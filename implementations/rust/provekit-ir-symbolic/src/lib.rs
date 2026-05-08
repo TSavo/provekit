@@ -48,13 +48,19 @@ impl Sort {
         Self { name: "Int".into() }
     }
     pub fn real() -> Self {
-        Self { name: "Real".into() }
+        Self {
+            name: "Real".into(),
+        }
     }
     pub fn string() -> Self {
-        Self { name: "String".into() }
+        Self {
+            name: "String".into(),
+        }
     }
     pub fn bool() -> Self {
-        Self { name: "Bool".into() }
+        Self {
+            name: "Bool".into(),
+        }
     }
 }
 
@@ -88,11 +94,26 @@ pub enum ConstValue {
 
 #[derive(Debug, Clone)]
 pub enum Term {
-    Var { name: String },
-    Const { value: ConstValue, sort: Sort },
-    Ctor { name: String, args: Vec<Rc<Term>> },
-    Lambda { param_name: String, param_sort: Sort, body: Rc<Term> },
-    Let { bindings: Vec<LetBinding>, body: Rc<Term> },
+    Var {
+        name: String,
+    },
+    Const {
+        value: ConstValue,
+        sort: Sort,
+    },
+    Ctor {
+        name: String,
+        args: Vec<Rc<Term>>,
+    },
+    Lambda {
+        param_name: String,
+        param_sort: Sort,
+        body: Rc<Term>,
+    },
+    Let {
+        bindings: Vec<LetBinding>,
+        body: Rc<Term>,
+    },
 }
 
 #[derive(Debug, Clone)]

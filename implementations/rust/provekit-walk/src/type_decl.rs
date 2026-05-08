@@ -190,11 +190,8 @@ pub fn lift_enum_decl(item: &ItemEnum, file_path: Option<&str>) -> EnumDeclMemen
                         .named
                         .iter()
                         .map(|f| {
-                            let field_name = f
-                                .ident
-                                .as_ref()
-                                .map(|i| i.to_string())
-                                .unwrap_or_default();
+                            let field_name =
+                                f.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
                             (field_name, infer_sort(&f.ty))
                         })
                         .collect(),
@@ -337,10 +334,7 @@ pub struct ImplMemento {
 pub fn lift_impl_block(
     item: &ItemImpl,
     file_path: Option<&str>,
-) -> (
-    ImplMemento,
-    Vec<crate::contract::FunctionContractMemento>,
-) {
+) -> (ImplMemento, Vec<crate::contract::FunctionContractMemento>) {
     let target_type = type_name(&item.self_ty);
     let trait_name = item.trait_.as_ref().map(|(_, path, _)| {
         path.segments
@@ -656,8 +650,7 @@ mod tests {
             "struct A {{ x: Vec<u32> }} and struct A {{ x: SomeStruct }} must have distinct CIDs"
         );
         assert_ne!(
-            set_vec.structs[0].fields[0].1,
-            set_user.structs[0].fields[0].1,
+            set_vec.structs[0].fields[0].1, set_user.structs[0].fields[0].1,
             "Vec<u32> and SomeStruct field sorts must be distinct"
         );
     }

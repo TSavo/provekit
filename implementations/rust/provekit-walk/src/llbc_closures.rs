@@ -79,11 +79,8 @@ fn collect_in_stmt(
                     if agg.len() == 2 {
                         let agg_kind = &agg[0];
                         let captures = agg[1].as_array().map(|a| a.len()).unwrap_or(0);
-                        if let Some(closure_path) =
-                            adt_kind_is_closure(agg_kind, type_decls)
-                        {
-                            let body_fn_cid =
-                                find_closure_body_cid(&closure_path, fun_decls);
+                        if let Some(closure_path) = adt_kind_is_closure(agg_kind, type_decls) {
+                            let body_fn_cid = find_closure_body_cid(&closure_path, fun_decls);
                             out.push(ClosureCaptureFingerprint {
                                 body_fn_cid,
                                 n_captures: captures,
@@ -159,13 +156,10 @@ fn adt_kind_is_closure(agg_kind: &Value, type_decls: Option<&Value>) -> Option<V
         .and_then(|v| v.as_u64())?;
 
     let type_decls = type_decls?.as_array()?;
-    let decl = type_decls.iter().find(|d| {
-        d.get("def_id").and_then(|v| v.as_u64()) == Some(adt_id)
-    })?;
-    let elems = decl
-        .get("item_meta")?
-        .get("name")?
-        .as_array()?;
+    let decl = type_decls
+        .iter()
+        .find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(adt_id))?;
+    let elems = decl.get("item_meta")?.get("name")?.as_array()?;
 
     // Last element must be Ident("closure").
     let last = elems.last()?;

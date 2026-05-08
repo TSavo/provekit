@@ -31,8 +31,8 @@ use crate::methods::{
     handle_flush_cache, handle_get_diagnostics, handle_parse_file, handle_project_status,
     rpc_error, shutdown_response, ERR_METHOD_NOT_FOUND,
 };
-use crate::state::ProjectState;
 use crate::snapshot;
+use crate::state::ProjectState;
 
 /// Configuration for the daemon server.
 pub struct ServerConfig {
@@ -68,9 +68,7 @@ pub fn default_socket_path(project_cid: &str) -> PathBuf {
 
 /// Compute the snapshot path for a given projectCid per R14.
 pub fn default_snapshot_path(project_cid: &str) -> PathBuf {
-    let base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| {
-        dirs_next_cache_home()
-    });
+    let base = std::env::var("XDG_CACHE_HOME").unwrap_or_else(|_| dirs_next_cache_home());
     PathBuf::from(base)
         .join("provekit")
         .join("linkerd")
@@ -96,7 +94,10 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
     // Load snapshot if available (R14).
     let state = match snapshot::load(&config.snapshot_path) {
         Ok(Some(s)) => {
-            info!("warm-start: loaded snapshot from {}", config.snapshot_path.display());
+            info!(
+                "warm-start: loaded snapshot from {}",
+                config.snapshot_path.display()
+            );
             Arc::new(Mutex::new(s))
         }
         Ok(None) => {
@@ -126,10 +127,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            &config.socket_path,
-            std::fs::Permissions::from_mode(0o600),
-        )?;
+        std::fs::set_permissions(&config.socket_path, std::fs::Permissions::from_mode(0o600))?;
     }
 
     info!("listening on {}", config.socket_path.display());
@@ -279,7 +277,11 @@ async fn handle_client(
                 shutdown_notify.notify_one();
                 return;
             }
-            _ => rpc_error(ERR_METHOD_NOT_FOUND, &format!("method not found: {method}"), &id),
+            _ => rpc_error(
+                ERR_METHOD_NOT_FOUND,
+                &format!("method not found: {method}"),
+                &id,
+            ),
         };
 
         if let Err(e) = write_response(&mut writer_half, &response).await {

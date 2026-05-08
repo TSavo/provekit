@@ -15,8 +15,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    contract, eq, forall, gt, gte, must, num, str_const, ContractArgs, Int,
-    String_, Term,
+    contract, eq, forall, gt, gte, must, num, str_const, ContractArgs, Int, String_, Term,
 };
 
 /// Wrap an arbitrary IR ctor with one argument. The kit only ships a

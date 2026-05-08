@@ -132,10 +132,8 @@ fn body_pairs_unsigned(input: &ProofEnvelopeInput) -> Vec<CborPair> {
         pairs.push(make_string_pair("binaryCid", bcid));
     }
     if let Some(ref meta) = input.metadata {
-        let mut meta_pairs: Vec<CborPair> = meta
-            .iter()
-            .map(|(k, v)| make_string_pair(k, v))
-            .collect();
+        let mut meta_pairs: Vec<CborPair> =
+            meta.iter().map(|(k, v)| make_string_pair(k, v)).collect();
         let mut meta_cbor = Vec::new();
         emit_sorted_map(&mut meta_cbor, &mut meta_pairs);
         pairs.push(CborPair {
@@ -186,8 +184,8 @@ mod tests {
         let input = ProofEnvelopeInput {
             name: "@x/y".to_string(),
             version: "0.0.1".to_string(),
-        binary_cid: None,
-        metadata: None,
+            binary_cid: None,
+            metadata: None,
             members,
             signer_cid: "blake3-512:bb".to_string(),
             signer_seed: [0x11; 32],

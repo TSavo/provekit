@@ -4,11 +4,21 @@ fn make_sort(name: &str) -> Value {
     json!({"kind": "primitive", "name": name})
 }
 
-pub fn string_sort() -> Value { make_sort("String") }
-pub fn int_sort() -> Value { make_sort("Int") }
-pub fn bool_sort() -> Value { make_sort("Bool") }
-pub fn real_sort() -> Value { make_sort("Real") }
-pub fn ref_sort() -> Value { make_sort("Ref") }
+pub fn string_sort() -> Value {
+    make_sort("String")
+}
+pub fn int_sort() -> Value {
+    make_sort("Int")
+}
+pub fn bool_sort() -> Value {
+    make_sort("Bool")
+}
+pub fn real_sort() -> Value {
+    make_sort("Real")
+}
+pub fn ref_sort() -> Value {
+    make_sort("Ref")
+}
 
 pub fn var(name: &str) -> Value {
     json!({ "kind": "var", "name": name })

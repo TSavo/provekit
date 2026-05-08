@@ -1,4 +1,4 @@
-use provekit_canonicalizer::{encode_jcs, blake3_512_of, Value as CValue};
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use serde_json::Value;
 use std::fs;
 use std::sync::Arc;
@@ -8,9 +8,13 @@ fn to_cvalue(v: &Value) -> Arc<CValue> {
         Value::Null => CValue::null(),
         Value::Bool(b) => CValue::boolean(*b),
         Value::Number(n) => {
-            if let Some(i) = n.as_i64() { CValue::integer(i) }
-            else if let Some(f) = n.as_f64() { CValue::string(format!("{}", f)) }
-            else { CValue::null() }
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else if let Some(f) = n.as_f64() {
+                CValue::string(format!("{}", f))
+            } else {
+                CValue::null()
+            }
         }
         Value::String(s) => CValue::string(s.clone()),
         Value::Array(arr) => CValue::array(arr.iter().map(|v| to_cvalue(v)).collect()),
@@ -21,9 +25,12 @@ fn to_cvalue(v: &Value) -> Arc<CValue> {
 fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let repo_root = std::path::Path::new(manifest_dir)
-        .parent().unwrap()
-        .parent().unwrap()
-        .parent().unwrap();
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
     let args: Vec<String> = std::env::args().collect();
     let fixture_path = if args.len() > 1 {
         std::path::PathBuf::from(&args[1])
@@ -32,8 +39,7 @@ fn main() {
     };
     let json_str = fs::read_to_string(&fixture_path)
         .unwrap_or_else(|e| panic!("read fixture {:?}: {}", fixture_path, e));
-    let v: Value = serde_json::from_str(&json_str)
-        .unwrap_or_else(|e| panic!("parse JSON: {}", e));
+    let v: Value = serde_json::from_str(&json_str).unwrap_or_else(|e| panic!("parse JSON: {}", e));
     let cv = to_cvalue(&v);
     let jcs = encode_jcs(&cv);
     let cid = blake3_512_of(jcs.as_bytes());

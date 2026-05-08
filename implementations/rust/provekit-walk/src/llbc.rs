@@ -64,10 +64,7 @@ impl LlbcCrate {
     }
 
     pub fn crate_name(&self) -> Option<&str> {
-        self.raw
-            .get("translated")?
-            .get("crate_name")?
-            .as_str()
+        self.raw.get("translated")?.get("crate_name")?.as_str()
     }
 
     /// The crate's type_decls array. Used by the LLBC lifter to resolve
@@ -122,19 +119,12 @@ impl<'a> LlbcFunction<'a> {
     /// The function's surface name (the last `Ident` element in the
     /// path). Returns None if the path is malformed.
     pub fn fn_name(&self) -> Option<String> {
-        let elems = self
-            .raw
-            .get("item_meta")?
-            .get("name")?
-            .as_array()?;
-        elems
-            .iter()
-            .rev()
-            .find_map(|elem| {
-                let ident = elem.get("Ident")?.as_array()?;
-                let name = ident.first()?.as_str()?;
-                Some(name.to_string())
-            })
+        let elems = self.raw.get("item_meta")?.get("name")?.as_array()?;
+        elems.iter().rev().find_map(|elem| {
+            let ident = elem.get("Ident")?.as_array()?;
+            let name = ident.first()?.as_str()?;
+            Some(name.to_string())
+        })
     }
 
     /// Number of input arguments (excludes the return local _0).

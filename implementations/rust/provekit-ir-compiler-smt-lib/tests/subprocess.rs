@@ -14,8 +14,7 @@ use provekit_ir_compiler_smt_lib::{compile_to_parts, DIALECT};
 
 fn binary_path() -> Option<PathBuf> {
     // Cargo sets CARGO_BIN_EXE_<name> for binaries in this package.
-    let p = option_env!("CARGO_BIN_EXE_provekit-ir-smt-lib")
-        .map(PathBuf::from)?;
+    let p = option_env!("CARGO_BIN_EXE_provekit-ir-smt-lib").map(PathBuf::from)?;
     if p.exists() {
         Some(p)
     } else {

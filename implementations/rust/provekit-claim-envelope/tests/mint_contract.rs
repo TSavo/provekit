@@ -171,7 +171,8 @@ fn inv_only_succeeds() {
 
 #[test]
 fn pre_post_succeeds() {
-    let m = mint_contract(&args_with(Some(pre_n_gt_0()), Some(post_out_eq_0()), None)).expect("mint");
+    let m =
+        mint_contract(&args_with(Some(pre_n_gt_0()), Some(post_out_eq_0()), None)).expect("mint");
     assert!(m.cid.starts_with("blake3-512:"));
 }
 
@@ -218,9 +219,11 @@ fn cid_matches_blake3_of_jcs_envelope() {
     // strip-and-rehash of the whole memento.
     let m = mint_contract(&args_with(Some(pre_n_gt_0()), None, None)).expect("mint");
     let signed_text = std::str::from_utf8(&m.canonical_bytes).expect("utf8");
-    let signed_json: serde_json::Value =
-        serde_json::from_str(signed_text).expect("json parse");
-    let envelope = signed_json.get("envelope").expect("envelope present").clone();
+    let signed_json: serde_json::Value = serde_json::from_str(signed_text).expect("json parse");
+    let envelope = signed_json
+        .get("envelope")
+        .expect("envelope present")
+        .clone();
     let v = json_to_value(&envelope);
     let recomputed = blake3_512_of(encode_jcs(&v).as_bytes());
     assert_eq!(
@@ -250,8 +253,10 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
             Value::array(v)
         }
         serde_json::Value::Object(map) => {
-            let entries: Vec<(String, _)> =
-                map.iter().map(|(k, v)| (k.clone(), json_to_value(v))).collect();
+            let entries: Vec<(String, _)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), json_to_value(v)))
+                .collect();
             Arc::new(Value::Object(entries))
         }
     }
@@ -288,7 +293,10 @@ fn post_hash_is_blake3_of_jcs_encoded_post() {
     let m = mint_contract(&args_with(None, Some(post_out_eq_0()), None)).expect("mint");
     let env = parse_envelope(&m);
     let metadata = env.pointer("/metadata").expect("metadata").clone();
-    let post_hash = metadata.get("postHash").and_then(|v| v.as_str()).expect("postHash");
+    let post_hash = metadata
+        .get("postHash")
+        .and_then(|v| v.as_str())
+        .expect("postHash");
     let expected = blake3_512_of(encode_jcs(&post_out_eq_0()).as_bytes());
     assert_eq!(post_hash, expected);
 }
@@ -298,7 +306,10 @@ fn inv_hash_is_blake3_of_jcs_encoded_inv() {
     let m = mint_contract(&args_with(None, None, Some(inv_true()))).expect("mint");
     let env = parse_envelope(&m);
     let metadata = env.pointer("/metadata").expect("metadata").clone();
-    let inv_hash = metadata.get("invHash").and_then(|v| v.as_str()).expect("invHash");
+    let inv_hash = metadata
+        .get("invHash")
+        .and_then(|v| v.as_str())
+        .expect("invHash");
     let expected = blake3_512_of(encode_jcs(&inv_true()).as_bytes());
     assert_eq!(inv_hash, expected);
 }
@@ -308,9 +319,18 @@ fn omitted_clauses_omit_their_hash_fields() {
     let m = mint_contract(&args_with(Some(pre_n_gt_0()), None, None)).expect("mint");
     let env = parse_envelope(&m);
     let metadata = env.pointer("/metadata").expect("metadata");
-    assert!(metadata.get("preHash").is_some(), "preHash should be present");
-    assert!(metadata.get("postHash").is_none(), "postHash should be absent");
-    assert!(metadata.get("invHash").is_none(), "invHash should be absent");
+    assert!(
+        metadata.get("preHash").is_some(),
+        "preHash should be present"
+    );
+    assert!(
+        metadata.get("postHash").is_none(),
+        "postHash should be absent"
+    );
+    assert!(
+        metadata.get("invHash").is_none(),
+        "invHash should be absent"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +367,10 @@ fn property_hash_is_blake3_of_jcs_pre_post_inv_outbinding() {
 fn binding_hash_is_blake3_of_jcs_producer_id_contract_name_property_hash() {
     let m = mint_contract(&args_with(Some(pre_n_gt_0()), None, None)).expect("mint");
     let env = parse_envelope(&m);
-    let property_hash = env.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
+    let property_hash = env
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     let claimed = env
         .pointer("/header/bindingHash")
         .and_then(|v| v.as_str())
@@ -396,8 +419,14 @@ fn changing_contract_name_changes_binding_hash() {
 
     let env_a = parse_envelope(&a);
     let env_b = parse_envelope(&b);
-    let bh_a = env_a.pointer("/header/bindingHash").and_then(|v| v.as_str()).unwrap();
-    let bh_b = env_b.pointer("/header/bindingHash").and_then(|v| v.as_str()).unwrap();
+    let bh_a = env_a
+        .pointer("/header/bindingHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    let bh_b = env_b
+        .pointer("/header/bindingHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_ne!(bh_a, bh_b);
 }
 
@@ -410,11 +439,23 @@ fn changing_producer_id_changes_binding_hash_but_not_property_hash() {
 
     let env_a = parse_envelope(&a);
     let env_b = parse_envelope(&b);
-    let ph_a = env_a.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
-    let ph_b = env_b.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
+    let ph_a = env_a
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    let ph_b = env_b
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(ph_a, ph_b, "propertyHash must be producer-independent");
-    let bh_a = env_a.pointer("/header/bindingHash").and_then(|v| v.as_str()).unwrap();
-    let bh_b = env_b.pointer("/header/bindingHash").and_then(|v| v.as_str()).unwrap();
+    let bh_a = env_a
+        .pointer("/header/bindingHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    let bh_b = env_b
+        .pointer("/header/bindingHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_ne!(bh_a, bh_b, "bindingHash must depend on producerId");
 }
 
@@ -431,12 +472,16 @@ fn authoring_kit_author_round_trips() {
     };
     let m = mint_contract(&args).expect("mint");
     let env = parse_envelope(&m);
-    let auth = env
-        .pointer("/metadata/authoring")
-        .expect("authoring");
-    assert_eq!(auth.get("producerKind").and_then(|v| v.as_str()), Some("kit-author"));
+    let auth = env.pointer("/metadata/authoring").expect("authoring");
+    assert_eq!(
+        auth.get("producerKind").and_then(|v| v.as_str()),
+        Some("kit-author")
+    );
     assert_eq!(auth.get("author").and_then(|v| v.as_str()), Some("alice"));
-    assert_eq!(auth.get("note").and_then(|v| v.as_str()), Some("hand-authored"));
+    assert_eq!(
+        auth.get("note").and_then(|v| v.as_str()),
+        Some("hand-authored")
+    );
 }
 
 #[test]
@@ -450,9 +495,18 @@ fn authoring_lift_round_trips() {
     let m = mint_contract(&args).expect("mint");
     let env = parse_envelope(&m);
     let auth = env.pointer("/metadata/authoring").expect("authoring");
-    assert_eq!(auth.get("producerKind").and_then(|v| v.as_str()), Some("lift"));
-    assert_eq!(auth.get("lifter").and_then(|v| v.as_str()), Some("lift-kit@1.0"));
-    assert_eq!(auth.get("sourceCid").and_then(|v| v.as_str()), Some("blake3-512:source"));
+    assert_eq!(
+        auth.get("producerKind").and_then(|v| v.as_str()),
+        Some("lift")
+    );
+    assert_eq!(
+        auth.get("lifter").and_then(|v| v.as_str()),
+        Some("lift-kit@1.0")
+    );
+    assert_eq!(
+        auth.get("sourceCid").and_then(|v| v.as_str()),
+        Some("blake3-512:source")
+    );
 }
 
 #[test]
@@ -468,7 +522,10 @@ fn authoring_llm_round_trips() {
     let m = mint_contract(&args).expect("mint");
     let env = parse_envelope(&m);
     let auth = env.pointer("/metadata/authoring").expect("authoring");
-    assert_eq!(auth.get("producerKind").and_then(|v| v.as_str()), Some("llm"));
+    assert_eq!(
+        auth.get("producerKind").and_then(|v| v.as_str()),
+        Some("llm")
+    );
     assert_eq!(auth.get("llm").and_then(|v| v.as_str()), Some("claude"));
     // confidence was scaled by 1000 and stored as integer
     assert_eq!(auth.get("confidence").and_then(|v| v.as_i64()), Some(900));

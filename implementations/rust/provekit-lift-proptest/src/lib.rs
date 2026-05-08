@@ -39,8 +39,8 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula,
-    Int, Sort, Term,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Int,
+    Sort, Term,
 };
 
 /// One warning emitted by the adapter. Returned alongside the lifted
@@ -202,7 +202,11 @@ fn subst_var_in_formula(f: &Rc<Formula>, formal: &str, actual: &Rc<Term>) -> Rc<
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             if var_name == formal {
                 f.clone() // shadowed
             } else {
@@ -231,7 +235,11 @@ fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> 
                 args: new_args,
             })
         }
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == formal {
                 t.clone() // shadowed
             } else {
@@ -261,8 +269,15 @@ fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> 
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_var_in_term(body, formal, actual) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_var_in_term(body, formal, actual)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -526,7 +541,6 @@ fn wrap_forall(params: &[(String, Sort)], i: usize, body: Rc<Formula>) -> Rc<For
     })
 }
 
-
 fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
     if from.is_empty() || from == to {
         return f.clone();
@@ -537,8 +551,10 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
             atomic_(name.clone(), new_args)
         }
         Formula::Connective { kind, operands } => {
-            let new_ops: Vec<Rc<Formula>> =
-                operands.iter().map(|o| subst_var_name(o, from, to)).collect();
+            let new_ops: Vec<Rc<Formula>> = operands
+                .iter()
+                .map(|o| subst_var_name(o, from, to))
+                .collect();
             Rc::new(Formula::Connective {
                 kind: kind.clone(),
                 operands: new_ops,
@@ -562,7 +578,11 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             if var_name == from {
                 f.clone() // shadowed
             } else {
@@ -588,7 +608,11 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
                 args: new_args,
             })
         }
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == from {
                 t.clone() // shadowed
             } else {
@@ -618,8 +642,15 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_term(body, from, to) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_term(body, from, to)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -846,7 +877,10 @@ mod tests {
         let out = lift_file(&f, "test.rs");
         assert_eq!(out.lifted, 0);
         assert_eq!(out.warnings.len(), 1);
-        assert!(out.warnings[0].reason.contains("not in v0 lift whitelist") || out.warnings[0].reason.contains("liftable"));
+        assert!(
+            out.warnings[0].reason.contains("not in v0 lift whitelist")
+                || out.warnings[0].reason.contains("liftable")
+        );
     }
 
     #[test]

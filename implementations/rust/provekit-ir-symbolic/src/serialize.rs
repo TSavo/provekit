@@ -39,10 +39,7 @@ pub fn evidence_to_value(e: &EvidenceTerm) -> Arc<Value> {
                     "formulaHash",
                     Value::string(e.certificate.formula_hash.clone()),
                 ),
-                (
-                    "proofData",
-                    Value::string(e.certificate.proof_data.clone()),
-                ),
+                ("proofData", Value::string(e.certificate.proof_data.clone())),
             ]),
         ),
     ])
@@ -81,19 +78,26 @@ pub fn term_to_value(t: &Term) -> Arc<Value> {
                 ("args", Value::array(arr)),
             ])
         }
-        Term::Lambda { param_name, param_sort, body } => Value::object([
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => Value::object([
             ("kind", Value::string("lambda")),
             ("paramName", Value::string(param_name.clone())),
             ("paramSort", sort_to_value(param_sort)),
             ("body", term_to_value(body)),
         ]),
         Term::Let { bindings, body } => {
-            let arr: Vec<Arc<Value>> = bindings.iter().map(|b| {
-                Value::object([
-                    ("name", Value::string(b.name.clone())),
-                    ("boundTerm", term_to_value(&b.bound_term)),
-                ])
-            }).collect();
+            let arr: Vec<Arc<Value>> = bindings
+                .iter()
+                .map(|b| {
+                    Value::object([
+                        ("name", Value::string(b.name.clone())),
+                        ("boundTerm", term_to_value(&b.bound_term)),
+                    ])
+                })
+                .collect();
             Value::object([
                 ("kind", Value::string("let")),
                 ("bindings", Value::array(arr)),
@@ -131,7 +135,11 @@ pub fn formula_to_value(f: &Formula) -> Arc<Value> {
             ("sort", sort_to_value(sort)),
             ("body", formula_to_value(body)),
         ]),
-        Formula::Choice { var_name, sort, body } => Value::object([
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => Value::object([
             ("kind", Value::string("choice")),
             ("varName", Value::string(var_name.clone())),
             ("sort", sort_to_value(sort)),
@@ -245,7 +253,11 @@ fn write_term(out: &mut String, t: &Term) {
             }
             out.push_str("]}");
         }
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             out.push_str(r#"{"kind":"lambda","paramName":"#);
             write_string(out, param_name);
             out.push_str(r#","paramSort":"#);
@@ -315,7 +327,11 @@ fn write_formula(out: &mut String, f: &Formula) {
             write_formula(out, body);
             out.push('}');
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             out.push_str(r#"{"kind":"choice","varName":"#);
             write_string(out, var_name);
             out.push_str(r#","sort":"#);

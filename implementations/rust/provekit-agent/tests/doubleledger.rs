@@ -41,8 +41,7 @@ fn doubleledger_must_produces_conservation_contract() {
         authoring_api_doc: String::new(),
         previous_rejection: None,
     };
-    let outcome = run_must_loop(&agent, ctx, &MustLoopOptions::default())
-        .expect("must loop");
+    let outcome = run_must_loop(&agent, ctx, &MustLoopOptions::default()).expect("must loop");
 
     // The stub agent recognises the phrase and returns the conservation
     // contract by name.
@@ -55,7 +54,12 @@ fn doubleledger_must_produces_conservation_contract() {
         outcome.minted.cid
     );
     // CIDs are 11 (prefix) + 128 (hex digest) = 139 chars.
-    assert_eq!(outcome.minted.cid.len(), 11 + 128, "cid: {}", outcome.minted.cid);
+    assert_eq!(
+        outcome.minted.cid.len(),
+        11 + 128,
+        "cid: {}",
+        outcome.minted.cid
+    );
 
     // The contract is an invariant (not pre/post).
     assert!(outcome.candidate.inv.is_some());

@@ -41,8 +41,14 @@ fn daemon_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
     // CI builds with --release; local cargo test uses debug. Try release first.
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
     if release.exists() {
         release
     } else {
@@ -70,9 +76,12 @@ fn spawn_daemon(sock: &PathBuf) -> Child {
             .unwrap_or(0)
     ));
     Command::new(daemon_bin())
-        .arg("--socket").arg(sock)
-        .arg("--snapshot").arg(snap)
-        .arg("--idle-timeout-ms").arg("30000")
+        .arg("--socket")
+        .arg(sock)
+        .arg("--snapshot")
+        .arg(snap)
+        .arg("--idle-timeout-ms")
+        .arg("30000")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -221,8 +230,13 @@ fn test2_unknown_kit_returns_error() {
 
     let resp = send_recv(&sock, &req);
 
-    let error = resp.get("error").expect("expected error field for unknown kit");
-    let code = error.get("code").and_then(|c| c.as_i64()).expect("expected error.code");
+    let error = resp
+        .get("error")
+        .expect("expected error field for unknown kit");
+    let code = error
+        .get("code")
+        .and_then(|c| c.as_i64())
+        .expect("expected error.code");
     assert_eq!(
         code, -33001,
         "unknown-kit must return error code -33001 (KitNotInManifest), got {}",
@@ -278,7 +292,10 @@ pub fn abs_value(x: i64) -> i64 {
         "jsonrpc": "2.0", "id": 2, "method": "projectStatus", "params": {}
     });
     let status1 = send_recv(&sock, &status_req);
-    let cid1 = status1["result"]["linkBundleCid"].as_str().unwrap_or("").to_string();
+    let cid1 = status1["result"]["linkBundleCid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
 
     // Flush and re-parse with identical source.
     let flush_req = serde_json::json!({
@@ -287,7 +304,10 @@ pub fn abs_value(x: i64) -> i64 {
     let _ = send_recv(&sock, &flush_req);
     let _ = send_recv(&sock, &parse_req);
     let status2 = send_recv(&sock, &status_req);
-    let cid2 = status2["result"]["linkBundleCid"].as_str().unwrap_or("").to_string();
+    let cid2 = status2["result"]["linkBundleCid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
 
     assert!(
         !cid1.is_empty(),

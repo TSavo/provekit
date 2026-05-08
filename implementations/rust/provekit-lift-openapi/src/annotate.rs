@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::ir_builder;
-use crate::types::{Diagnostics};
+use crate::types::Diagnostics;
 
 const TS_EXT: &[&str] = &["ts", "tsx"];
 const GO_EXT: &[&str] = &["go"];
@@ -41,8 +41,7 @@ pub fn run_annotate(input: &AnnotateInput) -> Result<AnnotateOutput, String> {
     {
         let yaml_doc: serde_yaml::Value =
             serde_yaml::from_str(&contents).map_err(|e| format!("yaml parse: {e}"))?;
-        let json_str =
-            serde_json::to_string(&yaml_doc).map_err(|e| format!("yaml->json: {e}"))?;
+        let json_str = serde_json::to_string(&yaml_doc).map_err(|e| format!("yaml->json: {e}"))?;
         serde_json::from_str(&json_str).map_err(|e| format!("json parse: {e}"))?
     } else {
         serde_json::from_str(&contents).map_err(|e| format!("json parse: {e}"))?
@@ -89,21 +88,12 @@ pub fn run_annotate(input: &AnnotateInput) -> Result<AnnotateOutput, String> {
                 .and_then(|v| v.as_str())
                 .unwrap_or_else(|| method)
                 .to_string();
-            let route_slug =
-                slugify(&format!("{spec_prefix}-{method}-{op_id}"));
+            let route_slug = slugify(&format!("{spec_prefix}-{method}-{op_id}"));
 
             let resp_constraints = operation
                 .get("responses")
                 .and_then(|v| v.as_object())
-                .and_then(|responses| {
-                    responses
-                        .get("200")
-                        .or_else(|| {
-                            responses
-                                .values()
-                                .next()
-                        })
-                })
+                .and_then(|responses| responses.get("200").or_else(|| responses.values().next()))
                 .and_then(|resp| lift_response_body(resp, &schemas));
 
             let req_constraints = operation
@@ -168,12 +158,8 @@ pub fn run_annotate(input: &AnnotateInput) -> Result<AnnotateOutput, String> {
                     find_function(&modified, pattern, lang)
                 {
                     let annotation = build_annotation(op, lang);
-                    let annotated_line = build_annotation_line(
-                        lang,
-                        &annotation,
-                        &op.contract_name,
-                        indent,
-                    );
+                    let annotated_line =
+                        build_annotation_line(lang, &annotation, &op.contract_name, indent);
 
                     let insertion_point = find_insertion_point(&modified, line_start);
                     modified.insert_str(insertion_point, &annotated_line);
@@ -194,14 +180,14 @@ pub fn run_annotate(input: &AnnotateInput) -> Result<AnnotateOutput, String> {
         }
 
         if injected > 0 {
-            std::fs::write(entry.path(), &modified)
-                .map_err(|e| format!("write: {e}"))?;
+            std::fs::write(entry.path(), &modified).map_err(|e| format!("write: {e}"))?;
             output.files_written += 1;
             output.annotations_injected += injected;
         }
     }
 
-    let annotation_file = build_annotation_defs(&ops, spec_prefix, lang_preference(&input.code_dir));
+    let annotation_file =
+        build_annotation_defs(&ops, spec_prefix, lang_preference(&input.code_dir));
     let annot_path = input.code_dir.join("provekit-contracts.ts");
     std::fs::write(&annot_path, &annotation_file).map_err(|e| format!("write: {e}"))?;
     output.files_written += 1;
@@ -296,7 +282,11 @@ fn find_function(content: &str, name: &str, lang: Lang) -> Option<(usize, usize,
 
         if trimmed.contains(name) {
             let lower = trimmed.to_lowercase();
-            if lower.contains("export") || lower.contains("function") || lower.contains("fn ") || lower.contains("const ") {
+            if lower.contains("export")
+                || lower.contains("function")
+                || lower.contains("fn ")
+                || lower.contains("const ")
+            {
                 let indent = line.len() - line.trim_start().len();
                 let start = content.lines().take(i).map(|l| l.len() + 1).sum::<usize>();
                 let end = start + line.len();
@@ -317,7 +307,10 @@ fn find_insertion_point(content: &str, line_start: usize) -> usize {
 }
 
 fn build_annotation(op: &OpInfo, _lang: Lang) -> String {
-    let mut parts = vec![format!("@provekit.target {}.{}", "openapi", op.contract_name)];
+    let mut parts = vec![format!(
+        "@provekit.target {}.{}",
+        "openapi", op.contract_name
+    )];
 
     if let Some(rc) = &op.response_constraints {
         parts.push(format!(
@@ -347,11 +340,7 @@ fn build_annotation_line(
     result
 }
 
-fn build_annotation_defs(
-    ops: &[OpInfo],
-    spec_prefix: String,
-    lang: Lang,
-) -> String {
+fn build_annotation_defs(ops: &[OpInfo], spec_prefix: String, lang: Lang) -> String {
     let comment = match lang {
         Lang::Ts | Lang::Go | Lang::Rs => "//",
     };
@@ -396,10 +385,7 @@ fn build_annotation_defs(
     out
 }
 
-fn lift_response_body(
-    body: &Value,
-    schemas: &serde_json::Map<String, Value>,
-) -> Option<Value> {
+fn lift_response_body(body: &Value, schemas: &serde_json::Map<String, Value>) -> Option<Value> {
     let schema = if let Some(s) = body.get("schema") {
         s.clone()
     } else if let Some(content) = body.get("content") {
@@ -414,7 +400,8 @@ fn lift_response_body(
     };
 
     let schema = resolve_schema(&schema, schemas);
-    let constraints = schema_to_constraints_on_value_resolved(&schema, schemas, ir_builder::var("x"));
+    let constraints =
+        schema_to_constraints_on_value_resolved(&schema, schemas, ir_builder::var("x"));
     Some(ir_builder::forall_ref("x", constraints))
 }
 
@@ -454,7 +441,10 @@ fn schema_to_constraints_on_value_inner(
                 {
                     operands.push(ir_builder::gt(value.clone(), ir_builder::const_real(min)));
                 } else {
-                    operands.push(ir_builder::gte(value.clone(), ir_builder::const_int(min as i64)));
+                    operands.push(ir_builder::gte(
+                        value.clone(),
+                        ir_builder::const_int(min as i64),
+                    ));
                 }
             }
             if let Some(max) = schema.get("maximum").and_then(|v| v.as_f64()) {
@@ -465,7 +455,10 @@ fn schema_to_constraints_on_value_inner(
                 {
                     operands.push(ir_builder::lt(value.clone(), ir_builder::const_real(max)));
                 } else {
-                    operands.push(ir_builder::lte(value.clone(), ir_builder::const_int(max as i64)));
+                    operands.push(ir_builder::lte(
+                        value.clone(),
+                        ir_builder::const_int(max as i64),
+                    ));
                 }
             }
         }
@@ -604,7 +597,10 @@ fn slugify(s: &str) -> String {
 }
 
 fn is_http_method(s: &str) -> bool {
-    matches!(s, "get" | "post" | "put" | "delete" | "patch" | "head" | "options")
+    matches!(
+        s,
+        "get" | "post" | "put" | "delete" | "patch" | "head" | "options"
+    )
 }
 
 fn to_camel_case(s: &str) -> String {
@@ -725,7 +721,10 @@ components:
                     }
                 }
             }
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         let array_schema = serde_json::json!({
             "type": "array",
@@ -734,11 +733,13 @@ components:
             }
         });
 
-        let result = schema_to_constraints_on_value_resolved(
-            &array_schema, &schemas, ir_builder::var("x"),
-        );
+        let result =
+            schema_to_constraints_on_value_resolved(&array_schema, &schemas, ir_builder::var("x"));
 
         let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("\"name\":\"id\""), "should contain id field: {json}");
+        assert!(
+            json.contains("\"name\":\"id\""),
+            "should contain id field: {json}"
+        );
     }
 }

@@ -127,9 +127,15 @@ fn print_canonical_claim_envelope_bytes() {
     let m = mint_contract(&fixture_args()).expect("mint");
     println!();
     println!("# canonical claim-envelope fixture (contract: demo)");
-    println!("CLAIM_ENVELOPE_FIXTURE_BYTES_HEX = \"{}\"", hex::encode(&m.canonical_bytes));
+    println!(
+        "CLAIM_ENVELOPE_FIXTURE_BYTES_HEX = \"{}\"",
+        hex::encode(&m.canonical_bytes)
+    );
     println!("CLAIM_ENVELOPE_FIXTURE_CID = \"{}\"", m.cid);
-    println!("CLAIM_ENVELOPE_FIXTURE_CONTRACT_CID = \"{}\"", m.contract_cid);
+    println!(
+        "CLAIM_ENVELOPE_FIXTURE_CONTRACT_CID = \"{}\"",
+        m.contract_cid
+    );
 
     // Direct contract_cid() call must equal m.contract_cid (signer-independent).
     let direct = contract_cid(&fixture_args());

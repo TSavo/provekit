@@ -19,8 +19,8 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, contract, eq, forall, gte, implies, must, num, or_,
-    str_const, ContractArgs, Int, String_, Term,
+    and_, atomic_, contract, eq, forall, gte, implies, must, num, or_, str_const, ContractArgs,
+    Int, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
@@ -52,7 +52,10 @@ pub fn invariants() {
         "mint_contract_cid_length_eq_139",
         forall(String_(), |args| {
             eq(
-                ctor1("len", ctor1("minted_envelope_cid", ctor1("mint_contract", args))),
+                ctor1(
+                    "len",
+                    ctor1("minted_envelope_cid", ctor1("mint_contract", args)),
+                ),
                 num(139),
             )
         }),
@@ -74,7 +77,10 @@ pub fn invariants() {
         "mint_bridge_cid_length_eq_139",
         forall(String_(), |args| {
             eq(
-                ctor1("len", ctor1("minted_envelope_cid", ctor1("mint_bridge", args))),
+                ctor1(
+                    "len",
+                    ctor1("minted_envelope_cid", ctor1("mint_bridge", args)),
+                ),
                 num(139),
             )
         }),
@@ -117,9 +123,7 @@ pub fn invariants() {
     // length floor of 11 (prefix length) for forward-compat tooling.
     must(
         "claim_envelope_schema_cid_prefix_length",
-        forall(Int(), |_n| {
-            gte(num(11), num(11))
-        }),
+        forall(Int(), |_n| gte(num(11), num(11))),
     );
 
     // -- Authoring::KitAuthor is the canonical orchestrator authoring kind. -

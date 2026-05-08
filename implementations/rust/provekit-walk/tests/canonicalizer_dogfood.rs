@@ -17,10 +17,8 @@
 
 use std::path::PathBuf;
 
-use provekit_walk::{
-    wrap_function_contract_cached, EnvelopeCache, DEV_SIGNER_SEED,
-};
 use provekit_walk::contract::build_function_contract_with_file;
+use provekit_walk::{wrap_function_contract_cached, EnvelopeCache, DEV_SIGNER_SEED};
 
 fn read_canonicalizer_source(filename: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -29,8 +27,7 @@ fn read_canonicalizer_source(filename: &str) -> String {
         .join("provekit-canonicalizer")
         .join("src")
         .join(filename);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read {:?}: {}", path, e))
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read {:?}: {}", path, e))
 }
 
 fn first_function_named<'a>(file: &'a syn::File, name: &str) -> Option<&'a syn::ItemFn> {
@@ -103,10 +100,8 @@ fn walk_lifts_multiple_canonicalizer_functions_into_one_cache() {
     let src = read_canonicalizer_source("hash.rs");
     let file: syn::File = syn::parse_str(&src).expect("hash.rs parses");
 
-    let f_of = first_function_named(&file, "blake3_512_of")
-        .expect("blake3_512_of present");
-    let f_hex = first_function_named(&file, "blake3_512_hex")
-        .expect("blake3_512_hex present");
+    let f_of = first_function_named(&file, "blake3_512_of").expect("blake3_512_of present");
+    let f_hex = first_function_named(&file, "blake3_512_hex").expect("blake3_512_hex present");
 
     let c_of =
         build_function_contract_with_file(f_of, None, Some("provekit-canonicalizer/src/hash.rs"));
@@ -114,40 +109,24 @@ fn walk_lifts_multiple_canonicalizer_functions_into_one_cache() {
         build_function_contract_with_file(f_hex, None, Some("provekit-canonicalizer/src/hash.rs"));
 
     let mut cache = EnvelopeCache::new();
-    let env_of_1 = wrap_function_contract_cached(
-        &c_of,
-        "2026-05-05T00:00:00Z",
-        &DEV_SIGNER_SEED,
-        &mut cache,
-    )
-    .unwrap();
-    let env_hex_1 = wrap_function_contract_cached(
-        &c_hex,
-        "2026-05-05T00:00:00Z",
-        &DEV_SIGNER_SEED,
-        &mut cache,
-    )
-    .unwrap();
+    let env_of_1 =
+        wrap_function_contract_cached(&c_of, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
+    let env_hex_1 =
+        wrap_function_contract_cached(&c_hex, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
     assert_eq!(cache.mints, 2);
     assert_eq!(cache.hits, 0);
     assert_eq!(cache.len(), 2);
     assert_ne!(env_of_1.contract_cid, env_hex_1.contract_cid);
 
     // Re-mint pass: both come from cache.
-    let env_of_2 = wrap_function_contract_cached(
-        &c_of,
-        "2026-05-05T00:00:00Z",
-        &DEV_SIGNER_SEED,
-        &mut cache,
-    )
-    .unwrap();
-    let env_hex_2 = wrap_function_contract_cached(
-        &c_hex,
-        "2026-05-05T00:00:00Z",
-        &DEV_SIGNER_SEED,
-        &mut cache,
-    )
-    .unwrap();
+    let env_of_2 =
+        wrap_function_contract_cached(&c_of, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
+    let env_hex_2 =
+        wrap_function_contract_cached(&c_hex, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
     assert_eq!(cache.mints, 2, "no re-mint");
     assert_eq!(cache.hits, 2);
     assert_eq!(env_of_1.cid, env_of_2.cid);
@@ -162,8 +141,7 @@ fn walk_canonicalizer_function_locus_carries_canonicalizer_path() {
     // feedback ("compile error at <file>:<line>").
     let src = read_canonicalizer_source("hash.rs");
     let file: syn::File = syn::parse_str(&src).expect("hash.rs parses");
-    let item_fn =
-        first_function_named(&file, "blake3_512_of").expect("blake3_512_of present");
+    let item_fn = first_function_named(&file, "blake3_512_of").expect("blake3_512_of present");
     let contract = build_function_contract_with_file(
         item_fn,
         None,

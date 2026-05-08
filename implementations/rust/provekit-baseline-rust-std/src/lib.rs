@@ -48,27 +48,25 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{
-    compute_contract_set_cid, contract_cid as compute_contract_cid,
-    mint_contract, Authoring, MintContractArgs, LAYERED_SCHEMA_VERSION,
+    compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
+    MintContractArgs, LAYERED_SCHEMA_VERSION,
 };
 use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{
-    begin_collecting, finish, reset_collector, ContractDecl,
-};
+use provekit_ir_symbolic::{begin_collecting, finish, reset_collector, ContractDecl};
 use provekit_proof_envelope::{
-    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string,
-    Ed25519Seed, ProofEnvelopeInput,
+    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
+    ProofEnvelopeInput,
 };
 
 // --- Slab modules ----------------------------------------------------------
 
-pub mod std_string_slab;
-pub mod std_vec_slab;
+pub mod std_hashmap_slab;
+pub mod std_iter_slab;
 pub mod std_option_slab;
 pub mod std_result_slab;
 pub mod std_slice_slab;
-pub mod std_hashmap_slab;
-pub mod std_iter_slab;
+pub mod std_string_slab;
+pub mod std_vec_slab;
 
 // --- Foundation signing constants ------------------------------------------
 
@@ -233,10 +231,7 @@ fn run_one_slab(source: InvariantSource, f: fn()) -> AuthoredSlab {
 // — only `header.kind == "bridge"` triggers special indexing).
 
 fn signing_bytes(header: &Arc<Value>, metadata: &Arc<Value>) -> Vec<u8> {
-    let msg = Value::object([
-        ("header", header.clone()),
-        ("metadata", metadata.clone()),
-    ]);
+    let msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
     encode_jcs(&msg).into_bytes()
 }
 
@@ -252,7 +247,10 @@ fn mint_disclaimer_memento(text: &str, signer_seed: &Ed25519Seed) -> (String, Ve
     //   * `body` carries the disclaimer text inline so the disclaimer
     //     IS in the proof bundle, not just hashed by reference.
     let header_entries: Vec<(String, Arc<Value>)> = vec![
-        ("schemaVersion".into(), Value::string(LAYERED_SCHEMA_VERSION)),
+        (
+            "schemaVersion".into(),
+            Value::string(LAYERED_SCHEMA_VERSION),
+        ),
         ("kind".into(), Value::string("disclaimer")),
         ("cid".into(), Value::string(body_hash.clone())),
         ("body".into(), Value::string(text.to_string())),
@@ -370,13 +368,9 @@ pub fn mint_baseline(out_dir: &Path) -> Result<MintResult, String> {
                 signer_seed,
             };
             let ccid = compute_contract_cid(&args);
-            let m = mint_contract(&args)
-                .map_err(|e| format!("mint_contract({}): {e}", d.name))?;
+            let m = mint_contract(&args).map_err(|e| format!("mint_contract({}): {e}", d.name))?;
             if contract_cids.contains_key(&d.name) {
-                return Err(format!(
-                    "duplicate contract name `{}` across slabs",
-                    d.name
-                ));
+                return Err(format!("duplicate contract name `{}` across slabs", d.name));
             }
             contract_cids.insert(d.name.clone(), ccid);
             members.insert(m.cid, m.canonical_bytes);
@@ -404,26 +398,14 @@ pub fn mint_baseline(out_dir: &Path) -> Result<MintResult, String> {
     // at parse time.
     let mut metadata: BTreeMap<String, String> = BTreeMap::new();
     metadata.insert("signer_role".into(), SIGNER_ROLE.into());
-    metadata.insert(
-        "baseline.version".into(),
-        BASELINE_VERSION.to_string(),
-    );
-    metadata.insert(
-        "baseline.language".into(),
-        BASELINE_LANGUAGE.into(),
-    );
+    metadata.insert("baseline.version".into(), BASELINE_VERSION.to_string());
+    metadata.insert("baseline.language".into(), BASELINE_LANGUAGE.into());
     metadata.insert(
         "baseline.language_version".into(),
         BASELINE_LANGUAGE_VERSION.into(),
     );
-    metadata.insert(
-        "baseline.kit_version".into(),
-        BASELINE_KIT_VERSION.into(),
-    );
-    metadata.insert(
-        "baseline.disclaimer_cid".into(),
-        disclaimer_cid.clone(),
-    );
+    metadata.insert("baseline.kit_version".into(), BASELINE_KIT_VERSION.into());
+    metadata.insert("baseline.disclaimer_cid".into(), disclaimer_cid.clone());
 
     let signer_pubkey = ed25519_pubkey_string(&signer_seed);
     let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
@@ -444,12 +426,9 @@ pub fn mint_baseline(out_dir: &Path) -> Result<MintResult, String> {
         return Err("internal: cid missing blake3-512 prefix".into());
     }
     let path = out_dir.join(format!("{cid}.proof", cid = built.cid));
-    std::fs::write(&path, &built.bytes)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    std::fs::write(&path, &built.bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
 
-    let contract_set_cid = compute_contract_set_cid(
-        contract_cids.values().cloned().collect(),
-    );
+    let contract_set_cid = compute_contract_set_cid(contract_cids.values().cloned().collect());
 
     // Distinct builtin count: contracts follow `<builtin>__<predicate>`
     // naming. The double-underscore separator splits cleanly.

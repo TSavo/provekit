@@ -55,7 +55,9 @@ impl CoqCompiler {
             let term: provekit_ir_types::Term = serde_json::from_value(ir.clone())
                 .map_err(|e| CompileError::MalformedIr(format!("{e}").into()))?;
             let term_str = generated::emit_term(&term);
-            let preamble = "Require Import ZArith String List.\nOpen Scope Z.\nOpen Scope string.\n\n".to_string();
+            let preamble =
+                "Require Import ZArith String List.\nOpen Scope Z.\nOpen Scope string.\n\n"
+                    .to_string();
             let body = format!("Goal {}.\nProof.\n  admit.\nQed.\n", term_str);
             Ok((preamble, body, vec![]))
         } else {
@@ -141,7 +143,7 @@ mod tests {
                 {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
             ]
         });
-        
+
         let result = compiler.compile(&ir, DIALECT).unwrap();
         assert!(result.body.contains("Goal"));
         assert!(result.body.contains("x = 42"));
@@ -155,7 +157,7 @@ mod tests {
             "name": "roundTrips",
             "args": [{"kind": "var", "name": "s"}]
         });
-        
+
         let result = compiler.compile(&ir, DIALECT).unwrap();
         // Generated compiler emits Parameter declarations in the body
         assert!(result.body.contains("Parameter s"));
@@ -178,7 +180,7 @@ mod tests {
                 ]
             }
         });
-        
+
         let result = compiler.compile(&ir, DIALECT).unwrap();
         assert!(result.body.contains("forall x : Z"));
     }

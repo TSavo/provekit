@@ -11,9 +11,9 @@ pub fn formula_contains_predicate(formula: &IrFormula, pred_name: &str) -> bool 
         IrFormula::And { operands }
         | IrFormula::Or { operands }
         | IrFormula::Not { operands }
-        | IrFormula::Implies { operands } => {
-            operands.iter().any(|o| formula_contains_predicate(o, pred_name))
-        }
+        | IrFormula::Implies { operands } => operands
+            .iter()
+            .any(|o| formula_contains_predicate(o, pred_name)),
         IrFormula::Forall { body, .. } | IrFormula::Exists { body, .. } => {
             formula_contains_predicate(body, pred_name)
         }
@@ -38,11 +38,12 @@ pub fn predicate_var_arg(formula: &IrFormula, pred_name: &str) -> Option<String>
         IrFormula::And { operands }
         | IrFormula::Or { operands }
         | IrFormula::Not { operands }
-        | IrFormula::Implies { operands } => {
-            operands.iter().find_map(|o| predicate_var_arg(o, pred_name))
+        | IrFormula::Implies { operands } => operands
+            .iter()
+            .find_map(|o| predicate_var_arg(o, pred_name)),
+        IrFormula::Forall { body, .. } | IrFormula::Exists { body, .. } => {
+            predicate_var_arg(body, pred_name)
         }
-        IrFormula::Forall { body, .. }
-        | IrFormula::Exists { body, .. } => predicate_var_arg(body, pred_name),
         IrFormula::Choice { body, .. } => predicate_var_arg(body, pred_name),
     }
 }
@@ -86,7 +87,9 @@ pub struct PredicateRegistry {
 impl Default for PredicateRegistry {
     fn default() -> Self {
         use crate::dropper::predicates::not_null::NotNullPredicate;
-        let mut r = PredicateRegistry { descriptors: Vec::new() };
+        let mut r = PredicateRegistry {
+            descriptors: Vec::new(),
+        };
         r.register(Box::new(NotNullPredicate));
         r
     }

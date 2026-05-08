@@ -22,8 +22,8 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 
@@ -150,7 +150,10 @@ pub fn generate(args: &GenerateArgs) -> Result<(), FixtureError> {
         })
         .collect();
 
-    eprintln!("  writing {} implication .proof files...", implications.len());
+    eprintln!(
+        "  writing {} implication .proof files...",
+        implications.len()
+    );
     implications
         .par_iter()
         .try_for_each(|m| write_proof(&args.output, &m.cid, &m.canonical_bytes))?;
@@ -263,19 +266,49 @@ fn mint_one_contract(root_seed: u64, idx: u64) -> ContractRow {
     };
 
     let pre = match shape {
-        0 => forall(vec![var_n.clone()], atomic(">=", vec![var_n.clone(), const_int(lit_pre)])),
-        1 => forall(vec![var_n.clone()], atomic("<=", vec![var_n.clone(), const_int(lit_pre)])),
-        2 => forall(vec![var_n.clone()], atomic("=", vec![var_n.clone(), const_int(lit_pre)])),
-        3 => forall(vec![var_s.clone()], atomic("string-nonempty?", vec![var_s.clone()])),
-        4 => forall(vec![var_n.clone()], atomic(">", vec![var_n.clone(), const_int(lit_pre)])),
+        0 => forall(
+            vec![var_n.clone()],
+            atomic(">=", vec![var_n.clone(), const_int(lit_pre)]),
+        ),
+        1 => forall(
+            vec![var_n.clone()],
+            atomic("<=", vec![var_n.clone(), const_int(lit_pre)]),
+        ),
+        2 => forall(
+            vec![var_n.clone()],
+            atomic("=", vec![var_n.clone(), const_int(lit_pre)]),
+        ),
+        3 => forall(
+            vec![var_s.clone()],
+            atomic("string-nonempty?", vec![var_s.clone()]),
+        ),
+        4 => forall(
+            vec![var_n.clone()],
+            atomic(">", vec![var_n.clone(), const_int(lit_pre)]),
+        ),
         _ => atomic("=", vec![const_bool(true), const_bool(true)]),
     };
     let post = match shape {
-        0 => forall(vec![var_n.clone()], atomic(">", vec![var_n.clone(), const_int(lit_post)])),
-        1 => forall(vec![var_n.clone()], atomic("<", vec![var_n.clone(), const_int(lit_post)])),
-        2 => forall(vec![var_n.clone()], atomic("=", vec![var_n.clone(), const_int(lit_post + 1)])),
-        3 => forall(vec![var_s.clone()], atomic("string-prefix?", vec![var_s.clone(), Value::string("foo")])),
-        4 => forall(vec![var_n.clone()], atomic(">=", vec![var_n.clone(), const_int(lit_post)])),
+        0 => forall(
+            vec![var_n.clone()],
+            atomic(">", vec![var_n.clone(), const_int(lit_post)]),
+        ),
+        1 => forall(
+            vec![var_n.clone()],
+            atomic("<", vec![var_n.clone(), const_int(lit_post)]),
+        ),
+        2 => forall(
+            vec![var_n.clone()],
+            atomic("=", vec![var_n.clone(), const_int(lit_post + 1)]),
+        ),
+        3 => forall(
+            vec![var_s.clone()],
+            atomic("string-prefix?", vec![var_s.clone(), Value::string("foo")]),
+        ),
+        4 => forall(
+            vec![var_n.clone()],
+            atomic(">=", vec![var_n.clone(), const_int(lit_post)]),
+        ),
         _ => atomic("=", vec![const_bool(true), const_bool(true)]),
     };
 

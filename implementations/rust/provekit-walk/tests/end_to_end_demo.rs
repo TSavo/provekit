@@ -11,9 +11,7 @@
 // → shadow → CID. No model in any of it.
 
 use provekit_ir_types::{IrFormula, IrTerm};
-use provekit_walk::{
-    build_shadow_source, lift_function_precondition, CalleeContract,
-};
+use provekit_walk::{build_shadow_source, lift_function_precondition, CalleeContract};
 use serde_json::Value as JsonValue;
 
 const BARE_DEMO_SRC: &str = r#"
@@ -73,7 +71,10 @@ fn end_to_end_lift_walk_shadow_dag_closes_ground_true() {
     // 4. The entry arrival is the chain's allocation. Its WP is the proof
     // obligation; for the bare demo it should be ground-true (`42 ≥ 10`).
     let entry_arrival = &s.slots[3].arrivals[0];
-    assert!(entry_arrival.allocation_cid.is_none(), "entry IS the allocation");
+    assert!(
+        entry_arrival.allocation_cid.is_none(),
+        "entry IS the allocation"
+    );
 
     // 5. The entry arrival's pre_wp should have NO free variables —
     // both args of the comparison are integer constants. We assert this
@@ -89,7 +90,10 @@ fn end_to_end_lift_walk_shadow_dag_closes_ground_true() {
     // (Z3, etc.) would discharge in microseconds. We assert ground-truth
     // here without invoking the solver, mirroring paper 07's discharge
     // story.
-    assert!(ground_truth(formula), "expected entry WP to evaluate to true");
+    assert!(
+        ground_truth(formula),
+        "expected entry WP to evaluate to true"
+    );
 }
 
 #[test]

@@ -90,11 +90,7 @@ pub fn rpc_result(result: Json, id: &Json) -> Json {
 /// Params: `{ "kitId": <str>, "file": <absolute path>, "source": <str> }`
 /// Returns: `{ "diagnostics": [LinterError] }` filtered to `file`.
 #[instrument(skip(state, params))]
-pub async fn handle_parse_file(
-    state: Arc<Mutex<ProjectState>>,
-    params: &Json,
-    id: &Json,
-) -> Json {
+pub async fn handle_parse_file(state: Arc<Mutex<ProjectState>>, params: &Json, id: &Json) -> Json {
     let kit_id = match params.get("kitId").and_then(|v| v.as_str()) {
         Some(k) => k.to_string(),
         None => return rpc_error(ERR_INVALID_PARAMS, "missing 'kitId'", id),
@@ -483,95 +479,93 @@ async fn spawn_kit_lifter(
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-        .map_err(|e| {
-            LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
+            .map_err(|e| LiftError::LifterUnavailable(format!("spawn {binary}: {e}")))?;
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| LiftError::LifterUnavailable("no stdin handle".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| LiftError::LifterUnavailable("no stdout handle".to_string()))?;
+        let mut reader = BufReader::new(stdout);
+
+        // 1. Send initialize.
+        let init_req = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+        });
+        let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
+        stdin.write_all(init_line.as_bytes()).map_err(|e| {
+            LiftError::LifterUnavailable(format!("write initialize to {binary}: {e}"))
         })?;
 
-    let mut stdin = child.stdin.take().ok_or_else(|| {
-        LiftError::LifterUnavailable("no stdin handle".to_string())
-    })?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        LiftError::LifterUnavailable("no stdout handle".to_string())
-    })?;
-    let mut reader = BufReader::new(stdout);
+        // 2. Read initialize response (discard).
+        let mut init_resp = String::new();
+        reader.read_line(&mut init_resp).map_err(|e| {
+            LiftError::LifterUnavailable(format!("read initialize from {binary}: {e}"))
+        })?;
 
-    // 1. Send initialize.
-    let init_req = serde_json::json!({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
-    });
-    let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
-    stdin.write_all(init_line.as_bytes()).map_err(|e| {
-        LiftError::LifterUnavailable(format!("write initialize to {binary}: {e}"))
-    })?;
+        // 3. Send parse request.
+        let parse_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "parse",
+            "params": { "path": file, "source": source }
+        });
+        let parse_line = serde_json::to_string(&parse_req).unwrap() + "\n";
+        stdin
+            .write_all(parse_line.as_bytes())
+            .map_err(|e| LiftError::LifterUnavailable(format!("write parse to {binary}: {e}")))?;
 
-    // 2. Read initialize response (discard).
-    let mut init_resp = String::new();
-    reader.read_line(&mut init_resp).map_err(|e| {
-        LiftError::LifterUnavailable(format!("read initialize from {binary}: {e}"))
-    })?;
+        // 4. Read parse response.
+        let mut resp_line = String::new();
+        reader
+            .read_line(&mut resp_line)
+            .map_err(|e| LiftError::LifterUnavailable(format!("read parse from {binary}: {e}")))?;
 
-    // 3. Send parse request.
-    let parse_req = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "parse",
-        "params": { "path": file, "source": source }
-    });
-    let parse_line = serde_json::to_string(&parse_req).unwrap() + "\n";
-    stdin.write_all(parse_line.as_bytes()).map_err(|e| {
-        LiftError::LifterUnavailable(format!("write parse to {binary}: {e}"))
-    })?;
+        // Send shutdown and drop stdin to let the subprocess exit cleanly.
+        let shutdown_req = serde_json::json!({
+            "jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}
+        });
+        let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
+        let _ = stdin.write_all(shutdown_line.as_bytes());
+        drop(stdin);
+        let _ = child.wait();
 
-    // 4. Read parse response.
-    let mut resp_line = String::new();
-    reader.read_line(&mut resp_line).map_err(|e| {
-        LiftError::LifterUnavailable(format!("read parse from {binary}: {e}"))
-    })?;
+        // 5. Parse response.
+        let resp: Json = serde_json::from_str(resp_line.trim()).map_err(|e| {
+            LiftError::LifterUnavailable(format!("parse JSON from {binary}: {e}; raw: {resp_line}"))
+        })?;
 
-    // Send shutdown and drop stdin to let the subprocess exit cleanly.
-    let shutdown_req = serde_json::json!({
-        "jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}
-    });
-    let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
-    let _ = stdin.write_all(shutdown_line.as_bytes());
-    drop(stdin);
-    let _ = child.wait();
+        if let Some(err) = resp.get("error") {
+            return Err(LiftError::LifterUnavailable(format!(
+                "{binary} returned RPC error: {err}"
+            )));
+        }
 
-    // 5. Parse response.
-    let resp: Json = serde_json::from_str(resp_line.trim()).map_err(|e| {
-        LiftError::LifterUnavailable(format!(
-            "parse JSON from {binary}: {e}; raw: {resp_line}"
-        ))
-    })?;
+        let result = resp.get("result").ok_or_else(|| {
+            LiftError::LifterUnavailable(format!("{binary} response missing 'result' field"))
+        })?;
 
-    if let Some(err) = resp.get("error") {
-        return Err(LiftError::LifterUnavailable(format!(
-            "{binary} returned RPC error: {err}"
-        )));
-    }
+        // 6. Extract declarations array.
+        let decls_json = extract_array_field(result, "declarations");
+        let contracts = decls_json
+            .iter()
+            .filter_map(|decl| parse_declaration_to_contract(decl, &kit_label))
+            .collect::<Vec<_>>();
 
-    let result = resp.get("result").ok_or_else(|| {
-        LiftError::LifterUnavailable(format!(
-            "{binary} response missing 'result' field"
-        ))
-    })?;
-
-    // 6. Extract declarations array.
-    let decls_json = extract_array_field(result, "declarations");
-    let contracts = decls_json
-        .iter()
-        .filter_map(|decl| parse_declaration_to_contract(decl, &kit_label))
-        .collect::<Vec<_>>();
-
-    // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
-    let edges_json = extract_array_field(result, "callEdges");
-    let call_edges = edges_json
-        .iter()
-        .filter_map(parse_call_edge)
-        .collect::<Vec<_>>();
+        // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
+        let edges_json = extract_array_field(result, "callEdges");
+        let call_edges = edges_json
+            .iter()
+            .filter_map(parse_call_edge)
+            .collect::<Vec<_>>();
 
         Ok((contracts, call_edges))
-    }).await.map_err(|e| LiftError::LifterUnavailable(format!("spawn_blocking: {e}")))?
+    })
+    .await
+    .map_err(|e| LiftError::LifterUnavailable(format!("spawn_blocking: {e}")))?
 }
 
 /// Extract a JSON array from a field in a result object.
@@ -699,14 +693,8 @@ fn parse_call_edge(edge: &Json) -> Option<LinkerCallEdge> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let locus = edge
-        .get("callSiteLocus")
-        .cloned()
-        .unwrap_or(Json::Null);
-    let evidence = edge
-        .get("evidenceTerm")
-        .cloned()
-        .unwrap_or(Json::Null);
+    let locus = edge.get("callSiteLocus").cloned().unwrap_or(Json::Null);
+    let evidence = edge.get("evidenceTerm").cloned().unwrap_or(Json::Null);
 
     Some(LinkerCallEdge {
         source_contract_cid: source_cid,
@@ -734,10 +722,8 @@ fn json_to_canon_value(v: &Json) -> Option<std::sync::Arc<provekit_canonicalizer
         }
         Json::String(s) => Value::String(s.clone()),
         Json::Array(arr) => {
-            let items: Vec<std::sync::Arc<Value>> = arr
-                .iter()
-                .filter_map(json_to_canon_value)
-                .collect();
+            let items: Vec<std::sync::Arc<Value>> =
+                arr.iter().filter_map(json_to_canon_value).collect();
             Value::Array(items)
         }
         Json::Object(map) => {
@@ -792,8 +778,10 @@ async fn lift_rust_source(
         // Convert provekit_lift::ContractDecl -> LinkerContract.
         let mut contracts: Vec<LinkerContract> = Vec::new();
         for decl in &report.decls {
+            use provekit_claim_envelope::{
+                contract_cid as compute_contract_cid, Authoring, MintContractArgs,
+            };
             use provekit_ir_symbolic::serialize::formula_to_value;
-            use provekit_claim_envelope::{contract_cid as compute_contract_cid, MintContractArgs, Authoring};
 
             let pre_v = decl.pre.as_deref().map(formula_to_value);
             let post_v = decl.post.as_deref().map(formula_to_value);

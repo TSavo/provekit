@@ -1888,6 +1888,7 @@ dependencies = [
 name = "provekit-lsp-rust"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "provekit-ir-symbolic",
  "provekit-lift",
  "serde_json",

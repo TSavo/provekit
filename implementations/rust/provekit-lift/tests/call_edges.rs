@@ -11,10 +11,10 @@
 
 use std::collections::BTreeMap;
 
-use provekit_lift::{extract_call_edges_from_file};
 use provekit_lift::adapter_contracts;
+use provekit_lift::extract_call_edges_from_file;
 
-use provekit_claim_envelope::{contract_cid as compute_contract_cid, MintContractArgs, Authoring};
+use provekit_claim_envelope::{contract_cid as compute_contract_cid, Authoring, MintContractArgs};
 use provekit_ir_symbolic::serialize::formula_to_value;
 
 // ---------------------------------------------------------------------------
@@ -41,27 +41,35 @@ fn b(n: i64) -> i64 { a(n) }
     assert!(adapter_out.lifted >= 2, "expected >=2 contracts (a and b)");
 
     // Build the name→CID map the same way lift_path does.
-    let cid_map: BTreeMap<String, String> = adapter_out.decls.iter().map(|d| {
-        let args = MintContractArgs {
-            contract_name: d.name.clone(),
-            pre: d.pre.as_deref().map(formula_to_value),
-            post: d.post.as_deref().map(formula_to_value),
-            inv: d.inv.as_deref().map(formula_to_value),
-            out_binding: d.out_binding.clone(),
-            produced_by: "provekit-lift".into(),
-            produced_at: "2026-01-01T00:00:00.000Z".into(),
-            input_cids: vec![],
-            authoring: Authoring::Lift {
-                lifter: "provekit-lift".into(),
-                evidence: String::new(),
-                source_cid: None,
-            },
-            signer_seed: [0u8; 32],
-        };
-        (d.name.clone(), compute_contract_cid(&args))
-    }).collect();
+    let cid_map: BTreeMap<String, String> = adapter_out
+        .decls
+        .iter()
+        .map(|d| {
+            let args = MintContractArgs {
+                contract_name: d.name.clone(),
+                pre: d.pre.as_deref().map(formula_to_value),
+                post: d.post.as_deref().map(formula_to_value),
+                inv: d.inv.as_deref().map(formula_to_value),
+                out_binding: d.out_binding.clone(),
+                produced_by: "provekit-lift".into(),
+                produced_at: "2026-01-01T00:00:00.000Z".into(),
+                input_cids: vec![],
+                authoring: Authoring::Lift {
+                    lifter: "provekit-lift".into(),
+                    evidence: String::new(),
+                    source_cid: None,
+                },
+                signer_seed: [0u8; 32],
+            };
+            (d.name.clone(), compute_contract_cid(&args))
+        })
+        .collect();
 
-    assert!(cid_map.contains_key("a"), "expected `a` in contract map; got {:?}", cid_map.keys().collect::<Vec<_>>());
+    assert!(
+        cid_map.contains_key("a"),
+        "expected `a` in contract map; got {:?}",
+        cid_map.keys().collect::<Vec<_>>()
+    );
     assert!(cid_map.contains_key("b"), "expected `b` in contract map");
 
     let edges = extract_call_edges_from_file(&parsed, "test1.rs", &cid_map);
@@ -69,10 +77,9 @@ fn b(n: i64) -> i64 { a(n) }
     // b calls a → exactly one edge.
     assert!(!edges.is_empty(), "expected at least one call edge");
 
-    let b_to_a = edges.iter().find(|e| {
-        e.source_contract_cid == *cid_map.get("b").unwrap()
-            && e.target_symbol == "a"
-    });
+    let b_to_a = edges
+        .iter()
+        .find(|e| e.source_contract_cid == *cid_map.get("b").unwrap() && e.target_symbol == "a");
 
     let b_to_a = b_to_a.expect("expected a call edge from b to a");
 
@@ -114,28 +121,35 @@ fn b(x: i64) -> i64 {
     let adapter_out = adapter_contracts::lift_file(&parsed, "test2.rs");
     assert!(adapter_out.lifted >= 1, "expected >=1 contract (b)");
 
-    let cid_map: BTreeMap<String, String> = adapter_out.decls.iter().map(|d| {
-        let args = MintContractArgs {
-            contract_name: d.name.clone(),
-            pre: d.pre.as_deref().map(formula_to_value),
-            post: d.post.as_deref().map(formula_to_value),
-            inv: d.inv.as_deref().map(formula_to_value),
-            out_binding: d.out_binding.clone(),
-            produced_by: "provekit-lift".into(),
-            produced_at: "2026-01-01T00:00:00.000Z".into(),
-            input_cids: vec![],
-            authoring: Authoring::Lift {
-                lifter: "provekit-lift".into(),
-                evidence: String::new(),
-                source_cid: None,
-            },
-            signer_seed: [0u8; 32],
-        };
-        (d.name.clone(), compute_contract_cid(&args))
-    }).collect();
+    let cid_map: BTreeMap<String, String> = adapter_out
+        .decls
+        .iter()
+        .map(|d| {
+            let args = MintContractArgs {
+                contract_name: d.name.clone(),
+                pre: d.pre.as_deref().map(formula_to_value),
+                post: d.post.as_deref().map(formula_to_value),
+                inv: d.inv.as_deref().map(formula_to_value),
+                out_binding: d.out_binding.clone(),
+                produced_by: "provekit-lift".into(),
+                produced_at: "2026-01-01T00:00:00.000Z".into(),
+                input_cids: vec![],
+                authoring: Authoring::Lift {
+                    lifter: "provekit-lift".into(),
+                    evidence: String::new(),
+                    source_cid: None,
+                },
+                signer_seed: [0u8; 32],
+            };
+            (d.name.clone(), compute_contract_cid(&args))
+        })
+        .collect();
 
     // `rust_add` is not in the contract map (no annotations).
-    assert!(!cid_map.contains_key("rust_add"), "rust_add should not have a contract");
+    assert!(
+        !cid_map.contains_key("rust_add"),
+        "rust_add should not have a contract"
+    );
 
     let edges = extract_call_edges_from_file(&parsed, "test2.rs", &cid_map);
 
@@ -176,25 +190,29 @@ fn b(n: i64) -> i64 { a(n) }
 
     let build_cid_map = || {
         let adapter_out = adapter_contracts::lift_file(&parsed, "test3.rs");
-        adapter_out.decls.iter().map(|d| {
-            let args = MintContractArgs {
-                contract_name: d.name.clone(),
-                pre: d.pre.as_deref().map(formula_to_value),
-                post: d.post.as_deref().map(formula_to_value),
-                inv: d.inv.as_deref().map(formula_to_value),
-                out_binding: d.out_binding.clone(),
-                produced_by: "provekit-lift".into(),
-                produced_at: "2026-01-01T00:00:00.000Z".into(),
-                input_cids: vec![],
-                authoring: Authoring::Lift {
-                    lifter: "provekit-lift".into(),
-                    evidence: String::new(),
-                    source_cid: None,
-                },
-                signer_seed: [0u8; 32],
-            };
-            (d.name.clone(), compute_contract_cid(&args))
-        }).collect::<BTreeMap<_, _>>()
+        adapter_out
+            .decls
+            .iter()
+            .map(|d| {
+                let args = MintContractArgs {
+                    contract_name: d.name.clone(),
+                    pre: d.pre.as_deref().map(formula_to_value),
+                    post: d.post.as_deref().map(formula_to_value),
+                    inv: d.inv.as_deref().map(formula_to_value),
+                    out_binding: d.out_binding.clone(),
+                    produced_by: "provekit-lift".into(),
+                    produced_at: "2026-01-01T00:00:00.000Z".into(),
+                    input_cids: vec![],
+                    authoring: Authoring::Lift {
+                        lifter: "provekit-lift".into(),
+                        evidence: String::new(),
+                        source_cid: None,
+                    },
+                    signer_seed: [0u8; 32],
+                };
+                (d.name.clone(), compute_contract_cid(&args))
+            })
+            .collect::<BTreeMap<_, _>>()
     };
 
     let cid_map1 = build_cid_map();

@@ -8,9 +8,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, must, num, str_const, String_, Term,
-};
+use provekit_ir_symbolic::{eq, forall, must, num, str_const, String_, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -87,19 +85,13 @@ pub fn invariants() {
     must(
         "Option_unwrap__type_signature",
         forall(String_(), |o| {
-            eq(
-                ctor1("type_of", ctor1("Option_unwrap", o)),
-                str_const("T"),
-            )
+            eq(ctor1("type_of", ctor1("Option_unwrap", o)), str_const("T"))
         }),
     );
     must(
         "Option_unwrap__determinism",
         forall(String_(), |o| {
-            eq(
-                ctor1("Option_unwrap", o.clone()),
-                ctor1("Option_unwrap", o),
-            )
+            eq(ctor1("Option_unwrap", o.clone()), ctor1("Option_unwrap", o))
         }),
     );
     // Structural: unwrap is partial (panics on None).
@@ -118,10 +110,7 @@ pub fn invariants() {
         "Option_unwrap_or__type_signature",
         forall(String_(), |o| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor2("Option_unwrap_or", o, num(0)),
-                ),
+                ctor1("type_of", ctor2("Option_unwrap_or", o, num(0))),
                 str_const("T"),
             )
         }),
@@ -184,10 +173,7 @@ pub fn invariants() {
         "Option_and_then__type_signature",
         forall(String_(), |o| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor2("Option_and_then", o, str_const("f")),
-                ),
+                ctor1("type_of", ctor2("Option_and_then", o, str_const("f"))),
                 str_const("Option"),
             )
         }),
@@ -207,10 +193,7 @@ pub fn invariants() {
         "Option_ok_or__type_signature",
         forall(String_(), |o| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor2("Option_ok_or", o, str_const("err")),
-                ),
+                ctor1("type_of", ctor2("Option_ok_or", o, str_const("err"))),
                 str_const("Result"),
             )
         }),
@@ -240,10 +223,7 @@ pub fn invariants() {
     must(
         "Option_take__determinism",
         forall(String_(), |o| {
-            eq(
-                ctor1("Option_take", o.clone()),
-                ctor1("Option_take", o),
-            )
+            eq(ctor1("Option_take", o.clone()), ctor1("Option_take", o))
         }),
     );
     // Structural: post-state is None.

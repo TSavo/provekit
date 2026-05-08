@@ -107,7 +107,10 @@ pub fn mint_call_edge(
     let memento = Value::object([
         ("schemaVersion", Value::string("1")),
         ("kind", Value::string("call-edge")),
-        ("sourceContractCid", Value::string(source_contract_cid.to_string())),
+        (
+            "sourceContractCid",
+            Value::string(source_contract_cid.to_string()),
+        ),
         ("targetContractCid", target_cid_value),
         ("callSiteLocus", locus.to_value()),
         ("targetSymbol", Value::string(target_symbol.to_string())),
@@ -142,8 +145,7 @@ pub fn extract_call_edges_from_file(
     contract_cids: &BTreeMap<String, String>,
 ) -> Vec<CallEdgeMemento> {
     let mut edges = Vec::new();
-    let contracted_fn_names: HashSet<&str> =
-        contract_cids.keys().map(|s| s.as_str()).collect();
+    let contracted_fn_names: HashSet<&str> = contract_cids.keys().map(|s| s.as_str()).collect();
     walk_items_for_edges(
         &file.items,
         source_path,
@@ -172,13 +174,7 @@ fn walk_items_for_edges(
                         line: None,
                         col: None,
                     };
-                    collect_call_sites_in_block(
-                        &f.block,
-                        source_cid,
-                        &locus,
-                        contract_cids,
-                        edges,
-                    );
+                    collect_call_sites_in_block(&f.block, source_cid, &locus, contract_cids, edges);
                 }
                 // Recurse into nested items in function body.
                 for stmt in &f.block.stmts {
@@ -483,7 +479,10 @@ mod tests {
         let edges2 = extract_call_edges_from_file(&file, "test.rs", &cids);
         assert_eq!(edges1.len(), edges2.len());
         for (e1, e2) in edges1.iter().zip(edges2.iter()) {
-            assert_eq!(e1.canonical_bytes, e2.canonical_bytes, "JCS bytes must be deterministic");
+            assert_eq!(
+                e1.canonical_bytes, e2.canonical_bytes,
+                "JCS bytes must be deterministic"
+            );
             assert_eq!(e1.cid, e2.cid, "CID must be deterministic");
         }
     }

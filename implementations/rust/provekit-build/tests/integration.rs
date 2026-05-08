@@ -219,12 +219,7 @@ fn mint_proof_is_deterministic() {
 #[test]
 fn solver_returns_undecidable_when_z3_missing() {
     let cfg = ProvekitConfig::default();
-    let script = build_obligation_script(
-        &cfg,
-        "missing-z3",
-        &FormulaShape::GteConst(0),
-        None,
-    );
+    let script = build_obligation_script(&cfg, "missing-z3", &FormulaShape::GteConst(0), None);
     let res = solve(
         "/nonexistent/path/to/z3-that-does-not-exist",
         &script.script_smt2,
@@ -233,7 +228,8 @@ fn solver_returns_undecidable_when_z3_missing() {
     assert_eq!(res.verdict, SolverVerdict::Undecidable);
     assert!(
         res.note.contains("spawn") || res.note.contains("nonexistent"),
-        "expected spawn-error note, got: {}", res.note
+        "expected spawn-error note, got: {}",
+        res.note
     );
 }
 
@@ -361,7 +357,11 @@ fn walker_handles_filesystem_walk() {
     let out: PathBuf = tmp.path().to_path_buf();
     let outcome = walk(&out);
     assert_eq!(outcome.contracts.len(), 2);
-    let names: Vec<_> = outcome.contracts.iter().map(|c| c.fn_name.as_str()).collect();
+    let names: Vec<_> = outcome
+        .contracts
+        .iter()
+        .map(|c| c.fn_name.as_str())
+        .collect();
     assert!(names.contains(&"f1"));
     assert!(names.contains(&"f2"));
 }

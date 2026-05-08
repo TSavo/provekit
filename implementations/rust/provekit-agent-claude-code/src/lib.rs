@@ -18,8 +18,11 @@ use provekit_agent::{
 /// Pluggable transport — abstracts the subprocess so tests can drop
 /// in a canned-response harness.
 pub trait Transport: Send + Sync {
-    fn invoke(&self, method: &str, params: &serde_json::Value)
-        -> Result<serde_json::Value, AgentError>;
+    fn invoke(
+        &self,
+        method: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, AgentError>;
 }
 
 #[derive(Debug, Clone)]
@@ -71,36 +74,26 @@ impl<T: Transport> ProvekitAgent for ClaudeCodeAgent<T> {
         &self,
         ctx: &ProposeContext,
     ) -> Result<Vec<ContractCandidate>, AgentError> {
-        let params = serde_json::to_value(ctx)
-            .map_err(|e| AgentError::InvalidIr(e.to_string()))?;
-        let resp = self
-            .transport
-            .invoke("provekit.lift.propose", &params)?;
-        let cs: Vec<ContractCandidate> = serde_json::from_value(resp)
-            .map_err(|e| AgentError::InvalidIr(e.to_string()))?;
+        let params = serde_json::to_value(ctx).map_err(|e| AgentError::InvalidIr(e.to_string()))?;
+        let resp = self.transport.invoke("provekit.lift.propose", &params)?;
+        let cs: Vec<ContractCandidate> =
+            serde_json::from_value(resp).map_err(|e| AgentError::InvalidIr(e.to_string()))?;
         Ok(cs)
     }
 
-    fn translate_must(
-        &self,
-        ctx: &MustContext,
-    ) -> Result<ContractCandidate, AgentError> {
-        let params = serde_json::to_value(ctx)
-            .map_err(|e| AgentError::InvalidIr(e.to_string()))?;
-        let resp = self
-            .transport
-            .invoke("provekit.must.translate", &params)?;
-        let c: ContractCandidate = serde_json::from_value(resp)
-            .map_err(|e| AgentError::InvalidIr(e.to_string()))?;
+    fn translate_must(&self, ctx: &MustContext) -> Result<ContractCandidate, AgentError> {
+        let params = serde_json::to_value(ctx).map_err(|e| AgentError::InvalidIr(e.to_string()))?;
+        let resp = self.transport.invoke("provekit.must.translate", &params)?;
+        let c: ContractCandidate =
+            serde_json::from_value(resp).map_err(|e| AgentError::InvalidIr(e.to_string()))?;
         Ok(c)
     }
 
     fn fix_bug(&self, ctx: &FixContext) -> Result<FixResult, AgentError> {
-        let params = serde_json::to_value(ctx)
-            .map_err(|e| AgentError::InvalidIr(e.to_string()))?;
+        let params = serde_json::to_value(ctx).map_err(|e| AgentError::InvalidIr(e.to_string()))?;
         let resp = self.transport.invoke("provekit.fix.patch", &params)?;
-        let r: FixResult = serde_json::from_value(resp)
-            .map_err(|e| AgentError::InvalidIr(e.to_string()))?;
+        let r: FixResult =
+            serde_json::from_value(resp).map_err(|e| AgentError::InvalidIr(e.to_string()))?;
         Ok(r)
     }
 
@@ -147,10 +140,7 @@ mod tests {
     #[test]
     fn mock_transport_round_trip_must() {
         let mut m = HashMap::new();
-        m.insert(
-            "provekit.must.translate".into(),
-            good_candidate_json(),
-        );
+        m.insert("provekit.must.translate".into(), good_candidate_json());
         let agent = ClaudeCodeAgent::new(MockTransport { responses: m });
         let ctx = MustContext {
             source_path: PathBuf::from("foo.ts"),

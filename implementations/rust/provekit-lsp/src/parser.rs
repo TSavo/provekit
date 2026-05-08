@@ -38,7 +38,11 @@ pub enum AnnotationKind {
 pub fn parse_rust_source(text: &str) -> SourceAnnotations {
     let file = match syn::parse_file(text) {
         Ok(f) => f,
-        Err(_) => return SourceAnnotations { annotations: Vec::new() },
+        Err(_) => {
+            return SourceAnnotations {
+                annotations: Vec::new(),
+            }
+        }
     };
 
     let mut visitor = AnnotationVisitor {

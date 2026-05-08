@@ -195,7 +195,9 @@ pub fn lift_llbc_function_with_registry(
         if let Some(ty_raw) = formal_ty_raws.get(idx) {
             if crate::aliasing::is_shared_ref_charon_ty(ty_raw)
                 && crate::aliasing::has_unsafecell_transitive(
-                    ty_raw, type_decls, &mut HashSet::new(),
+                    ty_raw,
+                    type_decls,
+                    &mut HashSet::new(),
                 )
             {
                 shared_ifmt.push(formal_name.clone());
@@ -204,7 +206,9 @@ pub fn lift_llbc_function_with_registry(
     }
     shared_ifmt.sort();
     if shared_ifmt.len() >= 2 {
-        formal_opacity_effects.push(Effect::PossibleAliasing { formals: shared_ifmt });
+        formal_opacity_effects.push(Effect::PossibleAliasing {
+            formals: shared_ifmt,
+        });
     }
 
     // Auto-mint Disjoint for &mut T formal pairs
@@ -237,7 +241,14 @@ pub fn lift_llbc_function_with_registry(
     // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
     // (overflow, bounds, division-by-zero, …) + callsite compositions.
     let mut pre_contribs: Vec<IrFormula> = Vec::new();
-    collect_if_panic_contributions(&[], &stmts, &formals, &named_locals, false, &mut pre_contribs);
+    collect_if_panic_contributions(
+        &[],
+        &stmts,
+        &formals,
+        &named_locals,
+        false,
+        &mut pre_contribs,
+    );
     collect_assert_contributions(&stmts, &formals, &named_locals, &mut pre_contribs);
     let mut effects = detect_effects_llbc(&stmts, fun_decls, registry);
     // Unsafe detection: Charon records `signature.is_unsafe` on the FunDecl
@@ -271,9 +282,7 @@ pub fn lift_llbc_function_with_registry(
     // (lifted normally); this effect records the link to the body and
     // the count of captured operands.
     if let Some(td) = type_decls {
-        for cap in
-            crate::llbc_closures::extract_closure_captures(&stmts, Some(td), fun_decls)
-        {
+        for cap in crate::llbc_closures::extract_closure_captures(&stmts, Some(td), fun_decls) {
             effects.add(Effect::ClosureCapture {
                 body_fn_cid: cap.body_fn_cid,
                 n_captures: cap.n_captures,
@@ -285,7 +294,15 @@ pub fn lift_llbc_function_with_registry(
         effects.add(e);
     }
     if let Some(fd) = fun_decls {
-        collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs, &mut effects);
+        collect_call_contributions(
+            &stmts,
+            &formals,
+            &named_locals,
+            fd,
+            registry,
+            &mut pre_contribs,
+            &mut effects,
+        );
     }
     let pre_formula = simplify_conjunction(pre_contribs.clone());
 
@@ -298,9 +315,14 @@ pub fn lift_llbc_function_with_registry(
     // derivation, collapsing LayerAgreement::Both into LlbcExtra
     // when MIR is the only layer that contributes.
     let mut post_contribs = pre_contribs;
-    if let Some(result_eq) =
-        derive_return_equation(&stmts, &formals, type_decls, &named_locals, fun_decls, registry)
-    {
+    if let Some(result_eq) = derive_return_equation(
+        &stmts,
+        &formals,
+        type_decls,
+        &named_locals,
+        fun_decls,
+        registry,
+    ) {
         post_contribs.push(result_eq);
     }
     let post_formula = simplify_conjunction(post_contribs);
@@ -337,12 +359,17 @@ pub fn lift_llbc_function_with_registry(
                     region_map.insert(idx, name_str.clone());
                     // Charon may use Body(N) where N is idx or idx+1.
                     // Map both to catch either encoding.
-                    region_map.entry(idx.saturating_add(1)).or_insert_with(|| name_str);
-                } else if let Some(idx) = r.get("index").and_then(|v| v.as_u64()).map(|v| v as u32) {
+                    region_map
+                        .entry(idx.saturating_add(1))
+                        .or_insert_with(|| name_str);
+                } else if let Some(idx) = r.get("index").and_then(|v| v.as_u64()).map(|v| v as u32)
+                {
                     // Null name: use fallback.
                     let name_str = format!("'r{}", idx);
                     region_map.insert(idx, name_str.clone());
-                    region_map.entry(idx.saturating_add(1)).or_insert_with(|| name_str);
+                    region_map
+                        .entry(idx.saturating_add(1))
+                        .or_insert_with(|| name_str);
                 }
             }
         }
@@ -369,10 +396,7 @@ pub fn lift_llbc_function_with_registry(
     // Each element in the pair is a region JSON value (Body/Bound/Var/Static).
     let mut region_facts: Vec<IrFormula> = Vec::new();
     if let Some(generics) = f.raw().get("generics") {
-        if let Some(outlives_arr) = generics
-            .get("regions_outlive")
-            .and_then(|v| v.as_array())
-        {
+        if let Some(outlives_arr) = generics.get("regions_outlive").and_then(|v| v.as_array()) {
             for pair in outlives_arr {
                 let pair_arr = match pair.as_array() {
                     Some(a) if a.len() == 2 => a,
@@ -397,7 +421,8 @@ pub fn lift_llbc_function_with_registry(
     // If pre has content, wrap as And(pre, region_fact_1, ..., region_fact_n).
     let pre_with_regions = if region_facts.is_empty() {
         pre_formula.clone()
-    } else if matches!(&pre_formula, IrFormula::Atomic { name, args } if name == "true" && args.is_empty()) {
+    } else if matches!(&pre_formula, IrFormula::Atomic { name, args } if name == "true" && args.is_empty())
+    {
         simplify_conjunction(region_facts)
     } else {
         let mut operands = vec![pre_formula.clone()];
@@ -485,7 +510,12 @@ fn derive_return_equation(
                         ) {
                             return Some(IrFormula::Atomic {
                                 name: "=".to_string(),
-                                args: vec![IrTerm::Var { name: "result".to_string() }, term],
+                                args: vec![
+                                    IrTerm::Var {
+                                        name: "result".to_string(),
+                                    },
+                                    term,
+                                ],
                             });
                         }
                         return None;
@@ -523,7 +553,9 @@ fn derive_return_equation(
                                 return Some(IrFormula::Atomic {
                                     name: "=".to_string(),
                                     args: vec![
-                                        IrTerm::Var { name: "result".to_string() },
+                                        IrTerm::Var {
+                                            name: "result".to_string(),
+                                        },
                                         IrTerm::Ctor {
                                             name: format!("call:{}", callee_name),
                                             args: arg_terms,
@@ -725,7 +757,9 @@ fn place_to_term_for_post(
                         name: "field".to_string(),
                         args: vec![
                             base_term,
-                            IrTerm::Var { name: format!(".{}", field_idx) },
+                            IrTerm::Var {
+                                name: format!(".{}", field_idx),
+                            },
                         ],
                     });
                 }
@@ -754,8 +788,7 @@ fn place_to_term_for_post(
                     let adt_id = adt_arr.first().and_then(|v| v.as_u64())? as usize;
                     // adt_arr[1] is variant_id: Some(N) for enum variants,
                     // null or absent for structs.
-                    let variant_id =
-                        adt_arr.get(1).and_then(|v| v.as_u64()).map(|n| n as usize);
+                    let variant_id = adt_arr.get(1).and_then(|v| v.as_u64()).map(|n| n as usize);
                     let field_name = type_decls
                         .and_then(|td| adt_field_name(td, adt_id, variant_id, field_idx))
                         .unwrap_or_else(|| field_idx.to_string());
@@ -765,7 +798,9 @@ fn place_to_term_for_post(
                         name: "field".to_string(),
                         args: vec![
                             base_term,
-                            IrTerm::Var { name: format!(".{}", field_name) },
+                            IrTerm::Var {
+                                name: format!(".{}", field_name),
+                            },
                         ],
                     });
                 }
@@ -792,9 +827,9 @@ fn adt_field_name(
     field_idx: usize,
 ) -> Option<String> {
     let decls = type_decls.as_array()?;
-    let decl = decls.iter().find(|d| {
-        crate::aliasing::adt_decl_matches_id(d, adt_id as u64)
-    })?;
+    let decl = decls
+        .iter()
+        .find(|d| crate::aliasing::adt_decl_matches_id(d, adt_id as u64))?;
     let kind = decl.get("kind")?;
     let fields = if let Some(vid) = variant_id {
         let variants = kind.get("Enum")?.as_array()?;
@@ -934,7 +969,11 @@ fn is_pin_adt(type_decls: &Value, adt_id: u64) -> bool {
         if !crate::aliasing::adt_decl_matches_id(td, adt_id) {
             continue;
         }
-        let Some(name_arr) = td.get("item_meta").and_then(|m| m.get("name")).and_then(|v| v.as_array()) else {
+        let Some(name_arr) = td
+            .get("item_meta")
+            .and_then(|m| m.get("name"))
+            .and_then(|v| v.as_array())
+        else {
             return false;
         };
         // Collect Ident strings from the name path.
@@ -1087,7 +1126,11 @@ pub fn detect_effects_llbc(
 /// A `Deref` element is the bare string `"Deref"`. A raw-pointer type looks
 /// like `{"Untagged": {"RawPtr": [pointee_ty, "Mut" | "Const"]}}`.
 fn place_has_rawptr_deref(place: &Value) -> bool {
-    let proj_arr = match place.get("kind").and_then(|k| k.get("Projection")).and_then(|v| v.as_array()) {
+    let proj_arr = match place
+        .get("kind")
+        .and_then(|k| k.get("Projection"))
+        .and_then(|v| v.as_array())
+    {
         Some(a) => a,
         None => return false,
     };
@@ -1112,9 +1155,7 @@ fn place_has_rawptr_deref(place: &Value) -> bool {
 /// True when a Charon Ty JSON value is a raw pointer (`*const T` or `*mut T`).
 /// The shape is `{"Untagged": {"RawPtr": [pointee_ty, mutability]}}`.
 fn ty_is_rawptr(ty: &Value) -> bool {
-    ty.get("Untagged")
-        .and_then(|u| u.get("RawPtr"))
-        .is_some()
+    ty.get("Untagged").and_then(|u| u.get("RawPtr")).is_some()
 }
 
 /// Extract all operands reachable in a flat rvalue. Only covers the shapes
@@ -1140,18 +1181,17 @@ fn rvalue_operands(rval: &Value) -> Vec<&Value> {
 /// Extract the GlobalDeclId from a Place.kind.Global (A.4).
 /// Returns None if the place is not a global.
 fn place_global_id(place: &Value) -> Option<u64> {
-    place
-        .get("kind")?
-        .get("Global")?
-        .as_u64()
+    place.get("kind")?.get("Global")?.as_u64()
 }
 
 /// Return true when a callee name indicates I/O. Matches against
 /// well-known substrings in std::io / fmt path components.
 fn is_io_callee_name(name: &str) -> bool {
     let lower = name.to_lowercase();
-    matches!(lower.as_str(), "print" | "println" | "eprint" | "eprintln" | "write_fmt" | "fmt")
-        || lower.contains("io")
+    matches!(
+        lower.as_str(),
+        "print" | "println" | "eprint" | "eprintln" | "write_fmt" | "fmt"
+    ) || lower.contains("io")
         || lower.contains("print")
         || lower.contains("display")
 }
@@ -1314,7 +1354,8 @@ fn collect_assert_contributions(
             let Some(len_term) = operand_to_ir_term(len_op, prior, formals, named_locals) else {
                 continue;
             };
-            let Some(index_term) = operand_to_ir_term(index_op, prior, formals, named_locals) else {
+            let Some(index_term) = operand_to_ir_term(index_op, prior, formals, named_locals)
+            else {
                 continue;
             };
             out.push(IrFormula::Atomic {
@@ -1331,8 +1372,7 @@ fn collect_assert_contributions(
         // local whose definition is `BinaryOp(Eq, divisor, 0)`. We
         // trace the cond, extract the non-zero operand, and emit
         // `Atomic("≠", [divisor, 0])`.
-        if check_kind.get("DivisionByZero").is_some()
-            || check_kind.get("RemainderByZero").is_some()
+        if check_kind.get("DivisionByZero").is_some() || check_kind.get("RemainderByZero").is_some()
         {
             if let Some(divisor_term) =
                 divisor_from_assert_cond(assert_obj.get("cond"), prior, formals, named_locals)
@@ -1356,7 +1396,11 @@ fn overflow_op_tag(descriptor: &Value) -> Option<String> {
     let obj = descriptor.as_object()?;
     let (op_name, mode_val) = obj.iter().next()?;
     let mode = mode_val.as_str().unwrap_or("unknown");
-    Some(format!("{}-{}", op_name.to_lowercase(), mode.to_lowercase()))
+    Some(format!(
+        "{}-{}",
+        op_name.to_lowercase(),
+        mode.to_lowercase()
+    ))
 }
 
 /// Recursive collector. `prior` is the chain of statements the
@@ -1454,8 +1498,7 @@ fn collect_if_panic_contributions(
             }
 
             // Lift the discriminant to an IR term (e.g. Var("x") for a formal).
-            let Some(discr_term) =
-                operand_to_ir_term(discr, &local_prior, formals, named_locals)
+            let Some(discr_term) = operand_to_ir_term(discr, &local_prior, formals, named_locals)
             else {
                 continue;
             };
@@ -1518,9 +1561,11 @@ fn collect_if_panic_contributions(
                         let eq_atoms: Vec<IrFormula> = patterns
                             .iter()
                             .filter_map(|scalar_val| {
-                                arm_scalar_to_ir_term(scalar_val).map(|lit_term| IrFormula::Atomic {
-                                    name: "=".to_string(),
-                                    args: vec![discr_term.clone(), lit_term],
+                                arm_scalar_to_ir_term(scalar_val).map(|lit_term| {
+                                    IrFormula::Atomic {
+                                        name: "=".to_string(),
+                                        args: vec![discr_term.clone(), lit_term],
+                                    }
                                 })
                             })
                             .collect();
@@ -1536,7 +1581,9 @@ fn collect_if_panic_contributions(
                         let consequent = if arm_contribs.len() == 1 {
                             arm_contribs.into_iter().next().unwrap()
                         } else {
-                            IrFormula::And { operands: arm_contribs }
+                            IrFormula::And {
+                                operands: arm_contribs,
+                            }
                         };
                         out.push(IrFormula::Implies {
                             operands: vec![premise, consequent],
@@ -1794,11 +1841,7 @@ fn operand_to_local_id(operand: &Value) -> Option<u32> {
 }
 
 fn place_to_local_id(place: &Value) -> Option<u32> {
-    place
-        .get("kind")?
-        .get("Local")?
-        .as_u64()
-        .map(|n| n as u32)
+    place.get("kind")?.get("Local")?.as_u64().map(|n| n as u32)
 }
 
 fn find_last_assign_rvalue<'a>(prior: &[&'a Value], local: u32) -> Option<&'a Value> {
@@ -1909,10 +1952,7 @@ fn region_term(name: &str) -> IrTerm {
 /// in the unlikely case where the sort-overwrite path has a bug.
 fn synth_item_fn(name: &str, formals: &[(u32, String)]) -> syn::ItemFn {
     let formal_names: Vec<String> = formals.iter().map(|(_, n)| n.clone()).collect();
-    let formal_args: Vec<String> = formal_names
-        .iter()
-        .map(|n| format!("{}: ()", n))
-        .collect();
+    let formal_args: Vec<String> = formal_names.iter().map(|n| format!("{}: ()", n)).collect();
     let src = format!("fn {}({}) {{}}", name, formal_args.join(", "));
     syn::parse_str::<syn::ItemFn>(&src).expect("synth fn parses")
 }
@@ -2252,7 +2292,12 @@ mod tests {
 
         match &contract.pre {
             IrFormula::And { operands } => {
-                assert_eq!(operands.len(), 2, "expected two ≠ conjuncts for 0|1 arm: {:?}", contract.pre);
+                assert_eq!(
+                    operands.len(),
+                    2,
+                    "expected two ≠ conjuncts for 0|1 arm: {:?}",
+                    contract.pre
+                );
                 for op in operands {
                     match op {
                         IrFormula::Atomic { name, args } => {
@@ -2327,9 +2372,11 @@ mod tests {
         )
         .unwrap();
 
-        let has_unresolved = contract.effects.effects.iter().any(|e| {
-            matches!(e, Effect::UnresolvedCall { name } if name == "inner")
-        });
+        let has_unresolved = contract
+            .effects
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::UnresolvedCall { name } if name == "inner"));
         assert!(
             has_unresolved,
             "outer calls inner with empty registry — must carry UnresolvedCall(inner); got {:?}",
@@ -2459,8 +2506,7 @@ mod tests {
         // intrinsic with `signature.is_unsafe: true`. Lifting it must
         // emit Effect::Unsafe in the contract's effect set.
         use crate::contract::Effect;
-        let krate =
-            LlbcCrate::from_path(fixture_path("closure_capture.llbc")).unwrap();
+        let krate = LlbcCrate::from_path(fixture_path("closure_capture.llbc")).unwrap();
         let f = krate.function_by_name("drop_in_place").unwrap();
         assert!(
             f.is_unsafe(),
@@ -2511,7 +2557,10 @@ mod tests {
         let stmts = vec![&dyn_call_stmt];
         let effects = detect_effects_llbc(&stmts, None, &empty_registry());
         assert!(
-            effects.effects.iter().any(|e| matches!(e, Effect::UnresolvedCall { name } if name == "<dyn dispatch>")),
+            effects
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::UnresolvedCall { name } if name == "<dyn dispatch>")),
             "dyn dispatch Call must emit UnresolvedCall(<dyn dispatch>); got {:?}",
             effects.effects
         );
@@ -2577,7 +2626,10 @@ mod tests {
         let stmts = vec![&regular_call_stmt];
         let effects = detect_effects_llbc(&stmts, None, &empty_registry());
         assert!(
-            !effects.effects.iter().any(|e| matches!(e, Effect::UnresolvedCall { .. })),
+            !effects
+                .effects
+                .iter()
+                .any(|e| matches!(e, Effect::UnresolvedCall { .. })),
             "regular static call must NOT emit UnresolvedCall; got {:?}",
             effects.effects
         );
@@ -2666,7 +2718,9 @@ mod tests {
         let stmts = vec![&assign_to_global];
         let effects = detect_effects_llbc(&stmts, None, &empty_registry());
         assert!(
-            effects.effects.contains(&Effect::Writes { target: "<global:7>".to_string() }),
+            effects.effects.contains(&Effect::Writes {
+                target: "<global:7>".to_string()
+            }),
             "assign to global place must emit Effect::Writes(<global:7>); got {:?}",
             effects.effects
         );
@@ -2703,7 +2757,9 @@ mod tests {
         let stmts = vec![&read_global];
         let effects = detect_effects_llbc(&stmts, None, &empty_registry());
         assert!(
-            effects.effects.contains(&Effect::Reads { target: "<global:3>".to_string() }),
+            effects.effects.contains(&Effect::Reads {
+                target: "<global:3>".to_string()
+            }),
             "rhs read of global place must emit Effect::Reads(<global:3>); got {:?}",
             effects.effects
         );
@@ -2887,7 +2943,8 @@ mod tests {
                 assert_eq!(*sort, Sort::Float { width: 64 }, "sort must be Float{{64}}");
                 // 2.0f64 bit pattern
                 let expected_bits: u64 = 2.0_f64.to_bits();
-                let actual_bits = value.get("__float_bits__")
+                let actual_bits = value
+                    .get("__float_bits__")
                     .and_then(|v| v.as_u64())
                     .expect("value must be tagged float object with __float_bits__");
                 assert_eq!(actual_bits, expected_bits, "2.0f64 bit pattern mismatch");
@@ -2914,7 +2971,8 @@ mod tests {
         match &term {
             IrTerm::Const { value, sort } => {
                 assert_eq!(*sort, Sort::Float { width: 32 }, "sort must be Float{{32}}");
-                let bits = value.get("__float_bits__")
+                let bits = value
+                    .get("__float_bits__")
                     .and_then(|v| v.as_u64())
                     .expect("__float_bits__ must be present");
                 assert_eq!(bits, 0_u64, "+0.0f32 bits must be 0");
@@ -2938,7 +2996,10 @@ mod tests {
                 }
             }
         });
-        assert!(is_zero_constant(&operand), "+0.0f64 must be is_zero_constant");
+        assert!(
+            is_zero_constant(&operand),
+            "+0.0f64 must be is_zero_constant"
+        );
     }
 
     #[test]
@@ -2957,7 +3018,10 @@ mod tests {
                 }
             }
         });
-        assert!(!is_zero_constant(&operand), "-0.0f64 must NOT be is_zero_constant");
+        assert!(
+            !is_zero_constant(&operand),
+            "-0.0f64 must NOT be is_zero_constant"
+        );
     }
 
     #[test]
@@ -2966,8 +3030,8 @@ mod tests {
         // content-address byte-deterministically across two independent runs.
         use crate::canonical::{cid_of_value, jcs_bytes_of_value};
         use crate::contract::build_memento_value;
-        use provekit_ir_types::Sort;
         use crate::llbc::LlbcCrate;
+        use provekit_ir_types::Sort;
 
         let krate = LlbcCrate::from_path(fixture_path("floats.llbc")).unwrap();
         let f = krate.function_by_name("scale").unwrap();
@@ -2992,7 +3056,10 @@ mod tests {
         // Bytes must also match.
         let b1 = jcs_bytes_of_value(&v1);
         let b2 = jcs_bytes_of_value(&v2);
-        assert_eq!(b1, b2, "float-sort contract JCS bytes must be deterministic");
+        assert_eq!(
+            b1, b2,
+            "float-sort contract JCS bytes must be deterministic"
+        );
     }
 
     // ---- C.9: Region extraction + Outlives emission tests ----
@@ -3055,8 +3122,7 @@ mod tests {
 
     #[test]
     fn region_two_unrelated_emits_no_facts() {
-        let krate =
-            LlbcCrate::from_path(fixture_path("region_two_unrelated.llbc")).unwrap();
+        let krate = LlbcCrate::from_path(fixture_path("region_two_unrelated.llbc")).unwrap();
         let f = krate.function_by_name("two").unwrap();
         let contract = lift_llbc_function(f, Some("region_two_unrelated.rs")).unwrap();
 
@@ -3102,8 +3168,7 @@ mod tests {
             "clean: x is u32 (not a reference) — region should be None"
         );
         assert_eq!(
-            contract.return_region,
-            None,
+            contract.return_region, None,
             "clean: return type is unit — region should be None"
         );
     }

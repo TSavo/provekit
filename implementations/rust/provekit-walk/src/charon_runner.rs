@@ -59,8 +59,7 @@ pub fn find_charon_binary() -> Option<PathBuf> {
     // Conventional location after `cargo build --release` from a
     // clone of AeneasVerif/charon under $HOME/projects/charon/.
     if let Ok(home) = std::env::var("HOME") {
-        let candidate = PathBuf::from(home)
-            .join("projects/charon/charon/target/release/charon");
+        let candidate = PathBuf::from(home).join("projects/charon/charon/target/release/charon");
         if candidate.is_file() {
             return Some(candidate);
         }
@@ -129,7 +128,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let path = std::env::temp_dir().join(format!("charon-runner-{}-{}-{}.rs", name, pid, nanos));
+        let path =
+            std::env::temp_dir().join(format!("charon-runner-{}-{}-{}.rs", name, pid, nanos));
         std::fs::write(&path, body).expect("write tmp source");
         path
     }
@@ -155,8 +155,8 @@ mod tests {
         };
         let src = "fn f(x: u32) { if x < 10 { panic!(); } }\n";
         let path = write_source("inline", src);
-        let krate = invoke_charon_on_rs_source(&path, None)
-            .expect("charon on inline source succeeds");
+        let krate =
+            invoke_charon_on_rs_source(&path, None).expect("charon on inline source succeeds");
         let f = krate
             .function_by_name("f")
             .expect("function f present in lifted crate");
@@ -183,8 +183,7 @@ mod tests {
         // LLBC layer via runner (fully end-to-end, no vendored fixture).
         let krate = invoke_charon_on_rs_source(&path, None).expect("charon ok");
         let f = krate.function_by_name("f").unwrap();
-        let llbc_contract =
-            lift_llbc_function(f, path.to_str()).expect("lift_llbc_function ok");
+        let llbc_contract = lift_llbc_function(f, path.to_str()).expect("lift_llbc_function ok");
 
         // AST layer.
         let file: syn::File = syn::parse_str(src).unwrap();

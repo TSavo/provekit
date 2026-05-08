@@ -25,8 +25,14 @@ fn daemon_bin() -> PathBuf {
 
     // CI builds with --release; local cargo test uses debug. Try release first
     // (CI), fall back to debug (local).
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
     if release.exists() {
         release
     } else {
@@ -137,7 +143,10 @@ fn test_01_start_connect_shutdown_exit() {
         .wait_timeout(Duration::from_secs(5))
         .expect("wait for child")
         .expect("child exited within timeout");
-    assert!(status.success(), "daemon should exit with status 0 on shutdown");
+    assert!(
+        status.success(),
+        "daemon should exit with status 0 on shutdown"
+    );
 
     std::fs::remove_file(&sock).ok();
 }
@@ -184,10 +193,7 @@ fn test_02_parse_file_response_shape() {
         resp
     );
     let result = &resp["result"];
-    assert!(
-        result.is_object(),
-        "result should be an object"
-    );
+    assert!(result.is_object(), "result should be an object");
     assert!(
         result.get("diagnostics").is_some(),
         "result.diagnostics should be present"
@@ -337,13 +343,22 @@ fn test_05_cache_hit_miss_via_project_status() {
         "params": {}
     });
     let status_a_resp = send_recv(&mut stream, &status_req.clone());
-    let cid_a = status_a_resp["result"]["linkBundleCid"].as_str().unwrap_or("").to_string();
+    let cid_a = status_a_resp["result"]["linkBundleCid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
 
     // Same parseFile again — cache hit, same CID.
     let _ = send_recv(&mut stream, &parse_a.clone());
     let status_a2_resp = send_recv(&mut stream, &status_req.clone());
-    let cid_a2 = status_a2_resp["result"]["linkBundleCid"].as_str().unwrap_or("").to_string();
-    assert_eq!(cid_a, cid_a2, "cache hit: same source => same linkBundleCid");
+    let cid_a2 = status_a2_resp["result"]["linkBundleCid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(
+        cid_a, cid_a2,
+        "cache hit: same source => same linkBundleCid"
+    );
 
     // Different source — cache miss, different CID.
     let parse_b = serde_json::json!({
@@ -358,10 +373,16 @@ fn test_05_cache_hit_miss_via_project_status() {
     });
     let _ = send_recv(&mut stream, &parse_b);
     let status_b_resp = send_recv(&mut stream, &status_req.clone());
-    let cid_b = status_b_resp["result"]["linkBundleCid"].as_str().unwrap_or("").to_string();
+    let cid_b = status_b_resp["result"]["linkBundleCid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     // If `fn beta()` has no contracts, the linker output may be the same
     // (empty bundle). That's correct. Assert the shape is valid.
-    assert!(!cid_b.is_empty(), "linkBundleCid should be non-empty after second parse");
+    assert!(
+        !cid_b.is_empty(),
+        "linkBundleCid should be non-empty after second parse"
+    );
 
     // Shutdown.
     let shutdown_req = serde_json::json!({

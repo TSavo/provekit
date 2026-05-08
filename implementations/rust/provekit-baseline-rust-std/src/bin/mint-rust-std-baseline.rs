@@ -25,9 +25,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use provekit_baseline_rust_std::{
-    author_all_invariants, mint_baseline, BASELINE_KIT_VERSION,
-    BASELINE_LANGUAGE, BASELINE_LANGUAGE_VERSION, BASELINE_VERSION,
-    SIGNER_ROLE,
+    author_all_invariants, mint_baseline, BASELINE_KIT_VERSION, BASELINE_LANGUAGE,
+    BASELINE_LANGUAGE_VERSION, BASELINE_VERSION, SIGNER_ROLE,
 };
 
 fn main() -> ExitCode {
@@ -63,7 +62,10 @@ fn main() -> ExitCode {
     println!();
     println!("output dir:        {}", out_dir.display());
     println!("baseline:          v{}", BASELINE_VERSION);
-    println!("language:          {} ({})", BASELINE_LANGUAGE, BASELINE_LANGUAGE_VERSION);
+    println!(
+        "language:          {} ({})",
+        BASELINE_LANGUAGE, BASELINE_LANGUAGE_VERSION
+    );
     println!("kit version:       {}", BASELINE_KIT_VERSION);
     println!("signer role:       {}", SIGNER_ROLE);
 
@@ -181,10 +183,7 @@ fn main() -> ExitCode {
     println!("== done. rust-std baseline minted. ==");
     println!();
     println!("To land at the canonical path, copy:");
-    println!(
-        "  cp {} .provekit/baselines/",
-        mint.path.display()
-    );
+    println!("  cp {} .provekit/baselines/", mint.path.display());
 
     ExitCode::SUCCESS
 }

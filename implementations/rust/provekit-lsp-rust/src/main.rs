@@ -52,10 +52,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use provekit_ir_symbolic::serialize::marshal_declarations;
 use provekit_lift::{
-    adapter_contracts, adapter_creusot, adapter_flux, adapter_kani,
-    adapter_proptest, adapter_prusti, adapter_quickcheck, adapter_rust_tests,
-    adapter_verus,
+    adapter_contracts, adapter_creusot, adapter_flux, adapter_kani, adapter_proptest,
+    adapter_prusti, adapter_quickcheck, adapter_rust_tests, adapter_verus,
 };
+use provekit_lsp_rust::forward_propagator::ForwardPropagator;
 
 fn main() {
     // Parse CLI.
@@ -105,10 +105,7 @@ fn main() {
         };
 
         let id = req.get("id").cloned().unwrap_or(serde_json::Value::Null);
-        let method = req
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
         match method {
             "initialize" => {
@@ -130,10 +127,7 @@ fn main() {
                     .get("path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("source.rs");
-                let source = params
-                    .get("source")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let source = params.get("source").and_then(|v| v.as_str()).unwrap_or("");
 
                 let resp = if let Some(ref socket_path) = daemon_socket {
                     handle_parse_daemon(
@@ -198,24 +192,22 @@ fn handle_parse_daemon(
     // Lazy connect-or-spawn.
     let stream = match stream_cache {
         Some(ref mut s) => s,
-        None => {
-            match daemon_client::connect_or_spawn(socket_path, &project_cid) {
-                Ok(s) => {
-                    *stream_cache = Some(s);
-                    stream_cache.as_mut().unwrap()
-                }
-                Err(e) => {
-                    return serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "id": id,
-                        "error": {
-                            "code": -32603,
-                            "message": format!("daemon connect/spawn failed: {e}")
-                        }
-                    });
-                }
+        None => match daemon_client::connect_or_spawn(socket_path, &project_cid) {
+            Ok(s) => {
+                *stream_cache = Some(s);
+                stream_cache.as_mut().unwrap()
             }
-        }
+            Err(e) => {
+                return serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32603,
+                        "message": format!("daemon connect/spawn failed: {e}")
+                    }
+                });
+            }
+        },
     };
 
     let rpc_id = req_counter.fetch_add(1, Ordering::Relaxed);
@@ -402,15 +394,22 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
         marshal_declarations(&decls)
     };
 
-    let decls_value: serde_json::Value = serde_json::from_str(&decls_json_str)
-        .unwrap_or(serde_json::Value::Array(vec![]));
+    let decls_value: serde_json::Value =
+        serde_json::from_str(&decls_json_str).unwrap_or(serde_json::Value::Array(vec![]));
+
+    let diagnostics: Vec<serde_json::Value> = ForwardPropagator::default()
+        .emit_diagnostics(&[])
+        .into_iter()
+        .map(|diagnostic| diagnostic.to_lsp_json())
+        .collect();
 
     serde_json::json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
             "declarations": decls_value,
-            "warnings": warnings
+            "warnings": warnings,
+            "diagnostics": diagnostics
         }
     })
 }

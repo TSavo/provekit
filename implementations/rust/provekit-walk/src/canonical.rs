@@ -29,12 +29,10 @@ pub fn serde_to_canonical(j: JsonValue) -> Arc<Value> {
                 // the string "42.5" produce identical CIDs, breaking content-
                 // address distinctness. Use a tagged object to distinguish the
                 // source type from a literal string value.
-                Value::object(vec![
-                    (
-                        "__provekit_non_i64_number__".to_string(),
-                        Value::string(n.to_string()),
-                    ),
-                ])
+                Value::object(vec![(
+                    "__provekit_non_i64_number__".to_string(),
+                    Value::string(n.to_string()),
+                )])
             }
         },
         JsonValue::String(s) => Value::string(s),

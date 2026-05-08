@@ -20,8 +20,8 @@
 // for "omit absent" because the spec's envelope shape never emits
 // JSON nulls.
 
-pub mod jcs;
 pub mod hash;
+pub mod jcs;
 pub mod value;
 
 pub use hash::{blake3_512_hex, blake3_512_of, BLAKE3_512_PREFIX};

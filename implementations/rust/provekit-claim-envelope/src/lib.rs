@@ -83,10 +83,7 @@ fn hash_string(s: &str) -> String {
 /// Build the JCS-canonical bytes of `{"header": header, "metadata": metadata}`.
 /// This is the message the envelope's Ed25519 signature covers (spec §2 R2).
 fn signing_bytes(header: &Arc<Value>, metadata: &Arc<Value>) -> Vec<u8> {
-    let msg = Value::object([
-        ("header", header.clone()),
-        ("metadata", metadata.clone()),
-    ]);
+    let msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
     encode_jcs(&msg).into_bytes()
 }
 
@@ -132,7 +129,11 @@ fn assemble_layered(
 /// Helper: build a header object from a vector of (key, value) pairs.
 /// Always prepends `schemaVersion`, `kind`, `cid` in that order; the
 /// kind-specific REQUIRED header fields follow.
-fn build_header(kind: &str, header_cid: &str, kind_specific: Vec<(String, Arc<Value>)>) -> Arc<Value> {
+fn build_header(
+    kind: &str,
+    header_cid: &str,
+    kind_specific: Vec<(String, Arc<Value>)>,
+) -> Arc<Value> {
     let mut entries: Vec<(String, Arc<Value>)> = Vec::with_capacity(3 + kind_specific.len());
     entries.push((
         "schemaVersion".into(),
@@ -150,9 +151,22 @@ fn build_header(kind: &str, header_cid: &str, kind_specific: Vec<(String, Arc<Va
 
 #[derive(Debug, Clone)]
 pub enum Authoring {
-    KitAuthor { author: String, note: Option<String> },
-    Lift { lifter: String, evidence: String, source_cid: Option<String> },
-    Llm { llm: String, llm_version: String, prompt_cid: String, confidence: f64, rationale: Option<String> },
+    KitAuthor {
+        author: String,
+        note: Option<String>,
+    },
+    Lift {
+        lifter: String,
+        evidence: String,
+        source_cid: Option<String>,
+    },
+    Llm {
+        llm: String,
+        llm_version: String,
+        prompt_cid: String,
+        confidence: f64,
+        rationale: Option<String>,
+    },
 }
 
 fn authoring_to_value(a: &Authoring) -> Arc<Value> {
@@ -169,7 +183,11 @@ fn authoring_to_value(a: &Authoring) -> Arc<Value> {
             }
             Arc::new(Value::Object(entries))
         }
-        Authoring::Lift { lifter, evidence, source_cid } => {
+        Authoring::Lift {
+            lifter,
+            evidence,
+            source_cid,
+        } => {
             let mut entries: Vec<(String, Arc<Value>)> = vec![
                 ("producerKind".into(), Value::string("lift")),
                 ("lifter".into(), Value::string(lifter.clone())),
@@ -182,13 +200,22 @@ fn authoring_to_value(a: &Authoring) -> Arc<Value> {
             }
             Arc::new(Value::Object(entries))
         }
-        Authoring::Llm { llm, llm_version, prompt_cid, confidence, rationale } => {
+        Authoring::Llm {
+            llm,
+            llm_version,
+            prompt_cid,
+            confidence,
+            rationale,
+        } => {
             let mut entries: Vec<(String, Arc<Value>)> = vec![
                 ("producerKind".into(), Value::string("llm")),
                 ("llm".into(), Value::string(llm.clone())),
                 ("llmVersion".into(), Value::string(llm_version.clone())),
                 ("promptCid".into(), Value::string(prompt_cid.clone())),
-                ("confidence".into(), Value::integer((confidence * 1000.0) as i64)),
+                (
+                    "confidence".into(),
+                    Value::integer((confidence * 1000.0) as i64),
+                ),
             ];
             if let Some(r) = rationale {
                 if !r.is_empty() {
@@ -296,10 +323,7 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     if let Some(inv) = &args.inv {
         ph_kvs.push(("inv".into(), inv.clone()));
     }
-    ph_kvs.push((
-        "outBinding".into(),
-        Value::string(args.out_binding.clone()),
-    ));
+    ph_kvs.push(("outBinding".into(), Value::string(args.out_binding.clone())));
     let property_hash = hash_value(&Arc::new(Value::Object(ph_kvs)));
 
     let bh_obj = Value::object([
@@ -388,7 +412,10 @@ fn bridge_content_cid(args: &MintBridgeArgs) -> String {
     let v = Value::object([
         ("sourceSymbol", Value::string(args.source_symbol.clone())),
         ("sourceLayer", Value::string(args.source_layer.clone())),
-        ("targetContractCid", Value::string(args.target_contract_cid.clone())),
+        (
+            "targetContractCid",
+            Value::string(args.target_contract_cid.clone()),
+        ),
         ("targetLayer", Value::string(args.target_layer.clone())),
         ("irArgSorts", Value::array(arg_sorts)),
         ("irReturnSort", Value::string(args.ir_return_sort.clone())),
@@ -415,12 +442,27 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
 
     let header_cid = bridge_content_cid(args);
     let kind_specific: Vec<(String, Arc<Value>)> = vec![
-        ("sourceSymbol".into(), Value::string(args.source_symbol.clone())),
-        ("sourceLayer".into(), Value::string(args.source_layer.clone())),
-        ("targetContractCid".into(), Value::string(args.target_contract_cid.clone())),
-        ("targetLayer".into(), Value::string(args.target_layer.clone())),
+        (
+            "sourceSymbol".into(),
+            Value::string(args.source_symbol.clone()),
+        ),
+        (
+            "sourceLayer".into(),
+            Value::string(args.source_layer.clone()),
+        ),
+        (
+            "targetContractCid".into(),
+            Value::string(args.target_contract_cid.clone()),
+        ),
+        (
+            "targetLayer".into(),
+            Value::string(args.target_layer.clone()),
+        ),
         ("irArgSorts".into(), Value::array(arg_sorts)),
-        ("irReturnSort".into(), Value::string(args.ir_return_sort.clone())),
+        (
+            "irReturnSort".into(),
+            Value::string(args.ir_return_sort.clone()),
+        ),
         ("verdict".into(), Value::string("holds")),
         ("bindingHash".into(), Value::string(binding_hash)),
         ("propertyHash".into(), Value::string(property_hash)),
@@ -441,7 +483,13 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
     }
     let metadata = Arc::new(Value::Object(metadata_kvs));
 
-    assemble_layered(header, metadata, &args.produced_at, &args.signer_seed, String::new())
+    assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    )
 }
 
 // =============================================================================
@@ -626,12 +674,24 @@ pub struct MintImplicationArgs {
 
 fn implication_content_cid(args: &MintImplicationArgs) -> String {
     let v = Value::object([
-        ("antecedentHash", Value::string(args.antecedent_hash.clone())),
-        ("consequentHash", Value::string(args.consequent_hash.clone())),
+        (
+            "antecedentHash",
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash",
+            Value::string(args.consequent_hash.clone()),
+        ),
         ("antecedentCid", Value::string(args.antecedent_cid.clone())),
         ("consequentCid", Value::string(args.consequent_cid.clone())),
-        ("antecedentSlot", Value::string(args.antecedent_slot.clone())),
-        ("consequentSlot", Value::string(args.consequent_slot.clone())),
+        (
+            "antecedentSlot",
+            Value::string(args.antecedent_slot.clone()),
+        ),
+        (
+            "consequentSlot",
+            Value::string(args.consequent_slot.clone()),
+        ),
     ]);
     blake3_512_of(encode_jcs(&v).as_bytes())
 }
@@ -641,8 +701,14 @@ pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
     //   bindingHash  = hash(canonical({antecedentHash, consequentHash}))
     //   propertyHash = hash("implication:" || antecedentHash || ":" || consequentHash)
     let bh_obj = Value::object([
-        ("antecedentHash", Value::string(args.antecedent_hash.clone())),
-        ("consequentHash", Value::string(args.consequent_hash.clone())),
+        (
+            "antecedentHash",
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash",
+            Value::string(args.consequent_hash.clone()),
+        ),
     ]);
     let binding_hash = hash_value(&bh_obj);
     let property_hash = hash_string(&format!(
@@ -656,12 +722,30 @@ pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
     let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
 
     let kind_specific: Vec<(String, Arc<Value>)> = vec![
-        ("antecedentHash".into(), Value::string(args.antecedent_hash.clone())),
-        ("consequentHash".into(), Value::string(args.consequent_hash.clone())),
-        ("antecedentCid".into(), Value::string(args.antecedent_cid.clone())),
-        ("consequentCid".into(), Value::string(args.consequent_cid.clone())),
-        ("antecedentSlot".into(), Value::string(args.antecedent_slot.clone())),
-        ("consequentSlot".into(), Value::string(args.consequent_slot.clone())),
+        (
+            "antecedentHash".into(),
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash".into(),
+            Value::string(args.consequent_hash.clone()),
+        ),
+        (
+            "antecedentCid".into(),
+            Value::string(args.antecedent_cid.clone()),
+        ),
+        (
+            "consequentCid".into(),
+            Value::string(args.consequent_cid.clone()),
+        ),
+        (
+            "antecedentSlot".into(),
+            Value::string(args.antecedent_slot.clone()),
+        ),
+        (
+            "consequentSlot".into(),
+            Value::string(args.consequent_slot.clone()),
+        ),
         ("verdict".into(), Value::string("holds")),
         ("bindingHash".into(), Value::string(binding_hash)),
         ("propertyHash".into(), Value::string(property_hash)),
@@ -677,14 +761,26 @@ pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
         ("proverRunMs".into(), Value::integer(args.prover_run_ms)),
     ];
     if !args.smt_lib_input.is_empty() {
-        metadata_kvs.push(("smtLibInput".into(), Value::string(args.smt_lib_input.clone())));
+        metadata_kvs.push((
+            "smtLibInput".into(),
+            Value::string(args.smt_lib_input.clone()),
+        ));
     }
     if !args.proof_witness.is_empty() {
-        metadata_kvs.push(("proofWitness".into(), Value::string(args.proof_witness.clone())));
+        metadata_kvs.push((
+            "proofWitness".into(),
+            Value::string(args.proof_witness.clone()),
+        ));
     }
     let metadata = Arc::new(Value::Object(metadata_kvs));
 
-    assemble_layered(header, metadata, &args.produced_at, &args.signer_seed, String::new())
+    assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    )
 }
 
 #[cfg(test)]
@@ -724,17 +820,17 @@ mod tests {
             (
                 "args",
                 Value::array(vec![
-                    Value::object([
-                        ("kind", Value::string("var")),
-                        ("name", Value::string("n")),
-                    ]),
+                    Value::object([("kind", Value::string("var")), ("name", Value::string("n"))]),
                     Value::object([
                         ("kind", Value::string("const")),
                         ("value", Value::integer(0)),
-                        ("sort", Value::object([
-                            ("kind", Value::string("primitive")),
-                            ("name", Value::string("Int")),
-                        ])),
+                        (
+                            "sort",
+                            Value::object([
+                                ("kind", Value::string("primitive")),
+                                ("name", Value::string("Int")),
+                            ]),
+                        ),
                     ]),
                 ]),
             ),

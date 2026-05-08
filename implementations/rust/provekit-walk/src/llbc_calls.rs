@@ -125,7 +125,9 @@ pub fn fun_decls_array(krate: &LlbcCrate) -> Option<&Value> {
 /// the decl is not found or the name path is empty.
 pub fn fundecl_path_segments_by_id(fun_decls: &Value, id: u64) -> Option<Vec<String>> {
     let arr = fun_decls.as_array()?;
-    let decl = arr.iter().find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
+    let decl = arr
+        .iter()
+        .find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
     let elems = decl.get("item_meta")?.get("name")?.as_array()?;
     let segs: Vec<String> = elems
         .iter()
@@ -134,7 +136,11 @@ pub fn fundecl_path_segments_by_id(fun_decls: &Value, id: u64) -> Option<Vec<Str
             ident.first()?.as_str().map(|s| s.to_string())
         })
         .collect();
-    if segs.is_empty() { None } else { Some(segs) }
+    if segs.is_empty() {
+        None
+    } else {
+        Some(segs)
+    }
 }
 
 /// Map from method name suffix to `AtomicKind`. Returns `None` if the
@@ -151,9 +157,7 @@ pub fn atomic_kind_for_method(method: &str) -> Option<crate::contract::AtomicKin
     match method {
         "load" => Some(AtomicKind::Load),
         "store" => Some(AtomicKind::Store),
-        "compare_exchange" | "compare_exchange_weak" | "compare_and_swap" => {
-            Some(AtomicKind::Cas)
-        }
+        "compare_exchange" | "compare_exchange_weak" | "compare_and_swap" => Some(AtomicKind::Cas),
         m if m.starts_with("fetch_") || m == "swap" => Some(AtomicKind::Rmw),
         _ => None,
     }
@@ -194,8 +198,9 @@ pub fn detect_atomic_call(
 /// item_meta.name path. `None` if not found or path is malformed.
 pub fn fundecl_name_by_id(fun_decls: &Value, id: u64) -> Option<String> {
     let arr = fun_decls.as_array()?;
-    let decl =
-        arr.iter().find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
+    let decl = arr
+        .iter()
+        .find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
     let elems = decl.get("item_meta")?.get("name")?.as_array()?;
     elems.iter().rev().find_map(|e| {
         let ident = e.get("Ident")?.as_array()?;
@@ -251,10 +256,7 @@ pub fn call_dest_local(stmt: &Value) -> Option<u32> {
 /// formal names are the keys; the actuals are the corresponding lifted
 /// IrTerms in the same positional order. Capture-avoiding substitution
 /// is the default semantics of `wp::substitute_in_formula`.
-pub fn compose_callsite_pre(
-    callee: &FunctionContractMemento,
-    arg_terms: &[IrTerm],
-) -> IrFormula {
+pub fn compose_callsite_pre(callee: &FunctionContractMemento, arg_terms: &[IrTerm]) -> IrFormula {
     let mut substituted = callee.pre.clone();
     for (formal_name, actual_term) in callee.formals.iter().zip(arg_terms.iter()) {
         substituted = wp::substitute_in_formula(substituted, formal_name, actual_term);
@@ -405,6 +407,9 @@ mod tests {
         // Fix-point stability: run again and check CIDs are identical.
         let registry2 = lift_llbc_crate(&krate, Some("fixpoint.rs")).unwrap();
         let outer2 = registry2.get("outer").expect("outer in second run");
-        assert_eq!(outer.cid, outer2.cid, "outer.cid must be stable across runs");
+        assert_eq!(
+            outer.cid, outer2.cid,
+            "outer.cid must be stable across runs"
+        );
     }
 }

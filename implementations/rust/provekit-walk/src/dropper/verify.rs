@@ -84,18 +84,20 @@ pub fn verify_closure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_ir_types::{IrFormula, IrTerm};
+    use crate::dropper::emit::emit_drop;
+    use crate::dropper::gap::detect_gaps;
+    use crate::dropper::predicates::not_null::NotNullPredicate;
+    use crate::dropper::template::DropTemplate;
     use crate::walk::walk_callsites_to_entry;
     use crate::wp::Wp;
-    use crate::dropper::gap::detect_gaps;
-    use crate::dropper::emit::emit_drop;
-    use crate::dropper::template::DropTemplate;
-    use crate::dropper::predicates::not_null::NotNullPredicate;
+    use provekit_ir_types::{IrFormula, IrTerm};
 
     fn not_null_wp(var_name: &str) -> Wp {
         Wp(IrFormula::Atomic {
             name: "not_null".to_string(),
-            args: vec![IrTerm::Var { name: var_name.to_string() }],
+            args: vec![IrTerm::Var {
+                name: var_name.to_string(),
+            }],
         })
     }
 

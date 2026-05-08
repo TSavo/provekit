@@ -218,8 +218,8 @@ impl ProjectState {
     /// Restore state from snapshot bytes. Returns `Ok(state)` on success,
     /// `Err(reason)` if the snapshot is invalid.
     pub fn from_snapshot_bytes(bytes: &[u8]) -> Result<Self, String> {
-        let v: Json = serde_json::from_slice(bytes)
-            .map_err(|e| format!("snapshot JSON parse error: {e}"))?;
+        let v: Json =
+            serde_json::from_slice(bytes).map_err(|e| format!("snapshot JSON parse error: {e}"))?;
         let slots = v
             .get("slots")
             .and_then(|s| s.as_array())
@@ -341,6 +341,9 @@ mod tests {
             .and_then(|s| s.get("linkBundleCid").cloned())
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .expect("restored cid");
-        assert_eq!(original_cid, restored_cid, "snapshot roundtrip preserves CID");
+        assert_eq!(
+            original_cid, restored_cid,
+            "snapshot roundtrip preserves CID"
+        );
     }
 }

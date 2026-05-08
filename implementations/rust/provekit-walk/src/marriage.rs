@@ -132,12 +132,8 @@ pub fn lift_marriage(
     let f = krate
         .function_by_name(fn_name)
         .map_err(MarriageError::Llbc)?;
-    let llbc = lift_llbc_function_with_types(
-        f,
-        rs_source_path.to_str(),
-        krate.type_decls_raw(),
-    )
-    .map_err(MarriageError::Llbc)?;
+    let llbc = lift_llbc_function_with_types(f, rs_source_path.to_str(), krate.type_decls_raw())
+        .map_err(MarriageError::Llbc)?;
 
     Ok(marry(ast, llbc))
 }
@@ -147,10 +143,7 @@ pub fn lift_marriage(
 /// stack). The merged contract takes the AST's metadata (locus,
 /// formals, sorts, body_cid) and the union of both layers' predicate
 /// atoms.
-pub fn marry(
-    ast: FunctionContractMemento,
-    llbc: FunctionContractMemento,
-) -> MarriedContract {
+pub fn marry(ast: FunctionContractMemento, llbc: FunctionContractMemento) -> MarriedContract {
     let agreement = compare_layers(&ast, &llbc);
     let merged_pre = merge_formulas(&ast.pre, &llbc.pre);
     let merged_post = merge_formulas(&ast.post, &llbc.post);
@@ -170,10 +163,7 @@ pub fn marry(
     }
 }
 
-fn compare_layers(
-    ast: &FunctionContractMemento,
-    llbc: &FunctionContractMemento,
-) -> LayerAgreement {
+fn compare_layers(ast: &FunctionContractMemento, llbc: &FunctionContractMemento) -> LayerAgreement {
     let ast_pre_atoms = atom_byte_set(&ast.pre);
     let llbc_pre_atoms = atom_byte_set(&llbc.pre);
     let ast_post_atoms = atom_byte_set(&ast.post);
@@ -217,8 +207,16 @@ fn compare_layers(
     // (AST cannot see borrow shape). When formulas agree but LLBC carries
     // PossibleAliasing that AST doesn't, classify as LlbcExtra(BorrowState).
     if agreement == LayerAgreement::Identical {
-        let llbc_has_aliasing = llbc.effects.effects.iter().any(|e| matches!(e, Effect::PossibleAliasing { .. }));
-        let ast_has_aliasing = ast.effects.effects.iter().any(|e| matches!(e, Effect::PossibleAliasing { .. }));
+        let llbc_has_aliasing = llbc
+            .effects
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::PossibleAliasing { .. }));
+        let ast_has_aliasing = ast
+            .effects
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::PossibleAliasing { .. }));
         if llbc_has_aliasing && !ast_has_aliasing {
             return LayerAgreement::LlbcExtra(LlbcExtraCategory::BorrowState);
         }
@@ -258,7 +256,10 @@ pub fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
 /// `Lambda` bodies. `Var` nodes have no sort metadata and are skipped.
 fn term_has_region_sort(term: &IrTerm) -> bool {
     match term {
-        IrTerm::Const { sort: Sort::Region { .. }, .. } => true,
+        IrTerm::Const {
+            sort: Sort::Region { .. },
+            ..
+        } => true,
         IrTerm::Const { .. } => false,
         IrTerm::Var { .. } => false,
         IrTerm::Ctor { args, .. } => args.iter().any(term_has_region_sort),
@@ -284,12 +285,8 @@ fn term_has_region_sort_in_formula(f: &IrFormula) -> bool {
         IrFormula::And { operands } | IrFormula::Or { operands } => {
             operands.iter().any(term_has_region_sort_in_formula)
         }
-        IrFormula::Not { operands } => {
-            operands.iter().any(term_has_region_sort_in_formula)
-        }
-        IrFormula::Implies { operands } => {
-            operands.iter().any(term_has_region_sort_in_formula)
-        }
+        IrFormula::Not { operands } => operands.iter().any(term_has_region_sort_in_formula),
+        IrFormula::Implies { operands } => operands.iter().any(term_has_region_sort_in_formula),
         IrFormula::Forall {
             sort: Sort::Region { .. },
             ..
@@ -359,9 +356,7 @@ mod tests {
     use crate::canonical::{formula_to_canonical, jcs_bytes_of_value};
     use crate::charon_runner::find_charon_binary;
     use crate::contract::build_function_contract_with_file;
-    use crate::envelope::{
-        wrap_function_contract_cached, EnvelopeCache, DEV_SIGNER_SEED,
-    };
+    use crate::envelope::{wrap_function_contract_cached, EnvelopeCache, DEV_SIGNER_SEED};
     use crate::llbc::LlbcCrate;
     use crate::llbc_lift::lift_llbc_function_with_types;
 
@@ -372,7 +367,11 @@ mod tests {
             .join(name)
     }
 
-    fn build_layers(rs: &str, llbc: &str, fn_name: &str) -> (FunctionContractMemento, FunctionContractMemento) {
+    fn build_layers(
+        rs: &str,
+        llbc: &str,
+        fn_name: &str,
+    ) -> (FunctionContractMemento, FunctionContractMemento) {
         let src = std::fs::read_to_string(fixture_path(rs)).unwrap();
         let file: syn::File = syn::parse_str(&src).unwrap();
         let item_fn = file
@@ -857,7 +856,9 @@ mod tests {
             formals: vec![],
             formal_sorts: vec![],
             formal_regions: vec![],
-            return_sort: Sort::Primitive { name: "Unit".to_string() },
+            return_sort: Sort::Primitive {
+                name: "Unit".to_string(),
+            },
             return_region: None,
             body_cid: None,
             effects: EffectSet::empty(),
@@ -952,15 +953,21 @@ mod tests {
         assert_eq!(
             ast.formal_sorts,
             vec![
-                Sort::Primitive { name: "Ref<Slice<U32>>".to_string() },
-                Sort::Primitive { name: "Usize".to_string() },
+                Sort::Primitive {
+                    name: "Ref<Slice<U32>>".to_string()
+                },
+                Sort::Primitive {
+                    name: "Usize".to_string()
+                },
             ],
             "formal_sorts must be [Ref<Slice<U32>>, Usize]: {:?}",
             ast.formal_sorts
         );
         assert_eq!(
             ast.return_sort,
-            Sort::Primitive { name: "U32".to_string() },
+            Sort::Primitive {
+                name: "U32".to_string()
+            },
             "return_sort must be U32: {:?}",
             ast.return_sort
         );
@@ -974,8 +981,12 @@ mod tests {
         let outlives_atom = IrFormula::Atomic {
             name: "Outlives".to_string(),
             args: vec![
-                IrTerm::Var { name: "'a".to_string() },
-                IrTerm::Var { name: "'b".to_string() },
+                IrTerm::Var {
+                    name: "'a".to_string(),
+                },
+                IrTerm::Var {
+                    name: "'b".to_string(),
+                },
             ],
         };
         let cat = classify_extras(&[outlives_atom]);
@@ -992,7 +1003,9 @@ mod tests {
         // still classified as LifetimeRelative.
         let region_term = IrTerm::Const {
             value: serde_json::json!("'a"),
-            sort: Sort::Region { name: "'a".to_string() },
+            sort: Sort::Region {
+                name: "'a".to_string(),
+            },
         };
         let region_atom = IrFormula::Atomic {
             name: "borrow_region".to_string(),
@@ -1012,10 +1025,14 @@ mod tests {
         let ge_atom = IrFormula::Atomic {
             name: "\u{2265}".to_string(),
             args: vec![
-                IrTerm::Var { name: "x".to_string() },
+                IrTerm::Var {
+                    name: "x".to_string(),
+                },
                 IrTerm::Const {
                     value: serde_json::json!(10),
-                    sort: Sort::Primitive { name: "U32".to_string() },
+                    sort: Sort::Primitive {
+                        name: "U32".to_string(),
+                    },
                 },
             ],
         };
@@ -1038,8 +1055,12 @@ mod tests {
         let outlives_atom = IrFormula::Atomic {
             name: "Outlives".to_string(),
             args: vec![
-                IrTerm::Var { name: "'a".to_string() },
-                IrTerm::Var { name: "'b".to_string() },
+                IrTerm::Var {
+                    name: "'a".to_string(),
+                },
+                IrTerm::Var {
+                    name: "'b".to_string(),
+                },
             ],
         };
 
@@ -1047,7 +1068,9 @@ mod tests {
             fn_name: "test_outlives_marriage".to_string(),
             formals: vec![],
             formal_sorts: vec![],
-            return_sort: Sort::Primitive { name: "Unit".to_string() },
+            return_sort: Sort::Primitive {
+                name: "Unit".to_string(),
+            },
             body_cid: None,
             effects: EffectSet::empty(),
             locus: Locus::unknown(),

@@ -89,7 +89,8 @@ fn run_rpc_mode() -> ExitCode {
                 }
             }),
             "lift" => {
-                let tmp = std::env::temp_dir().join(format!("provekit-rpc-mint-{}", std::process::id()));
+                let tmp =
+                    std::env::temp_dir().join(format!("provekit-rpc-mint-{}", std::process::id()));
                 let _ = std::fs::remove_dir_all(&tmp);
                 let _ = std::fs::create_dir_all(&tmp);
                 match mint_self_proof(&tmp) {
@@ -214,10 +215,8 @@ fn main() -> ExitCode {
     //
     // Wipe a determinism-check temp dir and mint there first; then mint
     // again into the real out_dir. The two CIDs MUST match.
-    let det_dir = std::env::temp_dir().join(format!(
-        "provekit-self-determinism-{}",
-        std::process::id()
-    ));
+    let det_dir =
+        std::env::temp_dir().join(format!("provekit-self-determinism-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&det_dir);
 
     let mint_a = match mint_self_proof(&det_dir) {
@@ -276,7 +275,10 @@ fn main() -> ExitCode {
     println!();
     println!("verifier (load + enumerate):");
     println!("  loaded mementos:              {}", pool.mementos.len());
-    println!("  bridges by sourceSymbol:      {}", pool.bridges_by_symbol.len());
+    println!(
+        "  bridges by sourceSymbol:      {}",
+        pool.bridges_by_symbol.len()
+    );
     println!("  enumerated callsites:         {}", callsites.len());
     if !pool.load_errors.is_empty() {
         println!();

@@ -337,9 +337,7 @@ fn classify_for_loop(
         out.warnings.push(LiftWarning {
             source_path: source_path.into(),
             item_name: test_name.into(),
-            reason:
-                "layer2 bounded-loop: nested for-loop detected; deferred to Layer 2.5"
-                    .into(),
+            reason: "layer2 bounded-loop: nested for-loop detected; deferred to Layer 2.5".into(),
         });
         return;
     }
@@ -422,7 +420,7 @@ fn classify_for_loop(
         post: None,
         inv: Some(quantified),
         out_binding: "out".into(),
-    evidence: None,
+        evidence: None,
     });
     out.lifted += 1;
     out.bounded_loop_lifted += 1;
@@ -600,7 +598,7 @@ fn classify_helper_inlining(
             post: None,
             inv: Some(inlined),
             out_binding: "out".into(),
-        evidence: None,
+            evidence: None,
         });
         out.lifted += 1;
         out.helper_inlined_lifted += 1;
@@ -644,7 +642,11 @@ fn subst_var_in_formula(f: &Rc<Formula>, formal: &str, actual: &Rc<Term>) -> Rc<
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             // Don't substitute under a shadowing binder.
             if var_name == formal {
                 f.clone()
@@ -674,7 +676,11 @@ fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> 
                 args: new_args,
             })
         }
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == formal {
                 t.clone() // shadowed
             } else {
@@ -704,8 +710,15 @@ fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> 
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_var_in_term(body, formal, actual) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_var_in_term(body, formal, actual)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -755,7 +768,7 @@ fn classify_characterization(
         post: None,
         inv: Some(body),
         out_binding: "out".into(),
-    evidence: None,
+        evidence: None,
     });
     out.lifted += 1;
     out.characterization_lifted += 1;

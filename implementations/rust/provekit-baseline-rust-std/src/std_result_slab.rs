@@ -8,9 +8,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, must, num, str_const, String_, Term,
-};
+use provekit_ir_symbolic::{eq, forall, must, num, str_const, String_, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -40,10 +38,7 @@ pub fn invariants() {
     must(
         "Result_is_ok__determinism",
         forall(String_(), |r| {
-            eq(
-                ctor1("Result_is_ok", r.clone()),
-                ctor1("Result_is_ok", r),
-            )
+            eq(ctor1("Result_is_ok", r.clone()), ctor1("Result_is_ok", r))
         }),
     );
     // Structural: is_ok and is_err are complements.
@@ -74,10 +69,7 @@ pub fn invariants() {
     must(
         "Result_is_err__determinism",
         forall(String_(), |r| {
-            eq(
-                ctor1("Result_is_err", r.clone()),
-                ctor1("Result_is_err", r),
-            )
+            eq(ctor1("Result_is_err", r.clone()), ctor1("Result_is_err", r))
         }),
     );
 
@@ -85,19 +77,13 @@ pub fn invariants() {
     must(
         "Result_unwrap__type_signature",
         forall(String_(), |r| {
-            eq(
-                ctor1("type_of", ctor1("Result_unwrap", r)),
-                str_const("T"),
-            )
+            eq(ctor1("type_of", ctor1("Result_unwrap", r)), str_const("T"))
         }),
     );
     must(
         "Result_unwrap__determinism",
         forall(String_(), |r| {
-            eq(
-                ctor1("Result_unwrap", r.clone()),
-                ctor1("Result_unwrap", r),
-            )
+            eq(ctor1("Result_unwrap", r.clone()), ctor1("Result_unwrap", r))
         }),
     );
     // Structural: unwrap is partial (panics on Err).
@@ -116,10 +102,7 @@ pub fn invariants() {
         "Result_unwrap_or__type_signature",
         forall(String_(), |r| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor2("Result_unwrap_or", r, num(0)),
-                ),
+                ctor1("type_of", ctor2("Result_unwrap_or", r, num(0))),
                 str_const("T"),
             )
         }),
@@ -210,10 +193,7 @@ pub fn invariants() {
         "Result_map_err__type_signature",
         forall(String_(), |r| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor2("Result_map_err", r, str_const("f")),
-                ),
+                ctor1("type_of", ctor2("Result_map_err", r, str_const("f"))),
                 str_const("Result"),
             )
         }),
@@ -245,10 +225,7 @@ pub fn invariants() {
     must(
         "Result_ok__type_signature",
         forall(String_(), |r| {
-            eq(
-                ctor1("type_of", ctor1("Result_ok", r)),
-                str_const("Option"),
-            )
+            eq(ctor1("type_of", ctor1("Result_ok", r)), str_const("Option"))
         }),
     );
     must(

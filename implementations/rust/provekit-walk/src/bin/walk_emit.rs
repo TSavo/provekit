@@ -73,7 +73,10 @@ fn main() -> ExitCode {
     let bytes = shadow_to_proof_ir(&s);
     let cid = shadow_proof_ir_cid(&s);
 
-    eprintln!("# proof.ir bundle for caller={} callee={}", caller_name, callee_name);
+    eprintln!(
+        "# proof.ir bundle for caller={} callee={}",
+        caller_name, callee_name
+    );
     eprintln!("# bundle CID:        {}", cid);
     eprintln!("# bundle bytes:      {}", bytes.len());
     eprintln!("# shadowSource CID:  {}", s.cid);

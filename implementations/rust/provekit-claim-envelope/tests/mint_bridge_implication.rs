@@ -15,9 +15,7 @@
 //   - antecedentSlot / consequentSlot are stored verbatim (no validation)
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_claim_envelope::{
-    mint_bridge, mint_implication, MintBridgeArgs, MintImplicationArgs,
-};
+use provekit_claim_envelope::{mint_bridge, mint_implication, MintBridgeArgs, MintImplicationArgs};
 use provekit_proof_envelope::Ed25519Seed;
 
 fn seed() -> Ed25519Seed {
@@ -58,7 +56,10 @@ fn bridge_cid_is_blake3_512_prefixed() {
 fn bridge_property_hash_is_blake3_of_bridge_prefix_plus_source_symbol() {
     let m = mint_bridge(&bridge_args());
     let env = parse(&m.canonical_bytes);
-    let ph = env.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
+    let ph = env
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     let expected = blake3_512_of(b"bridge:parseInt");
     assert_eq!(ph, expected);
 }
@@ -67,7 +68,10 @@ fn bridge_property_hash_is_blake3_of_bridge_prefix_plus_source_symbol() {
 fn bridge_binding_hash_is_blake3_of_jcs_source_layer_and_source_symbol() {
     let m = mint_bridge(&bridge_args());
     let env = parse(&m.canonical_bytes);
-    let bh = env.pointer("/header/bindingHash").and_then(|v| v.as_str()).unwrap();
+    let bh = env
+        .pointer("/header/bindingHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
 
     let v = Value::object([
         ("sourceLayer", Value::string("ts")),
@@ -93,7 +97,10 @@ fn bridge_input_cids_first_entry_is_target_contract_cid() {
 fn bridge_evidence_kind_is_bridge() {
     let m = mint_bridge(&bridge_args());
     let env = parse(&m.canonical_bytes);
-    let kind = env.pointer("/header/kind").and_then(|v| v.as_str()).unwrap();
+    let kind = env
+        .pointer("/header/kind")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(kind, "bridge");
 }
 
@@ -104,14 +111,26 @@ fn bridge_body_carries_all_input_fields() {
     let m = mint_bridge(&bridge_args());
     let env = parse(&m.canonical_bytes);
     let header = env.pointer("/header").unwrap();
-    assert_eq!(header.get("sourceSymbol").and_then(|v| v.as_str()), Some("parseInt"));
-    assert_eq!(header.get("sourceLayer").and_then(|v| v.as_str()), Some("ts"));
+    assert_eq!(
+        header.get("sourceSymbol").and_then(|v| v.as_str()),
+        Some("parseInt")
+    );
+    assert_eq!(
+        header.get("sourceLayer").and_then(|v| v.as_str()),
+        Some("ts")
+    );
     assert_eq!(
         header.get("targetContractCid").and_then(|v| v.as_str()),
         Some("blake3-512:cccc")
     );
-    assert_eq!(header.get("targetLayer").and_then(|v| v.as_str()), Some("rust-kit"));
-    assert_eq!(header.get("irReturnSort").and_then(|v| v.as_str()), Some("Int"));
+    assert_eq!(
+        header.get("targetLayer").and_then(|v| v.as_str()),
+        Some("rust-kit")
+    );
+    assert_eq!(
+        header.get("irReturnSort").and_then(|v| v.as_str()),
+        Some("Int")
+    );
     let arg_sorts = header.get("irArgSorts").and_then(|v| v.as_array()).unwrap();
     assert_eq!(arg_sorts.len(), 1);
     assert_eq!(arg_sorts[0].as_str(), Some("String"));
@@ -134,7 +153,10 @@ fn bridge_notes_included_when_provided() {
     let m = mint_bridge(&a);
     let env = parse(&m.canonical_bytes);
     let metadata = env.pointer("/metadata").unwrap();
-    assert_eq!(metadata.get("notes").and_then(|v| v.as_str()), Some("smoke from kit"));
+    assert_eq!(
+        metadata.get("notes").and_then(|v| v.as_str()),
+        Some("smoke from kit")
+    );
 }
 
 #[test]
@@ -154,8 +176,14 @@ fn bridge_changing_source_symbol_changes_property_hash() {
     let m_b = mint_bridge(&b);
     let env_a = parse(&m_a.canonical_bytes);
     let env_b = parse(&m_b.canonical_bytes);
-    let ph_a = env_a.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
-    let ph_b = env_b.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
+    let ph_a = env_a
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
+    let ph_b = env_b
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_ne!(ph_a, ph_b);
     a.source_symbol = "x".into();
     let _ = a;
@@ -194,7 +222,10 @@ fn implication_cid_is_blake3_512_prefixed() {
 fn implication_evidence_kind_is_implication() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
-    let kind = env.pointer("/header/kind").and_then(|v| v.as_str()).unwrap();
+    let kind = env
+        .pointer("/header/kind")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(kind, "implication");
 }
 
@@ -202,7 +233,10 @@ fn implication_evidence_kind_is_implication() {
 fn implication_property_hash_is_blake3_of_implication_prefix_plus_hashes() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
-    let ph = env.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap();
+    let ph = env
+        .pointer("/header/propertyHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
     let expected = blake3_512_of(b"implication:blake3-512:aaa:blake3-512:ccc");
     assert_eq!(ph, expected);
 }
@@ -211,7 +245,10 @@ fn implication_property_hash_is_blake3_of_implication_prefix_plus_hashes() {
 fn implication_binding_hash_is_blake3_of_jcs_antecedent_consequent_hashes() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
-    let bh = env.pointer("/header/bindingHash").and_then(|v| v.as_str()).unwrap();
+    let bh = env
+        .pointer("/header/bindingHash")
+        .and_then(|v| v.as_str())
+        .unwrap();
 
     let v = Value::object([
         ("antecedentHash", Value::string("blake3-512:aaa")),
@@ -225,7 +262,10 @@ fn implication_binding_hash_is_blake3_of_jcs_antecedent_consequent_hashes() {
 fn implication_input_cids_contain_both_antecedent_and_consequent_lex_sorted() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
-    let cids = env.pointer("/header/inputCids").and_then(|v| v.as_array()).expect("array");
+    let cids = env
+        .pointer("/header/inputCids")
+        .and_then(|v| v.as_array())
+        .expect("array");
     // antecedent_cid="zzz", consequent_cid="bbb"; envelope wrapper sorts.
     assert_eq!(cids.len(), 2);
     assert_eq!(cids[0].as_str(), Some("blake3-512:bbb"));
@@ -240,8 +280,14 @@ fn implication_body_carries_slots_verbatim() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
     let header = env.pointer("/header").unwrap();
-    assert_eq!(header.get("antecedentSlot").and_then(|v| v.as_str()), Some("pre"));
-    assert_eq!(header.get("consequentSlot").and_then(|v| v.as_str()), Some("post"));
+    assert_eq!(
+        header.get("antecedentSlot").and_then(|v| v.as_str()),
+        Some("pre")
+    );
+    assert_eq!(
+        header.get("consequentSlot").and_then(|v| v.as_str()),
+        Some("post")
+    );
 }
 
 #[test]
@@ -267,7 +313,10 @@ fn implication_smt_input_included_when_provided() {
         metadata.get("smtLibInput").and_then(|v| v.as_str()),
         Some("(declare-const x Int)\n(check-sat)")
     );
-    assert_eq!(metadata.get("proofWitness").and_then(|v| v.as_str()), Some("(unsat)"));
+    assert_eq!(
+        metadata.get("proofWitness").and_then(|v| v.as_str()),
+        Some("(unsat)")
+    );
 }
 
 #[test]
@@ -275,7 +324,10 @@ fn implication_prover_run_ms_round_trips() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
     let metadata = env.pointer("/metadata").unwrap();
-    assert_eq!(metadata.get("proverRunMs").and_then(|v| v.as_i64()), Some(42));
+    assert_eq!(
+        metadata.get("proverRunMs").and_then(|v| v.as_i64()),
+        Some(42)
+    );
 }
 
 #[test]
@@ -294,8 +346,14 @@ fn implication_changing_antecedent_hash_changes_property_hash() {
     let env_a = parse(&a.canonical_bytes);
     let env_b = parse(&b.canonical_bytes);
     assert_ne!(
-        env_a.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap(),
-        env_b.pointer("/header/propertyHash").and_then(|v| v.as_str()).unwrap()
+        env_a
+            .pointer("/header/propertyHash")
+            .and_then(|v| v.as_str())
+            .unwrap(),
+        env_b
+            .pointer("/header/propertyHash")
+            .and_then(|v| v.as_str())
+            .unwrap()
     );
 }
 
@@ -303,7 +361,10 @@ fn implication_changing_antecedent_hash_changes_property_hash() {
 fn implication_envelope_carries_producer_signature() {
     let m = mint_implication(&impl_args());
     let env = parse(&m.canonical_bytes);
-    let sig = env.pointer("/envelope/signature").and_then(|v| v.as_str()).unwrap();
+    let sig = env
+        .pointer("/envelope/signature")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert!(sig.starts_with("ed25519:"));
 }
 
@@ -311,6 +372,9 @@ fn implication_envelope_carries_producer_signature() {
 fn bridge_envelope_carries_producer_signature() {
     let m = mint_bridge(&bridge_args());
     let env = parse(&m.canonical_bytes);
-    let sig = env.pointer("/envelope/signature").and_then(|v| v.as_str()).unwrap();
+    let sig = env
+        .pointer("/envelope/signature")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert!(sig.starts_with("ed25519:"));
 }

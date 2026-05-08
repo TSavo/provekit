@@ -71,15 +71,17 @@ pub fn detect_gaps(walks: &[CallsiteWalk], descriptor: &dyn PredicateDescriptor)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_ir_types::{IrFormula, IrTerm};
+    use crate::dropper::predicates::not_null::NotNullPredicate;
     use crate::walk::{walk_callsites_to_entry, Arrival, ArrivalKind};
     use crate::wp::{atomic_ge, const_int, var, Wp};
-    use crate::dropper::predicates::not_null::NotNullPredicate;
+    use provekit_ir_types::{IrFormula, IrTerm};
 
     fn not_null_wp(var_name: &str) -> Wp {
         Wp(IrFormula::Atomic {
             name: "not_null".to_string(),
-            args: vec![IrTerm::Var { name: var_name.to_string() }],
+            args: vec![IrTerm::Var {
+                name: var_name.to_string(),
+            }],
         })
     }
 
@@ -153,12 +155,16 @@ fn caller(x: u32) { f(x); }
             callee_name: "f".to_string(),
             arrivals: vec![
                 Arrival {
-                    kind: ArrivalKind::Callsite { callee: "f".to_string() },
+                    kind: ArrivalKind::Callsite {
+                        callee: "f".to_string(),
+                    },
                     stmt_index: 0,
                     wp: Wp(non_var_formula.clone()),
                 },
                 Arrival {
-                    kind: ArrivalKind::FunctionEntry { fn_name: "caller".to_string() },
+                    kind: ArrivalKind::FunctionEntry {
+                        fn_name: "caller".to_string(),
+                    },
                     stmt_index: 1,
                     wp: Wp(non_var_formula),
                 },
@@ -181,12 +187,16 @@ fn caller(x: u32) { f(x); }
             callee_name: "f".to_string(),
             arrivals: vec![
                 Arrival {
-                    kind: ArrivalKind::Callsite { callee: "f".to_string() },
+                    kind: ArrivalKind::Callsite {
+                        callee: "f".to_string(),
+                    },
                     stmt_index: 0,
                     wp: entry_wp.clone(),
                 },
                 Arrival {
-                    kind: ArrivalKind::FunctionEntry { fn_name: "caller".to_string() },
+                    kind: ArrivalKind::FunctionEntry {
+                        fn_name: "caller".to_string(),
+                    },
                     stmt_index: 1,
                     wp: entry_wp,
                 },
@@ -212,7 +222,10 @@ fn caller(x: u32) { f(x); }
         });
         let walk = make_walk_with_entry_wp(implies_wp);
         let gaps = detect_gaps(&[walk], &NotNullPredicate);
-        assert!(gaps.is_empty(), "premise-guarded callsite must not produce a gap");
+        assert!(
+            gaps.is_empty(),
+            "premise-guarded callsite must not produce a gap"
+        );
     }
 
     #[test]

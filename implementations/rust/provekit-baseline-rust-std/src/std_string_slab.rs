@@ -22,8 +22,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    contract, eq, forall, gte, must, num, str_const, ContractArgs,
-    String_, Term,
+    contract, eq, forall, gte, must, num, str_const, ContractArgs, String_, Term,
 };
 
 /// Helper: build a kit-defined ctor with one argument. The IR does not
@@ -67,7 +66,10 @@ pub fn invariants() {
     must(
         "str_is_empty__type_signature",
         forall(String_(), |s| {
-            eq(ctor1("type_of", ctor1("str_is_empty", s)), str_const("bool"))
+            eq(
+                ctor1("type_of", ctor1("str_is_empty", s)),
+                str_const("bool"),
+            )
         }),
     );
     must(
@@ -114,10 +116,7 @@ pub fn invariants() {
         "str_starts_with__empty_prefix_holds",
         ContractArgs {
             post: Some(forall(String_(), |s| {
-                eq(
-                    ctor2("starts_with", s, str_const("")),
-                    str_const("true"),
-                )
+                eq(ctor2("starts_with", s, str_const("")), str_const("true"))
             })),
             ..Default::default()
         },
@@ -156,10 +155,7 @@ pub fn invariants() {
     must(
         "str_to_string__determinism",
         forall(String_(), |s| {
-            eq(
-                ctor1("str_to_string", s.clone()),
-                ctor1("str_to_string", s),
-            )
+            eq(ctor1("str_to_string", s.clone()), ctor1("str_to_string", s))
         }),
     );
     // Structural: str_to_string preserves length.
@@ -179,10 +175,7 @@ pub fn invariants() {
     must(
         "str_chars__type_signature",
         forall(String_(), |s| {
-            eq(
-                ctor1("type_of", ctor1("str_chars", s)),
-                str_const("Chars"),
-            )
+            eq(ctor1("type_of", ctor1("str_chars", s)), str_const("Chars"))
         }),
     );
     must(
@@ -196,10 +189,7 @@ pub fn invariants() {
     must(
         "str_bytes__type_signature",
         forall(String_(), |s| {
-            eq(
-                ctor1("type_of", ctor1("str_bytes", s)),
-                str_const("Bytes"),
-            )
+            eq(ctor1("type_of", ctor1("str_bytes", s)), str_const("Bytes"))
         }),
     );
     must(
@@ -280,10 +270,7 @@ pub fn invariants() {
     must(
         "String_clear__type_signature",
         forall(String_(), |s| {
-            eq(
-                ctor1("type_of", ctor1("String_clear", s)),
-                str_const("()"),
-            )
+            eq(ctor1("type_of", ctor1("String_clear", s)), str_const("()"))
         }),
     );
     must(
@@ -297,10 +284,7 @@ pub fn invariants() {
         "String_clear__post_state_empty",
         ContractArgs {
             post: Some(forall(String_(), |s| {
-                eq(
-                    ctor1("str_len", ctor1("String_clear_post", s)),
-                    num(0),
-                )
+                eq(ctor1("str_len", ctor1("String_clear_post", s)), num(0))
             })),
             ..Default::default()
         },

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::template::{DropTemplate, NotRenderable};
 use super::emit::EmitResult;
+use super::template::{DropTemplate, NotRenderable};
 
 /// Reasons `drop_gap` may fail to produce a verified, closing emission.
 ///
@@ -47,9 +47,15 @@ impl std::fmt::Display for DropFailure {
                 write!(f, "no gap for predicate `{predicate}` detected in any walk")
             }
             DropFailure::UnknownPredicate { predicate } => {
-                write!(f, "predicate `{predicate}` has no template family in this kit")
+                write!(
+                    f,
+                    "predicate `{predicate}` has no template family in this kit"
+                )
             }
-            DropFailure::TemplateNotCandidate { predicate, requested } => {
+            DropFailure::TemplateNotCandidate {
+                predicate,
+                requested,
+            } => {
                 write!(
                     f,
                     "template {:?} is not a verified candidate for predicate `{predicate}`",
@@ -59,7 +65,10 @@ impl std::fmt::Display for DropFailure {
             DropFailure::NotRenderable(e) => write!(f, "{e}"),
             DropFailure::EmitFailed => write!(f, "emit_drop could not splice the source"),
             DropFailure::ClosureVerificationFailed { .. } => {
-                write!(f, "emission produced but re-lift did not confirm DAG closure")
+                write!(
+                    f,
+                    "emission produced but re-lift did not confirm DAG closure"
+                )
             }
         }
     }

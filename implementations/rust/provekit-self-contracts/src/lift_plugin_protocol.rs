@@ -84,8 +84,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    contract, eq, forall, gte, must, num, str_const, ContractArgs,
-    String_, Term,
+    contract, eq, forall, gte, must, num, str_const, ContractArgs, String_, Term,
 };
 use serde_json::Value as JsonValue;
 
@@ -158,10 +157,7 @@ pub fn invariants() {
     must(
         "lift_plugin_initialize_capabilities_authoring_surfaces_nonempty",
         forall(String_(), |resp| {
-            gte(
-                ctor1("len", ctor1("authoring_surfaces_of", resp)),
-                num(1),
-            )
+            gte(ctor1("len", ctor1("authoring_surfaces_of", resp)), num(1))
         }),
     );
 
@@ -169,10 +165,7 @@ pub fn invariants() {
         "lift_plugin_initialize_capabilities_ir_version_starts_with_v",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "ir_version_starts_with_v",
-                    str_const("resp"),
-                ),
+                ctor1("ir_version_starts_with_v", str_const("resp")),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -202,10 +195,7 @@ pub fn invariants() {
     must(
         "lift_plugin_lift_request_source_paths_nonempty",
         forall(String_(), |req| {
-            gte(
-                ctor1("len", ctor1("source_paths_of", req)),
-                num(1),
-            )
+            gte(ctor1("len", ctor1("source_paths_of", req)), num(1))
         }),
     );
 
@@ -213,10 +203,7 @@ pub fn invariants() {
         "lift_plugin_lift_request_source_paths_each_nonempty",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "all_source_paths_nonempty",
-                    str_const("req"),
-                ),
+                ctor1("all_source_paths_nonempty", str_const("req")),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -255,10 +242,7 @@ pub fn invariants() {
         "lift_plugin_lift_response_kind_in_set",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "response_kind_in_allowed_set",
-                    str_const("resp"),
-                ),
+                ctor1("response_kind_in_allowed_set", str_const("resp")),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -277,10 +261,7 @@ pub fn invariants() {
         "lift_plugin_lift_response_ir_document_array",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "ir_field_is_array_when_kind_ir_document",
-                    str_const("resp"),
-                ),
+                ctor1("ir_field_is_array_when_kind_ir_document", str_const("resp")),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -294,10 +275,7 @@ pub fn invariants() {
         "lift_plugin_diagnostic_field_is_array",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "diagnostics_field_is_array_or_absent",
-                    str_const("resp"),
-                ),
+                ctor1("diagnostics_field_is_array_or_absent", str_const("resp")),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -319,10 +297,7 @@ pub fn invariants() {
         "lift_emits_call_edge_stream",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "call_edge_stream_present_or_unit_empty",
-                    str_const("resp"),
-                ),
+                ctor1("call_edge_stream_present_or_unit_empty", str_const("resp")),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -406,10 +381,7 @@ pub fn verify_c1_initialize_protocol_version_match(
             return Err(format!(
                 "C1 postcondition: response.error neither matches code {} nor name `{}`; \
                  got code={:?} name={:?}",
-                PROTOCOL_VERSION_MISMATCH_CODE,
-                PROTOCOL_VERSION_MISMATCH_NAME,
-                code,
-                name,
+                PROTOCOL_VERSION_MISMATCH_CODE, PROTOCOL_VERSION_MISMATCH_NAME, code, name,
             ));
         }
         return Ok(());
@@ -425,9 +397,7 @@ pub fn verify_c1_initialize_protocol_version_match(
 ///
 /// `response` is the JSON-RPC response object; capabilities are read from
 /// `response.result.capabilities` per spec lines 76-86.
-pub fn verify_c2_initialize_capabilities_populated(
-    response: &JsonValue,
-) -> Result<(), String> {
+pub fn verify_c2_initialize_capabilities_populated(response: &JsonValue) -> Result<(), String> {
     let result = response
         .get("result")
         .ok_or_else(|| "C2: response has no `result` field".to_string())?;
@@ -479,9 +449,7 @@ pub fn verify_c2_initialize_capabilities_populated(
 
 /// Verify C3: the lift request is well-formed.
 /// `request` is the JSON-RPC request `params` object.
-pub fn verify_c3_lift_request_well_formed(
-    request: &JsonValue,
-) -> Result<(), String> {
+pub fn verify_c3_lift_request_well_formed(request: &JsonValue) -> Result<(), String> {
     let surface = request
         .get("surface")
         .ok_or_else(|| "C3: request.surface missing".to_string())?;
@@ -513,10 +481,7 @@ pub fn verify_c3_lift_request_well_formed(
             )
         })?;
         if s.is_empty() {
-            return Err(format!(
-                "C3: request.source_paths[{}] is empty string",
-                i
-            ));
+            return Err(format!("C3: request.source_paths[{}] is empty string", i));
         }
     }
     Ok(())
@@ -548,9 +513,7 @@ pub fn verify_c4_surface_in_capabilities(
                 .to_string()
         })?;
 
-    let found = surfaces
-        .iter()
-        .any(|v| v.as_str() == Some(surface));
+    let found = surfaces.iter().any(|v| v.as_str() == Some(surface));
     if !found {
         let listed: Vec<String> = surfaces
             .iter()
@@ -572,9 +535,7 @@ pub fn verify_c4_surface_in_capabilities(
 
 /// Verify C5: the lift response's `kind` field is one of the three
 /// allowed shapes per spec lines 102-148.
-pub fn verify_c5_response_kind_in_set(
-    response: &JsonValue,
-) -> Result<(), String> {
+pub fn verify_c5_response_kind_in_set(response: &JsonValue) -> Result<(), String> {
     let result = response
         .get("result")
         .ok_or_else(|| "C5: response has no `result` field".to_string())?;
@@ -599,9 +560,7 @@ pub fn verify_c5_response_kind_in_set(
 /// `2026-04-30-ir-formal-grammar.md`).
 ///
 /// Vacuously holds when kind is not `"ir-document"`.
-pub fn verify_c6_ir_document_array(
-    response: &JsonValue,
-) -> Result<(), String> {
+pub fn verify_c6_ir_document_array(response: &JsonValue) -> Result<(), String> {
     let result = response
         .get("result")
         .ok_or_else(|| "C6: response has no `result` field".to_string())?;
@@ -627,9 +586,7 @@ pub fn verify_c6_ir_document_array(
 /// spec line 208 the field SHOULD be present whenever there are
 /// warnings; this verifier does not enforce presence, only that the
 /// shape is correct when the field appears.)
-pub fn verify_c7_diagnostics_field_is_array(
-    response: &JsonValue,
-) -> Result<(), String> {
+pub fn verify_c7_diagnostics_field_is_array(response: &JsonValue) -> Result<(), String> {
     let result = match response.get("result") {
         Some(r) => r,
         None => return Ok(()), // error responses don't carry diagnostics
@@ -659,9 +616,7 @@ pub fn verify_c7_diagnostics_field_is_array(
 ///
 /// The verifier is vacuously OK when the contract set is empty (no contracts
 /// lifted → no call edges required).
-pub fn verify_c8_call_edge_stream_present(
-    response: &JsonValue,
-) -> Result<(), String> {
+pub fn verify_c8_call_edge_stream_present(response: &JsonValue) -> Result<(), String> {
     let result = match response.get("result") {
         Some(r) => r,
         None => return Ok(()), // error responses don't carry call edges
@@ -939,10 +894,7 @@ mod tests {
         let req = json!({"surface": "go-self-contracts", "source_paths": ["a"]});
         let err = verify_c4_surface_in_capabilities(&req, &good_init_response())
             .expect_err("C4 should fire when surface absent");
-        assert!(
-            err.contains("not in capabilities"),
-            "got: {err}"
-        );
+        assert!(err.contains("not in capabilities"), "got: {err}");
     }
 
     // --- C5 ---------------------------------------------------------------
@@ -979,8 +931,8 @@ mod tests {
     #[test]
     fn c5_violation_unknown_kind_is_caught() {
         let resp = json!({"result": {"kind": "raw-bytes"}});
-        let err = verify_c5_response_kind_in_set(&resp)
-            .expect_err("C5 should fire on unknown kind");
+        let err =
+            verify_c5_response_kind_in_set(&resp).expect_err("C5 should fire on unknown kind");
         assert!(err.contains("not in"), "got: {err}");
     }
 
@@ -1011,16 +963,16 @@ mod tests {
                 "ir": "not-an-array",
             },
         });
-        let err = verify_c6_ir_document_array(&resp)
-            .expect_err("C6 should fire when ir is not an array");
+        let err =
+            verify_c6_ir_document_array(&resp).expect_err("C6 should fire when ir is not an array");
         assert!(err.contains("expected array"), "got: {err}");
     }
 
     #[test]
     fn c6_violation_ir_field_missing_is_caught() {
         let resp = json!({"result": {"kind": "ir-document"}});
-        let err = verify_c6_ir_document_array(&resp)
-            .expect_err("C6 should fire when ir is missing");
+        let err =
+            verify_c6_ir_document_array(&resp).expect_err("C6 should fire when ir is missing");
         assert!(err.contains("missing"), "got: {err}");
     }
 
@@ -1154,9 +1106,6 @@ mod tests {
         });
         let err = verify_c8_call_edge_stream_present(&resp)
             .expect_err("C8 should fire when call_edges is not an array");
-        assert!(
-            err.contains("array"),
-            "expected array mention; got: {err}"
-        );
+        assert!(err.contains("array"), "expected array mention; got: {err}");
     }
 }

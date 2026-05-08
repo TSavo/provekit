@@ -215,7 +215,7 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
                     post: None,
                     inv: Some(formula),
                     out_binding: "out".into(),
-                evidence: None,
+                    evidence: None,
                 });
                 out.lifted += 1;
             }
@@ -242,15 +242,15 @@ fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
     let path = path_to_string(&mac.path);
     match path.as_str() {
         "assert_eq" => {
-            let pair: TwoExprs = syn::parse2(mac.tokens.clone())
-                .map_err(|e| format!("assert_eq: parse: {e}"))?;
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_eq: parse: {e}"))?;
             let l = translate_term(&pair.a)?;
             let r = translate_term(&pair.b)?;
             Ok(eq(l, r))
         }
         "assert_ne" => {
-            let pair: TwoExprs = syn::parse2(mac.tokens.clone())
-                .map_err(|e| format!("assert_ne: parse: {e}"))?;
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_ne: parse: {e}"))?;
             let l = translate_term(&pair.a)?;
             let r = translate_term(&pair.b)?;
             Ok(ne(l, r))
@@ -258,8 +258,8 @@ fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
         "assert" => {
             // Only the `assert!(<expr>)` form. The expression must be a
             // top-level binary comparison.
-            let one: OneExpr = syn::parse2(mac.tokens.clone())
-                .map_err(|e| format!("assert: parse: {e}"))?;
+            let one: OneExpr =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert: parse: {e}"))?;
             translate_bool_expr(&one.a)
         }
         "assert_matches" => {
@@ -582,9 +582,9 @@ impl syn::parse::Parse for VecMacroArgs {
         let first: syn::Expr = input.parse()?;
         // Detect `vec![v; n]` repeat-shape.
         if input.peek(syn::Token![;]) {
-            return Err(input.error(
-                "vec![v; n] repeat-form not lifted in v0.5 (only finite list form)",
-            ));
+            return Err(
+                input.error("vec![v; n] repeat-form not lifted in v0.5 (only finite list form)")
+            );
         }
         exprs.push(first);
         while input.peek(syn::Token![,]) {
@@ -732,9 +732,7 @@ mod tests {
         // Inspect the IR: the LHS should be Ctor("len", [str_const("foo")]).
         let inv = out.decls[0].inv.as_ref().expect("inv");
         let lhs = match &**inv {
-            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => {
-                args[0].clone()
-            }
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
         match &*lhs {
@@ -770,16 +768,12 @@ mod tests {
         // Walk the structure.
         let inv = out.decls[0].inv.as_ref().expect("inv");
         let lhs = match &**inv {
-            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => {
-                args[0].clone()
-            }
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
         // outer: encode_jcs(<one arg>)
         let inner = match &*lhs {
-            Term::Ctor { name, args } if name == "encode_jcs" && args.len() == 1 => {
-                args[0].clone()
-            }
+            Term::Ctor { name, args } if name == "encode_jcs" && args.len() == 1 => args[0].clone(),
             other => panic!("expected Ctor encode_jcs/1, got {other:?}"),
         };
         // next: Value::object(<one arg = array>)
@@ -873,8 +867,7 @@ mod tests {
         assert_eq!(out.lifted, 0);
         assert_eq!(out.warnings.len(), 1);
         assert!(
-            out.warnings[0].reason.contains("macro")
-                && out.warnings[0].reason.contains("format"),
+            out.warnings[0].reason.contains("macro") && out.warnings[0].reason.contains("format"),
             "expected reason to name the macro: {:?}",
             out.warnings[0].reason
         );

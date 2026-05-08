@@ -48,9 +48,19 @@ fn registry_contains_all_three_decorated_functions() {
         names.contains(&"parse_positive_int"),
         "missing parse_positive_int in {names:?}"
     );
-    assert!(names.contains(&"echo_string"), "missing echo_string in {names:?}");
-    assert!(names.contains(&"loop_body"), "missing loop_body in {names:?}");
-    assert!(names.len() >= 3, "expected at least 3 entries, got {}", names.len());
+    assert!(
+        names.contains(&"echo_string"),
+        "missing echo_string in {names:?}"
+    );
+    assert!(
+        names.contains(&"loop_body"),
+        "missing loop_body in {names:?}"
+    );
+    assert!(
+        names.len() >= 3,
+        "expected at least 3 entries, got {}",
+        names.len()
+    );
 }
 
 #[test]
@@ -115,7 +125,10 @@ fn collect_all_contracts_returns_sorted_decls() {
     let mut sorted_names: Vec<String> = decls.iter().map(|d| d.name.clone()).collect();
     let prior = sorted_names.clone();
     sorted_names.sort();
-    assert_eq!(prior, sorted_names, "collect_all_contracts must return name-sorted output");
+    assert_eq!(
+        prior, sorted_names,
+        "collect_all_contracts must return name-sorted output"
+    );
     // Verify the toy decorations appear under expected names.
     let found_names: std::collections::HashSet<&str> =
         decls.iter().map(|d| d.name.as_str()).collect();

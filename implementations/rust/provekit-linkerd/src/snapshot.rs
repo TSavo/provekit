@@ -23,12 +23,10 @@ pub fn save(path: &Path, state: &ProjectState) -> Result<(), String> {
     let checksum = blake3_512_of(&bytes);
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create snapshot dir: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("create snapshot dir: {e}"))?;
     }
 
-    std::fs::write(path, &bytes)
-        .map_err(|e| format!("write snapshot: {e}"))?;
+    std::fs::write(path, &bytes).map_err(|e| format!("write snapshot: {e}"))?;
 
     let checksum_path = checksum_path_for(path);
     std::fs::write(&checksum_path, checksum.as_bytes())
@@ -47,8 +45,7 @@ pub fn load(path: &Path) -> Result<Option<ProjectState>, String> {
         return Ok(None);
     }
 
-    let bytes = std::fs::read(path)
-        .map_err(|e| format!("read snapshot: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("read snapshot: {e}"))?;
 
     // Verify checksum.
     let checksum_path = checksum_path_for(path);

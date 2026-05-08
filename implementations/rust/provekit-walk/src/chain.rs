@@ -113,7 +113,10 @@ mod tests {
     fn rejects_non_chain_expression() {
         assert!(detect_method_chain(&parse_expr("42")).is_none());
         assert!(detect_method_chain(&parse_expr("x + y")).is_none());
-        assert!(detect_method_chain(&parse_expr("v.iter()")).is_none(), "single call is not a chain");
+        assert!(
+            detect_method_chain(&parse_expr("v.iter()")).is_none(),
+            "single call is not a chain"
+        );
     }
 
     #[test]

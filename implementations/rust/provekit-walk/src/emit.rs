@@ -145,14 +145,8 @@ mod tests {
         assert_eq!(cid, shadow_proof_ir_cid(&s));
         // The bytes should parse as JSON.
         let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
-        assert_eq!(
-            parsed["schemaVersion"].as_str(),
-            Some("provekit-walk/1")
-        );
-        assert_eq!(
-            parsed["shadowSourceCid"].as_str(),
-            Some(s.cid.as_str())
-        );
+        assert_eq!(parsed["schemaVersion"].as_str(), Some("provekit-walk/1"));
+        assert_eq!(parsed["shadowSourceCid"].as_str(), Some(s.cid.as_str()));
     }
 
     #[test]

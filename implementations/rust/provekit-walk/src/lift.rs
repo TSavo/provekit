@@ -337,12 +337,16 @@ fn lift_predicate_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
             BinOp::And(_) => {
                 let l = lift_predicate_inner(left, ctx)?;
                 let r = lift_predicate_inner(right, ctx)?;
-                Some(IrFormula::And { operands: vec![l, r] })
+                Some(IrFormula::And {
+                    operands: vec![l, r],
+                })
             }
             BinOp::Or(_) => {
                 let l = lift_predicate_inner(left, ctx)?;
                 let r = lift_predicate_inner(right, ctx)?;
-                Some(IrFormula::Or { operands: vec![l, r] })
+                Some(IrFormula::Or {
+                    operands: vec![l, r],
+                })
             }
             _ => {
                 // Comparison: lift both sides as terms, pick the IR predicate name.
@@ -826,7 +830,11 @@ mod tests {
         );
         let post = lift_function_postcondition(&item_fn);
         let json = serde_json::to_string(post.as_formula()).unwrap();
-        assert!(json.contains("\"≥\""), "post should include x ≥ 10: {}", json);
+        assert!(
+            json.contains("\"≥\""),
+            "post should include x ≥ 10: {}",
+            json
+        );
         // The return-value derivation: result = x * 2.
         assert!(
             json.contains("\"result\""),
@@ -852,7 +860,11 @@ mod tests {
         );
         let post = lift_function_postcondition(&item_fn);
         let json = serde_json::to_string(post.as_formula()).unwrap();
-        assert!(json.contains("\"+\""), "post should encode the + ctor: {}", json);
+        assert!(
+            json.contains("\"+\""),
+            "post should encode the + ctor: {}",
+            json
+        );
         assert!(json.contains("\"x\""));
     }
 
@@ -873,8 +885,16 @@ mod tests {
         let pre = lift_function_precondition(&item_fn);
         let json = serde_json::to_string(pre.as_formula()).unwrap();
         // Expect an `and` of two `≥` atoms (De Morgan applied + comparison flips).
-        assert!(json.contains("\"and\""), "pre should be a conjunction: {}", json);
-        assert!(json.contains("\"≥\""), "pre should contain ≥ atoms: {}", json);
+        assert!(
+            json.contains("\"and\""),
+            "pre should be a conjunction: {}",
+            json
+        );
+        assert!(
+            json.contains("\"≥\""),
+            "pre should contain ≥ atoms: {}",
+            json
+        );
         assert!(json.contains("\"x\"") && json.contains("\"y\""));
     }
 
@@ -895,8 +915,16 @@ mod tests {
         let pre = lift_function_precondition(&item_fn);
         let json = serde_json::to_string(pre.as_formula()).unwrap();
         // Expect an `or` of two `≥` atoms.
-        assert!(json.contains("\"or\""), "pre should be a disjunction: {}", json);
-        assert!(json.contains("\"≥\""), "pre should contain ≥ atoms: {}", json);
+        assert!(
+            json.contains("\"or\""),
+            "pre should be a disjunction: {}",
+            json
+        );
+        assert!(
+            json.contains("\"≥\""),
+            "pre should contain ≥ atoms: {}",
+            json
+        );
     }
 
     #[test]
@@ -916,7 +944,11 @@ mod tests {
         let pre = lift_function_precondition(&item_fn);
         let json = serde_json::to_string(pre.as_formula()).unwrap();
         // The atomic ≥ should appear directly, with no `not` wrapper.
-        assert!(json.contains("\"≥\""), "pre should contain ≥ atom: {}", json);
+        assert!(
+            json.contains("\"≥\""),
+            "pre should contain ≥ atom: {}",
+            json
+        );
         assert!(
             !json.contains("\"not\""),
             "pre should NOT contain a `not` wrapper (double negation eliminated): {}",

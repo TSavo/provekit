@@ -19,3 +19,4 @@ provekit-lift = { path = "../provekit-lift" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 serde_json = { workspace = true }
 syn = { workspace = true }
+blake3 = { workspace = true }

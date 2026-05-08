@@ -37,20 +37,24 @@
 //   wires through the bin `cargo-provekit-lift`. We also ship a plain
 //   `provekit-lift` bin for direct invocation.
 
+use base64::Engine;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use base64::Engine;
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
-    compute_contract_set_cid, contract_cid as compute_contract_cid,
-    mint_contract, Authoring, MintContractArgs,
+    compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
+    MintContractArgs,
 };
 use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
-use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
 
 pub mod call_edges;
-pub use call_edges::{CallEdgeMemento, CallSiteLocus, extract_call_edges_from_file, mint_call_edge};
+pub use call_edges::{
+    extract_call_edges_from_file, mint_call_edge, CallEdgeMemento, CallSiteLocus,
+};
 
 pub use provekit_lift_contracts as adapter_contracts;
 pub use provekit_lift_creusot as adapter_creusot;
@@ -576,10 +580,7 @@ pub enum LiftMintError {
 /// canonical IR encodes to the same byte string mint to the same CID
 /// and collapse to one member. Names that disagree on the IR fail
 /// loud (the lattice should not silently accept contradiction).
-pub fn mint_proof(
-    decls: &[ContractDecl],
-    opts: &LiftOptions,
-) -> Result<MintOutput, LiftMintError> {
+pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutput, LiftMintError> {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
     // Signer-independent content CIDs for contractSetCid computation (spec #94).
@@ -807,10 +808,7 @@ pub fn run_cli(flags: CliFlags) -> i32 {
     match lift_and_mint(&workspace, &out_dir, &opts) {
         Ok((report, minted, path)) => {
             if !flags.quiet {
-                println!(
-                    "provekit-lift: scanned {} .rs files",
-                    report.files_scanned
-                );
+                println!("provekit-lift: scanned {} .rs files", report.files_scanned);
                 for ar in &report.adapter_reports {
                     println!(
                         "  adapter `{}`: seen {}, lifted {}, skipped {}",
@@ -923,9 +921,14 @@ proptest! {{
     #[test]
     fn cli_flags_parse() {
         let flags = parse_cli_flags(
-            ["--workspace".into(), "/a".into(), "--target-dir".into(), "/b".into()]
-                .into_iter()
-                .collect::<Vec<String>>(),
+            [
+                "--workspace".into(),
+                "/a".into(),
+                "--target-dir".into(),
+                "/b".into(),
+            ]
+            .into_iter()
+            .collect::<Vec<String>>(),
         );
         assert_eq!(flags.workspace.as_deref(), Some(Path::new("/a")));
         assert_eq!(flags.target_dir.as_deref(), Some(Path::new("/b")));
@@ -1019,7 +1022,11 @@ fn nonzero(a: i64) -> i64 {{ a }}
         write_determinism_fixture(td2.path());
 
         // Sanity: the two roots must NOT be the same directory.
-        assert_ne!(td1.path(), td2.path(), "test requires two distinct temp dirs");
+        assert_ne!(
+            td1.path(),
+            td2.path(),
+            "test requires two distinct temp dirs"
+        );
 
         let opts = LiftOptions::default();
 
@@ -1094,8 +1101,14 @@ fn nonzero(a: i64) -> i64 {{ a }}
         // enumerate_rs_files returns (rel_posix, abs) — verify the posix strings too.
         let entries = enumerate_rs_files(td.path());
         for (rel, _) in &entries {
-            assert!(!rel.starts_with('/'), "enumerate_rs_files returned absolute path: {rel}");
-            assert!(!rel.contains('\\'), "enumerate_rs_files returned backslash: {rel}");
+            assert!(
+                !rel.starts_with('/'),
+                "enumerate_rs_files returned absolute path: {rel}"
+            );
+            assert!(
+                !rel.contains('\\'),
+                "enumerate_rs_files returned backslash: {rel}"
+            );
         }
     }
 
@@ -1109,7 +1122,10 @@ fn nonzero(a: i64) -> i64 {{ a }}
         let paths: Vec<&str> = entries.iter().map(|(r, _)| r.as_str()).collect();
         let mut sorted = paths.clone();
         sorted.sort();
-        assert_eq!(paths, sorted, "enumerate_rs_files must return lexicographically sorted paths");
+        assert_eq!(
+            paths, sorted,
+            "enumerate_rs_files must return lexicographically sorted paths"
+        );
     }
 }
 
