@@ -21,7 +21,7 @@ In v1.1: a `.proof` file authored directly through the C++ kit (header-only IR l
 ## 3. Install
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
 cd implementations/cpp && make

@@ -128,7 +128,7 @@ Column meanings:
 
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
-**CLI:** `provekit` is the canonical shipping CLI for protocol v1.6.2. Subcommands include `prove`, `proof`, `protocol`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `bug-zoo/`, not a public `provekit` subcommand. Distributed via `cargo install provekit` once published, or `cargo install --path implementations/rust/provekit-cli` from source.
+**CLI:** `provekit` is the canonical Rust CLI for protocol v1.6.2. Subcommands include `prove`, `proof`, `protocol`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `bug-zoo/`, not a public `provekit` subcommand. Distributed from source today with `cargo install --path implementations/rust/provekit-cli`; crates.io publishing remains future work.
 
 ## TypeScript
 

@@ -80,7 +80,14 @@ The cypherpunk thesis from the 1990s mailing lists was that cryptographic primit
 
 ## Install path
 
-The Rust kit is the reference. It is `cargo install`-able once the workspace publishes:
+> **Current status:** this early paper describes the intended published package
+> and agent surface. The current repo is build-from-source; use
+> `cargo install --path implementations/rust/provekit-cli` from the repository
+> root and see [../reference/protocol-extensions.md](../reference/protocol-extensions.md)
+> for the current CLI surface.
+
+The Rust kit is the reference. Once the workspace publishes, the intended shape
+is:
 
 ```sh
 cargo install provekit-cli

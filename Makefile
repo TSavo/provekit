@@ -2,18 +2,18 @@
 #
 # Twelve-kit polyglot. TypeScript is the center surface, but every kit
 # owns its native build tool;
-# this Makefile is glue, not a build system. `make ci` runs the same
-# gate the GitHub Actions workflow runs (Linux x86_64: Rust/Go/C++/TS/C#/Python).
+# this Makefile is glue, not a build system. `make ci` runs the Linux-profile
+# gate used by the main GitHub Actions job.
 # Swift is macOS-only; use `make build-swift`, `make test-swift`, `make mint-swift`
 # directly on a macOS host — those targets are excluded from the CI aggregates.
 #
 # Mainline targets:
 #   make help        — print this help
-#   make ci          — full conformance gate (catalog + protocol + live mints + tests)
+#   make ci          — Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance — catalog + protocol + live mint CIDs + self-contract tests
-#   make all-mint    — run all 10 Linux/CI mint commands; print CIDs
+#   make all-mint    — run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts — re-sign attestations from live artifacts
-#   make test-all    — run every language-native test suite (Linux/CI subset)
+#   make test-all    — run the Linux native test aggregate
 #
 # Per-language targets:
 #   make build-rust  — cargo build --release for workspace + tools
@@ -21,9 +21,10 @@
 #   make test-rust / test-go / test-ts / test-csharp / test-python
 #
 # Determinism:
-#   make ci is the contract. If it's green, every peer's self-contracts
-#   round-trip to its pinned CID, the v1.6.2 catalog hash matches, and
-#   every native test suite passes. Anything else is decoration.
+#   make ci is the local Linux-profile contract. If it's green, the non-Swift
+#   self-contracts round-trip to their pinned CIDs, the v1.6.2 catalog hash
+#   matches, and the Linux native test aggregate passes. The GitHub workflow
+#   adds macOS Swift and per-kit verifier jobs.
 
 .DEFAULT_GOAL := help
 
@@ -74,7 +75,7 @@ help:
 	@echo "ProvekIt — top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 10 peer langs]"
+	@echo "  make ci             Linux-profile gate (conformance + test-all)"
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"

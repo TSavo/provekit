@@ -107,11 +107,11 @@ For more entry points (per-language tutorials, IDE integration, publishing a `.p
 
 - **Protocol catalog**: v1.6.2 (patch over v1.6.1; catalogs the Content-Addressed CI Protocol as an extension-only protocol)
 - **Catalog CID**: `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`
-- **Canonical implementation**: Rust (`cargo install provekit`)
+- **Canonical implementation**: Rust, built from this repository with `cargo install --path implementations/rust/provekit-cli`
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
 - **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
 - **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
-- **Bug Zoo**: the self-contained `bug-zoo/` runner checks lab, exhibit, fixed, and wild specimen states; fixed pairs are accepted only after the same surface re-lifts or re-links to a clean boundary receipt.
+- **Bug Zoo**: the self-contained `bug-zoo/` runner checks lab, exhibit, fixed, link, equivalence, and composition receipts for checked-in specimens. Wild sightings are metadata only until real upstream specimens are pinned and wired into the runner.
 - **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
@@ -137,7 +137,8 @@ lifecycle:
   through the same surface to yield the green `provekit prove` or
   `provekit link` signal.
 - `wild/`: optional real upstream sightings pinned by advisory, commit, path,
-  and evidence.
+  and evidence. No checked-in wild specimens are executed today; current
+  `wildSightings` entries are reported as metadata.
 
 In shorthand:
 
@@ -220,7 +221,7 @@ For other host languages, see the polyglot-stack tutorial above. The Rust CLI is
 
 ## Building from source
 
-If you are working on ProvekIt itself (kit, lift adapter, prover backend, spec change), see [docs/contributing/build.md](docs/contributing/build.md) for the polyglot Make targets, system dependencies, and per-implementation build commands. The conformance gate (`make ci`) enforces byte-determinism across every implementation.
+If you are working on ProvekIt itself (kit, lift adapter, prover backend, spec change), see [docs/contributing/build.md](docs/contributing/build.md) for the polyglot Make targets, system dependencies, and per-implementation build commands. The default `make ci` gate covers the Linux conformance profile plus the Linux native test aggregate; the full GitHub workflow adds macOS Swift and per-kit verifier jobs.
 
 ## License
 

@@ -57,7 +57,9 @@ Each species can carry four states:
   no `.provekit` config and no lifter/prover workflow.
 - `exhibit/`: the same bug species with one or more native contract surfaces; ProvekIt lifts the surface and reports the missing edge.
 - `fixed/`: the paired exhibit source with the boundary closed; ProvekIt lifts the same surface and reports clean.
-- `wild/`: real OSS specimens pinned by advisory, commit, affected path, and evidence.
+- `wild/`: optional real OSS sightings pinned by advisory, commit, affected
+  path, and evidence. The current runner reports `wildSightings` metadata but
+  does not execute wild specimens yet.
 
 ## Organization
 
