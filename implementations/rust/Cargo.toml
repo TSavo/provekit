@@ -40,7 +40,7 @@ members = [
     "examples/build_script_demo",
     "provekit-linkerd",
     "provekit-baseline-std",
-    "../../bug-zoo",
+    "../../menagerie/bug-zoo",
 ]
 
 [workspace.package]

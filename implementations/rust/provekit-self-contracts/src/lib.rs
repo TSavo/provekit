@@ -109,7 +109,7 @@ mod instantiate_invariants;
 #[path = "../../provekit-verifier/src/smt_emitter.invariant.rs"]
 mod smt_emitter_invariants;
 
-#[path = "../../../../bug-zoo/src/lib.invariant.rs"]
+#[path = "../../../../menagerie/bug-zoo/src/lib.invariant.rs"]
 mod bug_zoo_invariants;
 
 // catalog-format spec rules. Module is `pub mod catalog_format` above;
@@ -299,7 +299,7 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
         run_one_slab(
             InvariantSource {
                 label: "bug_zoo",
-                path: "../../bug-zoo/src/lib.invariant.rs",
+                path: "../../menagerie/bug-zoo/src/lib.invariant.rs",
             },
             bug_zoo_invariants::invariants,
         ),

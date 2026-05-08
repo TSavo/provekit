@@ -92,7 +92,7 @@ accountable edges the rest of the graph must satisfy.
 | | |
 | --- | --- |
 | **Use the CLI** | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) to install and run `provekit`; [docs/reference/protocol-extensions.md#tool-surfaces](docs/reference/protocol-extensions.md#tool-surfaces) for the command surface |
-| **See a bug class map to an addressable shape CID across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path bug-zoo/Cargo.toml -- --all` |
+| **See a bug class map to an addressable shape CID across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` |
 | **See supported languages and kit coverage** | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
@@ -111,7 +111,8 @@ For more entry points (per-language tutorials, IDE integration, publishing a `.p
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
 - **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
 - **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
-- **Bug Zoo**: the self-contained `bug-zoo/` runner checks lab, exhibit, fixed, link, equivalence, and composition receipts for checked-in specimens. Wild sightings are metadata only until real upstream specimens are pinned and wired into the runner.
+- **Bug Zoo**: the self-contained `menagerie/bug-zoo/` runner checks lab, exhibit, fixed, link, equivalence, and composition receipts for checked-in specimens. Wild sightings are metadata only until real upstream specimens are pinned and wired into the runner.
+- **Menagerie**: [menagerie/](menagerie/) is the executable map of proof workflows. Bug Zoo is the runnable destination today; Hashbound Mainline, Supply Chain Rails, Bridgeworks, Protocol Switchyard, and Change Station name the next routes.
 - **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
@@ -123,7 +124,11 @@ isolated host-language environment, uses that language's own compiler/kit to
 map source to canonical truth, then checks that the expected shape CID or
 boundary receipt CID is addressable from that projection. The normal proof gate
 for projects is `provekit prove`; Bug Zoo owns the fixture orchestration under
-`bug-zoo/` and routes lift, link, and proof work through the Rust CLI.
+`menagerie/bug-zoo/` and routes lift, link, and proof work through the Rust CLI.
+It is the first runnable destination in the broader [Menagerie](menagerie/),
+where workflows like Hashbound Mainline, Supply Chain Rails, Bridgeworks,
+Protocol Switchyard, and Change Station can share the same proof-carrying
+shape.
 
 The zoo is organized by species, not by language. A species directory owns a
 `specimen.yaml` manifest, then each language under that species carries the same
@@ -187,7 +192,7 @@ routes the fixture through `provekit link`; the exhibit produces an
 Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- --all
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 ```
 
 | Kit | Self-contracts | Lift-plugin-protocol bridges | LSP plugin |
@@ -215,7 +220,7 @@ The core binary is:
 cargo install --path implementations/rust/provekit-cli
 ```
 
-`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof`, `provekit protocol`, and `provekit ci` cover proof-file conformance, PEP transitions, and CICP supply-chain admission. Bug Zoo specimens are checked by the repo-owned runner under `bug-zoo/`. Any of these can fail closed; none requires the network.
+`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof`, `provekit protocol`, and `provekit ci` cover proof-file conformance, PEP transitions, and CICP supply-chain admission. Bug Zoo specimens are checked by the repo-owned runner under `menagerie/bug-zoo/`. Any of these can fail closed; none requires the network.
 
 For other host languages, see the polyglot-stack tutorial above. The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 

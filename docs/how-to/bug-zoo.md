@@ -13,7 +13,7 @@ Bug Zoo is not a patch archive. Historical fixes are context. The durable claim 
 The default null-boundary specimen is:
 
 ```text
-bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence
+menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence
 ```
 
 It starts with ordinary code that passes host checks. Its exhibits show the same non-null boundary through several source surfaces:
@@ -59,37 +59,37 @@ Each species can carry four states:
 Run the default null-boundary specimen:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence
 ```
 
 Run the value-scope specimen explicitly:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- bug-zoo/species/BZ-SHAPE-006-value-scope-escape
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- menagerie/bug-zoo/species/BZ-SHAPE-006-value-scope-escape
 ```
 
 Run the polyglot link specimen explicitly:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- menagerie/bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation
 ```
 
 Run every specimen:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- --all
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 ```
 
 Emit structured output:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- --all --json
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all --json
 ```
 
 Trace a slow or hanging specimen:
 
 ```sh
-PROVEKIT_BUG_ZOO_TRACE=1 cargo run --manifest-path bug-zoo/Cargo.toml -- --all --json
+PROVEKIT_BUG_ZOO_TRACE=1 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all --json
 ```
 
 Trace output goes to stderr. It prints each host check, `provekit mint`,
@@ -132,4 +132,4 @@ The manifest is `specimen.yaml`. Important fields:
 - `languages[].equivalence.required`, naming exhibit pairs that must lift to the same boundary CID;
 - `languages[].composition.checks`, which are the red/green proof obligations routed through `provekit prove --formula`.
 
-The root [../../bug-zoo/README.md](../../bug-zoo/README.md) explains the lifecycle. The worked species live under [../../bug-zoo/species/](../../bug-zoo/species/).
+The root [../../menagerie/bug-zoo/README.md](../../menagerie/bug-zoo/README.md) explains the lifecycle. The worked species live under [../../menagerie/bug-zoo/species/](../../menagerie/bug-zoo/species/).
