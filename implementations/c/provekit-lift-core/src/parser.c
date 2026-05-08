@@ -310,6 +310,7 @@ static int pk_c_parser_scan_calls(
     const char *path,
     const char *line,
     int line_no,
+    int column_offset,
     const char *caller
 ) {
     const char *cursor = line;
@@ -327,7 +328,7 @@ static int pk_c_parser_scan_calls(
         if (name == NULL) {
             return -1;
         }
-        column = (int)((cursor - line) + match[1].rm_so + 1);
+        column = (int)((cursor - line) + match[1].rm_so + column_offset + 1);
         if (!pk_c_parser_keyword(name) && strcmp(name, caller) != 0) {
             if (pk_c_parser_macro_name(name)) {
                 if (pk_c_parser_append_macro(facts, path, name, caller,
@@ -471,6 +472,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             if (body_open != NULL) {
                 facts->functions[function_index].has_body = 1;
                 if (pk_c_parser_scan_calls(facts, &call_re, path, body_open + 1, line_no,
+                    (int)(body_open + 1 - line),
                     facts->functions[function_index].name) != 0) {
                     pk_c_source_facts_free(facts);
                     facts = NULL;
@@ -494,7 +496,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
         }
 
         if (current_function != PK_C_NO_FUNCTION) {
-            if (pk_c_parser_scan_calls(facts, &call_re, path, line, line_no,
+            if (pk_c_parser_scan_calls(facts, &call_re, path, line, line_no, 0,
                 facts->functions[current_function].name) != 0) {
                 pk_c_source_facts_free(facts);
                 facts = NULL;

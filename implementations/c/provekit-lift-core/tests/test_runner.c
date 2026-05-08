@@ -109,7 +109,8 @@ static void test_parse_functions_and_macros(void) {
 static void test_parse_same_line_function_body_call(void) {
     const char *source =
         "int helper(int x) { return x + 1; }\n"
-        "int compute(int y) { return helper(y); }\n";
+        "int compute(int y) { return helper(y); }\n"
+        "int checker(int y) { WARN_ON(y < 0); }\n";
     pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
     if (!facts) {
         fprintf(stderr, "FAIL: parse returned null\n");
@@ -122,6 +123,15 @@ static void test_parse_same_line_function_body_call(void) {
     } else {
         assert_eq(facts->call_sites[0].caller, "compute", "same-line call caller");
         assert_eq(facts->call_sites[0].callee, "helper", "same-line call callee");
+        assert_int_eq(facts->call_sites[0].locus.column, 29, "same-line call column");
+    }
+    if (facts->n_macro_calls != 1) {
+        fprintf(stderr, "FAIL: expected 1 same-line macro call, got %zu\n", facts->n_macro_calls);
+        failures++;
+    } else {
+        assert_eq(facts->macro_calls[0].name, "WARN_ON", "same-line macro name");
+        assert_eq(facts->macro_calls[0].enclosing_function, "checker", "same-line macro enclosing function");
+        assert_int_eq(facts->macro_calls[0].locus.column, 22, "same-line macro column");
     }
     pk_c_source_facts_free(facts);
 }
