@@ -108,4 +108,38 @@ printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
     exit 1
 }
 
+MALFORMED_JSON_RESPONSE=$(printf '%s\n' '{"jsonrpc":"2.0","id":55,"method":"initialize"' | "$BIN" --rpc)
+
+printf '%s\n' "$MALFORMED_JSON_RESPONSE" | grep -q '"error"' || {
+    echo "FAIL: malformed JSON should return an error" >&2
+    echo "$MALFORMED_JSON_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$MALFORMED_JSON_RESPONSE" | grep -q '"code":-32700' || {
+    echo "FAIL: malformed JSON should return parse error -32700" >&2
+    echo "$MALFORMED_JSON_RESPONSE" >&2
+    exit 1
+}
+
+MALFORMED_SOURCE_PATHS="$(
+    {
+        printf '{"jsonrpc":"2.0","id":88,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["sparse_basic.c",1],"surface":"c-sparse"}}\n'
+    } | "$BIN" --rpc
+)"
+
+printf '%s\n' "$MALFORMED_SOURCE_PATHS" | grep -q '"error"' || {
+    echo "FAIL: malformed source_paths should return an error" >&2
+    echo "$MALFORMED_SOURCE_PATHS" >&2
+    exit 1
+}
+
+if printf '%s\n' "$MALFORMED_SOURCE_PATHS" | grep -q '"kind":"ir-document"'; then
+    echo "FAIL: malformed source_paths should not return an ir-document" >&2
+    echo "$MALFORMED_SOURCE_PATHS" >&2
+    exit 1
+fi
+
 printf 'provekit-lift-c-sparse integration passed\n'

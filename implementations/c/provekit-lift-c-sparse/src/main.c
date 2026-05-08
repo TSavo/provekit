@@ -22,6 +22,8 @@ typedef struct {
     size_t len;
 } StringArray;
 
+static void string_array_free(StringArray *arr);
+
 typedef struct {
     Buf ir;
     Buf diagnostics;
@@ -254,6 +256,70 @@ static char *json_extract_id(const char *json) {
     return out;
 }
 
+static int validate_json_request(const char *json) {
+    int object_depth = 0;
+    int array_depth = 0;
+    int in_string = 0;
+    int saw_nonspace = 0;
+
+    for (const char *p = json; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+
+        if (!in_string && (c == ' ' || c == '\t' || c == '\r' || c == '\n')) {
+            continue;
+        }
+
+        if (!saw_nonspace) {
+            if (c != '{') {
+                return 0;
+            }
+            saw_nonspace = 1;
+        }
+
+        if (in_string) {
+            if (c == '\\') {
+                if (p[1] == '\0') {
+                    return 0;
+                }
+                p++;
+                continue;
+            }
+            if (c == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+
+        switch (c) {
+        case '"':
+            in_string = 1;
+            break;
+        case '{':
+            object_depth++;
+            break;
+        case '}':
+            if (object_depth == 0) {
+                return 0;
+            }
+            object_depth--;
+            break;
+        case '[':
+            array_depth++;
+            break;
+        case ']':
+            if (array_depth == 0) {
+                return 0;
+            }
+            array_depth--;
+            break;
+        default:
+            break;
+        }
+    }
+
+    return saw_nonspace && !in_string && object_depth == 0 && array_depth == 0;
+}
+
 static int json_extract_str_array(const char *json, const char *field, StringArray *out) {
     char needle[128];
     const char *p;
@@ -270,6 +336,7 @@ static int json_extract_str_array(const char *json, const char *field, StringArr
         p++;
     }
     if (*p != '[') {
+        string_array_free(out);
         return -1;
     }
     p++;
@@ -285,12 +352,14 @@ static int json_extract_str_array(const char *json, const char *field, StringArr
             return 0;
         }
         if (*p != '"') {
+            string_array_free(out);
             return -1;
         }
 
         item = decode_json_string(p + 1, &p);
         if (!item || *p != '"') {
             free(item);
+            string_array_free(out);
             return -1;
         }
         p++;
@@ -298,12 +367,14 @@ static int json_extract_str_array(const char *json, const char *field, StringArr
         next = realloc(out->items, sizeof(char *) * (out->len + 1));
         if (!next) {
             free(item);
+            string_array_free(out);
             return -1;
         }
         out->items = next;
         out->items[out->len++] = item;
     }
 
+    string_array_free(out);
     return -1;
 }
 
@@ -604,6 +675,7 @@ static void handle_lift(const char *id, const char *line) {
     }
 
     if (json_extract_str_array(line, "source_paths", &source_paths) != 0) {
+        string_array_free(&source_paths);
         free(workspace);
         send_error(id, -32602, "source_paths must be an array of strings");
         return;
@@ -690,8 +762,13 @@ int main(int argc, char **argv) {
     }
 
     while (getline(&line, &line_cap, stdin) != -1) {
-        char *method = json_extract_str(line, "method");
+        if (!validate_json_request(line)) {
+            send_error("null", -32700, "parse error");
+            continue;
+        }
+
         char *id = json_extract_id(line);
+        char *method = json_extract_str(line, "method");
 
         if (!id) {
             id = str_dup("null");
