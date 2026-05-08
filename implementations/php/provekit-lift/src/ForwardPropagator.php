@@ -369,6 +369,14 @@ final class ForwardPropagator
                     $topSingleStatementPending = true;
                 }
             }
+            if (!$isFunctionDefinition && !$startsTopFallbackBlock && $topSingleStatementPending && str_contains($scanLine, '{')) {
+                $depth = $braceDepth + substr_count($scanLine, '{') - substr_count($scanLine, '}');
+                if ($depth <= $braceDepth) {
+                    $depth = $braceDepth + 1;
+                }
+                $topBlockDepth = $depth;
+                $topSingleStatementPending = false;
+            }
 
             $calls = self::checkPositiveCalls($scanLine);
             if (!$isFunctionDefinition) {

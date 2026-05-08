@@ -158,6 +158,28 @@ PHP;
     assert_same(0, count($diagnostics), 'unbraced loop bodies should keep top fallback suppression');
 }
 
+function testNextLineLoopBraceUsesTopFallbackForWholeBody(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo($condition): void {
+    while ($condition)
+    {
+        checkPositive(-1);
+        checkPositive(-2);
+    }
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+    $stmts = ForwardPropagator::lowerFloorSource($source);
+    $unsupportedCount = count(array_filter($stmts, static fn (ForwardStmt $stmt): bool => $stmt->kind === 'unsupported'));
+
+    assert_same(0, count($diagnostics), 'next-line loop braces should keep top fallback for the whole body');
+    assert_same(2, $unsupportedCount, 'both loop body calls should lower under top fallback');
+}
+
 function testCommentsAndStringsDoNotCreateCallsites(): void
 {
     $source = <<<'PHP'
@@ -222,6 +244,7 @@ testTopFallbackSuppressesFalsePositive();
 testFailedPreconditionDoesNotPropagateCalleePostcondition();
 testClassMethodResetPreventsFactLeak();
 testUnbracedLoopBodyUsesTopFallback();
+testNextLineLoopBraceUsesTopFallbackForWholeBody();
 testCommentsAndStringsDoNotCreateCallsites();
 testParseFloorFixtureEmitsForwardPropagationDiagnostic();
 
