@@ -10,9 +10,85 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
+RESPONSES="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":17,"method":"initialize","params":{}}'
+        printf '{"jsonrpc":"2.0","id":42,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["sparse_basic.c"],"surface":"c-sparse"}}\n'
+        printf '%s\n' '{"jsonrpc":"2.0","id":77,"method":"shutdown"}'
+    } | "$BIN" --rpc
+)"
+
+printf '%s\n' "$RESPONSES" | grep -q '"id":17' || {
+    echo "FAIL: initialize did not echo id 17" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"id":42' || {
+    echo "FAIL: lift did not echo id 42" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"id":77' || {
+    echo "FAIL: shutdown did not echo id 77" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"name":"c-sparse"' || {
+    echo "FAIL: initialize missing c-sparse name" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"protocol_version":"provekit-lift/1"' || {
+    echo "FAIL: initialize missing protocol version" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"kind":"ir-document"' || {
+    echo "FAIL: lift missing ir-document kind" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"ir":\[' || {
+    echo "FAIL: lift missing ir array" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"name":"c-sparse.user-pointer"' || {
+    echo "FAIL: lift missing __user contract" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"name":"c-sparse.must-hold"' || {
+    echo "FAIL: lift missing __must_hold contract" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"diagnostics":\[\]' || {
+    echo "FAIL: lift should have empty diagnostics" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
 SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$FIXTURE" | tr -d '\n' | sed 's/\\n$//')
-REQUEST="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"parse\",\"params\":{\"path\":\"sparse_basic.c\",\"source\":\"$SOURCE\"}}"
+REQUEST="{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"parse\",\"params\":{\"path\":\"sparse_basic.c\",\"source\":\"$SOURCE\"}}"
 RESPONSE=$(printf '%s\n' "$REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$RESPONSE" | grep -q '"id":99' || {
+    echo "FAIL: parse did not echo id 99" >&2
+    echo "$RESPONSE" >&2
+    exit 1
+}
 
 printf '%s\n' "$RESPONSE" | grep -q '"name":"c-sparse.user-pointer"' || {
     echo "FAIL: missing __user contract" >&2
