@@ -151,3 +151,32 @@ fn prove_formula_catches_value_scope_escape() {
     assert_eq!(fixed_report["ok"], true);
     assert_eq!(fixed_report["status"], "discharged");
 }
+
+#[test]
+fn lift_identify_only_delegates_from_project_config() {
+    let root = repo_root();
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(root.join("menagerie/bridgeworks/checked-add-u8"))
+        .arg("--identify-only")
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit lift --identify-only");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift --identify-only failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("identify-only lift JSON parses");
+    assert_eq!(report["kind"], "identity-document");
+    let identities = report["identities"].as_array().expect("identities array");
+    assert_eq!(identities.len(), 8);
+    assert!(identities.iter().any(|identity| {
+        identity["domain"] == "software" && identity["claim"] == "checked_add_u8.postcondition"
+    }));
+}

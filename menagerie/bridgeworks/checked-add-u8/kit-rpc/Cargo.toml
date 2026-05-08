@@ -1,0 +1,21 @@
+[package]
+name = "bridgeworks-checked-add-lifter"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["ProvekIt"]
+description = "Project-local Bridgeworks checked-add lift-plugin surface."
+
+[dependencies]
+blake3 = "1"
+serde_json = "1"
+
+[workspace]
+
+[[bin]]
+name = "bridgeworks-checked-add-lifter"
+path = "bridgeworks-lifter.rs"
+
+[[bin]]
+name = "bridgeworks-c-witness-lowerer"
+path = "bridgeworks-c-witness-lowerer.rs"

@@ -1,0 +1,30 @@
+# Bridgeworks checked-add-u8 gate netlist native artifact.
+# bridgeworks:claim gates.full_adder.equations
+# bridgeworks:requires cells.boolean_gates.valid_in_envelope
+# bridgeworks:projection blif-lifter/v0
+#
+# Toy-lifter-visible equations:
+#   sum = a XOR b XOR cin
+#   cout = majority(a, b, cin)
+
+.model bridgeworks_full_adder
+.inputs a b cin
+.outputs sum cout
+
+# axb = a XOR b
+.names a b axb
+01 1
+10 1
+
+# sum = axb XOR cin
+.names axb cin sum
+01 1
+10 1
+
+# cout = majority(a,b,cin)
+.names a b cin cout
+11- 1
+1-1 1
+-11 1
+
+.end

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit lift <FILE>` — when `--agent` is passed, drives the
-// LLM-assisted lift loop (Layer 3). When absent, falls through to the
-// stub message; mechanical lift adapters (proptest, contracts, kani,
-// etc.) live in their own subcommands and TS plugins.
+// `provekit lift <PROJECT>` — dispatch the configured lift-plugin protocol
+// and emit the raw lifted ProofIR response. Minting is a separate composition
+// step owned by `provekit mint`.
 
 use std::path::PathBuf;
 
@@ -12,6 +11,7 @@ use owo_colors::OwoColorize;
 use provekit_agent::{run_lift_loop, LiftLoopOptions, ProposeContext, ProvekitAgent, StubAgent};
 use serde_json::json;
 
+use crate::lift_plugin::{self, LiftPluginError, LiftPluginOptions};
 use crate::project_config::{read_project_config, read_user_config};
 use crate::prompts::{resolve_prompt, substitute, PromptCommand, PromptOverrides};
 use crate::{LiftArgs, OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
@@ -39,19 +39,102 @@ pub struct AgentLiftArgs {
 }
 
 pub fn run(args: LiftArgs) -> u8 {
-    let msg = "Lift v0 lives in TS. See implementations/typescript/src/proveLift/. \
-               Pass --agent <name> to drive the LLM-assisted Rust path.";
-    if args.out.json {
-        let payload = json!({
-            "status": "stub",
-            "message": msg,
-            "file": args.file.as_ref().map(|p| p.display().to_string()),
-        });
-        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
-    } else {
-        println!("{} {}", "lift:".yellow().bold(), msg);
+    let project_root = args.project.unwrap_or_else(|| PathBuf::from("."));
+    if !project_root.exists() {
+        eprintln!(
+            "{}: project not found: {}",
+            "error".red().bold(),
+            project_root.display()
+        );
+        return EXIT_USER_ERROR;
     }
-    EXIT_OK
+
+    let project_cfg = read_project_config(&project_root);
+    let user_cfg = read_user_config();
+    let surface = match project_cfg
+        .surface_for("lift")
+        .or_else(|| user_cfg.surface_for("lift"))
+    {
+        Some(surface) => surface,
+        None => {
+            eprintln!(
+                "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml.",
+                "error".red().bold()
+            );
+            return EXIT_USER_ERROR;
+        }
+    };
+
+    match lift_plugin::dispatch_lift(
+        &project_root,
+        &surface,
+        LiftPluginOptions {
+            identify_only: args.identify_only,
+        },
+        args.out.quiet,
+    ) {
+        Ok(session) => {
+            if args.out.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&session.response)
+                        .expect("serialize lift response")
+                );
+            } else if !args.out.quiet {
+                print_lift_summary(&surface, &session.response);
+            }
+            EXIT_OK
+        }
+        Err(LiftPluginError::MissingBinary { binary }) => {
+            eprintln!(
+                "{}: lifter binary `{binary}` not found",
+                "error".red().bold()
+            );
+            EXIT_USER_ERROR
+        }
+        Err(LiftPluginError::Failed(error)) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            EXIT_VERIFY_FAIL
+        }
+    }
+}
+
+fn print_lift_summary(surface: &str, response: &serde_json::Value) {
+    let kind = response
+        .get("kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    println!(
+        "{}: surface=`{surface}` kind=`{kind}`",
+        "lift".green().bold()
+    );
+    if kind == "ir-document" {
+        let contracts = response
+            .get("ir")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|item| {
+                        item.get("kind").and_then(|value| value.as_str()) == Some("contract")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        let implications = response
+            .get("implications")
+            .and_then(|value| value.as_array())
+            .map(Vec::len)
+            .unwrap_or(0);
+        let witnesses = response
+            .get("witnesses")
+            .and_then(|value| value.as_array())
+            .map(Vec::len)
+            .unwrap_or(0);
+        println!("  contracts:    {contracts}");
+        println!("  implications: {implications}");
+        println!("  witnesses:    {witnesses}");
+    }
 }
 
 /// New-style agent-driven lift. Wired into main.rs as `Cmd::AgentLift`.
@@ -185,9 +268,10 @@ mod tests {
     #[test]
     fn lift_returns_ok() {
         let args = LiftArgs {
-            file: None,
+            project: Some(PathBuf::from("/provekit/no/such/lift/project")),
+            identify_only: false,
             out: OutputFlags::default(),
         };
-        assert_eq!(run(args), crate::EXIT_OK);
+        assert_eq!(run(args), crate::EXIT_USER_ERROR);
     }
 }

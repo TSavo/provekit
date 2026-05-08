@@ -1,0 +1,23 @@
+layer: rtl
+native_artifact: artifacts/rtl/alu.v
+native_format: verilog
+projection: rtl-lifter/v0
+emits_claim: rtl.alu.refines_add8
+requires_claims:
+  - gates.full_adder.equations
+summary: ALU ADD8 output wires refine the ISA sum and carry relation.
+input_assumptions:
+  - Inputs a and b are 8-bit unsigned values.
+  - op_add8 selects the ADD8 datapath.
+required_lifter_markers:
+  - "bridgeworks:claim rtl.alu.refines_add8"
+  - "wide[8]"
+positive_checks:
+  - sum is assigned from wide[7:0].
+  - carry is assigned from wide[8].
+refusal_cases:
+  - id: rtl_wrong_carry_bit
+    artifact: mutations/rtl/alu_wrong_carry.v
+    reason: carry must not be derived from any sum bit.
+trusted_stops:
+  - Verilog syntax and finite bit-vector arithmetic are interpreted by the toy RTL lifter.

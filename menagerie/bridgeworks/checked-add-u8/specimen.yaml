@@ -1,0 +1,75 @@
+id: bridgeworks-checked-add-u8
+name: Checked 8-bit addition across software, compiler, machine, circuit, physics, and measurement
+surface: bridgeworks-checked-add
+
+positive:
+  project: .
+  expectedContracts: 8
+  expectedImplications: 7
+  expectedAuthorities: 16
+
+expected:
+  proofCidFile: expected/positive.proof-cid
+  mintJson: expected/positive-mint.json
+  proofInspectJson: expected/positive-proof-inspect.json
+
+implications:
+  - name: experiment-supports-device-physics
+    antecedent: experiment.material_parameters.within_tolerance
+    consequent: device_physics.mosfet_switch.valid
+  - name: device-physics-supports-cells
+    antecedent: device_physics.mosfet_switch.valid
+    consequent: cells.boolean_gates.valid_in_envelope
+  - name: cells-support-gates
+    antecedent: cells.boolean_gates.valid_in_envelope
+    consequent: gates.full_adder.equations
+  - name: gates-support-rtl
+    antecedent: gates.full_adder.equations
+    consequent: rtl.alu.refines_add8
+  - name: rtl-supports-isa
+    antecedent: rtl.alu.refines_add8
+    consequent: isa.add8.carry_semantics
+  - name: isa-supports-compiler-lowering
+    antecedent: isa.add8.carry_semantics
+    consequent: compiler.lowering.preserves_checked_add
+  - name: compiler-supports-software-postcondition
+    antecedent: compiler.lowering.preserves_checked_add
+    consequent: checked_add_u8.postcondition
+
+mutations:
+  - id: software-overflow-add-u8
+    source: mutations/software/overflow-add-u8/overflow_add_u8.c
+    target: artifacts/software/checked_add_u8.c
+    expectedRefusal: checked_add_u8.postcondition
+  - id: software-counterfeit-contract
+    source: mutations/software/counterfeit-contract/checked_add_u8.c
+    target: artifacts/software/checked_add_u8.c
+    expectedRefusal: checked_add_u8.postcondition
+  - id: compiler-ignores-carry
+    source: mutations/compiler/lowering.trace
+    target: artifacts/compiler/lowering.trace
+    expectedRefusal: compiler.lowering.preserves_checked_add
+  - id: isa-signed-overflow
+    source: mutations/isa/toy8.isa
+    target: artifacts/isa/toy8.isa
+    expectedRefusal: isa.add8.carry_semantics
+  - id: rtl-wrong-carry-bit
+    source: mutations/rtl/alu_wrong_carry.v
+    target: artifacts/rtl/alu.v
+    expectedRefusal: rtl.alu.refines_add8
+  - id: gates-xor-replaced-by-or
+    source: mutations/gates/full_adder_xor_replaced_by_or.blif
+    target: artifacts/gates/full_adder.blif
+    expectedRefusal: gates.full_adder.equations
+  - id: cells-omitted-noise-margin
+    source: mutations/cells/cells_omitted_noise_margin.sp
+    target: artifacts/cells/cells.sp
+    expectedRefusal: cells.boolean_gates.valid_in_envelope
+  - id: device-physics-outside-envelope
+    source: mutations/device-physics/mosfet-switch-paper_outside_envelope.md
+    target: artifacts/device-physics/mosfet-switch-paper.md
+    expectedRefusal: device_physics.mosfet_switch.valid
+  - id: experiment-measurement-changed-without-signature
+    source: mutations/experiment/bandgap_measurement_changed_without_signature.csv
+    target: artifacts/experiment/bandgap-measurements.csv
+    expectedRefusal: experiment.material_parameters.within_tolerance

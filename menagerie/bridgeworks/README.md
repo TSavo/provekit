@@ -1,6 +1,6 @@
 # Bridgeworks
 
-Bridgeworks is the planned Menagerie destination for claim transport across
+Bridgeworks is the runnable Menagerie destination for claim transport across
 true domain crossings.
 
 Its core claim is that a software contract can be supported by lower-domain
@@ -36,3 +36,9 @@ when the projected claims compose into one compressed receipt.
 Design spec:
 
 - [Bridgeworks White-Room Contract Stack Design](../../docs/superpowers/specs/2026-05-08-bridgeworks-white-room-contract-stack-design.md)
+
+Run it:
+
+```sh
+cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all
+```

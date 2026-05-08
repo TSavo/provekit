@@ -78,6 +78,15 @@ tools/recompute-spec-cids/target/
 # Rust workspace target dir.
 implementations/rust/target/
 
+# C lifter test/plugin binaries.
+implementations/c/provekit-lift/bin/
+
+# Project-local Bridgeworks toy lifter build output.
+menagerie/bridgeworks/**/kit-rpc/target/
+
+# Bridgeworks walkthrough scratch/build output.
+/target/provekit-bridgeworks-*
+
 # C++ orchestrator binary output (rebuilt by tools/build-cpp-self-contracts.sh).
 implementations/cpp/target/
 

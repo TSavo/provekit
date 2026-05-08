@@ -1,0 +1,34 @@
+layer: compiler
+contract_sheet: bridgeworks.checked_add_u8.lowering
+native_artifacts:
+  - artifacts/compiler/lowering.trace
+  - artifacts/compiler/toy8.asm
+lifter: lowering-trace toy adapter
+
+emitted_claim:
+  id: compiler.lowering.preserves_checked_add
+  meaning: >
+    The checked_add_u8 source contract is preserved by lowering to Toy8 ADD8
+    followed by a branch on the ADD8 unsigned carry flag.
+
+inputs:
+  source_claim: checked_add_u8.postcondition
+  lower_claim: isa.add8.carry_semantics
+
+required_markers:
+  trace_claim_id: compiler.lowering.preserves_checked_add
+  instruction: ADD8
+  branch_instruction: BR_CARRY
+  branch_flag: carry
+  overflow_target: overflow
+  ok_path: RET_OK after the non-carry path
+  overflow_path: RET_OVERFLOW after the carry path
+
+refusal_cases:
+  - id: lowering_ignores_carry
+    path: mutations/compiler/lowering.trace
+    reason: ADD8 carry is ignored before returning ok
+
+adapter_output:
+  emit_normal_proofir_later: true
+  private_proof_format: none

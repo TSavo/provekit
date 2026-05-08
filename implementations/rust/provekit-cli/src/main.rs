@@ -28,6 +28,7 @@ mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
 mod cmd_link;
+mod cmd_lower;
 mod cmd_mint;
 mod cmd_must;
 mod cmd_proof;
@@ -37,6 +38,7 @@ mod cmd_search;
 mod cmd_verify_protocol;
 mod cmd_version;
 mod cmd_witness;
+mod lift_plugin;
 mod project_config;
 mod prompts;
 mod protocol;
@@ -106,6 +108,8 @@ enum Cmd {
     AgentLift(cmd_lift::AgentLiftArgs),
     /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
     Mint(cmd_mint::MintArgs),
+    /// Dispatch the lower-plugin protocol and mint a witness .proof.
+    Lower(cmd_lower::LowerArgs),
     /// Translate an English description to a verified ProvekIt contract via the configured agent.
     Must(cmd_must::MustArgs),
     /// Hand the configured agent a bug; verify a fix in a sandbox; report.
@@ -220,8 +224,11 @@ pub struct InitArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct LiftArgs {
-    /// Source file to lift (currently informational; the lift implementation lives in TS).
-    pub file: Option<PathBuf>,
+    /// Project root to lift. Defaults to the current directory.
+    pub project: Option<PathBuf>,
+    /// Ask the configured lifter to report native contract identities without full ProofIR lowering.
+    #[arg(long)]
+    pub identify_only: bool,
     #[command(flatten)]
     pub out: OutputFlags,
 }
@@ -301,6 +308,7 @@ fn main() -> ExitCode {
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::AgentLift(a) => cmd_lift::run_agent(a),
         Cmd::Mint(a) => cmd_mint::run(a),
+        Cmd::Lower(a) => cmd_lower::run(a),
         Cmd::Must(a) => cmd_must::run(a),
         Cmd::Fix(a) => cmd_fix::run(a),
         Cmd::Witness(a) => cmd_witness::run(a),

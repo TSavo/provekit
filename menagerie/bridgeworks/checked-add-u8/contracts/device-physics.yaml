@@ -1,0 +1,24 @@
+layer: device-physics
+native_artifact: artifacts/device-physics/mosfet-switch-paper.md
+native_format: markdown
+projection: paper-claim-lifter/v0
+emits_claim: device_physics.mosfet_switch.valid
+requires_claims:
+  - experiment.material_parameters.within_tolerance
+summary: The MOSFET switch abstraction is valid for parameter set P and envelope E.
+input_assumptions:
+  - The experiment claim establishes the material parameters in P.
+  - The cell layer stays within the stated voltage, temperature, fanout, and noise envelope.
+required_lifter_markers:
+  - "bridgeworks:claim device_physics.mosfet_switch.valid"
+  - "Parameter set `P`"
+  - "Envelope `E`"
+positive_checks:
+  - nmos_vth_v, pmos_abs_vth_v, oxide_thickness_nm, and bandgap_ev remain in tolerated ranges.
+  - The claim scope is limited to static Boolean gates in this exhibit.
+refusal_cases:
+  - id: device_physics_parameters_outside_envelope
+    artifact: mutations/device-physics/mosfet-switch-paper_outside_envelope.md
+    reason: paper parameters exceed the measurement-backed envelope.
+trusted_stops:
+  - This is a toy paper lifter and accepts the explicit claim block as the projection boundary.

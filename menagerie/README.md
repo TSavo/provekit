@@ -23,7 +23,7 @@ protocol migrations, and proof-carrying changes.
 | [Bug Zoo](bug-zoo/README.md) | Bugs are missing edges; fixes are closure receipts. | Runnable |
 | [Hashbound Mainline](hashbound-mainline/README.md) | Cross-domain implication chains compress to 64-byte verification. | Planned |
 | [Supply Chain Rails](supply-chain-rails/README.md) | Artifacts stay on verified tracks through rank-3 pins, `binaryCid`, and CICP. | Planned |
-| [Bridgeworks](bridgeworks/README.md) | Proof survives domain crossings through content-addressed bridges. | Planned |
+| [Bridgeworks](bridgeworks/README.md) | ProofIR carries vertical contracts; `.proof` CIDs compress the implication DAG. | Runnable |
 | [Protocol Switchyard](protocol-switchyard/README.md) | Protocol versions are roots; migrations are witnessed routing edges. | Planned |
 | [Change Station](change-station/README.md) | Commits are `p -> q` proof-carrying transitions. | Planned |
 
@@ -31,4 +31,5 @@ Run the current runnable destination:
 
 ```sh
 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
+cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all
 ```

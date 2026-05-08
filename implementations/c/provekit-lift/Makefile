@@ -2,9 +2,10 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -Iinclude -I../provekit-ir/include
-LDFLAGS = -lclang
+LDFLAGS =
 
 SRC = src/lift.c
+CLI_SRC = src/main.c
 OBJ = $(SRC:.c=.o)
 BIN = bin/provekit-lift-c
 
@@ -12,8 +13,8 @@ BIN = bin/provekit-lift-c
 
 all: $(BIN)
 
-$(BIN): $(OBJ) | bin
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+$(BIN): $(SRC) $(CLI_SRC) include/provekit/lift.h | bin
+	$(CC) $(CFLAGS) -o $@ $(CLI_SRC) $(SRC) $(LDFLAGS)
 
 %.o: %.c include/provekit/lift.h src/lift.h
 
@@ -21,8 +22,13 @@ bin:
 	mkdir -p bin
 
 clean:
-	rm -f $(OBJ) $(BIN)
+	rm -f $(OBJ) $(BIN) bin/stub bin/test_runner
 
 stub: bin
 	$(CC) $(CFLAGS) -DPROVEKIT_LIFT_C_STUB -o bin/stub $(SRC)
 	./bin/stub --kernel
+
+test: $(BIN) bin
+	$(CC) $(CFLAGS) -o bin/test_runner tests/test_runner.c $(SRC)
+	./bin/test_runner
+	sh ./tests/test_rpc.sh

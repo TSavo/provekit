@@ -182,8 +182,6 @@ pub fn validate_proof_bytes(path: &Path, bytes: &[u8]) -> ProofFileConformanceRe
         None => {}
     }
 
-    validate_catalog_signature(root, &mut report);
-
     let members = match root.get("members").and_then(CborValue::as_map) {
         Some(members) => members,
         None => {
@@ -192,6 +190,8 @@ pub fn validate_proof_bytes(path: &Path, bytes: &[u8]) -> ProofFileConformanceRe
         }
     };
     report.member_count = members.len();
+
+    validate_catalog_signature(root, members, &mut report);
 
     for (cid, val) in members {
         validate_member(cid, val, &file_cid, &mut report);
@@ -202,6 +202,7 @@ pub fn validate_proof_bytes(path: &Path, bytes: &[u8]) -> ProofFileConformanceRe
 
 fn validate_catalog_signature(
     root: &BTreeMap<String, CborValue>,
+    members: &BTreeMap<String, CborValue>,
     report: &mut ProofFileConformanceReport,
 ) {
     let Some(signer) = root.get("signer").and_then(CborValue::as_tstr) else {
@@ -229,25 +230,62 @@ fn validate_catalog_signature(
         );
         return;
     };
-    if !signer.starts_with("ed25519:") {
+    let signer_key = if signer.starts_with("ed25519:") {
+        signer.to_string()
+    } else if signer.starts_with(HASH_TAG_PREFIX) {
+        match authority_key_for_catalog_signer(signer, members) {
+            Ok(key) => key,
+            Err(error) => {
+                report.push_error(PFCP_R9_CATALOG_SIGNATURE, error);
+                return;
+            }
+        }
+    } else {
         report.push_error(
             PFCP_R9_CATALOG_SIGNATURE,
-            format!(
-                "catalog signer `{signer}` is not an inline ed25519 public key; CID signer resolution is not available in this bundle"
-            ),
+            format!("catalog signer `{signer}` is neither an inline ed25519 key nor a CID authority memento"),
         );
         return;
-    }
+    };
 
     let mut unsigned = root.clone();
     unsigned.remove("signature");
     let unsigned_bytes = encode_cbor_value(&CborValue::Map(unsigned));
-    if !ed25519_verify_bytes(signer, signature, &unsigned_bytes) {
+    if !ed25519_verify_bytes(&signer_key, signature, &unsigned_bytes) {
         report.push_error(
             PFCP_R9_CATALOG_SIGNATURE,
             "catalog signature does not verify over the unsigned catalog body",
         );
     }
+}
+
+fn authority_key_for_catalog_signer(
+    signer: &str,
+    members: &BTreeMap<String, CborValue>,
+) -> Result<String, String> {
+    let member = members
+        .get(signer)
+        .ok_or_else(|| format!("catalog signer authority `{signer}` is not in members"))?;
+    let bytes = member.as_bstr().ok_or_else(|| {
+        format!("catalog signer authority `{signer}` member is not a byte string")
+    })?;
+    let env: Json = serde_json::from_slice(bytes)
+        .map_err(|e| format!("catalog signer authority `{signer}` JSON parse failed: {e}"))?;
+    if env.pointer("/header/kind").and_then(|v| v.as_str()) != Some("authority") {
+        return Err(format!(
+            "catalog signer `{signer}` does not resolve to an authority memento"
+        ));
+    }
+    let key = env
+        .pointer("/header/key")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("catalog signer authority `{signer}` is missing header.key"))?;
+    if !key.starts_with("ed25519:") {
+        return Err(format!(
+            "catalog signer authority `{signer}` header.key is not an inline ed25519 key"
+        ));
+    }
+    Ok(key.to_string())
 }
 
 fn empty_report(path: &Path, file_cid: &str) -> ProofFileConformanceReport {

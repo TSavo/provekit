@@ -1,0 +1,11 @@
+{
+  "kind": "ProofFileConformanceReport",
+  "schema_version": "0.1",
+  "proof_path": "/tmp/provekit-bridgeworks-fixture.YqUehF/blake3-512:c1462532795cbd886dfbdd2a1bc812823afdc827e68e441a1bbd3ee95284662a198c97c8e9bd7abaf0b077f419bbdd2e5c5049e3c8bdfe31e9f4f985a2444d15.proof",
+  "file_cid": "blake3-512:c1462532795cbd886dfbdd2a1bc812823afdc827e68e441a1bbd3ee95284662a198c97c8e9bd7abaf0b077f419bbdd2e5c5049e3c8bdfe31e9f4f985a2444d15",
+  "filename_cid": "blake3-512:c1462532795cbd886dfbdd2a1bc812823afdc827e68e441a1bbd3ee95284662a198c97c8e9bd7abaf0b077f419bbdd2e5c5049e3c8bdfe31e9f4f985a2444d15",
+  "member_count": 31,
+  "metadata_count": 0,
+  "warnings": [],
+  "errors": []
+}

@@ -40,11 +40,9 @@
 // failing the substrate pipeline. Any other spawn failure (wrong
 // permissions, exit > 0) is a hard error.
 
-use std::io::{BufRead, BufReader, Write};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Instant;
 
 use base64::Engine;
 use clap::Parser;
@@ -53,13 +51,15 @@ use serde_json::{json, Value};
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
-    compute_contract_set_cid, contract_cid, mint_contract, Authoring, MintContractArgs,
+    compute_contract_set_cid, contract_cid, mint_authority, mint_contract, mint_implication,
+    Authoring, MintAuthorityArgs, MintContractArgs, MintImplicationArgs,
 };
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
     ProofEnvelopeInput,
 };
 
+use crate::lift_plugin::{self, LiftPluginError, LiftPluginOptions};
 use crate::project_config::{read_project_config, read_user_config};
 use crate::OutputFlags;
 use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
@@ -129,100 +129,6 @@ pub(crate) fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
         })
 }
 
-// ---------------------------------------------------------------------------
-// Plugin manifest
-// ---------------------------------------------------------------------------
-
-/// Plugin manifest read from `.../lift/<name>/manifest.toml`.
-#[derive(Debug, Default)]
-struct PluginManifest {
-    name: String,
-    command: Vec<String>,
-    working_dir: Option<PathBuf>,
-}
-
-fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let mut m = PluginManifest::default();
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(p) => &line[..p],
-            None => line,
-        }
-        .trim();
-        if line.is_empty() || line.starts_with('[') {
-            continue;
-        }
-        let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
-        match key {
-            "name" => m.name = val.trim_matches('"').to_string(),
-            "working_dir" => m.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
-            "command" => {
-                let inner = val.trim_matches(|c| c == '[' || c == ']');
-                m.command = inner
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-            }
-            _ => {}
-        }
-    }
-    if m.command.is_empty() {
-        return Err(format!("manifest {} has no `command`", path.display()));
-    }
-    Ok(m)
-}
-
-fn find_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, String> {
-    let project_local = project_root
-        .join(".provekit")
-        .join("lift")
-        .join(surface)
-        .join("manifest.toml");
-    if project_local.exists() {
-        return parse_manifest(&project_local);
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let user_global = PathBuf::from(home)
-            .join(".config")
-            .join("provekit")
-            .join("lift")
-            .join(surface)
-            .join("manifest.toml");
-        if user_global.exists() {
-            return parse_manifest(&user_global);
-        }
-    }
-    Err(format!(
-        "no plugin manifest for surface `{surface}` (looked in .provekit/lift/{surface}/manifest.toml and ~/.config/provekit/lift/{surface}/manifest.toml)"
-    ))
-}
-
-// ---------------------------------------------------------------------------
-// Lift-protocol dispatch
-// ---------------------------------------------------------------------------
-
-/// Build the `params` object for the lift JSON-RPC request.
-///
-/// Extracted as a pure function so unit tests can assert the C3 invariant
-/// (non-empty `source_paths`) without spawning a subprocess.
-fn build_lift_params(project_root: &Path, surface: &str) -> Value {
-    let workspace_root = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-    json!({
-        "surface": surface,
-        "workspace_root": workspace_root,
-        "config_path": ".provekit/config.toml",
-        "source_paths": ["."],
-        "options": {"layer": "all"}
-    })
-}
-
 /// Result of a successful lift dispatch.
 struct DispatchResult {
     filename_cid: String,
@@ -232,74 +138,25 @@ struct DispatchResult {
     lift_result: Value,
 }
 
-/// Dispatch the lift-protocol RPC.
-///
-/// On ENOENT (lifter binary not found), returns `Ok` with
-/// `contract_set_cid = compute_contract_set_cid([])` and writes no .proof.
-/// The caller then signs an empty-set attestation. This surfaces the gap
-/// at the per-kit lifter level without failing the substrate pipeline.
-///
-/// All other spawn failures (permission denied, RPC errors) are hard errors.
 fn dispatch(
     project_root: &Path,
     surface: &str,
     out_dir: &Path,
     quiet: bool,
 ) -> Result<DispatchResult, String> {
-    let started = Instant::now();
-    let manifest = find_manifest(project_root, surface)?;
-    trace_log(format!(
-        "mint dispatch start surface={surface} project={} plugin={} command={:?}",
-        project_root.display(),
-        manifest.name,
-        manifest.command
-    ));
-    if !quiet {
-        println!(
-            "{}: surface=`{}` plugin=`{}` command={:?}",
-            "dispatch".green().bold(),
-            surface,
-            manifest.name,
-            manifest.command
-        );
-    }
-
-    let mut cmd = Command::new(&manifest.command[0]);
-    if manifest.command.len() > 1 {
-        cmd.args(&manifest.command[1..]);
-    }
-    // Append --rpc only if the manifest doesn't already include it.
-    // Several manifests (e.g. typescript) hard-code --rpc in their command
-    // array; appending unconditionally produces duplicate args, which some
-    // lifters reject. (Review feedback: PR #165 / Copilot.)
-    if !manifest.command.iter().any(|a| a == "--rpc") {
-        cmd.arg("--rpc");
-    }
-    if let Some(wd) = &manifest.working_dir {
-        let resolved = if wd.is_absolute() {
-            wd.clone()
-        } else {
-            project_root.join(wd)
-        };
-        cmd.current_dir(resolved);
-    }
-    cmd.stdin(Stdio::piped());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::inherit());
-
-    trace_log(format!(
-        "mint rpc spawn surface={surface} command={:?}",
-        manifest.command
-    ));
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // Lifter binary not installed yet. Surface as empty-set attestation.
+    let session = match lift_plugin::dispatch_lift(
+        project_root,
+        surface,
+        LiftPluginOptions::default(),
+        quiet,
+    ) {
+        Ok(session) => session,
+        Err(LiftPluginError::MissingBinary { binary }) => {
             if !quiet {
                 println!(
                     "{}: lifter binary `{}` not found — producing empty-set attestation",
                     "warn".yellow().bold(),
-                    manifest.command[0]
+                    binary
                 );
             }
             let empty_cid = compute_contract_set_cid(vec![]);
@@ -311,90 +168,22 @@ fn dispatch(
                 lift_result: json!({
                     "kind": "empty-set",
                     "reason": "lifter binary not found",
-                    "binary": manifest.command[0],
+                    "binary": binary,
                 }),
             });
         }
-        Err(e) => return Err(format!("spawn {:?}: {e}", manifest.command)),
+        Err(LiftPluginError::Failed(error)) => return Err(error),
     };
-    trace_log(format!(
-        "mint rpc spawned surface={surface} pid={}",
-        child.id()
-    ));
 
-    let mut stdin = child.stdin.take().ok_or("no stdin")?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let mut reader = BufReader::new(stdout);
+    mint_lift_response(project_root, out_dir, quiet, session.response)
+}
 
-    // 1. initialize
-    let init_req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-cli", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": "provekit-lift/1",
-            "workspace_root": project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf()),
-            "config_path": ".provekit/config.toml"
-        }
-    });
-    trace_log(format!("mint rpc send initialize surface={surface} id=1"));
-    writeln!(stdin, "{init_req}").map_err(|e| format!("write initialize: {e}"))?;
-
-    trace_log(format!(
-        "mint rpc wait initialize response surface={surface} id=1"
-    ));
-    let init_resp = read_response(&mut reader, 1)?;
-    trace_log(format!(
-        "mint rpc got initialize response surface={surface} elapsed={:?}",
-        started.elapsed()
-    ));
-    if !quiet {
-        if let Some(name) = init_resp.get("name").and_then(|v| v.as_str()) {
-            println!("{}: plugin `{}` ready", "ok".green().bold(), name);
-        }
-    }
-
-    // 2. lift — send source_paths:["."] to satisfy C3 non-empty invariant.
-    //    Most lifters walk their own working directory regardless of source_paths,
-    //    but C3 (`verify_c3_lift_request_well_formed`) requires the array to be
-    //    non-empty. Mirror the pattern from cmd_prove::capture_rpc.
-    let lift_params = build_lift_params(project_root, surface);
-    let lift_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "lift",
-        "params": lift_params
-    });
-    trace_log(format!("mint rpc send lift surface={surface} id=2"));
-    writeln!(stdin, "{lift_req}").map_err(|e| format!("write lift: {e}"))?;
-    trace_log(format!(
-        "mint rpc wait lift response surface={surface} id=2"
-    ));
-    let lift_resp = read_response(&mut reader, 2)?;
-    trace_log(format!(
-        "mint rpc got lift response surface={surface} elapsed={:?}",
-        started.elapsed()
-    ));
-
-    // 3. shutdown
-    let shutdown_req = json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "shutdown"
-    });
-    trace_log(format!("mint rpc send shutdown surface={surface} id=3"));
-    let _ = writeln!(stdin, "{shutdown_req}");
-    drop(stdin);
-    trace_log(format!("mint rpc wait child exit surface={surface}"));
-    let status = child.wait();
-    trace_log(format!(
-        "mint rpc child exit surface={surface} status={:?} elapsed={:?}",
-        status,
-        started.elapsed()
-    ));
-
-    // Process response: shape `proof-envelope` or `ir-document`
+fn mint_lift_response(
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+    lift_resp: Value,
+) -> Result<DispatchResult, String> {
     let kind = lift_resp
         .get("kind")
         .and_then(|v| v.as_str())
@@ -453,7 +242,18 @@ fn dispatch(
                 .and_then(|v| v.as_array())
                 .ok_or("ir-document response missing `ir` array")?;
 
-            let (bytes, filename_cid, contract_set_cid) = mint_from_ir_document(ir, &project_root)?;
+            let authorities = lift_resp.get("authorities").and_then(|v| v.as_array());
+            let implications = lift_resp.get("implications").and_then(|v| v.as_array());
+            let witnesses = lift_resp.get("witnesses").and_then(|v| v.as_array());
+            let (bytes, filename_cid, contract_set_cid) = mint_from_ir_document(
+                ir,
+                authorities,
+                implications,
+                witnesses,
+                &project_root,
+                out_dir,
+                quiet,
+            )?;
 
             std::fs::create_dir_all(out_dir)
                 .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
@@ -499,52 +299,106 @@ fn redact_lift_result(mut lift_resp: Value) -> Value {
     }
     lift_resp
 }
-
-fn trace_enabled() -> bool {
-    std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
-}
-
-fn trace_log(message: impl std::fmt::Display) {
-    if trace_enabled() {
-        eprintln!("provekit trace: {message}");
-    }
-}
-
-fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
-    let mut line = String::new();
-    let n = reader
-        .read_line(&mut line)
-        .map_err(|e| format!("read response: {e}"))?;
-    if n == 0 {
-        return Err("plugin closed stdout before responding".to_string());
-    }
-    let v: Value = serde_json::from_str(line.trim())
-        .map_err(|e| format!("parse JSON-RPC response: {e}\n  raw: {line}"))?;
-    if v.get("id").and_then(|v| v.as_i64()) != Some(id) {
-        return Err(format!("response id mismatch: expected {id}, got {v:?}"));
-    }
-    if let Some(err) = v.get("error") {
-        return Err(format!("plugin returned error: {err}"));
-    }
-    v.get("result")
-        .cloned()
-        .ok_or_else(|| "response missing `result`".to_string())
-}
-
 // ---------------------------------------------------------------------------
 // ir-document → proof-envelope minting
 // ---------------------------------------------------------------------------
 
 fn mint_from_ir_document(
     ir: &[Value],
-    _project_root: &Path,
+    authorities: Option<&Vec<Value>>,
+    implications: Option<&Vec<Value>>,
+    witnesses: Option<&Vec<Value>>,
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
 ) -> Result<(Vec<u8>, String, String), String> {
     use std::collections::BTreeMap;
 
+    #[derive(Clone)]
+    struct AuthorityRef {
+        cid: String,
+        seed: Ed25519Seed,
+        principal: String,
+    }
+
+    struct MintedContractRef {
+        attestation_cid: String,
+        pre_hash: Option<String>,
+        post_hash: Option<String>,
+        inv_hash: Option<String>,
+    }
+
+    impl MintedContractRef {
+        fn slot_hash(&self, slot: &str) -> Option<&str> {
+            match slot {
+                "pre" => self.pre_hash.as_deref(),
+                "post" => self.post_hash.as_deref(),
+                "inv" => self.inv_hash.as_deref(),
+                _ => None,
+            }
+        }
+    }
+
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut authorities_by_id: BTreeMap<String, AuthorityRef> = BTreeMap::new();
+    let mut proof_authority: Option<AuthorityRef> = None;
+    let mut contracts_by_name: BTreeMap<String, MintedContractRef> = BTreeMap::new();
     let mut content_cids: Vec<String> = Vec::new();
-    let signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
+    let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
     let produced_at = "2026-05-03T18:00:00Z".to_string();
+    let witness_cids_by_contract =
+        lower_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
+
+    if let Some(authorities) = authorities {
+        for authority in authorities {
+            let id = required_str(authority, "id", "authority")?;
+            let principal = optional_str(authority, "principal").unwrap_or(id);
+            let scope_kind = required_str(authority, "scopeKind", id)?;
+            let scope = required_str(authority, "scope", id)?;
+            let seed = deterministic_signer_seed(principal);
+            let key = ed25519_pubkey_string(&seed);
+            let parent_id = optional_str(authority, "parent")
+                .or_else(|| optional_str(authority, "issuer"))
+                .or_else(|| optional_str(authority, "parentAuthority"));
+            let parent = match parent_id {
+                Some(parent_id) => Some(authorities_by_id.get(parent_id).ok_or_else(|| {
+                    format!("authority `{id}` references missing parent `{parent_id}`")
+                })?),
+                None => None,
+            };
+            let parent_authority_cid = parent.map(|parent| parent.cid.clone());
+            let signer_seed = parent.map(|parent| parent.seed).unwrap_or(seed);
+            let args = MintAuthorityArgs {
+                principal: principal.to_string(),
+                key: key.clone(),
+                scope_kind: scope_kind.to_string(),
+                scope: scope.to_string(),
+                parent_authority_cid,
+                produced_by: "provekit-cli".to_string(),
+                produced_at: produced_at.clone(),
+                signer_seed,
+            };
+            let minted =
+                mint_authority(&args).map_err(|e| format!("mint authority `{id}`: {e}"))?;
+            let authority_ref = AuthorityRef {
+                cid: minted.cid.clone(),
+                seed,
+                principal: principal.to_string(),
+            };
+            if scope_kind == "proof" && proof_authority.is_none() {
+                proof_authority = Some(authority_ref.clone());
+            }
+            if authorities_by_id
+                .insert(id.to_string(), authority_ref)
+                .is_some()
+            {
+                return Err(format!("duplicate authority `{id}`"));
+            }
+            members
+                .entry(minted.cid.clone())
+                .or_insert(minted.canonical_bytes);
+        }
+    }
 
     for decl in ir {
         let kind = decl.get("kind").and_then(|v| v.as_str()).unwrap_or("");
@@ -579,6 +433,26 @@ fn mint_from_ir_document(
         if pre.is_none() && post.is_none() && inv.is_none() {
             continue;
         }
+        let authority = optional_str(decl, "authority")
+            .map(|authority_id| {
+                authorities_by_id.get(authority_id).ok_or_else(|| {
+                    format!("contract `{name}` references missing authority `{authority_id}`")
+                })
+            })
+            .transpose()?;
+        let mut input_cids = string_array(decl, "inputCids", &name)?;
+        if let Some(witness_cids) = witness_cids_by_contract.get(&name) {
+            input_cids.extend(witness_cids.iter().cloned());
+        }
+        if let Some(authority) = authority {
+            input_cids.push(authority.cid.clone());
+        }
+        let signer_seed = authority
+            .map(|authority| authority.seed)
+            .unwrap_or(default_signer_seed);
+        let produced_by = authority
+            .map(|authority| authority.principal.clone())
+            .unwrap_or_else(|| "provekit-cli".to_string());
 
         let args = MintContractArgs {
             contract_name: name,
@@ -586,9 +460,9 @@ fn mint_from_ir_document(
             post,
             inv,
             out_binding,
-            produced_by: "provekit-cli".to_string(),
+            produced_by,
             produced_at: produced_at.clone(),
-            input_cids: vec![],
+            input_cids,
             authoring: Authoring::Lift {
                 lifter: "ir-document".to_string(),
                 evidence: "minted from ir-document RPC response".to_string(),
@@ -598,9 +472,27 @@ fn mint_from_ir_document(
         };
 
         let ccid = contract_cid(&args);
-        content_cids.push(ccid);
+        let pre_hash = args.pre.as_ref().map(formula_hash);
+        let post_hash = args.post.as_ref().map(formula_hash);
+        let inv_hash = args.inv.as_ref().map(formula_hash);
+        content_cids.push(ccid.clone());
 
         let m = mint_contract(&args).map_err(|e| format!("mint contract: {e}"))?;
+
+        if contracts_by_name
+            .insert(
+                args.contract_name.clone(),
+                MintedContractRef {
+                    attestation_cid: m.cid.clone(),
+                    pre_hash,
+                    post_hash,
+                    inv_hash,
+                },
+            )
+            .is_some()
+        {
+            return Err(format!("duplicate contract `{}`", args.contract_name));
+        }
 
         members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
     }
@@ -609,10 +501,93 @@ fn mint_from_ir_document(
         return Err("no contracts to mint".to_string());
     }
 
+    if let Some(implications) = implications {
+        for implication in implications {
+            let name = implication
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed-implication");
+            let antecedent_name = required_str(implication, "antecedent", name)?;
+            let consequent_name = required_str(implication, "consequent", name)?;
+            let antecedent_slot = optional_str(implication, "antecedentSlot").unwrap_or("post");
+            let consequent_slot = optional_str(implication, "consequentSlot").unwrap_or("post");
+
+            let antecedent = contracts_by_name.get(antecedent_name).ok_or_else(|| {
+                format!("implication `{name}` references missing contract `{antecedent_name}`")
+            })?;
+            let consequent = contracts_by_name.get(consequent_name).ok_or_else(|| {
+                format!("implication `{name}` references missing contract `{consequent_name}`")
+            })?;
+            let antecedent_hash = antecedent.slot_hash(antecedent_slot).ok_or_else(|| {
+                format!(
+                    "implication `{name}` references missing slot `{antecedent_slot}` on contract `{antecedent_name}`"
+                )
+            })?;
+            let consequent_hash = consequent.slot_hash(consequent_slot).ok_or_else(|| {
+                format!(
+                    "implication `{name}` references missing slot `{consequent_slot}` on contract `{consequent_name}`"
+                )
+            })?;
+            let authority = optional_str(implication, "authority")
+                .map(|authority_id| {
+                    authorities_by_id.get(authority_id).ok_or_else(|| {
+                        format!(
+                            "implication `{name}` references missing authority `{authority_id}`"
+                        )
+                    })
+                })
+                .transpose()?;
+            let additional_input_cids = authority
+                .map(|authority| vec![authority.cid.clone()])
+                .unwrap_or_default();
+            let signer_seed = authority
+                .map(|authority| authority.seed)
+                .unwrap_or(default_signer_seed);
+            let produced_by = authority
+                .map(|authority| authority.principal.clone())
+                .unwrap_or_else(|| "provekit-cli".to_string());
+
+            let args = MintImplicationArgs {
+                produced_by,
+                produced_at: produced_at.clone(),
+                antecedent_hash: antecedent_hash.to_string(),
+                consequent_hash: consequent_hash.to_string(),
+                antecedent_cid: antecedent.attestation_cid.clone(),
+                consequent_cid: consequent.attestation_cid.clone(),
+                additional_input_cids,
+                antecedent_slot: antecedent_slot.to_string(),
+                consequent_slot: consequent_slot.to_string(),
+                prover: optional_str(implication, "prover")
+                    .unwrap_or("bridgeworks-white-room")
+                    .to_string(),
+                prover_run_ms: implication
+                    .get("proverRunMs")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+                smt_lib_input: optional_str(implication, "smtLibInput")
+                    .unwrap_or("")
+                    .to_string(),
+                proof_witness: optional_str(implication, "proofWitness")
+                    .unwrap_or(name)
+                    .to_string(),
+                signer_seed,
+            };
+
+            let m = mint_implication(&args);
+            members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
+        }
+    }
+
     let contract_set_cid = compute_contract_set_cid(content_cids);
 
-    let signer_pubkey = ed25519_pubkey_string(&signer_seed);
-    let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
+    let (proof_signer, proof_signer_seed) = if let Some(authority) = proof_authority {
+        (authority.cid, authority.seed)
+    } else {
+        (
+            ed25519_pubkey_string(&default_signer_seed),
+            default_signer_seed,
+        )
+    };
 
     let proof_input = ProofEnvelopeInput {
         name: "ir-document".to_string(),
@@ -620,14 +595,90 @@ fn mint_from_ir_document(
         binary_cid: None,
         metadata: None,
         members,
-        signer_cid,
-        signer_seed,
+        signer_cid: proof_signer,
+        signer_seed: proof_signer_seed,
         declared_at: produced_at,
     };
 
     let built = build_proof_envelope(&proof_input);
 
     Ok((built.bytes, built.cid, contract_set_cid))
+}
+
+fn optional_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
+    value.get(field).and_then(|v| v.as_str())
+}
+
+fn required_str<'a>(value: &'a Value, field: &str, context: &str) -> Result<&'a str, String> {
+    optional_str(value, field).ok_or_else(|| format!("`{context}` missing `{field}`"))
+}
+
+fn formula_hash(formula: &Arc<CValue>) -> String {
+    blake3_512_of(encode_jcs(formula).as_bytes())
+}
+
+fn string_array(value: &Value, field: &str, context: &str) -> Result<Vec<String>, String> {
+    let Some(values) = value.get(field) else {
+        return Ok(Vec::new());
+    };
+    let array = values
+        .as_array()
+        .ok_or_else(|| format!("`{context}` field `{field}` must be an array"))?;
+    array
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("`{context}` field `{field}` must contain only strings"))
+        })
+        .collect()
+}
+
+fn lower_witnesses_by_contract(
+    witnesses: Option<&Vec<Value>>,
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let mut by_contract: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let Some(witnesses) = witnesses else {
+        return Ok(by_contract);
+    };
+    for witness in witnesses {
+        let attach_to = required_str(witness, "attachTo", "witness requirement")?;
+        let lowered =
+            crate::cmd_lower::lower_witness_requirement(project_root, witness, out_dir, quiet)
+                .map_err(|e| format!("ORP witness failed: {attach_to}\n{e}"))?;
+        by_contract
+            .entry(attach_to.to_string())
+            .or_default()
+            .push(lowered.filename_cid);
+    }
+    Ok(by_contract)
+}
+
+fn deterministic_signer_seed(principal: &str) -> Ed25519Seed {
+    let digest = blake3_512_of(format!("provekit-signer:{principal}").as_bytes());
+    let hex = digest
+        .strip_prefix("blake3-512:")
+        .expect("blake3_512_of returns tagged digest");
+    let mut seed = [0u8; 32];
+    for (idx, slot) in seed.iter_mut().enumerate() {
+        let hi = hex_nibble(hex.as_bytes()[idx * 2]);
+        let lo = hex_nibble(hex.as_bytes()[idx * 2 + 1]);
+        *slot = (hi << 4) | lo;
+    }
+    seed
+}
+
+fn hex_nibble(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        b'A'..=b'F' => byte - b'A' + 10,
+        _ => 0,
+    }
 }
 
 /// Convert `serde_json::Value` to `provekit_canonicalizer::Value`.
@@ -986,7 +1037,8 @@ mod tests {
         // C3 (verify_c3_lift_request_well_formed) requires source_paths to be
         // a non-empty array. Sending [] was the bug fixed in issue #166.
         let root = PathBuf::from(".");
-        let params = build_lift_params(&root, "rust");
+        let params =
+            crate::lift_plugin::build_lift_params(&root, "rust", LiftPluginOptions::default());
         let paths = params["source_paths"]
             .as_array()
             .expect("source_paths must be an array");
@@ -1000,7 +1052,8 @@ mod tests {
     #[test]
     fn dispatch_lift_params_has_surface_and_options() {
         let root = PathBuf::from(".");
-        let params = build_lift_params(&root, "go");
+        let params =
+            crate::lift_plugin::build_lift_params(&root, "go", LiftPluginOptions::default());
         assert_eq!(params["surface"].as_str(), Some("go"));
         assert_eq!(
             params["config_path"].as_str(),
@@ -1029,10 +1082,213 @@ mod tests {
         })];
 
         let (bytes, filename_cid, contract_set_cid) =
-            mint_from_ir_document(&ir, Path::new(".")).expect("mint bug-zoo style ir-document");
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), Path::new("."), true)
+                .expect("mint bug-zoo style ir-document");
         assert!(!bytes.is_empty());
         assert!(filename_cid.starts_with("blake3-512:"));
         assert!(contract_set_cid.starts_with("blake3-512:"));
+        let proof_path = PathBuf::from(format!("{filename_cid}.proof"));
+        let report =
+            provekit_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
+        assert!(
+            report.errors.is_empty(),
+            "minted ir-document proof should inspect cleanly: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn mint_from_ir_document_mints_implication_mementos() {
+        let ir = vec![
+            json!({
+                "kind": "contract",
+                "name": "lower.claim",
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "lower_holds", "args": []}
+            }),
+            json!({
+                "kind": "contract",
+                "name": "upper.claim",
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "upper_holds", "args": []}
+            }),
+        ];
+        let implications = vec![json!({
+            "name": "lower-implies-upper",
+            "antecedent": "lower.claim",
+            "consequent": "upper.claim",
+            "antecedentSlot": "post",
+            "consequentSlot": "post"
+        })];
+
+        let (bytes, _, _) = mint_from_ir_document(
+            &ir,
+            None,
+            Some(&implications),
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect("mint contracts plus implication");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+
+        assert_eq!(members.len(), 3);
+
+        let mut contract_count = 0;
+        let mut implication_count = 0;
+        for member in members.values() {
+            let bytes = member.as_bstr().expect("member bytes");
+            let envelope: Value = serde_json::from_slice(bytes).expect("member JSON");
+            match envelope.pointer("/header/kind").and_then(|v| v.as_str()) {
+                Some("contract") => contract_count += 1,
+                Some("implication") => {
+                    implication_count += 1;
+                    let inputs = envelope
+                        .pointer("/header/inputCids")
+                        .and_then(|v| v.as_array())
+                        .expect("implication inputCids");
+                    assert_eq!(inputs.len(), 2);
+                }
+                other => panic!("unexpected member kind {other:?}"),
+            }
+        }
+
+        assert_eq!(contract_count, 2);
+        assert_eq!(implication_count, 1);
+    }
+
+    #[test]
+    fn mint_from_ir_document_links_contract_to_authority_memento() {
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "checked_add_u8.postcondition",
+            "outBinding": "out",
+            "authority": "bridgeworks.software",
+            "post": {"kind": "atomic", "name": "checked_add_u8.postcondition", "args": []}
+        })];
+        let authorities = vec![
+            json!({
+                "id": "bridgeworks.root",
+                "principal": "bridgeworks.root",
+                "scopeKind": "proof",
+                "scope": "authority-backed-test"
+            }),
+            json!({
+                "id": "bridgeworks.software",
+                "principal": "bridgeworks.software",
+                "scopeKind": "contract",
+                "scope": "checked_add_u8.postcondition",
+                "parent": "bridgeworks.root"
+            }),
+        ];
+
+        let (bytes, filename_cid, _) = mint_from_ir_document(
+            &ir,
+            Some(&authorities),
+            None,
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect("mint authority plus contract");
+        let proof_path = PathBuf::from(format!("{filename_cid}.proof"));
+        let report =
+            provekit_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
+        assert!(
+            report.errors.is_empty(),
+            "authority-backed proof should inspect cleanly: {:?}",
+            report.errors
+        );
+
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let root = catalog.as_map().expect("catalog map");
+        let proof_signer = root
+            .get("signer")
+            .and_then(|v| v.as_tstr())
+            .expect("proof signer");
+        assert!(proof_signer.starts_with("blake3-512:"));
+
+        let members = root
+            .get("members")
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        let mut authority = None;
+        let mut authority_member_cid = None;
+        let mut contract = None;
+        for (cid, member) in members {
+            let bytes = member.as_bstr().expect("member bytes");
+            let envelope: Value = serde_json::from_slice(bytes).expect("member JSON");
+            match envelope.pointer("/header/kind").and_then(|v| v.as_str()) {
+                Some("authority")
+                    if envelope
+                        .pointer("/header/principal")
+                        .and_then(|v| v.as_str())
+                        == Some("bridgeworks.software") =>
+                {
+                    authority_member_cid = Some(cid.clone());
+                    authority = Some(envelope);
+                }
+                Some("contract") => contract = Some(envelope),
+                _ => {}
+            }
+        }
+        let authority = authority.expect("authority memento");
+        let authority_member_cid = authority_member_cid.expect("authority member cid");
+        let contract = contract.expect("contract memento");
+        let authority_key = authority
+            .pointer("/header/key")
+            .and_then(|v| v.as_str())
+            .expect("authority key");
+
+        assert_eq!(
+            contract
+                .pointer("/header/inputCids/0")
+                .and_then(|v| v.as_str()),
+            Some(authority_member_cid.as_str())
+        );
+        assert_eq!(
+            contract
+                .pointer("/envelope/signer")
+                .and_then(|v| v.as_str()),
+            Some(authority_key)
+        );
+    }
+
+    #[test]
+    fn mint_from_ir_document_rejects_implication_missing_contract() {
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "upper.claim",
+            "outBinding": "out",
+            "post": {"kind": "atomic", "name": "upper_holds", "args": []}
+        })];
+        let implications = vec![json!({
+            "name": "lower-implies-upper",
+            "antecedent": "lower.claim",
+            "consequent": "upper.claim",
+            "antecedentSlot": "post",
+            "consequentSlot": "post"
+        })];
+
+        let err = mint_from_ir_document(
+            &ir,
+            None,
+            Some(&implications),
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect_err("missing antecedent should fail");
+
+        assert!(err.contains("lower.claim"), "error was: {err}");
     }
 
     #[test]

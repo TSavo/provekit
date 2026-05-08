@@ -1,0 +1,35 @@
+format: bridgeworks.lowering.trace.v1
+layer: compiler
+claim_id: compiler.lowering.preserves_checked_add
+source_contract: checked_add_u8.postcondition
+target_contract: isa.add8.carry_semantics
+
+[lowering]
+source_operation: checked_add_u8(a:u8, b:u8) -> result
+target_artifact: toy8.asm
+strategy: preserve_checked_add_u8
+
+[required_sequence]
+1: LOAD_ARG r0, a
+2: LOAD_ARG r1, b
+3: ADD8 r2, r0, r1
+4: BR_CARRY overflow
+5: RET_OK r2
+6: LABEL overflow
+7: RET_OVERFLOW
+
+[preservation_markers]
+sum_source: (a + b) mod 256
+sum_target: r2
+carry_source: a + b >= 256
+carry_target: ADD8.carry
+overflow_branch: BR_CARRY overflow
+ok_result_when: ADD8.carry == false
+overflow_result_when: ADD8.carry == true
+
+[adapter_expectations]
+emit_claim: compiler.lowering.preserves_checked_add
+requires_instruction: ADD8
+requires_branch_on_flag: carry
+requires_overflow_target: overflow
+requires_ok_return_after_noncarry: true
