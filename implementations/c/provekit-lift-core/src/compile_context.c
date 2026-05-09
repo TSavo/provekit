@@ -1,6 +1,7 @@
 #include "provekit/c_lift_core.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,9 @@ typedef struct {
     size_t len;
     size_t cap;
 } pk_c_cc_buf;
+
+static int pk_c_cc_is_absolute_path(const char *path);
+static char *pk_c_cc_join_path(const char *root, const char *path);
 
 static char *pk_c_cc_copy_n(const char *src, size_t len) {
     char *copy = malloc(len + 1);
@@ -416,6 +420,90 @@ static int pk_c_cc_add_default_args(
     return 0;
 }
 
+static int pk_c_cc_arg_value_is_path(const char *arg) {
+    return strcmp(arg, "-I") == 0 ||
+        strcmp(arg, "-include") == 0 ||
+        strcmp(arg, "-imacros") == 0 ||
+        strcmp(arg, "-isystem") == 0 ||
+        strcmp(arg, "-idirafter") == 0 ||
+        strcmp(arg, "-iquote") == 0 ||
+        strcmp(arg, "-isysroot") == 0;
+}
+
+static char *pk_c_cc_rebase_path_value(const char *base_dir, const char *value) {
+    if (value == NULL) {
+        return NULL;
+    }
+    if (base_dir == NULL || base_dir[0] == '\0' ||
+        value[0] == '\0' || pk_c_cc_is_absolute_path(value) ||
+        strcmp(value, "-") == 0) {
+        return pk_c_cc_copy(value);
+    }
+    return pk_c_cc_join_path(base_dir, value);
+}
+
+static int pk_c_cc_add_rebased_path_value(
+    pk_c_compile_context *context,
+    const char *base_dir,
+    const char *value
+) {
+    char *rebased = pk_c_cc_rebase_path_value(base_dir, value);
+    int rc;
+
+    if (rebased == NULL) {
+        return -1;
+    }
+    rc = pk_c_cc_add_arg(context, rebased);
+    free(rebased);
+    return rc;
+}
+
+static const char *pk_c_cc_attached_path_prefix(const char *arg) {
+    static const char *const prefixes[] = {
+        "-I",
+        "-isystem",
+        "-idirafter",
+        "-iquote",
+        "-isysroot"
+    };
+
+    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++) {
+        size_t prefix_len = strlen(prefixes[i]);
+
+        if (pk_c_cc_has_prefix(arg, prefixes[i]) && arg[prefix_len] != '\0') {
+            return prefixes[i];
+        }
+    }
+    return NULL;
+}
+
+static int pk_c_cc_add_rebased_attached_path_arg(
+    pk_c_compile_context *context,
+    const char *base_dir,
+    const char *arg,
+    const char *prefix
+) {
+    size_t prefix_len = strlen(prefix);
+    char *rebased = pk_c_cc_rebase_path_value(base_dir, arg + prefix_len);
+    char *attached;
+    int rc;
+
+    if (rebased == NULL) {
+        return -1;
+    }
+    attached = malloc(prefix_len + strlen(rebased) + 1);
+    if (attached == NULL) {
+        free(rebased);
+        return -1;
+    }
+    memcpy(attached, prefix, prefix_len);
+    memcpy(attached + prefix_len, rebased, strlen(rebased) + 1);
+    rc = pk_c_cc_add_arg(context, attached);
+    free(attached);
+    free(rebased);
+    return rc;
+}
+
 static int pk_c_cc_add_opacity(
     pk_c_compile_context *context,
     const char *path,
@@ -441,7 +529,8 @@ static int pk_c_cc_add_opacity(
 static int pk_c_cc_ingest_args(
     pk_c_compile_context *context,
     const char *path,
-    const pk_c_cc_words *words
+    const pk_c_cc_words *words,
+    const char *base_dir
 ) {
     size_t start = pk_c_cc_first_arg_index(words);
 
@@ -483,7 +572,11 @@ static int pk_c_cc_ingest_args(
                     pk_c_cc_set_target(context, words->items[i + 1]) != 0) {
                     return -1;
                 }
-                if (pk_c_cc_add_arg(context, words->items[i + 1]) != 0) {
+                if (pk_c_cc_arg_value_is_path(arg)) {
+                    if (pk_c_cc_add_rebased_path_value(context, base_dir, words->items[i + 1]) != 0) {
+                        return -1;
+                    }
+                } else if (pk_c_cc_add_arg(context, words->items[i + 1]) != 0) {
                     return -1;
                 }
                 i++;
@@ -508,7 +601,17 @@ static int pk_c_cc_ingest_args(
             continue;
         }
         if (pk_c_cc_preserve_attached(arg)) {
-            if (pk_c_cc_add_arg(context, arg) != 0) {
+            const char *path_prefix = pk_c_cc_attached_path_prefix(arg);
+
+            if (path_prefix != NULL) {
+                if (pk_c_cc_add_rebased_attached_path_arg(
+                    context,
+                    base_dir,
+                    arg,
+                    path_prefix) != 0) {
+                    return -1;
+                }
+            } else if (pk_c_cc_add_arg(context, arg) != 0) {
                 return -1;
             }
             continue;
@@ -524,9 +627,10 @@ static int pk_c_cc_ingest_args(
     return 0;
 }
 
-pk_c_compile_context *pk_c_compile_context_from_command(
+static pk_c_compile_context *pk_c_compile_context_from_command_with_base(
     const char *path,
-    const char *command
+    const char *command,
+    const char *base_dir
 ) {
     pk_c_compile_context *context = pk_c_cc_context_new(command == NULL ? "" : command);
     pk_c_cc_words words = {0};
@@ -546,12 +650,71 @@ pk_c_compile_context *pk_c_compile_context_from_command(
         pk_c_compile_context_free(context);
         return NULL;
     }
-    if (pk_c_cc_ingest_args(context, path, &words) != 0) {
+    if (pk_c_cc_ingest_args(context, path, &words, base_dir) != 0) {
         pk_c_cc_words_free(&words);
         pk_c_compile_context_free(context);
         return NULL;
     }
     pk_c_cc_words_free(&words);
+    return context;
+}
+
+pk_c_compile_context *pk_c_compile_context_from_command(
+    const char *path,
+    const char *command
+) {
+    return pk_c_compile_context_from_command_with_base(path, command, NULL);
+}
+
+static char *pk_c_cc_join_words_for_provenance(const pk_c_cc_words *words) {
+    size_t len = 0;
+    char *out;
+    char *dst;
+
+    if (words == NULL || words->len == 0) {
+        return pk_c_cc_copy("");
+    }
+    for (size_t i = 0; i < words->len; i++) {
+        len += strlen(words->items[i]) + (i == 0 ? 0 : 1);
+    }
+    out = malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    dst = out;
+    for (size_t i = 0; i < words->len; i++) {
+        size_t item_len = strlen(words->items[i]);
+
+        if (i != 0) {
+            *dst++ = ' ';
+        }
+        memcpy(dst, words->items[i], item_len);
+        dst += item_len;
+    }
+    *dst = '\0';
+    return out;
+}
+
+static pk_c_compile_context *pk_c_compile_context_from_words(
+    const char *path,
+    const pk_c_cc_words *words,
+    const char *base_dir
+) {
+    char *command = pk_c_cc_join_words_for_provenance(words);
+    pk_c_compile_context *context;
+
+    if (command == NULL) {
+        return NULL;
+    }
+    context = pk_c_cc_context_new(command);
+    free(command);
+    if (context == NULL) {
+        return NULL;
+    }
+    if (pk_c_cc_ingest_args(context, path, words, base_dir) != 0) {
+        pk_c_compile_context_free(context);
+        return NULL;
+    }
     return context;
 }
 
@@ -576,6 +739,486 @@ pk_c_compile_context *pk_c_compile_context_from_kbuild_cmdline(
     if (context != NULL && assignment == NULL &&
         pk_c_cc_add_opacity(context, path, "kbuild-command-assignment-missing",
             "Kbuild command line did not contain a := assignment") != 0) {
+        pk_c_compile_context_free(context);
+        return NULL;
+    }
+    return context;
+}
+
+static int pk_c_cc_is_absolute_path(const char *path) {
+    return path != NULL && path[0] == '/';
+}
+
+static char *pk_c_cc_join_path(const char *root, const char *path) {
+    const char *base = root == NULL || root[0] == '\0' ? "." : root;
+    size_t base_len = strlen(base);
+    size_t path_len;
+    char *joined;
+
+    if (path == NULL) {
+        path = "";
+    }
+    if (pk_c_cc_is_absolute_path(path)) {
+        return pk_c_cc_copy(path);
+    }
+    path_len = strlen(path);
+    joined = malloc(base_len + 1 + path_len + 1);
+    if (joined == NULL) {
+        return NULL;
+    }
+    memcpy(joined, base, base_len);
+    joined[base_len] = '/';
+    memcpy(joined + base_len + 1, path, path_len + 1);
+    return joined;
+}
+
+static const char *pk_c_cc_relative_source(const char *root, const char *source_path) {
+    size_t root_len;
+    const char *source = source_path == NULL ? "" : source_path;
+
+    while (source[0] == '.' && source[1] == '/') {
+        source += 2;
+    }
+    if (root == NULL || !pk_c_cc_is_absolute_path(source)) {
+        return source;
+    }
+    root_len = strlen(root);
+    if (root_len == 0) {
+        return source;
+    }
+    if (strncmp(source, root, root_len) == 0 && source[root_len] == '/') {
+        source += root_len + 1;
+        while (source[0] == '.' && source[1] == '/') {
+            source += 2;
+        }
+        return source;
+    }
+    return source;
+}
+
+static char *pk_c_cc_kbuild_cmd_path(const char *root, const char *source_path) {
+    const char *relative = pk_c_cc_relative_source(root, source_path);
+    const char *slash = strrchr(relative, '/');
+    const char *base = slash == NULL ? relative : slash + 1;
+    size_t dir_len = slash == NULL ? 0 : (size_t)(slash - relative);
+    size_t base_len = strlen(base);
+    size_t stem_len;
+    size_t rel_len;
+    char *rel_cmd;
+    char *joined;
+    char *dst;
+
+    if (base_len < 3 || strcmp(base + base_len - 2, ".c") != 0) {
+        return NULL;
+    }
+    stem_len = base_len - 2;
+    rel_len = dir_len + (dir_len == 0 ? 0 : 1) + 1 + stem_len + strlen(".o.cmd");
+    rel_cmd = malloc(rel_len + 1);
+    if (rel_cmd == NULL) {
+        return NULL;
+    }
+    dst = rel_cmd;
+    if (dir_len != 0) {
+        memcpy(dst, relative, dir_len);
+        dst += dir_len;
+        *dst++ = '/';
+    }
+    *dst++ = '.';
+    memcpy(dst, base, stem_len);
+    dst += stem_len;
+    memcpy(dst, ".o.cmd", strlen(".o.cmd") + 1);
+
+    joined = pk_c_cc_join_path(root, rel_cmd);
+    free(rel_cmd);
+    return joined;
+}
+
+static char *pk_c_cc_read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    long len;
+    char *data;
+
+    if (f == NULL) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    len = ftell(f);
+    if (len < 0) {
+        fclose(f);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    data = malloc((size_t)len + 1);
+    if (data == NULL) {
+        fclose(f);
+        return NULL;
+    }
+    if (fread(data, 1, (size_t)len, f) != (size_t)len) {
+        free(data);
+        fclose(f);
+        return NULL;
+    }
+    data[len] = '\0';
+    fclose(f);
+    return data;
+}
+
+static int pk_c_cc_path_has_suffix(const char *path, const char *suffix) {
+    size_t path_len;
+    size_t suffix_len;
+
+    if (path == NULL || suffix == NULL) {
+        return 0;
+    }
+    path_len = strlen(path);
+    suffix_len = strlen(suffix);
+    return path_len > suffix_len &&
+        path[path_len - suffix_len - 1] == '/' &&
+        strcmp(path + path_len - suffix_len, suffix) == 0;
+}
+
+static int pk_c_cc_compile_entry_matches(
+    const char *root,
+    const char *source_path,
+    const char *directory,
+    const char *file
+) {
+    const char *source = pk_c_cc_relative_source(root, source_path);
+    char *root_source = NULL;
+    char *directory_file = NULL;
+    int match = 0;
+
+    if (file == NULL || source == NULL) {
+        return 0;
+    }
+    if (strcmp(file, source) == 0 || pk_c_cc_path_has_suffix(file, source)) {
+        return 1;
+    }
+    root_source = pk_c_cc_join_path(root, source);
+    if (root_source != NULL && strcmp(file, root_source) == 0) {
+        match = 1;
+    }
+    if (!match && directory != NULL && !pk_c_cc_is_absolute_path(file)) {
+        directory_file = pk_c_cc_join_path(directory, file);
+        if (directory_file != NULL &&
+            (strcmp(directory_file, source) == 0 ||
+                (root_source != NULL && strcmp(directory_file, root_source) == 0) ||
+                pk_c_cc_path_has_suffix(directory_file, source))) {
+            match = 1;
+        }
+    }
+    free(root_source);
+    free(directory_file);
+    return match;
+}
+
+static char *pk_c_cc_json_decode_string_at(const char *quote, const char **end_out) {
+    const char *p;
+    char *out;
+    size_t cap;
+    size_t len = 0;
+
+    if (quote == NULL || *quote != '"') {
+        return NULL;
+    }
+    cap = strlen(quote) + 1;
+    out = malloc(cap);
+    if (out == NULL) {
+        return NULL;
+    }
+    p = quote + 1;
+    while (*p != '\0' && *p != '"') {
+        if (*p == '\\') {
+            p++;
+            switch (*p) {
+            case '"':
+            case '\\':
+            case '/':
+                out[len++] = *p++;
+                break;
+            case 'b':
+                out[len++] = '\b';
+                p++;
+                break;
+            case 'f':
+                out[len++] = '\f';
+                p++;
+                break;
+            case 'n':
+                out[len++] = '\n';
+                p++;
+                break;
+            case 'r':
+                out[len++] = '\r';
+                p++;
+                break;
+            case 't':
+                out[len++] = '\t';
+                p++;
+                break;
+            default:
+                free(out);
+                return NULL;
+            }
+        } else {
+            out[len++] = *p++;
+        }
+    }
+    if (*p != '"') {
+        free(out);
+        return NULL;
+    }
+    out[len] = '\0';
+    if (end_out != NULL) {
+        *end_out = p + 1;
+    }
+    return out;
+}
+
+static char *pk_c_cc_json_string_field(const char *object, const char *field) {
+    char needle[128];
+    const char *p;
+    int written;
+
+    written = snprintf(needle, sizeof(needle), "\"%s\"", field);
+    if (written < 0 || (size_t)written >= sizeof(needle)) {
+        return NULL;
+    }
+    p = strstr(object, needle);
+    if (p == NULL) {
+        return NULL;
+    }
+    p += strlen(needle);
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    if (*p != ':') {
+        return NULL;
+    }
+    p++;
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    if (*p != '"') {
+        return NULL;
+    }
+    return pk_c_cc_json_decode_string_at(p, NULL);
+}
+
+static int pk_c_cc_json_string_array_field(
+    const char *object,
+    const char *field,
+    pk_c_cc_words *words
+) {
+    char needle[128];
+    const char *p;
+    int written;
+
+    memset(words, 0, sizeof(*words));
+    written = snprintf(needle, sizeof(needle), "\"%s\"", field);
+    if (written < 0 || (size_t)written >= sizeof(needle)) {
+        return -1;
+    }
+    p = strstr(object, needle);
+    if (p == NULL) {
+        return 0;
+    }
+    p += strlen(needle);
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    if (*p != ':') {
+        return -1;
+    }
+    p++;
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    if (*p != '[') {
+        return -1;
+    }
+    p++;
+    while (*p != '\0') {
+        char *item;
+
+        while (isspace((unsigned char)*p)) {
+            p++;
+        }
+        if (*p == ']') {
+            return 0;
+        }
+        if (*p != '"') {
+            pk_c_cc_words_free(words);
+            return -1;
+        }
+        item = pk_c_cc_json_decode_string_at(p, &p);
+        if (item == NULL) {
+            pk_c_cc_words_free(words);
+            return -1;
+        }
+        if (pk_c_cc_words_add_owned(words, item) != 0) {
+            pk_c_cc_words_free(words);
+            return -1;
+        }
+        while (isspace((unsigned char)*p)) {
+            p++;
+        }
+        if (*p == ',') {
+            p++;
+            continue;
+        }
+        if (*p == ']') {
+            return 0;
+        }
+        pk_c_cc_words_free(words);
+        return -1;
+    }
+    pk_c_cc_words_free(words);
+    return -1;
+}
+
+static const char *pk_c_cc_json_object_end(const char *start) {
+    const char *p = start;
+    int depth = 0;
+    int in_string = 0;
+    int escaped = 0;
+
+    while (*p != '\0') {
+        if (in_string) {
+            if (escaped) {
+                escaped = 0;
+            } else if (*p == '\\') {
+                escaped = 1;
+            } else if (*p == '"') {
+                in_string = 0;
+            }
+        } else if (*p == '"') {
+            in_string = 1;
+        } else if (*p == '{') {
+            depth++;
+        } else if (*p == '}') {
+            depth--;
+            if (depth == 0) {
+                return p + 1;
+            }
+        }
+        p++;
+    }
+    return NULL;
+}
+
+static pk_c_compile_context *pk_c_cc_resolve_compile_commands(
+    const char *root,
+    const char *source_path
+) {
+    char *path = pk_c_cc_join_path(root, "compile_commands.json");
+    char *data;
+    const char *cursor;
+    pk_c_compile_context *context = NULL;
+
+    if (path == NULL) {
+        return NULL;
+    }
+    data = pk_c_cc_read_file(path);
+    free(path);
+    if (data == NULL) {
+        return NULL;
+    }
+    cursor = data;
+    while ((cursor = strchr(cursor, '{')) != NULL) {
+        const char *end = pk_c_cc_json_object_end(cursor);
+        char *object;
+        char *directory;
+        char *file;
+        char *command;
+        pk_c_cc_words arguments;
+
+        if (end == NULL) {
+            break;
+        }
+        object = pk_c_cc_copy_n(cursor, (size_t)(end - cursor));
+        if (object == NULL) {
+            break;
+        }
+        directory = pk_c_cc_json_string_field(object, "directory");
+        file = pk_c_cc_json_string_field(object, "file");
+        command = pk_c_cc_json_string_field(object, "command");
+        if (pk_c_cc_json_string_array_field(object, "arguments", &arguments) != 0) {
+            memset(&arguments, 0, sizeof(arguments));
+        }
+        if (pk_c_cc_compile_entry_matches(root, source_path, directory, file)) {
+            if (command != NULL) {
+                context = pk_c_compile_context_from_command_with_base(
+                    source_path,
+                    command,
+                    directory);
+            } else if (arguments.len > 0) {
+                context = pk_c_compile_context_from_words(source_path, &arguments, directory);
+            }
+            free(directory);
+            free(file);
+            free(command);
+            pk_c_cc_words_free(&arguments);
+            free(object);
+            break;
+        }
+        free(directory);
+        free(file);
+        free(command);
+        pk_c_cc_words_free(&arguments);
+        free(object);
+        cursor = end;
+    }
+    free(data);
+    return context;
+}
+
+static pk_c_compile_context *pk_c_cc_resolve_kbuild_cmd(
+    const char *root,
+    const char *source_path
+) {
+    char *path = pk_c_cc_kbuild_cmd_path(root, source_path);
+    char *data;
+    pk_c_compile_context *context;
+
+    if (path == NULL) {
+        return NULL;
+    }
+    data = pk_c_cc_read_file(path);
+    free(path);
+    if (data == NULL) {
+        return NULL;
+    }
+    context = pk_c_compile_context_from_kbuild_cmdline(source_path, data);
+    free(data);
+    return context;
+}
+
+pk_c_compile_context *pk_c_compile_context_resolve_kernel(
+    const char *workspace_root,
+    const char *source_path
+) {
+    const char *root = workspace_root == NULL || workspace_root[0] == '\0' ? "." : workspace_root;
+    const char *source = source_path == NULL ? "" : source_path;
+    pk_c_compile_context *context = pk_c_cc_resolve_compile_commands(root, source);
+
+    if (context != NULL) {
+        return context;
+    }
+    context = pk_c_cc_resolve_kbuild_cmd(root, source);
+    if (context != NULL) {
+        return context;
+    }
+    context = pk_c_compile_context_from_command(source, "");
+    if (context != NULL &&
+        pk_c_cc_add_opacity(context, source, "kernel-compile-context-missing",
+            "no compile_commands.json entry or Kbuild .cmd file was found for this source") != 0) {
         pk_c_compile_context_free(context);
         return NULL;
     }

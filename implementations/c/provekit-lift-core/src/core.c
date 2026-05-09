@@ -329,6 +329,34 @@ int pk_c_lift_result_add_refusal(pk_c_lift_result *result, const char *json) {
     return pk_c_json_array_add(&result->refusals, json);
 }
 
+static int pk_c_lift_result_extend_array(pk_c_json_array *dst, const pk_c_json_array *src) {
+    size_t i;
+
+    if (dst == NULL || src == NULL) {
+        return -1;
+    }
+    for (i = 0; i < src->len; i++) {
+        if (pk_c_json_array_add(dst, src->items[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int pk_c_lift_result_extend(pk_c_lift_result *result, const pk_c_lift_result *other) {
+    if (result == NULL || other == NULL) {
+        return -1;
+    }
+    if (pk_c_lift_result_extend_array(&result->declarations, &other->declarations) != 0 ||
+        pk_c_lift_result_extend_array(&result->call_edges, &other->call_edges) != 0 ||
+        pk_c_lift_result_extend_array(&result->diagnostics, &other->diagnostics) != 0 ||
+        pk_c_lift_result_extend_array(&result->opacity_report, &other->opacity_report) != 0 ||
+        pk_c_lift_result_extend_array(&result->refusals, &other->refusals) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 int pk_c_lift_result_add_opacity_entry(
     pk_c_lift_result *result,
     const char *kind,

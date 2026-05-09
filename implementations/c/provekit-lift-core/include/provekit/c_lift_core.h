@@ -107,6 +107,9 @@ pk_c_compile_context *pk_c_compile_context_from_command(
 pk_c_compile_context *pk_c_compile_context_from_kbuild_cmdline(
     const char *path,
     const char *cmdline);
+pk_c_compile_context *pk_c_compile_context_resolve_kernel(
+    const char *workspace_root,
+    const char *source_path);
 void pk_c_compile_context_configure_parse_options(
     const pk_c_compile_context *context,
     pk_c_parse_backend backend,
@@ -120,6 +123,7 @@ int pk_c_lift_result_add_call_edge(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_diagnostic(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_opacity(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_refusal(pk_c_lift_result *result, const char *json);
+int pk_c_lift_result_extend(pk_c_lift_result *result, const pk_c_lift_result *other);
 int pk_c_lift_result_add_opacity_entry(
     pk_c_lift_result *result,
     const char *kind,

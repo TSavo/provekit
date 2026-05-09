@@ -138,6 +138,35 @@ printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
     exit 1
 }
 
+AST_ASSERT_REQUEST='{"jsonrpc":"2.0","id":98,"method":"parse","params":{"path":"ast_assert.c","parse_backend":"clang_ast","source":"void assert(int);\nvoid check(int bad) { (assert)(bad); }\n"}}'
+AST_ASSERT_RESPONSE=$(printf '%s\n' "$AST_ASSERT_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"id":98' || {
+    echo "FAIL: AST assertions parse did not echo id 98" >&2
+    echo "$AST_ASSERT_RESPONSE" >&2
+    exit 1
+}
+
+if ! printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"name":"c-assertions.assert"' &&
+    ! printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"kind":"ast-backend-unavailable"'; then
+    echo "FAIL: clang_ast parse should either emit AST-only assert contract or report AST opacity" >&2
+    echo "$AST_ASSERT_RESPONSE" >&2
+    exit 1
+fi
+
+KERNEL_CONTEXT_REQUEST="$(
+    printf '{"jsonrpc":"2.0","id":97,"method":"parse","params":{"workspace_root":'
+    printf '"%s"' "$SCRIPT_DIR/fixtures"
+    printf ',"path":"kernel/missing.c","compile_context":"kernel","source":"void check(int bad) { WARN_ON(bad); }\\n"}}'
+)"
+KERNEL_CONTEXT_RESPONSE=$(printf '%s\n' "$KERNEL_CONTEXT_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$KERNEL_CONTEXT_RESPONSE" | grep -q '"kind":"kernel-compile-context-missing"' || {
+    echo "FAIL: kernel compile context resolver opacity should flow through assertions RPC" >&2
+    echo "$KERNEL_CONTEXT_RESPONSE" >&2
+    exit 1
+}
+
 COMMENT_ONLY_REQUEST='{"jsonrpc":"2.0","id":100,"method":"parse","params":{"path":"comment_only.c","source":"/* WARN_ON(noise) */\nint quiet(void) { const char *s = \"BUG_ON(noise)\"; return 0; }\n"}}'
 COMMENT_ONLY_RESPONSE=$(printf '%s\n' "$COMMENT_ONLY_REQUEST" | "$BIN" --rpc)
 

@@ -19,7 +19,18 @@ static int add_contract(pk_c_lift_result *result, const char *name) {
     return pk_c_lift_result_add_declaration(result, json);
 }
 
-pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *source) {
+static int append_core_result(pk_c_lift_result *result, const pk_c_source_facts *facts) {
+    if (facts == NULL || facts->extraction_result == NULL) {
+        return 0;
+    }
+    return pk_c_lift_result_extend(result, facts->extraction_result);
+}
+
+pk_c_lift_result *pk_c_assertions_lift_source_with_options(
+    const char *path,
+    const char *source,
+    const pk_c_parse_options *options
+) {
     pk_c_lift_result *result = pk_c_lift_result_new();
     pk_c_source_facts *facts;
     int saw_warn_on = 0;
@@ -34,12 +45,17 @@ pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *sour
         return result;
     }
 
-    facts = pk_c_parse_source(path, source);
+    facts = pk_c_parse_source_with_options(path, source, options);
     if (!facts) {
         (void)pk_c_lift_result_add_diagnostic(
             result,
             "{\"severity\":\"error\",\"message\":\"parse failed\"}");
         return result;
+    }
+    if (append_core_result(result, facts) != 0) {
+        pk_c_source_facts_free(facts);
+        pk_c_lift_result_free(result);
+        return NULL;
     }
 
     for (size_t i = 0; i < facts->n_macro_calls; i++) {
@@ -91,4 +107,8 @@ pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *sour
 
     pk_c_source_facts_free(facts);
     return result;
+}
+
+pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *source) {
+    return pk_c_assertions_lift_source_with_options(path, source, NULL);
 }
