@@ -115,9 +115,94 @@ static int add_contract(pk_c_lift_result *result, const char *name, const char *
     return rc;
 }
 
-pk_c_lift_result *pk_c_sparse_lift_source(const char *path, const char *source) {
+static int append_core_result(pk_c_lift_result *result, const pk_c_source_facts *facts) {
+    if (facts == NULL || facts->extraction_result == NULL) {
+        return 0;
+    }
+    return pk_c_lift_result_extend(result, facts->extraction_result);
+}
+
+static int using_libclang_backend(
+    const pk_c_parse_options *options,
+    const pk_c_source_facts *facts
+) {
+    return options != NULL &&
+        options->backend == PK_C_PARSE_BACKEND_CLANG_AST &&
+        facts != NULL &&
+        facts->parser_backend != NULL &&
+        strcmp(facts->parser_backend, "libclang") == 0;
+}
+
+static int add_sparse_overlay_opacity(
+    pk_c_lift_result *result,
+    const pk_c_source_facts *overlay_facts,
+    const char *fallback_path
+) {
+    const pk_c_sparse_annotation_fact *annotation = NULL;
+    const char *path = fallback_path == NULL ? "" : fallback_path;
+    int line = 1;
+    int column = 1;
+
+    if (overlay_facts != NULL && overlay_facts->n_sparse_annotations > 0) {
+        annotation = &overlay_facts->sparse_annotations[0];
+        if (annotation->locus.path != NULL) {
+            path = annotation->locus.path;
+        }
+        line = annotation->locus.line;
+        column = annotation->locus.column;
+    }
+
+    return pk_c_lift_result_add_opacity_entry(
+        result,
+        "c-sparse.ast-sparse-annotation-overlay",
+        path,
+        line,
+        column,
+        "libclang AST facts did not expose sparse annotation tokens; c-sparse used the source annotation scanner for this semantic surface",
+        "c-sparse");
+}
+
+static int emit_sparse_contracts(pk_c_lift_result *result, const pk_c_source_facts *facts) {
+    for (size_t i = 0; i < facts->n_sparse_annotations; i++) {
+        const pk_c_sparse_annotation_fact *annotation = &facts->sparse_annotations[i];
+
+        if (strcmp(annotation->name, "__user") == 0) {
+            if (add_contract(result, "c-sparse.user-pointer", "ptr") != 0) {
+                return -1;
+            }
+        } else if (strcmp(annotation->name, "__rcu") == 0) {
+            if (add_contract(result, "c-sparse.rcu-pointer", "ptr") != 0) {
+                return -1;
+            }
+        } else if (strcmp(annotation->name, "__must_hold") == 0) {
+            if (add_contract(result, "c-sparse.must-hold",
+                annotation->argument_text[0] ? annotation->argument_text : "lock") != 0) {
+                return -1;
+            }
+        } else if (strcmp(annotation->name, "__acquires") == 0) {
+            if (add_contract(result, "c-sparse.acquires",
+                annotation->argument_text[0] ? annotation->argument_text : "lock") != 0) {
+                return -1;
+            }
+        } else if (strcmp(annotation->name, "__releases") == 0) {
+            if (add_contract(result, "c-sparse.releases",
+                annotation->argument_text[0] ? annotation->argument_text : "lock") != 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+pk_c_lift_result *pk_c_sparse_lift_source_with_options(
+    const char *path,
+    const char *source,
+    const pk_c_parse_options *options
+) {
     pk_c_lift_result *result = pk_c_lift_result_new();
     pk_c_source_facts *facts;
+    pk_c_source_facts *overlay_facts = NULL;
+    const pk_c_source_facts *annotation_facts;
 
     if (!result) {
         return NULL;
@@ -127,53 +212,49 @@ pk_c_lift_result *pk_c_sparse_lift_source(const char *path, const char *source) 
         return result;
     }
 
-    facts = pk_c_parse_source(path, source);
+    facts = pk_c_parse_source_with_options(path, source, options);
     if (!facts) {
         (void)pk_c_lift_result_add_diagnostic(
             result,
             "{\"severity\":\"error\",\"message\":\"parse failed\"}");
         return result;
     }
+    if (append_core_result(result, facts) != 0) {
+        pk_c_source_facts_free(facts);
+        pk_c_lift_result_free(result);
+        return NULL;
+    }
 
-    for (size_t i = 0; i < facts->n_sparse_annotations; i++) {
-        pk_c_sparse_annotation_fact *annotation = &facts->sparse_annotations[i];
-
-        if (strcmp(annotation->name, "__user") == 0) {
-            if (add_contract(result, "c-sparse.user-pointer", "ptr") != 0) {
+    annotation_facts = facts;
+    if (using_libclang_backend(options, facts) && facts->n_sparse_annotations == 0) {
+        overlay_facts = pk_c_parse_source(path, source);
+        if (overlay_facts == NULL) {
+            (void)pk_c_lift_result_add_diagnostic(
+                result,
+                "{\"severity\":\"error\",\"message\":\"sparse annotation overlay parse failed\"}");
+        } else if (overlay_facts->n_sparse_annotations > 0) {
+            if (add_sparse_overlay_opacity(result, overlay_facts, path) != 0) {
+                pk_c_source_facts_free(overlay_facts);
                 pk_c_source_facts_free(facts);
                 pk_c_lift_result_free(result);
                 return NULL;
             }
-        } else if (strcmp(annotation->name, "__rcu") == 0) {
-            if (add_contract(result, "c-sparse.rcu-pointer", "ptr") != 0) {
-                pk_c_source_facts_free(facts);
-                pk_c_lift_result_free(result);
-                return NULL;
-            }
-        } else if (strcmp(annotation->name, "__must_hold") == 0) {
-            if (add_contract(result, "c-sparse.must-hold",
-                annotation->argument_text[0] ? annotation->argument_text : "lock") != 0) {
-                pk_c_source_facts_free(facts);
-                pk_c_lift_result_free(result);
-                return NULL;
-            }
-        } else if (strcmp(annotation->name, "__acquires") == 0) {
-            if (add_contract(result, "c-sparse.acquires",
-                annotation->argument_text[0] ? annotation->argument_text : "lock") != 0) {
-                pk_c_source_facts_free(facts);
-                pk_c_lift_result_free(result);
-                return NULL;
-            }
-        } else if (strcmp(annotation->name, "__releases") == 0) {
-            if (add_contract(result, "c-sparse.releases",
-                annotation->argument_text[0] ? annotation->argument_text : "lock") != 0) {
-                pk_c_source_facts_free(facts);
-                pk_c_lift_result_free(result);
-                return NULL;
-            }
+            annotation_facts = overlay_facts;
         }
     }
 
+    if (emit_sparse_contracts(result, annotation_facts) != 0) {
+        pk_c_source_facts_free(overlay_facts);
+        pk_c_source_facts_free(facts);
+        pk_c_lift_result_free(result);
+        return NULL;
+    }
+
+    pk_c_source_facts_free(overlay_facts);
     pk_c_source_facts_free(facts);
     return result;
+}
+
+pk_c_lift_result *pk_c_sparse_lift_source(const char *path, const char *source) {
+    return pk_c_sparse_lift_source_with_options(path, source, NULL);
 }

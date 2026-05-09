@@ -11,6 +11,10 @@ typedef struct {
     const char *current_function;
 } pk_c_clang_visit_ctx;
 
+typedef struct {
+    char *name;
+} pk_c_clang_callee_ctx;
+
 static char *pk_c_clang_copy_n(const char *src, size_t len) {
     char *copy = malloc(len + 1);
 
@@ -250,6 +254,44 @@ static int pk_c_clang_location_is_main(CXCursor cursor) {
     return clang_Location_isFromMainFile(clang_getCursorLocation(cursor)) != 0;
 }
 
+static enum CXChildVisitResult pk_c_clang_find_callee(
+    CXCursor cursor,
+    CXCursor parent,
+    CXClientData client_data
+) {
+    pk_c_clang_callee_ctx *ctx = (pk_c_clang_callee_ctx *)client_data;
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+    (void)parent;
+
+    if (ctx->name != NULL) {
+        return CXChildVisit_Break;
+    }
+    if (kind == CXCursor_DeclRefExpr || kind == CXCursor_MemberRefExpr) {
+        CXCursor referenced = clang_getCursorReferenced(cursor);
+
+        ctx->name = pk_c_clang_string(clang_getCursorSpelling(referenced));
+        if (ctx->name == NULL || ctx->name[0] == '\0') {
+            free(ctx->name);
+            ctx->name = pk_c_clang_string(clang_getCursorSpelling(cursor));
+        }
+        return CXChildVisit_Break;
+    }
+    return CXChildVisit_Recurse;
+}
+
+static char *pk_c_clang_call_callee(CXCursor cursor) {
+    CXCursor referenced = clang_getCursorReferenced(cursor);
+    char *callee = pk_c_clang_string(clang_getCursorSpelling(referenced));
+    pk_c_clang_callee_ctx ctx = {0};
+
+    if (callee != NULL && callee[0] != '\0') {
+        return callee;
+    }
+    free(callee);
+    (void)clang_visitChildren(cursor, pk_c_clang_find_callee, &ctx);
+    return ctx.name == NULL ? pk_c_clang_copy("") : ctx.name;
+}
+
 static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent, CXClientData client_data) {
     pk_c_clang_visit_ctx *ctx = (pk_c_clang_visit_ctx *)client_data;
     enum CXCursorKind kind = clang_getCursorKind(cursor);
@@ -283,8 +325,7 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
     }
 
     if (kind == CXCursor_CallExpr) {
-        CXCursor referenced = clang_getCursorReferenced(cursor);
-        char *callee = pk_c_clang_string(clang_getCursorSpelling(referenced));
+        char *callee = pk_c_clang_call_callee(cursor);
         int rc;
 
         if (callee == NULL) {

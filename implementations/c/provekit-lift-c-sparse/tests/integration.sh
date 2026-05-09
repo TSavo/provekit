@@ -126,6 +126,28 @@ printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
     exit 1
 }
 
+AST_SPARSE_REQUEST='{"jsonrpc":"2.0","id":98,"method":"parse","params":{"path":"ast_sparse.c","parse_backend":"clang_ast","source":"#define __user\nint copy_name(char __user *buf) { return 0; }\n"}}'
+AST_SPARSE_RESPONSE=$(printf '%s\n' "$AST_SPARSE_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$AST_SPARSE_RESPONSE" | grep -q '"id":98' || {
+    echo "FAIL: AST sparse parse did not echo id 98" >&2
+    echo "$AST_SPARSE_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$AST_SPARSE_RESPONSE" | grep -q '"name":"c-sparse.user-pointer"' || {
+    echo "FAIL: AST sparse parse should preserve visible __user contract" >&2
+    echo "$AST_SPARSE_RESPONSE" >&2
+    exit 1
+}
+
+if ! printf '%s\n' "$AST_SPARSE_RESPONSE" | grep -q '"kind":"c-sparse.ast-sparse-annotation-overlay"' &&
+    ! printf '%s\n' "$AST_SPARSE_RESPONSE" | grep -q '"kind":"ast-backend-unavailable"'; then
+    echo "FAIL: clang_ast sparse parse should report AST sparse-annotation overlay or AST opacity" >&2
+    echo "$AST_SPARSE_RESPONSE" >&2
+    exit 1
+fi
+
 DEFINE_ONLY_REQUEST='{"jsonrpc":"2.0","id":100,"method":"parse","params":{"path":"define_only.c","source":"#define __user\n"}}'
 DEFINE_ONLY_RESPONSE=$(printf '%s\n' "$DEFINE_ONLY_REQUEST" | "$BIN" --rpc)
 

@@ -120,6 +120,7 @@ int pk_c_lift_result_add_call_edge(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_diagnostic(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_opacity(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_refusal(pk_c_lift_result *result, const char *json);
+int pk_c_lift_result_extend(pk_c_lift_result *result, const pk_c_lift_result *other);
 int pk_c_lift_result_add_opacity_entry(
     pk_c_lift_result *result,
     const char *kind,
