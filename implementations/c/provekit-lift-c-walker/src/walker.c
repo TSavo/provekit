@@ -138,15 +138,14 @@ static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
     int i;
 
     if (wbuf_append(b, "{") != 0) return -1;
-    if (wbuf_append(b, "\"autoMintedMementos\":[],") != 0) return -1;
-    if (wbuf_append(b, "\"bodyCid\":null,") != 0) return -1;
-    if (wbuf_append(b, "\"effects\":[],") != 0) return -1;
+    if (wbuf_append(b, "\"auto_minted_mementos\":[],") != 0) return -1;
+    if (wbuf_append(b, "\"body_cid\":null,") != 0) return -1;
 
-    if (wbuf_append(b, "\"fnName\":") != 0) return -1;
+    if (wbuf_append(b, "\"fn_name\":") != 0) return -1;
     if (wbuf_append_quoted(b, fn_name) != 0) return -1;
     if (wbuf_append_char(b, ',') != 0) return -1;
 
-    if (wbuf_append(b, "\"formalSorts\":[") != 0) return -1;
+    if (wbuf_append(b, "\"formal_sorts\":[") != 0) return -1;
     for (i = 0; i < n_arity; i++) {
         if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
         if (wbuf_append(b, "{\"kind\":\"primitive\",\"name\":\"i32\"}") != 0) return -1;
@@ -197,8 +196,7 @@ static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
     if (wbuf_append(b, "],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
 
     if (wbuf_append(b, "\"pre\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},") != 0) return -1;
-    if (wbuf_append(b, "\"returnSort\":{\"kind\":\"primitive\",\"name\":\"i32\"},") != 0) return -1;
-    if (wbuf_append(b, "\"schemaVersion\":\"1\"}") != 0) return -1;
+    if (wbuf_append(b, "\"return_sort\":{\"kind\":\"primitive\",\"name\":\"i32\"}}") != 0) return -1;
 
     return 0;
 }

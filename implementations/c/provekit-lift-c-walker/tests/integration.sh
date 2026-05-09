@@ -72,9 +72,9 @@ printf '%s\n' "$RESPONSES" | grep -q '"kind":"function-contract"' || {
     exit 1
 }
 
-# fnName field must be present
-printf '%s\n' "$RESPONSES" | grep -q '"fnName"' || {
-    echo "FAIL: function-contract entries must have fnName field" >&2
+# fn_name field must be present
+printf '%s\n' "$RESPONSES" | grep -q '"fn_name"' || {
+    echo "FAIL: function-contract entries must have fn_name field" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
@@ -93,27 +93,20 @@ printf '%s\n' "$RESPONSES" | grep -q '"post"' || {
     exit 1
 }
 
-# schemaVersion must be present
-printf '%s\n' "$RESPONSES" | grep -q '"schemaVersion"' || {
-    echo "FAIL: function-contract entries must have schemaVersion field" >&2
-    echo "$RESPONSES" >&2
-    exit 1
-}
-
 # Verify known function names are lifted (regex backend always finds them)
-printf '%s\n' "$RESPONSES" | grep -q '"fnName":"add"' || {
+printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"add"' || {
     echo "FAIL: add function not found in declarations" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
 
-printf '%s\n' "$RESPONSES" | grep -q '"fnName":"identity"' || {
+printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"identity"' || {
     echo "FAIL: identity function not found in declarations" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
 
-printf '%s\n' "$RESPONSES" | grep -q '"fnName":"negate"' || {
+printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"negate"' || {
     echo "FAIL: negate function not found in declarations" >&2
     echo "$RESPONSES" >&2
     exit 1
