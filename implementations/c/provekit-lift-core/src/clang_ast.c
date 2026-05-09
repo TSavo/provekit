@@ -159,6 +159,12 @@ static int pk_c_clang_append_function(
         return -1;
     }
     fact->has_body = has_body;
+    /* Arity from libclang. Returns -1 for non-callable cursors; we
+     * floor at 0 so downstream consumers never see negative arity. */
+    {
+        int arity = clang_Cursor_getNumArguments(cursor);
+        fact->n_arity = arity < 0 ? 0 : arity;
+    }
     facts->n_functions++;
     return 0;
 }
