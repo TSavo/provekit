@@ -62,20 +62,20 @@ printf '%s\n' "$RESPONSES" | grep -q '"ir":\[' || {
     exit 1
 }
 
-printf '%s\n' "$RESPONSES" | grep -q '"name":"c-assertions.warn-on"' || {
-    echo "FAIL: lift missing WARN_ON contract" >&2
+printf '%s\n' "$RESPONSES" | grep -q '"kind":"c-assertions.warn-on"' || {
+    echo "FAIL: lift missing WARN_ON opacity" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
 
-printf '%s\n' "$RESPONSES" | grep -q '"name":"c-assertions.build-bug-on"' || {
-    echo "FAIL: lift missing BUILD_BUG_ON contract" >&2
+printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"check_value"' || {
+    echo "FAIL: lift missing BUILD_BUG_ON function contract" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
 
-if printf '%s\n' "$RESPONSES" | grep -q '"name":"c-assertions.bug-on"'; then
-    echo "FAIL: BUILD_BUG_ON should not emit BUG_ON contract" >&2
+if printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"warn_only"'; then
+    echo "FAIL: WARN_ON-only function should not emit a hard contract" >&2
     echo "$RESPONSES" >&2
     exit 1
 fi
@@ -88,12 +88,6 @@ printf '%s\n' "$RESPONSES" | grep -q '"diagnostics":\[\]' || {
 
 printf '%s\n' "$RESPONSES" | grep -q '"callEdges":\[\]' || {
     echo "FAIL: lift missing callEdges stream" >&2
-    echo "$RESPONSES" >&2
-    exit 1
-}
-
-printf '%s\n' "$RESPONSES" | grep -q '"opacityReport":\[\]' || {
-    echo "FAIL: lift missing opacityReport stream" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
@@ -114,29 +108,23 @@ printf '%s\n' "$RESPONSE" | grep -q '"id":99' || {
     exit 1
 }
 
-printf '%s\n' "$RESPONSE" | grep -q '"name":"c-assertions.warn-on"' || {
-    echo "FAIL: parse missing WARN_ON contract" >&2
+printf '%s\n' "$RESPONSE" | grep -q '"kind":"c-assertions.warn-on"' || {
+    echo "FAIL: parse missing WARN_ON opacity" >&2
     echo "$RESPONSE" >&2
     exit 1
 }
 
-printf '%s\n' "$RESPONSE" | grep -q '"name":"c-assertions.build-bug-on"' || {
-    echo "FAIL: parse missing BUILD_BUG_ON contract" >&2
+printf '%s\n' "$RESPONSE" | grep -q '"fn_name":"check_value"' || {
+    echo "FAIL: parse missing BUILD_BUG_ON function contract" >&2
     echo "$RESPONSE" >&2
     exit 1
 }
 
-if printf '%s\n' "$RESPONSE" | grep -q '"name":"c-assertions.bug-on"'; then
-    echo "FAIL: BUILD_BUG_ON parse should not emit BUG_ON contract" >&2
+if printf '%s\n' "$RESPONSE" | grep -q '"fn_name":"warn_only"'; then
+    echo "FAIL: WARN_ON-only parse should not emit a hard contract" >&2
     echo "$RESPONSE" >&2
     exit 1
 fi
-
-printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
-    echo "FAIL: assertions fixture should have empty opacity report" >&2
-    echo "$RESPONSE" >&2
-    exit 1
-}
 
 AST_ASSERT_REQUEST='{"jsonrpc":"2.0","id":98,"method":"parse","params":{"path":"ast_assert.c","parse_backend":"clang_ast","source":"void assert(int);\nvoid check(int bad) { (assert)(bad); }\n"}}'
 AST_ASSERT_RESPONSE=$(printf '%s\n' "$AST_ASSERT_REQUEST" | "$BIN" --rpc)
@@ -147,9 +135,9 @@ printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"id":98' || {
     exit 1
 }
 
-if ! printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"name":"c-assertions.assert"' &&
+if ! printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"fn_name":"check"' &&
     ! printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"kind":"ast-backend-unavailable"'; then
-    echo "FAIL: clang_ast parse should either emit AST-only assert contract or report AST opacity" >&2
+    echo "FAIL: clang_ast parse should either emit assert-derived function contract or report AST opacity" >&2
     echo "$AST_ASSERT_RESPONSE" >&2
     exit 1
 fi
@@ -191,7 +179,7 @@ printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"id":103' || {
     exit 1
 }
 
-printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"name":"c-assertions.warn-on"' || {
+printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"kind":"c-assertions.warn-on"' || {
     echo "FAIL: nested params.method should not override top-level parse method" >&2
     echo "$NESTED_METHOD_RESPONSE" >&2
     exit 1
@@ -200,14 +188,14 @@ printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"name":"c-assertions.warn-on"
 BUG_ON_REQUEST='{"jsonrpc":"2.0","id":101,"method":"parse","params":{"path":"bug_on.c","source":"void crash_if_bad(int bad) { BUG_ON(bad); }\n"}}'
 BUG_ON_RESPONSE=$(printf '%s\n' "$BUG_ON_REQUEST" | "$BIN" --rpc)
 
-if printf '%s\n' "$BUG_ON_RESPONSE" | grep -q '"name":"c-assertions.bug-on"'; then
-    echo "FAIL: BUG_ON should not emit a positive contract declaration" >&2
+printf '%s\n' "$BUG_ON_RESPONSE" | grep -q '"fn_name":"crash_if_bad"' || {
+    echo "FAIL: BUG_ON should emit a function contract" >&2
     echo "$BUG_ON_RESPONSE" >&2
     exit 1
-fi
+}
 
-printf '%s\n' "$BUG_ON_RESPONSE" | grep -q '"kind":"c-assertions.bug-on"' || {
-    echo "FAIL: BUG_ON should be reported as a refusal" >&2
+printf '%s\n' "$BUG_ON_RESPONSE" | grep -q '"name":"="' || {
+    echo "FAIL: BUG_ON(bad) should lift the normal-continuation precondition bad = 0" >&2
     echo "$BUG_ON_RESPONSE" >&2
     exit 1
 }
@@ -220,15 +208,64 @@ BUG_ON_LIFT_RESPONSES="$(
     } | "$BIN" --rpc
 )"
 
-if printf '%s\n' "$BUG_ON_LIFT_RESPONSES" | grep -q '"name":"c-assertions.bug-on"'; then
-    echo "FAIL: BUG_ON lift should not emit a positive contract declaration" >&2
+printf '%s\n' "$BUG_ON_LIFT_RESPONSES" | grep -q '"fn_name":"crash_if_bad"' || {
+    echo "FAIL: BUG_ON lift should emit a function contract" >&2
     echo "$BUG_ON_LIFT_RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$BUG_ON_LIFT_RESPONSES" | grep -q '"refusals":\[\]' || {
+    echo "FAIL: BUG_ON lift should not emit a refusal" >&2
+    echo "$BUG_ON_LIFT_RESPONSES" >&2
+    exit 1
+}
+
+KERNEL_ASSERTIONS_RESPONSES="$(
+    {
+        printf '{"jsonrpc":"2.0","id":104,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["assertions_kernel.c"],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+
+printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"fn_name":"bug_on_requires_ptr"' || {
+    echo "FAIL: BUG_ON(x == NULL) missing bug_on_requires_ptr contract" >&2
+    echo "$KERNEL_ASSERTIONS_RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"name":"≠"' &&
+    printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"name":"x"' &&
+    printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"name":"NULL"' || {
+    echo "FAIL: BUG_ON(x == NULL) should lift x != NULL" >&2
+    echo "$KERNEL_ASSERTIONS_RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"kind":"c-assertions.warn-on"' || {
+    echo "FAIL: WARN_ON(cond) should emit opacity" >&2
+    echo "$KERNEL_ASSERTIONS_RESPONSES" >&2
+    exit 1
+}
+
+if printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"fn_name":"warn_only"'; then
+    echo "FAIL: WARN_ON(cond) should not emit a hard contract" >&2
+    echo "$KERNEL_ASSERTIONS_RESPONSES" >&2
     exit 1
 fi
 
-printf '%s\n' "$BUG_ON_LIFT_RESPONSES" | grep -q '"kind":"c-assertions.bug-on"' || {
-    echo "FAIL: BUG_ON lift should preserve refusal stream" >&2
-    echo "$BUG_ON_LIFT_RESPONSES" >&2
+printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"fn_name":"alloc_requires_buf"' &&
+    printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"name":"buf"' || {
+    echo "FAIL: if (!buf) return -ENOMEM should lift buf != NULL" >&2
+    echo "$KERNEL_ASSERTIONS_RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"fn_name":"ret_must_be_nonnegative"' &&
+    printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"name":"≥"' &&
+    printf '%s\n' "$KERNEL_ASSERTIONS_RESPONSES" | grep -q '"name":"ret"' || {
+    echo "FAIL: if (ret < 0) return ret should lift ret >= 0" >&2
+    echo "$KERNEL_ASSERTIONS_RESPONSES" >&2
     exit 1
 }
 
