@@ -1,0 +1,17 @@
+{
+  "kind": "PackageReleaseReceipt",
+  "ecosystem": "npm",
+  "package": {
+    "name": "safe-json",
+    "version": "1.4.1"
+  },
+  "contractSetCid": "blake3-512:274b2fc435f45fd5390bb05547f787a601afee025f403d398cfb4a4e2e8855257c9ac5e2148346c9dabb0b88391da7c149b8beeb54cf4c106a99f6724b61b4d7",
+  "previousContractSetCid": null,
+  "contracts": [
+    "package.no-install-side-effect",
+    "parse.deterministic",
+    "parse.no-network-effect",
+    "runtime.no-env-secret-read"
+  ],
+  "policyCid": "builtin:supply-chain-rails/npm-safe-json@0.1"
+}

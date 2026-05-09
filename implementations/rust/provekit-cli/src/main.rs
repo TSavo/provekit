@@ -31,6 +31,7 @@ mod cmd_link;
 mod cmd_lower;
 mod cmd_mint;
 mod cmd_must;
+mod cmd_package;
 mod cmd_proof;
 mod cmd_protocol;
 mod cmd_prove;
@@ -84,6 +85,8 @@ enum Cmd {
     Proof(cmd_proof::ProofArgs),
     /// Work with protocol catalog evolution artifacts.
     Protocol(cmd_protocol::ProtocolArgs),
+    /// Inspect package artifacts and supply-chain receipt inputs.
+    Package(cmd_package::PackageArgs),
     /// Check content-addressed CI protocol artifacts.
     Ci(cmd_ci::CiArgs),
     /// Same as `prove`. Reserved for a future split.
@@ -140,6 +143,15 @@ pub struct ProveArgs {
     /// Path to z3 binary (default: "z3" on PATH).
     #[arg(long, default_value = "z3")]
     pub z3: String,
+    /// Artifact bytes to verify against a package release proof/receipt.
+    #[arg(long, requires = "proof")]
+    pub artifact: Option<PathBuf>,
+    /// Package release proof/receipt naming the expected binaryCid.
+    #[arg(long)]
+    pub proof: Option<PathBuf>,
+    /// Consumer policy proof/receipt used for policy admission checks.
+    #[arg(long, requires = "proof")]
+    pub policy: Option<PathBuf>,
     /// Kit conformance gate: verify the named kit's lifter implements the
     /// canonical lift-plugin-protocol contracts (C1-C8). When set, the six-stage
     /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
@@ -275,6 +287,8 @@ pub struct WitnessArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct VersionArgs {
+    #[command(subcommand)]
+    pub cmd: Option<cmd_version::VersionCmd>,
     #[command(flatten)]
     pub out: OutputFlags,
 }
@@ -298,6 +312,7 @@ fn main() -> ExitCode {
         Cmd::Prove(a) | Cmd::Verify(a) => cmd_prove::run(a),
         Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
+        Cmd::Package(a) => cmd_package::run(a),
         Cmd::Ci(a) => cmd_ci::run(a),
         Cmd::Ask(a) => cmd_ask::run(a),
         Cmd::Search(a) => cmd_search::run(a),

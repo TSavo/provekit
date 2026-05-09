@@ -1,6 +1,6 @@
 # Tutorial: C++
 
-> **Status:** kit + canonicalizer + libs shipping in the current v1.6.2 tree. Lift adapter for C++26 `[[expects:]]` and `[[ensures:]]` planned. `assert.h` walk under evaluation (partial coverage; the macro discards conditional information at compile time). Embedded verifier shipping. LSP plugin planned.
+> **Status:** kit + canonicalizer + libs shipping in the current v1.6.3 tree. Lift adapter for C++26 `[[expects:]]` and `[[ensures:]]` planned. `assert.h` walk under evaluation (partial coverage; the macro discards conditional information at compile time). Embedded verifier shipping. LSP plugin planned.
 
 A walkthrough for C++ developers. **v1.1 is the kit; the C++26 contracts lift adapter lands in v1.2.**
 

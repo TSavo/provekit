@@ -42,16 +42,21 @@
 //
 //   C3 lift_plugin_lift_request_well_formed
 //        request.surface is a string; request.source_paths is a non-empty
-//        array; each path is a non-empty string.
-//        Spec lines 92-100.
+//        array; each path is a non-empty string; request.options.layer is
+//        either "all" or "identify-only"; options.identifyOnly, when
+//        present, mirrors the layer.
+//        Spec formal message grammar: lift-params/lift-options.
 //
 //   C4 lift_plugin_lift_request_surface_in_capabilities
 //        request.surface  initialize-time capabilities.authoring_surfaces.
 //        Spec lines 160-166.
 //
-//   C5 lift_plugin_lift_response_kind_in_set
-//        response.kind  {"ir-document", "signed-mementos", "proof-envelope"}.
-//        Spec lines 102-148; line 148 is the MUST that anchors the set.
+//   C5 lift_plugin_lift_response_kind_matches_layer
+//        when request.options.layer == "all", response.kind is one of
+//        {"ir-document", "signed-mementos", "proof-envelope"}; when
+//        request.options.layer == "identify-only", response.kind is one of
+//        {"identity-document", "package-inspection-document"}.
+//        Spec formal message grammar: all-layer-result/identify-only-result.
 //
 //   C6 lift_plugin_lift_response_ir_document_array
 //        when kind == "ir-document", response.ir is an array (of IR-JSON
@@ -172,7 +177,7 @@ pub fn invariants() {
         },
     );
 
-    // -- C3: lift request well-formed (spec lines 92-100). -----------------
+    // -- C3: lift request well-formed. -------------------------------------
     //
     // forall req. is_string(surface_of(req)) = true
     //          AND len(source_paths_of(req)) >= 1
@@ -210,6 +215,17 @@ pub fn invariants() {
         },
     );
 
+    contract(
+        "lift_plugin_lift_request_options_layer_well_formed",
+        ContractArgs {
+            post: Some(eq(
+                ctor1("lift_options_layer_well_formed", str_const("req")),
+                ctor1("true_const", str_const("")),
+            )),
+            ..Default::default()
+        },
+    );
+
     // -- C4: lift surface in capabilities (spec lines 160-166). ------------
     //
     // forall req, caps. surface_of(req)  authoring_surfaces_of(caps).
@@ -231,18 +247,21 @@ pub fn invariants() {
         },
     );
 
-    // -- C5: lift response kind in {ir-document, signed-mementos,          -
-    //         proof-envelope} (spec lines 102-148, anchor line 148). -------
+    // -- C5: lift response kind matches request layer. ---------------------
     //
-    // forall resp. response_kind_in_allowed_set(resp) = true.
+    // forall req, resp. response_kind_matches_requested_layer(req, resp) = true.
     //
     // The set is a finite literal; the IR ctor name encodes the
     // discharge target.
     contract(
-        "lift_plugin_lift_response_kind_in_set",
+        "lift_plugin_lift_response_kind_matches_layer",
         ContractArgs {
             post: Some(eq(
-                ctor1("response_kind_in_allowed_set", str_const("resp")),
+                ctor2(
+                    "response_kind_matches_requested_layer",
+                    str_const("req"),
+                    str_const("resp"),
+                ),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -319,9 +338,23 @@ pub const PROTOCOL_VERSION_MISMATCH_CODE: i64 = 1001;
 /// both the manifest and the `initialize` request/response (line 40, 79).
 pub const PROTOCOL_VERSION_LITERAL: &str = "provekit-lift/1";
 
-/// Allowed `lift` response `kind` values per spec lines 102-148.
-pub const ALLOWED_LIFT_RESPONSE_KINDS: &[&str] =
-    &["ir-document", "signed-mementos", "proof-envelope"];
+/// Allowed proof-producing `lift` response `kind` values when
+/// `options.layer == "all"`.
+pub const ALL_LAYER_RESPONSE_KINDS: &[&str] = &["ir-document", "signed-mementos", "proof-envelope"];
+
+/// Allowed side-effect-free identity `lift` response `kind` values when
+/// `options.layer == "identify-only"`.
+pub const IDENTIFY_ONLY_RESPONSE_KINDS: &[&str] =
+    &["identity-document", "package-inspection-document"];
+
+/// Full response-kind vocabulary across every layer.
+pub const ALLOWED_LIFT_RESPONSE_KINDS: &[&str] = &[
+    "ir-document",
+    "signed-mementos",
+    "proof-envelope",
+    "identity-document",
+    "package-inspection-document",
+];
 
 // --- C1 ---------------------------------------------------------------------
 
@@ -484,6 +517,7 @@ pub fn verify_c3_lift_request_well_formed(request: &JsonValue) -> Result<(), Str
             return Err(format!("C3: request.source_paths[{}] is empty string", i));
         }
     }
+    request_layer(request, "C3")?;
     Ok(())
 }
 
@@ -533,9 +567,13 @@ pub fn verify_c4_surface_in_capabilities(
 
 // --- C5 ---------------------------------------------------------------------
 
-/// Verify C5: the lift response's `kind` field is one of the three
-/// allowed shapes per spec lines 102-148.
-pub fn verify_c5_response_kind_in_set(response: &JsonValue) -> Result<(), String> {
+/// Verify C5: the lift response's `kind` field matches the requested
+/// `options.layer`.
+pub fn verify_c5_response_kind_matches_layer(
+    request: &JsonValue,
+    response: &JsonValue,
+) -> Result<(), String> {
+    let layer = request_layer(request, "C5")?;
     let result = response
         .get("result")
         .ok_or_else(|| "C5: response has no `result` field".to_string())?;
@@ -543,11 +581,17 @@ pub fn verify_c5_response_kind_in_set(response: &JsonValue) -> Result<(), String
         .get("kind")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "C5: response.result.kind missing or not a string".to_string())?;
-    if !ALLOWED_LIFT_RESPONSE_KINDS.contains(&kind) {
+    let allowed = match layer {
+        "all" => ALL_LAYER_RESPONSE_KINDS,
+        "identify-only" => IDENTIFY_ONLY_RESPONSE_KINDS,
+        _ => unreachable!("request_layer only returns known layer values"),
+    };
+    if !allowed.contains(&kind) {
         return Err(format!(
-            "C5: response.result.kind `{}` not in {{{}}}",
+            "C5: options.layer `{}` response.result.kind `{}` not in {{{}}}",
+            layer,
             kind,
-            ALLOWED_LIFT_RESPONSE_KINDS.join(", ")
+            allowed.join(", ")
         ));
     }
     Ok(())
@@ -667,6 +711,39 @@ fn type_label(v: &JsonValue) -> &'static str {
     }
 }
 
+fn request_layer<'a>(request: &'a JsonValue, contract: &str) -> Result<&'a str, String> {
+    let options = request
+        .get("options")
+        .ok_or_else(|| format!("{contract}: request.options missing"))?;
+    let layer = options
+        .get("layer")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("{contract}: request.options.layer missing or not a string"))?;
+    match layer {
+        "all" | "identify-only" => {}
+        other => {
+            return Err(format!(
+                "{contract}: request.options.layer `{other}` is not one of {{all, identify-only}}"
+            ))
+        }
+    }
+    if let Some(identify_only) = options.get("identifyOnly") {
+        let Some(flag) = identify_only.as_bool() else {
+            return Err(format!(
+                "{contract}: request.options.identifyOnly is {}, expected bool",
+                type_label(identify_only)
+            ));
+        };
+        let expected = layer == "identify-only";
+        if flag != expected {
+            return Err(format!(
+                "{contract}: request.options.identifyOnly={flag} disagrees with layer `{layer}`"
+            ));
+        }
+    }
+    Ok(layer)
+}
+
 // ---------------------------------------------------------------------------
 // Tests  per-contract positive + negative coverage
 // ---------------------------------------------------------------------------
@@ -712,6 +789,14 @@ mod tests {
         })
     }
 
+    fn good_identify_only_lift_request() -> JsonValue {
+        json!({
+            "surface": "supply-chain-npm",
+            "source_paths": ["."],
+            "options": {"layer": "identify-only", "identifyOnly": true},
+        })
+    }
+
     fn good_lift_response_ir_document() -> JsonValue {
         json!({
             "jsonrpc": "2.0",
@@ -721,6 +806,24 @@ mod tests {
                 "ir": [
                     {"kind": "contract", "name": "encode_jcs_is_deterministic", "outBinding": "out"},
                 ],
+                "diagnostics": [],
+            },
+        })
+    }
+
+    fn good_lift_response_package_inspection() -> JsonValue {
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "kind": "package-inspection-document",
+                "ecosystem": "npm",
+                "package": {"name": "safe-json", "version": "1.4.2"},
+                "artifact": {
+                    "path": "package.tgz",
+                    "binaryCid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "bytes": 64
+                },
                 "diagnostics": [],
             },
         })
@@ -851,6 +954,11 @@ mod tests {
     }
 
     #[test]
+    fn c3_holds_on_identify_only_request_with_legacy_mirror() {
+        verify_c3_lift_request_well_formed(&good_identify_only_lift_request()).unwrap();
+    }
+
+    #[test]
     fn c3_violation_empty_source_paths_is_caught() {
         let req = json!({"surface": "x", "source_paths": []});
         let err = verify_c3_lift_request_well_formed(&req)
@@ -882,6 +990,18 @@ mod tests {
         assert!(err.contains("surface"), "got: {err}");
     }
 
+    #[test]
+    fn c3_violation_identify_only_mirror_drift_is_caught() {
+        let req = json!({
+            "surface": "supply-chain-npm",
+            "source_paths": ["."],
+            "options": {"layer": "identify-only", "identifyOnly": false},
+        });
+        let err = verify_c3_lift_request_well_formed(&req)
+            .expect_err("C3 should fire when identifyOnly disagrees with layer");
+        assert!(err.contains("identifyOnly"), "got: {err}");
+    }
+
     // --- C4 ---------------------------------------------------------------
 
     #[test]
@@ -901,7 +1021,11 @@ mod tests {
 
     #[test]
     fn c5_holds_for_ir_document_kind() {
-        verify_c5_response_kind_in_set(&good_lift_response_ir_document()).unwrap();
+        verify_c5_response_kind_matches_layer(
+            &good_lift_request(),
+            &good_lift_response_ir_document(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -913,7 +1037,7 @@ mod tests {
                 "signer_cid": "blake3-512:00",
             },
         });
-        verify_c5_response_kind_in_set(&resp).unwrap();
+        verify_c5_response_kind_matches_layer(&good_lift_request(), &resp).unwrap();
     }
 
     #[test]
@@ -925,14 +1049,33 @@ mod tests {
                 "bytes_base64": "",
             },
         });
-        verify_c5_response_kind_in_set(&resp).unwrap();
+        verify_c5_response_kind_matches_layer(&good_lift_request(), &resp).unwrap();
+    }
+
+    #[test]
+    fn c5_holds_for_package_inspection_kind_in_identify_only_layer() {
+        verify_c5_response_kind_matches_layer(
+            &good_identify_only_lift_request(),
+            &good_lift_response_package_inspection(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn c5_violation_ir_document_in_identify_only_layer_is_caught() {
+        let err = verify_c5_response_kind_matches_layer(
+            &good_identify_only_lift_request(),
+            &good_lift_response_ir_document(),
+        )
+        .expect_err("C5 should fire when identify-only returns a proof-producing shape");
+        assert!(err.contains("identify-only"), "got: {err}");
     }
 
     #[test]
     fn c5_violation_unknown_kind_is_caught() {
         let resp = json!({"result": {"kind": "raw-bytes"}});
-        let err =
-            verify_c5_response_kind_in_set(&resp).expect_err("C5 should fire on unknown kind");
+        let err = verify_c5_response_kind_matches_layer(&good_lift_request(), &resp)
+            .expect_err("C5 should fire on unknown kind");
         assert!(err.contains("not in"), "got: {err}");
     }
 
@@ -1012,18 +1155,18 @@ mod tests {
         begin_collecting();
         invariants();
         let decls = finish();
-        // C1, C2 (two facets), C3 (three facets), C4, C5, C6, C7, C8
-        // = 1 + 2 + 3 + 1 + 1 + 1 + 1 + 1 = 11 ContractDecls.
+        // C1, C2 (two facets), C3 (four facets), C4, C5, C6, C7, C8
+        // = 1 + 2 + 4 + 1 + 1 + 1 + 1 + 1 = 12 ContractDecls.
         assert_eq!(
             decls.len(),
-            11,
-            "lift_plugin_protocol::invariants should author 11 contracts; got {}",
+            12,
+            "lift_plugin_protocol::invariants should author 12 contracts; got {}",
             decls.len()
         );
         // Spot-check a few names.
         let names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"lift_plugin_initialize_protocol_version_match"));
-        assert!(names.contains(&"lift_plugin_lift_response_kind_in_set"));
+        assert!(names.contains(&"lift_plugin_lift_response_kind_matches_layer"));
         assert!(names.contains(&"lift_plugin_lift_response_ir_document_array"));
         assert!(names.contains(&"lift_plugin_diagnostic_field_is_array"));
         assert!(

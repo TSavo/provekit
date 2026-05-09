@@ -79,7 +79,9 @@ pub fn run(args: LiftArgs) -> u8 {
                     .response
                     .get("kind")
                     .and_then(|value| value.as_str())
-                    != Some("identity-document")
+                    .is_none_or(|kind| {
+                        kind != "identity-document" && kind != "package-inspection-document"
+                    })
             {
                 let kind = session
                     .response
@@ -87,7 +89,7 @@ pub fn run(args: LiftArgs) -> u8 {
                     .and_then(|value| value.as_str())
                     .unwrap_or("unknown");
                 eprintln!(
-                    "{}: identify-only lift returned `{kind}`; expected `identity-document`",
+                    "{}: identify-only lift returned `{kind}`; expected `identity-document` or `package-inspection-document`",
                     "error".red().bold()
                 );
                 return EXIT_VERIFY_FAIL;

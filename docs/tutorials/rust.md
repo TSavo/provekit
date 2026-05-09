@@ -1,6 +1,6 @@
 # Tutorial: Rust
 
-A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f` (v1.6.2), and you have run `provekit prove` against the catalog.
+A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` (v1.6.3), and you have run `provekit prove` against the catalog.
 
 > **Other languages:** see [tutorials/](./) for TypeScript, Python, Java, C#, Ruby, Zig, and the [polyglot stack walkthrough](polyglot-stack.md). The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
@@ -16,7 +16,7 @@ From the repository root:
 cargo install --path implementations/rust/provekit-cli
 ```
 
-The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.6.2; alternative implementations in other languages conform to the same catalog CID.
+The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.6.3; alternative implementations in other languages conform to the same catalog CID.
 
 ## Step 2: confirm protocol conformance
 
@@ -27,7 +27,7 @@ provekit verify-protocol
 This reads the local CLI's declared catalog CID, recomputes every spec CID listed in the catalog from the spec bytes shipped with the install, and confirms the catalog hashes to the expected value:
 
 ```
-blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
+blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d
 ```
 
 A mismatch means either the install is corrupted or the binary was built against a different protocol version. The exit code is 0 on conformance, 1 on drift.

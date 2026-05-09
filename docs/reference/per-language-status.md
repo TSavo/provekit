@@ -1,11 +1,11 @@
 # Per-language Status
 
-The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.6.2 (CID `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`).
+The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.6.3 (CID `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d`).
 
 The current status has two layers:
 
 - **Active conformance surface:** protocol catalog verification, proof-protocol fixtures, CICP golden vectors, self-contract attestations, lift-plugin-protocol C1-C8 checks, and language-native tests.
-- **Historical bridge-compatibility appendix:** older substrate-layering and bridge-target migration state. That appendix remains below for compatibility context only; the current protocol catalog is v1.6.2.
+- **Historical bridge-compatibility appendix:** older substrate-layering and bridge-target migration state. That appendix remains below for compatibility context only; the current protocol catalog is v1.6.3.
 
 For the spec-by-spec list see [`cids.md`](cids.md). For PEP, CICP, GCP, ORP, CBP, proof protocol, and Bug Zoo surfaces see [`protocol-extensions.md`](protocol-extensions.md).
 
@@ -18,14 +18,14 @@ For the spec-by-spec list see [`cids.md`](cids.md). For PEP, CICP, GCP, ORP, CBP
 - **Embedded verifier**: in-process verifier callable from the host language without spawning a subprocess.
 - **CLI**: shipping command-line implementation of `prove`, `verify-protocol`, `lift`, `dump`, etc.
 
-Legend: `+` shipping in the current v1.6.2 tree, `~` planned or partial, `o` under evaluation, `-` not on roadmap.
+Legend: `+` shipping in the current v1.6.3 tree, `~` planned or partial, `o` under evaluation, `-` not on roadmap.
 
 ## Active Conformance Surface
 
 | Surface | Status |
 |---|---|
-| Protocol catalog | `+` v1.6.2 catalog CID verified by `tools/recompute-spec-cids/` and `provekit verify-protocol --signed` |
-| PEP | `+` v1.6.1 and v1.6.2 dogfood transitions checked in under `protocol/evolution/` |
+| Protocol catalog | `+` v1.6.3 catalog CID verified by `tools/recompute-spec-cids/` and `provekit verify-protocol --signed` |
+| PEP | `+` v1.6.1, v1.6.2, and v1.6.3 dogfood transitions checked in under `protocol/evolution/` |
 | CICP | `+` Rust reference checker plus cross-language golden vectors in `protocol/conformance/cicp/` |
 | Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
 | CICP CI admission | `+` GitHub Actions computes blast radii, admits exact-closure reuse, and uploads candidate result witnesses |
@@ -71,8 +71,8 @@ All listed kits now carry CICP vector checks or equivalent language-library cove
 ## Historical Bridge-Compatibility Appendix
 
 This appendix tracks the older bridge-shape migration state that led into the
-current v1.6.2 tree. It is compatibility history, not the current protocol
-version. The current conformance surface is the v1.6.2 catalog and the active
+current v1.6.3 tree. It is compatibility history, not the current protocol
+version. The current conformance surface is the v1.6.3 catalog and the active
 matrix above.
 
 The historical substrate guarantees that depend on per-kit compliance are spread across four specs:
@@ -106,7 +106,7 @@ Column meanings:
 
 ## Rust (canonical reference implementation)
 
-**Kit:** `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`. Shipping in the current v1.6.2 tree.
+**Kit:** `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`. Shipping in the current v1.6.3 tree.
 
 **Libs:** `provekit-verifier`, plus the kit crates above. Embedded verifier callable from any Rust crate via the public API.
 
@@ -128,11 +128,11 @@ Column meanings:
 
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
-**CLI:** `provekit` is the canonical Rust CLI for protocol v1.6.2. Subcommands include `prove`, `proof`, `protocol`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `menagerie/bug-zoo/`, not a public `provekit` subcommand. Distributed from source today with `cargo install --path implementations/rust/provekit-cli`; crates.io publishing remains future work.
+**CLI:** `provekit` is the canonical Rust CLI for protocol v1.6.3. Subcommands include `prove`, `proof`, `protocol`, `package inspect`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `menagerie/bug-zoo/`, not a public `provekit` subcommand. Distributed from source today with `cargo install --path implementations/rust/provekit-cli`; crates.io publishing remains future work.
 
 ## TypeScript
 
-**Kit:** Shipping in the current v1.6.2 tree. The TypeScript kit emits the same canonical IR a Rust kit emits for the same proposition; cross-language conformance is direct.
+**Kit:** Shipping in the current v1.6.3 tree. The TypeScript kit emits the same canonical IR a Rust kit emits for the same proposition; cross-language conformance is direct.
 
 **Libs:** `ts-types-proof` lifts TypeScript type annotations into contract mementos. Embedded verifier shipping; usable from Node and from browsers (with the WASM build of the canonicalizer).
 
@@ -155,7 +155,7 @@ Column meanings:
 
 ## Go
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/go/provekit-ir-symbolic` provides the IR library. The canonicalizer matches the Rust implementation byte-for-byte.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/go/provekit-ir-symbolic` provides the IR library. The canonicalizer matches the Rust implementation byte-for-byte.
 
 **Libs:** Shipping. Embedded verifier callable from Go programs via a small CGO bridge to the canonicalizer; pure-Go verifier in flight.
 
@@ -175,7 +175,7 @@ Column meanings:
 
 ## C++
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/cpp/provekit-ir-symbolic` plus the canonicalizer. Header-only IR library; CMake integration shipped.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/cpp/provekit-ir-symbolic` plus the canonicalizer. Header-only IR library; CMake integration shipped.
 
 **Libs:** Shipping. Embedded verifier links into existing C++ projects.
 
@@ -197,7 +197,7 @@ Column meanings:
 
 ## Python
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/python/provekit-lift-py-tests` provides the IR library, canonicalizer (JCS + BLAKE3-512), Layer 2 lift adapter, decorator macros, Pydantic lift adapter, and embedded verifier.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/python/provekit-lift-py-tests` provides the IR library, canonicalizer (JCS + BLAKE3-512), Layer 2 lift adapter, decorator macros, Pydantic lift adapter, and embedded verifier.
 
 **Libs:** Shipping. The canonicalizer is implemented in pure Python and is byte-identical to the Rust canonicalizer for all conformance tests. Performance is acceptable for typical project sizes; the WASM-backed path remains an option if profiling demands it.
 
@@ -220,7 +220,7 @@ Column meanings:
 
 ## Java / JVM
 
-**Kit:** Shipping in the current v1.6.2 tree. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs, discovered via `java.util.ServiceLoader`.
+**Kit:** Shipping in the current v1.6.3 tree. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs, discovered via `java.util.ServiceLoader`.
 
 **Libs:** Shipping. `provekit-ir` provides IR types (`Formula`, `Term`, `Sort`, `Declaration`, `IrDocument`, `CallEdgeDecl`, plus the layered `BridgeDeclarationV14` / `BridgeHeaderV14` / `BridgeMetadataV14` / `BridgeEnvelope` / `BridgeTarget` records).
 
@@ -262,7 +262,7 @@ Column meanings:
 
 ## Zig
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/zig/provekit-ir` provides the IR library with JCS canonical JSON serialization and BLAKE3-512 hashing via `std.crypto.blake3`.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/zig/provekit-ir` provides the IR library with JCS canonical JSON serialization and BLAKE3-512 hashing via `std.crypto.blake3`.
 
 **Libs:** Under evaluation.
 
@@ -278,7 +278,7 @@ Column meanings:
 
 ## Ruby
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/ruby/lib/provekit/ir.rb` provides IR types, JCS canonical JSON emitter, and BLAKE3-512 hashing. Requires Ruby 3+ (uses endless-method syntax); macOS system Ruby 2.6 cannot parse the kit. Conformance harness prefers Homebrew Ruby automatically.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/ruby/lib/provekit/ir.rb` provides IR types, JCS canonical JSON emitter, and BLAKE3-512 hashing. Requires Ruby 3+ (uses endless-method syntax); macOS system Ruby 2.6 cannot parse the kit. Conformance harness prefers Homebrew Ruby automatically.
 
 **Libs:** Under evaluation.
 
@@ -299,7 +299,7 @@ Column meanings:
 
 ## C#
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/csharp/Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`. Multi-project .NET 10 solution with full IR + canonicalizer parity to Rust.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/csharp/Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`. Multi-project .NET 10 solution with full IR + canonicalizer parity to Rust.
 
 **Libs:** Shipping. `Provekit.Verifier` is the in-process verifier.
 
@@ -319,7 +319,7 @@ Column meanings:
 
 ## Swift
 
-**Kit:** Shipping in the current v1.6.2 tree. `implementations/swift/Sources/Provekit/IR.swift` provides IR types, JCS canonical JSON via `Jcs.encode`, and BLAKE3-512 hashing. The conformance runner at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
+**Kit:** Shipping in the current v1.6.3 tree. `implementations/swift/Sources/Provekit/IR.swift` provides IR types, JCS canonical JSON via `Jcs.encode`, and BLAKE3-512 hashing. The conformance runner at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
 
 **Libs:** Under evaluation.
 

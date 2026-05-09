@@ -6,9 +6,9 @@ The center use case is software correctness across domains: language to language
 
 That linked evidence object is a proofchain: a locally verifiable chain of signed, content-addressed evidence for logically true claims.
 
-Current protocol catalog: **v1.6.2**
+Current protocol catalog: **v1.6.3**
 
-Current catalog CID: `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`
+Current catalog CID: `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d`
 
 ## References
 
