@@ -154,6 +154,19 @@ if ! printf '%s\n' "$AST_ASSERT_RESPONSE" | grep -q '"name":"c-assertions.assert
     exit 1
 fi
 
+KERNEL_CONTEXT_REQUEST="$(
+    printf '{"jsonrpc":"2.0","id":97,"method":"parse","params":{"workspace_root":'
+    printf '"%s"' "$SCRIPT_DIR/fixtures"
+    printf ',"path":"kernel/missing.c","compile_context":"kernel","source":"void check(int bad) { WARN_ON(bad); }\\n"}}'
+)"
+KERNEL_CONTEXT_RESPONSE=$(printf '%s\n' "$KERNEL_CONTEXT_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$KERNEL_CONTEXT_RESPONSE" | grep -q '"kind":"kernel-compile-context-missing"' || {
+    echo "FAIL: kernel compile context resolver opacity should flow through assertions RPC" >&2
+    echo "$KERNEL_CONTEXT_RESPONSE" >&2
+    exit 1
+}
+
 COMMENT_ONLY_REQUEST='{"jsonrpc":"2.0","id":100,"method":"parse","params":{"path":"comment_only.c","source":"/* WARN_ON(noise) */\nint quiet(void) { const char *s = \"BUG_ON(noise)\"; return 0; }\n"}}'
 COMMENT_ONLY_RESPONSE=$(printf '%s\n' "$COMMENT_ONLY_REQUEST" | "$BIN" --rpc)
 

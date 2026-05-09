@@ -148,6 +148,19 @@ if ! printf '%s\n' "$AST_SPARSE_RESPONSE" | grep -q '"kind":"c-sparse.ast-sparse
     exit 1
 fi
 
+KERNEL_CONTEXT_REQUEST="$(
+    printf '{"jsonrpc":"2.0","id":97,"method":"parse","params":{"workspace_root":'
+    printf '"%s"' "$SCRIPT_DIR/fixtures"
+    printf ',"path":"kernel/missing.c","compile_context":"kernel","source":"int copy_name(char __user *buf) { return 0; }\\n"}}'
+)"
+KERNEL_CONTEXT_RESPONSE=$(printf '%s\n' "$KERNEL_CONTEXT_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$KERNEL_CONTEXT_RESPONSE" | grep -q '"kind":"kernel-compile-context-missing"' || {
+    echo "FAIL: kernel compile context resolver opacity should flow through sparse RPC" >&2
+    echo "$KERNEL_CONTEXT_RESPONSE" >&2
+    exit 1
+}
+
 DEFINE_ONLY_REQUEST='{"jsonrpc":"2.0","id":100,"method":"parse","params":{"path":"define_only.c","source":"#define __user\n"}}'
 DEFINE_ONLY_RESPONSE=$(printf '%s\n' "$DEFINE_ONLY_REQUEST" | "$BIN" --rpc)
 

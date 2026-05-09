@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int failures = 0;
 
@@ -483,6 +485,226 @@ static void test_compile_context_reports_dropped_gcc_plugin_flags(void) {
     pk_c_compile_context_free(context);
 }
 
+static int write_text_file(const char *path, const char *contents) {
+    FILE *f = fopen(path, "wb");
+
+    if (f == NULL) {
+        return -1;
+    }
+    if (fputs(contents, f) < 0) {
+        fclose(f);
+        return -1;
+    }
+    return fclose(f);
+}
+
+static int make_dir_path(const char *root, const char *relative, char *out, size_t out_len) {
+    int written = snprintf(out, out_len, "%s/%s", root, relative);
+
+    if (written < 0 || (size_t)written >= out_len) {
+        return -1;
+    }
+    return mkdir(out, 0700);
+}
+
+static void test_kernel_compile_context_resolves_compile_commands_json(void) {
+    char tmp[] = "/tmp/provekit-core-ccdb-XXXXXX";
+    char path[512];
+    char json[2048];
+    pk_c_compile_context *context;
+    const char *want[] = {
+        "-x", "c", "-std=gnu11",
+        "-D__KERNEL__", "-Iinclude", "--target=x86_64-linux-gnu"
+    };
+
+    if (mkdtemp(tmp) == NULL) {
+        fprintf(stderr, "FAIL: mkdtemp failed for compile_commands fixture\n");
+        failures++;
+        return;
+    }
+    (void)snprintf(path, sizeof(path), "%s/compile_commands.json", tmp);
+    (void)snprintf(json,
+        sizeof(json),
+        "[{\"directory\":\"%s\",\"file\":\"kernel/sched/core.c\","
+        "\"command\":\"clang -D__KERNEL__ -Iinclude --target=x86_64-linux-gnu "
+        "-c -o kernel/sched/core.o kernel/sched/core.c\"}]",
+        tmp);
+    if (write_text_file(path, json) != 0) {
+        fprintf(stderr, "FAIL: could not write compile_commands fixture\n");
+        failures++;
+        (void)rmdir(tmp);
+        return;
+    }
+
+    context = pk_c_compile_context_resolve_kernel(tmp, "kernel/sched/core.c");
+    if (!context) {
+        fprintf(stderr, "FAIL: kernel compile_commands resolver returned null\n");
+        failures++;
+        (void)unlink(path);
+        (void)rmdir(tmp);
+        return;
+    }
+    if (context->n_clang_args != sizeof(want) / sizeof(want[0])) {
+        fprintf(stderr, "FAIL: expected %zu compile_commands clang args, got %zu\n",
+            sizeof(want) / sizeof(want[0]), context->n_clang_args);
+        failures++;
+    } else {
+        for (size_t i = 0; i < context->n_clang_args; i++) {
+            assert_eq(context->clang_args[i], want[i], "compile_commands resolver clang arg");
+        }
+    }
+    assert_eq(context->target_triple, "x86_64-linux-gnu",
+        "compile_commands resolver target triple");
+    pk_c_compile_context_free(context);
+    (void)unlink(path);
+    (void)rmdir(tmp);
+}
+
+static void test_kernel_compile_context_resolves_compile_commands_arguments(void) {
+    char tmp[] = "/tmp/provekit-core-ccargs-XXXXXX";
+    char path[512];
+    pk_c_compile_context *context;
+    const char *want[] = {
+        "-x", "c", "-std=gnu11",
+        "-D__KERNEL__", "-Iinclude", "--target=riscv64-linux-gnu"
+    };
+
+    if (mkdtemp(tmp) == NULL) {
+        fprintf(stderr, "FAIL: mkdtemp failed for compile_commands arguments fixture\n");
+        failures++;
+        return;
+    }
+    (void)snprintf(path, sizeof(path), "%s/compile_commands.json", tmp);
+    if (write_text_file(path,
+        "[{\"file\":\"kernel/irq/chip.c\","
+        "\"arguments\":[\"clang\",\"-D__KERNEL__\",\"-Iinclude\","
+        "\"--target=riscv64-linux-gnu\",\"-c\",\"kernel/irq/chip.c\"]}]") != 0) {
+        fprintf(stderr, "FAIL: could not write compile_commands arguments fixture\n");
+        failures++;
+        (void)rmdir(tmp);
+        return;
+    }
+
+    context = pk_c_compile_context_resolve_kernel(tmp, "kernel/irq/chip.c");
+    if (!context) {
+        fprintf(stderr, "FAIL: compile_commands arguments resolver returned null\n");
+        failures++;
+        (void)unlink(path);
+        (void)rmdir(tmp);
+        return;
+    }
+    if (context->n_clang_args != sizeof(want) / sizeof(want[0])) {
+        fprintf(stderr, "FAIL: expected %zu arguments clang args, got %zu\n",
+            sizeof(want) / sizeof(want[0]), context->n_clang_args);
+        failures++;
+    } else {
+        for (size_t i = 0; i < context->n_clang_args; i++) {
+            assert_eq(context->clang_args[i], want[i], "compile_commands arguments clang arg");
+        }
+    }
+    assert_eq(context->target_triple, "riscv64-linux-gnu",
+        "compile_commands arguments target triple");
+    pk_c_compile_context_free(context);
+    (void)unlink(path);
+    (void)rmdir(tmp);
+}
+
+static void test_kernel_compile_context_resolves_kbuild_cmd_file(void) {
+    char tmp[] = "/tmp/provekit-core-kbuild-XXXXXX";
+    char path[512];
+    char kernel_dir[512] = {0};
+    char sched_dir[512] = {0};
+    pk_c_compile_context *context;
+    const char *want[] = {
+        "-x", "c", "-std=gnu11",
+        "-D__KERNEL__", "-Iinclude", "--target=arm64-linux-gnu"
+    };
+
+    if (mkdtemp(tmp) == NULL) {
+        fprintf(stderr, "FAIL: mkdtemp failed for kbuild fixture\n");
+        failures++;
+        return;
+    }
+    if (make_dir_path(tmp, "kernel", kernel_dir, sizeof(kernel_dir)) != 0 ||
+        make_dir_path(tmp, "kernel/sched", sched_dir, sizeof(sched_dir)) != 0) {
+        fprintf(stderr, "FAIL: could not create kbuild fixture directories\n");
+        failures++;
+        if (sched_dir[0] != '\0') {
+            (void)rmdir(sched_dir);
+        }
+        if (kernel_dir[0] != '\0') {
+            (void)rmdir(kernel_dir);
+        }
+        (void)rmdir(tmp);
+        return;
+    }
+    (void)snprintf(path, sizeof(path), "%s/kernel/sched/.core.o.cmd", tmp);
+    if (write_text_file(path,
+        "cmd_kernel/sched/core.o := gcc -D__KERNEL__ -Iinclude "
+        "--target=arm64-linux-gnu -c -o kernel/sched/core.o kernel/sched/core.c\n") != 0) {
+        fprintf(stderr, "FAIL: could not write kbuild .cmd fixture\n");
+        failures++;
+        (void)rmdir(sched_dir);
+        (void)rmdir(kernel_dir);
+        (void)rmdir(tmp);
+        return;
+    }
+
+    context = pk_c_compile_context_resolve_kernel(tmp, "kernel/sched/core.c");
+    if (!context) {
+        fprintf(stderr, "FAIL: kbuild resolver returned null\n");
+        failures++;
+        (void)unlink(path);
+        (void)rmdir(sched_dir);
+        (void)rmdir(kernel_dir);
+        (void)rmdir(tmp);
+        return;
+    }
+    if (context->n_clang_args != sizeof(want) / sizeof(want[0])) {
+        fprintf(stderr, "FAIL: expected %zu kbuild clang args, got %zu\n",
+            sizeof(want) / sizeof(want[0]), context->n_clang_args);
+        failures++;
+    } else {
+        for (size_t i = 0; i < context->n_clang_args; i++) {
+            assert_eq(context->clang_args[i], want[i], "kbuild resolver clang arg");
+        }
+    }
+    assert_eq(context->target_triple, "arm64-linux-gnu",
+        "kbuild resolver target triple");
+    pk_c_compile_context_free(context);
+    (void)unlink(path);
+    (void)rmdir(sched_dir);
+    (void)rmdir(kernel_dir);
+    (void)rmdir(tmp);
+}
+
+static void test_kernel_compile_context_reports_missing_context_opacity(void) {
+    char tmp[] = "/tmp/provekit-core-missing-XXXXXX";
+    pk_c_compile_context *context;
+
+    if (mkdtemp(tmp) == NULL) {
+        fprintf(stderr, "FAIL: mkdtemp failed for missing context fixture\n");
+        failures++;
+        return;
+    }
+    context = pk_c_compile_context_resolve_kernel(tmp, "kernel/missing.c");
+    if (!context) {
+        fprintf(stderr, "FAIL: missing kernel context resolver returned null\n");
+        failures++;
+        (void)rmdir(tmp);
+        return;
+    }
+    if (context->extraction_result == NULL ||
+        context->extraction_result->opacity_report.len != 1 ||
+        strstr(context->extraction_result->opacity_report.items[0],
+            "kernel-compile-context-missing") == NULL) {
+        fprintf(stderr, "FAIL: expected missing kernel compile context opacity\n");
+        failures++;
+    }
+    pk_c_compile_context_free(context);
+    (void)rmdir(tmp);
+}
+
 #ifdef PK_C_ENABLE_CLANG_AST
 static void test_parse_with_clang_ast_extracts_functions_and_calls(void) {
     const char *args[] = {"-x", "c", "-std=c11"};
@@ -605,6 +827,10 @@ int main(void) {
     test_compile_context_from_kbuild_command_filters_for_clang();
     test_compile_context_from_quoted_command_preserves_shell_words();
     test_compile_context_reports_dropped_gcc_plugin_flags();
+    test_kernel_compile_context_resolves_compile_commands_json();
+    test_kernel_compile_context_resolves_compile_commands_arguments();
+    test_kernel_compile_context_resolves_kbuild_cmd_file();
+    test_kernel_compile_context_reports_missing_context_opacity();
 #ifdef PK_C_ENABLE_CLANG_AST
     test_parse_with_clang_ast_extracts_functions_and_calls();
     test_compile_context_feeds_clang_ast_options();

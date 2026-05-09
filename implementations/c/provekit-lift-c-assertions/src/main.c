@@ -33,8 +33,11 @@ typedef struct {
     StringArray clang_args;
     pk_c_compile_context *compile_context;
     char *parse_backend;
+    char *compile_context_kind;
+    char *workspace_root;
     char *compile_command;
     char *target_triple;
+    int resolve_kernel_context;
 } ParseRequestOptions;
 
 typedef struct {
@@ -740,6 +743,8 @@ static void parse_request_options_free(ParseRequestOptions *config) {
     string_array_free(&config->clang_args);
     pk_c_compile_context_free(config->compile_context);
     free(config->parse_backend);
+    free(config->compile_context_kind);
+    free(config->workspace_root);
     free(config->compile_command);
     free(config->target_triple);
     memset(config, 0, sizeof(*config));
@@ -786,6 +791,17 @@ static int parse_request_options_init(
         (void)snprintf(error, error_len, "clang_args must be an array of strings");
         return -1;
     }
+    config->compile_context_kind = json_extract_param_str(line, "compile_context");
+    config->workspace_root = json_extract_param_str(line, "workspace_root");
+    if (config->compile_context_kind != NULL &&
+        config->compile_context_kind[0] != '\0' &&
+        strcmp(config->compile_context_kind, "none") != 0 &&
+        strcmp(config->compile_context_kind, "kernel") != 0) {
+        (void)snprintf(error, error_len, "compile_context must be none or kernel");
+        return -1;
+    }
+    config->resolve_kernel_context = config->compile_context_kind != NULL &&
+        strcmp(config->compile_context_kind, "kernel") == 0;
     config->compile_command = json_extract_param_str(line, "compile_command");
     config->target_triple = json_extract_param_str(line, "target_triple");
 
@@ -793,6 +809,16 @@ static int parse_request_options_init(
         config->compile_context = pk_c_compile_context_from_command(path, config->compile_command);
         if (!config->compile_context) {
             (void)snprintf(error, error_len, "compile_command could not be parsed");
+            return -1;
+        }
+        pk_c_compile_context_configure_parse_options(
+            config->compile_context,
+            backend,
+            &config->options);
+    } else if (config->resolve_kernel_context && path != NULL) {
+        config->compile_context = pk_c_compile_context_resolve_kernel(config->workspace_root, path);
+        if (!config->compile_context) {
+            (void)snprintf(error, error_len, "kernel compile context could not be resolved");
             return -1;
         }
         pk_c_compile_context_configure_parse_options(
@@ -823,6 +849,22 @@ static int append_request_option_opacity(
         return 0;
     }
     return pk_c_lift_result_extend(result, config->compile_context->extraction_result);
+}
+
+static void parse_request_options_apply_overrides(
+    const ParseRequestOptions *config,
+    pk_c_parse_options *options
+) {
+    if (!config || !options) {
+        return;
+    }
+    if (config->clang_args.len > 0) {
+        options->clang_args = (const char *const *)config->clang_args.items;
+        options->n_clang_args = config->clang_args.len;
+    }
+    if (config->target_triple) {
+        options->target_triple = config->target_triple;
+    }
 }
 
 static int has_suffix(const char *s, const char *suffix) {
@@ -941,10 +983,13 @@ static int acc_append_result(LiftAccumulator *acc, pk_c_lift_result *result) {
 static int lift_one_file(
     const char *path,
     LiftAccumulator *acc,
-    const pk_c_parse_options *options
+    const ParseRequestOptions *config
 ) {
     char *source = read_file(path);
     pk_c_lift_result *result;
+    pk_c_compile_context *file_context = NULL;
+    pk_c_parse_options file_options;
+    const pk_c_parse_options *options = config == NULL ? NULL : &config->options;
 
     if (!source) {
         (void)snprintf(acc->error,
@@ -955,27 +1000,52 @@ static int lift_one_file(
         return -1;
     }
 
+    if (config != NULL && config->resolve_kernel_context && config->compile_context == NULL) {
+        file_context = pk_c_compile_context_resolve_kernel(config->workspace_root, path);
+        if (file_context == NULL) {
+            free(source);
+            (void)snprintf(acc->error, sizeof(acc->error), "%s: kernel compile context failed", path);
+            return -1;
+        }
+        pk_c_compile_context_configure_parse_options(
+            file_context,
+            config->options.backend,
+            &file_options);
+        parse_request_options_apply_overrides(config, &file_options);
+        options = &file_options;
+    }
+
     result = pk_c_assertions_lift_source_with_options(path, source, options);
     free(source);
     if (!result) {
+        pk_c_compile_context_free(file_context);
         (void)snprintf(acc->error, sizeof(acc->error), "%s: lift failed", path);
+        return -1;
+    }
+    if (file_context != NULL && file_context->extraction_result != NULL &&
+        pk_c_lift_result_extend(result, file_context->extraction_result) != 0) {
+        pk_c_lift_result_free(result);
+        pk_c_compile_context_free(file_context);
+        (void)snprintf(acc->error, sizeof(acc->error), "%s: context opacity failed", path);
         return -1;
     }
 
     if (acc_append_result(acc, result) != 0) {
         pk_c_lift_result_free(result);
+        pk_c_compile_context_free(file_context);
         (void)snprintf(acc->error, sizeof(acc->error), "out of memory aggregating %s", path);
         return -1;
     }
 
     pk_c_lift_result_free(result);
+    pk_c_compile_context_free(file_context);
     return 0;
 }
 
 static int walk_path(
     const char *path,
     LiftAccumulator *acc,
-    const pk_c_parse_options *options
+    const ParseRequestOptions *config
 ) {
     struct stat st;
     DIR *dir;
@@ -995,7 +1065,7 @@ static int walk_path(
     }
 
     if (S_ISREG(st.st_mode)) {
-        return has_suffix(path, ".c") ? lift_one_file(path, acc, options) : 0;
+        return has_suffix(path, ".c") ? lift_one_file(path, acc, config) : 0;
     }
 
     if (!S_ISDIR(st.st_mode)) {
@@ -1027,7 +1097,7 @@ static int walk_path(
             return -1;
         }
 
-        rc = walk_path(child, acc, options);
+        rc = walk_path(child, acc, config);
         free(child);
         if (rc != 0) {
             closedir(dir);
@@ -1244,7 +1314,7 @@ static void handle_lift(const char *id, const char *line) {
             return;
         }
 
-        rc = walk_path(resolved, &acc, &parse_config.options);
+        rc = walk_path(resolved, &acc, &parse_config);
         free(resolved);
         if (rc != 0) {
             send_error(id, -32603, acc.error[0] ? acc.error : "lift failed");

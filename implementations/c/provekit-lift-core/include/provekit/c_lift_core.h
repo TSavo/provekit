@@ -107,6 +107,9 @@ pk_c_compile_context *pk_c_compile_context_from_command(
 pk_c_compile_context *pk_c_compile_context_from_kbuild_cmdline(
     const char *path,
     const char *cmdline);
+pk_c_compile_context *pk_c_compile_context_resolve_kernel(
+    const char *workspace_root,
+    const char *source_path);
 void pk_c_compile_context_configure_parse_options(
     const pk_c_compile_context *context,
     pk_c_parse_backend backend,
