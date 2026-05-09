@@ -16,3 +16,7 @@ int negate(int x) {
 int zero(void) {
     return 0;
 }
+
+int caller(int x) {
+    return add(x, 1);
+}

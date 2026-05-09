@@ -165,25 +165,18 @@ static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
 
     /*
      * post formula:
-     *   arity == 0: result = x0 (degenerate; compose handles 0-arity by
-     *               treating it as identity; emit result = x0 with empty formals
-     *               which is accepted by the wire decoder via serde default)
+     *   arity == 0: true (no formal to reference; emitting result = x0 here
+     *               would name a nonexistent formal and trip compose's
+     *               formal_idx >= formals.len() check on every chain)
      *   arity == 1: result = x0
      *   arity >= 2: result = Ctor("tuple", [Var(x0), ..., Var(xN-1)])
-     *
-     * The = atomic wraps both sides so find_result_equation in libprovekit
-     * can extract inner_value for substitution.
      */
-    if (wbuf_append(b, "\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},") != 0) return -1;
-    if (n_arity <= 1) {
-        /* Single formal: result = x0 (or degenerate 0-arity identity). */
-        const char *fname = (n_arity == 1) ? "x0" : "x0";
-        if (wbuf_append(b, "{\"kind\":\"var\",\"name\":") != 0) return -1;
-        if (wbuf_append_quoted(b, fname) != 0) return -1;
-        if (wbuf_append(b, "}") != 0) return -1;
+    if (n_arity == 0) {
+        if (wbuf_append(b, "\"post\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},") != 0) return -1;
+    } else if (n_arity == 1) {
+        if (wbuf_append(b, "\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"kind\":\"var\",\"name\":\"x0\"}],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
     } else {
-        /* Multi-formal: result = Ctor("tuple", [Var(x0), ..., Var(xN-1)]). */
-        if (wbuf_append(b, "{\"args\":[") != 0) return -1;
+        if (wbuf_append(b, "\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"args\":[") != 0) return -1;
         for (i = 0; i < n_arity; i++) {
             if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
             (void)snprintf(formal_name, sizeof(formal_name), "x%d", i);
@@ -191,11 +184,11 @@ static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
             if (wbuf_append_quoted(b, formal_name) != 0) return -1;
             if (wbuf_append(b, "}") != 0) return -1;
         }
-        if (wbuf_append(b, "],\"kind\":\"ctor\",\"name\":\"tuple\"}") != 0) return -1;
+        if (wbuf_append(b, "],\"kind\":\"ctor\",\"name\":\"tuple\"}],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
     }
-    if (wbuf_append(b, "],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
 
     if (wbuf_append(b, "\"pre\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},") != 0) return -1;
+    if (wbuf_append(b, "\"effects\":{\"effects\":[]},") != 0) return -1;
     if (wbuf_append(b, "\"return_sort\":{\"kind\":\"primitive\",\"name\":\"i32\"}}") != 0) return -1;
 
     return 0;
