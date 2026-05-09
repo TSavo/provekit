@@ -86,6 +86,24 @@ printf '%s\n' "$RESPONSES" | grep -q '"diagnostics":\[\]' || {
     exit 1
 }
 
+printf '%s\n' "$RESPONSES" | grep -q '"callEdges":\[\]' || {
+    echo "FAIL: lift missing callEdges stream" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"opacityReport":\[\]' || {
+    echo "FAIL: lift missing opacityReport stream" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"refusals":\[\]' || {
+    echo "FAIL: lift missing refusals stream" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
 SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$FIXTURE" | tr -d '\n' | sed 's/\\n$//')
 REQUEST="{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"parse\",\"params\":{\"path\":\"assertions_basic.c\",\"source\":\"$SOURCE\"}}"
 RESPONSE=$(printf '%s\n' "$REQUEST" | "$BIN" --rpc)
@@ -117,6 +135,56 @@ fi
 printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
     echo "FAIL: assertions fixture should have empty opacity report" >&2
     echo "$RESPONSE" >&2
+    exit 1
+}
+
+COMMENT_ONLY_REQUEST='{"jsonrpc":"2.0","id":100,"method":"parse","params":{"path":"comment_only.c","source":"/* WARN_ON(noise) */\nint quiet(void) { const char *s = \"BUG_ON(noise)\"; return 0; }\n"}}'
+COMMENT_ONLY_RESPONSE=$(printf '%s\n' "$COMMENT_ONLY_REQUEST" | "$BIN" --rpc)
+
+if printf '%s\n' "$COMMENT_ONLY_RESPONSE" | grep -q '"name":"c-assertions.warn-on"'; then
+    echo "FAIL: WARN_ON in comment should not emit contract" >&2
+    echo "$COMMENT_ONLY_RESPONSE" >&2
+    exit 1
+fi
+
+if printf '%s\n' "$COMMENT_ONLY_RESPONSE" | grep -q '"name":"c-assertions.bug-on"'; then
+    echo "FAIL: BUG_ON in string should not emit contract" >&2
+    echo "$COMMENT_ONLY_RESPONSE" >&2
+    exit 1
+fi
+
+BUG_ON_REQUEST='{"jsonrpc":"2.0","id":101,"method":"parse","params":{"path":"bug_on.c","source":"void crash_if_bad(int bad) { BUG_ON(bad); }\n"}}'
+BUG_ON_RESPONSE=$(printf '%s\n' "$BUG_ON_REQUEST" | "$BIN" --rpc)
+
+if printf '%s\n' "$BUG_ON_RESPONSE" | grep -q '"name":"c-assertions.bug-on"'; then
+    echo "FAIL: BUG_ON should not emit a positive contract declaration" >&2
+    echo "$BUG_ON_RESPONSE" >&2
+    exit 1
+fi
+
+printf '%s\n' "$BUG_ON_RESPONSE" | grep -q '"kind":"c-assertions.bug-on"' || {
+    echo "FAIL: BUG_ON should be reported as a refusal" >&2
+    echo "$BUG_ON_RESPONSE" >&2
+    exit 1
+}
+
+BUG_ON_LIFT_RESPONSES="$(
+    {
+        printf '{"jsonrpc":"2.0","id":102,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["assertions_refusal.c"],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+
+if printf '%s\n' "$BUG_ON_LIFT_RESPONSES" | grep -q '"name":"c-assertions.bug-on"'; then
+    echo "FAIL: BUG_ON lift should not emit a positive contract declaration" >&2
+    echo "$BUG_ON_LIFT_RESPONSES" >&2
+    exit 1
+fi
+
+printf '%s\n' "$BUG_ON_LIFT_RESPONSES" | grep -q '"kind":"c-assertions.bug-on"' || {
+    echo "FAIL: BUG_ON lift should preserve refusal stream" >&2
+    echo "$BUG_ON_LIFT_RESPONSES" >&2
     exit 1
 }
 

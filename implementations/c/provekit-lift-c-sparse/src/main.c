@@ -26,9 +26,15 @@ static void string_array_free(StringArray *arr);
 
 typedef struct {
     Buf ir;
+    Buf call_edges;
     Buf diagnostics;
+    Buf opacity_report;
+    Buf refusals;
     size_t ir_count;
+    size_t call_edge_count;
     size_t diagnostic_count;
+    size_t opacity_count;
+    size_t refusal_count;
     char error[512];
 } LiftAccumulator;
 
@@ -203,6 +209,13 @@ static char *json_extract_str(const char *json, const char *field) {
     }
 
     return decode_json_string(p + 1, NULL);
+}
+
+static int json_has_field(const char *json, const char *field) {
+    char needle[128];
+
+    (void)snprintf(needle, sizeof(needle), "\"%s\"", field);
+    return strstr(json, needle) != NULL;
 }
 
 static char *json_extract_id(const char *json) {
@@ -621,34 +634,41 @@ static char *read_file(const char *path) {
 static void acc_init(LiftAccumulator *acc) {
     memset(acc, 0, sizeof(*acc));
     buf_init(&acc->ir);
+    buf_init(&acc->call_edges);
     buf_init(&acc->diagnostics);
+    buf_init(&acc->opacity_report);
+    buf_init(&acc->refusals);
 }
 
 static void acc_free(LiftAccumulator *acc) {
     buf_free(&acc->ir);
+    buf_free(&acc->call_edges);
     buf_free(&acc->diagnostics);
+    buf_free(&acc->opacity_report);
+    buf_free(&acc->refusals);
+}
+
+static int acc_append_json_array(Buf *buf, size_t *count, const pk_c_json_array *items) {
+    for (size_t i = 0; i < items->len; i++) {
+        if (*count > 0 && buf_append_char(buf, ',') != 0) {
+            return -1;
+        }
+        if (buf_append(buf, items->items[i]) != 0) {
+            return -1;
+        }
+        (*count)++;
+    }
+    return 0;
 }
 
 static int acc_append_result(LiftAccumulator *acc, pk_c_lift_result *result) {
-    for (size_t i = 0; i < result->declarations.len; i++) {
-        if (acc->ir_count > 0 && buf_append_char(&acc->ir, ',') != 0) {
-            return -1;
-        }
-        if (buf_append(&acc->ir, result->declarations.items[i]) != 0) {
-            return -1;
-        }
-        acc->ir_count++;
-    }
-
-    for (size_t i = 0; i < result->diagnostics.len; i++) {
-        if (acc->diagnostic_count > 0 && buf_append_char(&acc->diagnostics, ',') != 0) {
-            return -1;
-        }
-        json_escape_str(&acc->diagnostics, result->diagnostics.items[i]);
-        acc->diagnostic_count++;
-    }
-
-    return 0;
+    return acc_append_json_array(&acc->ir, &acc->ir_count, &result->declarations) == 0 &&
+        acc_append_json_array(&acc->call_edges, &acc->call_edge_count, &result->call_edges) == 0 &&
+        acc_append_json_array(&acc->diagnostics, &acc->diagnostic_count, &result->diagnostics) == 0 &&
+        acc_append_json_array(&acc->opacity_report, &acc->opacity_count, &result->opacity_report) == 0 &&
+        acc_append_json_array(&acc->refusals, &acc->refusal_count, &result->refusals) == 0
+        ? 0
+        : -1;
 }
 
 static int lift_one_file(const char *path, LiftAccumulator *acc) {
@@ -816,46 +836,64 @@ static void handle_parse(const char *id, const char *line) {
 
 static void handle_lift(const char *id, const char *line) {
     char *workspace = json_extract_str(line, "workspace_root");
+    char *surface = json_extract_str(line, "surface");
     StringArray source_paths;
     LiftAccumulator acc;
     Buf result;
+
+    if (!surface) {
+        free(workspace);
+        send_error(id, -32602, "surface must be a string");
+        return;
+    }
 
     if (!workspace || !*workspace) {
         free(workspace);
         workspace = str_dup(".");
         if (!workspace) {
+            free(surface);
             send_error(id, -32603, "out of memory");
             return;
         }
     }
 
+    if (!json_has_field(line, "source_paths")) {
+        free(surface);
+        free(workspace);
+        send_error(id, -32602, "source_paths must be a non-empty array of strings");
+        return;
+    }
+
     if (json_extract_str_array(line, "source_paths", &source_paths) != 0) {
         string_array_free(&source_paths);
+        free(surface);
         free(workspace);
         send_error(id, -32602, "source_paths must be an array of strings");
         return;
     }
     if (source_paths.len == 0) {
-        source_paths.items = malloc(sizeof(char *));
-        if (!source_paths.items) {
-            free(workspace);
-            send_error(id, -32603, "out of memory");
-            return;
-        }
-        source_paths.items[0] = str_dup(".");
-        if (!source_paths.items[0]) {
+        string_array_free(&source_paths);
+        free(surface);
+        free(workspace);
+        send_error(id, -32602, "source_paths must be a non-empty array of strings");
+        return;
+    }
+    for (size_t i = 0; i < source_paths.len; i++) {
+        if (!source_paths.items[i] || !*source_paths.items[i]) {
             string_array_free(&source_paths);
+            free(surface);
             free(workspace);
-            send_error(id, -32603, "out of memory");
+            send_error(id, -32602, "source_paths entries must be non-empty strings");
             return;
         }
-        source_paths.len = 1;
     }
 
     acc_init(&acc);
-    if (!acc.ir.data || !acc.diagnostics.data) {
+    if (!acc.ir.data || !acc.call_edges.data || !acc.diagnostics.data ||
+        !acc.opacity_report.data || !acc.refusals.data) {
         acc_free(&acc);
         string_array_free(&source_paths);
+        free(surface);
         free(workspace);
         send_error(id, -32603, "out of memory");
         return;
@@ -868,6 +906,7 @@ static void handle_lift(const char *id, const char *line) {
         if (!resolved) {
             acc_free(&acc);
             string_array_free(&source_paths);
+            free(surface);
             free(workspace);
             send_error(id, -32603, "out of memory");
             return;
@@ -879,6 +918,7 @@ static void handle_lift(const char *id, const char *line) {
             send_error(id, -32603, acc.error[0] ? acc.error : "lift failed");
             acc_free(&acc);
             string_array_free(&source_paths);
+            free(surface);
             free(workspace);
             return;
         }
@@ -886,14 +926,23 @@ static void handle_lift(const char *id, const char *line) {
 
     buf_init(&result);
     if (!result.data ||
-        buf_append(&result, "{\"diagnostics\":[") != 0 ||
+        buf_append(&result, "{\"declarations\":[") != 0 ||
+        buf_append(&result, acc.ir.data ? acc.ir.data : "") != 0 ||
+        buf_append(&result, "],\"callEdges\":[") != 0 ||
+        buf_append(&result, acc.call_edges.data ? acc.call_edges.data : "") != 0 ||
+        buf_append(&result, "],\"diagnostics\":[") != 0 ||
         buf_append(&result, acc.diagnostics.data ? acc.diagnostics.data : "") != 0 ||
+        buf_append(&result, "],\"opacityReport\":[") != 0 ||
+        buf_append(&result, acc.opacity_report.data ? acc.opacity_report.data : "") != 0 ||
+        buf_append(&result, "],\"refusals\":[") != 0 ||
+        buf_append(&result, acc.refusals.data ? acc.refusals.data : "") != 0 ||
         buf_append(&result, "],\"ir\":[") != 0 ||
         buf_append(&result, acc.ir.data ? acc.ir.data : "") != 0 ||
         buf_append(&result, "],\"kind\":\"ir-document\"}") != 0) {
         buf_free(&result);
         acc_free(&acc);
         string_array_free(&source_paths);
+        free(surface);
         free(workspace);
         send_error(id, -32603, "out of memory");
         return;
@@ -904,6 +953,7 @@ static void handle_lift(const char *id, const char *line) {
     buf_free(&result);
     acc_free(&acc);
     string_array_free(&source_paths);
+    free(surface);
     free(workspace);
 }
 

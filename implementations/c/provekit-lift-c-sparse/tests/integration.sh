@@ -80,6 +80,24 @@ printf '%s\n' "$RESPONSES" | grep -q '"diagnostics":\[\]' || {
     exit 1
 }
 
+printf '%s\n' "$RESPONSES" | grep -q '"callEdges":\[\]' || {
+    echo "FAIL: lift missing callEdges stream" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"opacityReport":\[\]' || {
+    echo "FAIL: lift missing opacityReport stream" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"refusals":\[\]' || {
+    echo "FAIL: lift missing refusals stream" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
 SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$FIXTURE" | tr -d '\n' | sed 's/\\n$//')
 REQUEST="{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"parse\",\"params\":{\"path\":\"sparse_basic.c\",\"source\":\"$SOURCE\"}}"
 RESPONSE=$(printf '%s\n' "$REQUEST" | "$BIN" --rpc)
@@ -107,6 +125,24 @@ printf '%s\n' "$RESPONSE" | grep -q '"opacityReport":\[\]' || {
     echo "$RESPONSE" >&2
     exit 1
 }
+
+DEFINE_ONLY_REQUEST='{"jsonrpc":"2.0","id":100,"method":"parse","params":{"path":"define_only.c","source":"#define __user\n"}}'
+DEFINE_ONLY_RESPONSE=$(printf '%s\n' "$DEFINE_ONLY_REQUEST" | "$BIN" --rpc)
+
+if printf '%s\n' "$DEFINE_ONLY_RESPONSE" | grep -q '"name":"c-sparse.user-pointer"'; then
+    echo "FAIL: __user define should not emit user-pointer contract" >&2
+    echo "$DEFINE_ONLY_RESPONSE" >&2
+    exit 1
+fi
+
+COMMENT_ONLY_REQUEST='{"jsonrpc":"2.0","id":101,"method":"parse","params":{"path":"comment_only.c","source":"int quiet(void) { /* __must_hold(lock) */ return 0; }\n"}}'
+COMMENT_ONLY_RESPONSE=$(printf '%s\n' "$COMMENT_ONLY_REQUEST" | "$BIN" --rpc)
+
+if printf '%s\n' "$COMMENT_ONLY_RESPONSE" | grep -q '"name":"c-sparse.must-hold"'; then
+    echo "FAIL: sparse annotation in comment should not emit contract" >&2
+    echo "$COMMENT_ONLY_RESPONSE" >&2
+    exit 1
+fi
 
 MALFORMED_JSON_RESPONSE=$(printf '%s\n' '{"jsonrpc":"2.0","id":55,"method":"initialize"' | "$BIN" --rpc)
 
@@ -169,5 +205,64 @@ if printf '%s\n' "$MALFORMED_SOURCE_PATHS" | grep -q '"kind":"ir-document"'; the
     echo "$MALFORMED_SOURCE_PATHS" >&2
     exit 1
 fi
+
+assert_invalid_lift_params() {
+    name="$1"
+    response="$2"
+
+    printf '%s\n' "$response" | grep -q '"error"' || {
+        echo "FAIL: $name should return an error" >&2
+        echo "$response" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$response" | grep -q '"code":-32602' || {
+        echo "FAIL: $name should return invalid params -32602" >&2
+        echo "$response" >&2
+        exit 1
+    }
+
+    if printf '%s\n' "$response" | grep -q '"kind":"ir-document"'; then
+        echo "FAIL: $name should not return an ir-document" >&2
+        echo "$response" >&2
+        exit 1
+    fi
+}
+
+MISSING_SOURCE_PATHS="$(
+    {
+        printf '{"jsonrpc":"2.0","id":89,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"surface":"c-sparse"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "missing source_paths" "$MISSING_SOURCE_PATHS"
+
+EMPTY_SOURCE_PATHS="$(
+    {
+        printf '{"jsonrpc":"2.0","id":90,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":[],"surface":"c-sparse"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "empty source_paths" "$EMPTY_SOURCE_PATHS"
+
+EMPTY_SOURCE_PATH="$(
+    {
+        printf '{"jsonrpc":"2.0","id":91,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":[""],"surface":"c-sparse"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "empty source path" "$EMPTY_SOURCE_PATH"
+
+MISSING_SURFACE="$(
+    {
+        printf '{"jsonrpc":"2.0","id":92,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["sparse_basic.c"]}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "missing surface" "$MISSING_SURFACE"
 
 printf 'provekit-lift-c-sparse integration passed\n'

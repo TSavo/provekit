@@ -40,6 +40,13 @@ typedef struct {
 } pk_c_macro_call_fact;
 
 typedef struct {
+    char *name;
+    char *enclosing_function;
+    char *argument_text;
+    pk_c_locus locus;
+} pk_c_sparse_annotation_fact;
+
+typedef struct {
     char *caller;
     char *callee;
     pk_c_locus locus;
@@ -52,6 +59,9 @@ typedef struct {
     pk_c_macro_call_fact *macro_calls;
     size_t n_macro_calls;
     size_t cap_macro_calls;
+    pk_c_sparse_annotation_fact *sparse_annotations;
+    size_t n_sparse_annotations;
+    size_t cap_sparse_annotations;
     pk_c_call_site_fact *call_sites;
     size_t n_call_sites;
     size_t cap_call_sites;

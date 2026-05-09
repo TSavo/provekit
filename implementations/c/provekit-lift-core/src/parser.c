@@ -9,6 +9,7 @@
 #define PK_C_NO_FUNCTION SIZE_MAX
 
 static const char *pk_c_parser_first_nonblank(const char *line);
+static char *pk_c_parser_argument_text(const char *open_paren);
 
 static char *pk_c_parser_copy_n(const char *src, size_t len) {
     char *copy = malloc(len + 1);
@@ -147,6 +148,28 @@ static int pk_c_parser_grow_macros(pk_c_source_facts *facts) {
     return 0;
 }
 
+static int pk_c_parser_grow_sparse_annotations(pk_c_source_facts *facts) {
+    pk_c_sparse_annotation_fact *items;
+    size_t cap;
+    size_t bytes;
+
+    if (facts->n_sparse_annotations < facts->cap_sparse_annotations) {
+        return 0;
+    }
+    cap = facts->cap_sparse_annotations == 0 ? 4 : facts->cap_sparse_annotations * 2;
+    if (cap < facts->cap_sparse_annotations ||
+        pk_c_parser_checked_mul(cap, sizeof(*facts->sparse_annotations), &bytes) != 0) {
+        return -1;
+    }
+    items = realloc(facts->sparse_annotations, bytes);
+    if (items == NULL) {
+        return -1;
+    }
+    facts->sparse_annotations = items;
+    facts->cap_sparse_annotations = cap;
+    return 0;
+}
+
 static int pk_c_parser_grow_calls(pk_c_source_facts *facts) {
     pk_c_call_site_fact *items;
     size_t cap;
@@ -166,6 +189,47 @@ static int pk_c_parser_grow_calls(pk_c_source_facts *facts) {
     }
     facts->call_sites = items;
     facts->cap_call_sites = cap;
+    return 0;
+}
+
+static char *pk_c_parser_argument_text_or_empty(const char *open_paren) {
+    if (open_paren == NULL) {
+        return pk_c_parser_copy("");
+    }
+    return pk_c_parser_argument_text(open_paren);
+}
+
+static int pk_c_parser_append_sparse_annotation(
+    pk_c_source_facts *facts,
+    const char *path,
+    const char *name,
+    size_t name_len,
+    const char *caller,
+    const char *open_paren,
+    int line,
+    int column
+) {
+    pk_c_sparse_annotation_fact *fact;
+
+    if (pk_c_parser_grow_sparse_annotations(facts) != 0) {
+        return -1;
+    }
+    fact = &facts->sparse_annotations[facts->n_sparse_annotations];
+    memset(fact, 0, sizeof(*fact));
+    fact->name = pk_c_parser_copy_n(name, name_len);
+    fact->enclosing_function = pk_c_parser_copy(caller);
+    fact->argument_text = pk_c_parser_argument_text_or_empty(open_paren);
+    pk_c_parser_set_locus(&fact->locus, path, line, column);
+    if (fact->name == NULL || fact->enclosing_function == NULL ||
+        fact->argument_text == NULL || fact->locus.path == NULL) {
+        free(fact->name);
+        free(fact->enclosing_function);
+        free(fact->argument_text);
+        free(fact->locus.path);
+        memset(fact, 0, sizeof(*fact));
+        return -1;
+    }
+    facts->n_sparse_annotations++;
     return 0;
 }
 
@@ -195,6 +259,62 @@ static int pk_c_parser_append_function(
     }
     fact->has_contract_annotation = has_contract_annotation;
     facts->n_functions++;
+    return 0;
+}
+
+static int pk_c_parser_sparse_annotation_name(const char *name, size_t len) {
+    static const char *const names[] = {
+        "__user", "__rcu", "__must_hold", "__acquires", "__releases"
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strlen(names[i]) == len && strncmp(name, names[i], len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int pk_c_parser_scan_sparse_annotations(
+    pk_c_source_facts *facts,
+    const char *path,
+    const char *line,
+    int line_no,
+    int column_offset,
+    const char *caller
+) {
+    const char *p = line;
+
+    while (*p != '\0') {
+        const char *start;
+        const char *end;
+        const char *arg = NULL;
+
+        if (!isalpha((unsigned char)*p) && *p != '_') {
+            p++;
+            continue;
+        }
+        start = p;
+        p++;
+        while (isalnum((unsigned char)*p) || *p == '_') {
+            p++;
+        }
+        end = p;
+        if (!pk_c_parser_sparse_annotation_name(start, (size_t)(end - start))) {
+            continue;
+        }
+        while (isspace((unsigned char)*p)) {
+            p++;
+        }
+        if (*p == '(') {
+            arg = p;
+        }
+        if (pk_c_parser_append_sparse_annotation(facts, path, start, (size_t)(end - start),
+            caller, arg, line_no, (int)(start - line) + column_offset + 1) != 0) {
+            return -1;
+        }
+    }
     return 0;
 }
 
@@ -350,6 +470,66 @@ static int pk_c_parser_scan_calls(
     return 0;
 }
 
+static char *pk_c_parser_code_view(const char *line, int *in_block_comment) {
+    char *copy = pk_c_parser_copy(line);
+    size_t i = 0;
+    char quote = '\0';
+
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    while (copy[i] != '\0') {
+        if (*in_block_comment) {
+            if (copy[i] == '*' && copy[i + 1] == '/') {
+                copy[i] = ' ';
+                copy[i + 1] = ' ';
+                i += 2;
+                *in_block_comment = 0;
+            } else {
+                copy[i++] = ' ';
+            }
+            continue;
+        }
+
+        if (quote != '\0') {
+            if (copy[i] == '\\' && copy[i + 1] != '\0') {
+                copy[i] = ' ';
+                copy[i + 1] = ' ';
+                i += 2;
+                continue;
+            }
+            if (copy[i] == quote) {
+                quote = '\0';
+            }
+            copy[i++] = ' ';
+            continue;
+        }
+
+        if (copy[i] == '/' && copy[i + 1] == '/') {
+            while (copy[i] != '\0') {
+                copy[i++] = ' ';
+            }
+            break;
+        }
+        if (copy[i] == '/' && copy[i + 1] == '*') {
+            copy[i] = ' ';
+            copy[i + 1] = ' ';
+            i += 2;
+            *in_block_comment = 1;
+            continue;
+        }
+        if (copy[i] == '"' || copy[i] == '\'') {
+            quote = copy[i];
+            copy[i++] = ' ';
+            continue;
+        }
+        i++;
+    }
+
+    return copy;
+}
+
 void pk_c_source_facts_free(pk_c_source_facts *facts) {
     size_t i;
 
@@ -366,6 +546,12 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
         free(facts->macro_calls[i].argument_text);
         free(facts->macro_calls[i].locus.path);
     }
+    for (i = 0; i < facts->n_sparse_annotations; i++) {
+        free(facts->sparse_annotations[i].name);
+        free(facts->sparse_annotations[i].enclosing_function);
+        free(facts->sparse_annotations[i].argument_text);
+        free(facts->sparse_annotations[i].locus.path);
+    }
     for (i = 0; i < facts->n_call_sites; i++) {
         free(facts->call_sites[i].caller);
         free(facts->call_sites[i].callee);
@@ -373,6 +559,7 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
     }
     free(facts->functions);
     free(facts->macro_calls);
+    free(facts->sparse_annotations);
     free(facts->call_sites);
     pk_c_lift_result_free(facts->extraction_result);
     free(facts);
@@ -396,6 +583,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
     size_t pending_body = PK_C_NO_FUNCTION;
     size_t current_function = PK_C_NO_FUNCTION;
     int brace_depth = 0;
+    int in_block_comment = 0;
 
     if (facts == NULL) {
         return NULL;
@@ -422,6 +610,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
     for (line = owned_source; line != NULL; line = next, line_no++) {
         regmatch_t function_match[2];
         const char *body_open;
+        char *code_line;
         int is_blank;
 
         next = strchr(line, '\n');
@@ -430,9 +619,16 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             next++;
         }
 
-        is_blank = pk_c_parser_blank_line(line);
+        code_line = pk_c_parser_code_view(line, &in_block_comment);
+        if (code_line == NULL) {
+            pk_c_source_facts_free(facts);
+            facts = NULL;
+            goto done;
+        }
+
+        is_blank = pk_c_parser_blank_line(code_line);
         if (pending_body != PK_C_NO_FUNCTION && !is_blank) {
-            const char *first = pk_c_parser_first_nonblank(line);
+            const char *first = pk_c_parser_first_nonblank(code_line);
 
             if (*first == '{') {
                 facts->functions[pending_body].has_body = 1;
@@ -445,35 +641,46 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
                 brace_depth = 0;
             }
             if (*first == '{') {
+                free(code_line);
                 continue;
             }
         }
 
         if (pk_c_parser_contract_annotation(line)) {
             pending_contract = 1;
+            free(code_line);
             continue;
         }
 
-        if (!pk_c_parser_definition_disallowed_prefix(line) &&
-            regexec(&function_re, line, 2, function_match, 0) == 0 &&
+        if (!pk_c_parser_definition_disallowed_prefix(code_line) &&
+            regexec(&function_re, code_line, 2, function_match, 0) == 0 &&
             function_match[1].rm_so >= 0) {
             size_t function_index;
 
-            if (pk_c_parser_append_function(facts, path, line + function_match[1].rm_so,
+            if (pk_c_parser_append_function(facts, path, code_line + function_match[1].rm_so,
                 (size_t)(function_match[1].rm_eo - function_match[1].rm_so), line_no,
                 (int)function_match[1].rm_so + 1, pending_contract) != 0) {
+                free(code_line);
                 pk_c_source_facts_free(facts);
                 facts = NULL;
                 goto done;
             }
             pending_contract = 0;
             function_index = facts->n_functions - 1;
-            body_open = strchr(line + function_match[0].rm_eo, '{');
+            if (pk_c_parser_scan_sparse_annotations(facts, path, code_line, line_no, 0,
+                facts->functions[function_index].name) != 0) {
+                free(code_line);
+                pk_c_source_facts_free(facts);
+                facts = NULL;
+                goto done;
+            }
+            body_open = strchr(code_line + function_match[0].rm_eo, '{');
             if (body_open != NULL) {
                 facts->functions[function_index].has_body = 1;
                 if (pk_c_parser_scan_calls(facts, &call_re, path, body_open + 1, line_no,
-                    (int)(body_open + 1 - line),
+                    (int)(body_open + 1 - code_line),
                     facts->functions[function_index].name) != 0) {
+                    free(code_line);
                     pk_c_source_facts_free(facts);
                     facts = NULL;
                     goto done;
@@ -488,6 +695,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             } else {
                 pending_body = function_index;
             }
+            free(code_line);
             continue;
         }
 
@@ -496,18 +704,20 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
         }
 
         if (current_function != PK_C_NO_FUNCTION) {
-            if (pk_c_parser_scan_calls(facts, &call_re, path, line, line_no, 0,
+            if (pk_c_parser_scan_calls(facts, &call_re, path, code_line, line_no, 0,
                 facts->functions[current_function].name) != 0) {
+                free(code_line);
                 pk_c_source_facts_free(facts);
                 facts = NULL;
                 goto done;
             }
-            brace_depth += pk_c_parser_brace_delta_from(line);
+            brace_depth += pk_c_parser_brace_delta_from(code_line);
             if (brace_depth <= 0) {
                 current_function = PK_C_NO_FUNCTION;
                 brace_depth = 0;
             }
         }
+        free(code_line);
     }
 
 done:

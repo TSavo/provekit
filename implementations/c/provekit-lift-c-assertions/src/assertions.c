@@ -19,48 +19,57 @@ static int add_contract(pk_c_lift_result *result, const char *name) {
     return pk_c_lift_result_add_declaration(result, json);
 }
 
-static int contains_bug_on_call(const char *source) {
-    const char *p = source;
-
-    while ((p = strstr(p, "BUG_ON(")) != NULL) {
-        if (p < source + strlen("BUILD_") || strncmp(p - strlen("BUILD_"), "BUILD_", strlen("BUILD_")) != 0) {
-            return 1;
-        }
-        p += strlen("BUG_ON(");
-    }
-
-    return 0;
-}
-
 pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *source) {
     pk_c_lift_result *result = pk_c_lift_result_new();
     pk_c_source_facts *facts;
+    int saw_warn_on = 0;
+    int saw_build_bug_on = 0;
+    int saw_assert = 0;
 
     if (!result) {
         return NULL;
-    }
-
-    facts = pk_c_parse_source(path, source);
-    if (facts) {
-        pk_c_source_facts_free(facts);
     }
 
     if (!source) {
         return result;
     }
 
-    if (strstr(source, "WARN_ON(") || strstr(source, "WARN_ON_ONCE(")) {
-        (void)add_contract(result, "c-assertions.warn-on");
-    }
-    if (strstr(source, "BUILD_BUG_ON(")) {
-        (void)add_contract(result, "c-assertions.build-bug-on");
-    }
-    if (contains_bug_on_call(source)) {
-        (void)add_contract(result, "c-assertions.bug-on");
-    }
-    if (strstr(source, "assert(")) {
-        (void)add_contract(result, "c-assertions.assert");
+    facts = pk_c_parse_source(path, source);
+    if (!facts) {
+        return result;
     }
 
+    for (size_t i = 0; i < facts->n_macro_calls; i++) {
+        pk_c_macro_call_fact *call = &facts->macro_calls[i];
+
+        if (!saw_warn_on &&
+            (strcmp(call->name, "WARN_ON") == 0 || strcmp(call->name, "WARN_ON_ONCE") == 0)) {
+            (void)add_contract(result, "c-assertions.warn-on");
+            saw_warn_on = 1;
+        } else if (!saw_build_bug_on && strcmp(call->name, "BUILD_BUG_ON") == 0) {
+            (void)add_contract(result, "c-assertions.build-bug-on");
+            saw_build_bug_on = 1;
+        } else if (strcmp(call->name, "BUG_ON") == 0) {
+            (void)pk_c_lift_result_add_refusal_entry(
+                result,
+                "c-assertions.bug-on",
+                call->locus.path,
+                call->locus.line,
+                call->locus.column,
+                "c-assertions",
+                "BUG_ON is a recognized assertion-like control-flow stop; no positive proof contract emitted");
+        }
+    }
+
+    for (size_t i = 0; i < facts->n_call_sites; i++) {
+        pk_c_call_site_fact *call = &facts->call_sites[i];
+
+        if (!saw_assert && strcmp(call->callee, "assert") == 0) {
+            (void)add_contract(result, "c-assertions.assert");
+            saw_assert = 1;
+        }
+    }
+
+    pk_c_source_facts_free(facts);
     return result;
 }

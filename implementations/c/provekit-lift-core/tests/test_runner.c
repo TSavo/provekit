@@ -234,6 +234,63 @@ static void test_parse_recursive_same_line_function_body_call(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_parse_ignores_comments_and_strings(void) {
+    const char *source =
+        "int quiet(void) {\n"
+        "    /* WARN_ON(noise); */\n"
+        "    const char *text = \"BUG_ON(noise)\";\n"
+        "    return 0;\n"
+        "}\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_macro_calls != 0) {
+        fprintf(stderr, "FAIL: expected 0 macro calls from comments/strings, got %zu\n",
+            facts->n_macro_calls);
+        failures++;
+    }
+    pk_c_source_facts_free(facts);
+}
+
+static void test_parse_sparse_annotations(void) {
+    const char *source =
+        "#define __user\n"
+        "#define __must_hold(x)\n"
+        "int copy_name(char __user *buf, int len)\n"
+        "{\n"
+        "    return len;\n"
+        "}\n"
+        "void update_locked(int *state) __must_hold(lock)\n"
+        "{\n"
+        "    *state = 1;\n"
+        "}\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_sparse_annotations != 2) {
+        fprintf(stderr, "FAIL: expected 2 sparse annotations, got %zu\n",
+            facts->n_sparse_annotations);
+        failures++;
+    } else {
+        assert_eq(facts->sparse_annotations[0].name, "__user", "first sparse annotation name");
+        assert_eq(facts->sparse_annotations[0].enclosing_function, "copy_name",
+            "first sparse annotation function");
+        assert_eq(facts->sparse_annotations[1].name, "__must_hold",
+            "second sparse annotation name");
+        assert_eq(facts->sparse_annotations[1].argument_text, "lock",
+            "second sparse annotation argument");
+        assert_eq(facts->sparse_annotations[1].enclosing_function, "update_locked",
+            "second sparse annotation function");
+    }
+    pk_c_source_facts_free(facts);
+}
+
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
@@ -243,6 +300,8 @@ int main(void) {
     test_parse_functions_and_macros();
     test_parse_same_line_function_body_call();
     test_parse_recursive_same_line_function_body_call();
+    test_parse_ignores_comments_and_strings();
+    test_parse_sparse_annotations();
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;
