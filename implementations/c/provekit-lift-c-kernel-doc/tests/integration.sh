@@ -202,4 +202,70 @@ printf '%s\n' "$RESPONSES" | grep -q '"id":77' || {
     exit 1
 }
 
+STRUCTURAL_FIXTURE="$SCRIPT_DIR/fixtures/structural_basic.c"
+if [ ! -f "$STRUCTURAL_FIXTURE" ]; then
+    echo "FAIL: structural fixture not found: $STRUCTURAL_FIXTURE" >&2
+    exit 1
+fi
+STRUCTURAL_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$STRUCTURAL_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+STRUCTURAL_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":110,\"method\":\"parse\",\"params\":{\"path\":\"structural_basic.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$STRUCTURAL_SOURCE\"}}"
+STRUCTURAL_RESPONSE=$(printf '%s\n' "$STRUCTURAL_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"id":110' || {
+    echo "FAIL: structural parse did not echo id 110" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"callEdges":\[\s*\{' || {
+    echo "FAIL: clang_ast backend should surface call edges (callEdges array empty on file with callsites)" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"callee_name":"helper_inplace"' || {
+    echo "FAIL: callEdges should include helper_inplace callee per pinned schema (caller_function/callee_name/args_json/callsite_*)" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"caller_function":"caller_unsafe"' || {
+    echo "FAIL: callEdges should include caller_unsafe as a caller per pinned schema" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+# The arg-extraction assertions below require the libclang AST backend.
+# On builds without libclang, the stub emits an "ast-backend-unavailable"
+# opacity entry, callEdges still surface via the regex backend (with empty
+# args), and the args-specific assertions cannot be satisfied. Skip them
+# in that branch so `make test` is meaningful but not red on stub builds.
+if printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"kind":"ast-backend-unavailable"'; then
+    echo "info: clang_ast backend unavailable in this build; skipping arg-extraction assertions"
+else
+    printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"args":\[\{' || {
+        echo "FAIL: callEdges should emit args as a direct JSON array of arg objects (not a quoted string)" >&2
+        echo "$STRUCTURAL_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"text":"external"' || {
+        echo "FAIL: args extraction should surface the var text 'external' for caller_unsafe's helper_inplace call" >&2
+        echo "$STRUCTURAL_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"position":0' || {
+        echo "FAIL: args entries should carry a position field per the pinned schema" >&2
+        echo "$STRUCTURAL_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"kind":"(var|literal|expr)"' || {
+        echo "FAIL: args entries should carry a kind classification (var|literal|expr)" >&2
+        echo "$STRUCTURAL_RESPONSE" >&2
+        exit 1
+    }
+fi
+
 echo "provekit-lift-c-kernel-doc integration passed"

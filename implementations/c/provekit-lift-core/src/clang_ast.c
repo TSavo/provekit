@@ -1,7 +1,9 @@
 #include "provekit/c_lift_core.h"
 
 #include <clang-c/Index.h>
+#include <ctype.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -187,6 +189,193 @@ static int pk_c_clang_append_macro(
     return 0;
 }
 
+static char *pk_c_clang_get_cursor_source(CXCursor cursor) {
+    CXTranslationUnit tu = clang_Cursor_getTranslationUnit(cursor);
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXToken *tokens = NULL;
+    unsigned ntoks = 0;
+    char *out = NULL;
+    size_t out_len = 0;
+    size_t out_cap = 0;
+
+    clang_tokenize(tu, range, &tokens, &ntoks);
+    if (ntoks == 0) {
+        if (tokens != NULL) {
+            clang_disposeTokens(tu, tokens, ntoks);
+        }
+        return pk_c_clang_copy("");
+    }
+    out_cap = 64;
+    out = malloc(out_cap);
+    if (out == NULL) {
+        clang_disposeTokens(tu, tokens, ntoks);
+        return NULL;
+    }
+    out[0] = '\0';
+    for (unsigned i = 0; i < ntoks; i++) {
+        CXString sp = clang_getTokenSpelling(tu, tokens[i]);
+        const char *cstr = clang_getCString(sp);
+        size_t add = cstr ? strlen(cstr) : 0;
+
+        if (add > 0) {
+            if (out_len + add + 1 > out_cap) {
+                size_t new_cap = out_cap;
+                char *new_out;
+
+                while (new_cap < out_len + add + 1) {
+                    if (new_cap > ((size_t)-1) / 2) {
+                        clang_disposeString(sp);
+                        clang_disposeTokens(tu, tokens, ntoks);
+                        free(out);
+                        return NULL;
+                    }
+                    new_cap *= 2;
+                }
+                new_out = realloc(out, new_cap);
+                if (new_out == NULL) {
+                    clang_disposeString(sp);
+                    clang_disposeTokens(tu, tokens, ntoks);
+                    free(out);
+                    return NULL;
+                }
+                out = new_out;
+                out_cap = new_cap;
+            }
+            memcpy(out + out_len, cstr, add);
+            out_len += add;
+            out[out_len] = '\0';
+        }
+        clang_disposeString(sp);
+    }
+    clang_disposeTokens(tu, tokens, ntoks);
+    return out;
+}
+
+static const char *pk_c_clang_classify_arg_text(const char *text) {
+    const char *p;
+
+    if (text == NULL || text[0] == '\0') {
+        return "expr";
+    }
+    if (text[0] == '\'' || text[0] == '"') {
+        return "literal";
+    }
+    if (isdigit((unsigned char)text[0])) {
+        return "literal";
+    }
+    if (text[0] == '-' && isdigit((unsigned char)text[1])) {
+        return "literal";
+    }
+    for (p = text; *p != '\0'; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') {
+            return "expr";
+        }
+    }
+    return "var";
+}
+
+static char *pk_c_clang_extract_args(CXCursor call_cursor) {
+    int n = clang_Cursor_getNumArguments(call_cursor);
+    char *out;
+    size_t out_len;
+    size_t out_cap;
+    int i;
+
+    if (n < 0) {
+        n = 0;
+    }
+    out_cap = 32;
+    out = malloc(out_cap);
+    if (out == NULL) {
+        return NULL;
+    }
+    out[0] = '[';
+    out[1] = '\0';
+    out_len = 1;
+
+    for (i = 0; i < n; i++) {
+        CXCursor arg = clang_Cursor_getArgument(call_cursor, (unsigned)i);
+        char *text = pk_c_clang_get_cursor_source(arg);
+        const char *kind = pk_c_clang_classify_arg_text(text);
+        char *escaped = pk_c_lift_json_escape(text == NULL ? "" : text);
+        int written;
+        char *piece;
+
+        if (escaped == NULL) {
+            free(text);
+            free(out);
+            return NULL;
+        }
+        written = snprintf(NULL, 0,
+            "%s{\"position\":%d,\"kind\":\"%s\",\"text\":\"%s\"}",
+            i == 0 ? "" : ",",
+            i,
+            kind,
+            escaped);
+        if (written < 0) {
+            free(escaped);
+            free(text);
+            free(out);
+            return NULL;
+        }
+        piece = malloc((size_t)written + 1);
+        if (piece == NULL) {
+            free(escaped);
+            free(text);
+            free(out);
+            return NULL;
+        }
+        (void)snprintf(piece, (size_t)written + 1,
+            "%s{\"position\":%d,\"kind\":\"%s\",\"text\":\"%s\"}",
+            i == 0 ? "" : ",",
+            i,
+            kind,
+            escaped);
+        if (out_len + (size_t)written + 2 > out_cap) {
+            size_t new_cap = out_cap;
+            char *new_out;
+
+            while (new_cap < out_len + (size_t)written + 2) {
+                if (new_cap > ((size_t)-1) / 2) {
+                    free(piece);
+                    free(escaped);
+                    free(text);
+                    free(out);
+                    return NULL;
+                }
+                new_cap *= 2;
+            }
+            new_out = realloc(out, new_cap);
+            if (new_out == NULL) {
+                free(piece);
+                free(escaped);
+                free(text);
+                free(out);
+                return NULL;
+            }
+            out = new_out;
+            out_cap = new_cap;
+        }
+        memcpy(out + out_len, piece, (size_t)written);
+        out_len += (size_t)written;
+        out[out_len] = '\0';
+        free(piece);
+        free(escaped);
+        free(text);
+    }
+    if (out_len + 2 > out_cap) {
+        char *new_out = realloc(out, out_len + 2);
+        if (new_out == NULL) {
+            free(out);
+            return NULL;
+        }
+        out = new_out;
+    }
+    out[out_len++] = ']';
+    out[out_len] = '\0';
+    return out;
+}
+
 static int pk_c_clang_append_call(
     pk_c_source_facts *facts,
     const char *path,
@@ -206,6 +395,7 @@ static int pk_c_clang_append_call(
     memset(fact, 0, sizeof(*fact));
     fact->caller = pk_c_clang_copy(caller);
     fact->callee = pk_c_clang_copy(callee);
+    fact->args_json = pk_c_clang_extract_args(cursor);
     pk_c_clang_set_locus(&fact->locus, cursor, path);
     if (fact->caller == NULL || fact->callee == NULL || fact->locus.path == NULL) {
         free(fact->caller);
@@ -467,6 +657,7 @@ static pk_c_source_facts *pk_c_parse_source_clang(
 
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
+    (void)pk_c_emit_call_edges(facts);
     return facts;
 }
 
