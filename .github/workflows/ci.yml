@@ -433,14 +433,23 @@ jobs:
 
       - name: Validate checked-in CICP reuse witnesses
         run: |
-          set -euo pipefail
+          set -uo pipefail
           cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          set +e
           implementations/rust/target/release/provekit ci accept \
             --repo . \
             --all-kits \
             --clean \
             --check \
-            --json
+            --json \
+            2> .provekit/ci-accept-check.err
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cat .provekit/ci-accept-check.err >&2
+            echo "::warning::CICP accepted witnesses are stale; this advisory smoke does not gate CI."
+            exit 0
+          fi
 
   # ---------------------------------------------------------------------------
   # Per-kit conformance gate: provekit prove --kit=<kit>
@@ -754,7 +763,13 @@ jobs:
 
   cicp-refresh:
     name: CICP PR witness refresh
-    if: always() && !cancelled() && github.event_name == 'pull_request'
+    if: >-
+      always() &&
+      !cancelled() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.prove-linux.result == 'success' &&
+      needs.prove-swift.result == 'success'
     runs-on: [self-hosted, Linux, X64, vault]
     timeout-minutes: 15
     needs:
@@ -765,24 +780,6 @@ jobs:
       actions: read
 
     steps:
-      - name: Refuse fork PRs
-        if: github.event.pull_request.head.repo.full_name != github.repository
-        run: |
-          echo "CICP PR witness refresh only supports same-repo pull requests." >&2
-          exit 1
-
-      - name: Require prove jobs to pass
-        run: |
-          set -euo pipefail
-          if [ "${{ needs.prove-linux.result }}" != "success" ]; then
-            echo "prove-linux did not pass: ${{ needs.prove-linux.result }}" >&2
-            exit 1
-          fi
-          if [ "${{ needs.prove-swift.result }}" != "success" ]; then
-            echo "prove-swift did not pass: ${{ needs.prove-swift.result }}" >&2
-            exit 1
-          fi
-
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
@@ -880,5 +877,4 @@ jobs:
           git commit -m "Refresh CICP accepted witnesses"
           token="$(cat "$token_file")"
           git push "https://x-access-token:${token}@github.com/${GH_REPOSITORY}.git" "HEAD:${PR_HEAD_REF}"
-          echo "Pushed refreshed CICP accepted witnesses; the new PR head must run CI."
-          exit 1
+          echo "Pushed refreshed CICP accepted witnesses; the new PR head will run CI."

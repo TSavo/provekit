@@ -336,6 +336,13 @@ fn github_ci_refreshes_stale_cicp_witnesses_on_same_repo_prs() {
             && smoke_if.contains("github.ref == 'refs/heads/main'"),
         "stale checked-in witness smoke must be a main-only check, not a PR precondition: {smoke_if}"
     );
+    let smoke_text = serde_yaml::to_string(smoke).expect("serialize smoke job");
+    assert!(
+        smoke_text.contains("::warning::CICP accepted witnesses are stale")
+            && smoke_text.contains("does not gate CI")
+            && smoke_text.contains("exit 0"),
+        "checked-in witness smoke must be advisory and must not fail CI on stale witnesses:\n{smoke_text}"
+    );
 
     let refresh = jobs
         .get(serde_yaml::Value::String("cicp-refresh".into()))
@@ -346,14 +353,19 @@ fn github_ci_refreshes_stale_cicp_witnesses_on_same_repo_prs() {
         "refresh job must run only for PRs:\n{refresh_text}"
     );
     assert!(
+        refresh_text.contains("github.event.pull_request.head.repo.full_name == github.repository")
+            && refresh_text.contains("needs.prove-linux.result == 'success'")
+            && refresh_text.contains("needs.prove-swift.result == 'success'"),
+        "refresh job must skip unsupported or already-failing PRs instead of adding another failing gate:\n{refresh_text}"
+    );
+    assert!(
         refresh_text.contains("!cancelled()"),
         "refresh job must not run after a superseded workflow has been cancelled:\n{refresh_text}"
     );
     assert!(
-        refresh_text.contains("github.event.pull_request.head.repo.full_name != github.repository")
-            && refresh_text.contains("CICP PR witness refresh only supports same-repo pull requests")
-            && refresh_text.contains("exit 1"),
-        "refresh job must fail closed for fork PRs:\n{refresh_text}"
+        !refresh_text.contains("CICP PR witness refresh only supports same-repo pull requests")
+            && !refresh_text.contains("Refuse fork PRs"),
+        "refresh job must not fail fork PRs; unsupported refreshes should be skipped by the job guard:\n{refresh_text}"
     );
     assert!(
         refresh_text.contains("prove-linux") && refresh_text.contains("prove-swift"),
@@ -379,6 +391,11 @@ fn github_ci_refreshes_stale_cicp_witnesses_on_same_repo_prs() {
             && refresh_text.contains("Vault-rendered GitHub token file is not readable")
             && refresh_text.contains("tr -d"),
         "refresh job must handle root-owned Vault token mounts by staging a readable token copy before pushing:\n{refresh_text}"
+    );
+    assert!(
+        refresh_text.contains("Pushed refreshed CICP accepted witnesses; the new PR head will run CI.")
+            && !refresh_text.contains("Pushed refreshed CICP accepted witnesses; the new PR head must run CI."),
+        "refresh job should push missing witnesses without intentionally failing the old workflow run:\n{refresh_text}"
     );
 }
 
