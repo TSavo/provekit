@@ -26,13 +26,27 @@ Each script follows the Bridgeworks cadence:
 The exhibit proves this claim with receipts:
 
 ```text
-SLSA does not catch it.
-in-toto does not catch it.
-ProvekIt does.
+SLSA VSA verifies the tarball's declared provenance/process summary.
+This in-toto layout verifies the packaging step and product digest.
+ProvekIt rejects admission when a preserved contract cannot lower into evidence.
 ```
 
-The npm package is `safe-json`, a small believable JSON boundary helper. The
-baseline `1.4.1` release has four contracts:
+This is deliberately not a claim that the fixture is the whole npm ecosystem.
+The package is npm-shaped and the tarball is real, but the registry,
+maintainer keys, and attestations are repository-owned fixtures. The native
+receipt tools are real; the authority path is fixture authority. The visitor
+should see the gap between valid conventional receipts and contract admission,
+not infer that every npm or JavaScript supply-chain attack is already modeled.
+
+Two gaps are tracked explicitly before this can claim full coverage:
+
+- [#498](https://github.com/TSavo/provekit/issues/498): make the npm inspector
+  a complete package semantic model.
+- [#499](https://github.com/TSavo/provekit/issues/499): promote the JavaScript
+  lowerer from exhibit-specific ORP to a general JavaScript evidence engine.
+
+The npm-shaped package is `safe-json`, a small believable JSON boundary helper.
+The baseline `1.4.1` release has four contracts:
 
 - `parse.deterministic`
 - `parse.no-network-effect`
@@ -64,7 +78,7 @@ CID, and package input-closure CID. ProvekIt invokes `slsa-verifier verify-vsa`
 and `in-toto-verify`; the walkthrough does not call those tools directly.
 
 Those receipts are intentionally green. They are useful context, but they do
-not decide admission. ProvekIt admission goes red on one of the rails:
+not decide admission. ProvekIt admission goes red on one of the contract rails:
 
 | Script | Rail | Receipt |
 | --- | --- | --- |
@@ -81,7 +95,7 @@ not decide admission. ProvekIt admission goes red on one of the rails:
 Every script answers:
 
 - What is ProvekIt doing here?
-- What value does ProvekIt add beyond package-manager or provenance checks?
+- What value does ProvekIt add beyond the package-shaped provenance checks shown here?
 - Which receipt proves or rejects the initial claim?
 
 The important sentence for the visitor:

@@ -119,15 +119,103 @@ fn shutdown(sock: &PathBuf) {
 
 /// Check if a binary is available on PATH.
 fn binary_on_path(name: &str) -> bool {
+    binary_path(name).is_some()
+}
+
+fn binary_path(name: &str) -> Option<PathBuf> {
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in path_var.split(':') {
             let candidate = PathBuf::from(dir).join(name);
             if candidate.is_file() {
-                return true;
+                return Some(candidate);
             }
         }
     }
-    false
+    None
+}
+
+fn rpc_binary_accepts_initialize(name: &str, args: &[&str]) -> Result<PathBuf, String> {
+    let path = binary_path(name).ok_or_else(|| format!("{name} not on PATH"))?;
+
+    let mut child = Command::new(&path)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("spawn {}: {e}", path.display()))?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| format!("{} did not expose stdin", path.display()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("{} did not expose stdout", path.display()))?;
+
+    let init_req = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+    });
+    let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
+    if let Err(e) = stdin.write_all(init_line.as_bytes()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("write initialize to {}: {e}", path.display()));
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let read = reader.read_line(&mut line);
+        let _ = tx.send((read, line));
+    });
+
+    let (read, line) = match rx.recv_timeout(Duration::from_secs(3)) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{} did not answer initialize", path.display()));
+        }
+    };
+
+    match read {
+        Ok(0) => {
+            let _ = child.wait();
+            return Err(format!(
+                "{} exited before initialize response",
+                path.display()
+            ));
+        }
+        Ok(_) => {}
+        Err(e) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("read initialize from {}: {e}", path.display()));
+        }
+    }
+
+    if !line.contains("\"result\"") {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "{} returned unexpected initialize response: {}",
+            path.display(),
+            line.trim()
+        ));
+    }
+
+    let shutdown_req = serde_json::json!({
+        "jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}
+    });
+    let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
+    let _ = stdin.write_all(shutdown_line.as_bytes());
+    drop(stdin);
+    let _ = child.wait();
+
+    Ok(path)
 }
 
 // -------------------------------------------------------------------
@@ -343,13 +431,16 @@ pub fn abs_value(x: i64) -> i64 {
 ///   - No JSON-RPC error is returned.
 #[test]
 fn test4_java_kit_dispatch() {
-    if !binary_on_path("provekit-lsp-java") {
-        println!(
-            "SKIP test4_java_kit_dispatch: provekit-lsp-java not on PATH. \
-             Install via: cd implementations/java/provekit-lift-java-core && \
-             mvn package -q && cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/"
-        );
-        return;
+    match rpc_binary_accepts_initialize("provekit-lsp-java", &["--rpc"]) {
+        Ok(_) => {}
+        Err(reason) => {
+            println!(
+                "SKIP test4_java_kit_dispatch: provekit-lsp-java is not usable ({reason}). \
+                 Install via: cd implementations/java/provekit-lift-java-core && \
+                 mvn package -q && cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/"
+            );
+            return;
+        }
     }
 
     let sock = unique_sock_path("t4");

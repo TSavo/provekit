@@ -29,7 +29,7 @@ pub struct OutputFlags {
     name = "provekit-supply-chain-rails",
     version,
     about = "Run Supply Chain Rails package-admission exhibits.",
-    long_about = "Supply Chain Rails demonstrates that ordinary supply-chain receipts can stay green while ProvekIt rejects an authentic package release on contract, witness, binary, or CI rails."
+    long_about = "Supply Chain Rails demonstrates that conventional package receipts can stay green while ProvekIt rejects a package-shaped release on contract, witness, binary, or CI rails."
 )]
 pub struct SupplyChainRailsArgs {
     /// Exhibit directory or specimen.yaml path. Defaults to menagerie/supply-chain-rails/authenticated-betrayal.
@@ -327,7 +327,7 @@ fn check_specimen(specimen_dir: &Path) -> Result<Value, SupplyChainRailsError> {
     Ok(json!({
         "id": "SCR-SHAPE-001",
         "name": "Authenticated Betrayal",
-        "claim": "SLSA does not catch it; in-toto does not catch it; ProvekIt does",
+        "claim": "conventional SLSA and in-toto receipts stay green while ProvekIt rejects admission for an undischargeable preserved contract",
         "baseline": {
             "package": baseline_inspect["package"],
             "minted": baseline_mint["ok"],
