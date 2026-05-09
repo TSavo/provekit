@@ -1937,6 +1937,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-protocol-switchyard"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "provekit-canonicalizer",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-self-contracts"
 version = "0.1.0"
 dependencies = [
