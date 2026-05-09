@@ -1299,6 +1299,9 @@ fn stale_accept_error(args: &CiAcceptArgs, missing: &[(String, String, PathBuf)]
     if args.clean {
         message.push_str(" --clean");
     }
+    if args.result.is_none() && args.results_dir.is_none() {
+        message.push_str(" --assume-pass");
+    }
     message.push_str(" --out ");
     message.push_str(&args.out.display().to_string());
     message.push_str("\n\nMissing:\n");

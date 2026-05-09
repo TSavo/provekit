@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 fn main() {
-    if !std::env::args().any(|arg| arg == "--rpc") {
+    let args = std::env::args().collect::<Vec<_>>();
+    if args.len() != 2 || args[1] != "--rpc" {
         eprintln!("Usage: supply-chain-js-lowerer --rpc");
         std::process::exit(1);
     }
@@ -98,6 +99,18 @@ fn realize(project: &Path, plan: &Value) -> Result<Value, String> {
     let artifact_cid = blake3_512(source.as_bytes());
 
     if let Some(message) = refusal_for(contract, artifact, &source) {
+        let evidence = json!({
+            "kind": "static-js-witness-refusal",
+            "contract": contract,
+            "artifact": artifact,
+            "counterexample": message,
+            "witnessArtifact": {
+                "language": "javascript-static-analysis",
+                "source": format!("scan({artifact}) => reject when preserved contract {contract} is contradicted")
+            }
+        });
+        let evidence_json =
+            serde_json::to_string(&evidence).map_err(|e| format!("serialize evidence: {e}"))?;
         return Ok(json!({
             "kind": "ORPLowerResult",
             "claimKind": "npm-package-contract-witness",
@@ -109,17 +122,8 @@ fn realize(project: &Path, plan: &Value) -> Result<Value, String> {
                 "subjectCids": [artifact_cid],
                 "policyCid": plan.get("policyCid").and_then(Value::as_str).unwrap_or("builtin:supply-chain-rails/npm-safe-json@0.1")
             },
-            "evidence": {
-                "kind": "static-js-witness-refusal",
-                "contract": contract,
-                "artifact": artifact,
-                "counterexample": message,
-                "witnessArtifact": {
-                    "language": "javascript-static-analysis",
-                    "source": format!("scan({artifact}) => reject when preserved contract {contract} is contradicted")
-                }
-            },
-            "evidenceCid": blake3_512(message.as_bytes()),
+            "evidence": evidence,
+            "evidenceCid": blake3_512(evidence_json.as_bytes()),
             "output": {
                 "status": "rejected",
                 "reasonCode": reason_code(contract),
@@ -145,6 +149,8 @@ fn realize(project: &Path, plan: &Value) -> Result<Value, String> {
             "source": format!("scan({artifact}) => accepted contract {contract}; no forbidden token matched")
         }
     });
+    let evidence_json =
+        serde_json::to_string(&evidence).map_err(|e| format!("serialize evidence: {e}"))?;
     Ok(json!({
         "kind": "ORPLowerResult",
         "claimKind": "npm-package-contract-witness",
@@ -157,7 +163,7 @@ fn realize(project: &Path, plan: &Value) -> Result<Value, String> {
             "policyCid": plan.get("policyCid").and_then(Value::as_str).unwrap_or("builtin:supply-chain-rails/npm-safe-json@0.1")
         },
         "evidence": evidence,
-        "evidenceCid": blake3_512(serde_json::to_string(&evidence).unwrap().as_bytes()),
+        "evidenceCid": blake3_512(evidence_json.as_bytes()),
         "inputCids": [],
         "producedAt": "2026-05-08T00:00:00Z",
         "output": {

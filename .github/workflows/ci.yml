@@ -108,6 +108,19 @@ jobs:
         # Mirrors how `cache: maven` + setup-java provisions java's deps.
         run: pip install -e implementations/python/provekit-lift-py-tests
 
+      - name: Install Supply Chain Rails native receipt tools
+        # The Supply Chain Rails exhibit intentionally invokes real
+        # conventional receipt verifiers before ProvekIt rejects the poisoned
+        # package on contract rails. Keep CI on that same path: install the
+        # native SLSA VSA and in-toto verifiers, then let `provekit package
+        # inspect` call them through the lifter.
+        run: |
+          python -m pip install --user uv
+          export PATH="${HOME}/.local/bin:${PATH}"
+          menagerie/supply-chain-rails/authenticated-betrayal/tools/install-native-receipt-tools.sh
+          "${HOME}/go/bin/slsa-verifier" version
+          "$(uv tool dir --bin)/in-toto-verify" --version
+
       - name: Set up Java 21 + Maven
         # build-java (added by java-agent E2E work) calls `mvn package`.
         # pom.xml sets maven.compiler.source/target=17; Temurin 21 is

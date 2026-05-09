@@ -31,5 +31,6 @@ Run the current runnable destination:
 
 ```sh
 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
+cargo run --manifest-path menagerie/supply-chain-rails/Cargo.toml -- --all
 cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all
 ```

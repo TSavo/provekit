@@ -46,6 +46,21 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+fn copy_dir(src: &std::path::Path, dst: &std::path::Path) {
+    std::fs::create_dir_all(dst).expect("create copy destination");
+    for entry in std::fs::read_dir(src).expect("read source dir") {
+        let entry = entry.expect("read source dir entry");
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir(&from, &to);
+        } else {
+            std::fs::copy(&from, &to)
+                .unwrap_or_else(|e| panic!("copy {} to {}: {e}", from.display(), to.display()));
+        }
+    }
+}
+
 fn run_provekit_json(root: &std::path::Path, provekit: &std::path::Path, args: &[&str]) -> Value {
     let output = Command::new(provekit)
         .args(args)
@@ -90,6 +105,27 @@ fn runner_help_is_self_contained() {
     assert!(stdout.contains("provekit-supply-chain-rails"));
     assert!(stdout.contains("--all"));
     assert!(!stdout.contains("provekit zoo"));
+}
+
+#[test]
+fn all_mode_rejects_empty_specimen_root() {
+    let root = temp_dir("empty-all-root");
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit-supply-chain-rails"))
+        .arg(&root)
+        .arg("--all")
+        .output()
+        .expect("run provekit-supply-chain-rails --all empty root");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "--all should reject an empty specimen root\nstdout={}\nstderr={stderr}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        stderr.contains("no Supply Chain Rails specimens found"),
+        "stderr={stderr}"
+    );
 }
 
 #[test]
@@ -225,5 +261,66 @@ fn package_inspection_uses_real_package_and_external_receipt_tools() {
     assert_eq!(
         inspected["conventionalReceipts"]["inTotoPipeline"]["step"],
         "safe-json-pack"
+    );
+}
+
+#[test]
+fn package_inspection_rejects_missing_npm_tarball() {
+    let root = repo_root();
+    let provekit = build_provekit(&root);
+    let source = root
+        .join("menagerie/supply-chain-rails/authenticated-betrayal/packages/safe-json-1.4.2-lie");
+    let package = temp_dir("missing-package-tgz");
+    copy_dir(&source, &package);
+    let kit_root = root.join("menagerie/supply-chain-rails/authenticated-betrayal/kit-rpc");
+    for rel in [
+        ".provekit/lift/supply-chain-npm/manifest.toml",
+        ".provekit/lower/javascript/manifest.toml",
+        ".provekit/lower/package-manifest/manifest.toml",
+    ] {
+        let path = package.join(rel);
+        let text = std::fs::read_to_string(&path).expect("read copied manifest");
+        let text = text
+            .replace(
+                "../../kit-rpc/run-supply-chain-npm-lifter.sh",
+                &kit_root
+                    .join("run-supply-chain-npm-lifter.sh")
+                    .display()
+                    .to_string(),
+            )
+            .replace(
+                "../../kit-rpc/run-supply-chain-js-lowerer.sh",
+                &kit_root
+                    .join("run-supply-chain-js-lowerer.sh")
+                    .display()
+                    .to_string(),
+            );
+        std::fs::write(&path, text).expect("write copied manifest");
+    }
+    std::fs::remove_file(package.join("package.tgz")).expect("remove package.tgz");
+
+    let output = Command::new(&provekit)
+        .args(["package", "inspect"])
+        .arg(&package)
+        .arg("--json")
+        .arg("--quiet")
+        .env(
+            "PROVEKIT_SUPPLY_CHAIN_KIT_TARGET_DIR",
+            root.join("implementations/rust/target/supply-chain-rails-kit-rpc-test"),
+        )
+        .current_dir(&root)
+        .output()
+        .expect("run provekit package inspect");
+
+    assert!(
+        !output.status.success(),
+        "package inspect should reject missing package.tgz\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("package.tgz"),
+        "missing tarball error should name package.tgz\nstderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }

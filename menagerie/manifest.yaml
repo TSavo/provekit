@@ -12,6 +12,7 @@ destinations:
     path: supply-chain-rails
     runnable: true
     claim: authentic compatible-looking releases cannot silently betray preserved contracts
+    command: cargo run --manifest-path menagerie/supply-chain-rails/Cargo.toml -- --all
   - id: bridgeworks
     path: bridgeworks
     runnable: true

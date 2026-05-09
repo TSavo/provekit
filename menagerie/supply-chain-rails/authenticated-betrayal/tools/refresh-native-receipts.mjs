@@ -180,7 +180,8 @@ function writeInToto(packageDir, inTotoDir) {
   ], { cwd: packageDir });
 
   const inTotoRun = realpathSync(commandPath("in-toto-run", [join(process.env.HOME, ".local/bin/in-toto-run")]));
-  const inTotoPython = join(dirname(inTotoRun), "python");
+  const siblingPython = join(dirname(inTotoRun), "python");
+  const inTotoPython = existsSync(siblingPython) ? siblingPython : commandPath("python3", ["python"]);
   run(inTotoPython, [
     join(toolsDir, "write-in-toto-layout.py"),
     "--layout-key",

@@ -101,7 +101,17 @@ fn check_extension(previous_path: &PathBuf, candidate_path: &PathBuf) -> Result<
         .and_then(Value::as_str)
         .unwrap_or("");
     let previous_link_ok = candidate_previous == previous_contract_set_cid;
-    let ok = missing.is_empty() && previous_link_ok;
+    let candidate_contract_set_cid = candidate
+        .get("contractSetCid")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let candidate_contract_set_cid_present = !candidate_contract_set_cid.is_empty();
+    let previous_identity = package_identity(&previous);
+    let candidate_identity = package_identity(&candidate);
+    let identity_ok =
+        receipt_identity_is_complete(&previous_identity) && previous_identity == candidate_identity;
+    let ok =
+        missing.is_empty() && previous_link_ok && candidate_contract_set_cid_present && identity_ok;
     let verdict = if ok { "accepted" } else { "rejected" };
     Ok(json!({
         "ok": ok,
@@ -109,8 +119,12 @@ fn check_extension(previous_path: &PathBuf, candidate_path: &PathBuf) -> Result<
         "rule": "oldSet subset newSet",
         "previousContractSetCid": previous_contract_set_cid,
         "candidatePreviousContractSetCid": candidate_previous,
-        "candidateContractSetCid": candidate.get("contractSetCid").and_then(Value::as_str).unwrap_or(""),
+        "candidateContractSetCid": candidate_contract_set_cid,
+        "candidateContractSetCidPresent": candidate_contract_set_cid_present,
         "previousLinkOk": previous_link_ok,
+        "previousIdentity": previous_identity,
+        "candidateIdentity": candidate_identity,
+        "identityOk": identity_ok,
         "missingContracts": missing,
     }))
 }
@@ -142,6 +156,30 @@ fn string_set(value: &Value, field: &str) -> Result<BTreeSet<String>, String> {
                 .ok_or_else(|| format!("receipt field `{field}` must contain only strings"))
         })
         .collect()
+}
+
+fn package_identity(receipt: &Value) -> Value {
+    json!({
+        "ecosystem": receipt
+            .get("ecosystem")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        "name": receipt
+            .pointer("/package/name")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    })
+}
+
+fn receipt_identity_is_complete(identity: &Value) -> bool {
+    identity
+        .get("ecosystem")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty())
+        && identity
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
 }
 
 #[cfg(test)]

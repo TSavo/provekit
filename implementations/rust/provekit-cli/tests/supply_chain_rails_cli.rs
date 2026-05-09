@@ -254,6 +254,97 @@ fn version_check_extension_rejects_removed_contract() {
 }
 
 #[test]
+fn version_check_extension_rejects_cross_package_reuse() {
+    let dir = tmp_dir("version-cross-package");
+    let previous = dir.join("safe-json-1.4.1.json");
+    let candidate = dir.join("unsafe-json-1.4.2.json");
+    write_json(
+        &previous,
+        &json!({
+            "ecosystem": "npm",
+            "package": {"name": "safe-json", "version": "1.4.1"},
+            "contractSetCid": "blake3-512:previous",
+            "contracts": ["parse.deterministic"]
+        }),
+    );
+    write_json(
+        &candidate,
+        &json!({
+            "ecosystem": "npm",
+            "package": {"name": "unsafe-json", "version": "1.4.2"},
+            "previousContractSetCid": "blake3-512:previous",
+            "contractSetCid": "blake3-512:candidate",
+            "contracts": ["parse.deterministic"]
+        }),
+    );
+
+    let output = run_provekit(&[
+        "version",
+        "check-extension",
+        "--previous",
+        previous.to_str().unwrap(),
+        "--candidate",
+        candidate.to_str().unwrap(),
+        "--json",
+        "--quiet",
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "cross-package candidate should be rejected\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_stdout(&output);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["identityOk"], false);
+}
+
+#[test]
+fn version_check_extension_rejects_missing_candidate_contract_set_cid() {
+    let dir = tmp_dir("version-missing-candidate-cid");
+    let previous = dir.join("safe-json-1.4.1.json");
+    let candidate = dir.join("safe-json-1.4.2.json");
+    write_json(
+        &previous,
+        &json!({
+            "package": {"name": "safe-json", "version": "1.4.1"},
+            "contractSetCid": "blake3-512:previous",
+            "contracts": ["parse.deterministic"]
+        }),
+    );
+    write_json(
+        &candidate,
+        &json!({
+            "package": {"name": "safe-json", "version": "1.4.2"},
+            "previousContractSetCid": "blake3-512:previous",
+            "contracts": ["parse.deterministic"]
+        }),
+    );
+
+    let output = run_provekit(&[
+        "version",
+        "check-extension",
+        "--previous",
+        previous.to_str().unwrap(),
+        "--candidate",
+        candidate.to_str().unwrap(),
+        "--json",
+        "--quiet",
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "candidate missing contractSetCid should be rejected\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_stdout(&output);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["candidateContractSetCidPresent"], false);
+}
+
+#[test]
 fn verify_artifact_rejects_binary_cid_mismatch() {
     let dir = tmp_dir("binary-verify");
     let artifact = dir.join("package.tgz");
@@ -293,4 +384,51 @@ fn verify_artifact_rejects_binary_cid_mismatch() {
         json["observedBinaryCid"],
         blake3_512_of("poisoned bytes".as_bytes())
     );
+}
+
+#[test]
+fn verify_artifact_and_policy_runs_both_rails() {
+    let dir = tmp_dir("binary-policy-verify");
+    let artifact = dir.join("package.tgz");
+    let proof = dir.join("release.json");
+    let policy = dir.join("policy.json");
+    write(&artifact, "poisoned bytes");
+    write_json(
+        &proof,
+        &json!({
+            "kind": "PackageReleaseReceipt",
+            "binaryCid": blake3_512_of("clean bytes".as_bytes()),
+            "policyCid": "builtin:supply-chain-rails/npm"
+        }),
+    );
+    write_json(
+        &policy,
+        &json!({
+            "policyCid": "builtin:supply-chain-rails/npm"
+        }),
+    );
+
+    let output = run_provekit(&[
+        "verify",
+        "--artifact",
+        artifact.to_str().unwrap(),
+        "--proof",
+        proof.to_str().unwrap(),
+        "--policy",
+        policy.to_str().unwrap(),
+        "--json",
+        "--quiet",
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "artifact mismatch must still reject when policy matches\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json = parse_stdout(&output);
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["policy"]["ok"], true);
+    assert_eq!(json["artifact"]["ok"], false);
+    assert_eq!(json["artifact"]["reason"], "binaryCid mismatch");
 }

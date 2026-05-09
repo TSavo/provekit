@@ -26,6 +26,12 @@ The exhibit should not caricature SLSA or in-toto as broken. Their receipts are
 allowed to be valid. They simply discharge different predicates than the one the
 consumer needs for safe admission.
 
+The private signing keys under `authenticated-betrayal/packages/*/attestations`
+are repository-owned fixtures. They are intentionally checked in so the native
+SLSA and in-toto receipts are reproducible without a hidden signing ceremony;
+they are not trusted project credentials, and they are not the evidence ProvekIt
+accepts for package admission.
+
 ProvekIt asks the admission question as a set of DAG queries:
 
 ```text

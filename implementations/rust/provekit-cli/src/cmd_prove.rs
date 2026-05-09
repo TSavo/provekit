@@ -596,27 +596,57 @@ fn verify_artifact_or_policy(args: &ProveArgs) -> Result<Value, String> {
         .ok_or_else(|| "--proof is required for admission verification".to_string())?;
     let proof = read_json_value(proof_path)?;
 
-    if let Some(policy_path) = &args.policy {
-        let policy = read_json_value(policy_path)?;
-        let pinned = policy
-            .get("policyCid")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "policy receipt missing policyCid".to_string())?;
-        let candidate = proof.get("policyCid").and_then(Value::as_str).unwrap_or("");
-        let ok = pinned == candidate;
-        return Ok(json!({
-            "ok": ok,
-            "verdict": if ok { "accepted" } else { "rejected" },
-            "reason": if ok { "policyCid matched" } else { "policyCid mismatch" },
-            "pinnedPolicyCid": pinned,
-            "candidatePolicyCid": candidate,
-        }));
-    }
-
-    let artifact_path = args
+    let policy_report = args
+        .policy
+        .as_ref()
+        .map(|policy_path| verify_policy_receipt(&proof, policy_path))
+        .transpose()?;
+    let artifact_report = args
         .artifact
         .as_ref()
-        .ok_or_else(|| "--artifact is required unless --policy is supplied".to_string())?;
+        .map(|artifact_path| verify_artifact_receipt(&proof, artifact_path))
+        .transpose()?;
+
+    match (policy_report, artifact_report) {
+        (Some(policy), Some(artifact)) => {
+            let policy_ok = value_ok(&policy);
+            let artifact_ok = value_ok(&artifact);
+            let ok = policy_ok && artifact_ok;
+            Ok(json!({
+                "ok": ok,
+                "verdict": if ok { "accepted" } else { "rejected" },
+                "reason": combined_admission_reason(policy_ok, artifact_ok),
+                "policy": policy,
+                "artifact": artifact,
+            }))
+        }
+        (Some(policy), None) => Ok(policy),
+        (None, Some(artifact)) => Ok(artifact),
+        (None, None) => Err("--artifact or --policy is required for admission verification".into()),
+    }
+}
+
+fn verify_policy_receipt(proof: &Value, policy_path: &Path) -> Result<Value, String> {
+    let policy = read_json_value(policy_path)?;
+    let pinned = policy
+        .get("policyCid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "policy receipt missing policyCid".to_string())?;
+    let candidate = proof
+        .get("policyCid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "proof receipt missing policyCid".to_string())?;
+    let ok = pinned == candidate;
+    Ok(json!({
+        "ok": ok,
+        "verdict": if ok { "accepted" } else { "rejected" },
+        "reason": if ok { "policyCid matched" } else { "policyCid mismatch" },
+        "pinnedPolicyCid": pinned,
+        "candidatePolicyCid": candidate,
+    }))
+}
+
+fn verify_artifact_receipt(proof: &Value, artifact_path: &Path) -> Result<Value, String> {
     let artifact_bytes = std::fs::read(artifact_path)
         .map_err(|e| format!("read artifact {}: {e}", artifact_path.display()))?;
     let observed_binary_cid = blake3_512_of(&artifact_bytes);
@@ -633,6 +663,19 @@ fn verify_artifact_or_policy(args: &ProveArgs) -> Result<Value, String> {
         "attestedBinaryCid": attested_binary_cid,
         "observedBinaryCid": observed_binary_cid,
     }))
+}
+
+fn value_ok(value: &Value) -> bool {
+    value.get("ok").and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn combined_admission_reason(policy_ok: bool, artifact_ok: bool) -> &'static str {
+    match (policy_ok, artifact_ok) {
+        (true, true) => "policyCid and binaryCid matched",
+        (false, true) => "policyCid mismatch",
+        (true, false) => "binaryCid mismatch",
+        (false, false) => "policyCid and binaryCid mismatch",
+    }
 }
 
 fn read_json_value(path: &Path) -> Result<Value, String> {

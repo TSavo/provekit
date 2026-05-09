@@ -13,8 +13,17 @@ need_cmd() {
 need_cmd go
 need_cmd uv
 
-go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@v2.7.1
-uv tool install in-toto
+GOTOOLCHAIN=auto go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@v2.7.1
+uv tool install --force in-toto
+
+in_toto_bin_dir="$(uv tool dir --bin)"
+
+if [ -n "${GITHUB_PATH:-}" ]; then
+  {
+    printf '%s\n' "${HOME}/go/bin"
+    printf '%s\n' "$in_toto_bin_dir"
+  } >> "$GITHUB_PATH"
+fi
 
 printf 'installed slsa-verifier: %s\n' "${HOME}/go/bin/slsa-verifier"
-printf 'installed in-toto tools under: %s\n' "$(uv tool dir --bin)"
+printf 'installed in-toto tools under: %s\n' "$in_toto_bin_dir"

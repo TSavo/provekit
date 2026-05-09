@@ -123,7 +123,7 @@ use catalog_format as catalog_format_invariants;
 // name in `author_all_invariants()` reads `lift_plugin_protocol`.
 use lift_plugin_protocol as lift_plugin_protocol_invariants;
 
-/// The standard protocol-contract slab: lift-plugin-protocol C1-C8, split
+/// The standard protocol-contract slab: lift-plugin-protocol C1-C9, split
 /// into the concrete contract facets authored by `lift_plugin_protocol.rs`.
 ///
 /// This list is the stable ordering for the separate protocol contract set.

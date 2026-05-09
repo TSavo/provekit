@@ -129,18 +129,15 @@ binary_needs_build() {
 build_cargo_binary_if_needed() {
   local manifest="$1"
   local bin_name="$2"
-  local binary="$3"
   local log_dir log
   shift 3
-  if binary_needs_build "$binary" "$@"; then
-    log_dir="$(tmp_dir)"
-    log="$log_dir/build-$bin_name.log"
-    if ! cargo build --quiet --manifest-path "$manifest" --target-dir "$WALKTHROUGH_TARGET_DIR" --bin "$bin_name" >"$log" 2>&1; then
-      cat "$log" >&2
-      return 1
-    fi
-    rm -rf "$log_dir"
+  log_dir="$(tmp_dir)"
+  log="$log_dir/build-$bin_name.log"
+  if ! cargo build --quiet --manifest-path "$manifest" --target-dir "$WALKTHROUGH_TARGET_DIR" --bin "$bin_name" >"$log" 2>&1; then
+    cat "$log" >&2
+    return 1
   fi
+  rm -rf "$log_dir"
 }
 
 ensure_walkthrough_bins() {

@@ -144,13 +144,13 @@ pub struct ProveArgs {
     #[arg(long, default_value = "z3")]
     pub z3: String,
     /// Artifact bytes to verify against a package release proof/receipt.
-    #[arg(long)]
+    #[arg(long, requires = "proof")]
     pub artifact: Option<PathBuf>,
     /// Package release proof/receipt naming the expected binaryCid.
     #[arg(long)]
     pub proof: Option<PathBuf>,
     /// Consumer policy proof/receipt used for policy admission checks.
-    #[arg(long)]
+    #[arg(long, requires = "proof")]
     pub policy: Option<PathBuf>,
     /// Kit conformance gate: verify the named kit's lifter implements the
     /// canonical lift-plugin-protocol contracts (C1-C8). When set, the six-stage

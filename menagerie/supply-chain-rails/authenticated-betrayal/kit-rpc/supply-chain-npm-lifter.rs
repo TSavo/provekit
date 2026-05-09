@@ -127,24 +127,19 @@ fn identify_project(project: &Path) -> Result<Value, String> {
     let previous_contract_set_cid = release_metadata
         .get("previousContractSetCid")
         .and_then(Value::as_str)
-        .unwrap_or("");
+        .map(str::to_string);
     let contract_names = lifted.contract_names;
 
     let tarball_path = project.join("package.tgz");
-    let (artifact_path, artifact_bytes) = if tarball_path.exists() {
-        (
-            "package.tgz",
-            std::fs::read(&tarball_path)
-                .map_err(|e| format!("read {}: {e}", tarball_path.display()))?,
-        )
-    } else {
-        let package_path = project.join("package.json");
-        (
-            "package.json",
-            std::fs::read(&package_path)
-                .map_err(|e| format!("read {}: {e}", package_path.display()))?,
-        )
-    };
+    if !tarball_path.is_file() {
+        return Err(format!(
+            "missing npm package artifact {}",
+            tarball_path.display()
+        ));
+    }
+    let artifact_path = "package.tgz";
+    let artifact_bytes = std::fs::read(&tarball_path)
+        .map_err(|e| format!("read {}: {e}", tarball_path.display()))?;
     let artifact_cid = blake3_512(&artifact_bytes);
     let artifact = artifact_report(artifact_path, &artifact_bytes)?;
     let (input_closure_cid, closure) = package_input_closure_cid(project)?;
@@ -222,7 +217,7 @@ fn lift_project(project: &Path) -> Result<Value, String> {
     let previous_contract_set_cid = release_metadata
         .get("previousContractSetCid")
         .and_then(Value::as_str)
-        .unwrap_or("");
+        .map(str::to_string);
     let contract_names = lifted.contract_names;
 
     Ok(json!({
@@ -848,14 +843,17 @@ fn package_input_closure_cid(project: &Path) -> Result<(String, Vec<String>), St
             continue;
         }
         closure.push(rel.clone());
-        bytes.extend_from_slice(rel.as_bytes());
-        bytes.push(0);
+        append_len_prefixed(&mut bytes, rel.as_bytes());
         let file_bytes =
             std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        bytes.extend_from_slice(&file_bytes);
-        bytes.push(0);
+        append_len_prefixed(&mut bytes, &file_bytes);
     }
     Ok((blake3_512(&bytes), closure))
+}
+
+fn append_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+    out.extend_from_slice(bytes);
 }
 
 fn attestation_file_rels(project: &Path) -> Result<Vec<String>, String> {

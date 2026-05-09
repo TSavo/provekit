@@ -93,12 +93,14 @@ pub fn run(args: SupplyChainRailsArgs) -> u8 {
             }))
             .expect("Supply Chain Rails report serializes")
         );
-    } else if !args.out.quiet {
-        for report in &reports {
-            println!(
-                "supply-chain-rails: {} PASS",
-                report["id"].as_str().unwrap_or("exhibit")
-            );
+    } else {
+        if !args.out.quiet {
+            for report in &reports {
+                println!(
+                    "supply-chain-rails: {} PASS",
+                    report["id"].as_str().unwrap_or("exhibit")
+                );
+            }
         }
         for error in setup_errors.iter().chain(verify_errors.iter()) {
             eprintln!("supply-chain-rails: {error}");
@@ -131,6 +133,12 @@ fn resolve_targets(args: &SupplyChainRailsArgs) -> Result<Vec<PathBuf>, String> 
             }
         }
         out.sort();
+        if out.is_empty() {
+            return Err(format!(
+                "no Supply Chain Rails specimens found under {}",
+                root.display()
+            ));
+        }
         return Ok(out);
     }
 
