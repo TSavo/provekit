@@ -1146,6 +1146,7 @@ name = "libprovekit"
 version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
+ "provekit-ir-types",
  "serde",
  "serde_json",
  "thiserror",
@@ -2008,6 +2009,7 @@ name = "provekit-walk"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "libprovekit",
  "proc-macro2",
  "provekit-canonicalizer",
  "provekit-claim-envelope",

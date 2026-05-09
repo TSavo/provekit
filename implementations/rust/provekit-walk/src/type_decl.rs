@@ -48,7 +48,7 @@ use syn::{File, Item, ItemEnum, ItemImpl, ItemStruct, ItemTrait};
 
 use crate::canonical::{cid_of_value, jcs_bytes_of_value};
 use crate::contract::build_function_contract_with_file;
-use crate::locus::Locus;
+use crate::locus::{Locus, LocusFromSpanExt};
 
 // ---- Struct ----
 
