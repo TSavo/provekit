@@ -48,8 +48,7 @@ fn run() -> Result<(), String> {
 
     let pub_string = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
     let pub_body = format!("{}\n", pub_string);
-    fs::write(&pub_path, pub_body)
-        .map_err(|e| format!("write {}: {}", pub_path.display(), e))?;
+    fs::write(&pub_path, pub_body).map_err(|e| format!("write {}: {}", pub_path.display(), e))?;
 
     println!("# ProvekIt Foundation v0 keypair");
     println!();

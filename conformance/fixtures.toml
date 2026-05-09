@@ -5,8 +5,8 @@
 #
 # These vectors are pinned to the protocol catalog below. Updating fixture
 # CIDs is a catalog-versioned event, not test maintenance.
-catalog_version = "v1.6.2-2026-05-07"
-catalog_cid = "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f"
+catalog_version = "v1.6.3-2026-05-09"
+catalog_cid = "blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d"
 #
 # To add a fixture:
 # 1. Define the IR tree in the Rust kit

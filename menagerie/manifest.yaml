@@ -10,8 +10,9 @@ destinations:
     claim: cross-domain implication chains compressed to 64-byte verification
   - id: supply-chain-rails
     path: supply-chain-rails
-    runnable: planned
-    claim: artifact admission through rank-3 pins, binaryCid, and CICP
+    runnable: true
+    claim: authentic compatible-looking releases cannot silently betray preserved contracts
+    command: cargo run --manifest-path menagerie/supply-chain-rails/Cargo.toml -- --all
   - id: bridgeworks
     path: bridgeworks
     runnable: true

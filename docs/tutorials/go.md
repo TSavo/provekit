@@ -1,6 +1,6 @@
 # Tutorial: Go
 
-> **Status:** kit shipping in the current v1.6.2 tree. Lift adapters planned: `go-playground/validator`, `ozzo-validation`. Decorator macros: comment annotations (`//provekit:contract`) under evaluation. Embedded verifier shipping (CGO bridge to Rust canonicalizer; pure-Go canonicalizer planned). LSP plugin planned. Verification via the Rust CLI.
+> **Status:** kit shipping in the current v1.6.3 tree. Lift adapters planned: `go-playground/validator`, `ozzo-validation`. Decorator macros: comment annotations (`//provekit:contract`) under evaluation. Embedded verifier shipping (CGO bridge to Rust canonicalizer; pure-Go canonicalizer planned). LSP plugin planned. Verification via the Rust CLI.
 
 A walkthrough for Go developers. **v1.1 is the kit; lift adapters land in v1.2.** If you can wait, the v1.2 release will pick up `validate:` struct tags from `go-playground/validator` and `ozzo-validation` rule chains automatically. If you can't, you can author IR directly via the kit's API today.
 

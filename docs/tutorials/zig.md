@@ -1,6 +1,6 @@
 # Tutorial: Zig
 
-> **Status:** kit shipping in the current v1.6.2 tree. Lift adapter: comment-based annotations (`//provekit:contract`, `//provekit:implement`, `//provekit:verify`). LSP plugin shipping. Verification via the Rust CLI.
+> **Status:** kit shipping in the current v1.6.3 tree. Lift adapter: comment-based annotations (`//provekit:contract`, `//provekit:implement`, `//provekit:verify`). LSP plugin shipping. Verification via the Rust CLI.
 
 A walkthrough for Zig developers. Zig has no native attribute syntax, so the lift adapter walks comment-block conventions.
 

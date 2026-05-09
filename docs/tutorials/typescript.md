@@ -1,6 +1,6 @@
 # Tutorial: TypeScript
 
-> **Status:** kit shipping in the current v1.6.2 tree. Lift adapters shipping: `zod`, `class-validator`, `fast-check`. Verification today is via the Rust CLI as a subprocess; a native TypeScript CLI is planned. LSP plugin planned (until then, no IDE squigglies).
+> **Status:** kit shipping in the current v1.6.3 tree. Lift adapters shipping: `zod`, `class-validator`, `fast-check`. Verification today is via the Rust CLI as a subprocess; a native TypeScript CLI is planned. LSP plugin planned (until then, no IDE squigglies).
 
 A walkthrough for TypeScript developers. By the end you have a `.proof` catalog of signed contract mementos for an npm package, lifted from existing `zod` schemas / `class-validator` decorators / `fast-check` properties, and verified via the Rust CLI.
 

@@ -1,0 +1,67 @@
+{
+ "signatures": [
+  {
+   "keyid": "9202284b160e56b3db34d8c008914975b7bd2f0abf3dbf8577ee1a54c3f5675d",
+   "sig": "a4889c8b39cd218ca026e8049f4fad244c254ad77a8fa71b025c13df6d512f1c2cd92a0884198a4f7b81a96b5989c9b537b7dd4657314ab05735b08ca5ca7409"
+  }
+ ],
+ "signed": {
+  "_type": "layout",
+  "expires": "2036-05-08T00:00:00Z",
+  "inspect": [],
+  "keys": {
+   "dcb947453ec8f7c0b5acdb0932a41a9ba21a60e64fdd510a7402de5167c8d736": {
+    "keyid": "dcb947453ec8f7c0b5acdb0932a41a9ba21a60e64fdd510a7402de5167c8d736",
+    "keytype": "ed25519",
+    "keyval": {
+     "public": "8909970b87ddc20afeb3928c716e39cf9a6df4bb2b53cc14cbe3f34bb60ed5d4"
+    },
+    "scheme": "ed25519"
+   }
+  },
+  "readme": "Supply Chain Rails native in-toto receipt: the packaging step created package.tgz from the package manifest, implementation, and ProvekIt contract source. This layout does not assert that the package satisfies its behavioral contracts.",
+  "steps": [
+   {
+    "_type": "step",
+    "expected_command": [],
+    "expected_materials": [
+     [
+      "ALLOW",
+      "package.json"
+     ],
+     [
+      "ALLOW",
+      "index.js"
+     ],
+     [
+      "ALLOW",
+      "contracts.ts"
+     ],
+     [
+      "ALLOW",
+      "contracts.json"
+     ],
+     [
+      "DISALLOW",
+      "*"
+     ]
+    ],
+    "expected_products": [
+     [
+      "CREATE",
+      "package.tgz"
+     ],
+     [
+      "DISALLOW",
+      "*"
+     ]
+    ],
+    "name": "safe-json-pack",
+    "pubkeys": [
+     "dcb947453ec8f7c0b5acdb0932a41a9ba21a60e64fdd510a7402de5167c8d736"
+    ],
+    "threshold": 1
+   }
+  ]
+ }
+}

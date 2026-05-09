@@ -1,0 +1,10 @@
+name = "supply-chain-package-manifest-witness-lowerer"
+version = "0.1.0"
+protocol_version = "provekit-orp/1"
+command = ["../../kit-rpc/run-supply-chain-js-lowerer.sh"]
+working_dir = "."
+
+[capabilities]
+kits = ["package-manifest"]
+modes = ["witness"]
+obligation_kinds = ["predicate"]

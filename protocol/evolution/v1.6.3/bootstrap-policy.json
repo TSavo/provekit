@@ -1,0 +1,28 @@
+{
+  "kind": "ProtocolEvolutionPolicy",
+  "schemaVersion": "1",
+  "name": "provekit-pep-bootstrap-v0",
+  "acceptedSigner": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "acceptedChangeClass": "extension-only",
+  "versionLabelRule": {
+    "extensionOnlyWithoutCrossKitSemanticObligation": "patch"
+  },
+  "requiredChecks": [
+    "from catalog CID recomputes from from-catalog-v1.6.2.json",
+    "to catalog CID recomputes from to-catalog-v1.6.3.json",
+    "catalog diff contains exactly one modified property",
+    "modified property key is lift-plugin-protocol",
+    "modified property CID hashes to protocol/specs/2026-04-30-lift-plugin-protocol.md",
+    "change class is extension-only",
+    "no core verifier behavior changed",
+    "no ProofIR grammar, canonicalization, proof-file, or all-layer lift output semantics changed",
+    "no cross-kit semantic obligation changed",
+    "v1.6.3 catalog attestation signature verifies under acceptedSigner"
+  ],
+  "nonGoals": [
+    "execute extension bytecode in core verification",
+    "create a package-manager-specific JSON-RPC protocol",
+    "require every language kit lifter to implement package inspection",
+    "require cross-kit fixture value changes"
+  ]
+}

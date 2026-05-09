@@ -14,11 +14,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, String>;
 
-const EXPECTED_CATALOG_VERSION: &str = "v1.6.2-2026-05-07";
+const EXPECTED_CATALOG_VERSION: &str = "v1.6.3-2026-05-09";
 const EXPECTED_CATALOG_CID: &str = concat!(
     "blake3-512:",
-    "52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd51",
-    "3f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f"
+    "dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055",
+    "ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d"
 );
 const EMPTY_CONTRACT_SET_CID: &str = concat!(
     "blake3-512:",
@@ -901,7 +901,7 @@ fn assert_catalog_pin(f: &FixtureToml) -> Result<()> {
         ));
     }
     if f.catalog_cid != EXPECTED_CATALOG_CID {
-        return Err("fixtures.toml catalog_cid does not match v1.6.2".to_string());
+        return Err("fixtures.toml catalog_cid does not match v1.6.3".to_string());
     }
 
     let catalog_text = fs::read_to_string(catalog_json())

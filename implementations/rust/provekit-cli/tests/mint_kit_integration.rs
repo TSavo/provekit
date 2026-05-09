@@ -575,6 +575,14 @@ fn go_kit_pins_expected_contract_set_cid() {
 /// the generic workspace-lifter CID (ca9638b4...). It is deliberately NOT the
 /// lift-plugin protocol contract-set CID below; this pin covers the whole Rust
 /// kit surface, including but not limited to protocol contracts.
+#[cfg(target_os = "linux")]
+const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
+    "blake3-512:eb9979cc46b716217ece7340696ba2d0a97fac61a39f9673a1dfa8e38441737ca6e4dd307e2e1fb404093b98b6b412d1bd51a515e7405282bdd5ad32dff02dc0";
+
+/// macOS currently emits a distinct full Rust self-contract surface CID.
+/// The pin is explicit so host drift remains loud instead of silently
+/// weakening the CI canonical Linux gate.
+#[cfg(not(target_os = "linux"))]
 const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
     "blake3-512:404a1489b43a76b87f2b47592eaaf91ce2713af694c4a0ad1470f9e6a6195d541480d298e3b84c3542794e8423167f2cbde77c55e86ec6f22ba4187fe41cd405";
 
@@ -636,8 +644,8 @@ fn lift_plugin_protocol_contract_set_cid_is_pinned_separately_from_rust_surface(
 
     assert_eq!(
         provekit_self_contracts::LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES.len(),
-        11,
-        "lift-plugin-protocol pin expects the C1-C8 protocol facets split into 11 concrete contracts"
+        12,
+        "lift-plugin-protocol pin expects the C1-C9 protocol facets split into 12 concrete contracts"
     );
     assert_eq!(
         cset,
