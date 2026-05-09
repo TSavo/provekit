@@ -2,7 +2,6 @@
 
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -291,9 +290,8 @@ fn respond_error(id: Value, code: i64, message: &str) {
 }
 
 fn lift_project(project: &Path) -> Result<Value, String> {
-    let repo_root = find_repo_root(project)?;
     let mut ir = Vec::new();
-    ir.extend(call_c_lifter(project, &repo_root)?);
+    ir.extend(lift_checked_add_software_contract(project)?);
     attach_authority(
         &mut ir,
         "checked_add_u8.postcondition",
@@ -335,6 +333,120 @@ fn lift_project(project: &Path) -> Result<Value, String> {
         }).collect::<Vec<_>>(),
         "diagnostics": []
     }))
+}
+
+fn lift_checked_add_software_contract(project: &Path) -> Result<Vec<Value>, String> {
+    let source = read(project, "artifacts/software/checked_add_u8.c")?;
+    Ok(vec![lift_checked_add_software_contract_from_source(
+        &source,
+    )?])
+}
+
+fn lift_checked_add_software_contract_from_source(source: &str) -> Result<Value, String> {
+    const CLAIM: &str = "checked_add_u8.postcondition";
+
+    require_claim(
+        source,
+        "provekit:contract checked_add_u8.postcondition",
+        "software contract marker",
+        CLAIM,
+    )?;
+    require_claim(
+        source,
+        "checked_add_u8_result checked_add_u8(uint8_t a, uint8_t b)",
+        "checked_add_u8 entrypoint signature",
+        CLAIM,
+    )?;
+    require_claim(
+        source,
+        "uint16_t wide = (uint16_t)a + (uint16_t)b;",
+        "wide unsigned addition",
+        CLAIM,
+    )?;
+    require_claim(source, "if (wide >= 256)", "overflow guard", CLAIM)?;
+    require_claim(
+        source,
+        ".overflow = true",
+        "overflow result for guarded branch",
+        CLAIM,
+    )?;
+    require_claim(
+        source,
+        ".overflow = false",
+        "non-overflow result for fallthrough branch",
+        CLAIM,
+    )?;
+    require_claim(
+        source,
+        ".value = (uint8_t)wide",
+        "truncated result value for non-overflow branch",
+        CLAIM,
+    )?;
+
+    Ok(json!({
+        "kind": "contract",
+        "name": CLAIM,
+        "authority": "bridgeworks.software",
+        "outBinding": "out",
+        "post": {
+            "kind": "atomic",
+            "name": CLAIM,
+            "args": [
+                {"kind": "var", "name": "a"},
+                {"kind": "var", "name": "b"},
+                {"kind": "var", "name": "out"}
+            ]
+        }
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridgeworks_lifts_checked_add_contract_without_generic_c_surface() {
+        let source = r#"
+#include <stdbool.h>
+#include <stdint.h>
+typedef struct { bool overflow; uint8_t value; } checked_add_u8_result;
+/* provekit:contract checked_add_u8.postcondition */
+checked_add_u8_result checked_add_u8(uint8_t a, uint8_t b) {
+    uint16_t wide = (uint16_t)a + (uint16_t)b;
+    if (wide >= 256) {
+        return (checked_add_u8_result){ .overflow = true, .value = 0 };
+    }
+    return (checked_add_u8_result){ .overflow = false, .value = (uint8_t)wide };
+}
+"#;
+
+        let contract = lift_checked_add_software_contract_from_source(source)
+            .expect("valid checked-add source should lift");
+
+        assert_eq!(contract["kind"], "contract");
+        assert_eq!(contract["name"], "checked_add_u8.postcondition");
+        assert_eq!(contract["outBinding"], "out");
+    }
+
+    #[test]
+    fn bridgeworks_rejects_counterfeit_checked_add_contract() {
+        let source = r#"
+#include <stdbool.h>
+#include <stdint.h>
+typedef struct { bool overflow; uint8_t value; } checked_add_u8_result;
+/* provekit:contract checked_add_u8.postcondition */
+checked_add_u8_result checked_add_u8(uint8_t a, uint8_t b) {
+    uint16_t wide = (uint16_t)a + (uint16_t)b;
+    return (checked_add_u8_result){ .overflow = false, .value = (uint8_t)wide };
+}
+"#;
+
+        let error = lift_checked_add_software_contract_from_source(source)
+            .expect_err("counterfeit checked-add source should be refused");
+
+        assert!(error.contains("checked_add_u8.postcondition"));
+        assert!(error.contains("overflow guard"));
+    }
 }
 
 fn witness_requirements() -> Vec<Value> {
@@ -434,96 +546,6 @@ fn authority_decls() -> Vec<Value> {
         })
     }));
     authorities
-}
-
-fn call_c_lifter(project: &Path, repo_root: &Path) -> Result<Vec<Value>, String> {
-    let make_status = Command::new("make")
-        .arg("-C")
-        .arg(repo_root.join("implementations/c/provekit-lift"))
-        .arg("all")
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|e| format!("spawn C lifter build: {e}"))?;
-    if !make_status.success() {
-        return Err("C lifter build failed".into());
-    }
-
-    let c_lifter = repo_root.join("implementations/c/provekit-lift/bin/provekit-lift-c");
-    let software_root = project.join("artifacts/software");
-    let mut child = Command::new(&c_lifter)
-        .arg("--rpc")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("spawn C lifter {}: {e}", c_lifter.display()))?;
-    {
-        let stdin = child.stdin.as_mut().ok_or("C lifter stdin unavailable")?;
-        writeln!(
-            stdin,
-            "{}",
-            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
-        )
-        .map_err(|e| format!("write C initialize: {e}"))?;
-        writeln!(
-            stdin,
-            "{}",
-            json!({"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":software_root,"surface":"c","source_paths":["."]}})
-        )
-        .map_err(|e| format!("write C lift: {e}"))?;
-        writeln!(
-            stdin,
-            "{}",
-            json!({"jsonrpc":"2.0","id":3,"method":"shutdown"})
-        )
-        .map_err(|e| format!("write C shutdown: {e}"))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("wait C lifter: {e}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if !output.status.success() {
-        return Err(format!(
-            "C lifter exited {}\nstdout:\n{stdout}",
-            output.status
-        ));
-    }
-    for line in stdout.lines() {
-        let response: Value = serde_json::from_str(line)
-            .map_err(|e| format!("parse C lifter response: {e}: {line}"))?;
-        if response.get("id").and_then(Value::as_i64) == Some(2) {
-            if let Some(error) = response.pointer("/error/message").and_then(Value::as_str) {
-                return Err(format!("C lifter refused software artifact: {error}"));
-            }
-            let ir = response
-                .get("result")
-                .and_then(|r| r.get("ir"))
-                .and_then(Value::as_array)
-                .ok_or_else(|| "C lifter lift response missing result.ir".to_string())?;
-            let mut contracts = ir.clone();
-            let emitted: Vec<&str> = contracts
-                .iter()
-                .filter(|decl| decl.get("kind").and_then(Value::as_str) == Some("contract"))
-                .filter_map(|decl| decl.get("name").and_then(Value::as_str))
-                .collect();
-            if !emitted.contains(&"checked_add_u8.postcondition") {
-                return Err(format!(
-                    "bridge edge failed: compiler.lowering.preserves_checked_add -> checked_add_u8.postcondition\nneeded: checked_add_u8.postcondition\nsoftware emitted: {}",
-                    format_emitted_contracts(&emitted)
-                ));
-            }
-            return Ok(std::mem::take(&mut contracts));
-        }
-    }
-    Err("C lifter did not return lift response id=2".into())
-}
-
-fn format_emitted_contracts(emitted: &[&str]) -> String {
-    if emitted.is_empty() {
-        "<none>".to_string()
-    } else {
-        emitted.join(", ")
-    }
 }
 
 fn validate_compiler(project: &Path) -> Result<(), String> {
@@ -806,29 +828,4 @@ fn require_blif_table(
 fn read(project: &Path, rel: &str) -> Result<String, String> {
     let path = project.join(rel);
     std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))
-}
-
-fn find_repo_root(start: &Path) -> Result<PathBuf, String> {
-    let mut cursor = if start.is_absolute() {
-        start.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|e| format!("current dir: {e}"))?
-            .join(start)
-    };
-    cursor = cursor.canonicalize().unwrap_or(cursor);
-    loop {
-        if cursor
-            .join("implementations/rust/provekit-cli/Cargo.toml")
-            .exists()
-        {
-            return Ok(cursor);
-        }
-        if !cursor.pop() {
-            return Err(format!(
-                "could not find repo root above {}",
-                start.display()
-            ));
-        }
-    }
 }

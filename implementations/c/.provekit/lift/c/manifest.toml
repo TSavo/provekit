@@ -1,4 +1,4 @@
-name = "c-lift"
+name = "c-lift-compat"
 version = "0.1.0"
 protocol_version = "provekit-lift/1"
 command = ["./provekit-lift/bin/provekit-lift-c", "--rpc"]
@@ -8,3 +8,5 @@ working_dir = "."
 authoring_surfaces = ["c"]
 ir_version = "v1.1.0"
 emits_signed_mementos = false
+deprecated = true
+replacement_surfaces = ["c-sparse", "c-kernel-doc", "c-assertions"]

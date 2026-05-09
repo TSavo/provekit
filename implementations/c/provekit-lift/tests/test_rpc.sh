@@ -33,9 +33,17 @@ responses="$(
     } | ./bin/provekit-lift-c --rpc
 )"
 
-printf '%s\n' "$responses" | grep '"name":"c-lift"' >/dev/null
-printf '%s\n' "$responses" | grep '"kind":"ir-document"' >/dev/null
-printf '%s\n' "$responses" | grep '"name":"checked_add_u8.postcondition"' >/dev/null
+printf '%s\n' "$responses" | grep '"name":"c-lift-compat"' >/dev/null
+printf '%s\n' "$responses" | grep '"deprecated":true' >/dev/null
+printf '%s\n' "$responses" | grep '"c-sparse"' >/dev/null
+printf '%s\n' "$responses" | grep '"c-kernel-doc"' >/dev/null
+printf '%s\n' "$responses" | grep '"c-assertions"' >/dev/null
+printf '%s\n' "$responses" | grep '"error"' >/dev/null
+printf '%s\n' "$responses" | grep 'generic C surface is a compatibility facade' >/dev/null
+if printf '%s\n' "$responses" | grep '"name":"checked_add_u8.postcondition"' >/dev/null; then
+    printf 'compatibility facade unexpectedly emitted legacy marker contract:\n%s\n' "$responses" >&2
+    exit 1
+fi
 
 scoped="$(mktemp -d)"
 cat > "$scoped/checked_add_u8.c" <<'C_EOF'
@@ -83,10 +91,10 @@ scoped_responses="$(
 )"
 rm -rf "$scoped"
 
-printf '%s\n' "$scoped_responses" | grep '"kind":"ir-document"' >/dev/null
-printf '%s\n' "$scoped_responses" | grep '"name":"checked_add_u8.postcondition"' >/dev/null
-if printf '%s\n' "$scoped_responses" | grep '"error"' >/dev/null; then
-    printf 'source_paths-scoped lift unexpectedly failed:\n%s\n' "$scoped_responses" >&2
+printf '%s\n' "$scoped_responses" | grep '"error"' >/dev/null
+printf '%s\n' "$scoped_responses" | grep 'generic C surface is a compatibility facade' >/dev/null
+if printf '%s\n' "$scoped_responses" | grep '"kind":"ir-document"' >/dev/null; then
+    printf 'compatibility facade unexpectedly emitted an ir-document:\n%s\n' "$scoped_responses" >&2
     exit 1
 fi
 
@@ -118,4 +126,4 @@ bad_responses="$(
 rm -rf "$bad"
 
 printf '%s\n' "$bad_responses" | grep '"error"' >/dev/null
-printf '%s\n' "$bad_responses" | grep 'checked_add_u8.postcondition' >/dev/null
+printf '%s\n' "$bad_responses" | grep 'generic C surface is a compatibility facade' >/dev/null
