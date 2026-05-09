@@ -168,6 +168,22 @@ fn all_exhibits_show_conventional_green_then_provekit_red() {
         report["redRails"]["witness"]["reasonCode"],
         "env-secret-read"
     );
+    assert!(report["redRails"]["witness"]["evidenceCid"]
+        .as_str()
+        .expect("witness evidenceCid")
+        .starts_with("blake3-512:"));
+    assert_eq!(
+        report["redRails"]["witness"]["unsupportedSemantics"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        report["redRails"]["witness"]["findings"][0]["expression"],
+        "process.env.SAFE_JSON_TOKEN"
+    );
+    assert_eq!(
+        report["redRails"]["witness"]["sourceSpans"][0]["lineStart"],
+        8
+    );
     assert_eq!(
         report["redRails"]["contractSet"]["missingContracts"],
         serde_json::json!(["runtime.no-env-secret-read"])
