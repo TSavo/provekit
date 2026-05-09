@@ -76,6 +76,20 @@ provekit ci result \
   --result pass
 ```
 
+Validate the checked-in accepted witness store using the same release-built
+CLI shape as CI:
+
+```sh
+make ci-accept-check
+```
+
+Refresh the checked-in accepted store after the relevant prove jobs have been
+reviewed and accepted:
+
+```sh
+make ci-accept-refresh
+```
+
 ## CI Workflow Shape
 
 The GitHub workflow does three things around each prove job:

@@ -430,8 +430,12 @@ fn ci_accept_check_reports_missing_witnesses_without_writing() {
         "stderr={stderr}"
     );
     assert!(
-        stderr.contains("provekit ci accept"),
-        "stderr should include a repair command\nstderr={stderr}"
+        stderr.contains("make ci-accept-refresh"),
+        "stderr should point at the release-built repair target\nstderr={stderr}"
+    );
+    assert!(
+        stderr.contains("make ci-accept-check"),
+        "stderr should point at the release-built validation target\nstderr={stderr}"
     );
     assert!(
         !accepted_dir.exists(),

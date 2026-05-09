@@ -46,7 +46,7 @@ Bumping the catalog CID is a coordinated activity:
 6. **Update `provekit verify-protocol`** in the Rust CLI to expect the new catalog CID.
 7. **Update conformance fixtures** if the canonical input/output bytes changed.
 8. **Emit or check the PEP transition** with `provekit protocol evolve` or `provekit protocol check-evolution`.
-9. **Update CICP accepted witnesses** only after reviewing candidate job-result witnesses as supply-chain artifacts.
+9. **Update CICP accepted witnesses** only after reviewing candidate job-result witnesses as supply-chain artifacts. Use `make ci-accept-refresh`, then `make ci-accept-check`, so the local flow rebuilds the release CLI before touching `.provekit/ci/accepted`.
 10. **Run `make ci`** to verify the whole stack.
 11. **Tag the release** in git.
 12. **Publish packages** in dependency order: protocol catalog first, then kits, then lift adapters, then tooling.
