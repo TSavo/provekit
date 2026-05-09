@@ -373,6 +373,13 @@ fn github_ci_refreshes_stale_cicp_witnesses_on_same_repo_prs() {
             && refresh_text.contains("git push"),
         "refresh job must run on a vault-token-capable runner and push with the mounted token:\n{refresh_text}"
     );
+    assert!(
+        refresh_text.contains("token_file=\"$RUNNER_TEMP/cicp-gh-token\"")
+            && refresh_text.contains("sudo -n")
+            && refresh_text.contains("Vault-rendered GitHub token file is not readable")
+            && refresh_text.contains("tr -d"),
+        "refresh job must handle root-owned Vault token mounts by staging a readable token copy before pushing:\n{refresh_text}"
+    );
 }
 
 #[test]
