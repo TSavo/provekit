@@ -128,6 +128,14 @@ static void pk_c_clang_set_locus(pk_c_locus *locus, CXCursor cursor, const char 
     locus->column = (int)column;
 }
 
+/* Forward declaration for the effects extraction pass implemented in
+ * effects.c. It walks the function body cursor (passed as `void *`
+ * to keep clang-c types out of the public header) and appends Reads /
+ * Writes / Io / Unsafe / Panics / UnresolvedCall effects on the fact. */
+extern void pk_c_extract_function_effects(
+    pk_c_function_fact *fact,
+    void *function_cursor_ptr);
+
 static int pk_c_clang_append_function(
     pk_c_source_facts *facts,
     const char *path,
@@ -153,6 +161,22 @@ static int pk_c_clang_append_function(
     fact->has_body = has_body;
     facts->n_functions++;
     return 0;
+}
+
+static pk_c_function_fact *pk_c_clang_find_function(
+    pk_c_source_facts *facts,
+    const char *name
+) {
+    if (facts == NULL || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < facts->n_functions; i++) {
+        if (facts->functions[i].name != NULL &&
+            strcmp(facts->functions[i].name, name) == 0) {
+            return &facts->functions[i];
+        }
+    }
+    return NULL;
 }
 
 static int pk_c_clang_append_macro(
@@ -603,10 +627,20 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
             return CXChildVisit_Break;
         }
         if (has_body) {
+            pk_c_function_fact *fact;
+
             child_ctx.current_function = name;
             if (clang_visitChildren(cursor, pk_c_clang_visit, &child_ctx) != 0) {
                 free(name);
                 return CXChildVisit_Break;
+            }
+            /* Per CCP section 3, extract the function's effect set so
+             * downstream composition can decide whether subtrees rooted
+             * at this function are safely composable. The extraction is
+             * conservative (over-tags rather than under-tags). */
+            fact = pk_c_clang_find_function(ctx->facts, name);
+            if (fact != NULL) {
+                pk_c_extract_function_effects(fact, &cursor);
             }
         }
         free(name);
@@ -791,6 +825,12 @@ static pk_c_source_facts *pk_c_parse_source_clang(
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
     (void)pk_c_emit_call_edges(facts);
+    if (facts->extraction_result == NULL) {
+        facts->extraction_result = pk_c_lift_result_new();
+    }
+    if (facts->extraction_result != NULL) {
+        (void)pk_c_emit_function_effects(facts->extraction_result, facts);
+    }
     return facts;
 }
 

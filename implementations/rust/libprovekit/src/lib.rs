@@ -2,6 +2,8 @@
 
 pub mod canonical;
 pub mod ci;
+pub mod compose;
+pub mod ffi;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProvekitError {
