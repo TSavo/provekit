@@ -70,6 +70,13 @@ typedef struct {
     pk_c_locus locus;
     int has_body;
     int has_contract_annotation;
+    /* Formal-parameter arity. Set by the libclang AST backend from
+     * clang_Cursor_getNumArguments on the FunctionDecl. The regex
+     * backend leaves this at 0 because it never inspects the parameter
+     * list. The composition pass uses this to size the synthetic
+     * pure-identity memento (CCP §6.2 wire format) so that resolved
+     * formalIdx values stay in range. */
+    int n_arity;
     pk_c_function_effect *effects;
     size_t n_effects;
     size_t cap_effects;
