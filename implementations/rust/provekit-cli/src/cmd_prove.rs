@@ -31,12 +31,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use owo_colors::OwoColorize;
+use provekit_canonicalizer::blake3_512_of;
 use serde_json::{json, Value};
 
 use provekit_self_contracts::lift_plugin_protocol::{
     verify_c1_initialize_protocol_version_match, verify_c2_initialize_capabilities_populated,
     verify_c3_lift_request_well_formed, verify_c4_surface_in_capabilities,
-    verify_c5_response_kind_in_set, verify_c6_ir_document_array,
+    verify_c5_response_kind_matches_layer, verify_c6_ir_document_array,
     verify_c7_diagnostics_field_is_array, verify_c8_call_edge_stream_present,
 };
 use provekit_verifier::solvers::{registry, run_plan, SolverHandle, SolverPlan, SolversConfig};
@@ -327,8 +328,8 @@ fn run_verifiers(rpc: &CapturedRpc) -> Vec<ContractResult> {
             result: verify_c4_surface_in_capabilities(&rpc.lift_params, &rpc.init_response),
         },
         ContractResult {
-            name: "C5: lift response kind_in_set",
-            result: verify_c5_response_kind_in_set(&rpc.lift_response),
+            name: "C5: lift response kind_matches_layer",
+            result: verify_c5_response_kind_matches_layer(&rpc.lift_params, &rpc.lift_response),
         },
         ContractResult {
             name: "C6: lift response ir_document_array",
@@ -395,7 +396,7 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
                 eprintln!("  C2: initialize capabilities_populated");
                 eprintln!("  C3: lift request well_formed");
                 eprintln!("  C4: lift surface_in_capabilities");
-                eprintln!("  C5: lift response kind_in_set");
+                eprintln!("  C5: lift response kind_matches_layer");
                 eprintln!("  C6: lift response ir_document_array");
                 eprintln!("  C7: diagnostics field_is_array");
                 eprintln!("  C8: call_edge_stream_present");
@@ -480,6 +481,10 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
 // ---------------------------------------------------------------------------
 
 pub fn run(args: ProveArgs) -> u8 {
+    if args.artifact.is_some() || args.proof.is_some() || args.policy.is_some() {
+        return run_admission_gate(&args);
+    }
+
     // When --kit is given, run the conformance gate.
     if let Some(kit) = &args.kit {
         return run_kit(kit, args.out.quiet, args.out.json);
@@ -556,6 +561,84 @@ pub fn run(args: ProveArgs) -> u8 {
     }
 
     report_fmt::report_exit_code(&report)
+}
+
+fn run_admission_gate(args: &ProveArgs) -> u8 {
+    match verify_artifact_or_policy(args) {
+        Ok(report) => {
+            let ok = report["ok"].as_bool().unwrap_or(false);
+            if args.out.json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else if !args.out.quiet {
+                let verdict = report["verdict"].as_str().unwrap_or("unknown");
+                println!("verify admission: {verdict}");
+                if let Some(reason) = report.get("reason").and_then(Value::as_str) {
+                    println!("  reason: {reason}");
+                }
+            }
+            if ok {
+                crate::EXIT_OK
+            } else {
+                crate::EXIT_VERIFY_FAIL
+            }
+        }
+        Err(error) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            crate::EXIT_USER_ERROR
+        }
+    }
+}
+
+fn verify_artifact_or_policy(args: &ProveArgs) -> Result<Value, String> {
+    let proof_path = args
+        .proof
+        .as_ref()
+        .ok_or_else(|| "--proof is required for admission verification".to_string())?;
+    let proof = read_json_value(proof_path)?;
+
+    if let Some(policy_path) = &args.policy {
+        let policy = read_json_value(policy_path)?;
+        let pinned = policy
+            .get("policyCid")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "policy receipt missing policyCid".to_string())?;
+        let candidate = proof.get("policyCid").and_then(Value::as_str).unwrap_or("");
+        let ok = pinned == candidate;
+        return Ok(json!({
+            "ok": ok,
+            "verdict": if ok { "accepted" } else { "rejected" },
+            "reason": if ok { "policyCid matched" } else { "policyCid mismatch" },
+            "pinnedPolicyCid": pinned,
+            "candidatePolicyCid": candidate,
+        }));
+    }
+
+    let artifact_path = args
+        .artifact
+        .as_ref()
+        .ok_or_else(|| "--artifact is required unless --policy is supplied".to_string())?;
+    let artifact_bytes = std::fs::read(artifact_path)
+        .map_err(|e| format!("read artifact {}: {e}", artifact_path.display()))?;
+    let observed_binary_cid = blake3_512_of(&artifact_bytes);
+    let attested_binary_cid = proof
+        .get("binaryCid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "proof receipt missing binaryCid".to_string())?;
+    let ok = observed_binary_cid == attested_binary_cid;
+    Ok(json!({
+        "ok": ok,
+        "verdict": if ok { "accepted" } else { "rejected" },
+        "reason": if ok { "binaryCid matched" } else { "binaryCid mismatch" },
+        "artifact": artifact_path,
+        "attestedBinaryCid": attested_binary_cid,
+        "observedBinaryCid": observed_binary_cid,
+    }))
+}
+
+fn read_json_value(path: &Path) -> Result<Value, String> {
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
 }
 
 fn run_formula_gate(
@@ -886,7 +969,7 @@ mod tests {
         });
         let results = run_verifiers(&rpc);
         let c5 = &results[4];
-        assert_eq!(c5.name, "C5: lift response kind_in_set");
+        assert_eq!(c5.name, "C5: lift response kind_matches_layer");
         assert!(c5.result.is_err(), "C5 should fail on unknown kind");
     }
 

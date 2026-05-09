@@ -6,10 +6,10 @@ This page maps the post-v1.6 protocol/tooling surface. It separates cataloged pr
 
 | Item | Value |
 |---|---|
-| Catalog version | `v1.6.2-2026-05-07` |
-| Catalog CID | `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f` |
+| Catalog version | `v1.6.3-2026-05-09` |
+| Catalog CID | `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` |
 | Catalog file | [../../protocol/specs/2026-04-30-protocol-catalog.json](../../protocol/specs/2026-04-30-protocol-catalog.json) |
-| Signed attestation | [../../.provekit/catalog-signatures/v1.6.2.json](../../.provekit/catalog-signatures/v1.6.2.json) |
+| Signed attestation | [../../.provekit/catalog-signatures/v1.6.3.json](../../.provekit/catalog-signatures/v1.6.3.json) |
 
 ## Cataloged Extensions
 
@@ -17,10 +17,11 @@ This page maps the post-v1.6 protocol/tooling surface. It separates cataloged pr
 |---|---|---|---|
 | `protocol-evolution-protocol` | [PEP](../../protocol/specs/2026-05-07-protocol-evolution-protocol.md) | `blake3-512:d8827f89df20e5be38c4d5de851fe4e55420dcd6cacfd9b98f458c53e64e6ba07349e29f8da2fbab6cb7195b297c3704a70f489c020e3f55c96ef702c4a09949` | Protocol catalog transitions become signed, content-addressed body-claims. |
 | `content-addressed-ci-protocol` | [CICP](../../protocol/specs/2026-05-07-content-addressed-ci-protocol.md) | `blake3-512:4b63e8c58d59b54272407b624b67578b7e1a8fdeb71d41c7d5e18d3bd6d668e7f77c8e2b9a68a10d3732dda40baf66db27f87ab10cbdb1d52e857bcbb7d3ec47` | CI results name exact source, catalog, toolchain, config, and witness input closures. |
+| `lift-plugin-protocol` | [Lift Plugin Protocol](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) | `blake3-512:f2b856a8010b0f95cdd9961e0c367b003b1de7be39b6668db7f96cfe884a99f153609a846be39ad4a4f40a3bb778fecf2b0e24908b94411f32be165473045055` | `provekit lift` and `provekit package inspect` use the same configured lifter RPC; identify-only package inspection emits content-addressed package, CI, contract, and `.proof` rails. |
 
 ## Draft Companion Specs
 
-These are protocol working notes in `protocol/specs/`. They are content-addressed by raw bytes, but they are not catalog properties in v1.6.2 unless listed above.
+These are protocol working notes in `protocol/specs/`. They are content-addressed by raw bytes, but they are not catalog properties in v1.6.3 unless listed above.
 
 | Spec | Raw-byte CID | Role |
 |---|---|---|
@@ -37,7 +38,8 @@ These are protocol working notes in `protocol/specs/`. They are content-addresse
 | Command | Purpose | Primary docs |
 |---|---|---|
 | `provekit proof hash/inspect/check/implements/mint-protocol` | Proof-file hashing, inspection, conformance, implementation witnesses, and fixture corpus minting. | [../../protocol/conformance/proof-protocol/README.md](../../protocol/conformance/proof-protocol/README.md) |
-| `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.2/README.md](../../protocol/evolution/v1.6.2/README.md) |
+| `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.3/README.md](../../protocol/evolution/v1.6.3/README.md) |
+| `provekit package inspect` | Dispatch to the configured lifter with `options.layer = "identify-only"` and require a `package-inspection-document`. | [../../protocol/specs/2026-04-30-lift-plugin-protocol.md](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) |
 | `provekit ci check/shadow/result/reuse` | Validate CICP bodies, compute blast radii, emit job results, and admit exact-closure reuse. | [../how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md) |
 | `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exhibits, link exhibits, fixed pairs, equivalence checks, and scoped composition checks. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |
 

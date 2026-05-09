@@ -136,8 +136,9 @@ pub const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
     "lift_plugin_lift_request_surface_is_string",
     "lift_plugin_lift_request_source_paths_nonempty",
     "lift_plugin_lift_request_source_paths_each_nonempty",
+    "lift_plugin_lift_request_options_layer_well_formed",
     "lift_plugin_lift_request_surface_in_capabilities",
-    "lift_plugin_lift_response_kind_in_set",
+    "lift_plugin_lift_response_kind_matches_layer",
     "lift_plugin_lift_response_ir_document_array",
     "lift_plugin_diagnostic_field_is_array",
     "lift_emits_call_edge_stream",
@@ -151,8 +152,8 @@ pub const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
 /// dogfood-surface drift only moves the Rust kit pin.
 pub const ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID: &str = concat!(
     "blake3-512:",
-    "2a4dc95d1af1ff9f7f5a3414dd7fef67ab342155f4ff204aaf333b2dab6441ec",
-    "ddd2ed2d53aaabb5c929eefa8d4155a9f7a1725f8ea2febefe04c4f7365c27ab"
+    "804c8c31fd4743c35280760cb14ce7ba31942806bb3d41be9cec32fac8f9b1c1",
+    "7ebd62fef41e3b06d8262cdc4b86f82fe0be4f7d4f7b4d1791bdb5c34e5127bb"
 );
 
 // --- Orchestrator types ----------------------------------------------------

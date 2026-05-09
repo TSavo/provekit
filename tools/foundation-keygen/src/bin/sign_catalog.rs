@@ -20,8 +20,7 @@ use foundation_keygen::{
 fn run() -> Result<(), String> {
     let catalog = catalog_path();
     let cid = compute_catalog_cid_from_path(&catalog)?;
-    let attestation =
-        build_signed_attestation(&FOUNDATION_V0_SEED, &cid, V1_1_0_DECLARED_AT)?;
+    let attestation = build_signed_attestation(&FOUNDATION_V0_SEED, &cid, V1_1_0_DECLARED_AT)?;
 
     let out_path = signature_path();
     if let Some(dir) = out_path.parent() {

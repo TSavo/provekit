@@ -16,8 +16,8 @@ use std::fs;
 use std::process::ExitCode;
 
 use foundation_keygen::{
-    build_signed_attestation_for, catalog_path, compute_catalog_cid_from_path,
-    signature_path_for, FOUNDATION_V0_SEED, V1_5_0_DECLARED_AT,
+    build_signed_attestation_for, catalog_path, compute_catalog_cid_from_path, signature_path_for,
+    FOUNDATION_V0_SEED, V1_5_0_DECLARED_AT,
 };
 
 const PROTOCOL_VERSION: &str = "v1.5.0";

@@ -42,6 +42,7 @@ members = [
     "provekit-baseline-std",
     "../../menagerie/bug-zoo",
     "../../menagerie/bridgeworks",
+    "../../menagerie/supply-chain-rails",
 ]
 
 [workspace.package]

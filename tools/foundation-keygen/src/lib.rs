@@ -98,6 +98,11 @@ pub const V1_6_1_DECLARED_AT: &str = "2026-05-07T00:00:00Z";
 /// cross-kit semantic obligations.
 pub const V1_6_2_DECLARED_AT: &str = "2026-05-07T01:00:00Z";
 
+/// Pinned `declaredAt` for v1.6.3. Patch bump: re-bakes the lift-plugin
+/// protocol to formalize the identify-only package inspection result
+/// without changing core verifier behavior or all-layer lift semantics.
+pub const V1_6_3_DECLARED_AT: &str = "2026-05-09T00:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")

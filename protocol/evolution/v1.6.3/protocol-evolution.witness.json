@@ -1,0 +1,31 @@
+{
+  "kind": "TruthDischargeWitness",
+  "schemaVersion": "1",
+  "claimBodyCid": "blake3-512:bf7d3d9c5be556f7164caea22ec01681a64bddad481e564448a921abffdd86bb408b5e94f0680a257c2dbe02ed399cf0e4e2a1416a71a31215483f8908b34530",
+  "claimKind": "protocol-evolution",
+  "result": true,
+  "verifierCid": "blake3-512:8df69e305bbe380ff8e3a2a3996530201e59cb80f7c2417dbc01f051986490d4ffbf36ca85e52b5961e602c340b47e3551479010151fa023d76054db02524541",
+  "policyCid": "blake3-512:d84e27ae351bb151c10521e9c66d571b57e29035fa0248c7e18f68cefe8b45d7a9bbce5dc3dc9f95100ba02855059f75fd807cc6863add7c80bf3b028ee7abf5",
+  "evidenceRootCid": "blake3-512:1949924327f01ce53bebd02fe8c412bb373b0d498edbc59edae0eafde057e9aecbee2fc92e6010827c82ca3395217ec24017d17bd2c842b3f668c37ee3a43cf5",
+  "inputCids": [
+    "blake3-512:1949924327f01ce53bebd02fe8c412bb373b0d498edbc59edae0eafde057e9aecbee2fc92e6010827c82ca3395217ec24017d17bd2c842b3f668c37ee3a43cf5",
+    "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f",
+    "blake3-512:8df69e305bbe380ff8e3a2a3996530201e59cb80f7c2417dbc01f051986490d4ffbf36ca85e52b5961e602c340b47e3551479010151fa023d76054db02524541",
+    "blake3-512:93e71464a4af06f07aac700d3dd21ad0c61cdc5d6c6594173406b1d9f350798d1e77fc0391e5a7ac6e65b2a4f45f540aa3696f88f262290006c95fc88b173d97",
+    "blake3-512:bf7d3d9c5be556f7164caea22ec01681a64bddad481e564448a921abffdd86bb408b5e94f0680a257c2dbe02ed399cf0e4e2a1416a71a31215483f8908b34530",
+    "blake3-512:d84e27ae351bb151c10521e9c66d571b57e29035fa0248c7e18f68cefe8b45d7a9bbce5dc3dc9f95100ba02855059f75fd807cc6863add7c80bf3b028ee7abf5",
+    "blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d",
+    "blake3-512:f2b856a8010b0f95cdd9961e0c367b003b1de7be39b6668db7f96cfe884a99f153609a846be39ad4a4f40a3bb778fecf2b0e24908b94411f32be165473045055",
+    "blake3-512:fa5e47b0650b07a3d7d37e3efc0ec006d079224b23c601464a69fd91f6cbdb3e9adf4f2f1d54eb73c0f553c73750d4ca9349eeeba2ec9d47d081c52f6de263b6"
+  ],
+  "execution": {
+    "startedAt": "1970-01-01T00:00:00Z",
+    "finishedAt": "1970-01-01T00:00:00Z",
+    "fuelUsed": 0
+  },
+  "metadata": {
+    "producer": "provekit-lift-identify-only-pep",
+    "producerVersion": "0.1.0",
+    "bootstrapNote": "TDP-shaped PEP witness emitted by extension-aware tooling; core verification does not execute PEP."
+  }
+}
