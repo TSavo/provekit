@@ -570,6 +570,7 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
     for (i = 0; i < facts->n_call_sites; i++) {
         free(facts->call_sites[i].caller);
         free(facts->call_sites[i].callee);
+        free(facts->call_sites[i].args_json);
         free(facts->call_sites[i].locus.path);
     }
     free(facts->functions);
@@ -583,7 +584,7 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
     free(facts);
 }
 
-static char *pk_c_call_edge_escape(const char *src) {
+char *pk_c_lift_json_escape(const char *src) {
     size_t total = 0;
     char *out;
     char *p;
@@ -651,9 +652,12 @@ static int pk_c_emit_one_call_edge(
     pk_c_lift_result *result,
     const pk_c_call_site_fact *fact
 ) {
-    char *caller = pk_c_call_edge_escape(fact->caller);
-    char *callee = pk_c_call_edge_escape(fact->callee);
-    char *path = pk_c_call_edge_escape(fact->locus.path);
+    char *caller = pk_c_lift_json_escape(fact->caller);
+    char *callee = pk_c_lift_json_escape(fact->callee);
+    char *path = pk_c_lift_json_escape(fact->locus.path);
+    const char *args = (fact->args_json != NULL && fact->args_json[0] != '\0')
+        ? fact->args_json
+        : "[]";
     char *json = NULL;
     int written;
     int rc;
@@ -667,10 +671,11 @@ static int pk_c_emit_one_call_edge(
     written = snprintf(NULL,
         0,
         "{\"caller_function\":\"%s\",\"callee_name\":\"%s\","
-        "\"args_json\":\"[]\",\"callsite_path\":\"%s\","
+        "\"args\":%s,\"callsite_path\":\"%s\","
         "\"callsite_line\":%d,\"callsite_column\":%d}",
         caller,
         callee,
+        args,
         path,
         fact->locus.line,
         fact->locus.column);
@@ -690,10 +695,11 @@ static int pk_c_emit_one_call_edge(
     (void)snprintf(json,
         (size_t)written + 1,
         "{\"caller_function\":\"%s\",\"callee_name\":\"%s\","
-        "\"args_json\":\"[]\",\"callsite_path\":\"%s\","
+        "\"args\":%s,\"callsite_path\":\"%s\","
         "\"callsite_line\":%d,\"callsite_column\":%d}",
         caller,
         callee,
+        args,
         path,
         fact->locus.line,
         fact->locus.column);

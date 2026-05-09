@@ -235,4 +235,28 @@ printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"caller_function":"caller_unsafe
     exit 1
 }
 
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"args":\[\{' || {
+    echo "FAIL: callEdges should emit args as a direct JSON array of arg objects (not a quoted string)" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"text":"external"' || {
+    echo "FAIL: args extraction should surface the var text 'external' for caller_unsafe's helper_inplace call" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"position":0' || {
+    echo "FAIL: args entries should carry a position field per the pinned schema" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"kind":"(var|literal|expr)"' || {
+    echo "FAIL: args entries should carry a kind classification (var|literal|expr)" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
 echo "provekit-lift-c-kernel-doc integration passed"

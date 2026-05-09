@@ -72,6 +72,7 @@ typedef struct {
 typedef struct {
     char *caller;
     char *callee;
+    char *args_json;
     pk_c_locus locus;
 } pk_c_call_site_fact;
 
@@ -102,6 +103,7 @@ pk_c_source_facts *pk_c_parse_source_with_options(
 void pk_c_source_facts_free(pk_c_source_facts *facts);
 
 int pk_c_emit_call_edges(pk_c_source_facts *facts);
+char *pk_c_lift_json_escape(const char *src);
 
 pk_c_compile_context *pk_c_compile_context_from_command(
     const char *path,
