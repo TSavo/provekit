@@ -138,6 +138,76 @@ static char *str_dup(const char *s) {
     return out;
 }
 
+static void json_skip_ws(const char **p) {
+    while (**p == ' ' || **p == '\t' || **p == '\r' || **p == '\n') {
+        (*p)++;
+    }
+}
+
+static int json_parse_value(const char **p);
+
+static int json_hex_value(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
+static int json_decode_hex4(const char *p, unsigned *out) {
+    unsigned value = 0;
+
+    for (int i = 0; i < 4; i++) {
+        int digit = json_hex_value(p[i]);
+        if (digit < 0) {
+            return -1;
+        }
+        value = (value << 4) | (unsigned)digit;
+    }
+    *out = value;
+    return 0;
+}
+
+static int json_append_utf8(char *out, size_t cap, size_t *len, unsigned codepoint) {
+    if (codepoint == 0 || codepoint > 0x10ffffu ||
+        (codepoint >= 0xd800u && codepoint <= 0xdfffu)) {
+        return -1;
+    }
+    if (codepoint < 0x80u) {
+        if (*len + 1 >= cap) {
+            return -1;
+        }
+        out[(*len)++] = (char)codepoint;
+    } else if (codepoint < 0x800u) {
+        if (*len + 2 >= cap) {
+            return -1;
+        }
+        out[(*len)++] = (char)(0xc0u | (codepoint >> 6));
+        out[(*len)++] = (char)(0x80u | (codepoint & 0x3fu));
+    } else if (codepoint < 0x10000u) {
+        if (*len + 3 >= cap) {
+            return -1;
+        }
+        out[(*len)++] = (char)(0xe0u | (codepoint >> 12));
+        out[(*len)++] = (char)(0x80u | ((codepoint >> 6) & 0x3fu));
+        out[(*len)++] = (char)(0x80u | (codepoint & 0x3fu));
+    } else {
+        if (*len + 4 >= cap) {
+            return -1;
+        }
+        out[(*len)++] = (char)(0xf0u | (codepoint >> 18));
+        out[(*len)++] = (char)(0x80u | ((codepoint >> 12) & 0x3fu));
+        out[(*len)++] = (char)(0x80u | ((codepoint >> 6) & 0x3fu));
+        out[(*len)++] = (char)(0x80u | (codepoint & 0x3fu));
+    }
+    return 0;
+}
+
 static char *decode_json_string(const char *start, const char **end_out) {
     size_t cap = strlen(start) + 1;
     char *out = malloc(cap);
@@ -152,21 +222,66 @@ static char *decode_json_string(const char *start, const char **end_out) {
         if (*p == '\\') {
             p++;
             switch (*p) {
+            case 'b':
+                out[len++] = '\b';
+                p++;
+                break;
+            case 'f':
+                out[len++] = '\f';
+                p++;
+                break;
             case 'n':
                 out[len++] = '\n';
+                p++;
                 break;
             case 'r':
                 out[len++] = '\r';
+                p++;
                 break;
             case 't':
                 out[len++] = '\t';
+                p++;
                 break;
             case '"':
                 out[len++] = '"';
+                p++;
                 break;
             case '\\':
                 out[len++] = '\\';
+                p++;
                 break;
+            case '/':
+                out[len++] = '/';
+                p++;
+                break;
+            case 'u': {
+                unsigned codepoint;
+
+                p++;
+                if (json_decode_hex4(p, &codepoint) != 0) {
+                    free(out);
+                    return NULL;
+                }
+                p += 4;
+                if (codepoint >= 0xd800u && codepoint <= 0xdbffu) {
+                    unsigned low;
+
+                    if (p[0] != '\\' || p[1] != 'u' ||
+                        json_decode_hex4(p + 2, &low) != 0 ||
+                        low < 0xdc00u || low > 0xdfffu) {
+                        free(out);
+                        return NULL;
+                    }
+                    p += 6;
+                    codepoint = 0x10000u + (((codepoint - 0xd800u) << 10) |
+                        (low - 0xdc00u));
+                }
+                if (json_append_utf8(out, cap, &len, codepoint) != 0) {
+                    free(out);
+                    return NULL;
+                }
+                break;
+            }
             case '\0':
                 out[len] = '\0';
                 if (end_out) {
@@ -174,10 +289,9 @@ static char *decode_json_string(const char *start, const char **end_out) {
                 }
                 return out;
             default:
-                out[len++] = *p;
-                break;
+                free(out);
+                return NULL;
             }
-            p++;
         } else {
             out[len++] = *p++;
         }
@@ -190,45 +304,97 @@ static char *decode_json_string(const char *start, const char **end_out) {
     return out;
 }
 
-static char *json_extract_str(const char *json, const char *field) {
-    char needle[128];
-    const char *p;
+static const char *json_find_object_value(const char *json, const char *field) {
+    const char *p = json;
 
-    (void)snprintf(needle, sizeof(needle), "\"%s\"", field);
-    p = strstr(json, needle);
-    if (!p) {
+    json_skip_ws(&p);
+    if (*p != '{') {
         return NULL;
     }
+    p++;
+    json_skip_ws(&p);
+    if (*p == '}') {
+        return NULL;
+    }
+    for (;;) {
+        const char *end = NULL;
+        char *key;
+        int matched;
 
-    p += strlen(needle);
-    while (*p == ':' || *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+        if (*p != '"') {
+            return NULL;
+        }
+        key = decode_json_string(p + 1, &end);
+        if (key == NULL || end == NULL || *end != '"') {
+            free(key);
+            return NULL;
+        }
+        p = end + 1;
+        json_skip_ws(&p);
+        if (*p != ':') {
+            free(key);
+            return NULL;
+        }
         p++;
+        json_skip_ws(&p);
+        matched = strcmp(key, field) == 0;
+        free(key);
+        if (matched) {
+            return p;
+        }
+        if (!json_parse_value(&p)) {
+            return NULL;
+        }
+        json_skip_ws(&p);
+        if (*p == '}') {
+            return NULL;
+        }
+        if (*p != ',') {
+            return NULL;
+        }
+        p++;
+        json_skip_ws(&p);
     }
-    if (*p != '"') {
+}
+
+static const char *json_find_params_value(const char *json, const char *field) {
+    const char *params = json_find_object_value(json, "params");
+
+    if (params == NULL) {
         return NULL;
     }
+    return json_find_object_value(params, field);
+}
 
+static char *json_extract_str(const char *json, const char *field) {
+    const char *p = json_find_object_value(json, field);
+
+    if (p == NULL || *p != '"') {
+        return NULL;
+    }
     return decode_json_string(p + 1, NULL);
 }
 
-static int json_has_field(const char *json, const char *field) {
-    char needle[128];
+static char *json_extract_param_str(const char *json, const char *field) {
+    const char *p = json_find_params_value(json, field);
 
-    (void)snprintf(needle, sizeof(needle), "\"%s\"", field);
-    return strstr(json, needle) != NULL;
+    if (p == NULL || *p != '"') {
+        return NULL;
+    }
+    return decode_json_string(p + 1, NULL);
+}
+
+static int json_has_param_field(const char *json, const char *field) {
+    return json_find_params_value(json, field) != NULL;
 }
 
 static char *json_extract_id(const char *json) {
-    const char *p = strstr(json, "\"id\"");
+    const char *p = json_find_object_value(json, "id");
     Buf b;
     char *out;
 
     if (!p) {
         return str_dup("null");
-    }
-    p += strlen("\"id\"");
-    while (*p == ':' || *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
-        p++;
     }
     if (!*p) {
         return str_dup("null");
@@ -268,14 +434,6 @@ static char *json_extract_id(const char *json) {
     buf_free(&b);
     return out;
 }
-
-static void json_skip_ws(const char **p) {
-    while (**p == ' ' || **p == '\t' || **p == '\r' || **p == '\n') {
-        (*p)++;
-    }
-}
-
-static int json_parse_value(const char **p);
 
 static int json_parse_string_value(const char **p) {
     if (**p != '"') {
@@ -489,20 +647,14 @@ static int validate_json_request(const char *json) {
 }
 
 static int json_extract_str_array(const char *json, const char *field, StringArray *out) {
-    char needle[128];
     const char *p;
 
     memset(out, 0, sizeof(*out));
-    (void)snprintf(needle, sizeof(needle), "\"%s\"", field);
-    p = strstr(json, needle);
+    p = json_find_object_value(json, field);
     if (!p) {
         return 0;
     }
 
-    p += strlen(needle);
-    while (*p == ':' || *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
-        p++;
-    }
     if (*p != '[') {
         string_array_free(out);
         return -1;
@@ -544,6 +696,16 @@ static int json_extract_str_array(const char *json, const char *field, StringArr
 
     string_array_free(out);
     return -1;
+}
+
+static int json_extract_param_str_array(const char *json, const char *field, StringArray *out) {
+    const char *params = json_find_object_value(json, "params");
+
+    if (params == NULL) {
+        memset(out, 0, sizeof(*out));
+        return 0;
+    }
+    return json_extract_str_array(params, field, out);
 }
 
 static void string_array_free(StringArray *arr) {
@@ -706,13 +868,17 @@ static int walk_path(const char *path, LiftAccumulator *acc) {
     DIR *dir;
     struct dirent *entry;
 
-    if (stat(path, &st) != 0) {
+    if (lstat(path, &st) != 0) {
         (void)snprintf(acc->error,
             sizeof(acc->error),
             "%s: stat failed: %s",
             path,
             strerror(errno));
         return -1;
+    }
+
+    if (S_ISLNK(st.st_mode)) {
+        return 0;
     }
 
     if (S_ISREG(st.st_mode)) {
@@ -798,8 +964,8 @@ static void handle_initialize(const char *id) {
 }
 
 static void handle_parse(const char *id, const char *line) {
-    char *path = json_extract_str(line, "path");
-    char *source = json_extract_str(line, "source");
+    char *path = json_extract_param_str(line, "path");
+    char *source = json_extract_param_str(line, "source");
     pk_c_lift_result *result;
     char *json;
 
@@ -835,8 +1001,8 @@ static void handle_parse(const char *id, const char *line) {
 }
 
 static void handle_lift(const char *id, const char *line) {
-    char *workspace = json_extract_str(line, "workspace_root");
-    char *surface = json_extract_str(line, "surface");
+    char *workspace = json_extract_param_str(line, "workspace_root");
+    char *surface = json_extract_param_str(line, "surface");
     StringArray source_paths;
     LiftAccumulator acc;
     Buf result;
@@ -844,6 +1010,12 @@ static void handle_lift(const char *id, const char *line) {
     if (!surface) {
         free(workspace);
         send_error(id, -32602, "surface must be a string");
+        return;
+    }
+    if (strcmp(surface, "c-sparse") != 0) {
+        free(surface);
+        free(workspace);
+        send_error(id, -32602, "unsupported surface");
         return;
     }
 
@@ -857,14 +1029,14 @@ static void handle_lift(const char *id, const char *line) {
         }
     }
 
-    if (!json_has_field(line, "source_paths")) {
+    if (!json_has_param_field(line, "source_paths")) {
         free(surface);
         free(workspace);
         send_error(id, -32602, "source_paths must be a non-empty array of strings");
         return;
     }
 
-    if (json_extract_str_array(line, "source_paths", &source_paths) != 0) {
+    if (json_extract_param_str_array(line, "source_paths", &source_paths) != 0) {
         string_array_free(&source_paths);
         free(surface);
         free(workspace);

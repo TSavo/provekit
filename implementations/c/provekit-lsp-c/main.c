@@ -55,29 +55,42 @@ static void buf_free(Buf *b) {
     b->cap  = 0;
 }
 
-static void buf_grow(Buf *b, size_t need) {
-    if (b->len + need + 1 <= b->cap) return;
-    size_t nc = b->cap * 2;
-    while (nc < b->len + need + 1) nc *= 2;
-    char *nd = (char *)realloc(b->data, nc);
-    if (!nd) return;
+static int buf_grow(Buf *b, size_t need) {
+    size_t required;
+    size_t nc;
+    char *nd;
+
+    if (!b->data) return -1;
+    if (need >= ((size_t)-1) - b->len) return -1;
+    required = b->len + need + 1;
+    if (required <= b->cap) return 0;
+    nc = b->cap ? b->cap : 256;
+    while (nc < required) {
+        if (nc > ((size_t)-1) / 2) return -1;
+        nc *= 2;
+    }
+    nd = (char *)realloc(b->data, nc);
+    if (!nd) return -1;
     b->data = nd;
     b->cap  = nc;
+    return 0;
 }
 
-static void buf_append(Buf *b, const char *s) {
-    if (!s) return;
+static int buf_append(Buf *b, const char *s) {
+    if (!s) return 0;
     size_t n = strlen(s);
-    buf_grow(b, n);
+    if (buf_grow(b, n) != 0) return -1;
     memcpy(b->data + b->len, s, n + 1);
     b->len += n;
+    return 0;
 }
 
-static void buf_append_char(Buf *b, char c) {
-    buf_grow(b, 1);
+static int buf_append_char(Buf *b, char c) {
+    if (buf_grow(b, 1) != 0) return -1;
     b->data[b->len] = c;
     b->data[b->len + 1] = '\0';
     b->len++;
+    return 0;
 }
 
 /* -----------------------------------------------------------------------
@@ -85,33 +98,33 @@ static void buf_append_char(Buf *b, char c) {
  * ----------------------------------------------------------------------- */
 
 /* JCS-compliant string escaping per RFC 8785. */
-static void json_escape_str(Buf *out, const char *s) {
-    buf_append_char(out, '"');
+static int json_escape_str(Buf *out, const char *s) {
+    if (buf_append_char(out, '"') != 0) return -1;
     for (const char *p = s; *p; p++) {
         unsigned char c = (unsigned char)*p;
         if (c == '"') {
-            buf_append(out, "\\\"");
+            if (buf_append(out, "\\\"") != 0) return -1;
         } else if (c == '\\') {
-            buf_append(out, "\\\\");
+            if (buf_append(out, "\\\\") != 0) return -1;
         } else if (c == '\b') {
-            buf_append(out, "\\b");
+            if (buf_append(out, "\\b") != 0) return -1;
         } else if (c == '\f') {
-            buf_append(out, "\\f");
+            if (buf_append(out, "\\f") != 0) return -1;
         } else if (c == '\n') {
-            buf_append(out, "\\n");
+            if (buf_append(out, "\\n") != 0) return -1;
         } else if (c == '\r') {
-            buf_append(out, "\\r");
+            if (buf_append(out, "\\r") != 0) return -1;
         } else if (c == '\t') {
-            buf_append(out, "\\t");
+            if (buf_append(out, "\\t") != 0) return -1;
         } else if (c < 0x20) {
             char esc[7];
             snprintf(esc, sizeof(esc), "\\u00%02x", c);
-            buf_append(out, esc);
+            if (buf_append(out, esc) != 0) return -1;
         } else {
-            buf_append_char(out, *p);
+            if (buf_append_char(out, *p) != 0) return -1;
         }
     }
-    buf_append_char(out, '"');
+    return buf_append_char(out, '"');
 }
 
 /* Extract the string value of the named field in a flat JSON object line.
@@ -220,16 +233,26 @@ static void send_response(const char *id, const char *result_json) {
 
 static void send_error(const char *id, int code, const char *message) {
     Buf b;
+    int ok;
     buf_init(&b);
-    buf_append(&b, "{\"code\":");
     char cstr[32];
     snprintf(cstr, sizeof(cstr), "%d", code);
-    buf_append(&b, cstr);
-    buf_append(&b, ",\"message\":");
-    json_escape_str(&b, message);
-    buf_append(&b, "}");
 
     const char *safe_id = (id && *id) ? id : "null";
+    ok = b.data &&
+        buf_append(&b, "{\"code\":") == 0 &&
+        buf_append(&b, cstr) == 0 &&
+        buf_append(&b, ",\"message\":") == 0 &&
+        json_escape_str(&b, message ? message : "internal error") == 0 &&
+        buf_append(&b, "}") == 0;
+    if (!ok) {
+        buf_free(&b);
+        printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"error\":{\"code\":-32603,\"message\":\"internal error\"}}\n",
+               safe_id);
+        fflush(stdout);
+        return;
+    }
+
     printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"error\":%s}\n", safe_id, b.data);
     fflush(stdout);
 
@@ -244,14 +267,19 @@ static void handle_initialize(const char *id) {
         "\"version\":\"0.1.0\"}");
 }
 
-static void add_contract_decl(pk_c_lift_result *result, const char *name) {
+static int add_contract_decl(pk_c_lift_result *result, const char *name) {
     Buf decl;
     buf_init(&decl);
-    buf_append(&decl, "{\"kind\":\"contract\",\"name\":");
-    json_escape_str(&decl, name);
-    buf_append(&decl, ",\"outBinding\":\"out\"}");
-    pk_c_lift_result_add_declaration(result, decl.data);
+    if (!decl.data ||
+        buf_append(&decl, "{\"kind\":\"contract\",\"name\":") != 0 ||
+        json_escape_str(&decl, name) != 0 ||
+        buf_append(&decl, ",\"outBinding\":\"out\"}") != 0 ||
+        pk_c_lift_result_add_declaration(result, decl.data) != 0) {
+        buf_free(&decl);
+        return -1;
+    }
     buf_free(&decl);
+    return 0;
 }
 
 static void handle_parse(const char *id, const char *json_line) {
@@ -282,14 +310,24 @@ static void handle_parse(const char *id, const char *json_line) {
 
     for (size_t i = 0; i < facts->n_functions; i++) {
         if (facts->functions[i].has_contract_annotation) {
-            add_contract_decl(result_obj, facts->functions[i].name);
+            if (add_contract_decl(result_obj, facts->functions[i].name) != 0) {
+                pk_c_source_facts_free(facts);
+                pk_c_lift_result_free(result_obj);
+                send_error(id, -32603, "parse: out of memory");
+                return;
+            }
         }
     }
     if (facts->extraction_result) {
         for (size_t i = 0; i < facts->extraction_result->diagnostics.len; i++) {
-            pk_c_lift_result_add_diagnostic(
+            if (pk_c_lift_result_add_diagnostic(
                 result_obj,
-                facts->extraction_result->diagnostics.items[i]);
+                facts->extraction_result->diagnostics.items[i]) != 0) {
+                pk_c_source_facts_free(facts);
+                pk_c_lift_result_free(result_obj);
+                send_error(id, -32603, "parse: out of memory");
+                return;
+            }
         }
     }
     pk_c_source_facts_free(facts);
@@ -360,9 +398,13 @@ int main(int argc, char **argv) {
         } else {
             Buf msg;
             buf_init(&msg);
-            buf_append(&msg, "unknown method: ");
-            buf_append(&msg, method);
-            send_error(safe_id, -32601, msg.data);
+            if (msg.data &&
+                buf_append(&msg, "unknown method: ") == 0 &&
+                buf_append(&msg, method) == 0) {
+                send_error(safe_id, -32601, msg.data);
+            } else {
+                send_error(safe_id, -32601, "unknown method");
+            }
             buf_free(&msg);
         }
 

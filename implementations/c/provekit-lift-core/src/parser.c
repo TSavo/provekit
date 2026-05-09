@@ -326,8 +326,17 @@ static int pk_c_parser_scan_sparse_annotations(
 static char *pk_c_parser_argument_text(const char *open_paren) {
     const char *start = open_paren + 1;
     const char *end = start;
+    int depth = 1;
 
-    while (*end != '\0' && *end != ')') {
+    while (*end != '\0' && depth > 0) {
+        if (*end == '(') {
+            depth++;
+        } else if (*end == ')') {
+            depth--;
+            if (depth == 0) {
+                break;
+            }
+        }
         end++;
     }
     return pk_c_parser_copy_n(start, (size_t)(end - start));

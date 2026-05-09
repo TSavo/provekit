@@ -36,6 +36,9 @@ pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *sour
 
     facts = pk_c_parse_source(path, source);
     if (!facts) {
+        (void)pk_c_lift_result_add_diagnostic(
+            result,
+            "{\"severity\":\"error\",\"message\":\"parse failed\"}");
         return result;
     }
 
@@ -44,20 +47,32 @@ pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *sour
 
         if (!saw_warn_on &&
             (strcmp(call->name, "WARN_ON") == 0 || strcmp(call->name, "WARN_ON_ONCE") == 0)) {
-            (void)add_contract(result, "c-assertions.warn-on");
+            if (add_contract(result, "c-assertions.warn-on") != 0) {
+                pk_c_source_facts_free(facts);
+                pk_c_lift_result_free(result);
+                return NULL;
+            }
             saw_warn_on = 1;
         } else if (!saw_build_bug_on && strcmp(call->name, "BUILD_BUG_ON") == 0) {
-            (void)add_contract(result, "c-assertions.build-bug-on");
+            if (add_contract(result, "c-assertions.build-bug-on") != 0) {
+                pk_c_source_facts_free(facts);
+                pk_c_lift_result_free(result);
+                return NULL;
+            }
             saw_build_bug_on = 1;
         } else if (strcmp(call->name, "BUG_ON") == 0) {
-            (void)pk_c_lift_result_add_refusal_entry(
+            if (pk_c_lift_result_add_refusal_entry(
                 result,
                 "c-assertions.bug-on",
                 call->locus.path,
                 call->locus.line,
                 call->locus.column,
                 "c-assertions",
-                "BUG_ON is a recognized assertion-like control-flow stop; no positive proof contract emitted");
+                "BUG_ON is a recognized assertion-like control-flow stop; no positive proof contract emitted") != 0) {
+                pk_c_source_facts_free(facts);
+                pk_c_lift_result_free(result);
+                return NULL;
+            }
         }
     }
 
@@ -65,7 +80,11 @@ pk_c_lift_result *pk_c_assertions_lift_source(const char *path, const char *sour
         pk_c_call_site_fact *call = &facts->call_sites[i];
 
         if (!saw_assert && strcmp(call->callee, "assert") == 0) {
-            (void)add_contract(result, "c-assertions.assert");
+            if (add_contract(result, "c-assertions.assert") != 0) {
+                pk_c_source_facts_free(facts);
+                pk_c_lift_result_free(result);
+                return NULL;
+            }
             saw_assert = 1;
         }
     }

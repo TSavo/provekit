@@ -408,7 +408,21 @@ static pk_c_source_facts *pk_c_parse_source_clang(
     ctx.facts = facts;
     ctx.path = filename;
     ctx.current_function = NULL;
-    (void)clang_visitChildren(clang_getTranslationUnitCursor(unit), pk_c_clang_visit, &ctx);
+    if (clang_visitChildren(clang_getTranslationUnitCursor(unit), pk_c_clang_visit, &ctx) != 0) {
+        if (facts->extraction_result == NULL) {
+            facts->extraction_result = pk_c_lift_result_new();
+        }
+        if (facts->extraction_result != NULL) {
+            (void)pk_c_lift_result_add_opacity_entry(
+                facts->extraction_result,
+                "ast-walk-aborted",
+                filename,
+                1,
+                1,
+                "libclang AST walk stopped before all facts were extracted",
+                "c-core");
+        }
+    }
 
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);

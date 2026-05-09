@@ -23,49 +23,53 @@ REQUEST="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"parse\",\"params\":{\"path\"
 SPARSE_RESPONSE=$(printf '%s\n' "$REQUEST" | "$SPARSE" --rpc)
 ASSERTIONS_RESPONSE=$(printf '%s\n' "$REQUEST" | "$ASSERTIONS" --rpc)
 
-printf '%s\n' "$SPARSE_RESPONSE" | grep -q '"id":1' || {
+contains_json() {
+    printf '%s\n' "$1" | grep -Eq "$2"
+}
+
+contains_json "$SPARSE_RESPONSE" '"id"[[:space:]]*:[[:space:]]*1' || {
     echo "FAIL: sparse lifter did not echo id 1" >&2
     echo "$SPARSE_RESPONSE" >&2
     exit 1
 }
 
-printf '%s\n' "$ASSERTIONS_RESPONSE" | grep -q '"id":1' || {
+contains_json "$ASSERTIONS_RESPONSE" '"id"[[:space:]]*:[[:space:]]*1' || {
     echo "FAIL: assertions lifter did not echo id 1" >&2
     echo "$ASSERTIONS_RESPONSE" >&2
     exit 1
 }
 
-printf '%s\n' "$SPARSE_RESPONSE" | grep -q '"name":"c-sparse.user-pointer"' || {
+contains_json "$SPARSE_RESPONSE" '"name"[[:space:]]*:[[:space:]]*"c-sparse\.user-pointer"' || {
     echo "FAIL: sparse lifter did not find __user contract" >&2
     echo "$SPARSE_RESPONSE" >&2
     exit 1
 }
 
-printf '%s\n' "$ASSERTIONS_RESPONSE" | grep -q '"name":"c-assertions.warn-on"' || {
+contains_json "$ASSERTIONS_RESPONSE" '"name"[[:space:]]*:[[:space:]]*"c-assertions\.warn-on"' || {
     echo "FAIL: assertions lifter did not find WARN_ON contract" >&2
     echo "$ASSERTIONS_RESPONSE" >&2
     exit 1
 }
 
-if printf '%s\n' "$SPARSE_RESPONSE" | grep -q '"name":"c-assertions.'; then
+if contains_json "$SPARSE_RESPONSE" '"name"[[:space:]]*:[[:space:]]*"c-assertions\.'; then
     echo "FAIL: sparse lifter emitted assertions contract" >&2
     echo "$SPARSE_RESPONSE" >&2
     exit 1
 fi
 
-if printf '%s\n' "$ASSERTIONS_RESPONSE" | grep -q '"name":"c-sparse.'; then
+if contains_json "$ASSERTIONS_RESPONSE" '"name"[[:space:]]*:[[:space:]]*"c-sparse\.'; then
     echo "FAIL: assertions lifter emitted sparse contract" >&2
     echo "$ASSERTIONS_RESPONSE" >&2
     exit 1
 fi
 
-printf '%s\n' "$SPARSE_RESPONSE" | grep -q '"refusals":\[\]' || {
+contains_json "$SPARSE_RESPONSE" '"refusals"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' || {
     echo "FAIL: sparse lifter should have empty refusals" >&2
     echo "$SPARSE_RESPONSE" >&2
     exit 1
 }
 
-printf '%s\n' "$ASSERTIONS_RESPONSE" | grep -q '"opacityReport":\[\]' || {
+contains_json "$ASSERTIONS_RESPONSE" '"opacityReport"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' || {
     echo "FAIL: assertions lifter should have empty opacity report" >&2
     echo "$ASSERTIONS_RESPONSE" >&2
     exit 1

@@ -153,6 +153,21 @@ if printf '%s\n' "$COMMENT_ONLY_RESPONSE" | grep -q '"name":"c-assertions.bug-on
     exit 1
 fi
 
+NESTED_METHOD_REQUEST='{"jsonrpc":"2.0","id":103,"params":{"method":"shutdown","path":"nested_method.c","source":"void f(int bad) { WARN_ON(bad); }\n"},"method":"parse"}'
+NESTED_METHOD_RESPONSE=$(printf '%s\n' "$NESTED_METHOD_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"id":103' || {
+    echo "FAIL: nested params.method should not override top-level id" >&2
+    echo "$NESTED_METHOD_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"name":"c-assertions.warn-on"' || {
+    echo "FAIL: nested params.method should not override top-level parse method" >&2
+    echo "$NESTED_METHOD_RESPONSE" >&2
+    exit 1
+}
+
 BUG_ON_REQUEST='{"jsonrpc":"2.0","id":101,"method":"parse","params":{"path":"bug_on.c","source":"void crash_if_bad(int bad) { BUG_ON(bad); }\n"}}'
 BUG_ON_RESPONSE=$(printf '%s\n' "$BUG_ON_REQUEST" | "$BIN" --rpc)
 
@@ -314,5 +329,37 @@ MISSING_SURFACE="$(
     } | "$BIN" --rpc
 )"
 assert_invalid_lift_params "missing surface" "$MISSING_SURFACE"
+
+UNSUPPORTED_SURFACE="$(
+    {
+        printf '{"jsonrpc":"2.0","id":93,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["assertions_basic.c"],"surface":"c-sparse"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "unsupported surface" "$UNSUPPORTED_SURFACE"
+
+SYMLINK_ROOT="$(mktemp -d)"
+trap 'rm -rf "$SYMLINK_ROOT"' EXIT
+ln -s "$SCRIPT_DIR/fixtures" "$SYMLINK_ROOT/linked-fixtures"
+SYMLINK_RESPONSE="$(
+    {
+        printf '{"jsonrpc":"2.0","id":94,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SYMLINK_ROOT"
+        printf ',"source_paths":["linked-fixtures"],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+
+if printf '%s\n' "$SYMLINK_RESPONSE" | grep -q '"name":"c-assertions.'; then
+    echo "FAIL: symlinked directories should not be traversed" >&2
+    echo "$SYMLINK_RESPONSE" >&2
+    exit 1
+fi
+
+if printf '%s\n' "$SYMLINK_RESPONSE" | grep -q '"kind":"c-assertions.bug-on"'; then
+    echo "FAIL: symlinked directories should not preserve nested refusals" >&2
+    echo "$SYMLINK_RESPONSE" >&2
+    exit 1
+fi
 
 printf 'provekit-lift-c-assertions integration passed\n'

@@ -144,6 +144,69 @@ if printf '%s\n' "$COMMENT_ONLY_RESPONSE" | grep -q '"name":"c-sparse.must-hold"
     exit 1
 fi
 
+FIELD_COLLISION_REQUEST='{"jsonrpc":"2.0","id":102,"method":"parse","params":{"path":"source","source":"int copy_name(char __user *buf) { return 0; }\n"}}'
+FIELD_COLLISION_RESPONSE=$(printf '%s\n' "$FIELD_COLLISION_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$FIELD_COLLISION_RESPONSE" | grep -q '"id":102' || {
+    echo "FAIL: parse with source-valued path did not echo id 102" >&2
+    echo "$FIELD_COLLISION_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$FIELD_COLLISION_RESPONSE" | grep -q '"name":"c-sparse.user-pointer"' || {
+    echo "FAIL: parse with source-valued path missed __user contract" >&2
+    echo "$FIELD_COLLISION_RESPONSE" >&2
+    exit 1
+}
+
+NESTED_METHOD_REQUEST='{"jsonrpc":"2.0","id":103,"params":{"method":"shutdown","path":"nested_method.c","source":"int copy_name(char __user *buf) { return 0; }\n"},"method":"parse"}'
+NESTED_METHOD_RESPONSE=$(printf '%s\n' "$NESTED_METHOD_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"id":103' || {
+    echo "FAIL: nested params.method should not override top-level id" >&2
+    echo "$NESTED_METHOD_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$NESTED_METHOD_RESPONSE" | grep -q '"name":"c-sparse.user-pointer"' || {
+    echo "FAIL: nested params.method should not override top-level parse method" >&2
+    echo "$NESTED_METHOD_RESPONSE" >&2
+    exit 1
+}
+
+REPEATED_LOCKS_REQUEST='{"jsonrpc":"2.0","id":104,"method":"parse","params":{"path":"locks.c","source":"void a(int *p) __must_hold(lock_a) { }\nvoid b(int *p) __must_hold(lock_b) { }\n"}}'
+REPEATED_LOCKS_RESPONSE=$(printf '%s\n' "$REPEATED_LOCKS_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$REPEATED_LOCKS_RESPONSE" | grep -q '"name":"lock_a"' || {
+    echo "FAIL: repeated __must_hold should emit first lock" >&2
+    echo "$REPEATED_LOCKS_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$REPEATED_LOCKS_RESPONSE" | grep -q '"name":"lock_b"' || {
+    echo "FAIL: repeated __must_hold should emit second lock" >&2
+    echo "$REPEATED_LOCKS_RESPONSE" >&2
+    exit 1
+}
+
+ESCAPED_LOCK_REQUEST='{"jsonrpc":"2.0","id":105,"method":"parse","params":{"path":"escaped.c","source":"void a(int *p) __must_hold(lock\\quoted) { }\n"}}'
+ESCAPED_LOCK_RESPONSE=$(printf '%s\n' "$ESCAPED_LOCK_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$ESCAPED_LOCK_RESPONSE" | grep -qF 'lock\\quoted' || {
+    echo "FAIL: sparse annotation backslash argument should be JSON-escaped" >&2
+    echo "$ESCAPED_LOCK_RESPONSE" >&2
+    exit 1
+}
+
+UNICODE_LOCK_REQUEST='{"jsonrpc":"2.0","id":106,"method":"parse","params":{"path":"unicode.c","source":"void a(int *p) __must_hold(lock\u005fa) { }\n"}}'
+UNICODE_LOCK_RESPONSE=$(printf '%s\n' "$UNICODE_LOCK_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$UNICODE_LOCK_RESPONSE" | grep -q '"name":"lock_a"' || {
+    echo "FAIL: JSON unicode escapes should decode before sparse lifting" >&2
+    echo "$UNICODE_LOCK_RESPONSE" >&2
+    exit 1
+}
+
 MALFORMED_JSON_RESPONSE=$(printf '%s\n' '{"jsonrpc":"2.0","id":55,"method":"initialize"' | "$BIN" --rpc)
 
 printf '%s\n' "$MALFORMED_JSON_RESPONSE" | grep -q '"error"' || {
@@ -264,5 +327,14 @@ MISSING_SURFACE="$(
     } | "$BIN" --rpc
 )"
 assert_invalid_lift_params "missing surface" "$MISSING_SURFACE"
+
+UNSUPPORTED_SURFACE="$(
+    {
+        printf '{"jsonrpc":"2.0","id":93,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["sparse_basic.c"],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "unsupported surface" "$UNSUPPORTED_SURFACE"
 
 printf 'provekit-lift-c-sparse integration passed\n'
