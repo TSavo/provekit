@@ -10,10 +10,10 @@
 # Clean: make clean
 
 CC      = cc
-CFLAGS  = -std=c11 -Wall -Wextra -Wpedantic -O2
+CFLAGS  = -std=c11 -Wall -Wextra -Wpedantic -O2 -I../provekit-lift-core/include
 
 BIN     = provekit-lsp-c
-SRC     = main.c
+SRC     = main.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c
 TEST_SH = tests/integration.sh
 
 .PHONY: all test clean
@@ -21,7 +21,7 @@ TEST_SH = tests/integration.sh
 all: $(BIN)
 
 $(BIN): $(SRC)
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $(SRC)
 
 test: $(BIN) $(TEST_SH)
 	@chmod +x $(TEST_SH)

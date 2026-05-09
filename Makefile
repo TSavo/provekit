@@ -92,7 +92,7 @@ help:
 	@echo "  make build-ts       pnpm install"
 	@echo "  make build-csharp   dotnet build"
 	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
-	@echo "  make build-c        cc build of provekit-ir + provekit-lsp-c"
+	@echo "  make build-c        cc build of C IR, lifters, LSP, and self-contracts"
 	@echo "  make build-swift    swift build -c release"
 	@echo ""
 	@echo "Per-language test:"
@@ -158,6 +158,10 @@ build-csharp:
 .PHONY: build-c
 build-c:
 	$(MAKE) -C implementations/c/provekit-ir all
+	$(MAKE) -C implementations/c/provekit-lift all
+	$(MAKE) -C implementations/c/provekit-lift-core all
+	$(MAKE) -C implementations/c/provekit-lift-c-sparse all
+	$(MAKE) -C implementations/c/provekit-lift-c-assertions all
 	$(MAKE) -C implementations/c/provekit-lsp-c all
 	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
@@ -563,6 +567,11 @@ test-csharp: build-csharp
 .PHONY: test-c
 test-c: build-c
 	$(MAKE) -C implementations/c/provekit-ir test
+	$(MAKE) -C implementations/c/provekit-lift test
+	$(MAKE) -C implementations/c/provekit-lift-core test
+	$(MAKE) -C implementations/c/provekit-lift-c-sparse test
+	$(MAKE) -C implementations/c/provekit-lift-c-assertions test
+	$(MAKE) -C implementations/c/provekit-lift-composition test
 	$(MAKE) -C implementations/c/provekit-lsp-c test
 	$(MAKE) -C implementations/c/provekit-self-contracts test
 
