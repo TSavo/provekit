@@ -50,7 +50,9 @@ static int pk_c_parser_blank_line(const char *line) {
 }
 
 static int pk_c_parser_contract_annotation(const char *line) {
-    return strstr(line, "//provekit:contract") != NULL;
+    const char *p = pk_c_parser_first_nonblank(line);
+
+    return strncmp(p, "//provekit:contract", strlen("//provekit:contract")) == 0;
 }
 
 static int pk_c_parser_keyword(const char *name) {
