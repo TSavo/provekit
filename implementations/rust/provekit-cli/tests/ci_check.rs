@@ -311,6 +311,67 @@ fn git_commit_all(repo: &Path, message: &str) {
 }
 
 #[test]
+fn github_ci_refreshes_stale_cicp_witnesses_on_same_repo_prs() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("repo root");
+    let workflow_path = repo_root.join(".github/workflows/ci.yml");
+    let workflow = fs::read_to_string(&workflow_path).expect("read CI workflow");
+    let parsed: serde_yaml::Value = serde_yaml::from_str(&workflow).expect("parse CI workflow");
+    let jobs = parsed
+        .get("jobs")
+        .and_then(serde_yaml::Value::as_mapping)
+        .expect("jobs mapping");
+
+    let smoke = jobs
+        .get(serde_yaml::Value::String("cicp-reuse-smoke".into()))
+        .expect("main-branch CICP smoke job remains present");
+    let smoke_if = smoke
+        .get("if")
+        .and_then(serde_yaml::Value::as_str)
+        .expect("CICP smoke job has an if guard");
+    assert!(
+        smoke_if.contains("github.event_name == 'push'")
+            && smoke_if.contains("github.ref == 'refs/heads/main'"),
+        "stale checked-in witness smoke must be a main-only check, not a PR precondition: {smoke_if}"
+    );
+
+    let refresh = jobs
+        .get(serde_yaml::Value::String("cicp-refresh".into()))
+        .expect("PR CICP refresh job exists");
+    let refresh_text = serde_yaml::to_string(refresh).expect("serialize refresh job");
+    assert!(
+        refresh_text.contains("github.event_name == 'pull_request'"),
+        "refresh job must run only for PRs:\n{refresh_text}"
+    );
+    assert!(
+        refresh_text.contains("github.event.pull_request.head.repo.full_name != github.repository")
+            && refresh_text.contains("CICP PR witness refresh only supports same-repo pull requests")
+            && refresh_text.contains("exit 1"),
+        "refresh job must fail closed for fork PRs:\n{refresh_text}"
+    );
+    assert!(
+        refresh_text.contains("prove-linux") && refresh_text.contains("prove-swift"),
+        "refresh job must wait for all prove jobs:\n{refresh_text}"
+    );
+    assert!(
+        refresh_text.contains("actions/download-artifact@v4")
+            && refresh_text.contains("cicp-shadow-*")
+            && refresh_text.contains("provekit ci accept")
+            && refresh_text.contains("--results-dir .provekit/ci-shadow"),
+        "refresh job must import per-kit candidate result witnesses:\n{refresh_text}"
+    );
+    assert!(
+        refresh_text.contains("- vault")
+            && refresh_text.contains("CICP_GH_TOKEN_FILE")
+            && refresh_text.contains("/run/vault/github-pat")
+            && refresh_text.contains("git push"),
+        "refresh job must run on a vault-token-capable runner and push with the mounted token:\n{refresh_text}"
+    );
+}
+
+#[test]
 fn ci_accept_imports_candidate_job_result_by_default() {
     let repo = make_shadow_repo("accept-generate");
     let accepted_dir = repo.join(".provekit/ci/accepted");
