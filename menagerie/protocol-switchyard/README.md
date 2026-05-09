@@ -71,6 +71,19 @@ The runner exits 0 and prints the four CIDs above plus the paths to the
 catalog, policy, verifier, body, and witness JSON it produced under
 `$TMPDIR`. Pass `--json` for a structured report.
 
+## Walkthrough
+
+A numbered, CLI-first tour lives under `walkthrough/`. The tour scripts
+mint the migration edge piece by piece (specs, catalogs, witness,
+verifier check); the break scripts perturb one rail at a time and show
+which check refuses the chain. See
+[`walkthrough/README.md`](walkthrough/README.md) for the script index
+and the rail-by-rail failure-mode table.
+
+```sh
+./menagerie/protocol-switchyard/walkthrough/00-start-here.sh
+```
+
 ## See also
 
 - `docs/papers/10-after-protocol-specs-how-protocols-actually-evolve.md`,
