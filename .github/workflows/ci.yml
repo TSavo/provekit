@@ -46,7 +46,23 @@ jobs:
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/cross-kit-conformance/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: |
@@ -296,7 +312,26 @@ jobs:
         # RPC against mint-swift-self-contracts).
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        # Same cache shape as the Linux job; ${{ runner.os }} resolves to
+        # macOS here so the namespace is distinct (no collision with the
+        # Linux cargo cache). PRs restore only so post-job cache upload cannot
+        # turn successful verification into a timeout failure.
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
         # Same cache shape as the Linux job; ${{ runner.os }} resolves to
         # macOS here so the namespace is distinct (no collision with the
         # Linux cargo cache). Cold-start without this is ~5-7 minutes of
@@ -363,7 +398,22 @@ jobs:
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: |
@@ -425,7 +475,22 @@ jobs:
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: |
@@ -602,7 +667,22 @@ jobs:
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: |
