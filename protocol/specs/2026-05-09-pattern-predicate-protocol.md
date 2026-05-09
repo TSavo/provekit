@@ -42,6 +42,7 @@ across languages, and admissible to a proofchain head under verifier policy.
 | FRP `policyCid` | A predicate CID, surfaced through PPP's `predicate` field. |
 | FRP `closureWitnessCid` | The result-set delta CID, defined by Section 5. |
 | Proofchain | PPP receipts are links in a chain; the head carries closure under verifier policy. |
+| Contract Composition Protocol (CCP, `2026-05-09-contract-composition-protocol.md`) | CCP produces ComposedFunctionContract mementos that PPP MAY query as a substrate relation. CCP also defines the canonical compose primitive whose CIDs PPP federation depends on per Section 7. A `policyCid` MAY reference a ComposedFunctionContract CID when the policy is a chain-level guarantee rather than a per-function predicate. |
 
 PPP does not replace FRP. FRP names the receipt; PPP names the predicate
 the receipt cites and the delta the receipt witnesses. Without PPP, FRP's
@@ -141,11 +142,32 @@ CREATE TABLE lifted_files (
   edge_count  INTEGER NOT NULL,
   source_cid  TEXT NOT NULL         -- CID of the source bytes lifted
 );
+
+CREATE TABLE effects (
+  function    TEXT NOT NULL,
+  kind        TEXT NOT NULL,        -- Reads | Writes | Io | Unsafe | Panics | UnresolvedCall
+  target      TEXT,                 -- named target for Reads/Writes/UnresolvedCall; NULL for Io/Unsafe/Panics
+  source_cid  TEXT NOT NULL         -- CID of the lifter that produced this row
+);
+
+CREATE TABLE composed_contracts (
+  composed_cid    TEXT PRIMARY KEY, -- CID of the ComposedFunctionContract memento per CCP
+  chain           TEXT NOT NULL,    -- JSON array of atomic FunctionContractMemento CIDs in call-graph order
+  effect_set_cid  TEXT NOT NULL,    -- CID of the disjoint-union effect set (empty for pure compositions)
+  ccp_version     TEXT NOT NULL,    -- e.g. "1.0.0"
+  source_cid      TEXT NOT NULL     -- CID of the producer that materialized the composition
+);
 ```
+
+`effects` is populated by per-language effects extraction (CCP §3 prerequisite).
+`composed_contracts` is populated by CCP-canonical composition, materialized
+eagerly at lift time or lazily during prove (CCP §4).
 
 Future versions extend this set. Adding columns to existing relations is
 a substrate-schema breaking change requiring a v2 designation. Adding new
-relations is non-breaking.
+relations is non-breaking; `effects` and `composed_contracts` were
+non-breaking additions to the v1 schema landed 2026-05-09 alongside CCP
+v1.0.0.
 
 ### 3.2 Predicate result row
 
@@ -299,6 +321,15 @@ function name set. The mapping is itself a content-addressed memento
 signed by the producer; verifiers admit it according to their trust
 policy on that producer.
 
+The empirical federation guarantee for predicates that join over the
+`composed_contracts` relation is the BZ-COMPOSITION-001 specimen at
+`menagerie/bug-zoo/species/BZ-COMPOSITION-001-cross-language-equivalence/`,
+defined by CCP §7. The specimen lifts a structurally-equivalent chain in
+both Rust and C, runs the canonical compose primitive on each, and
+asserts the resulting ComposedFunctionContract CIDs are byte-identical.
+A passing run is the empirical receipt that PPP predicates joining over
+composed CIDs federate correctly across those two lifters.
+
 ## Section 8. Worked example: borrowed-pages-as-scratch
 
 The pattern is editorial:
@@ -403,7 +434,23 @@ verifier's recomputation. A producer that observes determinism
 violations MUST publish a corrected predicate with a new CID and SHOULD
 mark the old predicate as withdrawn.
 
-### 9.6 Federation mismatch
+### 9.6 Composition not materialized
+
+A predicate that binds to `composed_contracts` only fires when CCP-
+canonical composition has been materialized for the chains the predicate
+queries. Eager materialization (lifter-time per CCP §4) populates the
+relation at lift; lazy materialization (verifier-time per CCP §4)
+populates it during prove. A predicate that runs against a substrate
+where neither has occurred returns an empty result set, which under
+Section 5's closure-shape table is `unchanged` (vacuous).
+
+A producer that wants a composition-bound predicate to fire reliably
+MUST ensure the substrate's lifter chain emits ComposedFunctionContract
+mementos eagerly. A consumer that wants the same MAY trigger lazy
+materialization by running `provekit prove` over the substrate before
+running the predicate.
+
+### 9.7 Federation mismatch
 
 Two lifters claiming to produce the same v1 substrate from the same
 source MUST agree bit-for-bit on the result of any v1 predicate. The
