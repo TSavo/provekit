@@ -540,6 +540,13 @@ fn self_contract_bootstrap_targets(profile: Profile) -> Vec<&'static str> {
     targets
 }
 
+fn bootstrap_timeout_for_target(target: &str) -> Duration {
+    match target {
+        "build-swift" => Duration::from_secs(1800),
+        _ => Duration::from_secs(900),
+    }
+}
+
 fn attestation_path(lang: &str) -> PathBuf {
     repo_root()
         .join(".provekit/self-contracts-attestations")
@@ -777,7 +784,7 @@ fn bootstrap_self_contract_toolchains(profile: Profile) -> Result<()> {
     for target in self_contract_bootstrap_targets(profile) {
         println!("  bootstrap: make {target}");
         let cmd = vec!["make".to_string(), target.to_string()];
-        let proc = run_cmd(&cmd, &repo_root(), Duration::from_secs(900));
+        let proc = run_cmd(&cmd, &repo_root(), bootstrap_timeout_for_target(target));
         if proc.code != 0 {
             return Err(command_error(&cmd, &proc));
         }
@@ -1922,16 +1929,26 @@ public class PkJavaConformance {{
 fn swift_emit_cid(name: &str) -> Result<String> {
     let root = repo_root();
     command_stdout(
-        &[
-            "swift".into(),
-            "run".into(),
-            "conformance".into(),
-            "--fixture".into(),
-            name.into(),
-        ],
+        &swift_fixture_cmd(name),
         &root.join("implementations/swift"),
         Duration::from_secs(180),
     )
+}
+
+fn swift_conformance_cmd(args: &[&str]) -> Vec<String> {
+    let mut cmd = vec![
+        "swift".to_string(),
+        "run".to_string(),
+        "-c".to_string(),
+        "release".to_string(),
+        "conformance".to_string(),
+    ];
+    cmd.extend(args.iter().map(|arg| arg.to_string()));
+    cmd
+}
+
+fn swift_fixture_cmd(name: &str) -> Vec<String> {
+    swift_conformance_cmd(&["--fixture", name])
 }
 
 fn linux_direct_adapters() -> Vec<DirectAdapter> {
@@ -2075,7 +2092,7 @@ fn swift_native_checks() -> Vec<NativeCheck> {
     vec![NativeCheck {
         kit: "swift",
         name: "swift conformance runner CID checks",
-        cmd: vec!["swift".into(), "run".into(), "conformance".into()],
+        cmd: swift_conformance_cmd(&[]),
         cwd: root.join("implementations/swift"),
         timeout: Duration::from_secs(300),
     }]
@@ -2636,6 +2653,35 @@ mod tests {
         let targets = self_contract_bootstrap_targets(Profile::Linux);
         assert!(targets.contains(&"build-rust"));
         assert!(targets.contains(&"build-ruby"));
+    }
+
+    #[test]
+    fn swift_profile_uses_release_runner_and_extended_bootstrap_timeout() {
+        let native = swift_native_checks()
+            .into_iter()
+            .next()
+            .expect("swift native check");
+
+        assert_eq!(
+            bootstrap_timeout_for_target("build-swift"),
+            Duration::from_secs(1800)
+        );
+        assert_eq!(
+            native.cmd,
+            vec!["swift", "run", "-c", "release", "conformance"]
+        );
+        assert_eq!(
+            swift_fixture_cmd("eq_atomic"),
+            vec![
+                "swift",
+                "run",
+                "-c",
+                "release",
+                "conformance",
+                "--fixture",
+                "eq_atomic"
+            ]
+        );
     }
 
     #[test]
