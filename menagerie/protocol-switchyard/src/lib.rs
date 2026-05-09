@@ -52,7 +52,10 @@ enum SwitchyardError {
 }
 
 pub fn run(args: SwitchyardArgs) -> u8 {
-    let _ = args.all;
+    if !args.all {
+        eprintln!("protocol-switchyard: pass --all to run all exhibits");
+        return EXIT_USER_ERROR;
+    }
     let repo_root = match find_repo_root() {
         Ok(root) => root,
         Err(e) => {
@@ -213,13 +216,7 @@ fn run_http_profile_migration(
         .current_dir(repo_root)
         .stdin(Stdio::null());
 
-    for binding in v1_bindings.iter().chain(v2_bindings.iter()) {
-        if !v2_props.contains_key(binding.property_key) {
-            continue;
-        }
-        if binding.profile != "v2" {
-            continue;
-        }
+    for binding in v2_bindings.iter() {
         cmd.arg("--changed-spec").arg(format!(
             "{}={}",
             binding.property_key,
