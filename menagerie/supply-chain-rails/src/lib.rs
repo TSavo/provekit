@@ -346,6 +346,10 @@ fn check_specimen(specimen_dir: &Path) -> Result<Value, SupplyChainRailsError> {
                 "status": lower_lie.pointer("/lowerResult/output/status"),
                 "reasonCode": lower_lie.pointer("/lowerResult/output/reasonCode"),
                 "message": lower_lie.pointer("/lowerResult/output/message"),
+                "evidenceCid": lower_lie.pointer("/lowerResult/output/evidenceCid"),
+                "findings": lower_lie.pointer("/lowerResult/output/findings"),
+                "unsupportedSemantics": lower_lie.pointer("/lowerResult/output/unsupportedSemantics"),
+                "sourceSpans": lower_lie.pointer("/lowerResult/output/sourceSpans"),
             },
             "contractSet": {
                 "verdict": version_red["verdict"],

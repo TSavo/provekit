@@ -37,13 +37,16 @@ maintainer keys, and attestations are repository-owned fixtures. The native
 receipt tools are real; the authority path is fixture authority. The visitor
 should see the gap between valid conventional receipts and contract admission,
 not infer that every npm or JavaScript supply-chain attack is already modeled.
+The JavaScript lowerer is AST-backed for the `runtime.no-env-secret-read`
+contract used here; broader JavaScript semantics remain explicit future work.
 
 Two gaps are tracked explicitly before this can claim full coverage:
 
 - [#498](https://github.com/TSavo/provekit/issues/498): make the npm inspector
   a complete package semantic model.
 - [#499](https://github.com/TSavo/provekit/issues/499): promote the JavaScript
-  lowerer from exhibit-specific ORP to a general JavaScript evidence engine.
+  lowerer beyond the current runtime env-read envelope into a general
+  JavaScript evidence engine.
 
 The npm-shaped package is `safe-json`, a small believable JSON boundary helper.
 The baseline `1.4.1` release has four contracts:
