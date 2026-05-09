@@ -50,6 +50,50 @@ static int pk_c_parser_blank_line(const char *line) {
     return 1;
 }
 
+static int pk_c_parser_count_function_args(const char *params, const char *limit) {
+    const char *start;
+    const char *end;
+    int arity = 0;
+    int segment_has_token = 0;
+
+    if (params == NULL) {
+        return 0;
+    }
+
+    end = params;
+    while (*end != '\0' && *end != ')' && (limit == NULL || end < limit)) {
+        end++;
+    }
+    start = params;
+    while (start < end && isspace((unsigned char)*start)) {
+        start++;
+    }
+    while (end > start && isspace((unsigned char)end[-1])) {
+        end--;
+    }
+    if (start == end) {
+        return 0;
+    }
+    if ((size_t)(end - start) == strlen("void") &&
+        strncmp(start, "void", strlen("void")) == 0) {
+        return 0;
+    }
+    for (const char *p = start; p < end; p++) {
+        if (*p == ',') {
+            if (segment_has_token) {
+                arity++;
+            }
+            segment_has_token = 0;
+        } else if (!isspace((unsigned char)*p)) {
+            segment_has_token = 1;
+        }
+    }
+    if (segment_has_token) {
+        arity++;
+    }
+    return arity;
+}
+
 static int pk_c_parser_contract_annotation(const char *line, int in_block_comment) {
     const char *p = pk_c_parser_first_nonblank(line);
 
@@ -246,6 +290,7 @@ static int pk_c_parser_append_function(
     size_t name_len,
     int line,
     int column,
+    int n_arity,
     int has_contract_annotation
 ) {
     pk_c_function_fact *fact;
@@ -256,6 +301,7 @@ static int pk_c_parser_append_function(
     fact = &facts->functions[facts->n_functions];
     memset(fact, 0, sizeof(*fact));
     fact->name = pk_c_parser_copy_n(name, name_len);
+    fact->n_arity = n_arity;
     pk_c_parser_set_locus(&fact->locus, path, line, column);
     if (fact->name == NULL || fact->locus.path == NULL) {
         free(fact->name);
@@ -1052,10 +1098,14 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             regexec(&function_re, code_line, 2, function_match, 0) == 0 &&
             function_match[1].rm_so >= 0) {
             size_t function_index;
+            int n_arity;
 
+            body_open = strchr(code_line + function_match[0].rm_eo, '{');
+            n_arity = pk_c_parser_count_function_args(
+                code_line + function_match[0].rm_eo, body_open);
             if (pk_c_parser_append_function(facts, path, code_line + function_match[1].rm_so,
                 (size_t)(function_match[1].rm_eo - function_match[1].rm_so), line_no,
-                (int)function_match[1].rm_so + 1, pending_contract) != 0) {
+                (int)function_match[1].rm_so + 1, n_arity, pending_contract) != 0) {
                 free(code_line);
                 pk_c_source_facts_free(facts);
                 facts = NULL;
@@ -1070,7 +1120,6 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
                 facts = NULL;
                 goto done;
             }
-            body_open = strchr(code_line + function_match[0].rm_eo, '{');
             if (body_open != NULL) {
                 facts->functions[function_index].has_body = 1;
                 if (pk_c_parser_scan_calls(facts, &call_re, path, body_open + 1, line_no,

@@ -197,6 +197,32 @@ static void test_parse_functions_and_macros(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_parse_regex_function_arity(void) {
+    const char *source =
+        "int add(int a, int b) { return a + b; }\n"
+        "int identity(int x) { return x; }\n"
+        "int zero(void) { return 0; }\n"
+        "int legacy() { return 0; }\n"
+        "int trailing(int x,) { return x; }\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_functions != 5) {
+        fprintf(stderr, "FAIL: expected 5 arity functions, got %zu\n", facts->n_functions);
+        failures++;
+    } else {
+        assert_int_eq(facts->functions[0].n_arity, 2, "add arity");
+        assert_int_eq(facts->functions[1].n_arity, 1, "identity arity");
+        assert_int_eq(facts->functions[2].n_arity, 0, "void arity");
+        assert_int_eq(facts->functions[3].n_arity, 0, "empty arity");
+        assert_int_eq(facts->functions[4].n_arity, 1, "trailing comma arity");
+    }
+    pk_c_source_facts_free(facts);
+}
+
 static void test_parse_nested_macro_arguments(void) {
     const char *source =
         "int helper(int x) { return x; }\n"
@@ -966,6 +992,7 @@ int main(void) {
     test_structured_helpers_escape_json_strings();
     test_array_growth_overflow_is_rejected();
     test_parse_functions_and_macros();
+    test_parse_regex_function_arity();
     test_parse_nested_macro_arguments();
     test_parse_same_line_function_body_call();
     test_parse_recursive_same_line_function_body_call();
