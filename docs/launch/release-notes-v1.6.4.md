@@ -41,7 +41,7 @@ Patch label is correct under v1.6.3 bootstrap-policy's `versionLabelRule.extensi
 
 ## Verify chain (historical catalogs)
 
-```
+```text
 v1.4.0  blake3-512:b0f2030d56c2fddf...
 v1.4.1  blake3-512:dc2f42ff8a4a6628... (bluepaper freeze, May 3)
 v1.5.0  blake3-512:540e8c1f5f7fea88...
