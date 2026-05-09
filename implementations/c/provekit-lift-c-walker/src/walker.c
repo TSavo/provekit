@@ -5,18 +5,12 @@
 #include <string.h>
 
 #include "provekit/c_lift_core.h"
+#include "contract.h"
 
 /*
- * Emit a trivial pure-identity function-contract memento for each function
- * found in source_facts. The contract has:
- *   pre:  true (no precondition)
- *   post: result = formals[0]  (arity <= 1)
- *         result = tuple(x0,...,xN-1)  (arity >= 2)
- *   effects: empty (MVP unblock; callers with real effects are conservatively
- *            accepted by compose and discharged trivially by prove)
- *
- * Shape mirrors the pure-identity memento emitted by composition.c so that
- * provekit compose --rpc can chain any pair of synthesized contracts.
+ * Emit a function-contract memento for each function found in source_facts.
+ * Preconditions and trailing-return postconditions are synthesized from the
+ * source walker; unknown pieces stay conservative and trivial.
  */
 
 /* Minimal growable buffer for JSON construction. */
@@ -133,9 +127,72 @@ static int wbuf_append_quoted(WBuf *b, const char *s) {
  *   fnName, formals, formalSorts, returnSort, pre, post, effects,
  *   bodyCid, locus, autoMintedMementos, schemaVersion, kind
  */
-static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
+static size_t contract_arity(
+    int fact_arity,
+    const pk_c_walker_contract *contract
+) {
+    if (contract != NULL && contract->formals.len > 0) {
+        return contract->formals.len;
+    }
+    return fact_arity < 0 ? 0 : (size_t)fact_arity;
+}
+
+static const char *contract_formal_name(
+    const pk_c_walker_contract *contract,
+    size_t i,
+    char fallback[32]
+) {
+    if (contract != NULL && i < contract->formals.len) {
+        return contract->formals.items[i];
+    }
+    (void)snprintf(fallback, 32, "x%zu", i);
+    return fallback;
+}
+
+static int append_var_term(WBuf *b, const char *name) {
+    if (wbuf_append(b, "{\"kind\":\"var\",\"name\":") != 0) return -1;
+    if (wbuf_append_quoted(b, name) != 0) return -1;
+    return wbuf_append_char(b, '}');
+}
+
+static int append_true_formula(WBuf *b) {
+    return wbuf_append(b, "{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"}");
+}
+
+static int append_formula_conjunction(WBuf *b, const pk_c_walker_json_list *parts) {
+    if (parts == NULL || parts->len == 0) {
+        return append_true_formula(b);
+    }
+    if (parts->len == 1) {
+        return wbuf_append(b, parts->items[0]);
+    }
+    if (wbuf_append(b, "{\"kind\":\"and\",\"operands\":[") != 0) return -1;
+    for (size_t i = 0; i < parts->len; i++) {
+        if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
+        if (wbuf_append(b, parts->items[i]) != 0) return -1;
+    }
+    return wbuf_append(b, "]}");
+}
+
+static int append_effect_set(WBuf *b, const pk_c_walker_contract *contract) {
+    if (wbuf_append(b, "\"effects\":{\"effects\":[") != 0) return -1;
+    if (contract != NULL) {
+        for (size_t i = 0; i < contract->effects.len; i++) {
+            if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
+            if (wbuf_append(b, contract->effects.items[i]) != 0) return -1;
+        }
+    }
+    return wbuf_append(b, "]},");
+}
+
+static int build_contract(
+    WBuf *b,
+    const char *fn_name,
+    int fact_arity,
+    const pk_c_walker_contract *contract
+) {
     char formal_name[32];
-    int i;
+    size_t n_arity = contract_arity(fact_arity, contract);
 
     if (wbuf_append(b, "{") != 0) return -1;
     if (wbuf_append(b, "\"auto_minted_mementos\":[],") != 0) return -1;
@@ -146,17 +203,16 @@ static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
     if (wbuf_append_char(b, ',') != 0) return -1;
 
     if (wbuf_append(b, "\"formal_sorts\":[") != 0) return -1;
-    for (i = 0; i < n_arity; i++) {
+    for (size_t i = 0; i < n_arity; i++) {
         if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
         if (wbuf_append(b, "{\"kind\":\"primitive\",\"name\":\"i32\"}") != 0) return -1;
     }
     if (wbuf_append(b, "],") != 0) return -1;
 
     if (wbuf_append(b, "\"formals\":[") != 0) return -1;
-    for (i = 0; i < n_arity; i++) {
+    for (size_t i = 0; i < n_arity; i++) {
         if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
-        (void)snprintf(formal_name, sizeof(formal_name), "x%d", i);
-        if (wbuf_append_quoted(b, formal_name) != 0) return -1;
+        if (wbuf_append_quoted(b, contract_formal_name(contract, i, formal_name)) != 0) return -1;
     }
     if (wbuf_append(b, "],") != 0) return -1;
 
@@ -171,24 +227,31 @@ static int build_trivial_contract(WBuf *b, const char *fn_name, int n_arity) {
      *   arity == 1: result = x0
      *   arity >= 2: result = Ctor("tuple", [Var(x0), ..., Var(xN-1)])
      */
-    if (n_arity == 0) {
-        if (wbuf_append(b, "\"post\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},") != 0) return -1;
+    if (contract != NULL && contract->post != NULL) {
+        if (wbuf_append(b, "\"post\":") != 0) return -1;
+        if (wbuf_append(b, contract->post) != 0) return -1;
+        if (wbuf_append_char(b, ',') != 0) return -1;
+    } else if (n_arity == 0) {
+        if (wbuf_append(b, "\"post\":") != 0) return -1;
+        if (append_true_formula(b) != 0) return -1;
+        if (wbuf_append_char(b, ',') != 0) return -1;
     } else if (n_arity == 1) {
-        if (wbuf_append(b, "\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"kind\":\"var\",\"name\":\"x0\"}],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
+        if (wbuf_append(b, "\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},") != 0) return -1;
+        if (append_var_term(b, contract_formal_name(contract, 0, formal_name)) != 0) return -1;
+        if (wbuf_append(b, "],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
     } else {
         if (wbuf_append(b, "\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"args\":[") != 0) return -1;
-        for (i = 0; i < n_arity; i++) {
+        for (size_t i = 0; i < n_arity; i++) {
             if (i > 0 && wbuf_append_char(b, ',') != 0) return -1;
-            (void)snprintf(formal_name, sizeof(formal_name), "x%d", i);
-            if (wbuf_append(b, "{\"kind\":\"var\",\"name\":") != 0) return -1;
-            if (wbuf_append_quoted(b, formal_name) != 0) return -1;
-            if (wbuf_append(b, "}") != 0) return -1;
+            if (append_var_term(b, contract_formal_name(contract, i, formal_name)) != 0) return -1;
         }
         if (wbuf_append(b, "],\"kind\":\"ctor\",\"name\":\"tuple\"}],\"kind\":\"atomic\",\"name\":\"=\"},") != 0) return -1;
     }
 
-    if (wbuf_append(b, "\"pre\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},") != 0) return -1;
-    if (wbuf_append(b, "\"effects\":{\"effects\":[]},") != 0) return -1;
+    if (wbuf_append(b, "\"pre\":") != 0) return -1;
+    if (append_formula_conjunction(b, contract == NULL ? NULL : &contract->preconditions) != 0) return -1;
+    if (wbuf_append_char(b, ',') != 0) return -1;
+    if (append_effect_set(b, contract) != 0) return -1;
     if (wbuf_append(b, "\"return_sort\":{\"kind\":\"primitive\",\"name\":\"i32\"}}") != 0) return -1;
 
     return 0;
@@ -240,19 +303,30 @@ pk_c_lift_result *pk_c_walker_lift_source_with_options(
     for (i = 0; i < facts->n_functions; i++) {
         const pk_c_function_fact *fn = &facts->functions[i];
         WBuf b;
+        pk_c_walker_contract contract;
 
         if (!fn->has_body || fn->name == NULL || fn->name[0] == '\0') {
             continue;
         }
-
-        if (wbuf_init(&b) != 0) {
+        pk_c_walker_contract_init(&contract);
+        if (pk_c_walker_extract_type_predicates(source, fn->name, &contract) != 0 ||
+            pk_c_walker_extract_defensive_patterns(source, fn->name, &contract) != 0) {
+            pk_c_walker_contract_free(&contract);
             pk_c_source_facts_free(facts);
             pk_c_lift_result_free(result);
             return NULL;
         }
 
-        if (build_trivial_contract(&b, fn->name, fn->n_arity) != 0) {
+        if (wbuf_init(&b) != 0) {
+            pk_c_walker_contract_free(&contract);
+            pk_c_source_facts_free(facts);
+            pk_c_lift_result_free(result);
+            return NULL;
+        }
+
+        if (build_contract(&b, fn->name, fn->n_arity, &contract) != 0) {
             wbuf_free(&b);
+            pk_c_walker_contract_free(&contract);
             pk_c_source_facts_free(facts);
             pk_c_lift_result_free(result);
             return NULL;
@@ -260,11 +334,13 @@ pk_c_lift_result *pk_c_walker_lift_source_with_options(
 
         if (pk_c_lift_result_add_declaration(result, b.data) != 0) {
             wbuf_free(&b);
+            pk_c_walker_contract_free(&contract);
             pk_c_source_facts_free(facts);
             pk_c_lift_result_free(result);
             return NULL;
         }
 
+        pk_c_walker_contract_free(&contract);
         wbuf_free(&b);
     }
 
