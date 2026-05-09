@@ -13,6 +13,8 @@
 #   make conformance — catalog + protocol + live mint CIDs + self-contract tests
 #   make all-mint    — run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts — re-sign attestations from live artifacts
+#   make ci-accept-check — rebuild release CLI, then validate CICP accepted witnesses
+#   make ci-accept-refresh — rebuild release CLI, then refresh CICP accepted witnesses
 #   make test-all    — run the Linux native test aggregate
 #
 # Per-language targets:
@@ -59,6 +61,7 @@ CATALOG_CID := blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
 SELF_CONTRACTS_ATTEST_DIR := .provekit/self-contracts-attestations
+CICP_ACCEPTED_DIR ?= .provekit/ci/accepted
 CONFORMANCE_PROFILE ?= linux
 CONFORMANCE_JOBS ?= 4
 RUBY ?= $(shell for p in /usr/local/opt/ruby/bin/ruby /opt/homebrew/opt/ruby/bin/ruby /usr/local/bin/ruby /opt/homebrew/bin/ruby; do if [ -x "$$p" ]; then echo "$$p"; exit; fi; done; command -v ruby || echo ruby)
@@ -76,6 +79,10 @@ help:
 	@echo ""
 	@echo "Mainline:"
 	@echo "  make ci             Linux-profile gate (conformance + test-all)"
+	@echo "  make ci-accept-check"
+	@echo "                       rebuild release provekit, then validate CICP accepted witnesses"
+	@echo "  make ci-accept-refresh"
+	@echo "                       rebuild release provekit, then refresh CICP accepted witnesses"
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
@@ -129,6 +136,28 @@ help:
 # directly on macOS.
 .PHONY: build-all
 build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-ruby
+
+.PHONY: ci-accept-check
+ci-accept-check: build-rust
+	@echo ">> validating CICP accepted witnesses with freshly built release provekit"
+	$(PROVEKIT) ci accept \
+		--repo . \
+		--all-kits \
+		--clean \
+		--check \
+		--out $(CICP_ACCEPTED_DIR) \
+		--json
+
+.PHONY: ci-accept-refresh
+ci-accept-refresh: build-rust
+	@echo ">> refreshing CICP accepted witnesses with freshly built release provekit"
+	$(PROVEKIT) ci accept \
+		--repo . \
+		--all-kits \
+		--clean \
+		--assume-pass \
+		--out $(CICP_ACCEPTED_DIR) \
+		--json
 
 .PHONY: build-rust
 build-rust:
