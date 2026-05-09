@@ -567,6 +567,9 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
     free(facts->sparse_annotations);
     free(facts->call_sites);
     pk_c_lift_result_free(facts->extraction_result);
+    free(facts->parser_backend);
+    free(facts->parser_compile_command);
+    free(facts->parser_target_triple);
     free(facts);
 }
 
@@ -591,6 +594,11 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
     int in_block_comment = 0;
 
     if (facts == NULL) {
+        return NULL;
+    }
+    facts->parser_backend = pk_c_parser_copy("regex");
+    if (facts->parser_backend == NULL) {
+        pk_c_source_facts_free(facts);
         return NULL;
     }
     owned_source = pk_c_parser_copy(source == NULL ? "" : source);

@@ -6,6 +6,8 @@ Build a family of C contract lifters over a shared C lifting core. The Linux ker
 
 The reusable part is `libprovekit-c-lift-core`: parsing, source loci, facts, diagnostics, opacity reporting, IR helpers, and merge-friendly output. Each contract language used by C projects is a separate lifter with its own manifest, capabilities, tests, and semantic vocabulary.
 
+The core exposes parser-backend provenance. The temporary regex backend remains the conservative default for existing lifters, while an opt-in libclang AST backend can populate the same fact model when a caller supplies enough compiler context. Missing or unavailable AST context is an extraction visibility issue, not a semantic refusal.
+
 ## Goals
 
 - Provide a reusable C lifting substrate for ordinary C projects and Linux-kernel-scale code.
@@ -61,6 +63,7 @@ Responsibilities:
 - Accept source text or source paths.
 - Preserve stable source loci: path, line, column, and optional byte spans.
 - Extract reusable C facts: function declarations/definitions, parameters, return types when available, call sites, macro invocations, attributes, comments, and basic block/function boundaries.
+- Record parser backend provenance, including compile-command context when the AST backend is used.
 - Attach nearby comments to declarations where this can be done deterministically.
 - Report extraction visibility limits in `opacityReport`.
 - Provide helpers for stable JSON emission, IR declaration construction, call-edge construction, diagnostics, and refusals.
@@ -289,8 +292,9 @@ The first slice should be small enough to land safely:
 4. Add refusal support to the core result shape.
 5. Implement one semantic lifter first, preferably `provekit-lift-c-sparse`, because sparse annotations are the closest thing to native C/kernel contract syntax.
 6. Add a composition fixture showing sparse plus assertions or sparse plus kernel-doc can coexist without sharing semantic code.
+7. Add an opt-in libclang AST backend behind the same fact API. Keep the regex backend available for fallback and small fixtures, but make the backend choice visible on `pk_c_source_facts`.
 
-libclang or tree-sitter can replace the temporary parser later behind the same core fact model.
+The temporary regex backend can be retired later behind the same core fact model as libclang coverage becomes sufficient. Tree-sitter remains a possible lightweight fallback for editor-oriented facts.
 
 ## Decisions For Implementation
 

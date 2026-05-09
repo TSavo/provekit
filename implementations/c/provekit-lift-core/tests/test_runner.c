@@ -333,6 +333,87 @@ static void test_contract_annotation_ignores_block_comment_marker(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_parse_with_regex_options_records_backend(void) {
+    pk_c_parse_options options = {0};
+    const char *source = "int one(void) { return 1; }\n";
+    pk_c_source_facts *facts;
+
+    options.backend = PK_C_PARSE_BACKEND_REGEX;
+    facts = pk_c_parse_source_with_options("fixture.c", source, &options);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    assert_eq(facts->parser_backend, "regex", "regex backend provenance");
+    pk_c_source_facts_free(facts);
+}
+
+#ifdef PK_C_ENABLE_CLANG_AST
+static void test_parse_with_clang_ast_extracts_functions_and_calls(void) {
+    const char *args[] = {"-x", "c", "-std=c11"};
+    pk_c_parse_options options = {0};
+    const char *source =
+        "int helper(int x) { return x + 1; }\n"
+        "int compute(int y) { return helper(y); }\n";
+    pk_c_source_facts *facts;
+
+    options.backend = PK_C_PARSE_BACKEND_CLANG_AST;
+    options.clang_args = args;
+    options.n_clang_args = sizeof(args) / sizeof(args[0]);
+    options.compile_command = "clang -x c -std=c11 fixture.c";
+    facts = pk_c_parse_source_with_options("fixture.c", source, &options);
+    if (!facts) {
+        fprintf(stderr, "FAIL: clang AST parse returned null\n");
+        failures++;
+        return;
+    }
+    assert_eq(facts->parser_backend, "libclang", "clang backend provenance");
+    assert_eq(facts->parser_compile_command, "clang -x c -std=c11 fixture.c",
+        "clang compile command provenance");
+    if (facts->n_functions != 2) {
+        fprintf(stderr, "FAIL: expected 2 clang AST functions, got %zu\n", facts->n_functions);
+        failures++;
+    } else {
+        assert_eq(facts->functions[0].name, "helper", "clang first function");
+        assert_eq(facts->functions[1].name, "compute", "clang second function");
+        assert_int_eq(facts->functions[0].has_body, 1, "clang helper has body");
+        assert_int_eq(facts->functions[1].has_body, 1, "clang compute has body");
+    }
+    if (facts->n_call_sites != 1) {
+        fprintf(stderr, "FAIL: expected 1 clang AST call site, got %zu\n", facts->n_call_sites);
+        failures++;
+    } else {
+        assert_eq(facts->call_sites[0].caller, "compute", "clang call caller");
+        assert_eq(facts->call_sites[0].callee, "helper", "clang call callee");
+    }
+    pk_c_source_facts_free(facts);
+}
+#else
+static void test_parse_with_clang_ast_stub_reports_opacity(void) {
+    pk_c_parse_options options = {0};
+    const char *source = "int one(void) { return 1; }\n";
+    pk_c_source_facts *facts;
+
+    options.backend = PK_C_PARSE_BACKEND_CLANG_AST;
+    facts = pk_c_parse_source_with_options("fixture.c", source, &options);
+    if (!facts) {
+        fprintf(stderr, "FAIL: clang AST stub parse returned null\n");
+        failures++;
+        return;
+    }
+    assert_eq(facts->parser_backend, "regex", "clang stub fallback backend provenance");
+    if (facts->extraction_result == NULL ||
+        facts->extraction_result->opacity_report.len != 1 ||
+        strstr(facts->extraction_result->opacity_report.items[0],
+            "ast-backend-unavailable") == NULL) {
+        fprintf(stderr, "FAIL: expected AST backend unavailable opacity entry\n");
+        failures++;
+    }
+    pk_c_source_facts_free(facts);
+}
+#endif
+
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
@@ -346,6 +427,12 @@ int main(void) {
     test_parse_sparse_annotations();
     test_contract_annotation_ignores_string_literal_marker();
     test_contract_annotation_ignores_block_comment_marker();
+    test_parse_with_regex_options_records_backend();
+#ifdef PK_C_ENABLE_CLANG_AST
+    test_parse_with_clang_ast_extracts_functions_and_calls();
+#else
+    test_parse_with_clang_ast_stub_reports_opacity();
+#endif
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;

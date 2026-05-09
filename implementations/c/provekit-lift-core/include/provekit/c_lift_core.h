@@ -25,6 +25,20 @@ typedef struct pk_c_lift_result {
     pk_c_json_array refusals;
 } pk_c_lift_result;
 
+typedef enum {
+    PK_C_PARSE_BACKEND_AUTO = 0,
+    PK_C_PARSE_BACKEND_REGEX = 1,
+    PK_C_PARSE_BACKEND_CLANG_AST = 2
+} pk_c_parse_backend;
+
+typedef struct {
+    pk_c_parse_backend backend;
+    const char *const *clang_args;
+    size_t n_clang_args;
+    const char *compile_command;
+    const char *target_triple;
+} pk_c_parse_options;
+
 typedef struct {
     char *name;
     pk_c_locus locus;
@@ -66,9 +80,16 @@ typedef struct {
     size_t n_call_sites;
     size_t cap_call_sites;
     pk_c_lift_result *extraction_result;
+    char *parser_backend;
+    char *parser_compile_command;
+    char *parser_target_triple;
 } pk_c_source_facts;
 
 pk_c_source_facts *pk_c_parse_source(const char *path, const char *source);
+pk_c_source_facts *pk_c_parse_source_with_options(
+    const char *path,
+    const char *source,
+    const pk_c_parse_options *options);
 void pk_c_source_facts_free(pk_c_source_facts *facts);
 
 pk_c_lift_result *pk_c_lift_result_new(void);
