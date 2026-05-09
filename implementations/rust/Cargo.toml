@@ -43,6 +43,7 @@ members = [
     "../../menagerie/bug-zoo",
     "../../menagerie/bridgeworks",
     "../../menagerie/supply-chain-rails",
+    "../../menagerie/protocol-switchyard",
 ]
 
 [workspace.package]

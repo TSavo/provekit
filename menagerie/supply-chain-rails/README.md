@@ -3,28 +3,57 @@
 Supply Chain Rails is the Menagerie destination for proof-carrying
 artifact admission.
 
-Its core claim is stronger than artifact authentication:
+Its core claim is narrower and stronger than artifact authentication:
 
 ```text
-an authentic compatible-looking release cannot silently betray its contracts
+an authentic conventional-green release can still fail contract admission
 ```
 
 A package maintainer may still sign a bad release. The package name may be
 right. The registry may be right. The tarball hash may match. A real
 `slsa-verifier` VSA check and a real `in-toto-verify` pipeline check may be
-green. That only proves the package's provenance and process predicates.
+green. That proves useful provenance and process predicates, not the preserved
+behavioral contract the consumer relies on.
 
-That is the problem statement:
+That is the precise problem statement:
 
 ```text
-SLSA does not catch it.
-in-toto does not catch it.
-ProvekIt does.
+SLSA VSA verifies the tarball's declared provenance/process summary.
+This in-toto layout verifies the packaging step and product digest.
+ProvekIt rejects admission when a preserved contract cannot lower into evidence.
 ```
 
 The exhibit should not caricature SLSA or in-toto as broken. Their receipts are
 allowed to be valid. They simply discharge different predicates than the one the
 consumer needs for safe admission.
+
+## Honesty Boundary
+
+This exhibit is npm-shaped, not a complete model of the npm ecosystem. The
+artifact is a real `npm pack` tarball, and ProvekIt invokes real
+`slsa-verifier` and `in-toto-verify` binaries. The registry, maintainer keys,
+and attestations are repository-owned fixtures so the receipt chain is
+reproducible.
+
+That means the exhibit does not claim that ProvekIt currently models every npm
+attack surface. It does not model full npm dependency resolution, lifecycle
+script semantics, registry provenance, package aliases, bundled dependency
+behavior, or every possible in-toto layout. The npm lifter maps enough package
+rails to carry the contract admission story, and the JavaScript lowerer
+demonstrates the ORP move for this contract. They are not general-purpose npm
+or JavaScript verifiers yet.
+
+The path to remove those caveats is tracked in:
+
+- [#498](https://github.com/TSavo/provekit/issues/498): make the npm inspector
+  a complete package semantic model.
+- [#499](https://github.com/TSavo/provekit/issues/499): promote the JavaScript
+  lowerer from exhibit-specific ORP to a general JavaScript evidence engine.
+
+Until those land, the claim is conditional and receipt-shaped: for this
+package-shaped release, this contract set, these accepted lowerers, and this
+admission policy, conventional receipts stay green while ProvekIt rejects the
+release on the rail whose contract evidence fails.
 
 The private signing keys under `authenticated-betrayal/packages/*/attestations`
 are repository-owned fixtures. They are intentionally checked in so the native
@@ -47,16 +76,17 @@ green-red, not red-green:
 
 ```text
 safe-json 1.4.1 -> safe-json 1.4.2
-ordinary supply-chain receipts: green
+conventional receipt rails: green
 ProvekIt admission receipt: red
 ```
 
 `1.4.1` is admitted because its package identity, binary identity, contract set,
 lowered witnesses, and CI input closure compose. `1.4.2` is published by the
-same legitimate maintainer with ordinary provenance green, but it introduces a
+same fixture maintainer with conventional provenance green, but it introduces a
 forbidden behavior.
 
-The walkthrough must first show the problem as a package manager sees it:
+The walkthrough must first show the problem as conventional package receipts
+see it:
 
 ```text
 right name, right maintainer, right version shape, right provenance, right build
@@ -70,7 +100,7 @@ authentic artifact, inadmissible contract graph
 
 The attacker then has only visible choices:
 
-| Choice | Conventional supply-chain result | ProvekIt receipt |
+| Choice | Conventional receipt result | ProvekIt receipt |
 | --- | --- | --- |
 | Keep the old contract set and lie about behavior | green | ORP lowerer refuses or emits a counterexample instead of a witness `.proof` |
 | Weaken the contract set to match the new behavior | green | `oldSet subset newSet` fails for the claimed compatible update |
@@ -98,9 +128,10 @@ The exhibit is specified as receipts, not as a whitepaper:
   defines the CLI-first tour and the proof artifacts each step must show.
 
 The poisoned npm package tarball is the artifact under test. It is not the
-proof. The proof is the receipt chain that shows conventional green, then the
-specific ProvekIt rail that turns red. PyPI/PIP can get a sibling exhibit later;
-this one is npm all the way down.
+proof. The proof is the receipt chain that shows conventional green for the
+fixture's package-shaped rails, then the specific ProvekIt rail that turns red.
+PyPI/PIP can get a sibling exhibit later; this one is npm-shaped all the way
+down.
 
 The npm lifter does not author behavioral contracts from package metadata. It
 maps package rails, then delegates the contract surface to the existing
