@@ -411,9 +411,25 @@ else
 
     # The pinned compose_three CID guards against accidental changes to
     # the composition pass that would silently break Rust/C federation.
-    EXPECTED_COMPOSE_THREE_CID="blake3-512:c636517ab82fac933a920ed47f28f585d7357161c2498c5221928b693cfa7b0dc61570fb62284ac9bb72072992bd84168876be42fefe4e42d03a61a2a94b6e40"
+    # Updated 2026-05-09: composition.c now derives real
+    # FunctionContractMemento bodies from the kernel-doc index
+    # (param.nonnull, param.positive, context.must-hold,
+    # return.negative-errno) instead of synthesising
+    # pure-identity-shaped mementos. The composed CID therefore reflects
+    # actual kernel-doc semantics, not just chain structure.
+    EXPECTED_COMPOSE_THREE_CID="blake3-512:0460848b17923b3a6b468ba101823d397aa5540bb3c7138c3f3df9814e701b308a3da9aada326f541bca3b2138c91dd178b4f89b491da60842761b894099ac76"
     if [ "$CID_1" != "$EXPECTED_COMPOSE_THREE_CID" ]; then
         echo "FAIL: compose_three composed CID changed; expected $EXPECTED_COMPOSE_THREE_CID got $CID_1" >&2
+        exit 1
+    fi
+
+    # Explicit guard against silent regression to the previous
+    # identity-shape body. If composition.c ever drops back to
+    # pure-identity mementos (pre: true, post: result = formal_0) the
+    # composed CID will collapse back to the pre-real-mementos value.
+    PRIOR_IDENTITY_COMPOSE_THREE_CID="blake3-512:c636517ab82fac933a920ed47f28f585d7357161c2498c5221928b693cfa7b0dc61570fb62284ac9bb72072992bd84168876be42fefe4e42d03a61a2a94b6e40"
+    if [ "$CID_1" = "$PRIOR_IDENTITY_COMPOSE_THREE_CID" ]; then
+        echo "FAIL: compose_three composed CID matches the pre-real-mementos identity-shape value $PRIOR_IDENTITY_COMPOSE_THREE_CID; the composition pass appears to have regressed to the synthesised identity body" >&2
         exit 1
     fi
 fi

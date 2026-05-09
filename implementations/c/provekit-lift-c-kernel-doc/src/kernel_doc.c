@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "provekit/c_lift_core.h"
+#include "kdoc_index.h"
 
 typedef struct {
     char **items;
@@ -211,8 +212,15 @@ static int append_core_result(pk_c_lift_result *result, const pk_c_source_facts 
 /* Forward declaration of the composition pass. Lives in composition.c
  * and links in only when the libclang AST backend is enabled (the
  * regex-only stub build has no per-function effects, so composition
- * cannot soundly classify pure subtrees). */
-int pk_c_composition_emit(pk_c_lift_result *result, const pk_c_source_facts *facts);
+ * cannot soundly classify pure subtrees). The optional kernel-doc
+ * index lets composition build real FunctionContractMemento envelopes
+ * carrying the function's accumulated kernel-doc preconditions; if the
+ * index is NULL or a function has no entries, composition falls back
+ * to the identity-shape body so the chain still composes. */
+int pk_c_composition_emit(
+    pk_c_lift_result *result,
+    const pk_c_source_facts *facts,
+    const pk_c_kdoc_index *kdoc);
 #endif
 
 static int add_contract(
@@ -567,6 +575,244 @@ static int scan_kernel_doc(pk_c_lift_result *result, const char *path, const cha
     return rc;
 }
 
+/* -------------------------------------------------------------------- */
+/* Kernel-doc index builder. Mirrors scan_kernel_doc's traversal, but
+ * appends to a (function, kind, binding) triple table instead of
+ * emitting JSON declarations. The composition pass consumes the index
+ * to construct real FunctionContractMemento envelopes for the
+ * libprovekit compose FFI per CCP v1.0.0 sections 2 + 9. Functions
+ * with zero kernel-doc entries are absent from the index; the
+ * composition pass falls back to the identity-shape body for them. */
+
+static pk_c_kdoc_function_entries *kdoc_index_get_or_create(
+    pk_c_kdoc_index *index,
+    const char *function_name
+) {
+    for (size_t i = 0; i < index->n_functions; i++) {
+        if (strcmp(index->functions[i].function, function_name) == 0) {
+            return &index->functions[i];
+        }
+    }
+    if (index->n_functions >= index->cap_functions) {
+        size_t next = index->cap_functions == 0 ? 4 : index->cap_functions * 2;
+        pk_c_kdoc_function_entries *resized = realloc(
+            index->functions, next * sizeof(*resized));
+        if (resized == NULL) {
+            return NULL;
+        }
+        index->functions = resized;
+        index->cap_functions = next;
+    }
+    pk_c_kdoc_function_entries *fe = &index->functions[index->n_functions];
+    fe->function = copy_str(function_name);
+    if (fe->function == NULL) {
+        return NULL;
+    }
+    fe->entries = NULL;
+    fe->n_entries = 0;
+    fe->cap_entries = 0;
+    index->n_functions++;
+    return fe;
+}
+
+static int kdoc_function_entries_append(
+    pk_c_kdoc_function_entries *fe,
+    const char *kind,
+    const char *binding
+) {
+    /* De-duplicate exact (kind, binding) pairs: kernel-doc commonly
+     * names the same parameter once; defensive against accidental
+     * duplicates that would inflate the pre-condition list and skew
+     * composed CIDs. */
+    for (size_t i = 0; i < fe->n_entries; i++) {
+        if (strcmp(fe->entries[i].kind, kind) == 0 &&
+            strcmp(fe->entries[i].binding, binding) == 0) {
+            return 0;
+        }
+    }
+    if (fe->n_entries >= fe->cap_entries) {
+        size_t next = fe->cap_entries == 0 ? 4 : fe->cap_entries * 2;
+        pk_c_kdoc_entry *resized = realloc(
+            fe->entries, next * sizeof(*resized));
+        if (resized == NULL) {
+            return -1;
+        }
+        fe->entries = resized;
+        fe->cap_entries = next;
+    }
+    fe->entries[fe->n_entries].kind = copy_str(kind);
+    fe->entries[fe->n_entries].binding = copy_str(binding);
+    if (fe->entries[fe->n_entries].kind == NULL ||
+        fe->entries[fe->n_entries].binding == NULL) {
+        free(fe->entries[fe->n_entries].kind);
+        free(fe->entries[fe->n_entries].binding);
+        return -1;
+    }
+    fe->n_entries++;
+    return 0;
+}
+
+static int index_doc_comment(
+    pk_c_kdoc_index *index,
+    const LineArray *lines,
+    size_t start,
+    size_t end
+) {
+    size_t attach = end + 1;
+    char *function_name = NULL;
+    pk_c_kdoc_function_entries *fe = NULL;
+
+    while (attach < lines->len && is_blank(lines->items[attach])) {
+        attach++;
+    }
+    if (attach >= lines->len) {
+        return 0;
+    }
+    if (*first_nonblank(lines->items[attach]) == '#') {
+        return 0;
+    }
+    function_name = extract_function_name(lines->items[attach]);
+    if (function_name == NULL) {
+        return 0;
+    }
+
+    for (size_t i = start; i <= end; i++) {
+        char *doc = clean_doc_line(lines->items[i]);
+        const char *kind = NULL;
+        char *binding = NULL;
+        int rc = 0;
+
+        if (doc == NULL) {
+            free(function_name);
+            return -1;
+        }
+
+        if (doc[0] == '@') {
+            char *param = extract_doc_param(doc);
+            if (param != NULL && contains_ci(doc, "must not be null")) {
+                kind = "c-kernel-doc.param.nonnull";
+                binding = param;
+            } else if (param != NULL && contains_ci(doc, "must be positive")) {
+                kind = "c-kernel-doc.param.positive";
+                binding = param;
+            } else {
+                free(param);
+            }
+        } else if (has_prefix(doc, "Context:") && contains_ci(doc, "held")) {
+            char *lock = extract_must_hold_lock(doc);
+            if (lock != NULL) {
+                kind = "c-kernel-doc.context.must-hold";
+                binding = lock;
+            }
+        } else if (has_prefix(doc, "Return:") &&
+                   contains_ci(doc, "negative errno")) {
+            kind = "c-kernel-doc.return.negative-errno";
+            binding = copy_str(function_name);
+            if (binding == NULL) {
+                free(doc);
+                free(function_name);
+                return -1;
+            }
+        }
+
+        if (kind != NULL && binding != NULL) {
+            if (fe == NULL) {
+                fe = kdoc_index_get_or_create(index, function_name);
+                if (fe == NULL) {
+                    free(binding);
+                    free(doc);
+                    free(function_name);
+                    return -1;
+                }
+            }
+            rc = kdoc_function_entries_append(fe, kind, binding);
+        }
+        free(binding);
+        free(doc);
+        if (rc != 0) {
+            free(function_name);
+            return -1;
+        }
+    }
+
+    free(function_name);
+    return 0;
+}
+
+pk_c_kdoc_index *pk_c_kdoc_index_build(const char *source) {
+    pk_c_kdoc_index *index = calloc(1, sizeof(*index));
+    LineArray lines = {0};
+    int rc = 0;
+
+    if (index == NULL) {
+        return NULL;
+    }
+    if (source == NULL) {
+        return index;
+    }
+    if (split_lines(source, &lines) != 0) {
+        line_array_free(&lines);
+        pk_c_kdoc_index_free(index);
+        return NULL;
+    }
+    for (size_t i = 0; i < lines.len; i++) {
+        const char *first = first_nonblank(lines.items[i]);
+        if (!has_prefix(first, "/**")) {
+            continue;
+        }
+        size_t end = i;
+        while (end < lines.len && strstr(lines.items[end], "*/") == NULL) {
+            end++;
+        }
+        if (end >= lines.len) {
+            break;
+        }
+        rc = index_doc_comment(index, &lines, i, end);
+        if (rc != 0) {
+            break;
+        }
+        i = end;
+    }
+    line_array_free(&lines);
+    if (rc != 0) {
+        pk_c_kdoc_index_free(index);
+        return NULL;
+    }
+    return index;
+}
+
+const pk_c_kdoc_function_entries *pk_c_kdoc_index_lookup(
+    const pk_c_kdoc_index *index,
+    const char *function_name
+) {
+    if (index == NULL || function_name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < index->n_functions; i++) {
+        if (strcmp(index->functions[i].function, function_name) == 0) {
+            return &index->functions[i];
+        }
+    }
+    return NULL;
+}
+
+void pk_c_kdoc_index_free(pk_c_kdoc_index *index) {
+    if (index == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < index->n_functions; i++) {
+        pk_c_kdoc_function_entries *fe = &index->functions[i];
+        for (size_t j = 0; j < fe->n_entries; j++) {
+            free(fe->entries[j].kind);
+            free(fe->entries[j].binding);
+        }
+        free(fe->entries);
+        free(fe->function);
+    }
+    free(index->functions);
+    free(index);
+}
+
 pk_c_lift_result *pk_c_kernel_doc_lift_source_with_options(
     const char *path,
     const char *source,
@@ -600,8 +846,23 @@ pk_c_lift_result *pk_c_kernel_doc_lift_source_with_options(
      * call-site graph the parser already populated, finds pure
      * subtrees, and emits ComposedFunctionContract mementos via the
      * canonical libprovekit FFI. Soft failure: chain-by-chain refusals
-     * are silently skipped; only an OOM bubbles up. */
-    if (pk_c_composition_emit(result, facts) != 0) {
+     * are silently skipped; only an OOM bubbles up.
+     *
+     * Build the kernel-doc index first so composition can derive real
+     * FunctionContractMemento envelopes from each function's
+     * accumulated preconditions per CCP §2 + §9. The index lifecycle
+     * is bounded to this call: composition reads it, then it is freed
+     * before scan_kernel_doc emits the per-precondition declarations
+     * (which remain unchanged so the existing IR output is stable). */
+    pk_c_kdoc_index *kdoc = pk_c_kdoc_index_build(source);
+    if (kdoc == NULL) {
+        pk_c_source_facts_free(facts);
+        pk_c_lift_result_free(result);
+        return NULL;
+    }
+    int compose_rc = pk_c_composition_emit(result, facts, kdoc);
+    pk_c_kdoc_index_free(kdoc);
+    if (compose_rc != 0) {
         pk_c_source_facts_free(facts);
         pk_c_lift_result_free(result);
         return NULL;

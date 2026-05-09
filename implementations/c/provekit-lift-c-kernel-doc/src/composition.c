@@ -19,21 +19,39 @@
  * N}` and the parallel `effects_jcs` array equals each atom's embedded
  * `effects` field by-value.
  *
- * Important: the C lifter's existing per-function "contract"
- * declarations (kind="contract", emitted by add_contract in
- * kernel_doc.c) are kernel-doc preconditions, not full
- * FunctionContractMementos. The wire format the FFI accepts requires
- * `fnName`, `formals`, `formalSorts`, `returnSort`, `pre`, `post`,
- * `effects`, `locus`, `bodyCid`, `autoMintedMementos`, and
- * `schemaVersion` per `build_value` in libprovekit/src/compose.rs.
+ * Real kernel-doc-derived mementos. The C lifter's per-function
+ * kernel-doc contracts (param.nonnull, param.positive,
+ * context.must-hold, return.negative-errno) are extracted by a
+ * dedicated index pass (kdoc_index.h, built in kernel_doc.c) and
+ * handed to this pass as a side input. For each pure function in a
+ * composable chain we look up its index entries and emit a
+ * FunctionContractMemento body whose `pre` is the conjunction of the
+ * precondition kinds (param.nonnull / param.positive /
+ * context.must-hold) referencing the kernel-doc binding names, and
+ * whose `post` is `result = <formal>` AND-conjoined with any
+ * return-side kinds (return.negative-errno).
  *
- * For chains discovered via the call-site graph this pass synthesises
- * pure-identity-shaped mementos (post: result = formal_0) per pure
- * function so that the wire format round-trips. The composed CID
- * therefore reflects the structural shape of the chain (number of
- * atoms, formal-index linkage), not kernel-doc preconditions. This is
- * sufficient for BZ-COMPOSITION-001 cross-language equivalence: the
- * Rust side must lift the equivalent shape and produce the same CID.
+ * The post identity (`result = <formal>`) is preserved across the
+ * chain: libprovekit's compose_function_contracts requires it via
+ * find_result_equation; without it composition refuses with
+ * ComposeRefused. The And-walker in find_result_equation accepts
+ * the conjunctive shape so the negative-errno case round-trips.
+ *
+ * Composable formal selection. We use the first lex-sorted kernel-doc
+ * binding name as `formals[0]`, so substitution at formal_idx=0 binds
+ * the inner atom's result into the named parameter. Other bindings
+ * appear as free vars in the predicates and survive composition
+ * unchanged per CCP §9 rule 4. If no kernel-doc data exists for a
+ * function we fall back to the identity-shape body (formal "x", `pre:
+ * true`, `post: result = x`) so chains where no atom carries
+ * kernel-doc still produce the structural composed contract that
+ * BZ-COMPOSITION-001 exercises.
+ *
+ * Translated kinds: param.nonnull, param.positive, context.must-hold,
+ * return.negative-errno.
+ * Deferred kinds: ownership / aliasing language is currently emitted
+ * as a refusal by kernel_doc.c (unsupported-return-ownership) and
+ * does not enter the index. New kinds may be added as the spec grows.
  *
  * Conservative classification: a function is composable iff
  *   1. it has a body (parser saw `{`), AND
@@ -65,6 +83,7 @@
 
 #include "provekit/c_lift_core.h"
 #include "provekit-compose.h"
+#include "kdoc_index.h"
 
 /* -------------------------------------------------------------------- */
 /* Small dynamic buffer for JSON construction. */
@@ -253,6 +272,302 @@ static int pk_c_compose_emit_identity_body(
 }
 
 /* -------------------------------------------------------------------- */
+/* Real-memento body construction. Walks the function's kernel-doc
+ * index entries and builds a FunctionContractMemento body whose pre
+ * conjoins the precondition kinds and whose post is the identity
+ * equation conjoined with any post-condition kinds. Kinds are split
+ * into pre vs post per the table in the file docblock.
+ *
+ * Sort order. Index entries are sorted lex-by-(kind, binding) before
+ * encoding so byte-stable composed CIDs are preserved across runs
+ * regardless of the order kernel-doc lines appear in source. The
+ * canonical re-encoding inside libprovekit's build_value would
+ * normalize key order anyway, but the conjunction operand order is
+ * NOT key-sorted by JCS, so we sort here. */
+
+static int pk_c_compose_kind_is_pre(const char *kind) {
+    /* Conservative encoding (CCP §3): if a new kind is added to the
+     * kernel-doc index but not yet classified here we conservatively
+     * treat it as a precondition. Wrong placement breaks substitution
+     * semantics but never produces a liberal (unsound) composed
+     * contract: misclassified post-conditions still strengthen the
+     * caller's preconditions. */
+    return strcmp(kind, "c-kernel-doc.return.negative-errno") != 0;
+}
+
+static int pk_c_compose_entry_compare(const void *a, const void *b) {
+    const pk_c_kdoc_entry *ea = (const pk_c_kdoc_entry *)a;
+    const pk_c_kdoc_entry *eb = (const pk_c_kdoc_entry *)b;
+    int c = strcmp(ea->kind, eb->kind);
+    if (c != 0) {
+        return c;
+    }
+    return strcmp(ea->binding, eb->binding);
+}
+
+/* Emit a single atomic predicate `{"args":[{"kind":"var","name":<arg>}],
+ * "kind":"atomic","name":<predicate>}`. The kernel-doc kind name IS
+ * the predicate name; AtomicPredicateName is a free-form String in
+ * provekit-ir-types so any kind translates verbatim. */
+static int pk_c_compose_emit_atomic_predicate(
+    pk_c_compose_buf *b,
+    const char *predicate,
+    const char *arg
+) {
+    if (pk_c_compose_buf_append(b,
+            "{\"args\":[{\"kind\":\"var\",\"name\":") != 0) {
+        return -1;
+    }
+    if (pk_c_compose_json_escape_into(b, arg) != 0) {
+        return -1;
+    }
+    if (pk_c_compose_buf_append(b, "}],\"kind\":\"atomic\",\"name\":") != 0) {
+        return -1;
+    }
+    if (pk_c_compose_json_escape_into(b, predicate) != 0) {
+        return -1;
+    }
+    return pk_c_compose_buf_append(b, "}");
+}
+
+/* Emit `{"kind":"atomic","name":"true","args":[]}`. */
+static int pk_c_compose_emit_true(pk_c_compose_buf *b) {
+    return pk_c_compose_buf_append(b,
+        "{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"}");
+}
+
+/* Emit `result = <formal>` as an atomic equation. */
+static int pk_c_compose_emit_identity_eq(
+    pk_c_compose_buf *b,
+    const char *formal
+) {
+    if (pk_c_compose_buf_append(b,
+            "{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},"
+            "{\"kind\":\"var\",\"name\":") != 0) {
+        return -1;
+    }
+    if (pk_c_compose_json_escape_into(b, formal) != 0) {
+        return -1;
+    }
+    return pk_c_compose_buf_append(b,
+        "}],\"kind\":\"atomic\",\"name\":\"=\"}");
+}
+
+/* Wrap a list of formula-emitter steps in an And-formula. If only one
+ * operand exists, emit it directly (no And wrapper) to keep the body
+ * minimal. The caller passes a callable encoded as a tag-dispatched
+ * loop in pk_c_compose_emit_real_body; here we just open the And and
+ * the operand list. */
+
+static int pk_c_compose_emit_real_body(
+    pk_c_compose_buf *b,
+    const char *fn_name,
+    const pk_c_kdoc_function_entries *entries
+) {
+    /* Sort entries (lex by kind then binding) into a temp array so the
+     * source file's order does not affect the composed CID. */
+    pk_c_kdoc_entry *sorted = NULL;
+    size_t n = entries->n_entries;
+    if (n > 0) {
+        sorted = malloc(n * sizeof(*sorted));
+        if (sorted == NULL) {
+            return -1;
+        }
+        memcpy(sorted, entries->entries, n * sizeof(*sorted));
+        qsort(sorted, n, sizeof(*sorted), pk_c_compose_entry_compare);
+    }
+
+    /* Pick formals[0] = first sorted `param.*` entry's binding so the
+     * substituted formal is a real C parameter. Without this rule the
+     * lex-first binding in a function with `Context: foo_lock held`
+     * AND `@buf: must not be null` would be `foo_lock` (a lock name,
+     * not a parameter), and composition would substitute the inner
+     * atom's result into the lock variable instead of into `buf`,
+     * which is semantically wrong (silently liberal under CCP §3).
+     * Fall back to the first sorted binding if no param.* entry
+     * exists (e.g. context-only or return-only functions); in that
+     * case the resulting body is still byte-stable but the chain is
+     * unlikely to compose further (no real caller would feed a return
+     * value into a lock). */
+    const char *formal = NULL;
+    for (size_t i = 0; i < n; i++) {
+        if (strncmp(sorted[i].kind, "c-kernel-doc.param.",
+                strlen("c-kernel-doc.param.")) == 0) {
+            formal = sorted[i].binding;
+            break;
+        }
+    }
+    if (formal == NULL && n > 0) {
+        formal = sorted[0].binding;
+    }
+    if (formal == NULL) {
+        formal = "x";
+    }
+
+    /* Count pre vs post operands (in addition to the always-present
+     * identity equation in post). */
+    size_t n_pre = 0;
+    size_t n_post_extra = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (pk_c_compose_kind_is_pre(sorted[i].kind)) {
+            n_pre++;
+        } else {
+            n_post_extra++;
+        }
+    }
+
+    if (pk_c_compose_buf_append(b, "{") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b, "\"autoMintedMementos\":[],") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b, "\"bodyCid\":null,") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b, "\"effects\":[],") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b, "\"fnName\":") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_json_escape_into(b, fn_name) != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b,
+            ",\"formalSorts\":[{\"kind\":\"primitive\",\"name\":\"i32\"}],") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b, "\"formals\":[") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_json_escape_into(b, formal) != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b,
+            "],\"kind\":\"function-contract\",") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b,
+            "\"locus\":{\"col\":0,\"file\":null,\"line\":0},") != 0) {
+        goto fail;
+    }
+
+    /* post: result = formal AND <post-conditions...>
+     * Single operand: emit directly; multiple: wrap in And. */
+    if (pk_c_compose_buf_append(b, "\"post\":") != 0) {
+        goto fail;
+    }
+    if (n_post_extra == 0) {
+        if (pk_c_compose_emit_identity_eq(b, formal) != 0) {
+            goto fail;
+        }
+    } else {
+        if (pk_c_compose_buf_append(b,
+                "{\"kind\":\"and\",\"operands\":[") != 0) {
+            goto fail;
+        }
+        if (pk_c_compose_emit_identity_eq(b, formal) != 0) {
+            goto fail;
+        }
+        for (size_t i = 0; i < n; i++) {
+            if (pk_c_compose_kind_is_pre(sorted[i].kind)) {
+                continue;
+            }
+            if (pk_c_compose_buf_append(b, ",") != 0) {
+                goto fail;
+            }
+            if (pk_c_compose_emit_atomic_predicate(b,
+                    sorted[i].kind, sorted[i].binding) != 0) {
+                goto fail;
+            }
+        }
+        if (pk_c_compose_buf_append(b, "]}") != 0) {
+            goto fail;
+        }
+    }
+    if (pk_c_compose_buf_append(b, ",") != 0) {
+        goto fail;
+    }
+
+    /* pre: empty -> true; one -> direct; many -> And. */
+    if (pk_c_compose_buf_append(b, "\"pre\":") != 0) {
+        goto fail;
+    }
+    if (n_pre == 0) {
+        if (pk_c_compose_emit_true(b) != 0) {
+            goto fail;
+        }
+    } else if (n_pre == 1) {
+        for (size_t i = 0; i < n; i++) {
+            if (!pk_c_compose_kind_is_pre(sorted[i].kind)) {
+                continue;
+            }
+            if (pk_c_compose_emit_atomic_predicate(b,
+                    sorted[i].kind, sorted[i].binding) != 0) {
+                goto fail;
+            }
+            break;
+        }
+    } else {
+        if (pk_c_compose_buf_append(b,
+                "{\"kind\":\"and\",\"operands\":[") != 0) {
+            goto fail;
+        }
+        int first = 1;
+        for (size_t i = 0; i < n; i++) {
+            if (!pk_c_compose_kind_is_pre(sorted[i].kind)) {
+                continue;
+            }
+            if (!first) {
+                if (pk_c_compose_buf_append(b, ",") != 0) {
+                    goto fail;
+                }
+            }
+            first = 0;
+            if (pk_c_compose_emit_atomic_predicate(b,
+                    sorted[i].kind, sorted[i].binding) != 0) {
+                goto fail;
+            }
+        }
+        if (pk_c_compose_buf_append(b, "]}") != 0) {
+            goto fail;
+        }
+    }
+    if (pk_c_compose_buf_append(b, ",") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b,
+            "\"returnSort\":{\"kind\":\"primitive\",\"name\":\"i32\"},") != 0) {
+        goto fail;
+    }
+    if (pk_c_compose_buf_append(b, "\"schemaVersion\":\"1\"}") != 0) {
+        goto fail;
+    }
+
+    free(sorted);
+    return 0;
+
+fail:
+    free(sorted);
+    return -1;
+}
+
+/* Public-to-this-file builder: pick real or identity body based on
+ * whether the function has any kernel-doc entries. The caller passes
+ * the per-function entries (may be NULL). */
+static int pk_c_compose_emit_function_body(
+    pk_c_compose_buf *b,
+    const char *fn_name,
+    const pk_c_kdoc_function_entries *entries
+) {
+    if (entries == NULL || entries->n_entries == 0) {
+        return pk_c_compose_emit_identity_body(b, fn_name, "x");
+    }
+    return pk_c_compose_emit_real_body(b, fn_name, entries);
+}
+
+/* -------------------------------------------------------------------- */
 /* Function-fact lookup helpers. */
 
 static const pk_c_function_fact *pk_c_compose_find_function(
@@ -376,11 +691,14 @@ static int pk_c_compose_build_chain(
     return 0;
 }
 
-/* Build atoms_jcs and effects_jcs payloads for a chain. */
+/* Build atoms_jcs and effects_jcs payloads for a chain. Each atom's
+ * memento body is real (kernel-doc-derived) when the index has
+ * entries for the function, identity-shaped otherwise. */
 
 static int pk_c_compose_build_payloads(
     const pk_c_function_fact *const *chain,
     size_t chain_len,
+    const pk_c_kdoc_index *kdoc,
     pk_c_compose_buf *atoms,
     pk_c_compose_buf *effects
 ) {
@@ -392,6 +710,8 @@ static int pk_c_compose_build_payloads(
     }
     for (size_t i = 0; i < chain_len; i++) {
         const pk_c_function_fact *fn = chain[i];
+        const pk_c_kdoc_function_entries *entries =
+            pk_c_kdoc_index_lookup(kdoc, fn->name);
         if (i > 0) {
             if (pk_c_compose_buf_append(atoms, ",") != 0) {
                 return -1;
@@ -403,7 +723,7 @@ static int pk_c_compose_build_payloads(
         if (pk_c_compose_buf_append(atoms, "{\"formalIdx\":0,\"memento\":") != 0) {
             return -1;
         }
-        if (pk_c_compose_emit_identity_body(atoms, fn->name, "x") != 0) {
+        if (pk_c_compose_emit_function_body(atoms, fn->name, entries) != 0) {
             return -1;
         }
         if (pk_c_compose_buf_append(atoms, "}") != 0) {
@@ -540,7 +860,11 @@ static void pk_c_compose_seen_free(pk_c_compose_seen *s) {
  * is treated as data ("we couldn't compose this chain") and silently
  * skipped: the rest of the lifter output is unaffected. */
 
-int pk_c_composition_emit(pk_c_lift_result *result, const pk_c_source_facts *facts) {
+int pk_c_composition_emit(
+    pk_c_lift_result *result,
+    const pk_c_source_facts *facts,
+    const pk_c_kdoc_index *kdoc
+) {
     if (result == NULL || facts == NULL) {
         return 0;
     }
@@ -589,7 +913,7 @@ int pk_c_composition_emit(pk_c_lift_result *result, const pk_c_source_facts *fac
             pk_c_compose_seen_free(&seen);
             return -1;
         }
-        if (pk_c_compose_build_payloads(chain, chain_len, &atoms, &effects) != 0) {
+        if (pk_c_compose_build_payloads(chain, chain_len, kdoc, &atoms, &effects) != 0) {
             pk_c_compose_buf_free(&atoms);
             pk_c_compose_buf_free(&effects);
             free(chain);

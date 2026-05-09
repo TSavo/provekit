@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 CC = cc
-CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../provekit-lift-core/include -g
+CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../provekit-lift-core/include -Isrc -g
 LLVM_CONFIG ?= $(shell command -v llvm-config 2>/dev/null || command -v /usr/local/opt/llvm/bin/llvm-config 2>/dev/null || command -v /usr/local/opt/llvm@21/bin/llvm-config 2>/dev/null)
 
 UNAME_S := $(shell uname -s)
