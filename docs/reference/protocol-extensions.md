@@ -6,10 +6,10 @@ This page maps the post-v1.6 protocol/tooling surface. It separates cataloged pr
 
 | Item | Value |
 |---|---|
-| Catalog version | `v1.6.3-2026-05-09` |
-| Catalog CID | `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` |
+| Catalog version | `v1.6.4-2026-05-09` |
+| Catalog CID | `blake3-512:09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6be75f4afce9eb3dedb7b8ebe2536de054143efefcb3cb622e6e5b4140bb26e6156a9bc9adf3` |
 | Catalog file | [../../protocol/specs/2026-04-30-protocol-catalog.json](../../protocol/specs/2026-04-30-protocol-catalog.json) |
-| Signed attestation | [../../.provekit/catalog-signatures/v1.6.3.json](../../.provekit/catalog-signatures/v1.6.3.json) |
+| Signed attestation | [../../.provekit/catalog-signatures/v1.6.4.json](../../.provekit/catalog-signatures/v1.6.4.json) |
 
 ## Cataloged Extensions
 
@@ -21,7 +21,7 @@ This page maps the post-v1.6 protocol/tooling surface. It separates cataloged pr
 
 ## Draft Companion Specs
 
-These are protocol working notes in `protocol/specs/`. They are content-addressed by raw bytes, but they are not catalog properties in v1.6.3 unless listed above.
+These are protocol working notes in `protocol/specs/`. They are content-addressed by raw bytes, but they are not catalog properties in v1.6.4 unless listed above.
 
 | Spec | Raw-byte CID | Role |
 |---|---|---|
@@ -38,7 +38,7 @@ These are protocol working notes in `protocol/specs/`. They are content-addresse
 | Command | Purpose | Primary docs |
 |---|---|---|
 | `provekit proof hash/inspect/check/implements/mint-protocol` | Proof-file hashing, inspection, conformance, implementation witnesses, and fixture corpus minting. | [../../protocol/conformance/proof-protocol/README.md](../../protocol/conformance/proof-protocol/README.md) |
-| `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.3/README.md](../../protocol/evolution/v1.6.3/README.md) |
+| `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.4/README.md](../../protocol/evolution/v1.6.4/README.md) |
 | `provekit package inspect` | Dispatch to the configured lifter with `options.layer = "identify-only"` and require a `package-inspection-document`. | [../../protocol/specs/2026-04-30-lift-plugin-protocol.md](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) |
 | `provekit ci check/shadow/result/reuse` | Validate CICP bodies, compute blast radii, emit job results, and admit exact-closure reuse. | [../how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md) |
 | `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exhibits, link exhibits, fixed pairs, equivalence checks, and scoped composition checks. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |

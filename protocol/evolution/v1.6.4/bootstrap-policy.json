@@ -1,0 +1,28 @@
+{
+  "kind": "ProtocolEvolutionPolicy",
+  "schemaVersion": "1",
+  "name": "provekit-pep-bootstrap-v0",
+  "acceptedSigner": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "acceptedChangeClass": "extension-only",
+  "versionLabelRule": {
+    "extensionOnlyWithoutCrossKitSemanticObligation": "patch"
+  },
+  "requiredChecks": [
+    "from catalog CID recomputes from from-catalog-v1.6.3.json",
+    "to catalog CID recomputes from to-catalog-v1.6.4.json",
+    "catalog diff contains exactly two added properties, zero modified, zero removed",
+    "added property keys are pattern-predicate-protocol and contract-composition-protocol",
+    "added property CIDs hash to protocol/specs/2026-05-09-pattern-predicate-protocol.md and protocol/specs/2026-05-09-contract-composition-protocol.md respectively",
+    "change class is extension-only",
+    "no core verifier behavior changed",
+    "no ProofIR grammar, canonicalization, proof-file, or all-layer lift output semantics changed",
+    "no cross-kit semantic obligation changed",
+    "v1.6.4 catalog attestation signature verifies under acceptedSigner"
+  ],
+  "nonGoals": [
+    "execute extension bytecode in core verification",
+    "require every language kit to implement pattern predicates",
+    "require every language kit lifter to emit composed-function contracts",
+    "require cross-kit fixture value changes"
+  ]
+}

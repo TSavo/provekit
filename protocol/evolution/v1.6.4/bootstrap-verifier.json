@@ -1,0 +1,29 @@
+{
+  "kind": "ProtocolEvolutionVerifier",
+  "schemaVersion": "1",
+  "name": "provekit-pep-bootstrap-verifier",
+  "version": "0.1.0",
+  "acceptedTools": [
+    {
+      "name": "recompute-spec-cids",
+      "command": "cargo run --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify",
+      "purpose": "Recompute spec CIDs and candidate catalog CID."
+    },
+    {
+      "name": "compute_fixture_cid",
+      "command": "cargo run --manifest-path implementations/rust/Cargo.toml -p provekit-canonicalizer --bin compute_fixture_cid -- <json>",
+      "purpose": "Recompute JCS-based CIDs for catalog snapshots and PEP JSON bodies."
+    },
+    {
+      "name": "provekit verify-protocol --signed",
+      "command": "cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-cli protocol::tests::embedded_signature_verifies_against_embedded_pubkey",
+      "purpose": "Verify embedded catalog signature path."
+    }
+  ],
+  "acceptedManualAssertions": [
+    "v1.6.4 adds exactly two new catalog properties (pattern-predicate-protocol and contract-composition-protocol); no existing property is modified or removed.",
+    "PPP names how an editorially-defined bug class compiles to a content-addressed substrate query whose result-set delta discharges an FRP receipt's policy; the protocol is draft and extension-only.",
+    "CCP names canonical contract composition over the existing handshake tier 2 cache and its FFI/CLI/direct-link binding modes; the protocol is draft and extension-only.",
+    "No language kit must change emitted ProofIR, canonicalization, all-layer lifting, proof-file format, or cross-kit conformance fixture values to remain v1.6.4 compatible."
+  ]
+}
