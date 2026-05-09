@@ -18,6 +18,9 @@ typedef struct {
     size_t cap;
 } pk_c_cc_buf;
 
+static int pk_c_cc_is_absolute_path(const char *path);
+static char *pk_c_cc_join_path(const char *root, const char *path);
+
 static char *pk_c_cc_copy_n(const char *src, size_t len) {
     char *copy = malloc(len + 1);
 
@@ -417,6 +420,90 @@ static int pk_c_cc_add_default_args(
     return 0;
 }
 
+static int pk_c_cc_arg_value_is_path(const char *arg) {
+    return strcmp(arg, "-I") == 0 ||
+        strcmp(arg, "-include") == 0 ||
+        strcmp(arg, "-imacros") == 0 ||
+        strcmp(arg, "-isystem") == 0 ||
+        strcmp(arg, "-idirafter") == 0 ||
+        strcmp(arg, "-iquote") == 0 ||
+        strcmp(arg, "-isysroot") == 0;
+}
+
+static char *pk_c_cc_rebase_path_value(const char *base_dir, const char *value) {
+    if (value == NULL) {
+        return NULL;
+    }
+    if (base_dir == NULL || base_dir[0] == '\0' ||
+        value[0] == '\0' || pk_c_cc_is_absolute_path(value) ||
+        strcmp(value, "-") == 0) {
+        return pk_c_cc_copy(value);
+    }
+    return pk_c_cc_join_path(base_dir, value);
+}
+
+static int pk_c_cc_add_rebased_path_value(
+    pk_c_compile_context *context,
+    const char *base_dir,
+    const char *value
+) {
+    char *rebased = pk_c_cc_rebase_path_value(base_dir, value);
+    int rc;
+
+    if (rebased == NULL) {
+        return -1;
+    }
+    rc = pk_c_cc_add_arg(context, rebased);
+    free(rebased);
+    return rc;
+}
+
+static const char *pk_c_cc_attached_path_prefix(const char *arg) {
+    static const char *const prefixes[] = {
+        "-I",
+        "-isystem",
+        "-idirafter",
+        "-iquote",
+        "-isysroot"
+    };
+
+    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++) {
+        size_t prefix_len = strlen(prefixes[i]);
+
+        if (pk_c_cc_has_prefix(arg, prefixes[i]) && arg[prefix_len] != '\0') {
+            return prefixes[i];
+        }
+    }
+    return NULL;
+}
+
+static int pk_c_cc_add_rebased_attached_path_arg(
+    pk_c_compile_context *context,
+    const char *base_dir,
+    const char *arg,
+    const char *prefix
+) {
+    size_t prefix_len = strlen(prefix);
+    char *rebased = pk_c_cc_rebase_path_value(base_dir, arg + prefix_len);
+    char *attached;
+    int rc;
+
+    if (rebased == NULL) {
+        return -1;
+    }
+    attached = malloc(prefix_len + strlen(rebased) + 1);
+    if (attached == NULL) {
+        free(rebased);
+        return -1;
+    }
+    memcpy(attached, prefix, prefix_len);
+    memcpy(attached + prefix_len, rebased, strlen(rebased) + 1);
+    rc = pk_c_cc_add_arg(context, attached);
+    free(attached);
+    free(rebased);
+    return rc;
+}
+
 static int pk_c_cc_add_opacity(
     pk_c_compile_context *context,
     const char *path,
@@ -442,7 +529,8 @@ static int pk_c_cc_add_opacity(
 static int pk_c_cc_ingest_args(
     pk_c_compile_context *context,
     const char *path,
-    const pk_c_cc_words *words
+    const pk_c_cc_words *words,
+    const char *base_dir
 ) {
     size_t start = pk_c_cc_first_arg_index(words);
 
@@ -484,7 +572,11 @@ static int pk_c_cc_ingest_args(
                     pk_c_cc_set_target(context, words->items[i + 1]) != 0) {
                     return -1;
                 }
-                if (pk_c_cc_add_arg(context, words->items[i + 1]) != 0) {
+                if (pk_c_cc_arg_value_is_path(arg)) {
+                    if (pk_c_cc_add_rebased_path_value(context, base_dir, words->items[i + 1]) != 0) {
+                        return -1;
+                    }
+                } else if (pk_c_cc_add_arg(context, words->items[i + 1]) != 0) {
                     return -1;
                 }
                 i++;
@@ -509,7 +601,17 @@ static int pk_c_cc_ingest_args(
             continue;
         }
         if (pk_c_cc_preserve_attached(arg)) {
-            if (pk_c_cc_add_arg(context, arg) != 0) {
+            const char *path_prefix = pk_c_cc_attached_path_prefix(arg);
+
+            if (path_prefix != NULL) {
+                if (pk_c_cc_add_rebased_attached_path_arg(
+                    context,
+                    base_dir,
+                    arg,
+                    path_prefix) != 0) {
+                    return -1;
+                }
+            } else if (pk_c_cc_add_arg(context, arg) != 0) {
                 return -1;
             }
             continue;
@@ -525,9 +627,10 @@ static int pk_c_cc_ingest_args(
     return 0;
 }
 
-pk_c_compile_context *pk_c_compile_context_from_command(
+static pk_c_compile_context *pk_c_compile_context_from_command_with_base(
     const char *path,
-    const char *command
+    const char *command,
+    const char *base_dir
 ) {
     pk_c_compile_context *context = pk_c_cc_context_new(command == NULL ? "" : command);
     pk_c_cc_words words = {0};
@@ -547,13 +650,20 @@ pk_c_compile_context *pk_c_compile_context_from_command(
         pk_c_compile_context_free(context);
         return NULL;
     }
-    if (pk_c_cc_ingest_args(context, path, &words) != 0) {
+    if (pk_c_cc_ingest_args(context, path, &words, base_dir) != 0) {
         pk_c_cc_words_free(&words);
         pk_c_compile_context_free(context);
         return NULL;
     }
     pk_c_cc_words_free(&words);
     return context;
+}
+
+pk_c_compile_context *pk_c_compile_context_from_command(
+    const char *path,
+    const char *command
+) {
+    return pk_c_compile_context_from_command_with_base(path, command, NULL);
 }
 
 static char *pk_c_cc_join_words_for_provenance(const pk_c_cc_words *words) {
@@ -587,7 +697,8 @@ static char *pk_c_cc_join_words_for_provenance(const pk_c_cc_words *words) {
 
 static pk_c_compile_context *pk_c_compile_context_from_words(
     const char *path,
-    const pk_c_cc_words *words
+    const pk_c_cc_words *words,
+    const char *base_dir
 ) {
     char *command = pk_c_cc_join_words_for_provenance(words);
     pk_c_compile_context *context;
@@ -600,7 +711,7 @@ static pk_c_compile_context *pk_c_compile_context_from_words(
     if (context == NULL) {
         return NULL;
     }
-    if (pk_c_cc_ingest_args(context, path, words) != 0) {
+    if (pk_c_cc_ingest_args(context, path, words, base_dir) != 0) {
         pk_c_compile_context_free(context);
         return NULL;
     }
@@ -663,18 +774,26 @@ static char *pk_c_cc_join_path(const char *root, const char *path) {
 
 static const char *pk_c_cc_relative_source(const char *root, const char *source_path) {
     size_t root_len;
+    const char *source = source_path == NULL ? "" : source_path;
 
-    if (root == NULL || source_path == NULL || !pk_c_cc_is_absolute_path(source_path)) {
-        return source_path == NULL ? "" : source_path;
+    while (source[0] == '.' && source[1] == '/') {
+        source += 2;
+    }
+    if (root == NULL || !pk_c_cc_is_absolute_path(source)) {
+        return source;
     }
     root_len = strlen(root);
     if (root_len == 0) {
-        return source_path;
+        return source;
     }
-    if (strncmp(source_path, root, root_len) == 0 && source_path[root_len] == '/') {
-        return source_path + root_len + 1;
+    if (strncmp(source, root, root_len) == 0 && source[root_len] == '/') {
+        source += root_len + 1;
+        while (source[0] == '.' && source[1] == '/') {
+            source += 2;
+        }
+        return source;
     }
-    return source_path;
+    return source;
 }
 
 static char *pk_c_cc_kbuild_cmd_path(const char *root, const char *source_path) {
@@ -1035,9 +1154,12 @@ static pk_c_compile_context *pk_c_cc_resolve_compile_commands(
         }
         if (pk_c_cc_compile_entry_matches(root, source_path, directory, file)) {
             if (command != NULL) {
-                context = pk_c_compile_context_from_command(source_path, command);
+                context = pk_c_compile_context_from_command_with_base(
+                    source_path,
+                    command,
+                    directory);
             } else if (arguments.len > 0) {
-                context = pk_c_compile_context_from_words(source_path, &arguments);
+                context = pk_c_compile_context_from_words(source_path, &arguments, directory);
             }
             free(directory);
             free(file);
