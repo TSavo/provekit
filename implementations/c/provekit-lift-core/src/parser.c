@@ -552,8 +552,14 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
         return;
     }
     for (i = 0; i < facts->n_functions; i++) {
+        size_t e;
+
         free(facts->functions[i].name);
         free(facts->functions[i].locus.path);
+        for (e = 0; e < facts->functions[i].n_effects; e++) {
+            free(facts->functions[i].effects[e].target);
+        }
+        free(facts->functions[i].effects);
     }
     for (i = 0; i < facts->n_macro_calls; i++) {
         free(facts->macro_calls[i].name);
@@ -724,6 +730,224 @@ int pk_c_emit_call_edges(pk_c_source_facts *facts) {
     for (size_t i = 0; i < facts->n_call_sites; i++) {
         if (pk_c_emit_one_call_edge(facts->extraction_result,
                 &facts->call_sites[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+const char *pk_c_effect_kind_name(pk_c_effect_kind kind) {
+    switch (kind) {
+    case PK_C_EFFECT_READS:
+        return "Reads";
+    case PK_C_EFFECT_WRITES:
+        return "Writes";
+    case PK_C_EFFECT_IO:
+        return "Io";
+    case PK_C_EFFECT_UNSAFE:
+        return "Unsafe";
+    case PK_C_EFFECT_PANICS:
+        return "Panics";
+    case PK_C_EFFECT_UNRESOLVED_CALL:
+        return "UnresolvedCall";
+    }
+    return "Unknown";
+}
+
+static int pk_c_effect_kind_has_target(pk_c_effect_kind kind) {
+    return kind == PK_C_EFFECT_READS ||
+        kind == PK_C_EFFECT_WRITES ||
+        kind == PK_C_EFFECT_UNRESOLVED_CALL;
+}
+
+int pk_c_function_fact_add_effect(
+    pk_c_function_fact *fact,
+    pk_c_effect_kind kind,
+    const char *target
+) {
+    pk_c_function_effect *items;
+    size_t cap;
+    size_t bytes;
+    char *target_copy = NULL;
+    size_t i;
+    const char *target_norm;
+
+    if (fact == NULL) {
+        return -1;
+    }
+    target_norm = pk_c_effect_kind_has_target(kind)
+        ? (target == NULL || target[0] == '\0' ? "<unknown>" : target)
+        : NULL;
+
+    /* Deduplicate: same kind + same (or both NULL) target collapses into
+     * one entry. CCP §3 specifies the effect set; duplicates have no
+     * additional meaning. */
+    for (i = 0; i < fact->n_effects; i++) {
+        if (fact->effects[i].kind != kind) {
+            continue;
+        }
+        if (target_norm == NULL && fact->effects[i].target == NULL) {
+            return 0;
+        }
+        if (target_norm != NULL && fact->effects[i].target != NULL &&
+            strcmp(fact->effects[i].target, target_norm) == 0) {
+            return 0;
+        }
+    }
+
+    if (target_norm != NULL) {
+        target_copy = pk_c_parser_copy(target_norm);
+        if (target_copy == NULL) {
+            return -1;
+        }
+    }
+
+    if (fact->n_effects >= fact->cap_effects) {
+        cap = fact->cap_effects == 0 ? 4 : fact->cap_effects * 2;
+        if (cap < fact->cap_effects ||
+            pk_c_parser_checked_mul(cap, sizeof(*fact->effects), &bytes) != 0) {
+            free(target_copy);
+            return -1;
+        }
+        items = realloc(fact->effects, bytes);
+        if (items == NULL) {
+            free(target_copy);
+            return -1;
+        }
+        fact->effects = items;
+        fact->cap_effects = cap;
+    }
+    fact->effects[fact->n_effects].kind = kind;
+    fact->effects[fact->n_effects].target = target_copy;
+    fact->n_effects++;
+    return 0;
+}
+
+static int pk_c_emit_one_function_effects(
+    pk_c_lift_result *result,
+    const pk_c_function_fact *fact
+) {
+    char *escaped_function = pk_c_lift_json_escape(fact->name);
+    char *path = pk_c_lift_json_escape(fact->locus.path);
+    char *body = NULL;
+    size_t cap = 64;
+    size_t len = 0;
+    int rc = -1;
+
+    if (escaped_function == NULL || path == NULL) {
+        goto cleanup;
+    }
+    body = malloc(cap);
+    if (body == NULL) {
+        goto cleanup;
+    }
+    body[0] = '\0';
+    for (size_t i = 0; i < fact->n_effects; i++) {
+        const char *kind_name = pk_c_effect_kind_name(fact->effects[i].kind);
+        char *escaped_target = NULL;
+        const char *prefix = (i == 0) ? "" : ",";
+        int written;
+        char *piece;
+        size_t need;
+
+        if (fact->effects[i].target != NULL) {
+            escaped_target = pk_c_lift_json_escape(fact->effects[i].target);
+            if (escaped_target == NULL) {
+                goto cleanup;
+            }
+            written = snprintf(NULL, 0,
+                "%s{\"kind\":\"%s\",\"target\":\"%s\"}",
+                prefix, kind_name, escaped_target);
+        } else {
+            written = snprintf(NULL, 0,
+                "%s{\"kind\":\"%s\"}", prefix, kind_name);
+        }
+        if (written < 0) {
+            free(escaped_target);
+            goto cleanup;
+        }
+        piece = malloc((size_t)written + 1);
+        if (piece == NULL) {
+            free(escaped_target);
+            goto cleanup;
+        }
+        if (escaped_target != NULL) {
+            (void)snprintf(piece, (size_t)written + 1,
+                "%s{\"kind\":\"%s\",\"target\":\"%s\"}",
+                prefix, kind_name, escaped_target);
+        } else {
+            (void)snprintf(piece, (size_t)written + 1,
+                "%s{\"kind\":\"%s\"}", prefix, kind_name);
+        }
+        free(escaped_target);
+        need = len + (size_t)written + 1;
+        if (need > cap) {
+            char *new_body;
+            size_t new_cap = cap;
+
+            while (new_cap < need) {
+                if (new_cap > ((size_t)-1) / 2) {
+                    free(piece);
+                    goto cleanup;
+                }
+                new_cap *= 2;
+            }
+            new_body = realloc(body, new_cap);
+            if (new_body == NULL) {
+                free(piece);
+                goto cleanup;
+            }
+            body = new_body;
+            cap = new_cap;
+        }
+        memcpy(body + len, piece, (size_t)written);
+        len += (size_t)written;
+        body[len] = '\0';
+        free(piece);
+    }
+
+    {
+        int written = snprintf(NULL, 0,
+            "{\"function\":\"%s\",\"kind\":\"function-effects\","
+            "\"effects\":[%s],\"locus\":{\"path\":\"%s\","
+            "\"line\":%d,\"column\":%d}}",
+            escaped_function, body, path,
+            fact->locus.line, fact->locus.column);
+        char *json;
+
+        if (written < 0) {
+            goto cleanup;
+        }
+        json = malloc((size_t)written + 1);
+        if (json == NULL) {
+            goto cleanup;
+        }
+        (void)snprintf(json, (size_t)written + 1,
+            "{\"function\":\"%s\",\"kind\":\"function-effects\","
+            "\"effects\":[%s],\"locus\":{\"path\":\"%s\","
+            "\"line\":%d,\"column\":%d}}",
+            escaped_function, body, path,
+            fact->locus.line, fact->locus.column);
+        rc = pk_c_lift_result_add_declaration(result, json);
+        free(json);
+    }
+
+cleanup:
+    free(escaped_function);
+    free(path);
+    free(body);
+    return rc;
+}
+
+int pk_c_emit_function_effects(pk_c_lift_result *result, const pk_c_source_facts *facts) {
+    if (result == NULL || facts == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < facts->n_functions; i++) {
+        if (!facts->functions[i].has_body) {
+            continue;
+        }
+        if (pk_c_emit_one_function_effects(result, &facts->functions[i]) != 0) {
             return -1;
         }
     }

@@ -294,6 +294,67 @@ else
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
     }
+
+    # Per-function effects extraction per CCP v1.0.0 section 3.
+    # Composition refuses on impure atoms; a lifter that emits no
+    # effects is unsound. The fixture has one function per effect kind
+    # plus pure_function with empty effects.
+    EFFECTS_FIXTURE="$SCRIPT_DIR/fixtures/effects_basic.c"
+    if [ ! -f "$EFFECTS_FIXTURE" ]; then
+        echo "FAIL: effects fixture not found: $EFFECTS_FIXTURE" >&2
+        exit 1
+    fi
+    EFFECTS_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$EFFECTS_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+    EFFECTS_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":130,\"method\":\"parse\",\"params\":{\"path\":\"effects_basic.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$EFFECTS_SOURCE\"}}"
+    EFFECTS_RESPONSE=$(printf '%s\n' "$EFFECTS_REQUEST" | "$BIN" --rpc)
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -q '"id":130' || {
+        echo "FAIL: effects parse did not echo id 130" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"pure_function","kind":"function-effects","effects":\[\]' || {
+        echo "FAIL: pure_function should emit empty effects array" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"writes_function","kind":"function-effects","effects":\[[^]]*"kind":"Writes"' || {
+        echo "FAIL: writes_function should emit Writes effect" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"reads_function","kind":"function-effects","effects":\[[^]]*"kind":"Reads"' || {
+        echo "FAIL: reads_function should emit Reads effect" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"io_function","kind":"function-effects","effects":\[[^]]*"kind":"Io"' || {
+        echo "FAIL: io_function should emit Io effect from kmalloc allowlist" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"unsafe_function","kind":"function-effects","effects":\[[^]]*"kind":"Unsafe"' || {
+        echo "FAIL: unsafe_function should emit Unsafe effect from non-void pointer cast" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"panics_function","kind":"function-effects","effects":\[[^]]*"kind":"Panics"' || {
+        echo "FAIL: panics_function should emit Panics effect from BUG_ON allowlist" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"unresolved_call_function","kind":"function-effects","effects":\[[^]]*"kind":"UnresolvedCall"' || {
+        echo "FAIL: unresolved_call_function should emit UnresolvedCall effect from struct-member function pointer dispatch" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
 fi
 
 echo "provekit-lift-c-kernel-doc integration passed"
