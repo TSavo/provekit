@@ -49,9 +49,12 @@ static int pk_c_parser_blank_line(const char *line) {
     return 1;
 }
 
-static int pk_c_parser_contract_annotation(const char *line) {
+static int pk_c_parser_contract_annotation(const char *line, int in_block_comment) {
     const char *p = pk_c_parser_first_nonblank(line);
 
+    if (in_block_comment) {
+        return 0;
+    }
     return strncmp(p, "//provekit:contract", strlen("//provekit:contract")) == 0;
 }
 
@@ -614,6 +617,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
         const char *body_open;
         char *code_line;
         int is_blank;
+        int line_started_in_block_comment;
 
         next = strchr(line, '\n');
         if (next != NULL) {
@@ -621,6 +625,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             next++;
         }
 
+        line_started_in_block_comment = in_block_comment;
         code_line = pk_c_parser_code_view(line, &in_block_comment);
         if (code_line == NULL) {
             pk_c_source_facts_free(facts);
@@ -648,7 +653,7 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             }
         }
 
-        if (pk_c_parser_contract_annotation(line)) {
+        if (pk_c_parser_contract_annotation(line, line_started_in_block_comment)) {
             pending_contract = 1;
             free(code_line);
             continue;

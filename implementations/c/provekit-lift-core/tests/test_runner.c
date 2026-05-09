@@ -311,6 +311,28 @@ static void test_contract_annotation_ignores_string_literal_marker(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_contract_annotation_ignores_block_comment_marker(void) {
+    const char *source =
+        "/*\n"
+        " //provekit:contract\n"
+        "*/\n"
+        "int not_annotated(void) { return 0; }\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_functions != 1) {
+        fprintf(stderr, "FAIL: expected 1 function, got %zu\n", facts->n_functions);
+        failures++;
+    } else {
+        assert_int_eq(facts->functions[0].has_contract_annotation, 0,
+            "block comment contract marker should not annotate function");
+    }
+    pk_c_source_facts_free(facts);
+}
+
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
@@ -323,6 +345,7 @@ int main(void) {
     test_parse_ignores_comments_and_strings();
     test_parse_sparse_annotations();
     test_contract_annotation_ignores_string_literal_marker();
+    test_contract_annotation_ignores_block_comment_marker();
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;
