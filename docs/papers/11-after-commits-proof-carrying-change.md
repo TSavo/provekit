@@ -620,6 +620,8 @@ commitCid + CI-signed proof binding
 
 That is enough to make protected branches semantic today.
 
+The bootstrap inherits the lifter's correctness. A `CommitProofBinding` signed by CI binds whatever the lifter produced over the tree, including its bugs. Refusal receipts catch known unknowns by design; lifter defects are unknown unknowns and cannot refuse themselves. The empirical answer is the Bug Zoo loop: lifter regressions surface as missing rediscovery edges, and a lifter that fails to recover known historical obligations is wrong, not refining. The bootstrap does not eliminate trust in the lifter. It makes that trust explicit, named by lifter CID and profile, and policy-checkable. A consumer that does not trust a particular lifter can refuse bindings produced by it, and a repository that wants stronger guarantees can require multiple lifters to converge before the binding is admitted.
+
 Branch protection can evolve from:
 
 ```text
