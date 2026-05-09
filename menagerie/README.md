@@ -24,7 +24,7 @@ protocol migrations, and proof-carrying changes.
 | [Hashbound Mainline](hashbound-mainline/README.md) | Cross-domain implication chains compress to 64-byte verification. | Planned |
 | [Supply Chain Rails](supply-chain-rails/README.md) | Authentic compatible-looking releases cannot silently betray preserved contracts. | Runnable |
 | [Bridgeworks](bridgeworks/README.md) | ProofIR carries vertical contracts; `.proof` CIDs compress the implication DAG. | Runnable |
-| [Protocol Switchyard](protocol-switchyard/README.md) | Protocol versions are roots; migrations are witnessed routing edges. | Planned |
+| [Protocol Switchyard](protocol-switchyard/README.md) | Protocol versions are roots; migrations are witnessed routing edges. | Runnable |
 | [Change Station](change-station/README.md) | Commits are `p -> q` proof-carrying transitions. | Planned |
 
 Run the current runnable destination:
@@ -33,4 +33,5 @@ Run the current runnable destination:
 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 cargo run --manifest-path menagerie/supply-chain-rails/Cargo.toml -- --all
 cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all
+cargo run --manifest-path menagerie/protocol-switchyard/Cargo.toml -- --all
 ```
