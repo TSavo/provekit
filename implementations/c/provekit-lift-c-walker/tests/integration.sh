@@ -5,6 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN="$SCRIPT_DIR/../provekit-lift-c-walker"
 FIXTURE="$SCRIPT_DIR/fixtures/trivial.c"
+DEFENSIVE_FIXTURE="$SCRIPT_DIR/fixtures/defensive.c"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -16,14 +17,17 @@ if [ ! -f "$FIXTURE" ]; then
     exit 1
 fi
 
-SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+if [ ! -f "$DEFENSIVE_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $DEFENSIVE_FIXTURE" >&2
+    exit 1
+fi
 
 RESPONSES="$(
     {
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
         printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
         printf '"%s"' "$SCRIPT_DIR/fixtures"
-        printf ',"source_paths":["trivial.c"],"surface":"c-walker"}}\n'
+        printf ',"source_paths":["trivial.c","defensive.c"],"surface":"c-walker"}}\n'
         printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
     } | "$BIN" --rpc
 )"
@@ -123,5 +127,139 @@ printf '%s\n' "$RESPONSES" | grep -q '"effects":{"effects":\[\]}' || {
     echo "$RESPONSES" >&2
     exit 1
 }
+
+RESPONSES_JSON="$RESPONSES" python3 - <<'PY'
+import json
+import os
+import sys
+
+responses = [json.loads(line) for line in os.environ["RESPONSES_JSON"].splitlines() if line.strip()]
+lift = next((r for r in responses if r.get("id") == 2), None)
+if lift is None:
+    raise SystemExit("FAIL: lift response missing")
+decls = lift["result"]["declarations"]
+by_name = {
+    decl["fn_name"]: decl
+    for decl in decls
+    if decl.get("kind") == "function-contract"
+}
+
+def fail(message):
+    raise SystemExit(f"FAIL: {message}\n{json.dumps(by_name, sort_keys=True)}")
+
+def var(name):
+    return {"kind": "var", "name": name}
+
+def const_int(value):
+    return {
+        "kind": "const",
+        "value": value,
+        "sort": {"kind": "primitive", "name": "Int"},
+    }
+
+def ctor(name, args):
+    return {"kind": "ctor", "name": name, "args": args}
+
+def atom(name, args):
+    return {"kind": "atomic", "name": name, "args": args}
+
+def contains_formula(formula, expected):
+    if formula == expected:
+        return True
+    if isinstance(formula, dict):
+        for key in ("operands", "args"):
+            if any(contains_formula(part, expected) for part in formula.get(key, [])):
+                return True
+    return False
+
+checks = [
+    (
+        "bug_on_nonnegative",
+        "pre",
+        atom("\u2265", [var("x"), const_int(0)]),
+        "BUG_ON(x < 0) did not lift x >= 0",
+    ),
+    (
+        "errno_guard",
+        "pre",
+        atom("\u2260", [var("ptr"), var("NULL")]),
+        "if (!ptr) return -ENOMEM did not lift ptr != NULL",
+    ),
+    (
+        "user_buffer",
+        "pre",
+        atom("is_user_ptr", [var("buf")]),
+        "__user char *buf did not lift is_user_ptr(buf)",
+    ),
+    (
+        "held_lock",
+        "pre",
+        atom("lock_held", [var("lock")]),
+        "__must_hold(lock) did not lift lock_held(lock)",
+    ),
+    (
+        "trailing_return",
+        "post",
+        atom("=", [var("result"), ctor("+", [var("x"), const_int(1)])]),
+        "trailing return x + 1 did not lift result = x + 1",
+    ),
+    (
+        "ret_guard",
+        "pre",
+        atom("\u2265", [var("ret"), const_int(0)]),
+        "if (ret < 0) return ret did not lift ret >= 0",
+    ),
+    (
+        "goto_error",
+        "pre",
+        atom("\u2260", [var("x"), const_int(0)]),
+        "if (x == 0) goto error did not lift x != 0",
+    ),
+    (
+        "assert_positive",
+        "pre",
+        atom(">", [var("x"), const_int(0)]),
+        "assert(x > 0) did not lift x > 0",
+    ),
+    (
+        "rcu_pointer",
+        "pre",
+        atom("is_rcu_protected", [var("p")]),
+        "__rcu int *p did not lift is_rcu_protected(p)",
+    ),
+    (
+        "sized_count",
+        "pre",
+        atom("\u2265", [var("n"), const_int(0)]),
+        "size_t n did not lift n >= 0",
+    ),
+    (
+        "gfp_flags",
+        "pre",
+        atom("valid_gfp_flags", [var("gfp")]),
+        "gfp_t gfp did not lift valid_gfp_flags(gfp)",
+    ),
+]
+
+for fn_name, field, expected, message in checks:
+    decl = by_name.get(fn_name)
+    if decl is None:
+        fail(f"{fn_name} function not found in declarations")
+    if not contains_formula(decl.get(field), expected):
+        fail(message)
+
+effect_checks = [
+    ("acquire_lock", {"kind": "lock_acquire", "target": "lock"}),
+    ("release_lock", {"kind": "lock_release", "target": "lock"}),
+]
+
+for fn_name, expected in effect_checks:
+    decl = by_name.get(fn_name)
+    if decl is None:
+        fail(f"{fn_name} function not found in declarations")
+    effects = decl.get("effects", {}).get("effects", [])
+    if expected not in effects:
+        fail(f"{fn_name} missing effect {expected}")
+PY
 
 echo "provekit-lift-c-walker integration passed"
