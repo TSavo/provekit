@@ -9,14 +9,29 @@
 
 extern void target_inplace_set();
 extern void target_callback_set();
+extern void target_noncall_ref();
+extern void target_parenthesized_set();
+extern void target_deref_set();
 
 void caller_with_recovery(int *req, int *sg) {
+    void (*fp)(void);
     u8 *iv;            /* undeclared typedef -> dependent-type lvalue */
     int elen, ivlen = 0;
     elen = 0;
 
+    /* Function references are not calls and must not produce callEdges. */
+    fp = target_noncall_ref;
+    (void)target_noncall_ref;
+
     /* Args without a poisoned operand: regular CallExpr. */
     target_callback_set(req, 0, sg, sg);
+
+    /* The one real call to the function-ref target must still surface. */
+    target_noncall_ref();
+
+    /* Parenthesized function designators are still direct calls. */
+    (target_parenthesized_set)(req, sg, sg, elen + ivlen, iv);
+    (*target_deref_set)(req, sg, sg, elen + ivlen, iv);
 
     /* Passing the dependent-type `iv`: libclang produces RecoveryExpr. */
     target_inplace_set(req, sg, sg, elen + ivlen, iv);

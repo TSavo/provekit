@@ -283,17 +283,40 @@ else
     RECOVERY_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":120,\"method\":\"parse\",\"params\":{\"path\":\"recovery_call.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$RECOVERY_SOURCE\"}}"
     RECOVERY_RESPONSE=$(printf '%s\n' "$RECOVERY_REQUEST" | "$BIN" --rpc)
 
-    printf '%s\n' "$RECOVERY_RESPONSE" | grep -q '"callee_name":"target_callback_set"' || {
-        echo "FAIL: regular CallExpr target_callback_set should still be lifted in recovery fixture" >&2
+    CALLBACK_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_callback_set"' | wc -l | tr -d '[:space:]')
+    if [ "$CALLBACK_COUNT" != "1" ]; then
+        echo "FAIL: regular CallExpr target_callback_set should be lifted exactly once in recovery fixture (got $CALLBACK_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
-    }
+    fi
 
-    printf '%s\n' "$RECOVERY_RESPONSE" | grep -q '"callee_name":"target_inplace_set"' || {
-        echo "FAIL: RecoveryExpr-wrapped call target_inplace_set must be surfaced as a callEdge (libclang wraps the call when an arg has dependent type)" >&2
+    INPLACE_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_inplace_set"' | wc -l | tr -d '[:space:]')
+    if [ "$INPLACE_COUNT" != "1" ]; then
+        echo "FAIL: RecoveryExpr-wrapped call target_inplace_set must be surfaced exactly once as a callEdge (got $INPLACE_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
-    }
+    fi
+
+    NONCALL_REF_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_noncall_ref"' | wc -l | tr -d '[:space:]')
+    if [ "$NONCALL_REF_COUNT" != "1" ]; then
+        echo "FAIL: function references to target_noncall_ref must not be counted as calls; only the real call should surface (got $NONCALL_REF_COUNT)" >&2
+        echo "$RECOVERY_RESPONSE" >&2
+        exit 1
+    fi
+
+    PAREN_CALL_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_parenthesized_set"' | wc -l | tr -d '[:space:]')
+    if [ "$PAREN_CALL_COUNT" != "1" ]; then
+        echo "FAIL: parenthesized function designator target_parenthesized_set should be lifted exactly once (got $PAREN_CALL_COUNT)" >&2
+        echo "$RECOVERY_RESPONSE" >&2
+        exit 1
+    fi
+
+    DEREF_CALL_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_deref_set"' | wc -l | tr -d '[:space:]')
+    if [ "$DEREF_CALL_COUNT" != "1" ]; then
+        echo "FAIL: dereferenced function designator target_deref_set should be lifted exactly once (got $DEREF_CALL_COUNT)" >&2
+        echo "$RECOVERY_RESPONSE" >&2
+        exit 1
+    fi
 fi
 
 echo "provekit-lift-c-kernel-doc integration passed"
