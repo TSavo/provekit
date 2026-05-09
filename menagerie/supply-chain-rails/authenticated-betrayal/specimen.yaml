@@ -1,9 +1,16 @@
 id: SCR-SHAPE-001
 name: Authenticated Betrayal
 status: implemented
-claim: SLSA does not catch it; in-toto does not catch it; ProvekIt does
+claim: conventional SLSA and in-toto receipts stay green while ProvekIt rejects admission for an undischargeable preserved contract
 walkthroughShape: conventional-green-then-provekit-red
 toolRule: every central receipt is emitted or inspected by provekit
+truthBoundary:
+  ecosystem: npm-shaped fixture, not a complete npm registry or installer model
+  nativeReceipts: real slsa-verifier and in-toto-verify over repository-owned fixture attestations
+  provekitClaim: admission is rejected only for declared contracts under accepted lowerers and policy
+  followUps:
+    - https://github.com/TSavo/provekit/issues/498
+    - https://github.com/TSavo/provekit/issues/499
 
 package:
   name: safe-json
@@ -15,7 +22,7 @@ package:
 ordinarySupplyChainSignals:
   expected: green
   receiptSource: provekit package inspect
-  conclusion: conventional receipts validate but do not ask whether preserved behavior still holds
+  conclusion: conventional receipts validate the fixture provenance and packaging predicates but do not ask whether preserved behavior still holds
   receipts:
     - package name resolves to safe-json
     - maintainer signature is green
