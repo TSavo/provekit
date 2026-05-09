@@ -112,4 +112,16 @@ printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"negate"' || {
     exit 1
 }
 
+printf '%s\n' "$RESPONSES" | grep -q '"fn_name":"caller"' || {
+    echo "FAIL: caller function not found in declarations" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
+printf '%s\n' "$RESPONSES" | grep -q '"effects":{"effects":\[\]}' || {
+    echo "FAIL: declarations must include explicit effects:{effects:[]} field" >&2
+    echo "$RESPONSES" >&2
+    exit 1
+}
+
 echo "provekit-lift-c-walker integration passed"
