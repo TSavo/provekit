@@ -16,6 +16,35 @@ same boundary. The rest of the Menagerie names the other routes through the
 substrate: long implication chains, supply-chain admission, domain bridges,
 protocol migrations, and proof-carrying changes.
 
+## Prerequisites
+
+The runnable exhibits drive real foreign toolchains. The Rust runner shells out
+to per-language harness scripts (`./run.sh`) which call `pnpm`, `tsc`, `tsx`,
+`javac`, `java`, `mvn`, `dotnet`, `go`, and `jq`. A cold-start visitor missing
+any of these will see the exhibit fail with `command not found` from inside
+pnpm, Maven, or a harness shell.
+
+Before running an exhibit, run `bash menagerie/scripts/check-prereqs.sh` to
+verify the toolchain. The script probes each tool with `command -v`, prints a
+PASS/MISSING table, and exits non-zero with a list of the missing tools.
+
+| Tool | Why it is needed | macOS (Homebrew) | Linux (apt or generic) |
+|---|---|---|---|
+| `cargo` (Rust) | Drives `cargo run --manifest-path menagerie/<exhibit>/Cargo.toml`; implicit if you reached this README via cargo. | `brew install rustup-init && rustup-init` | `curl https://sh.rustup.rs -sSf \| sh` |
+| `node` | Hosts `pnpm` and `tsx` for the TypeScript harnesses. | `brew install node` | `apt install nodejs` (or use `nvm`) |
+| `pnpm` | Runs `pnpm exec tsc` and `pnpm exec tsx` in the TypeScript bug-zoo harnesses. | `brew install pnpm` | `npm install -g pnpm` (or `corepack enable && corepack prepare pnpm@latest --activate`) |
+| `java`, `javac` (JDK 17+) | Compiles and runs the Java bug-zoo lab harnesses and lifter jars. | `brew install openjdk` (link with `sudo ln -sfn $(brew --prefix)/opt/openjdk/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk.jdk`) | `apt install default-jdk` |
+| `mvn` (Maven) | Builds the `provekit-lift-java-*` jars used by the Java kit-rpc lifters. | `brew install maven` | `apt install maven` |
+| `dotnet` (.NET SDK 8+) | Builds and runs the C# bug-zoo harnesses and `Provekit.BugZoo` lifters. | `brew install --cask dotnet-sdk` | `apt install dotnet-sdk-8.0` (or follow Microsoft's package feed) |
+| `go` | Runs the Go side of the BZ-SHAPE-007 polyglot link harness. | `brew install go` | `apt install golang` |
+| `jq` | Filters JSON in the supply-chain-rails and bridgeworks walkthroughs. | `brew install jq` | `apt install jq` |
+
+The bridgeworks walkthrough scripts also use `cc` and `make` for the C lowerer.
+These ship with macOS Command Line Tools and most Linux distributions; install
+with `xcode-select --install` on macOS or `apt install build-essential` on
+Debian-derived Linux. They are not required by `cargo run --manifest-path
+menagerie/bridgeworks/Cargo.toml -- --all`; only by the walkthrough.
+
 ## Destinations
 
 | Destination | Claim | Status |
