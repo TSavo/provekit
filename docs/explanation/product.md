@@ -4,6 +4,8 @@
 
 ProvekIt is a toolchain for proving content-addressed claims. It defines four core things: a canonical IR for claim boundaries, a signed memento envelope wrapping claims with provenance, a published `.proof` catalog of mementos addressed by CID, and a handshake algorithm that verifies a consumer's obligations against a publisher's evidence in time decoupled from the size of the dependency graph.
 
+Those pieces compose into proofchains: portable, locally verifiable chains of signed, content-addressed evidence for logically true claims. A blockchain carries state transitions; a proofchain carries formal proofs. The chain exists so a verifier can re-check why a claim is true under explicit policy.
+
 Software correctness across domains is the center use case: language to language, package to package, protocol version to protocol version, CI result to supply-chain input closure, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that larger pattern.
 
 Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
@@ -135,6 +137,7 @@ The conformance CID is the protocol version. An implementation that declares a d
 You don't get "mathematical certainty that your code is correct." You get:
 
 - A signed `.proof` catalog of contract mementos that ships with your library.
+- A proofchain that carries the claims, witnesses, attestations, and policy context needed to verify the result locally.
 - A verifier that walks consumer call sites and reports the hash-discharge fraction.
 - A growing lattice of cached implication mementos that amortize solver cost across the ecosystem.
 - A per-call-site report identifying the residue that genuinely needs your attention.

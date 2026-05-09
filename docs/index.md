@@ -4,6 +4,8 @@ ProvekIt is a toolchain for proving content-addressed claims.
 
 The center use case is software correctness across domains: language to language, package to package, protocol version to protocol version, CI result to supply-chain input closure, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that. The common shape is simple: canonicalize a proposition, name it by CID, name the evidence by CID, sign the edge, and fail closed when the graph does not carry the claim.
 
+That linked evidence object is a proofchain: a locally verifiable chain of signed, content-addressed evidence for logically true claims.
+
 Current protocol catalog: **v1.6.2**
 
 Current catalog CID: `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`
@@ -83,6 +85,7 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 |---|---|
 | What is the central claim? | [explanation/thesis.md](explanation/thesis.md) |
 | Why content-addressing instead of a registry? | [explanation/content-addressing-not-registry.md](explanation/content-addressing-not-registry.md) |
+| What is a proofchain? | [explanation/proofchain.md](explanation/proofchain.md) |
 | Why lift, do not author? | [explanation/lift-not-author.md](explanation/lift-not-author.md) |
 | Why is provability monotonic? | [explanation/monotonic-provability.md](explanation/monotonic-provability.md) |
 | What is out of scope? | [explanation/boundaries.md](explanation/boundaries.md) |

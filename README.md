@@ -18,6 +18,12 @@ ProvekIt does not ask you to trust the artifact. It asks for signed,
 content-addressed evidence that applying `k` to `I` produces `t`, then fails
 closed when the graph does not carry the claim.
 
+That linked evidence object is a **proofchain**: a locally verifiable chain of
+signed, content-addressed evidence for logically true claims. A blockchain
+carries state transitions; a proofchain carries formal proofs. Proof validity
+does not need a global ledger because the object of verification is the
+evidence itself.
+
 Modern software already depends on `k(I)=t` claims everywhere. A compiler says
 source becomes a binary. A type checker says a program inhabits a type. A CI run
 says a precise closure of inputs produced a result. A schema says a payload has a
@@ -95,6 +101,7 @@ accountable edges the rest of the graph must satisfy.
 | **See a bug class map to an addressable shape CID across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` |
 | **See supported languages and kit coverage** | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
+| **Understand proofchains** | [docs/explanation/proofchain.md](docs/explanation/proofchain.md) |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
 | **Understand the new protocol/tooling surface** | [docs/reference/protocol-extensions.md](docs/reference/protocol-extensions.md) |
