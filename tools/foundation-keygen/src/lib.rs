@@ -103,6 +103,13 @@ pub const V1_6_2_DECLARED_AT: &str = "2026-05-07T01:00:00Z";
 /// without changing core verifier behavior or all-layer lift semantics.
 pub const V1_6_3_DECLARED_AT: &str = "2026-05-09T00:00:00Z";
 
+/// Pinned `declaredAt` for v1.6.4. Patch bump: catalogs two new draft
+/// extension protocols (Pattern Predicate Protocol and Contract
+/// Composition Protocol) without changing core verifier behavior, ProofIR
+/// grammar, canonicalization, proof-file format, all-layer lift output
+/// semantics, or cross-kit conformance fixture semantics.
+pub const V1_6_4_DECLARED_AT: &str = "2026-05-09T12:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")

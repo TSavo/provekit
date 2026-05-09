@@ -19,11 +19,13 @@ use serde_json::Value as Json;
 /// The protocol catalog CID this CLI declares conformance to. Kept in
 /// sync with `protocol/specs/2026-04-30-protocol-versioning.md`. If
 /// the catalog changes, bump this string AND ship a new CLI.
-/// Currently: v1.6.3 (patch bump over v1.6.2: formalizes the
-/// identify-only package inspection lift result without changing the
-/// core substrate or all-layer lift semantics).
+/// Currently: v1.6.4 (patch bump over v1.6.3: catalogs two new draft
+/// extension protocols, Pattern Predicate Protocol and Contract
+/// Composition Protocol, without changing core verifier behavior,
+/// ProofIR grammar, canonicalization, proof-file format, all-layer
+/// lift output semantics, or cross-kit conformance fixture semantics).
 pub const EXPECTED_CATALOG_CID: &str =
-    "blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d";
+    "blake3-512:09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6be75f4afce9eb3dedb7b8ebe2536de054143efefcb3cb622e6e5b4140bb26e6156a9bc9adf3";
 
 /// Catalog JSON bytes embedded at compile time. The CLI never reads
 /// the on-disk spec file at runtime; `verify-protocol` recomputes from
@@ -39,12 +41,12 @@ pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] = include_bytes!("../assets/foundati
 
 /// Signed attestation bytes (the JSON object) embedded at compile
 /// time. Mirrors the committed
-/// `.provekit/catalog-signatures/v1.6.3.json` (current). The v1.6.2,
-/// v1.6.1, v1.6.0, v1.5.0, v1.4.1, v1.4.0, v1.3.1, v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
+/// `.provekit/catalog-signatures/v1.6.4.json` (current). The v1.6.3,
+/// v1.6.2, v1.6.1, v1.6.0, v1.5.0, v1.4.1, v1.4.0, v1.3.1, v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
 /// embedded asset siblings for callers pinning to those versions; pass
 /// `--signature-file` + `--catalog` to verify against them explicitly.
 pub const EMBEDDED_CATALOG_SIGNATURE: &[u8] =
-    include_bytes!("../assets/catalog-signature-v1.6.3.json");
+    include_bytes!("../assets/catalog-signature-v1.6.4.json");
 
 /// Recompute the embedded catalog's CID using the same routine
 /// `tools/recompute-spec-cids` uses: parse JSON, JCS-encode, BLAKE3-512.
