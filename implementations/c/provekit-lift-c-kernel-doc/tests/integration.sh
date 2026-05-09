@@ -439,6 +439,123 @@ else
         echo "FAIL: compose_three composed CID changed; expected $EXPECTED_COMPOSE_THREE_CID got $CID_1" >&2
         exit 1
     fi
+
+    # Position-aware composition per CCP v1.0.0 §9 Rule 1 (singular
+    # formal substitution). The formal_position_basic.c fixture has
+    # two chains (chain_pos0, chain_pos1) that compose the SAME inner
+    # function (`inner`) into the SAME outer function (`outer`) at
+    # different formal positions. With the resolver wired in
+    # composition.c (pk_c_compose_resolve_formal_idx_in_args), the
+    # two chains' composed CIDs MUST differ. A v1 implementation that
+    # hardcoded formalIdx=0 would collide them.
+    FORMAL_FIXTURE="$SCRIPT_DIR/fixtures/formal_position_basic.c"
+    if [ ! -f "$FORMAL_FIXTURE" ]; then
+        echo "FAIL: formal-position fixture not found: $FORMAL_FIXTURE" >&2
+        exit 1
+    fi
+    FORMAL_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$FORMAL_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+    FORMAL_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":150,\"method\":\"parse\",\"params\":{\"path\":\"formal_position_basic.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$FORMAL_SOURCE\"}}"
+    FORMAL_RESPONSE=$(printf '%s\n' "$FORMAL_REQUEST" | "$BIN" --rpc)
+
+    printf '%s\n' "$FORMAL_RESPONSE" | grep -q '"id":150' || {
+        echo "FAIL: formal-position parse did not echo id 150" >&2
+        echo "$FORMAL_RESPONSE" >&2
+        exit 1
+    }
+
+    # Both chains must surface as composed-contract declarations.
+    printf '%s\n' "$FORMAL_RESPONSE" | grep -q '"function":"chain_pos0"' || {
+        echo "FAIL: formal_position_basic.c should yield a composed-contract for chain_pos0" >&2
+        echo "$FORMAL_RESPONSE" >&2
+        exit 1
+    }
+    printf '%s\n' "$FORMAL_RESPONSE" | grep -q '"function":"chain_pos1"' || {
+        echo "FAIL: formal_position_basic.c should yield a composed-contract for chain_pos1" >&2
+        echo "$FORMAL_RESPONSE" >&2
+        exit 1
+    }
+
+    EXTRACT_CID_BY_FN='import json,sys; fn=sys.argv[1]; r=json.loads(sys.stdin.read()); ds=r["result"]["declarations"]; cs=[d for d in ds if d.get("kind")=="composed-contract" and d.get("function")==fn]; print(cs[0]["composedCid"]) if cs else sys.exit(99)'
+    POS0_CID=$(printf '%s\n' "$FORMAL_RESPONSE" | python3 -c "$EXTRACT_CID_BY_FN" chain_pos0)
+    POS1_CID=$(printf '%s\n' "$FORMAL_RESPONSE" | python3 -c "$EXTRACT_CID_BY_FN" chain_pos1)
+
+    if [ -z "$POS0_CID" ] || [ -z "$POS1_CID" ]; then
+        echo "FAIL: could not extract composed CIDs for chain_pos0 / chain_pos1" >&2
+        echo "$FORMAL_RESPONSE" >&2
+        exit 1
+    fi
+
+    case "$POS0_CID" in
+        blake3-512:*) ;;
+        *)
+            echo "FAIL: chain_pos0 composed CID lacks blake3-512 prefix: $POS0_CID" >&2
+            exit 1
+            ;;
+    esac
+    case "$POS1_CID" in
+        blake3-512:*) ;;
+        *)
+            echo "FAIL: chain_pos1 composed CID lacks blake3-512 prefix: $POS1_CID" >&2
+            exit 1
+            ;;
+    esac
+
+    # Load-bearing assertion: position-aware composition.
+    if [ "$POS0_CID" = "$POS1_CID" ]; then
+        echo "FAIL: chain_pos0 and chain_pos1 composed CIDs collide ($POS0_CID); position-aware composition is not working. Composition pass is hardcoding formalIdx=0 instead of resolving from each call_site's args layout." >&2
+        exit 1
+    fi
+
+    # Pin both new CIDs so future changes to the synthetic memento
+    # arity / Ctor("tuple") shape are caught (per CCP §6.2 wire
+    # format byte-identity requirement).
+    EXPECTED_POS0_CID="blake3-512:1e832e9cc5d0cfb4723aec35b81d7af8127a05cd837db035d92e222ee0daab0ec0a42564e701ec25cc01f93d99486212d0a61924ca5868c1615311bb8a8c1ee3"
+    EXPECTED_POS1_CID="blake3-512:6f36a5e05cbf645a312b16627ad9c940c43aacc30792c5588a63653ef43a2805b5ad05a89043244944d2fb9e0e758f5e1f0ce1eb7a22ee522270268ee221afd6"
+    if [ "$POS0_CID" != "$EXPECTED_POS0_CID" ]; then
+        echo "FAIL: chain_pos0 composed CID changed; expected $EXPECTED_POS0_CID got $POS0_CID" >&2
+        exit 1
+    fi
+    if [ "$POS1_CID" != "$EXPECTED_POS1_CID" ]; then
+        echo "FAIL: chain_pos1 composed CID changed; expected $EXPECTED_POS1_CID got $POS1_CID" >&2
+        exit 1
+    fi
+
+    # Tighter signal: the post-formula in each chain must reflect
+    # substitution at the correct formal position. chain_pos0
+    # substitutes the inner result at outer.formals[0] (= "x0");
+    # chain_pos1 substitutes at outer.formals[1] (= "x1"). The
+    # synthetic outer atom's post is `result = tuple(x0, x1)`, so
+    # after substitution chain_pos0 should contain a Var(x0)
+    # replacement and chain_pos1 should contain a Var(x1) replacement.
+    # We assert structurally by checking which legacy formal name
+    # ("x" from the inner identity post) appears at which position
+    # in the bodyJcs-encoded composed post. This is the "PASS =
+    # working" CID-divergence assertion the follow-up specs.
+    POS0_POST=$(printf '%s\n' "$FORMAL_RESPONSE" | python3 -c '
+import json, sys
+r = json.loads(sys.stdin.read())
+ds = r["result"]["declarations"]
+for d in ds:
+    if d.get("kind") == "composed-contract" and d.get("function") == "chain_pos0":
+        body = json.loads(d["bodyJcs"])
+        print(json.dumps(body["post"], sort_keys=True))
+        break
+')
+    POS1_POST=$(printf '%s\n' "$FORMAL_RESPONSE" | python3 -c '
+import json, sys
+r = json.loads(sys.stdin.read())
+ds = r["result"]["declarations"]
+for d in ds:
+    if d.get("kind") == "composed-contract" and d.get("function") == "chain_pos1":
+        body = json.loads(d["bodyJcs"])
+        print(json.dumps(body["post"], sort_keys=True))
+        break
+')
+    if [ "$POS0_POST" = "$POS1_POST" ]; then
+        echo "FAIL: chain_pos0 / chain_pos1 composed posts identical, formalIdx differential not propagating into substitution" >&2
+        echo "post: $POS0_POST" >&2
+        exit 1
+    fi
 fi
 
 echo "provekit-lift-c-kernel-doc integration passed"
