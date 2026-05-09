@@ -735,6 +735,7 @@ mod tests {
             V1_6_1_DECLARED_AT,
             V1_6_2_DECLARED_AT,
             V1_6_3_DECLARED_AT,
+            V1_6_4_DECLARED_AT,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
             SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         ];
