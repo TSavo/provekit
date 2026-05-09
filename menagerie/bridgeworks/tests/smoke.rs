@@ -453,11 +453,18 @@ fn all_exhibits_reports_contract_and_implication_mementos() {
     let software_error = software["detail"]["error"]
         .as_str()
         .expect("software overflow mutation error");
-    assert!(software_error.contains(
-        "bridge edge failed: compiler.lowering.preserves_checked_add -> checked_add_u8.postcondition"
-    ));
-    assert!(software_error.contains("needed: checked_add_u8.postcondition"));
-    assert!(software_error.contains("software emitted: overflow_add_u8.postcondition"));
+    assert!(
+        software_error.contains("checked_add_u8.postcondition refused"),
+        "{software_error}"
+    );
+    assert!(
+        software_error.contains("missing software contract marker"),
+        "{software_error}"
+    );
+    assert!(
+        software_error.contains("provekit:contract checked_add_u8.postcondition"),
+        "{software_error}"
+    );
     let counterfeit = mutations
         .iter()
         .find(|mutation| mutation["id"] == "software-counterfeit-contract")
@@ -465,10 +472,15 @@ fn all_exhibits_reports_contract_and_implication_mementos() {
     let counterfeit_error = counterfeit["detail"]["error"]
         .as_str()
         .expect("software counterfeit mutation error");
-    assert!(counterfeit_error.contains("ORP witness failed: checked_add_u8.postcondition"));
-    assert!(counterfeit_error.contains("counterexample: a=1 b=255"));
-    assert!(counterfeit_error.contains("expected: overflow=true value=0"));
-    assert!(counterfeit_error.contains("observed: overflow=false value=0"));
+    assert!(
+        counterfeit_error.contains("checked_add_u8.postcondition refused"),
+        "{counterfeit_error}"
+    );
+    assert!(
+        counterfeit_error.contains("missing overflow guard"),
+        "{counterfeit_error}"
+    );
+    assert!(counterfeit_error.contains("if (wide >= 256)"));
     let experiment = mutations
         .iter()
         .find(|mutation| mutation["id"] == "experiment-measurement-changed-without-signature")

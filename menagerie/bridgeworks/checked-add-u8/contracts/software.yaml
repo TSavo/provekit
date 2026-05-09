@@ -1,8 +1,8 @@
 id: software.checked_add_u8
 layer: software
 native_artifact: ../artifacts/software/checked_add_u8.c
-lift_surface: c
-projection: existing C lifter path
+lift_surface: bridgeworks-checked-add
+projection: Bridgeworks checked-add software validator
 claim:
   name: checked_add_u8.postcondition
   summary: >

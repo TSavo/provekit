@@ -9,7 +9,7 @@ SRC = src/core.c src/parser.c src/compile_context.c
 ifneq ($(strip $(LLVM_CONFIG)),)
 CFLAGS += -DPK_C_ENABLE_CLANG_AST -I$(shell $(LLVM_CONFIG) --includedir)
 LDFLAGS += -L$(shell $(LLVM_CONFIG) --libdir) -Wl,-rpath,$(shell $(LLVM_CONFIG) --libdir) -lclang
-SRC += src/clang_ast.c
+SRC += src/clang_ast.c src/effects.c
 else
 SRC += src/clang_ast_stub.c
 endif
@@ -31,4 +31,4 @@ $(TEST): $(OBJ) tests/test_runner.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(sort $(OBJ) src/clang_ast.o src/clang_ast_stub.o) $(TEST)
+	rm -f $(sort $(OBJ) src/clang_ast.o src/clang_ast_stub.o src/effects.o) $(TEST)

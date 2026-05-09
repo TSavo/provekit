@@ -17,7 +17,7 @@ Value ProvekIt adds:
 Identity is a real contract gate. Before behavior can be witnessed, before bridge edges can be trusted, the artifacts must claim the contract names the chain needs. ProvekIt gives that identity step a protocol and a JSON output instead of leaving it as an informal grep through a source tree.
 
 Relationship to the chain:
-The final compiler-to-software edge needs checked_add_u8.postcondition as its consequent. If the C file advertises overflow_add_u8.postcondition instead, the edge has nowhere to land. That failure is different from a bad implementation. It is a failed identity match at the software boundary.
+The final compiler-to-software edge needs checked_add_u8.postcondition as its consequent. If the C file stops advertising that checked-add marker, the Bridgeworks software boundary refuses before the edge can land. That failure is different from a bad implementation. It is a failed identity match at the software boundary.
 
 What to look for:
 After the prompt, the raw JSON should show an identity-document. The highlighted lines should point to the checked_add_u8.postcondition claim and the exact C marker that produced it.
