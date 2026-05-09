@@ -207,6 +207,14 @@ static int append_core_result(pk_c_lift_result *result, const pk_c_source_facts 
     return pk_c_lift_result_extend(result, facts->extraction_result);
 }
 
+#ifdef PK_C_ENABLE_FFI_COMPOSE
+/* Forward declaration of the composition pass. Lives in composition.c
+ * and links in only when the libclang AST backend is enabled (the
+ * regex-only stub build has no per-function effects, so composition
+ * cannot soundly classify pure subtrees). */
+int pk_c_composition_emit(pk_c_lift_result *result, const pk_c_source_facts *facts);
+#endif
+
 static int add_contract(
     pk_c_lift_result *result,
     const char *name,
@@ -586,6 +594,20 @@ pk_c_lift_result *pk_c_kernel_doc_lift_source_with_options(
         pk_c_lift_result_free(result);
         return NULL;
     }
+
+#ifdef PK_C_ENABLE_FFI_COMPOSE
+    /* Composition pass (CCP §4 eager materialization). Walks the
+     * call-site graph the parser already populated, finds pure
+     * subtrees, and emits ComposedFunctionContract mementos via the
+     * canonical libprovekit FFI. Soft failure: chain-by-chain refusals
+     * are silently skipped; only an OOM bubbles up. */
+    if (pk_c_composition_emit(result, facts) != 0) {
+        pk_c_source_facts_free(facts);
+        pk_c_lift_result_free(result);
+        return NULL;
+    }
+#endif
+
     pk_c_source_facts_free(facts);
 
     if (scan_kernel_doc(result, path == NULL ? "" : path, source) != 0) {

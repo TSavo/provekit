@@ -21,6 +21,7 @@ use clap::{Parser, Subcommand};
 mod cmd_agent;
 mod cmd_ask;
 mod cmd_ci;
+mod cmd_compose;
 mod cmd_dump;
 mod cmd_fix;
 mod cmd_hash;
@@ -129,6 +130,10 @@ enum Cmd {
     /// Linker pass: derive bridges from (contracts ∪ call-edges), emit LinkBundle.
     /// Per spec protocol/specs/2026-05-03-bridge-linkage-protocol.md R2-R5.
     Link(LinkArgs),
+    /// JSON-RPC subprocess transport for the canonical compose primitive.
+    /// Per spec protocol/specs/2026-05-09-contract-composition-protocol.md §6.3.
+    /// Reads JSON-RPC requests on stdin, writes responses on stdout.
+    Compose(ComposeArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -294,6 +299,16 @@ pub struct VersionArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
+pub struct ComposeArgs {
+    /// Speak JSON-RPC over stdin / stdout. Required today; the only
+    /// transport the CCP §6.3 binding mode defines.
+    #[arg(long)]
+    pub rpc: bool,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
+#[derive(Parser, Debug, Clone)]
 pub struct LinkArgs {
     /// Project root. Must contain rust-callee/ and go-caller/ subdirs.
     /// Defaults to current directory.
@@ -331,6 +346,7 @@ fn main() -> ExitCode {
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Link(a) => cmd_link::run(a),
+        Cmd::Compose(a) => cmd_compose::run(a),
     };
     ExitCode::from(code)
 }

@@ -48,11 +48,31 @@ typedef struct {
     pk_c_lift_result *extraction_result;
 } pk_c_compile_context;
 
+/* Effect kinds per Contract Composition Protocol (CCP) v1.0.0 §3.
+ * `target` is owned and may be NULL for kinds that have no target
+ * (Io, Unsafe, Panics) or "<unknown>" for conservative tags. */
+typedef enum {
+    PK_C_EFFECT_READS = 0,
+    PK_C_EFFECT_WRITES = 1,
+    PK_C_EFFECT_IO = 2,
+    PK_C_EFFECT_UNSAFE = 3,
+    PK_C_EFFECT_PANICS = 4,
+    PK_C_EFFECT_UNRESOLVED_CALL = 5
+} pk_c_effect_kind;
+
+typedef struct {
+    pk_c_effect_kind kind;
+    char *target;
+} pk_c_function_effect;
+
 typedef struct {
     char *name;
     pk_c_locus locus;
     int has_body;
     int has_contract_annotation;
+    pk_c_function_effect *effects;
+    size_t n_effects;
+    size_t cap_effects;
 } pk_c_function_fact;
 
 typedef struct {
@@ -103,6 +123,12 @@ pk_c_source_facts *pk_c_parse_source_with_options(
 void pk_c_source_facts_free(pk_c_source_facts *facts);
 
 int pk_c_emit_call_edges(pk_c_source_facts *facts);
+int pk_c_emit_function_effects(pk_c_lift_result *result, const pk_c_source_facts *facts);
+int pk_c_function_fact_add_effect(
+    pk_c_function_fact *fact,
+    pk_c_effect_kind kind,
+    const char *target);
+const char *pk_c_effect_kind_name(pk_c_effect_kind kind);
 char *pk_c_lift_json_escape(const char *src);
 
 pk_c_compile_context *pk_c_compile_context_from_command(

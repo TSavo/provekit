@@ -317,6 +317,128 @@ else
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
     fi
+
+    # Per-function effects extraction per CCP v1.0.0 section 3.
+    # Composition refuses on impure atoms; a lifter that emits no
+    # effects is unsound. The fixture has one function per effect kind
+    # plus pure_function with empty effects.
+    EFFECTS_FIXTURE="$SCRIPT_DIR/fixtures/effects_basic.c"
+    if [ ! -f "$EFFECTS_FIXTURE" ]; then
+        echo "FAIL: effects fixture not found: $EFFECTS_FIXTURE" >&2
+        exit 1
+    fi
+    EFFECTS_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$EFFECTS_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+    EFFECTS_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":130,\"method\":\"parse\",\"params\":{\"path\":\"effects_basic.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$EFFECTS_SOURCE\"}}"
+    EFFECTS_RESPONSE=$(printf '%s\n' "$EFFECTS_REQUEST" | "$BIN" --rpc)
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -q '"id":130' || {
+        echo "FAIL: effects parse did not echo id 130" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"pure_function","kind":"function-effects","effects":\[\]' || {
+        echo "FAIL: pure_function should emit empty effects array" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"writes_function","kind":"function-effects","effects":\[[^]]*"kind":"Writes"' || {
+        echo "FAIL: writes_function should emit Writes effect" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"reads_function","kind":"function-effects","effects":\[[^]]*"kind":"Reads"' || {
+        echo "FAIL: reads_function should emit Reads effect" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"io_function","kind":"function-effects","effects":\[[^]]*"kind":"Io"' || {
+        echo "FAIL: io_function should emit Io effect from kmalloc allowlist" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"unsafe_function","kind":"function-effects","effects":\[[^]]*"kind":"Unsafe"' || {
+        echo "FAIL: unsafe_function should emit Unsafe effect from non-void pointer cast" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"panics_function","kind":"function-effects","effects":\[[^]]*"kind":"Panics"' || {
+        echo "FAIL: panics_function should emit Panics effect from BUG_ON allowlist" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$EFFECTS_RESPONSE" | grep -qE '"function":"unresolved_call_function","kind":"function-effects","effects":\[[^]]*"kind":"UnresolvedCall"' || {
+        echo "FAIL: unresolved_call_function should emit UnresolvedCall effect from struct-member function pointer dispatch" >&2
+        echo "$EFFECTS_RESPONSE" >&2
+        exit 1
+    }
+
+    # Composition pass per CCP v1.0.0 section 4 (eager materialization)
+    # and section 6.2 (C ABI FFI). The composition_basic.c fixture has
+    # three pure helpers chained via direct calls; the C lifter must
+    # walk the call_sites graph, identify the pure subtree, JCS-encode
+    # the chain, call libprovekit's pk_compose_chain_contracts via the
+    # FFI, and emit the resulting ComposedFunctionContract back into
+    # the IR document under kind="composed-contract".
+    COMPOSITION_FIXTURE="$SCRIPT_DIR/fixtures/composition_basic.c"
+    if [ ! -f "$COMPOSITION_FIXTURE" ]; then
+        echo "FAIL: composition fixture not found: $COMPOSITION_FIXTURE" >&2
+        exit 1
+    fi
+    COMPOSITION_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$COMPOSITION_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+    COMPOSITION_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":140,\"method\":\"parse\",\"params\":{\"path\":\"composition_basic.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$COMPOSITION_SOURCE\"}}"
+    COMPOSITION_RESPONSE_1=$(printf '%s\n' "$COMPOSITION_REQUEST" | "$BIN" --rpc)
+    COMPOSITION_RESPONSE_2=$(printf '%s\n' "$COMPOSITION_REQUEST" | "$BIN" --rpc)
+
+    printf '%s\n' "$COMPOSITION_RESPONSE_1" | grep -q '"id":140' || {
+        echo "FAIL: composition parse did not echo id 140" >&2
+        echo "$COMPOSITION_RESPONSE_1" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$COMPOSITION_RESPONSE_1" | grep -q '"kind":"composed-contract"' || {
+        echo "FAIL: composition_basic.c should yield at least one composed-contract declaration" >&2
+        echo "$COMPOSITION_RESPONSE_1" >&2
+        exit 1
+    }
+
+    # Byte-stable composed CID across runs: composition is deterministic.
+    # Extract the composed-contract entry for compose_three (the longest
+    # pure chain in the fixture: [double_it, add_one, compose_three]).
+    EXTRACT_COMPOSE_THREE_CID='import json,sys; r=json.loads(sys.stdin.read()); ds=r["result"]["declarations"]; cs=[d for d in ds if d.get("kind")=="composed-contract" and d.get("function")=="compose_three"]; print(cs[0]["composedCid"]) if cs else sys.exit(99)'
+    CID_1=$(printf '%s\n' "$COMPOSITION_RESPONSE_1" | python3 -c "$EXTRACT_COMPOSE_THREE_CID")
+    CID_2=$(printf '%s\n' "$COMPOSITION_RESPONSE_2" | python3 -c "$EXTRACT_COMPOSE_THREE_CID")
+
+    if [ -z "$CID_1" ] || [ -z "$CID_2" ]; then
+        echo "FAIL: could not extract compose_three composed CID from lift output" >&2
+        echo "$COMPOSITION_RESPONSE_1" >&2
+        exit 1
+    fi
+    if [ "$CID_1" != "$CID_2" ]; then
+        echo "FAIL: composed CID for compose_three is not byte-stable across runs (run 1=$CID_1 run 2=$CID_2)" >&2
+        exit 1
+    fi
+    case "$CID_1" in
+        blake3-512:*) ;;
+        *)
+            echo "FAIL: composed CID lacks expected blake3-512 prefix: $CID_1" >&2
+            exit 1
+            ;;
+    esac
+
+    # The pinned compose_three CID guards against accidental changes to
+    # the composition pass that would silently break Rust/C federation.
+    EXPECTED_COMPOSE_THREE_CID="blake3-512:c636517ab82fac933a920ed47f28f585d7357161c2498c5221928b693cfa7b0dc61570fb62284ac9bb72072992bd84168876be42fefe4e42d03a61a2a94b6e40"
+    if [ "$CID_1" != "$EXPECTED_COMPOSE_THREE_CID" ]; then
+        echo "FAIL: compose_three composed CID changed; expected $EXPECTED_COMPOSE_THREE_CID got $CID_1" >&2
+        exit 1
+    fi
 fi
 
 echo "provekit-lift-c-kernel-doc integration passed"
