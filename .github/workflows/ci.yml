@@ -754,7 +754,7 @@ jobs:
 
   cicp-refresh:
     name: CICP PR witness refresh
-    if: always() && github.event_name == 'pull_request'
+    if: always() && !cancelled() && github.event_name == 'pull_request'
     runs-on: [self-hosted, Linux, X64, vault]
     timeout-minutes: 15
     needs:

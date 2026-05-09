@@ -346,6 +346,10 @@ fn github_ci_refreshes_stale_cicp_witnesses_on_same_repo_prs() {
         "refresh job must run only for PRs:\n{refresh_text}"
     );
     assert!(
+        refresh_text.contains("!cancelled()"),
+        "refresh job must not run after a superseded workflow has been cancelled:\n{refresh_text}"
+    );
+    assert!(
         refresh_text.contains("github.event.pull_request.head.repo.full_name != github.repository")
             && refresh_text.contains("CICP PR witness refresh only supports same-repo pull requests")
             && refresh_text.contains("exit 1"),
