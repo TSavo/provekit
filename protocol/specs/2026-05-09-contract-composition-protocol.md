@@ -322,11 +322,11 @@ Consumers writing wrappers (FFI, CLI) MUST canonicalize inputs before calling. C
 
 The v1 reference implementation lives at `implementations/rust/libprovekit/src/compose.rs` (planned). It exposes:
 
-- `pub fn compose_chain_contracts(...)` — the canonical primitive
-- `pub struct EffectSet` — opaque type
-- `pub enum Effect` — the effect kinds
-- `pub enum CompositionError` — the failure variants
-- `pub struct ComposedFunctionContract` — the output type
+- `pub fn compose_chain_contracts(...)`, the canonical primitive
+- `pub struct EffectSet`, opaque type
+- `pub enum Effect`, the effect kinds
+- `pub enum CompositionError`, the failure variants
+- `pub struct ComposedFunctionContract`, the output type
 - `pub const CCP_VERSION: &str = "1.0.0"`
 
 The C ABI FFI lives at `implementations/rust/libprovekit/include/provekit-compose.h` (planned). It exposes the C-callable wrappers per Section 6.2.
