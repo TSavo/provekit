@@ -101,6 +101,8 @@ pk_c_source_facts *pk_c_parse_source_with_options(
     const pk_c_parse_options *options);
 void pk_c_source_facts_free(pk_c_source_facts *facts);
 
+int pk_c_emit_call_edges(pk_c_source_facts *facts);
+
 pk_c_compile_context *pk_c_compile_context_from_command(
     const char *path,
     const char *command);

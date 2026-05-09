@@ -467,6 +467,7 @@ static pk_c_source_facts *pk_c_parse_source_clang(
 
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
+    (void)pk_c_emit_call_edges(facts);
     return facts;
 }
 

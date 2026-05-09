@@ -202,4 +202,37 @@ printf '%s\n' "$RESPONSES" | grep -q '"id":77' || {
     exit 1
 }
 
+STRUCTURAL_FIXTURE="$SCRIPT_DIR/fixtures/structural_basic.c"
+if [ ! -f "$STRUCTURAL_FIXTURE" ]; then
+    echo "FAIL: structural fixture not found: $STRUCTURAL_FIXTURE" >&2
+    exit 1
+fi
+STRUCTURAL_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$STRUCTURAL_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+STRUCTURAL_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":110,\"method\":\"parse\",\"params\":{\"path\":\"structural_basic.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$STRUCTURAL_SOURCE\"}}"
+STRUCTURAL_RESPONSE=$(printf '%s\n' "$STRUCTURAL_REQUEST" | "$BIN" --rpc)
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"id":110' || {
+    echo "FAIL: structural parse did not echo id 110" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"callEdges":\[\s*\{' || {
+    echo "FAIL: clang_ast backend should surface call edges (callEdges array empty on file with callsites)" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"callee_name":"helper_inplace"' || {
+    echo "FAIL: callEdges should include helper_inplace callee per pinned schema (caller_function/callee_name/args_json/callsite_*)" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"caller_function":"caller_unsafe"' || {
+    echo "FAIL: callEdges should include caller_unsafe as a caller per pinned schema" >&2
+    echo "$STRUCTURAL_RESPONSE" >&2
+    exit 1
+}
+
 echo "provekit-lift-c-kernel-doc integration passed"

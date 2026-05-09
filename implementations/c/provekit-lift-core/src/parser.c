@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <regex.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -582,6 +583,147 @@ void pk_c_source_facts_free(pk_c_source_facts *facts) {
     free(facts);
 }
 
+static char *pk_c_call_edge_escape(const char *src) {
+    size_t total = 0;
+    char *out;
+    char *p;
+
+    if (src == NULL) {
+        src = "";
+    }
+    for (const unsigned char *s = (const unsigned char *)src; *s != '\0'; s++) {
+        size_t add;
+
+        if (*s == '"' || *s == '\\') {
+            add = 2;
+        } else if (*s < 0x20) {
+            add = 6;
+        } else {
+            add = 1;
+        }
+        if (add > ((size_t)-1) - total) {
+            return NULL;
+        }
+        total += add;
+    }
+    out = malloc(total + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    p = out;
+    for (const unsigned char *s = (const unsigned char *)src; *s != '\0'; s++) {
+        switch (*s) {
+        case '"':
+            *p++ = '\\';
+            *p++ = '"';
+            break;
+        case '\\':
+            *p++ = '\\';
+            *p++ = '\\';
+            break;
+        case '\n':
+            *p++ = '\\';
+            *p++ = 'n';
+            break;
+        case '\r':
+            *p++ = '\\';
+            *p++ = 'r';
+            break;
+        case '\t':
+            *p++ = '\\';
+            *p++ = 't';
+            break;
+        default:
+            if (*s < 0x20) {
+                (void)snprintf(p, 7, "\\u%04x", *s);
+                p += 6;
+            } else {
+                *p++ = (char)*s;
+            }
+            break;
+        }
+    }
+    *p = '\0';
+    return out;
+}
+
+static int pk_c_emit_one_call_edge(
+    pk_c_lift_result *result,
+    const pk_c_call_site_fact *fact
+) {
+    char *caller = pk_c_call_edge_escape(fact->caller);
+    char *callee = pk_c_call_edge_escape(fact->callee);
+    char *path = pk_c_call_edge_escape(fact->locus.path);
+    char *json = NULL;
+    int written;
+    int rc;
+
+    if (caller == NULL || callee == NULL || path == NULL) {
+        free(caller);
+        free(callee);
+        free(path);
+        return -1;
+    }
+    written = snprintf(NULL,
+        0,
+        "{\"caller_function\":\"%s\",\"callee_name\":\"%s\","
+        "\"args_json\":\"[]\",\"callsite_path\":\"%s\","
+        "\"callsite_line\":%d,\"callsite_column\":%d}",
+        caller,
+        callee,
+        path,
+        fact->locus.line,
+        fact->locus.column);
+    if (written < 0) {
+        free(caller);
+        free(callee);
+        free(path);
+        return -1;
+    }
+    json = malloc((size_t)written + 1);
+    if (json == NULL) {
+        free(caller);
+        free(callee);
+        free(path);
+        return -1;
+    }
+    (void)snprintf(json,
+        (size_t)written + 1,
+        "{\"caller_function\":\"%s\",\"callee_name\":\"%s\","
+        "\"args_json\":\"[]\",\"callsite_path\":\"%s\","
+        "\"callsite_line\":%d,\"callsite_column\":%d}",
+        caller,
+        callee,
+        path,
+        fact->locus.line,
+        fact->locus.column);
+    rc = pk_c_lift_result_add_call_edge(result, json);
+    free(json);
+    free(caller);
+    free(callee);
+    free(path);
+    return rc;
+}
+
+int pk_c_emit_call_edges(pk_c_source_facts *facts) {
+    if (facts == NULL || facts->n_call_sites == 0) {
+        return 0;
+    }
+    if (facts->extraction_result == NULL) {
+        facts->extraction_result = pk_c_lift_result_new();
+        if (facts->extraction_result == NULL) {
+            return -1;
+        }
+    }
+    for (size_t i = 0; i < facts->n_call_sites; i++) {
+        if (pk_c_emit_one_call_edge(facts->extraction_result,
+                &facts->call_sites[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
     static const char *const function_pattern =
         "^[[:space:]]*[A-Za-z_][A-Za-z0-9_ *]*[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\\(";
@@ -752,5 +894,8 @@ done:
         regfree(&function_re);
     }
     free(owned_source);
+    if (facts != NULL) {
+        (void)pk_c_emit_call_edges(facts);
+    }
     return facts;
 }
