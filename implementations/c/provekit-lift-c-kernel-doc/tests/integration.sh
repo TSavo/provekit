@@ -266,6 +266,34 @@ else
         echo "$STRUCTURAL_RESPONSE" >&2
         exit 1
     }
+
+    # Recovery-wrapped calls (RecoveryExpr / CXCursor_UnexposedExpr)
+    # show up in real kernel C whenever an arg has a dependent type,
+    # e.g. a local declared with an undeclared typedef. The lifter must
+    # surface the call name even when libclang wraps the call instead
+    # of producing a regular CallExpr cursor; otherwise the cluster
+    # predicate misses critical sites such as aead_request_set_crypt
+    # in net/ipv4/esp4.c.
+    RECOVERY_FIXTURE="$SCRIPT_DIR/fixtures/recovery_call.c"
+    if [ ! -f "$RECOVERY_FIXTURE" ]; then
+        echo "FAIL: recovery fixture not found: $RECOVERY_FIXTURE" >&2
+        exit 1
+    fi
+    RECOVERY_SOURCE=$(sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' "$RECOVERY_FIXTURE" | tr -d '\n' | sed 's/\\n$//')
+    RECOVERY_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":120,\"method\":\"parse\",\"params\":{\"path\":\"recovery_call.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$RECOVERY_SOURCE\"}}"
+    RECOVERY_RESPONSE=$(printf '%s\n' "$RECOVERY_REQUEST" | "$BIN" --rpc)
+
+    printf '%s\n' "$RECOVERY_RESPONSE" | grep -q '"callee_name":"target_callback_set"' || {
+        echo "FAIL: regular CallExpr target_callback_set should still be lifted in recovery fixture" >&2
+        echo "$RECOVERY_RESPONSE" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$RECOVERY_RESPONSE" | grep -q '"callee_name":"target_inplace_set"' || {
+        echo "FAIL: RecoveryExpr-wrapped call target_inplace_set must be surfaced as a callEdge (libclang wraps the call when an arg has dependent type)" >&2
+        echo "$RECOVERY_RESPONSE" >&2
+        exit 1
+    }
 fi
 
 echo "provekit-lift-c-kernel-doc integration passed"

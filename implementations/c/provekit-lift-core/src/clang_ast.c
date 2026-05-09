@@ -482,10 +482,51 @@ static char *pk_c_clang_call_callee(CXCursor cursor) {
     return ctx.name == NULL ? pk_c_clang_copy("") : ctx.name;
 }
 
+/* Walk children looking for a DeclRefExpr whose referenced cursor is a
+ * FunctionDecl. Used to recover the callee name from libclang's
+ * RecoveryExpr nodes (CXCursor_UnexposedExpr) that wrap calls whose
+ * argument types could not be resolved. */
+static enum CXChildVisitResult pk_c_clang_find_recovery_function_ref(
+    CXCursor cursor,
+    CXCursor parent,
+    CXClientData client_data
+) {
+    pk_c_clang_callee_ctx *ctx = (pk_c_clang_callee_ctx *)client_data;
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+    (void)parent;
+
+    if (ctx->name != NULL) {
+        return CXChildVisit_Break;
+    }
+    if (kind == CXCursor_DeclRefExpr) {
+        CXCursor referenced = clang_getCursorReferenced(cursor);
+
+        if (clang_getCursorKind(referenced) == CXCursor_FunctionDecl) {
+            ctx->name = pk_c_clang_string(clang_getCursorSpelling(referenced));
+            if (ctx->name != NULL && ctx->name[0] != '\0') {
+                return CXChildVisit_Break;
+            }
+            free(ctx->name);
+            ctx->name = NULL;
+        }
+        /* Not a function ref; the recovery wraps something else. */
+        return CXChildVisit_Break;
+    }
+    /* Step through transparent wrappers (ImplicitCastExpr is reported as
+     * UnexposedExpr by libclang) until we hit the function reference. */
+    if (kind == CXCursor_UnexposedExpr) {
+        return CXChildVisit_Recurse;
+    }
+    /* Anything else as a first child means the cursor is not a recovery-
+     * wrapped call; bail out instead of scanning the rest of the children
+     * (which would be argument expressions). */
+    return CXChildVisit_Break;
+}
+
 static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent, CXClientData client_data) {
     pk_c_clang_visit_ctx *ctx = (pk_c_clang_visit_ctx *)client_data;
     enum CXCursorKind kind = clang_getCursorKind(cursor);
-    (void)parent;
+    enum CXCursorKind parent_kind = clang_getCursorKind(parent);
 
     if (!pk_c_clang_location_is_main(cursor)) {
         return CXChildVisit_Continue;
@@ -536,6 +577,39 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
         rc = pk_c_clang_append_macro(ctx->facts, ctx->path, name, ctx->current_function, cursor);
         free(name);
         return rc == 0 ? CXChildVisit_Continue : CXChildVisit_Break;
+    }
+
+    /* libclang represents call expressions whose arguments cannot be
+     * type-checked (e.g. an arg with `<dependent type>` because a
+     * referenced typedef was not declared) as RecoveryExpr nodes
+     * surfaced through CXCursor_UnexposedExpr instead of CXCursor_CallExpr.
+     * The function reference is preserved as a child DeclRefExpr.
+     * Detect that shape and emit a call edge so the cluster predicate
+     * does not silently lose calls in real kernel C, where dependent
+     * types are common without a built kernel tree on the include path.
+     *
+     * Skip UnexposedExprs that are immediate children of CallExpr or of
+     * other UnexposedExprs we are already processing, since those are the
+     * ImplicitCastExpr / FunctionToPointerDecay wrappers the regular
+     * CallExpr branch already handles. */
+    if (kind == CXCursor_UnexposedExpr &&
+        parent_kind != CXCursor_CallExpr &&
+        parent_kind != CXCursor_UnexposedExpr) {
+        pk_c_clang_callee_ctx fc = {0};
+
+        (void)clang_visitChildren(cursor, pk_c_clang_find_recovery_function_ref, &fc);
+        if (fc.name != NULL && fc.name[0] != '\0') {
+            int rc = pk_c_clang_append_call(
+                ctx->facts, ctx->path, ctx->current_function, fc.name, cursor);
+
+            free(fc.name);
+            if (rc != 0) {
+                return CXChildVisit_Break;
+            }
+        } else {
+            free(fc.name);
+        }
+        return CXChildVisit_Recurse;
     }
 
     return CXChildVisit_Recurse;
