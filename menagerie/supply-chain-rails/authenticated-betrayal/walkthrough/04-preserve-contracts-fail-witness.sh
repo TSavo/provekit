@@ -16,9 +16,9 @@ section "Preserved Contract Fails Witness"
 explain_then_pause "lift the poisoned release and lower the preserved contract" <<'TEXT'
 This is the central "oh shit" moment. The 1.4.2 package keeps the baseline contract set. That means the maintainer is explicitly still claiming runtime.no-env-secret-read. ProvekIt does not block the claim at the text layer. It lifts the claim and then demands a witness.
 
-Lowering is where the claim becomes evidence. The JavaScript lowerer receives the ProofIR obligation for runtime.no-env-secret-read and inspects the host artifact. The package contains a rare-path process.env.SAFE_JSON_TOKEN read, so the lowerer cannot mint a witness .proof.
+Lowering is where the claim becomes evidence. The JavaScript lowerer receives the ProofIR obligation for runtime.no-env-secret-read, parses index.js, and records AST-backed evidence. The package contains a rare-path process.env.SAFE_JSON_TOKEN read, so the lowerer cannot mint a witness .proof.
 
-What to look for: lift still shows the baseline contractSetCid, says the contract source is provekit-lift-ts, and carries a witness attached to runtime.no-env-secret-read. Lower then returns status rejected with reasonCode env-secret-read and the concrete counterexample text.
+What to look for: lift still shows the baseline contractSetCid, says the contract source is provekit-lift-ts, and carries a witness attached to runtime.no-env-secret-read. Lower then returns status rejected with reasonCode env-secret-read, an evidenceCid over the refusal receipt, a source span for the counterexample, and an empty unsupportedSemantics list. That last field matters: this is not a shrug about JavaScript being hard. It is a concrete contradiction of the preserved contract.
 TEXT
 
 print_provekit lift "menagerie/supply-chain-rails/authenticated-betrayal/packages/safe-json-1.4.2-lie" --json --quiet
@@ -46,11 +46,14 @@ section "Lower Refusal JSON"
 show_json_file "$lower_json"
 highlight_raw_line "$lower_json" '"status": "rejected"' "The lowerer refused to mint a witness .proof."
 highlight_raw_line "$lower_json" '"reasonCode": "env-secret-read"' "The violated rail is the preserved no-env-secret-read contract."
+highlight_raw_line "$lower_json" '"evidenceCid":' "The refusal evidence is content-addressed."
 highlight_raw_line "$lower_json" 'process.env.SAFE_JSON_TOKEN' "The counterexample names the forbidden secret read."
-highlight_raw_line "$lower_json" '"source": "scan(index.js) => reject' "The lower result carries the emitted witness evidence description."
+highlight_raw_line "$lower_json" '"sourceSpans":' "The lowerer points at the source span that contradicts the preserved contract."
+highlight_raw_line "$lower_json" '"unsupportedSemantics": []' "The failure is a concrete counterexample, not an unsupported-language escape hatch."
+highlight_raw_line "$lower_json" '"source": "parse(index.js) => reject' "The lower result carries the emitted witness evidence description."
 
 analysis_with_receipts <<'TEXT'
-The lift lines prove the maintainer made the old claim. The lower lines prove ProvekIt forced the claim into evidence and rejected it. The package was not rejected because the signer was fake or the provenance was missing. It was rejected because the preserved contract could not produce a witness.
+The lift lines prove the maintainer made the old claim. The lower lines prove ProvekIt forced the claim into evidence and rejected it. The package was not rejected because the signer was fake or the provenance was missing. It was rejected because the preserved contract lowered into a content-addressed AST receipt with a counterexample.
 
 That is the supply-chain primitive in action: claim first, evidence required, red receipt when evidence cannot be produced.
 TEXT

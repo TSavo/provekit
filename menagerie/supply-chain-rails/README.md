@@ -39,16 +39,18 @@ That means the exhibit does not claim that ProvekIt currently models every npm
 attack surface. It does not model full npm dependency resolution, lifecycle
 script semantics, registry provenance, package aliases, bundled dependency
 behavior, or every possible in-toto layout. The npm lifter maps enough package
-rails to carry the contract admission story, and the JavaScript lowerer
-demonstrates the ORP move for this contract. They are not general-purpose npm
-or JavaScript verifiers yet.
+rails to carry the contract admission story. The JavaScript lowerer now parses
+JavaScript and emits AST-backed evidence for `runtime.no-env-secret-read`,
+including refusal spans and unsupported-semantics receipts. It is still not a
+general-purpose JavaScript verifier beyond that documented coverage envelope.
 
 The path to remove those caveats is tracked in:
 
 - [#498](https://github.com/TSavo/provekit/issues/498): make the npm inspector
   a complete package semantic model.
 - [#499](https://github.com/TSavo/provekit/issues/499): promote the JavaScript
-  lowerer from exhibit-specific ORP to a general JavaScript evidence engine.
+  lowerer beyond the current `runtime.no-env-secret-read` envelope into a
+  general JavaScript evidence engine.
 
 Until those land, the claim is conditional and receipt-shaped: for this
 package-shaped release, this contract set, these accepted lowerers, and this

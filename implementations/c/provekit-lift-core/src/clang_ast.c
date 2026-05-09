@@ -275,6 +275,62 @@ static char *pk_c_clang_get_cursor_source(CXCursor cursor) {
     return out;
 }
 
+static void pk_c_clang_skip_space(const char **p) {
+    while (isspace((unsigned char)**p)) {
+        (*p)++;
+    }
+}
+
+static int pk_c_clang_match_callee_token(const char **p, const char *callee) {
+    size_t len = strlen(callee);
+
+    if (strncmp(*p, callee, len) != 0) {
+        return 0;
+    }
+    if (isalnum((unsigned char)(*p)[len]) || (*p)[len] == '_') {
+        return 0;
+    }
+    *p += len;
+    return 1;
+}
+
+static int pk_c_clang_source_starts_direct_call(CXCursor cursor, const char *callee) {
+    char *source;
+    const char *p;
+    int result = 0;
+
+    if (callee == NULL || callee[0] == '\0') {
+        return 0;
+    }
+    source = pk_c_clang_get_cursor_source(cursor);
+    if (source == NULL) {
+        return 0;
+    }
+    p = source;
+    pk_c_clang_skip_space(&p);
+    if (pk_c_clang_match_callee_token(&p, callee)) {
+        pk_c_clang_skip_space(&p);
+        result = *p == '(';
+    } else if (*p == '(') {
+        p++;
+        pk_c_clang_skip_space(&p);
+        if (*p == '*') {
+            p++;
+            pk_c_clang_skip_space(&p);
+        }
+        if (pk_c_clang_match_callee_token(&p, callee)) {
+            pk_c_clang_skip_space(&p);
+            if (*p == ')') {
+                p++;
+                pk_c_clang_skip_space(&p);
+                result = *p == '(';
+            }
+        }
+    }
+    free(source);
+    return result;
+}
+
 static const char *pk_c_clang_classify_arg_text(const char *text) {
     const char *p;
 
@@ -538,7 +594,9 @@ static enum CXChildVisitResult pk_c_clang_find_recovery_function_ref(
     }
     /* Step through transparent wrappers (ImplicitCastExpr is reported as
      * UnexposedExpr by libclang) until we hit the function reference. */
-    if (kind == CXCursor_UnexposedExpr) {
+    if (kind == CXCursor_UnexposedExpr ||
+        kind == CXCursor_ParenExpr ||
+        kind == CXCursor_UnaryOperator) {
         return CXChildVisit_Recurse;
     }
     /* Anything else as a first child means the cursor is not a recovery-
@@ -632,7 +690,8 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
         pk_c_clang_callee_ctx fc = {0};
 
         (void)clang_visitChildren(cursor, pk_c_clang_find_recovery_function_ref, &fc);
-        if (fc.name != NULL && fc.name[0] != '\0') {
+        if (fc.name != NULL && fc.name[0] != '\0' &&
+            pk_c_clang_source_starts_direct_call(cursor, fc.name)) {
             int rc = pk_c_clang_append_call(
                 ctx->facts, ctx->path, ctx->current_function, fc.name, cursor);
 
