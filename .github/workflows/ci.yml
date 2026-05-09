@@ -25,6 +25,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   conformance:
     name: Cross-language conformance gate
@@ -388,6 +392,7 @@ jobs:
 
   cicp-reuse-smoke:
     name: CICP checked-in reuse smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
 
@@ -746,3 +751,134 @@ jobs:
         with:
           name: cicp-shadow-swift
           path: .provekit/ci-shadow/swift
+
+  cicp-refresh:
+    name: CICP PR witness refresh
+    if: always() && !cancelled() && github.event_name == 'pull_request'
+    runs-on: [self-hosted, Linux, X64, vault]
+    timeout-minutes: 15
+    needs:
+      - prove-linux
+      - prove-swift
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Refuse fork PRs
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "CICP PR witness refresh only supports same-repo pull requests." >&2
+          exit 1
+
+      - name: Require prove jobs to pass
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.prove-linux.result }}" != "success" ]; then
+            echo "prove-linux did not pass: ${{ needs.prove-linux.result }}" >&2
+            exit 1
+          fi
+          if [ "${{ needs.prove-swift.result }}" != "success" ]; then
+            echo "prove-swift did not pass: ${{ needs.prove-swift.result }}" >&2
+            exit 1
+          fi
+
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download CICP candidate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cicp-shadow-*
+          path: .provekit/ci-artifacts
+          merge-multiple: false
+
+      - name: Prepare CICP results directory
+        run: |
+          set -euo pipefail
+          rm -rf .provekit/ci-shadow
+          mkdir -p .provekit/ci-shadow
+          shopt -s nullglob
+          found=0
+          for artifact in .provekit/ci-artifacts/cicp-shadow-*; do
+            kit="${artifact##*/cicp-shadow-}"
+            mkdir -p ".provekit/ci-shadow/${kit}"
+            cp -R "${artifact}/." ".provekit/ci-shadow/${kit}/"
+            found=1
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "No CICP candidate artifacts were downloaded." >&2
+            exit 1
+          fi
+
+      - name: Accept successful CICP candidates
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci accept \
+            --repo . \
+            --all-kits \
+            --results-dir .provekit/ci-shadow \
+            --json
+
+      - name: Commit refreshed CICP witnesses
+        env:
+          CICP_GH_TOKEN_FILE: /run/vault/github-pat
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git add .provekit/ci/accepted
+          if git diff --cached --quiet; then
+            echo "CICP accepted witnesses are already current."
+            exit 0
+          fi
+          token_file="$RUNNER_TEMP/cicp-gh-token"
+          rm -f "$token_file"
+          if [ ! -s "$CICP_GH_TOKEN_FILE" ]; then
+            echo "Vault-rendered GitHub token file missing or empty: $CICP_GH_TOKEN_FILE" >&2
+            exit 1
+          fi
+          if [ -r "$CICP_GH_TOKEN_FILE" ]; then
+            tr -d '\r\n' < "$CICP_GH_TOKEN_FILE" > "$token_file"
+          else
+            echo "Vault-rendered GitHub token file is not readable by $(id -un); trying sudo copy." >&2
+            if ! sudo -n sh -c 'tr -d "\r\n" < "$1"' sh "$CICP_GH_TOKEN_FILE" > "$token_file"; then
+              echo "Vault-rendered GitHub token file is not readable and sudo copy failed: $CICP_GH_TOKEN_FILE" >&2
+              exit 1
+            fi
+          fi
+          chmod 600 "$token_file"
+          if [ ! -s "$token_file" ]; then
+            echo "Vault-rendered GitHub token was empty after staging: $CICP_GH_TOKEN_FILE" >&2
+            exit 1
+          fi
+          git diff --cached --name-only
+          git config user.name "provekit-ci"
+          git config user.email "provekit-ci@users.noreply.github.com"
+          git commit -m "Refresh CICP accepted witnesses"
+          token="$(cat "$token_file")"
+          git push "https://x-access-token:${token}@github.com/${GH_REPOSITORY}.git" "HEAD:${PR_HEAD_REF}"
+          echo "Pushed refreshed CICP accepted witnesses; the new PR head must run CI."
+          exit 1
