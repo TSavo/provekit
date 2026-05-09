@@ -11,7 +11,7 @@ TEST_SH = tests/integration.sh
 ifneq ($(strip $(LLVM_CONFIG)),)
 CFLAGS += -DPK_C_ENABLE_CLANG_AST -I$(shell $(LLVM_CONFIG) --includedir)
 LDFLAGS += -L$(shell $(LLVM_CONFIG) --libdir) -Wl,-rpath,$(shell $(LLVM_CONFIG) --libdir) -lclang
-SRC += ../provekit-lift-core/src/clang_ast.c
+SRC += ../provekit-lift-core/src/clang_ast.c ../provekit-lift-core/src/effects.c
 else
 SRC += ../provekit-lift-core/src/clang_ast_stub.c
 endif
