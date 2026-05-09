@@ -4,7 +4,7 @@ CC = cc
 CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -Iinclude -g
 LLVM_CONFIG ?= $(shell command -v llvm-config 2>/dev/null || command -v /usr/local/opt/llvm/bin/llvm-config 2>/dev/null || command -v /usr/local/opt/llvm@21/bin/llvm-config 2>/dev/null)
 
-SRC = src/core.c src/parser.c
+SRC = src/core.c src/parser.c src/compile_context.c
 
 ifneq ($(strip $(LLVM_CONFIG)),)
 CFLAGS += -DPK_C_ENABLE_CLANG_AST -I$(shell $(LLVM_CONFIG) --includedir)

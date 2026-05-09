@@ -349,6 +349,107 @@ static void test_parse_with_regex_options_records_backend(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_compile_context_from_kbuild_command_filters_for_clang(void) {
+    const char *line =
+        "cmd_kernel/foo.o := gcc -Wp,-MMD,kernel/.foo.o.d -nostdinc "
+        "-I./arch/x86/include -I ./include -include ./include/linux/compiler_types.h "
+        "-D__KERNEL__ -DCONFIG_SMP=1 --target=x86_64-linux-gnu "
+        "-c -o kernel/foo.o kernel/foo.c";
+    pk_c_compile_context *context = pk_c_compile_context_from_kbuild_cmdline("kernel/foo.c", line);
+    const char *want[] = {
+        "-x", "c", "-std=gnu11", "-nostdinc",
+        "-I./arch/x86/include", "-I", "./include",
+        "-include", "./include/linux/compiler_types.h",
+        "-D__KERNEL__", "-DCONFIG_SMP=1",
+        "--target=x86_64-linux-gnu"
+    };
+
+    if (!context) {
+        fprintf(stderr, "FAIL: compile context returned null\n");
+        failures++;
+        return;
+    }
+    if (context->n_clang_args != sizeof(want) / sizeof(want[0])) {
+        fprintf(stderr, "FAIL: expected %zu clang args, got %zu\n",
+            sizeof(want) / sizeof(want[0]), context->n_clang_args);
+        failures++;
+    } else {
+        for (size_t i = 0; i < context->n_clang_args; i++) {
+            assert_eq(context->clang_args[i], want[i], "kbuild clang arg");
+        }
+    }
+    assert_eq(context->compile_command,
+        "gcc -Wp,-MMD,kernel/.foo.o.d -nostdinc -I./arch/x86/include -I ./include -include ./include/linux/compiler_types.h -D__KERNEL__ -DCONFIG_SMP=1 --target=x86_64-linux-gnu -c -o kernel/foo.o kernel/foo.c",
+        "kbuild compile command provenance");
+    assert_eq(context->target_triple, "x86_64-linux-gnu", "kbuild target triple");
+    if (context->extraction_result != NULL &&
+        context->extraction_result->opacity_report.len != 0) {
+        fprintf(stderr, "FAIL: expected no opacity for supported compile command\n");
+        failures++;
+    }
+    pk_c_compile_context_free(context);
+}
+
+static void test_compile_context_from_quoted_command_preserves_shell_words(void) {
+    const char *line =
+        "clang -DNAME='value with space' -I\"quoted include\" -c quoted.c";
+    pk_c_compile_context *context = pk_c_compile_context_from_command("quoted.c", line);
+    const char *want[] = {
+        "-x", "c", "-std=gnu11",
+        "-DNAME=value with space",
+        "-Iquoted include"
+    };
+
+    if (!context) {
+        fprintf(stderr, "FAIL: quoted compile context returned null\n");
+        failures++;
+        return;
+    }
+    if (context->n_clang_args != sizeof(want) / sizeof(want[0])) {
+        fprintf(stderr, "FAIL: expected %zu quoted clang args, got %zu\n",
+            sizeof(want) / sizeof(want[0]), context->n_clang_args);
+        failures++;
+    } else {
+        for (size_t i = 0; i < context->n_clang_args; i++) {
+            assert_eq(context->clang_args[i], want[i], "quoted clang arg");
+        }
+    }
+    pk_c_compile_context_free(context);
+}
+
+static void test_compile_context_reports_dropped_gcc_plugin_flags(void) {
+    const char *line =
+        "gcc -fplugin=scripts/gcc-plugins/stackleak_plugin.so "
+        "-fplugin-arg-stackleak_plugin-track-min-size=100 -DOK=1 -c plugin.c";
+    pk_c_compile_context *context = pk_c_compile_context_from_command("plugin.c", line);
+    const char *want[] = {
+        "-x", "c", "-std=gnu11", "-DOK=1"
+    };
+
+    if (!context) {
+        fprintf(stderr, "FAIL: plugin compile context returned null\n");
+        failures++;
+        return;
+    }
+    if (context->n_clang_args != sizeof(want) / sizeof(want[0])) {
+        fprintf(stderr, "FAIL: expected %zu plugin-filtered clang args, got %zu\n",
+            sizeof(want) / sizeof(want[0]), context->n_clang_args);
+        failures++;
+    } else {
+        for (size_t i = 0; i < context->n_clang_args; i++) {
+            assert_eq(context->clang_args[i], want[i], "plugin-filtered clang arg");
+        }
+    }
+    if (context->extraction_result == NULL ||
+        context->extraction_result->opacity_report.len != 2 ||
+        strstr(context->extraction_result->opacity_report.items[0], "compile-arg-dropped") == NULL ||
+        strstr(context->extraction_result->opacity_report.items[1], "compile-arg-dropped") == NULL) {
+        fprintf(stderr, "FAIL: expected opacity for dropped GCC plugin flags\n");
+        failures++;
+    }
+    pk_c_compile_context_free(context);
+}
+
 #ifdef PK_C_ENABLE_CLANG_AST
 static void test_parse_with_clang_ast_extracts_functions_and_calls(void) {
     const char *args[] = {"-x", "c", "-std=c11"};
@@ -389,6 +490,45 @@ static void test_parse_with_clang_ast_extracts_functions_and_calls(void) {
     }
     pk_c_source_facts_free(facts);
 }
+
+static void test_compile_context_feeds_clang_ast_options(void) {
+    const char *source =
+        "#ifndef CONFIG_SMP\n"
+        "#error CONFIG_SMP missing\n"
+        "#endif\n"
+        "int helper(int x) { return x + 1; }\n"
+        "int compute(int y) { return helper(y); }\n";
+    pk_c_compile_context *context = pk_c_compile_context_from_command(
+        "kernel/sched/core.c",
+        "clang -DCONFIG_SMP=1 -c -o kernel/sched/core.o kernel/sched/core.c");
+    pk_c_parse_options options = {0};
+    pk_c_source_facts *facts;
+
+    if (!context) {
+        fprintf(stderr, "FAIL: AST compile context returned null\n");
+        failures++;
+        return;
+    }
+    pk_c_compile_context_configure_parse_options(context, PK_C_PARSE_BACKEND_CLANG_AST, &options);
+    facts = pk_c_parse_source_with_options("kernel/sched/core.c", source, &options);
+    if (!facts) {
+        fprintf(stderr, "FAIL: clang AST parse with compile context returned null\n");
+        failures++;
+        pk_c_compile_context_free(context);
+        return;
+    }
+    assert_eq(facts->parser_backend, "libclang", "compile context AST backend");
+    assert_eq(facts->parser_compile_command,
+        "clang -DCONFIG_SMP=1 -c -o kernel/sched/core.o kernel/sched/core.c",
+        "compile context AST provenance");
+    if (facts->n_functions != 2) {
+        fprintf(stderr, "FAIL: expected 2 AST functions from compile context, got %zu\n",
+            facts->n_functions);
+        failures++;
+    }
+    pk_c_source_facts_free(facts);
+    pk_c_compile_context_free(context);
+}
 #else
 static void test_parse_with_clang_ast_stub_reports_opacity(void) {
     pk_c_parse_options options = {0};
@@ -428,8 +568,12 @@ int main(void) {
     test_contract_annotation_ignores_string_literal_marker();
     test_contract_annotation_ignores_block_comment_marker();
     test_parse_with_regex_options_records_backend();
+    test_compile_context_from_kbuild_command_filters_for_clang();
+    test_compile_context_from_quoted_command_preserves_shell_words();
+    test_compile_context_reports_dropped_gcc_plugin_flags();
 #ifdef PK_C_ENABLE_CLANG_AST
     test_parse_with_clang_ast_extracts_functions_and_calls();
+    test_compile_context_feeds_clang_ast_options();
 #else
     test_parse_with_clang_ast_stub_reports_opacity();
 #endif

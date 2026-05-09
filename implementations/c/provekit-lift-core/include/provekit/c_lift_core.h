@@ -40,6 +40,15 @@ typedef struct {
 } pk_c_parse_options;
 
 typedef struct {
+    char **clang_args;
+    size_t n_clang_args;
+    size_t cap_clang_args;
+    char *compile_command;
+    char *target_triple;
+    pk_c_lift_result *extraction_result;
+} pk_c_compile_context;
+
+typedef struct {
     char *name;
     pk_c_locus locus;
     int has_body;
@@ -91,6 +100,18 @@ pk_c_source_facts *pk_c_parse_source_with_options(
     const char *source,
     const pk_c_parse_options *options);
 void pk_c_source_facts_free(pk_c_source_facts *facts);
+
+pk_c_compile_context *pk_c_compile_context_from_command(
+    const char *path,
+    const char *command);
+pk_c_compile_context *pk_c_compile_context_from_kbuild_cmdline(
+    const char *path,
+    const char *cmdline);
+void pk_c_compile_context_configure_parse_options(
+    const pk_c_compile_context *context,
+    pk_c_parse_backend backend,
+    pk_c_parse_options *options);
+void pk_c_compile_context_free(pk_c_compile_context *context);
 
 pk_c_lift_result *pk_c_lift_result_new(void);
 void pk_c_lift_result_free(pk_c_lift_result *result);

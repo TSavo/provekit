@@ -63,6 +63,8 @@ Responsibilities:
 - Accept source text or source paths.
 - Preserve stable source loci: path, line, column, and optional byte spans.
 - Extract reusable C facts: function declarations/definitions, parameters, return types when available, call sites, macro invocations, attributes, comments, and basic block/function boundaries.
+- Ingest compile-command context, including Linux Kbuild `.cmd` command lines, into owned clang-compatible parse arguments.
+- Report compile-context options that cannot be represented in libclang as opacity, not refusals.
 - Record parser backend provenance, including compile-command context when the AST backend is used.
 - Attach nearby comments to declarations where this can be done deterministically.
 - Report extraction visibility limits in `opacityReport`.
@@ -293,6 +295,7 @@ The first slice should be small enough to land safely:
 5. Implement one semantic lifter first, preferably `provekit-lift-c-sparse`, because sparse annotations are the closest thing to native C/kernel contract syntax.
 6. Add a composition fixture showing sparse plus assertions or sparse plus kernel-doc can coexist without sharing semantic code.
 7. Add an opt-in libclang AST backend behind the same fact API. Keep the regex backend available for fallback and small fixtures, but make the backend choice visible on `pk_c_source_facts`.
+8. Add reusable compile-context ingestion so kernel-style command lines can feed the AST backend without making compile flags part of any one semantic lifter.
 
 The temporary regex backend can be retired later behind the same core fact model as libclang coverage becomes sufficient. Tree-sitter remains a possible lightweight fallback for editor-oriented facts.
 
