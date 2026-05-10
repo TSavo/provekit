@@ -3,6 +3,9 @@
 > *Supra omnia, rectum.*
 > — T
 
+ProvekIt is the geometry of how lossy abstract interpretations compose
+into a sound joint inference over a content-addressed federated substrate.
+
 The name is literal: **Prove `k(I)=t`**. ProvekIt is a general-purpose framework
 for proving that a transformation `k`, applied to an input `I` from some domain,
 produces the formal correctness representation `t`.
