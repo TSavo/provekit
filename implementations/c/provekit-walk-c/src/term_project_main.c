@@ -437,6 +437,20 @@ static int source_has_token(const char *source, const char *token) {
     return source != NULL && strstr(source, token) != NULL;
 }
 
+static int source_starts_with(const char *source, const char *token) {
+    return source != NULL && strncmp(source, token, strlen(token)) == 0;
+}
+
+static int source_ends_with(const char *source, const char *token) {
+    size_t source_len;
+    size_t token_len;
+
+    if (source == NULL || token == NULL) return 0;
+    source_len = strlen(source);
+    token_len = strlen(token);
+    return source_len >= token_len && strcmp(source + source_len - token_len, token) == 0;
+}
+
 static C11Term *lift_binary_expr(CXCursor cursor) {
     CursorList children = {0};
     char *source = NULL;
@@ -453,7 +467,7 @@ static C11Term *lift_binary_expr(CXCursor cursor) {
     if (source_has_token(source, "==")) {
         out = term_op2_take("eq", lhs, rhs);
     } else if (source_has_token(source, "!=")) {
-        out = term_op1_take("not", term_op2_take("eq", lhs, rhs));
+        out = term_op2_take("ne", lhs, rhs);
     } else if (source_has_token(source, "&&")) {
         out = term_op2_take("and", lhs, rhs);
     } else if (source_has_token(source, "||")) {
@@ -461,19 +475,35 @@ static C11Term *lift_binary_expr(CXCursor cursor) {
     } else if (source_has_token(source, "<=")) {
         out = term_op2_take("le", lhs, rhs);
     } else if (source_has_token(source, ">=")) {
-        out = term_op2_take("le", rhs, lhs);
+        out = term_op2_take("ge", lhs, rhs);
+    } else if (source_has_token(source, "<<")) {
+        out = term_op2_take("shl", lhs, rhs);
+    } else if (source_has_token(source, ">>")) {
+        out = term_op2_take("shr", lhs, rhs);
     } else if (source_has_token(source, "<")) {
         out = term_op2_take("lt", lhs, rhs);
     } else if (source_has_token(source, ">")) {
-        out = term_op2_take("lt", rhs, lhs);
+        out = term_op2_take("gt", lhs, rhs);
     } else if (source_has_token(source, "=")) {
         out = term_op2_take("assign", lhs, rhs);
     } else if (source_has_token(source, "+")) {
         out = term_op2_take("add", lhs, rhs);
-    } else if (source_has_token(source, "*")) {
-        out = term_op2_take("mul", lhs, rhs);
     } else if (source_has_token(source, "-")) {
         out = term_op2_take("sub", lhs, rhs);
+    } else if (source_has_token(source, "*")) {
+        out = term_op2_take("mul", lhs, rhs);
+    } else if (source_has_token(source, "/")) {
+        out = term_op2_take("div", lhs, rhs);
+    } else if (source_has_token(source, "%")) {
+        out = term_op2_take("mod", lhs, rhs);
+    } else if (source_has_token(source, "&")) {
+        out = term_op2_take("bit_and", lhs, rhs);
+    } else if (source_has_token(source, "|")) {
+        out = term_op2_take("bit_or", lhs, rhs);
+    } else if (source_has_token(source, "^")) {
+        out = term_op2_take("bit_xor", lhs, rhs);
+    } else if (source_has_token(source, ",")) {
+        out = term_op2_take("comma", lhs, rhs);
     } else {
         out = term_op2_take("binary-operator", lhs, rhs);
     }
@@ -509,6 +539,20 @@ static C11Term *lift_compound_assign_expr(CXCursor cursor) {
         value = term_op2_take("sub", lhs_for_rhs, rhs);
     } else if (source_has_token(source, "*=")) {
         value = term_op2_take("mul", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, "/=")) {
+        value = term_op2_take("div", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, "%=")) {
+        value = term_op2_take("mod", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, "<<=")) {
+        value = term_op2_take("shl", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, ">>=")) {
+        value = term_op2_take("shr", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, "&=")) {
+        value = term_op2_take("bit_and", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, "|=")) {
+        value = term_op2_take("bit_or", lhs_for_rhs, rhs);
+    } else if (source_has_token(source, "^=")) {
+        value = term_op2_take("bit_xor", lhs_for_rhs, rhs);
     } else {
         value = term_op2_take("binary-operator", lhs_for_rhs, rhs);
     }
@@ -539,12 +583,26 @@ static C11Term *lift_unary_expr(CXCursor cursor) {
     source = pk_c_walk_cursor_source(cursor);
     inner = unwrap_expr(children.items[0]);
     if (inner == NULL) goto done;
-    if (source != NULL && source[0] == '-') {
+    if (source_starts_with(source, "++")) {
+        out = term_op1_take("pre_inc", inner);
+    } else if (source_ends_with(source, "++")) {
+        out = term_op1_take("post_inc", inner);
+    } else if (source_starts_with(source, "--")) {
+        out = term_op1_take("pre_dec", inner);
+    } else if (source_ends_with(source, "--")) {
+        out = term_op1_take("post_dec", inner);
+    } else if (source != NULL && source[0] == '-') {
         out = term_op1_take("neg", inner);
     } else if (source != NULL && source[0] == '!') {
         out = term_op1_take("not", inner);
     } else if (source != NULL && source[0] == '*') {
         out = term_op1_take("deref", inner);
+    } else if (source != NULL && source[0] == '~') {
+        out = term_op1_take("bit_not", inner);
+    } else if (source != NULL && source[0] == '&') {
+        out = term_op1_take("addr_of", inner);
+    } else if (source != NULL && source[0] == '+') {
+        out = term_op1_take("plus", inner);
     } else {
         out = term_op1_take("unary-operator", inner);
     }
@@ -1121,9 +1179,19 @@ static const char *contract_ctor_name(const char *op_name) {
     if (strcmp(op_name, "add") == 0) return "+";
     if (strcmp(op_name, "sub") == 0) return "-";
     if (strcmp(op_name, "mul") == 0) return "*";
+    if (strcmp(op_name, "div") == 0) return "/";
+    if (strcmp(op_name, "mod") == 0) return "%";
+    if (strcmp(op_name, "shl") == 0) return "<<";
+    if (strcmp(op_name, "shr") == 0) return ">>";
+    if (strcmp(op_name, "bit_and") == 0) return "&";
+    if (strcmp(op_name, "bit_or") == 0) return "|";
+    if (strcmp(op_name, "bit_xor") == 0) return "^";
     if (strcmp(op_name, "eq") == 0) return "=";
     if (strcmp(op_name, "lt") == 0) return "<";
     if (strcmp(op_name, "le") == 0) return "<=";
+    if (strcmp(op_name, "gt") == 0) return ">";
+    if (strcmp(op_name, "ge") == 0) return ">=";
+    if (strcmp(op_name, "ne") == 0) return "!=";
     return op_name;
 }
 
@@ -1651,11 +1719,22 @@ static int serialize_expr(Buf *out, const C11Term *term) {
         if (strcmp(term->name, "add") == 0) return serialize_infix(out, term, "+");
         if (strcmp(term->name, "sub") == 0) return serialize_infix(out, term, "-");
         if (strcmp(term->name, "mul") == 0) return serialize_infix(out, term, "*");
+        if (strcmp(term->name, "div") == 0) return serialize_infix(out, term, "/");
+        if (strcmp(term->name, "mod") == 0) return serialize_infix(out, term, "%");
+        if (strcmp(term->name, "shl") == 0) return serialize_infix(out, term, "<<");
+        if (strcmp(term->name, "shr") == 0) return serialize_infix(out, term, ">>");
+        if (strcmp(term->name, "bit_and") == 0) return serialize_infix(out, term, "&");
+        if (strcmp(term->name, "bit_or") == 0) return serialize_infix(out, term, "|");
+        if (strcmp(term->name, "bit_xor") == 0) return serialize_infix(out, term, "^");
         if (strcmp(term->name, "eq") == 0) return serialize_infix(out, term, "==");
         if (strcmp(term->name, "lt") == 0) return serialize_infix(out, term, "<");
         if (strcmp(term->name, "le") == 0) return serialize_infix(out, term, "<=");
+        if (strcmp(term->name, "gt") == 0) return serialize_infix(out, term, ">");
+        if (strcmp(term->name, "ge") == 0) return serialize_infix(out, term, ">=");
+        if (strcmp(term->name, "ne") == 0) return serialize_infix(out, term, "!=");
         if (strcmp(term->name, "and") == 0) return serialize_infix(out, term, "&&");
         if (strcmp(term->name, "or") == 0) return serialize_infix(out, term, "||");
+        if (strcmp(term->name, "comma") == 0) return serialize_infix(out, term, ",");
         if (strcmp(term->name, "assign") == 0) return serialize_infix(out, term, "=");
         if (strcmp(term->name, "neg") == 0 && term->n_args == 1) {
             return buf_append(out, "(-") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
@@ -1665,6 +1744,27 @@ static int serialize_expr(Buf *out, const C11Term *term) {
         }
         if (strcmp(term->name, "deref") == 0 && term->n_args == 1) {
             return buf_append(out, "(*") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "bit_not") == 0 && term->n_args == 1) {
+            return buf_append(out, "(~") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "addr_of") == 0 && term->n_args == 1) {
+            return buf_append(out, "(&") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "pre_inc") == 0 && term->n_args == 1) {
+            return buf_append(out, "(++") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "post_inc") == 0 && term->n_args == 1) {
+            return buf_append_char(out, '(') == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append(out, "++)") == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "pre_dec") == 0 && term->n_args == 1) {
+            return buf_append(out, "(--") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "post_dec") == 0 && term->n_args == 1) {
+            return buf_append_char(out, '(') == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append(out, "--)") == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "plus") == 0 && term->n_args == 1) {
+            return buf_append(out, "(+") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         fprintf(stderr, "serialize not implemented for expression op c11:%s\n", term->name);
         return -1;
