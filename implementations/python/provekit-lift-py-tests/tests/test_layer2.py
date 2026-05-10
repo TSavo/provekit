@@ -7,8 +7,12 @@ import textwrap
 from provekit_lift_py_tests import lift_file_layer2
 from provekit_lift_py_tests.ir import (
     _Atomic,
+    _ConstInt,
+    _ConstStr,
     _Connective,
+    _Ctor,
     _Quantifier,
+    _Var,
 )
 
 
@@ -231,13 +235,131 @@ def test_pattern4_parametrize_skips_non_literal_row():
     assert any("parametrize" in w.reason for w in out.warnings)
 
 
+# --- Pattern 5: value-scope assertions -----------------------------------
+
+
+def test_pattern5_local_assignment_scopes_pytest_assertion():
+    out = _lift("""
+        def test_parse_value_scope():
+            actual = parse_int("42")
+            assert actual == 42
+    """)
+    assert out.lifted == 2, f"warnings: {out.warnings}"
+    assert out.value_scope_lifted == 1
+    assert "test_parse_value_scope" in out.claimed_tests
+    by_name = {d.name: d for d in out.decls}
+    assert len(by_name) == 2
+    assert all(name.startswith("parse_int@t.py:") for name in by_name)
+    assert all("test_parse_value_scope" not in name for name in by_name)
+    callsite_name = next(name for name in by_name if name.endswith("::facts"))
+    assertion_name = next(name for name in by_name if name.endswith("::assertion"))
+    assert len(out.implications) == 1
+    assert out.implications[0].name.startswith("parse_int@t.py:")
+    assert "test_parse_value_scope" not in out.implications[0].name
+    assert out.implications[0].antecedent == callsite_name
+    assert out.implications[0].consequent == assertion_name
+
+    fact = by_name[callsite_name].inv
+    consequent = by_name[assertion_name].inv
+
+    assert isinstance(fact, _Atomic)
+    assert fact.name == "="
+    assert isinstance(fact.args[0], _Var)
+    assert fact.args[0].name == "actual$0"
+    assert isinstance(fact.args[1], _Ctor)
+    assert fact.args[1].name == "parse_int"
+    assert isinstance(fact.args[1].args[0], _ConstStr)
+    assert fact.args[1].args[0].value == "42"
+
+    assert isinstance(consequent, _Atomic)
+    assert consequent.name == "="
+    assert isinstance(consequent.args[0], _Var)
+    assert consequent.args[0].name == "actual$0"
+    assert isinstance(consequent.args[1], _ConstInt)
+    assert consequent.args[1].value == 42
+
+
+def test_pattern5_if_else_scopes_assertion_to_each_branch():
+    out = _lift("""
+        def test_branch_value_scope(raw):
+            if raw == "42":
+                actual = parse_int(raw)
+            else:
+                actual = parse_int("0")
+            assert actual >= 0
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    names = {d.name for d in out.decls}
+    assert len(names) == 4
+    assert all(name.startswith("parse_int@t.py:") for name in names)
+    assert all("test_branch_value_scope" not in name for name in names)
+    assert len([name for name in names if name.endswith("::facts")]) == 2
+    assert len([name for name in names if name.endswith("::assertion")]) == 2
+    assert len(out.implications) == 2
+    for d in out.decls:
+        assert d.inv is not None
+        if d.name.endswith("::facts"):
+            assert isinstance(d.inv, _Connective)
+            assert d.inv.kind == "and"
+        if d.name.endswith("::assertion"):
+            assert isinstance(d.inv, _Atomic)
+            assert d.inv.name == "≥"
+
+
+def test_pattern5_local_assignment_scopes_unittest_assertion():
+    out = _lift("""
+        import unittest
+
+        class TestParser(unittest.TestCase):
+            def test_parse_value_scope(self):
+                actual = parse_int("42")
+                self.assertEqual(actual, 42)
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    names = {d.name for d in out.decls}
+    assert len(names) == 2
+    assert all(name.startswith("parse_int@t.py:") for name in names)
+    assert all("test_parse_value_scope" not in name for name in names)
+    assert len(out.implications) == 1
+
+
+def test_pattern5_direct_call_assertion_lifts_to_callsite_contracts():
+    out = _lift("""
+        def test_direct_parse():
+            assert parse_int("42") == 42
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    assert "test_direct_parse" in out.claimed_tests
+    names = {d.name for d in out.decls}
+    assert len(names) == 2
+    assert all(name.startswith("parse_int@t.py:") for name in names)
+    assert all("test_direct_parse" not in name for name in names)
+    assert len([name for name in names if name.endswith("::facts")]) == 1
+    assert len([name for name in names if name.endswith("::assertion")]) == 1
+    assert len(out.implications) == 1
+
+
+def test_pattern5_mints_every_callsite_implication_in_one_assertion():
+    out = _lift("""
+        def test_two_calls():
+            assert parse_int("42") == parse_int("042")
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    names = {d.name for d in out.decls}
+    assert len([name for name in names if name.endswith("::facts")]) == 2
+    assert len([name for name in names if name.endswith("::assertion")]) == 2
+    assert len(out.implications) == 2
+    assert all(imp.antecedent.endswith("::facts") for imp in out.implications)
+    assert all(imp.consequent.endswith("::assertion") for imp in out.implications)
+
+
 # --- No pattern fires ----------------------------------------------------
 
 
-def test_single_assert_test_falls_through_to_layer0():
+def test_single_literal_assert_test_falls_through_to_layer0():
     out = _lift("""
         def test_one():
-            assert f(1) == 1
+            assert 1 == 1
     """)
     assert out.lifted == 0
     assert not out.claimed_tests

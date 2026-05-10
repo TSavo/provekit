@@ -319,3 +319,346 @@ done
         .unwrap_or_default()
         .starts_with("blake3-512:"));
 }
+
+#[test]
+fn lift_python_emits_contracts_and_callsite_implications() {
+    let root = repo_root();
+    let project = tempfile::tempdir().expect("create tempdir");
+    fs::write(
+        project.path().join("test_parser.py"),
+        r#"
+def parse_int(raw):
+    return int(raw)
+
+def test_parse_value_scope():
+    actual = parse_int("42")
+    assert actual == 42
+
+def test_direct_parse():
+    assert parse_int("42") == 42
+
+def test_two_callsites():
+    assert parse_int("42") == parse_int("042")
+"#,
+    )
+    .expect("write python fixture");
+    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::write(
+        project.path().join(".provekit/config.toml"),
+        r#"[authoring.lift]
+surface = "python"
+"#,
+    )
+    .expect("write config");
+    let manifest_dir = project.path().join(".provekit/lift/python");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    let python_src = root.join("implementations/python/provekit-lift-py-tests/src");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"provekit_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
+            python_src.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(project.path())
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit lift python");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
+    assert_eq!(report["kind"], "ir-document");
+    let ir = report["ir"].as_array().expect("ir array");
+    let implications = report["implications"]
+        .as_array()
+        .expect("implications array");
+    assert_eq!(
+        ir.len(),
+        8,
+        "expected callsite fact + assertion contracts: {report:#}"
+    );
+    assert_eq!(
+        implications.len(),
+        4,
+        "expected one implication per lifted callsite: {report:#}"
+    );
+    let names: Vec<_> = ir
+        .iter()
+        .map(|decl| decl["name"].as_str().unwrap_or_default())
+        .collect();
+    assert!(names.iter().all(|name| name.starts_with("parse_int@")));
+    for test_name in [
+        "test_parse_value_scope",
+        "test_direct_parse",
+        "test_two_callsites",
+    ] {
+        assert!(names.iter().all(|name| !name.contains(test_name)));
+    }
+    assert_eq!(
+        names
+            .iter()
+            .filter(|name| name.ends_with("::facts"))
+            .count(),
+        4
+    );
+    assert_eq!(
+        names
+            .iter()
+            .filter(|name| name.ends_with("::assertion"))
+            .count(),
+        4
+    );
+    for implication in implications {
+        let antecedent = implication["antecedent"].as_str().unwrap_or_default();
+        let consequent = implication["consequent"].as_str().unwrap_or_default();
+        assert!(antecedent.ends_with("::facts"));
+        assert!(consequent.ends_with("::assertion"));
+        assert!(names.contains(&antecedent));
+        assert!(names.contains(&consequent));
+    }
+}
+
+#[test]
+fn lift_python_emits_production_wp_callsite_implications() {
+    let root = repo_root();
+    let project = tempfile::tempdir().expect("create tempdir");
+    fs::write(
+        project.path().join("app.py"),
+        r#"
+def f(x):
+    if x < 10:
+        raise ValueError("x must be >= 10")
+    return x
+
+def caller():
+    y = 42
+    return f(y)
+"#,
+    )
+    .expect("write python fixture");
+    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::write(
+        project.path().join(".provekit/config.toml"),
+        r#"[authoring.lift]
+surface = "python"
+"#,
+    )
+    .expect("write config");
+    let manifest_dir = project.path().join(".provekit/lift/python");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    let python_src = root.join("implementations/python/provekit-lift-py-tests/src");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"provekit_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
+            python_src.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(project.path())
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit lift python");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
+    assert_eq!(report["kind"], "ir-document");
+    let ir = report["ir"].as_array().expect("ir array");
+    let implications = report["implications"]
+        .as_array()
+        .expect("implications array");
+    assert_eq!(
+        ir.len(),
+        3,
+        "expected callsite, let, and entry WP edges: {report:#}"
+    );
+    assert_eq!(
+        implications.len(),
+        3,
+        "expected one pre->post implication per WP edge: {report:#}"
+    );
+
+    let names: Vec<_> = ir
+        .iter()
+        .map(|decl| decl["name"].as_str().unwrap_or_default())
+        .collect();
+    assert!(names.iter().all(|name| name.starts_with("f@app.py:")));
+    assert!(names.iter().any(|name| name.ends_with("::callsite")));
+    assert!(names.iter().any(|name| name.ends_with("::let:y")));
+    assert!(names.iter().any(|name| name.ends_with("::entry")));
+
+    let let_edge = ir
+        .iter()
+        .find(|decl| {
+            decl["name"]
+                .as_str()
+                .unwrap_or_default()
+                .ends_with("::let:y")
+        })
+        .expect("let edge");
+    assert_eq!(let_edge["pre"]["name"], "≥");
+    assert_eq!(let_edge["pre"]["args"][0]["value"], 42);
+    assert_eq!(let_edge["post"]["name"], "≥");
+    assert_eq!(let_edge["post"]["args"][0]["name"], "y");
+
+    for implication in implications {
+        let antecedent = implication["antecedent"].as_str().unwrap_or_default();
+        let consequent = implication["consequent"].as_str().unwrap_or_default();
+        assert_eq!(antecedent, consequent);
+        assert!(names.contains(&antecedent));
+        assert_eq!(implication["antecedentSlot"], "pre");
+        assert_eq!(implication["consequentSlot"], "post");
+        assert_eq!(implication["prover"], "python-wp-walk");
+    }
+}
+
+#[test]
+fn lift_python_shows_production_composes_but_unittest_contracts_conflict() {
+    let root = repo_root();
+    let project = tempfile::tempdir().expect("create tempdir");
+    fs::write(
+        project.path().join("app.py"),
+        r#"
+import unittest
+
+def checked(x):
+    if x < 10:
+        raise ValueError("x must be >= 10")
+    return x
+
+def composed_ok():
+    y = 42
+    return checked(y)
+
+class CheckedContracts(unittest.TestCase):
+    def test_checked_returns_42(self):
+        actual = checked(42)
+        self.assertEqual(actual, 42)
+
+    def test_checked_does_not_return_42(self):
+        actual = checked(42)
+        self.assertNotEqual(actual, 42)
+"#,
+    )
+    .expect("write python fixture");
+    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::write(
+        project.path().join(".provekit/config.toml"),
+        r#"[authoring.lift]
+surface = "python"
+"#,
+    )
+    .expect("write config");
+    let manifest_dir = project.path().join(".provekit/lift/python");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    let python_src = root.join("implementations/python/provekit-lift-py-tests/src");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"python-lift\"\ncommand = [\"env\", \"PYTHONPATH={}\", \"python3\", \"-m\", \"provekit_lift_py_tests.lsp\"]\nworking_dir = \".\"\n",
+            python_src.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(project.path())
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit lift python");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift python failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
+    let ir = report["ir"].as_array().expect("ir array");
+    let implications = report["implications"]
+        .as_array()
+        .expect("implications array");
+
+    let production: Vec<_> = ir
+        .iter()
+        .filter(|decl| {
+            let name = decl["name"].as_str().unwrap_or_default();
+            name.starts_with("checked@app.py:")
+                && (name.ends_with("::callsite")
+                    || name.ends_with("::let:y")
+                    || name.ends_with("::entry"))
+        })
+        .collect();
+    assert_eq!(
+        production.len(),
+        3,
+        "expected production callsite, let, and entry WP edges: {report:#}"
+    );
+    let let_edge = production
+        .iter()
+        .copied()
+        .find(|decl| {
+            decl["name"]
+                .as_str()
+                .unwrap_or_default()
+                .ends_with("::let:y")
+        })
+        .expect("let edge");
+    assert_eq!(let_edge["pre"]["name"], "≥");
+    assert_eq!(let_edge["pre"]["args"][0]["value"], 42);
+    assert_eq!(let_edge["pre"]["args"][1]["value"], 10);
+
+    let test_assertions: Vec<_> = ir
+        .iter()
+        .filter(|decl| {
+            let name = decl["name"].as_str().unwrap_or_default();
+            name.starts_with("checked@app.py:") && name.ends_with("::assertion")
+        })
+        .collect();
+    assert_eq!(
+        test_assertions.len(),
+        2,
+        "expected two unittest-derived assertion contracts: {report:#}"
+    );
+    let mut assertion_ops: Vec<_> = test_assertions
+        .iter()
+        .map(|decl| decl["inv"]["name"].as_str().unwrap_or_default())
+        .collect();
+    assertion_ops.sort_unstable();
+    assert_eq!(assertion_ops, vec!["=", "≠"]);
+
+    let wp_implications = implications
+        .iter()
+        .filter(|imp| imp["prover"] == "python-wp-walk")
+        .count();
+    let test_implications = implications
+        .iter()
+        .filter(|imp| imp["prover"] == "python-test-value-scope")
+        .count();
+    assert_eq!(wp_implications, 3);
+    assert_eq!(test_implications, 2);
+}
