@@ -27,10 +27,11 @@ public class JUnitExtractor implements Extractor {
 
     public List<ContractDecl> extract(CompilationUnit cu, String rawSource) {
         List<ContractDecl> out = new ArrayList<>();
+        String sourceFile = sourceFileName(cu);
         for (TypeDeclaration<?> type : cu.getTypes()) {
             for (BodyDeclaration<?> member : type.getMembers()) {
                 if (member instanceof MethodDeclaration method && isJUnitTest(cu, method)) {
-                    extractMethod(cu, method, out);
+                    extractMethod(cu, method, sourceFile, out);
                 }
             }
         }
@@ -51,53 +52,72 @@ public class JUnitExtractor implements Extractor {
         return false;
     }
 
-    private void extractMethod(CompilationUnit cu, MethodDeclaration method, List<ContractDecl> out) {
+    private void extractMethod(
+            CompilationUnit cu,
+            MethodDeclaration method,
+            String sourceFile,
+            List<ContractDecl> out) {
         if (method.getBody().isEmpty()) return;
 
         Map<String, Integer> versions = new LinkedHashMap<>();
         List<ValueScope> scopes = List.of(new ValueScope());
-        int assertionIndex = 0;
 
         for (Statement stmt : method.getBody().get().getStatements()) {
-            Optional<String> assertion = liftAssertion(cu, stmt, scopes);
-            if (assertion.isPresent()) {
+            List<LiftedAssertion> assertions = liftAssertion(cu, stmt, scopes, sourceFile);
+            for (LiftedAssertion assertion : assertions) {
                 out.add(new ContractDecl(
-                    method.getNameAsString() + "::" + assertionIndex,
+                    assertion.symbol(),
                     List.of(),
                     List.of(),
-                    List.of(assertion.get())
+                    List.of(assertion.formula())
                 ));
-                assertionIndex++;
-                continue;
             }
+            if (!assertions.isEmpty()) continue;
             scopes = applyStatement(stmt, scopes, versions);
         }
     }
 
-    private Optional<String> liftAssertion(
+    private List<LiftedAssertion> liftAssertion(
             CompilationUnit cu,
             Statement stmt,
-            List<ValueScope> scopes) {
-        if (!stmt.isExpressionStmt()) return Optional.empty();
+            List<ValueScope> scopes,
+            String sourceFile) {
+        if (!stmt.isExpressionStmt()) return List.of();
         Expression expr = stmt.asExpressionStmt().getExpression();
-        if (!(expr instanceof MethodCallExpr call)) return Optional.empty();
-        if (!isJUnitAssertion(cu, call)) return Optional.empty();
+        if (!(expr instanceof MethodCallExpr call)) return List.of();
+        if (!isJUnitAssertion(cu, call)) return List.of();
 
         String name = call.getNameAsString();
-        List<String> scoped = new ArrayList<>();
+        Map<String, List<String>> scopedByCallsite = new LinkedHashMap<>();
         for (ValueScope scope : scopes) {
+            Optional<ObservedCall> observedCall = observedCallForAssertion(name, call, scope);
+            if (observedCall.isEmpty()) return List.of();
+            Optional<String> symbol = callsiteSymbol(sourceFile, observedCall.get().call());
+            if (symbol.isEmpty()) return List.of();
+            ValueScope assertionScope = scope.withTermOverrides(observedCall.get().termOverrides());
             Optional<String> consequent = switch (name) {
-                case "assertEquals" -> liftBinaryAssertion(call, scope, "eq");
-                case "assertNotEquals" -> liftBinaryAssertion(call, scope, "neq");
-                case "assertTrue" -> liftTruthAssertion(call, scope, true);
-                case "assertFalse" -> liftTruthAssertion(call, scope, false);
+                case "assertEquals" -> liftBinaryAssertion(call, assertionScope, "eq");
+                case "assertNotEquals" -> liftBinaryAssertion(call, assertionScope, "neq");
+                case "assertTrue" -> liftTruthAssertion(call, assertionScope, true);
+                case "assertFalse" -> liftTruthAssertion(call, assertionScope, false);
                 default -> Optional.empty();
             };
-            if (consequent.isEmpty()) return Optional.empty();
-            scoped.add(scope.wrap(consequent.get()));
+            if (consequent.isEmpty()) return List.of();
+            scopedByCallsite
+                .computeIfAbsent(symbol.get(), ignored -> new ArrayList<>())
+                .add(assertionScope.wrapExcluding(observedCall.get().sourceLocals(), consequent.get()));
         }
-        if (scoped.isEmpty()) return Optional.empty();
-        return Optional.of(scoped.size() == 1 ? scoped.get(0) : and(scoped));
+        List<LiftedAssertion> lifted = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : scopedByCallsite.entrySet()) {
+            List<String> scoped = entry.getValue();
+            if (!scoped.isEmpty()) {
+                lifted.add(new LiftedAssertion(
+                    entry.getKey(),
+                    scoped.size() == 1 ? scoped.get(0) : and(scoped)
+                ));
+            }
+        }
+        return lifted;
     }
 
     private Optional<String> liftBinaryAssertion(MethodCallExpr call, ValueScope scope, String op) {
@@ -193,11 +213,11 @@ public class JUnitExtractor implements Extractor {
             String guard = liftFormula(stmt.getCondition(), scope)
                 .orElseGet(() -> opaqueBranchCondition(stmt.getCondition()));
             ValueScope thenScope = scope.copy();
-            thenScope.facts.add(guard);
+            thenScope.facts.add(new ScopeFact(guard, null));
             out.addAll(applyStatement(stmt.getThenStmt(), List.of(thenScope), versions));
 
             ValueScope elseScope = scope.copy();
-            elseScope.facts.add(not(guard));
+            elseScope.facts.add(new ScopeFact(not(guard), null));
             if (stmt.getElseStmt().isPresent()) {
                 out.addAll(applyStatement(stmt.getElseStmt().get(), List.of(elseScope), versions));
             } else {
@@ -222,6 +242,7 @@ public class JUnitExtractor implements Extractor {
                     bind(next, name, varDecl.getInitializer().get(), versions);
                 } else {
                     next.current.remove(name);
+                    next.calls.remove(name);
                 }
             }
             out.add(next);
@@ -253,6 +274,7 @@ public class JUnitExtractor implements Extractor {
         Optional<String> lifted = liftTerm(expr, scope);
         if (lifted.isEmpty()) {
             scope.current.remove(name);
+            scope.calls.remove(name);
             return;
         }
 
@@ -261,11 +283,16 @@ public class JUnitExtractor implements Extractor {
         String ssaName = name + "$" + version;
         String ssaVar = var(ssaName);
         scope.current.put(name, ssaVar);
-        scope.facts.add(atom("eq", ssaVar, lifted.get()));
+        scope.calls.remove(name);
+        Expression unwrapped = unwrap(expr);
+        if (unwrapped instanceof MethodCallExpr call) {
+            scope.calls.put(name, new ObservedCall(call, lifted.get(), Map.of(), Set.of()));
+        }
+        scope.facts.add(new ScopeFact(atom("eq", ssaVar, lifted.get()), name));
     }
 
     private Optional<String> liftFormula(Expression expr, ValueScope scope) {
-        if (expr instanceof EnclosedExpr enclosed) return liftFormula(enclosed.getInner(), scope);
+        expr = unwrap(expr);
         if (expr instanceof BinaryExpr binary) {
             Optional<String> op = binaryFormulaOp(binary.getOperator());
             if (op.isPresent()) {
@@ -292,9 +319,12 @@ public class JUnitExtractor implements Extractor {
     }
 
     private Optional<String> liftTerm(Expression expr, ValueScope scope) {
-        if (expr instanceof EnclosedExpr enclosed) return liftTerm(enclosed.getInner(), scope);
+        expr = unwrap(expr);
         if (expr instanceof NameExpr name) {
             String simple = name.getNameAsString();
+            if (scope.termOverrides.containsKey(simple)) {
+                return Optional.of(scope.termOverrides.get(simple));
+            }
             if (scope.locals.contains(simple)) {
                 return Optional.ofNullable(scope.current.get(simple));
             }
@@ -335,6 +365,83 @@ public class JUnitExtractor implements Extractor {
             return Optional.of(ctor(op.get(), left.get(), right.get()));
         }
         return Optional.empty();
+    }
+
+    private Optional<ObservedCall> observedCallForAssertion(
+            String assertionName,
+            MethodCallExpr assertion,
+            ValueScope scope) {
+        return switch (assertionName) {
+            case "assertEquals", "assertNotEquals" -> {
+                if (assertion.getArguments().size() < 2) yield Optional.empty();
+                yield observedCallForValue(assertion.getArgument(1), scope);
+            }
+            case "assertTrue", "assertFalse" -> {
+                if (assertion.getArguments().size() != 1) yield Optional.empty();
+                List<ObservedCall> calls = observedCallsInFormula(assertion.getArgument(0), scope);
+                yield calls.size() == 1 ? Optional.of(calls.get(0)) : Optional.empty();
+            }
+            default -> Optional.empty();
+        };
+    }
+
+    private Optional<ObservedCall> observedCallForValue(Expression expr, ValueScope scope) {
+        expr = unwrap(expr);
+        if (expr instanceof MethodCallExpr call) {
+            Optional<String> term = liftTerm(call, scope);
+            return term.map(t -> new ObservedCall(call, t, Map.of(), Set.of()));
+        }
+        if (expr instanceof NameExpr name) {
+            ObservedCall bound = scope.calls.get(name.getNameAsString());
+            if (bound != null) return Optional.of(bound.withLocalOverride(name.getNameAsString()));
+        }
+        return Optional.empty();
+    }
+
+    private List<ObservedCall> observedCallsInFormula(Expression expr, ValueScope scope) {
+        Optional<ObservedCall> direct = observedCallForValue(expr, scope);
+        if (direct.isPresent()) return List.of(direct.get());
+
+        expr = unwrap(expr);
+        if (expr instanceof UnaryExpr unary) {
+            return observedCallsInFormula(unary.getExpression(), scope);
+        }
+        if (expr instanceof BinaryExpr binary) {
+            List<ObservedCall> calls = new ArrayList<>();
+            calls.addAll(observedCallsInFormula(binary.getLeft(), scope));
+            calls.addAll(observedCallsInFormula(binary.getRight(), scope));
+            return calls;
+        }
+        return List.of();
+    }
+
+    private Optional<String> callsiteSymbol(String sourceFile, MethodCallExpr call) {
+        return call.getRange().map(range ->
+            call.getNameAsString()
+                + "@"
+                + sourceFile
+                + ":"
+                + range.begin.line
+                + ":"
+                + range.begin.column
+        );
+    }
+
+    private String sourceFileName(CompilationUnit cu) {
+        if (cu.getStorage().isPresent()) {
+            return cu.getStorage().get().getPath().getFileName().toString();
+        }
+        return cu.getPrimaryTypeName()
+            .or(() -> cu.getTypes().stream().findFirst().map(type -> type.getNameAsString()))
+            .map(name -> name + ".java")
+            .orElse("<unknown>.java");
+    }
+
+    private Expression unwrap(Expression expr) {
+        while (expr instanceof EnclosedExpr enclosed) {
+            expr = enclosed.getInner();
+        }
+        return expr;
     }
 
     private Optional<String> liftMethodCallTerm(MethodCallExpr call, ValueScope scope) {
@@ -396,29 +503,62 @@ public class JUnitExtractor implements Extractor {
     private static final class ValueScope {
         final Map<String, String> current;
         final Set<String> locals;
-        final List<String> facts;
+        final List<ScopeFact> facts;
+        final Map<String, ObservedCall> calls;
+        final Map<String, String> termOverrides;
 
         ValueScope() {
-            this(new LinkedHashMap<>(), new LinkedHashSet<>(), new ArrayList<>());
+            this(
+                new LinkedHashMap<>(),
+                new LinkedHashSet<>(),
+                new ArrayList<>(),
+                new LinkedHashMap<>(),
+                new LinkedHashMap<>()
+            );
         }
 
-        private ValueScope(Map<String, String> current, Set<String> locals, List<String> facts) {
+        private ValueScope(
+                Map<String, String> current,
+                Set<String> locals,
+                List<ScopeFact> facts,
+                Map<String, ObservedCall> calls,
+                Map<String, String> termOverrides) {
             this.current = current;
             this.locals = locals;
             this.facts = facts;
+            this.calls = calls;
+            this.termOverrides = termOverrides;
         }
 
         ValueScope copy() {
             return new ValueScope(
                 new LinkedHashMap<>(current),
                 new LinkedHashSet<>(locals),
-                new ArrayList<>(facts)
+                new ArrayList<>(facts),
+                new LinkedHashMap<>(calls),
+                new LinkedHashMap<>(termOverrides)
             );
         }
 
         String wrap(String consequent) {
-            if (facts.isEmpty()) return consequent;
-            return implies(facts.size() == 1 ? facts.get(0) : and(facts), consequent);
+            return wrapExcluding(Set.of(), consequent);
+        }
+
+        String wrapExcluding(Set<String> excludedLocals, String consequent) {
+            List<String> formulas = new ArrayList<>();
+            for (ScopeFact fact : facts) {
+                if (fact.localName() == null || !excludedLocals.contains(fact.localName())) {
+                    formulas.add(fact.formula());
+                }
+            }
+            if (formulas.isEmpty()) return consequent;
+            return implies(formulas.size() == 1 ? formulas.get(0) : and(formulas), consequent);
+        }
+
+        ValueScope withTermOverrides(Map<String, String> overrides) {
+            ValueScope next = copy();
+            next.termOverrides.putAll(overrides);
+            return next;
         }
     }
 
@@ -514,4 +654,22 @@ public class JUnitExtractor implements Extractor {
             .replace("\r", "\\r")
             .replace("\t", "\\t");
     }
+
+    private record LiftedAssertion(String symbol, String formula) {}
+
+    private record ObservedCall(
+            MethodCallExpr call,
+            String term,
+            Map<String, String> termOverrides,
+            Set<String> sourceLocals) {
+        ObservedCall withLocalOverride(String localName) {
+            Map<String, String> nextOverrides = new LinkedHashMap<>(termOverrides);
+            nextOverrides.put(localName, term);
+            Set<String> nextLocals = new LinkedHashSet<>(sourceLocals);
+            nextLocals.add(localName);
+            return new ObservedCall(call, term, nextOverrides, nextLocals);
+        }
+    }
+
+    private record ScopeFact(String formula, String localName) {}
 }
