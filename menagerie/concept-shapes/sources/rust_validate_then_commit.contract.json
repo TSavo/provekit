@@ -1,0 +1,116 @@
+{
+  "kind": "function-contract",
+  "fn_name": "rust:validate_then_commit",
+  "formals": [
+    "item",
+    "err_value",
+    "committed"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Item"
+    },
+    {
+      "kind": "primitive",
+      "name": "CommitOutcome"
+    },
+    {
+      "kind": "primitive",
+      "name": "CommitOutcome"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "CommitOutcome"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "outcome"
+          },
+          {
+            "kind": "ctor",
+            "name": "ite",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "rust_valid_item",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "item"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "committed"
+              },
+              {
+                "kind": "var",
+                "name": "err_value"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "rust_valid_item",
+            "args": [
+              {
+                "kind": "var",
+                "name": "item"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "rust_commit_applied",
+            "args": [
+              {
+                "kind": "var",
+                "name": "item"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "MemWrite",
+        "target": "store",
+        "value": "item",
+        "guard": {
+          "kind": "ctor",
+          "name": "rust_valid_item",
+          "args": [
+            {
+              "kind": "var",
+              "name": "item"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

@@ -1,0 +1,60 @@
+{
+  "kind": "algorithm",
+  "fn_name": "check-bounds-then-access:c:to-shape",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:2b6a0e6a7b696c43680723cd54394a6d55e3dcfa4bfe7f774b29f7afe997324dabd49b6529086cfdcc09b2f616c43f6832487c79a39a48ab6d0b6f53412e6752",
+    "target_shape_cid": "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f",
+    "renaming_map": {
+      "arr": "buf",
+      "idx": "i",
+      "n": "len",
+      "fail": "err",
+      "result": "ret"
+    },
+    "representation_map": {
+      "int_ptr": "Buffer",
+      "size_t_index": "Index",
+      "size_t_len": "Size",
+      "int": "Value"
+    },
+    "operator_map": {
+      "c_lt": "<",
+      "c_read_i32": "read",
+      "c_accessible": "accessible"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "source": "blake3-512:2b6a0e6a7b696c43680723cd54394a6d55e3dcfa4bfe7f774b29f7afe997324dabd49b6529086cfdcc09b2f616c43f6832487c79a39a48ab6d0b6f53412e6752",
+      "target": "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:2b6a0e6a7b696c43680723cd54394a6d55e3dcfa4bfe7f774b29f7afe997324dabd49b6529086cfdcc09b2f616c43f6832487c79a39a48ab6d0b6f53412e6752",
+    "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f"
+  ]
+}

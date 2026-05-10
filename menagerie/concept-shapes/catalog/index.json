@@ -1,0 +1,125 @@
+{
+  "schema_version": "provekit-algebraic-catalog-index/1",
+  "entries": {
+    "blake3-512:08e136f0b16268168cc70ecb6095d1d5643c190120ed9a08d8ef70161fb9b5eac02dc03f139a21c8581a2f90bc9092ac0987ae9dcd288c1ddd865a41d4ca1975": {
+      "cid": "blake3-512:08e136f0b16268168cc70ecb6095d1d5643c190120ed9a08d8ef70161fb9b5eac02dc03f139a21c8581a2f90bc9092ac0987ae9dcd288c1ddd865a41d4ca1975",
+      "kind": "algorithm",
+      "name": "branch-on-error-else-passthrough:c:to-shape",
+      "path": "algorithms/branch-on-error-else-passthrough:c:to-shape.blake3-512:08e136f0b16268168cc70ecb6095d1d5643c190120ed9a08d8ef70161fb9b5eac02dc03f139a21c8581a2f90bc9092ac0987ae9dcd288c1ddd865a41d4ca1975.json"
+    },
+    "blake3-512:21db13bca50174cfde6f83a76d72c32d25f480072fbe83aeaf0ba8bffae8f80ff725f608d24cd3c2235c792e4fecc0a7253d46f9d94faf85cceb0e193fc33fe8": {
+      "cid": "blake3-512:21db13bca50174cfde6f83a76d72c32d25f480072fbe83aeaf0ba8bffae8f80ff725f608d24cd3c2235c792e4fecc0a7253d46f9d94faf85cceb0e193fc33fe8",
+      "kind": "algorithm",
+      "name": "check-bounds-then-access:rust:to-shape",
+      "path": "algorithms/check-bounds-then-access:rust:to-shape.blake3-512:21db13bca50174cfde6f83a76d72c32d25f480072fbe83aeaf0ba8bffae8f80ff725f608d24cd3c2235c792e4fecc0a7253d46f9d94faf85cceb0e193fc33fe8.json"
+    },
+    "blake3-512:26e325bf56a11e3b4ef0887ced6ae15b58d4b1ce5fbb0855333bcfb33cf6a3854f8df46e486724e20de59f66877e4ae1c0cb37442c87ed38dde3d15a874ad1da": {
+      "cid": "blake3-512:26e325bf56a11e3b4ef0887ced6ae15b58d4b1ce5fbb0855333bcfb33cf6a3854f8df46e486724e20de59f66877e4ae1c0cb37442c87ed38dde3d15a874ad1da",
+      "kind": "algorithm",
+      "name": "refcount-inc-use-dec:rust:to-shape",
+      "path": "algorithms/refcount-inc-use-dec:rust:to-shape.blake3-512:26e325bf56a11e3b4ef0887ced6ae15b58d4b1ce5fbb0855333bcfb33cf6a3854f8df46e486724e20de59f66877e4ae1c0cb37442c87ed38dde3d15a874ad1da.json"
+    },
+    "blake3-512:28b3e7c54d412f9e399198a58a2a28cb2be0dcf6b7db1778cc752aee933631ecc677d53f31576b78f4f997175e3eecb9e19f1626c9c416e45a886d3c06ca10cd": {
+      "cid": "blake3-512:28b3e7c54d412f9e399198a58a2a28cb2be0dcf6b7db1778cc752aee933631ecc677d53f31576b78f4f997175e3eecb9e19f1626c9c416e45a886d3c06ca10cd",
+      "kind": "algorithm",
+      "name": "branch-on-error-else-passthrough:rust:to-shape",
+      "path": "algorithms/branch-on-error-else-passthrough:rust:to-shape.blake3-512:28b3e7c54d412f9e399198a58a2a28cb2be0dcf6b7db1778cc752aee933631ecc677d53f31576b78f4f997175e3eecb9e19f1626c9c416e45a886d3c06ca10cd.json"
+    },
+    "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e": {
+      "cid": "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e",
+      "kind": "algorithm",
+      "name": "shape:refcount-inc-use-dec",
+      "path": "algorithms/shape:refcount-inc-use-dec.blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e.json"
+    },
+    "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b": {
+      "cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
+      "kind": "algorithm",
+      "name": "shape:branch-on-error-else-passthrough",
+      "path": "algorithms/shape:branch-on-error-else-passthrough.blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b.json"
+    },
+    "blake3-512:50452b65547e8923957e4f2a9aaf0d538e715f583e60b4e36f31043afc1e977441e352e939fc5eef01c020a3998af85dab8ec188cfc1d2ae4eaf17536e8400ed": {
+      "cid": "blake3-512:50452b65547e8923957e4f2a9aaf0d538e715f583e60b4e36f31043afc1e977441e352e939fc5eef01c020a3998af85dab8ec188cfc1d2ae4eaf17536e8400ed",
+      "kind": "algorithm",
+      "name": "allocate-or-bail:c:to-shape",
+      "path": "algorithms/allocate-or-bail:c:to-shape.blake3-512:50452b65547e8923957e4f2a9aaf0d538e715f583e60b4e36f31043afc1e977441e352e939fc5eef01c020a3998af85dab8ec188cfc1d2ae4eaf17536e8400ed.json"
+    },
+    "blake3-512:561b53854df5ebf79f21701c4ff8f4d4acda49b856e7f25e4fdbb4373de03a4fd8aeec9a063fb66caca0c6c462eae111d4d8706d7302778dad81116c7cf3c14d": {
+      "cid": "blake3-512:561b53854df5ebf79f21701c4ff8f4d4acda49b856e7f25e4fdbb4373de03a4fd8aeec9a063fb66caca0c6c462eae111d4d8706d7302778dad81116c7cf3c14d",
+      "kind": "algorithm",
+      "name": "acquire-use-release:c:to-shape",
+      "path": "algorithms/acquire-use-release:c:to-shape.blake3-512:561b53854df5ebf79f21701c4ff8f4d4acda49b856e7f25e4fdbb4373de03a4fd8aeec9a063fb66caca0c6c462eae111d4d8706d7302778dad81116c7cf3c14d.json"
+    },
+    "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c": {
+      "cid": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c",
+      "kind": "algorithm",
+      "name": "shape:allocate-or-bail",
+      "path": "algorithms/shape:allocate-or-bail.blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c.json"
+    },
+    "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae": {
+      "cid": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae",
+      "kind": "algorithm",
+      "name": "shape:validate-then-commit",
+      "path": "algorithms/shape:validate-then-commit.blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae.json"
+    },
+    "blake3-512:845865f123e8983e6d4a989288330e1b96cacbae723b36f4422fa61b50e8f7c988c647926aeaec977d601274c3ee2205457f841396685358cad2a4f2efa7045e": {
+      "cid": "blake3-512:845865f123e8983e6d4a989288330e1b96cacbae723b36f4422fa61b50e8f7c988c647926aeaec977d601274c3ee2205457f841396685358cad2a4f2efa7045e",
+      "kind": "algorithm",
+      "name": "refcount-inc-use-dec:c:to-shape",
+      "path": "algorithms/refcount-inc-use-dec:c:to-shape.blake3-512:845865f123e8983e6d4a989288330e1b96cacbae723b36f4422fa61b50e8f7c988c647926aeaec977d601274c3ee2205457f841396685358cad2a4f2efa7045e.json"
+    },
+    "blake3-512:90ca9d2dde2e9acb8309f5c20b5a5008b4b2453a3048784a596bbeb9ec258360ff6222c2be098c85c0b4ce44efc03b9612aad0afbcafc3227dc3d0e6ecdca544": {
+      "cid": "blake3-512:90ca9d2dde2e9acb8309f5c20b5a5008b4b2453a3048784a596bbeb9ec258360ff6222c2be098c85c0b4ce44efc03b9612aad0afbcafc3227dc3d0e6ecdca544",
+      "kind": "algorithm",
+      "name": "check-bounds-then-access:c:to-shape",
+      "path": "algorithms/check-bounds-then-access:c:to-shape.blake3-512:90ca9d2dde2e9acb8309f5c20b5a5008b4b2453a3048784a596bbeb9ec258360ff6222c2be098c85c0b4ce44efc03b9612aad0afbcafc3227dc3d0e6ecdca544.json"
+    },
+    "blake3-512:9ce2a7d273c005c6e5d0936deae5e4cd6783a72cbf3d007c8571a0dd74091e61c3a3a3feefc1093f54f051f5a75f9668cd0c3bcd59f989192d31c0e5c1bfe307": {
+      "cid": "blake3-512:9ce2a7d273c005c6e5d0936deae5e4cd6783a72cbf3d007c8571a0dd74091e61c3a3a3feefc1093f54f051f5a75f9668cd0c3bcd59f989192d31c0e5c1bfe307",
+      "kind": "algorithm",
+      "name": "validate-then-commit:c:to-shape",
+      "path": "algorithms/validate-then-commit:c:to-shape.blake3-512:9ce2a7d273c005c6e5d0936deae5e4cd6783a72cbf3d007c8571a0dd74091e61c3a3a3feefc1093f54f051f5a75f9668cd0c3bcd59f989192d31c0e5c1bfe307.json"
+    },
+    "blake3-512:a33706b4f08d6a9353b1b3223bdf9ea586593263efe4d6fb735b31fd3e68ee85859a8d4d0949ad0c792369ced097367c9896fb6f32ec12f2a7d684e8ec611ec9": {
+      "cid": "blake3-512:a33706b4f08d6a9353b1b3223bdf9ea586593263efe4d6fb735b31fd3e68ee85859a8d4d0949ad0c792369ced097367c9896fb6f32ec12f2a7d684e8ec611ec9",
+      "kind": "algorithm",
+      "name": "foo:specializes:branch-on-error-else-passthrough",
+      "path": "algorithms/foo:specializes:branch-on-error-else-passthrough.blake3-512:a33706b4f08d6a9353b1b3223bdf9ea586593263efe4d6fb735b31fd3e68ee85859a8d4d0949ad0c792369ced097367c9896fb6f32ec12f2a7d684e8ec611ec9.json"
+    },
+    "blake3-512:a7e62ad34a151ed439c5902857c54bb23906cd578a47b327e9769541c8447eacbba6b7ff42d47bc868752392bc7896f1f4b0cebb15211895179307df239baf85": {
+      "cid": "blake3-512:a7e62ad34a151ed439c5902857c54bb23906cd578a47b327e9769541c8447eacbba6b7ff42d47bc868752392bc7896f1f4b0cebb15211895179307df239baf85",
+      "kind": "algorithm",
+      "name": "acquire-use-release:rust:to-shape",
+      "path": "algorithms/acquire-use-release:rust:to-shape.blake3-512:a7e62ad34a151ed439c5902857c54bb23906cd578a47b327e9769541c8447eacbba6b7ff42d47bc868752392bc7896f1f4b0cebb15211895179307df239baf85.json"
+    },
+    "blake3-512:bbb9e01a79af15d27da8772bf27d822e161defe17672c37b793c2200ebe85e2452e8ab5595e8e825589d9f1cf27fed560c0dde8d43496598145ad3d9478e9152": {
+      "cid": "blake3-512:bbb9e01a79af15d27da8772bf27d822e161defe17672c37b793c2200ebe85e2452e8ab5595e8e825589d9f1cf27fed560c0dde8d43496598145ad3d9478e9152",
+      "kind": "algorithm",
+      "name": "shape:validated-allocated-access",
+      "path": "algorithms/shape:validated-allocated-access.blake3-512:bbb9e01a79af15d27da8772bf27d822e161defe17672c37b793c2200ebe85e2452e8ab5595e8e825589d9f1cf27fed560c0dde8d43496598145ad3d9478e9152.json"
+    },
+    "blake3-512:c72a08c3f11b839934e8aed4456e1b105e33ef6ff91b77fa293a5456eff8a4af920300ba5eac4c745ce2c3b3f57833057c69246b6a664e0d0f2423262b487e45": {
+      "cid": "blake3-512:c72a08c3f11b839934e8aed4456e1b105e33ef6ff91b77fa293a5456eff8a4af920300ba5eac4c745ce2c3b3f57833057c69246b6a664e0d0f2423262b487e45",
+      "kind": "algorithm",
+      "name": "allocate-or-bail:rust:to-shape",
+      "path": "algorithms/allocate-or-bail:rust:to-shape.blake3-512:c72a08c3f11b839934e8aed4456e1b105e33ef6ff91b77fa293a5456eff8a4af920300ba5eac4c745ce2c3b3f57833057c69246b6a664e0d0f2423262b487e45.json"
+    },
+    "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4": {
+      "cid": "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4",
+      "kind": "algorithm",
+      "name": "shape:acquire-use-release",
+      "path": "algorithms/shape:acquire-use-release.blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4.json"
+    },
+    "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f": {
+      "cid": "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f",
+      "kind": "algorithm",
+      "name": "shape:check-bounds-then-access",
+      "path": "algorithms/shape:check-bounds-then-access.blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f.json"
+    },
+    "blake3-512:e8577df2a02ff15be5c9a4c200f828354fda8da2bb3a5148a3b102b315d52ba78aa5970b2d3f5d7777216fb026d0e866901347afe5bf22976dd01a742a26b288": {
+      "cid": "blake3-512:e8577df2a02ff15be5c9a4c200f828354fda8da2bb3a5148a3b102b315d52ba78aa5970b2d3f5d7777216fb026d0e866901347afe5bf22976dd01a742a26b288",
+      "kind": "algorithm",
+      "name": "validate-then-commit:rust:to-shape",
+      "path": "algorithms/validate-then-commit:rust:to-shape.blake3-512:e8577df2a02ff15be5c9a4c200f828354fda8da2bb3a5148a3b102b315d52ba78aa5970b2d3f5d7777216fb026d0e866901347afe5bf22976dd01a742a26b288.json"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "acquire-use-release:c:to-shape",
+    "formals": [
+      "source_contract"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "FunctionContractMemento",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "contract-renaming-morphism",
+      "source_contract_cid": "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
+      "target_shape_cid": "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4",
+      "renaming_map": {
+        "mutex": "m",
+        "body_result": "body_ret",
+        "result": "ret"
+      },
+      "representation_map": {
+        "pthread_mutex_t_ptr": "Lock",
+        "int": "CriticalValue"
+      },
+      "operator_map": {
+        "pthread_mutex_available": "lock_available",
+        "pthread_state_after": "lock_state_after",
+        "pthread_state_before": "lock_state_before",
+        "pthread_balanced": "balanced_lock_pair",
+        "pthread_mutex_held": "holds_lock",
+        "critical_body_done": "body_effects_done"
+      },
+      "literal_map": {},
+      "homomorphism_obligation": {
+        "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+        "source": "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
+        "target": "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4"
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    },
+    "input_cids": [
+      "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
+      "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4"
+    ]
+  },
+  "cid": "blake3-512:561b53854df5ebf79f21701c4ff8f4d4acda49b856e7f25e4fdbb4373de03a4fd8aeec9a063fb66caca0c6c462eae111d4d8706d7302778dad81116c7cf3c14d",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "rPLgx/2Q+QVdKaW5xvnxxmb3FP+H+S1JfVXuDRnOnfFt9+voGJ2ioRSsjvzuLoIHWkd5QxD8dZ9F6PECHHxpAw=="
+  }
+}

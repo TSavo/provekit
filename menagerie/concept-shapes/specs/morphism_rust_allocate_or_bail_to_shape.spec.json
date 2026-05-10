@@ -1,0 +1,58 @@
+{
+  "kind": "algorithm",
+  "fn_name": "allocate-or-bail:rust:to-shape",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:63a50f4d06b00a21d403b8fb9d0e51b49e8d5044d751bd23d6329aa2a993ff78a06f9ab448711b7d5d367391f8e2ebae0e31e18a8df66f7dad883067ed150a35",
+    "target_shape_cid": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c",
+    "renaming_map": {
+      "len": "n",
+      "err_code": "err",
+      "ok_value": "continuation_value",
+      "buf": "p",
+      "out": "ret"
+    },
+    "representation_map": {
+      "usize": "Size",
+      "isize": "ReturnValue",
+      "RawVec": "Buffer"
+    },
+    "operator_map": {
+      "try_reserve_failed": "alloc_failed",
+      "raw_vec_capacity_ge": "valid_buffer"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "source": "blake3-512:63a50f4d06b00a21d403b8fb9d0e51b49e8d5044d751bd23d6329aa2a993ff78a06f9ab448711b7d5d367391f8e2ebae0e31e18a8df66f7dad883067ed150a35",
+      "target": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:63a50f4d06b00a21d403b8fb9d0e51b49e8d5044d751bd23d6329aa2a993ff78a06f9ab448711b7d5d367391f8e2ebae0e31e18a8df66f7dad883067ed150a35",
+    "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c"
+  ]
+}

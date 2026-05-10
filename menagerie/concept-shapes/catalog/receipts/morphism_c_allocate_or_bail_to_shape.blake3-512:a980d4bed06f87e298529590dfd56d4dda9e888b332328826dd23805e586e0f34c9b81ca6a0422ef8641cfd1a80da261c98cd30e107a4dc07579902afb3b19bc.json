@@ -1,0 +1,31 @@
+{
+  "cid": "blake3-512:a980d4bed06f87e298529590dfd56d4dda9e888b332328826dd23805e586e0f34c9b81ca6a0422ef8641cfd1a80da261c98cd30e107a4dc07579902afb3b19bc",
+  "memento": {
+    "schema_version": "1",
+    "kind": "MorphismDischargeReceipt",
+    "morphism_cid": "blake3-512:50452b65547e8923957e4f2a9aaf0d538e715f583e60b4e36f31043afc1e977441e352e939fc5eef01c020a3998af85dab8ec188cfc1d2ae4eaf17536e8400ed",
+    "source_contract_cid": "blake3-512:1e148e4f3e5fcb5014cb127a58160efe0002c29bdb6963ddbc22ae56347137d6d544d8bffd9c9dbccb9b8a84a7094645d8bb8dbe5880bb8afbd5e71e7f520df8",
+    "renaming_map": {
+      "count": "n",
+      "failure": "err",
+      "next_value": "continuation_value",
+      "ptr": "p",
+      "result": "ret"
+    },
+    "representation_map": {
+      "size_t": "Size",
+      "int": "ReturnValue",
+      "void_ptr": "Buffer"
+    },
+    "operator_map": {
+      "malloc_failed": "alloc_failed",
+      "non_null_sized": "valid_buffer"
+    },
+    "literal_map": {},
+    "after_substitution_cid": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c",
+    "shape_cid": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c",
+    "discharged": true,
+    "method": "canonicalizer-alpha-equivalence-plus-representation-map"
+  },
+  "signature": null
+}

@@ -1,0 +1,163 @@
+{
+  "kind": "function-contract",
+  "fn_name": "rust:allocate_or_bail",
+  "formals": [
+    "len",
+    "err_code",
+    "ok_value",
+    "buf"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "usize"
+    },
+    {
+      "kind": "primitive",
+      "name": "isize"
+    },
+    {
+      "kind": "primitive",
+      "name": "isize"
+    },
+    {
+      "kind": "primitive",
+      "name": "RawVec"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "isize"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "out"
+          },
+          {
+            "kind": "ctor",
+            "name": "ite",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "try_reserve_failed",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "len"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "err_code"
+              },
+              {
+                "kind": "var",
+                "name": "ok_value"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "try_reserve_failed",
+            "args": [
+              {
+                "kind": "var",
+                "name": "len"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+              {
+                "kind": "var",
+                "name": "buf"
+              },
+              {
+                "kind": "const",
+                "value": "null",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "RawVec"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "not",
+            "operands": [
+              {
+                "kind": "atomic",
+                "name": "try_reserve_failed",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "len"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "raw_vec_capacity_ge",
+            "args": [
+              {
+                "kind": "var",
+                "name": "buf"
+              },
+              {
+                "kind": "var",
+                "name": "len"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "Alloc",
+        "result": "buf",
+        "size": "len",
+        "failure_condition": {
+          "kind": "ctor",
+          "name": "try_reserve_failed",
+          "args": [
+            {
+              "kind": "var",
+              "name": "len"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

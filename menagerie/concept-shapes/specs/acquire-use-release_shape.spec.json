@@ -1,0 +1,132 @@
+{
+  "kind": "algorithm",
+  "fn_name": "shape:acquire-use-release",
+  "formals": [
+    "m",
+    "body_ret"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Lock"
+    },
+    {
+      "kind": "primitive",
+      "name": "CriticalValue"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "CriticalValue"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "lock_available",
+    "args": [
+      {
+        "kind": "var",
+        "name": "m"
+      }
+    ]
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "ret"
+          },
+          {
+            "kind": "var",
+            "name": "body_ret"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "lock_state_after",
+            "args": [
+              {
+                "kind": "var",
+                "name": "m"
+              }
+            ]
+          },
+          {
+            "kind": "ctor",
+            "name": "lock_state_before",
+            "args": [
+              {
+                "kind": "var",
+                "name": "m"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "balanced_lock_pair",
+        "args": [
+          {
+            "kind": "var",
+            "name": "m"
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "holds_lock",
+            "args": [
+              {
+                "kind": "var",
+                "name": "m"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "body_effects_done",
+            "args": [
+              {
+                "kind": "var",
+                "name": "m"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "CriticalSection",
+        "lock": "m",
+        "guard": {
+          "kind": "ctor",
+          "name": "holds_lock",
+          "args": [
+            {
+              "kind": "var",
+              "name": "m"
+            }
+          ]
+        },
+        "body_effects": "body_effects",
+        "balanced": true
+      }
+    ]
+  }
+}

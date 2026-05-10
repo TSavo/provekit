@@ -1,0 +1,58 @@
+{
+  "kind": "algorithm",
+  "fn_name": "refcount-inc-use-dec:rust:to-shape",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:aa480223c50f8061c23a35894ca2a407e420c036b488d043b298708cefbf47ba1c019d66fda7956f2bf4902861b4d4572afd433f7efd2c6a6ffd498e2529f8a1",
+    "target_shape_cid": "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e",
+    "renaming_map": {
+      "arc_obj": "o",
+      "value": "use_ret",
+      "out": "ret"
+    },
+    "representation_map": {
+      "ArcRef": "Object",
+      "UseOut": "UseValue"
+    },
+    "operator_map": {
+      "arc_count_after": "refcount_after",
+      "arc_count_before": "refcount_before",
+      "arc_clone_drop_balanced": "balanced_refcount_pair",
+      "arc_count_after_clone": "refcount_after_inc",
+      "arc_use_guarded": "use_guarded"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "source": "blake3-512:aa480223c50f8061c23a35894ca2a407e420c036b488d043b298708cefbf47ba1c019d66fda7956f2bf4902861b4d4572afd433f7efd2c6a6ffd498e2529f8a1",
+      "target": "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:aa480223c50f8061c23a35894ca2a407e420c036b488d043b298708cefbf47ba1c019d66fda7956f2bf4902861b4d4572afd433f7efd2c6a6ffd498e2529f8a1",
+    "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e"
+  ]
+}

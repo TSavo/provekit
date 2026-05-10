@@ -1,0 +1,181 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:refcount_inc_use_dec",
+  "formals": [
+    "obj",
+    "body_result"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "ref_obj_ptr"
+    },
+    {
+      "kind": "primitive",
+      "name": "int"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": ">=",
+    "args": [
+      {
+        "kind": "ctor",
+        "name": "c_refcount_before",
+        "args": [
+          {
+            "kind": "var",
+            "name": "obj"
+          }
+        ]
+      },
+      {
+        "kind": "const",
+        "value": 0,
+        "sort": {
+          "kind": "primitive",
+          "name": "Int"
+        }
+      }
+    ]
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "var",
+            "name": "body_result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "c_refcount_after",
+            "args": [
+              {
+                "kind": "var",
+                "name": "obj"
+              }
+            ]
+          },
+          {
+            "kind": "ctor",
+            "name": "c_refcount_before",
+            "args": [
+              {
+                "kind": "var",
+                "name": "obj"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "c_ref_balanced",
+        "args": [
+          {
+            "kind": "var",
+            "name": "obj"
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": ">",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "c_refcount_after_inc",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "obj"
+                  }
+                ]
+              },
+              {
+                "kind": "const",
+                "value": 0,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "c_use_guarded",
+            "args": [
+              {
+                "kind": "var",
+                "name": "obj"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "RefInc",
+        "object": "obj"
+      },
+      {
+        "kind": "Use",
+        "object": "obj",
+        "guard": {
+          "kind": "ctor",
+          "name": ">",
+          "args": [
+            {
+              "kind": "ctor",
+              "name": "c_refcount_after_inc",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "obj"
+                }
+              ]
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "RefDec",
+        "object": "obj"
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

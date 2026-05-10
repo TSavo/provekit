@@ -1,0 +1,133 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:acquire_use_release",
+  "formals": [
+    "mutex",
+    "body_result"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "pthread_mutex_t_ptr"
+    },
+    {
+      "kind": "primitive",
+      "name": "int"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "pthread_mutex_available",
+    "args": [
+      {
+        "kind": "var",
+        "name": "mutex"
+      }
+    ]
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "var",
+            "name": "body_result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "pthread_state_after",
+            "args": [
+              {
+                "kind": "var",
+                "name": "mutex"
+              }
+            ]
+          },
+          {
+            "kind": "ctor",
+            "name": "pthread_state_before",
+            "args": [
+              {
+                "kind": "var",
+                "name": "mutex"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "pthread_balanced",
+        "args": [
+          {
+            "kind": "var",
+            "name": "mutex"
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "pthread_mutex_held",
+            "args": [
+              {
+                "kind": "var",
+                "name": "mutex"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "critical_body_done",
+            "args": [
+              {
+                "kind": "var",
+                "name": "mutex"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "CriticalSection",
+        "lock": "mutex",
+        "guard": {
+          "kind": "ctor",
+          "name": "pthread_mutex_held",
+          "args": [
+            {
+              "kind": "var",
+              "name": "mutex"
+            }
+          ]
+        },
+        "body_effects": "body_effects",
+        "balanced": true
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

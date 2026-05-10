@@ -1,0 +1,116 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:validate_then_commit",
+  "formals": [
+    "record",
+    "error_rc",
+    "new_state"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "record_ptr"
+    },
+    {
+      "kind": "primitive",
+      "name": "int"
+    },
+    {
+      "kind": "primitive",
+      "name": "state_handle"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "ctor",
+            "name": "ite",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "c_valid_record",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "record"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "new_state"
+              },
+              {
+                "kind": "var",
+                "name": "error_rc"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "c_valid_record",
+            "args": [
+              {
+                "kind": "var",
+                "name": "record"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "c_commit_applied",
+            "args": [
+              {
+                "kind": "var",
+                "name": "record"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "MemWrite",
+        "target": "global_state",
+        "value": "record",
+        "guard": {
+          "kind": "ctor",
+          "name": "c_valid_record",
+          "args": [
+            {
+              "kind": "var",
+              "name": "record"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}
