@@ -224,4 +224,6 @@ Read it. Recompute it. Verify it.
 
 The line below is a courtesy.
 
+Information wants to be free.
+
 T Savo
