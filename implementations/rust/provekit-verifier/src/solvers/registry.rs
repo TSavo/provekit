@@ -32,11 +32,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use provekit_ir_compiler_coq::DIALECT as COQ_DIALECT;
+use provekit_ir_compiler_lean::DIALECT as LEAN_DIALECT;
 use provekit_ir_compiler_maude::DIALECT as MAUDE_DIALECT;
 
 use crate::solvers::{
-    CetaGateConfig, CoqSubprocessSolver, MaudeSubprocessSolver, SolverConfig, SolverHandle,
-    SolversConfig, StubSolver, SubprocessSolver,
+    CetaGateConfig, CoqSubprocessSolver, LeanSubprocessSolver, MaudeSubprocessSolver, SolverConfig,
+    SolverHandle, SolversConfig, StubSolver, SubprocessSolver,
 };
 
 pub fn build(cfg: &SolversConfig) -> HashMap<String, SolverHandle> {
@@ -60,12 +61,18 @@ fn is_maude_compiler(ir_compiler: &str) -> bool {
     ir_compiler == "maude" || ir_compiler == MAUDE_DIALECT
 }
 
+fn is_lean_compiler(ir_compiler: &str) -> bool {
+    ir_compiler == "lean" || ir_compiler == LEAN_DIALECT
+}
+
 fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
     if let Some(stub) = StubSolver::from_binary(name, &sc.binary) {
         return Arc::new(stub) as SolverHandle;
     }
     let timeout = sc.timeout_seconds.map(Duration::from_secs);
-    let bin = if sc.binary.is_empty() {
+    let bin = if sc.binary.is_empty() && is_lean_compiler(&sc.ir_compiler) {
+        "lake".to_string()
+    } else if sc.binary.is_empty() {
         name.to_string()
     } else {
         sc.binary.clone()
@@ -91,6 +98,16 @@ fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
                 confluence_checker: sc.confluence_checker.clone(),
                 timeout,
             },
+        )) as SolverHandle;
+    }
+    if is_lean_compiler(&sc.ir_compiler) {
+        return Arc::new(LeanSubprocessSolver::new(
+            name,
+            bin,
+            sc.version.clone(),
+            timeout,
+            sc.lake_project.clone(),
+            sc.lean_toolchain.clone(),
         )) as SolverHandle;
     }
     Arc::new(SubprocessSolver::new(
@@ -199,12 +216,34 @@ ir_compiler = "coq"
     }
 
     #[test]
+    fn build_recognizes_lean_ir_compiler() {
+        let toml = r#"
+[solvers]
+default = "lean"
+[solvers.lean]
+binary = "lake"
+ir_compiler = "lean"
+"#;
+        let c = SolversConfig::from_toml(toml).unwrap();
+        let r = build(&c);
+        let s = r.get("lean").expect("lean registered");
+        assert_eq!(s.ir_compiler(), "lean");
+        let res = s.solve("(check-sat)");
+        assert_eq!(res.verdict, crate::types::ObligationVerdict::Undecidable);
+        assert!(
+            res.error.contains("parse IR-JSON") || res.error.contains("IR-JSON"),
+            "expected IR-JSON parse error from LeanSubprocessSolver, got: {}",
+            res.error
+        );
+    }
+
+    #[test]
     fn build_recognizes_default_workspace_portfolio() {
         // Closes #251 (cvc5) + #252 Tier 1 (Vampire).
         //
         // Reads the canonical `.provekit/config.toml` from the repo
         // root (computed from CARGO_MANIFEST_DIR) and asserts that the
-        // file parses cleanly and registers all four default-portfolio
+        // file parses cleanly and registers all five default-portfolio
         // solvers with the right ir_compiler tags. This is a
         // registry-build smoke test only: it does not spawn any solver
         // binary, so it passes even on hosts that lack
@@ -224,8 +263,8 @@ ir_compiler = "coq"
         let c = SolversConfig::from_toml(&body).expect("config parses");
         let r = build(&c);
 
-        // All five seats register.
-        for name in ["z3", "cvc5", "vampire", "coq", "maude"] {
+        // All six seats register.
+        for name in ["z3", "cvc5", "vampire", "coq", "maude", "lean"] {
             assert!(r.contains_key(name), "{name} seat missing from registry");
         }
 
@@ -252,6 +291,8 @@ ir_compiler = "coq"
         assert_eq!(coq.ir_compiler(), "coq");
         let maude = r.get("maude").unwrap();
         assert_eq!(maude.ir_compiler(), "maude");
+        let lean = r.get("lean").unwrap();
+        assert_eq!(lean.ir_compiler(), "lean");
     }
 
     #[test]
