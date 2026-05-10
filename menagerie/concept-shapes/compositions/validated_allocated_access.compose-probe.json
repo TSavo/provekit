@@ -1,0 +1,129 @@
+{
+  "status": "composed",
+  "composed_cid": "blake3-512:46459256c7797f637370eee21ff1efdf4799b4ba72a0c3c63756c9f951ecfb54674d4ff5d118cef039d1c74d377a04e41c5b696a4a54bd9c1cc362455c83a351",
+  "body_jcs": "{\"components\":[\"blake3-512:30f4c0a7d8f12e3b8b1260bed142524f4bfc1796782163cd300ba69dc60d8e72fe98c7d0e5a8b4464333e622a1e13fc8486190b55fff20fab7995ea541ffc1ad\",\"blake3-512:43c1cf06472f02e6e46f87d7f0023f20a4a383a1eacd39c23f4697655480b10b5cace3d233e9690b91d6322d0afc7cc33f91f4ad37c6a54ad5d3ea7b50167d35\"],\"formalIdx\":0,\"kind\":\"composed-function-contract\",\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"args\":[{\"args\":[{\"kind\":\"var\",\"name\":\"n\"}],\"kind\":\"ctor\",\"name\":\"allocated_buffer\"},{\"kind\":\"var\",\"name\":\"i\"}],\"kind\":\"ctor\",\"name\":\"read\"}],\"kind\":\"atomic\",\"name\":\"=\"},\"pre\":{\"kind\":\"and\",\"operands\":[{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},{\"kind\":\"implies\",\"operands\":[{\"args\":[{\"kind\":\"var\",\"name\":\"result__ea7b50167d35\"},{\"args\":[{\"kind\":\"var\",\"name\":\"n\"}],\"kind\":\"ctor\",\"name\":\"allocated_buffer\"}],\"kind\":\"atomic\",\"name\":\"=\"},{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"}]}]},\"schemaVersion\":\"1\"}",
+  "atoms": [
+    {
+      "fn_name": "shape:allocate-or-bail:pure-projection",
+      "formals": [
+        "n"
+      ],
+      "formal_sorts": [
+        {
+          "kind": "primitive",
+          "name": "Size"
+        }
+      ],
+      "formal_regions": [],
+      "return_sort": {
+        "kind": "primitive",
+        "name": "Buffer"
+      },
+      "return_region": null,
+      "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      "post": {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "ctor",
+            "name": "allocated_buffer",
+            "args": [
+              {
+                "kind": "var",
+                "name": "n"
+              }
+            ]
+          }
+        ]
+      },
+      "body_cid": null,
+      "effects": {
+        "effects": []
+      },
+      "locus": {
+        "file": null,
+        "line": 0,
+        "col": 0
+      },
+      "auto_minted_mementos": [],
+      "formal_idx": 0
+    },
+    {
+      "fn_name": "shape:check-bounds-then-access:pure-projection",
+      "formals": [
+        "p",
+        "i",
+        "len"
+      ],
+      "formal_sorts": [
+        {
+          "kind": "primitive",
+          "name": "Buffer"
+        },
+        {
+          "kind": "primitive",
+          "name": "Index"
+        },
+        {
+          "kind": "primitive",
+          "name": "Size"
+        }
+      ],
+      "formal_regions": [],
+      "return_sort": {
+        "kind": "primitive",
+        "name": "Value"
+      },
+      "return_region": null,
+      "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      "post": {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "ctor",
+            "name": "read",
+            "args": [
+              {
+                "kind": "var",
+                "name": "p"
+              },
+              {
+                "kind": "var",
+                "name": "i"
+              }
+            ]
+          }
+        ]
+      },
+      "body_cid": null,
+      "effects": {
+        "effects": []
+      },
+      "locus": {
+        "file": null,
+        "line": 0,
+        "col": 0
+      },
+      "auto_minted_mementos": [],
+      "formal_idx": 0
+    }
+  ]
+}

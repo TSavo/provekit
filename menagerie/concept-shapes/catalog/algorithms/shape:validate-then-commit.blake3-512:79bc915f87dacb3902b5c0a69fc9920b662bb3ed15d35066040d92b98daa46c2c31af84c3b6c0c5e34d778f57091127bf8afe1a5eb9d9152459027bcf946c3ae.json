@@ -1,0 +1,126 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "shape:validate-then-commit",
+    "formals": [
+      "x",
+      "err",
+      "committed_state"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "primitive",
+        "name": "Candidate"
+      },
+      {
+        "kind": "primitive",
+        "name": "Outcome"
+      },
+      {
+        "kind": "primitive",
+        "name": "Outcome"
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "and",
+      "operands": [
+        {
+          "kind": "atomic",
+          "name": "=",
+          "args": [
+            {
+              "kind": "var",
+              "name": "ret"
+            },
+            {
+              "kind": "ctor",
+              "name": "ite",
+              "args": [
+                {
+                  "kind": "ctor",
+                  "name": "valid",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    }
+                  ]
+                },
+                {
+                  "kind": "var",
+                  "name": "committed_state"
+                },
+                {
+                  "kind": "var",
+                  "name": "err"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "implies",
+          "operands": [
+            {
+              "kind": "atomic",
+              "name": "valid",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "x"
+                }
+              ]
+            },
+            {
+              "kind": "atomic",
+              "name": "commit_applied",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "x"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "MemWrite",
+          "target": "state",
+          "value": "x",
+          "guard": {
+            "kind": "ctor",
+            "name": "valid",
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Outcome"
+    }
+  },
+  "cid": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "sa/XbgCmSXwhaSH3ijug+yk+kOEYVsWuNwkpIKdEDEQn6StWc5u3cVcnKRkxbnKOuyvX0YnNqImhWLCD3Wc3Cg=="
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:allocate_or_bail",
+  "formals": [
+    "count",
+    "failure",
+    "next_value",
+    "ptr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "size_t"
+    },
+    {
+      "kind": "primitive",
+      "name": "int"
+    },
+    {
+      "kind": "primitive",
+      "name": "int"
+    },
+    {
+      "kind": "primitive",
+      "name": "void_ptr"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "ctor",
+            "name": "ite",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "malloc_failed",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "count"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "failure"
+              },
+              {
+                "kind": "var",
+                "name": "next_value"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "malloc_failed",
+            "args": [
+              {
+                "kind": "var",
+                "name": "count"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+              {
+                "kind": "var",
+                "name": "ptr"
+              },
+              {
+                "kind": "const",
+                "value": "null",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "void_ptr"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "not",
+            "operands": [
+              {
+                "kind": "atomic",
+                "name": "malloc_failed",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "count"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "non_null_sized",
+            "args": [
+              {
+                "kind": "var",
+                "name": "ptr"
+              },
+              {
+                "kind": "var",
+                "name": "count"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "Alloc",
+        "result": "ptr",
+        "size": "count",
+        "failure_condition": {
+          "kind": "ctor",
+          "name": "malloc_failed",
+          "args": [
+            {
+              "kind": "var",
+              "name": "count"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

@@ -1,0 +1,67 @@
+{
+  "schema_version": "1",
+  "protocol": "AMP",
+  "kind": "AlgorithmMemento",
+  "fn_name": "shape:branch-on-error-else-passthrough",
+  "formals": [
+    "x",
+    "err_val"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Value"
+    },
+    {
+      "kind": "primitive",
+      "name": "Value"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "Value"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "atomic",
+    "name": "=",
+    "args": [
+      {
+        "kind": "var",
+        "name": "ret"
+      },
+      {
+        "kind": "ctor",
+        "name": "ite",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "err_cond",
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "err_val"
+          },
+          {
+            "kind": "var",
+            "name": "x"
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": []
+  },
+  "auto_minted_mementos": []
+}

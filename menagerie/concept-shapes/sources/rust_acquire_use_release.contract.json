@@ -1,0 +1,133 @@
+{
+  "kind": "function-contract",
+  "fn_name": "rust:acquire_use_release",
+  "formals": [
+    "lock_ref",
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "MutexRef"
+    },
+    {
+      "kind": "primitive",
+      "name": "CriticalOut"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "CriticalOut"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "mutex_available",
+    "args": [
+      {
+        "kind": "var",
+        "name": "lock_ref"
+      }
+    ]
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "out"
+          },
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "mutex_state_after",
+            "args": [
+              {
+                "kind": "var",
+                "name": "lock_ref"
+              }
+            ]
+          },
+          {
+            "kind": "ctor",
+            "name": "mutex_state_before",
+            "args": [
+              {
+                "kind": "var",
+                "name": "lock_ref"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "mutex_guard_balanced",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lock_ref"
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "guard_holds_lock",
+            "args": [
+              {
+                "kind": "var",
+                "name": "lock_ref"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "closure_body_done",
+            "args": [
+              {
+                "kind": "var",
+                "name": "lock_ref"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "CriticalSection",
+        "lock": "lock_ref",
+        "guard": {
+          "kind": "ctor",
+          "name": "guard_holds_lock",
+          "args": [
+            {
+              "kind": "var",
+              "name": "lock_ref"
+            }
+          ]
+        },
+        "body_effects": "body_effects",
+        "balanced": true
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

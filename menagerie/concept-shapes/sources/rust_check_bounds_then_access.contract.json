@@ -1,0 +1,147 @@
+{
+  "kind": "function-contract",
+  "fn_name": "rust:check_bounds_then_access",
+  "formals": [
+    "slice",
+    "pos",
+    "length",
+    "fallback"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "SliceRef"
+    },
+    {
+      "kind": "primitive",
+      "name": "usize_index"
+    },
+    {
+      "kind": "primitive",
+      "name": "usize_len"
+    },
+    {
+      "kind": "primitive",
+      "name": "Elem"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "Elem"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "retv"
+          },
+          {
+            "kind": "ctor",
+            "name": "ite",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "usize_lt",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "pos"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "length"
+                  }
+                ]
+              },
+              {
+                "kind": "ctor",
+                "name": "slice_get",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "slice"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "pos"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "fallback"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "usize_lt",
+            "args": [
+              {
+                "kind": "var",
+                "name": "pos"
+              },
+              {
+                "kind": "var",
+                "name": "length"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "slice_accessible",
+            "args": [
+              {
+                "kind": "var",
+                "name": "slice"
+              },
+              {
+                "kind": "var",
+                "name": "pos"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "MemRead",
+        "target": "slice",
+        "index": "pos",
+        "guard": {
+          "kind": "ctor",
+          "name": "usize_lt",
+          "args": [
+            {
+              "kind": "var",
+              "name": "pos"
+            },
+            {
+              "kind": "var",
+              "name": "length"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

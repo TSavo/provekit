@@ -1,0 +1,65 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:branch_on_error_else_passthrough",
+  "formals": [
+    "status",
+    "fail_value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "int"
+    },
+    {
+      "kind": "primitive",
+      "name": "int"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "atomic",
+    "name": "=",
+    "args": [
+      {
+        "kind": "var",
+        "name": "result"
+      },
+      {
+        "kind": "ctor",
+        "name": "ite",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "c_status_is_error",
+            "args": [
+              {
+                "kind": "var",
+                "name": "status"
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "fail_value"
+          },
+          {
+            "kind": "var",
+            "name": "status"
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": []
+  },
+  "auto_minted_mementos": []
+}

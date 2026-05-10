@@ -1,0 +1,180 @@
+{
+  "kind": "algorithm",
+  "fn_name": "shape:refcount-inc-use-dec",
+  "formals": [
+    "o",
+    "use_ret"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Object"
+    },
+    {
+      "kind": "primitive",
+      "name": "UseValue"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "UseValue"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": ">=",
+    "args": [
+      {
+        "kind": "ctor",
+        "name": "refcount_before",
+        "args": [
+          {
+            "kind": "var",
+            "name": "o"
+          }
+        ]
+      },
+      {
+        "kind": "const",
+        "value": 0,
+        "sort": {
+          "kind": "primitive",
+          "name": "Int"
+        }
+      }
+    ]
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "ret"
+          },
+          {
+            "kind": "var",
+            "name": "use_ret"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "refcount_after",
+            "args": [
+              {
+                "kind": "var",
+                "name": "o"
+              }
+            ]
+          },
+          {
+            "kind": "ctor",
+            "name": "refcount_before",
+            "args": [
+              {
+                "kind": "var",
+                "name": "o"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "balanced_refcount_pair",
+        "args": [
+          {
+            "kind": "var",
+            "name": "o"
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": ">",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "refcount_after_inc",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "o"
+                  }
+                ]
+              },
+              {
+                "kind": "const",
+                "value": 0,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "use_guarded",
+            "args": [
+              {
+                "kind": "var",
+                "name": "o"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "RefInc",
+        "object": "o"
+      },
+      {
+        "kind": "Use",
+        "object": "o",
+        "guard": {
+          "kind": "ctor",
+          "name": ">",
+          "args": [
+            {
+              "kind": "ctor",
+              "name": "refcount_after_inc",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "o"
+                }
+              ]
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "RefDec",
+        "object": "o"
+      }
+    ]
+  }
+}
