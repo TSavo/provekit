@@ -1,0 +1,25 @@
+{
+  "kind": "CIJobResultBodyClaim",
+  "schemaVersion": "1",
+  "jobKey": "provekit/ci/rust",
+  "blastRadiusCid": "blake3-512:8c7b1796444769d8031e9e838abf4b766f58c083b0c3637bf81afc4d2aeb653cdec08a4837446111cbe7adf2e03bc4a2988ade06fc14a635d25371aeb32bbe73",
+  "result": "pass",
+  "outputCid": "blake3-512:0022a0c76d1b4e41da5b9cced08ddcbe702cb0602717aaec93befe1c5be98208be0baca7a11fda7e85ace5cbbc25e14a9ab4125fc47d85e9239b8c6ba094627b",
+  "logCid": "blake3-512:1fa3e2ebde5a1c78947d1e0381d8638b862832a27da64d7ed0f3380aba55381ca48b9b269ac37f629bafa9172159435f1c77c074abc73f92397b64e46f33aa4a",
+  "startedAt": "2026-05-07T00:00:00Z",
+  "finishedAt": "2026-05-07T00:00:00Z",
+  "runnerIdentityCid": "blake3-512:ea57d5bb564e290c3cd6fa3e5355e411d279c37be83cd4085d856b6c1210ce27ea65012d9810b1d343aeddd9ddfffd4542991107a3c7cc5121447ac4722ccd4b",
+  "policyCid": "blake3-512:430f7ae604144abb9810c0ee83dedce757cd12ce1bb3457051c7c94fcccfc237ccb7a909fe471290367bf9649129bdb76d63a392e28f59dad74b5417612e5668",
+  "inputCids": [
+    "blake3-512:0022a0c76d1b4e41da5b9cced08ddcbe702cb0602717aaec93befe1c5be98208be0baca7a11fda7e85ace5cbbc25e14a9ab4125fc47d85e9239b8c6ba094627b",
+    "blake3-512:1fa3e2ebde5a1c78947d1e0381d8638b862832a27da64d7ed0f3380aba55381ca48b9b269ac37f629bafa9172159435f1c77c074abc73f92397b64e46f33aa4a",
+    "blake3-512:430f7ae604144abb9810c0ee83dedce757cd12ce1bb3457051c7c94fcccfc237ccb7a909fe471290367bf9649129bdb76d63a392e28f59dad74b5417612e5668",
+    "blake3-512:8c7b1796444769d8031e9e838abf4b766f58c083b0c3637bf81afc4d2aeb653cdec08a4837446111cbe7adf2e03bc4a2988ade06fc14a635d25371aeb32bbe73",
+    "blake3-512:ea57d5bb564e290c3cd6fa3e5355e411d279c37be83cd4085d856b6c1210ce27ea65012d9810b1d343aeddd9ddfffd4542991107a3c7cc5121447ac4722ccd4b"
+  ],
+  "producer": {
+    "kind": "ci-runner",
+    "name": "github-actions",
+    "version": "25614533887.1"
+  }
+}
