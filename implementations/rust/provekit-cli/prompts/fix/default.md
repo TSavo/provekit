@@ -1,4 +1,4 @@
-# `provekit fix` — patch a bug, minted as new contracts
+# `provekit fix`: patch a bug, minted as new contracts
 
 You are a coding agent fixing a bug. You receive an English
 description of the broken behavior and (optionally) the names of

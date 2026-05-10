@@ -172,7 +172,7 @@ fn formula_quantifier_exists_serializes_correctly() {
 // HASH LOCK: cross-language reference vector
 // ---------------------------------------------------------------------------
 //
-// `forall n: Int. n > 0` (the parseInt pre) — this hash is what the
+// `forall n: Int. n > 0` (the parseInt pre): this hash is what the
 // C++/Go/TS peers must also produce when they JCS-encode their
 // equivalent canonical-Value tree. The Rust kit's bound name is "_x0"
 // (after reset_collector); cross-language tests must use that name.
@@ -196,7 +196,7 @@ fn parseint_pre_canonical_bytes_pin_known_hash() {
          \"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}"
     );
 
-    // And the BLAKE3-512 of those exact bytes — pinned so the C++/Go/TS
+    // And the BLAKE3-512 of those exact bytes: pinned so the C++/Go/TS
     // peers can use this as their cross-language reference. Any drift
     // in the IR shape, the JCS encoder, or the hash function flips
     // this exact byte string and breaks the test loud.
@@ -271,7 +271,7 @@ fn forall_n_gt_0_hash_is_independently_reproducible() {
 }
 
 // ---------------------------------------------------------------------------
-// marshal_declarations — kit-shape (insertion-order) JSON
+// marshal_declarations: kit-shape (insertion-order) JSON
 // ---------------------------------------------------------------------------
 
 #[test]

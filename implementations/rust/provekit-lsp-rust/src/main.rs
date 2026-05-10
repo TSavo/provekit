@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lsp-rust — NDJSON LSP plugin for Rust.
+// provekit-lsp-rust: NDJSON LSP plugin for Rust.
 //
 // ## Operating modes
 //
@@ -35,7 +35,7 @@
 //
 // where each element is a `LinterError` memento returned by the daemon.
 //
-// This mode is used by editor-facing components — in particular the real LSP
+// This mode is used by editor-facing components: in particular the real LSP
 // server (`provekit-lsp-server`, step 3b of the LSP+linker path) that handles
 // `textDocument/didOpen` and emits `publishDiagnostics` to the editor.
 //

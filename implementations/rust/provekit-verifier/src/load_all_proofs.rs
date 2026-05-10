@@ -90,7 +90,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     }
     // Filenames whose stem isn't a 128-hex string are tolerated; the
     // CID-from-bytes is what matters. (C++ rejects unknown tags loud;
-    // we keep that behavior via the prefix-trim — if there's a tag,
+    // we keep that behavior via the prefix-trim: if there's a tag,
     // it must be blake3-512.)
     if !hex_only && !filename_hex.is_empty() {
         pool.load_errors.push(LoadError {

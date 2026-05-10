@@ -97,17 +97,12 @@ fn default_confluence_checker() -> String {
     "csi".into()
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PortfolioMode {
+    #[default]
     FirstWins,
     Consensus,
-}
-
-impl Default for PortfolioMode {
-    fn default() -> Self {
-        Self::FirstWins
-    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

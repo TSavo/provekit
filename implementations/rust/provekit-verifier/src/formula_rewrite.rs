@@ -61,7 +61,7 @@ fn try_contrapositive(obligation: &Json, pool: &crate::types::MementoPool) -> Op
             if ops.len() != 2 {
                 return None;
             }
-            (ops.get(0)?, ops.get(1)?)
+            (ops.first()?, ops.get(1)?)
         }
         _ => return None,
     };
@@ -70,7 +70,7 @@ fn try_contrapositive(obligation: &Json, pool: &crate::types::MementoPool) -> Op
     let q = match not_q {
         Json::Object(obj) if obj.get("kind")?.as_str()? == "not" => {
             let ops = obj.get("operands")?.as_array()?;
-            ops.get(0)?
+            ops.first()?
         }
         _ => return None,
     };
@@ -79,7 +79,7 @@ fn try_contrapositive(obligation: &Json, pool: &crate::types::MementoPool) -> Op
     let p = match not_p {
         Json::Object(obj) if obj.get("kind")?.as_str()? == "not" => {
             let ops = obj.get("operands")?.as_array()?;
-            ops.get(0)?
+            ops.first()?
         }
         _ => return None,
     };
@@ -124,7 +124,7 @@ fn try_weaken(obligation: &Json, pool: &crate::types::MementoPool) -> Option<Tac
             if ops.len() != 2 {
                 return None;
             }
-            (ops.get(0)?, ops.get(1)?)
+            (ops.first()?, ops.get(1)?)
         }
         _ => return None,
     };
@@ -220,10 +220,7 @@ fn is_formula_verified(formula: &Json, pool: &crate::types::MementoPool) -> bool
 fn is_trivially_true(formula: &Json) -> bool {
     match formula {
         Json::Object(obj) => match get_str(obj, "kind") {
-            Some("atomic") => match get_str(obj, "name") {
-                Some("true") => true,
-                _ => false,
-            },
+            Some("atomic") => matches!(get_str(obj, "name"), Some("true")),
             _ => false,
         },
         _ => false,
@@ -252,7 +249,7 @@ fn formula_summary(formula: &Json) -> String {
             match kind {
                 "atomic" => {
                     let name = get_str(obj, "name").unwrap_or("?");
-                    format!("{}", name)
+                    name.to_string()
                 }
                 "var" => {
                     let name = get_str(obj, "name").unwrap_or("?");

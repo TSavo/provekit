@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// daemon_client.rs — thin client for the provekit-linkerd daemon.
+// daemon_client.rs: thin client for the provekit-linkerd daemon.
 //
 // Implements `connect_or_spawn` (connect to an existing daemon or spawn one)
 // and `send_parse_file` (forward a `parseFile` JSON-RPC and return diagnostics).
 //
-// This module uses only `std` — no tokio, no async. The parent binary speaks
+// This module uses only `std`: no tokio, no async. The parent binary speaks
 // synchronous NDJSON on stdin/stdout; there is no need for an async runtime here.
 
 use std::io::{BufRead, BufReader, Write};
@@ -67,7 +67,7 @@ pub fn connect_or_spawn(socket_path: &Path, project_cid: &str) -> std::io::Resul
                 format!("failed to spawn provekit-linkerd: {e}"),
             )
         })?;
-    // We intentionally don't join the child — it's a long-running daemon.
+    // We intentionally don't join the child: it's a long-running daemon.
 
     // Poll for the socket to appear (max 5 s, 50 ms intervals).
     let deadline = Instant::now() + Duration::from_secs(5);

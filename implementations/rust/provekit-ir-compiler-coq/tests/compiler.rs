@@ -88,7 +88,7 @@ fn lambda_produces_valid_coq_syntax() {
 // to a Π-type `forall <var> : <index_sort>, <name> <var>` (instantiated form,
 // matching the `Vec n` example in the issue body).
 //
-// "Round-trip" interpretation: the Coq compiler is emit-only — there is no
+// "Round-trip" interpretation: the Coq compiler is emit-only: there is no
 // Coq parser. So round-trip here means (a) IR JSON serde round-trips, and
 // (b) emission is deterministic byte-for-byte across calls. Surface-shape
 // assertions cover the actual translation.

@@ -2086,6 +2086,7 @@ dependencies = [
 name = "provekit-verifier"
 version = "0.1.0"
 dependencies = [
+ "libprovekit",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-compiler",
@@ -2095,30 +2096,12 @@ dependencies = [
  "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
- "provekit-walk",
  "rayon",
  "serde",
  "serde_json",
  "thiserror",
  "toml 0.8.23",
  "walkdir",
-]
-
-[[package]]
-name = "provekit-walk"
-version = "0.1.0"
-dependencies = [
- "base64",
- "libprovekit",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "quote",
- "serde_json",
- "syn",
- "thiserror",
 ]
 
 [[package]]

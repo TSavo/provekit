@@ -23,9 +23,8 @@
 //
 // Spec: protocol/specs/2026-05-02-multi-solver-protocol-v2.md
 //       (Coq's seat in `Portfolio { consensus, coverage_required: true }`).
-// Note: this file ships the registry seat. The §5 ConsensusCoverage
-// 7-step rule and the OpacityManifest types are out of scope for this
-// change; see the PR body for the staged-rollout plan.
+// Note: this file ships the registry seat. Consensus coverage policy
+// and opacity manifests are handled by the compiler and runner layers.
 
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-# `provekit must` — translate English to a verified ProvekIt contract
+# `provekit must`: translate English to a verified ProvekIt contract
 
 You are a coding agent operating inside ProvekIt. Your job is to read
 the source file the user pointed at, understand it, and translate the

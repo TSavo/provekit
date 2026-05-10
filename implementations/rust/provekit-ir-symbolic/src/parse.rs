@@ -12,13 +12,13 @@
 //
 // Closed-object policy: nodes carry exactly the keys their grammar
 // production names. Extra fields are rejected loud (RuleViolation::ExtraKey).
-// `VarTerm` and `CtorTerm` post-v1.1.0 carry no `sort` — the parser
+// `VarTerm` and `CtorTerm` post-v1.1.0 carry no `sort`: the parser
 // rejects strays.
 //
 // Strict-mode arity rules per the grammar:
-//   - `not`     — exactly 1 operand
-//   - `implies` — exactly 2 operands
-//   - `and` / `or` — 2+ operands
+//   - `not`: exactly 1 operand
+//   - `implies`: exactly 2 operands
+//   - `and` / `or`: 2+ operands
 
 use std::rc::Rc;
 
@@ -55,7 +55,7 @@ pub enum ParseError {
         expected: String,
         actual: usize,
     },
-    #[error("parse: at {path}: empty contract — at least one of pre/post/inv required")]
+    #[error("parse: at {path}: empty contract: at least one of pre/post/inv required")]
     EmptyContract { path: String },
     #[error("parse: invalid JSON: {0}")]
     InvalidJson(String),
@@ -512,7 +512,7 @@ fn reject_extra_keys(
     kind: &str,
 ) -> Result<(), ParseError> {
     for (k, _) in obj {
-        if !allowed.iter().any(|a| *a == k.as_str()) {
+        if !allowed.contains(&k.as_str()) {
             return Err(ParseError::ExtraKey {
                 path: path.into(),
                 key: k.clone(),

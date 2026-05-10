@@ -1,4 +1,4 @@
-//! provekit-ir-codegen — Generate Rust types and compilers from CDDL grammar.
+//! provekit-ir-codegen: generate Rust types and compilers from CDDL grammar.
 //!
 //! Usage:
 //!     cargo run -p provekit-ir-codegen
@@ -31,7 +31,7 @@ pub fn generate_all(cddl_path: &str) -> Result<(), String> {
 
     let ir = cddl_parser::extract_ir(&cddl);
 
-    // 1. Types crate (direct lib.rs — this crate IS the generated types)
+    // 1. Types crate. Direct lib.rs: this crate IS the generated types.
     let types_rs = rust_gen::emit_module(&ir, rust_gen::ModuleKind::Types);
     fs::write("provekit-ir-types/src/lib.rs", types_rs)
         .map_err(|e| format!("Failed to write provekit-ir-types/src/lib.rs: {}", e))?;

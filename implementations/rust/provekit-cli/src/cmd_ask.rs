@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit ask <FORMULA-FILE>` — Librarian query.
+// `provekit ask <FORMULA-FILE>`: Librarian query.
 //
 // Parse an IR-JSON formula via `provekit_ir_symbolic::parse_formula`,
 // re-serialize to canonical JCS bytes via `formula_to_value`, hash via

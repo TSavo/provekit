@@ -1,4 +1,4 @@
-//! mint-all-baselines — config-driven baseline catalog generator.
+//! mint-all-baselines: config-driven baseline catalog generator.
 //! Reads per-language TOML configs, generates ContractDecls using
 //! provekit-ir-symbolic primitives, mints each into a signed memento,
 //! bundles into per-kit content-addressed .proof files under .provekit/baselines/.
@@ -82,11 +82,11 @@ struct PredicateArgs {
     right: i64,
 }
 
-// ── IR helper — apply builtin sig to quantified vars ──
+// ── IR helper: apply builtin sig to quantified vars ──
 
 fn apply_builtin(sig: &str, arity: usize, vars: &[Rc<Term>]) -> Rc<Term> {
     // var0..varN correspond to quantified variables in order.
-    // For arity=0: nullary ctor — no arguments (e.g. a constant).
+    // For arity=0: nullary ctor: no arguments (e.g. a constant).
     // For arity=1: ctor1(sig, var0).
     // For arity>=2: ctorN(sig, var0..varN).
     // Default (unconfigured arity=0): treat as arity=1 (unary function).
@@ -204,7 +204,7 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
                         )
                     });
                     let f = forall(String_(), move |s| {
-                        // left_name(s) >= right_val — the property bounded below.
+                        // left_name(s) >= right_val: the property bounded below.
                         let inner = ctor1(&left_name, s);
                         gte(inner, num(right_val))
                     });
@@ -212,7 +212,7 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
                 }
                 other => {
                     panic!(
-                        "unknown predicate kind '{}' for {}/{} — fix config or add handler",
+                        "unknown predicate kind '{}' for {}/{}: fix config or add handler",
                         other, config.lang, builtin_name
                     );
                 }
@@ -296,7 +296,7 @@ fn main() {
         let config_path = config_dir.join(format!("{lang}.toml"));
         if !config_path.exists() {
             panic!(
-                "required config missing: {} — every language in the langs list must have a config file",
+                "required config missing: {}: every language in the langs list must have a config file",
                 config_path.display()
             );
         }
@@ -310,7 +310,7 @@ fn main() {
 
     if count == 0 {
         panic!(
-            "no configs found in {} — nothing to mint",
+            "no configs found in {}: nothing to mint",
             config_dir.display()
         );
     }
