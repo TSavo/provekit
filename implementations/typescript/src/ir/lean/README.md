@@ -7,9 +7,9 @@ as leaves to the same IR CID.
 
 ## Public surface
 
-- `emitLean(formula)` — render a single `IrFormula` as a Lean 4 expression
+- `emitLean(formula)`: render a single `IrFormula` as a Lean 4 expression
   (no preamble, no theorem wrapper).
-- `emitLeanTheorem({ axioms, assertion, name? })` — render full Lean
+- `emitLeanTheorem({ axioms, assertion, name? })`: render full Lean
   source: `axiom` declarations for user sorts / ctors / uninterpreted
   predicates, then `theorem <name> : <prop> := by sorry`. The proof body
   is `sorry` so the file parses; `provideLeanProof` splices the user's
@@ -41,11 +41,11 @@ as leaves to the same IR CID.
 The discipline is "throw a structured error rather than silently
 mistranslate." `LeanUnsupportedError` is raised on:
 
-- `Real` sort — requires Mathlib (`Real` is not in plain Lean 4).
-- `Set` sort — requires Mathlib (`Set` is not in plain Lean 4).
-- `tuple` sort — out of FOL scope.
-- `function` sort — out of FOL scope.
-- `null`/`undefined` const — kits must model nullability as an explicit
+- `Real` sort: requires Mathlib (`Real` is not in plain Lean 4).
+- `Set` sort: requires Mathlib (`Set` is not in plain Lean 4).
+- `tuple` sort: out of FOL scope.
+- `function` sort: out of FOL scope.
+- `null`/`undefined` const: kits must model nullability as an explicit
   ctor, not a null literal.
 
 Kits that depend on Mathlib can compose their own sort emitter to lift

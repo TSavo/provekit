@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use provekit_walk::contract::{OpacityMementoLookup, PinInvariantMementoView};
+use libprovekit::compose::{OpacityMementoLookup, PinInvariantMementoView};
 use serde::Serialize;
 use serde_json::Value as Json;
 
@@ -192,7 +192,7 @@ impl MementoPool {
         // Scan for implication mementos that link these two.
         // Shape-agnostic: under v1.2 these references live in the
         // metadata; under v1.1 they live in evidence.body.
-        for (_, envelope) in &self.mementos {
+        for envelope in self.mementos.values() {
             if memento_kind(envelope) == Some("implication") {
                 let ant = memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str());
                 let con = memento_body_field(envelope, "consequentHash").and_then(|v| v.as_str());
@@ -219,7 +219,7 @@ impl MementoPool {
         // Build implication graph adjacency list on-the-fly.
         // Shape-agnostic per the body/header accessors.
         let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (_, envelope) in &self.mementos {
+        for envelope in self.mementos.values() {
             if memento_kind(envelope) == Some("implication") {
                 if let (Some(ant), Some(con)) = (
                     memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str()),
@@ -491,9 +491,7 @@ impl MementoPool {
     /// collisions via `load_errors` so the verifier reports them.
     pub fn merge(&mut self, other: Self) {
         for (cid, env) in other.mementos {
-            if !self.mementos.contains_key(&cid) {
-                self.mementos.insert(cid, env);
-            }
+            self.mementos.entry(cid).or_insert(env);
         }
         for (k, v) in other.formula_to_memento {
             if let Some(existing) = self.formula_to_memento.get(&k) {
@@ -536,7 +534,7 @@ impl MementoPool {
         // Opacity discharge indexes: first-insertion wins (same policy as
         // other single-valued indexes). Collisions on these keys mean two
         // proofs supply different discharge mementos for the same opacity
-        // site — keep the first, let the substrate use whichever it loaded
+        // site: keep the first, let the substrate use whichever it loaded
         // first.
         for (k, v) in other.loop_cid_to_memento {
             self.loop_cid_to_memento.entry(k).or_insert(v);
@@ -557,7 +555,7 @@ impl MementoPool {
 }
 
 /// `MementoPool` implements `OpacityMementoLookup` so that
-/// `compose_function_contracts_checked` in `provekit-walk` can query
+/// `compose_function_contracts_checked` in `libprovekit` can query
 /// whether a discharge memento is present for a given opacity site CID.
 ///
 /// Each lookup is an O(log n) BTreeMap probe against the three
@@ -864,7 +862,7 @@ mod tests {
     fn pin_invariant_insert_lookup_roundtrip() {
         let mut pool = MementoPool::default();
         let fc = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let m_cid = format!("blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        let m_cid = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string();
         pool.insert(
             m_cid.clone(),
             make_pin_invariant_memento(&m_cid, fc, "pin", "0 <= state"),
@@ -882,12 +880,12 @@ mod tests {
         let mut pool = MementoPool::default();
         let fc_a = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let fc_b = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let m_cid = format!("blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+        let m_cid = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string();
         pool.insert(
             m_cid.clone(),
             make_pin_invariant_memento(&m_cid, fc_a, "pin", "0 <= state"),
         );
-        // Same target "pin" but different function CID — should NOT match
+        // Same target "pin" but different function CID: should NOT match
         let view = pool.lookup_pin_invariant(fc_b, "pin");
         assert!(view.is_none(), "cross-function-CID lookup must return None");
     }

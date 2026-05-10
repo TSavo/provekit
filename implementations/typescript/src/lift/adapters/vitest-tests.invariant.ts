@@ -6,7 +6,7 @@
 // `it("must P", () => ...)` becomes a contract whose `pre` is the
 // lifted assertion.
 //
-// Honest scope: the IR pins shape — no raw test bodies, just lifted
+// Honest scope: the IR pins shape: no raw test bodies, just lifted
 // claim names; deterministic for a fixed input file.
 
 import {

@@ -13,7 +13,7 @@
  * re-running the script picks the same 30. If we need a different sample
  * later, change SAMPLE_SALT.
  *
- * Stratum sizes (default — total 30):
+ * Stratum sizes (default: total 30):
  *   - expressible-now-pending-principle:  16
  *   - expressible-now-recognized:         11
  *   - needs-new-relation:                  1 (entire population)
@@ -21,7 +21,7 @@
  *
  * The labeling step itself is manual: read each candidate's diff in
  * the markdown and tick `[x]` in the right cell. No automated
- * verification — the whole point of the gate is "does mechanical
+ * verification: the whole point of the gate is "does mechanical
  * tagger agree with a human reviewer?"
  */
 import { createHash } from "crypto";

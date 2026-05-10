@@ -4,7 +4,7 @@
  * everything else in the IR library produces them.
  *
  * This file is the single source of truth for the IR-formula shape.
- * Zero runtime dependencies — pure type and helper definitions.
+ * Zero runtime dependencies: pure type and helper definitions.
  */
 
 // ---------------------------------------------------------------------------

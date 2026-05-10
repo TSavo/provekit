@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt IR — Declaration types and collector pattern. */
+/** ProvekIt IR: Declaration types and collector pattern. */
 
 namespace ProvekIt\Ir;
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// state.rs — per-project daemon state.
+// state.rs: per-project daemon state.
 //
 // The daemon maintains a union of all kits' contracts and call-edges in
 // memory. Each `parseFile` RPC replaces the (kitId, file) slice in the
@@ -10,12 +10,12 @@
 // Cache contract (R12-R13): we key the last `LinkerOutput` on the pair
 // `(contractSetCid, callEdgeSetCid)` that produced it. If the next
 // `parseFile` call's union yields the same key, we return the cached
-// output directly — by the content-addressing invariant this is
+// output directly: by the content-addressing invariant this is
 // byte-identical to a fresh derivation.
 //
 // LRU eviction (R12): we maintain a simple bounded LRU map keyed on
 // `(contractSetCid, callEdgeSetCid)`. The default cap is 1024.
-// Eviction never changes output correctness — a miss just triggers a fresh
+// Eviction never changes output correctness: a miss just triggers a fresh
 // `link()` call that produces the same result (R13).
 
 use std::collections::{BTreeMap, VecDeque};
@@ -76,7 +76,7 @@ impl Lru {
 /// Per-project daemon state.
 ///
 /// One instance lives behind a `tokio::sync::Mutex` inside the server.
-/// All methods are synchronous (no async) — the caller holds the mutex
+/// All methods are synchronous (no async): the caller holds the mutex
 /// while calling them.
 pub struct ProjectState {
     /// Maps (kitId, absolute file path) -> (contracts, call_edges) produced
@@ -121,7 +121,7 @@ impl ProjectState {
             all_call_edges.extend(ces.iter().cloned());
         }
 
-        // Run the linker (pure function — deterministic per R13).
+        // Run the linker (pure function: deterministic per R13).
         let output = link(LinkerInputs {
             contracts: all_contracts,
             call_edges: all_call_edges,

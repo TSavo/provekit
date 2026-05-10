@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// std::option slab — builtins on `Option<T>`.
+// std::option slab: builtins on `Option<T>`.
 //
 // Coverage (8 builtins): Option_is_some, Option_is_none, Option_unwrap,
 // Option_unwrap_or, Option_map, Option_and_then, Option_ok_or,

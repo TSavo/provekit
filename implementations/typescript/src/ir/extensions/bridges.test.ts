@@ -2,7 +2,7 @@
  * Primitive bridge authoring tests.
  *
  * The kit's "built-in" primitives that aren't actually kit-owned
- * (parseInt, abs, floor, etc. — owned by V8/ECMA-262) get authored
+ * (parseInt, abs, floor, etc.: owned by V8/ECMA-262) get authored
  * as bridges, not extensions. These tests verify the bridge factory
  * registers declarations correctly and emits IR ctor nodes the user
  * can call directly.

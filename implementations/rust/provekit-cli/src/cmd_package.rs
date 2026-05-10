@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit package` — package-shaped supply-chain receipt helpers.
+// `provekit package`: package-shaped supply-chain receipt helpers.
 
 use std::path::PathBuf;
 

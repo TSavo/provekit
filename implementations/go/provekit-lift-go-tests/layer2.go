@@ -2,9 +2,9 @@
 //
 // Patterns (port of provekit-lift-rust-tests/src/layer2.rs):
 //
-//	Pattern 1 — bounded for-loop as universal quantifier
-//	Pattern 2 — helper-function inlining (one memento per call site)
-//	Pattern 3 — multi-assertion characterization conjunction
+//	Pattern 1: bounded for-loop as universal quantifier
+//	Pattern 2: helper-function inlining (one memento per call site)
+//	Pattern 3: multi-assertion characterization conjunction
 //
 // At most one pattern claims a given test function. The dispatcher
 // uses Layer2Output.ClaimedTests so Layer 0 will skip those tests.

@@ -10,7 +10,7 @@
 //   1. A peer kit (C++ or Go) shipped a v1.1.0 .proof with parseInt's
 //      precondition (forall n: Int. n > 0).
 //   2. Rust consumer authors invariants via kit primitives parse_int(num(...))
-//      — every call emits a Ctor("parseInt", [arg]) IrTerm.
+//: every call emits a Ctor("parseInt", [arg]) IrTerm.
 //   3. Rust consumer mints + signs its property mementos in pure Rust.
 //   4. Rust consumer bundles them into its own .proof file in pure Rust.
 //   5. Rust bridge enforcement runner walks both .proofs:

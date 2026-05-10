@@ -2,7 +2,7 @@
 // The narrows extractor now emits literal_lt for `x < N` (and literal_gt/lte/gte). We
 // use that to detect explicit upper-bound checks. If `lhs < some_literal` exists
 // anywhere with `lhs` matching the addition's lhs_node via same_value, the principle
-// is suppressed — the programmer asserted a bound.
+// is suppressed: the programmer asserted a bound.
 //
 // Tightened (2026-04-27, #115 step 2.5):
 //   - `arithmetic.result_sort != "String"`: extractor now infers result kind from
@@ -14,7 +14,7 @@
 //     matched node to actually live in the diff (change_kind != 'unchanged' for
 //     this exact pre coordinates). Without this, principles match on stable code
 //     near the actual fix and report violations the developer didn't introduce.
-//     Dormant when no active diff context — static-only runs unaffected.
+//     Dormant when no active diff context: static-only runs unaffected.
 
 predicate has_upper_bound_lt($var: node) {
   match $g: node where narrows.narrowing_kind == "literal_lt"

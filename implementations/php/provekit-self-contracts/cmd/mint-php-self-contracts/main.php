@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt PHP self-contracts — Main mint orchestrator.
+/** ProvekIt PHP self-contracts: Main mint orchestrator.
  *  Side A pattern: walks the canonical PHP slab, mints each contract
  *  as a signed layered memento, bundles into a .proof envelope.
  *  Mirrors ruby/lib/provekit/self_contracts.rb.
@@ -69,7 +69,7 @@ function mintAll(string $outDir): array
     ];
 }
 
-// Direct invocation (non-RPC) — prints to stdout for `make mint-php` parsing
+// Direct invocation (non-RPC): prints to stdout for `make mint-php` parsing
 if (PHP_SAPI === 'cli' && !in_array('--rpc', $argv ?? [])) {
     $outDir = $argv[1] ?? dirname(__DIR__, 2);
     $result = mintAll($outDir);

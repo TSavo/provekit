@@ -345,7 +345,7 @@ describe("runMint", () => {
   });
 
   it("'mint catalog' without <dir> exits 1", async () => {
-    // No flags at all — leaves no positional that could be misread as a dir.
+    // No flags at all: leaves no positional that could be misread as a dir.
     let caught: Error | null = null;
     try {
       await runMint(["catalog"]);

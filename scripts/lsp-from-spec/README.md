@@ -14,7 +14,7 @@ Companion to `protocol/specs/2026-04-30-lsp-from-protocol.md`.
    - SHA-256-prefix-16 per §9.
    The implementation is inline (`canonicalize.mjs`); it does not import from `src/`.
 
-3. **Surfaces hover info** via the Language Server Protocol — when the user hovers in a `.json` file, the server returns a markdown card naming each property declaration's name and propertyHash CID.
+3. **Surfaces hover info** via the Language Server Protocol: when the user hovers in a `.json` file, the server returns a markdown card naming each property declaration's name and propertyHash CID.
 
 4. **Publishes diagnostics** when the document fails to parse against the IR grammar.
 

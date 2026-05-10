@@ -1,11 +1,11 @@
-// cgo_resolver_test.go — tests for per-host cgo preamble resolver.
+// cgo_resolver_test.go: tests for per-host cgo preamble resolver.
 //
 // Implements Part 2 of spec #114 R3:
 //   Test 1: cgo file with rust_*.h include → targetSymbol = "rust-kit:funcName"
 //   Test 2: cgo file with -lz (zlib) LDFLAGS → targetSymbol = "c-kit:funcName"
 //   Test 3: cgo file with no target signal → resolver-error prefix, no placeholder
 //   Test 4: non-cgo Go file → no cgo call edges emitted
-//   Test 5: byte-determinism — two runs produce identical call-edge stream
+//   Test 5: byte-determinism: two runs produce identical call-edge stream
 package main
 
 import (
@@ -35,7 +35,7 @@ func CallRust(n int) int {
 
 // cgoZlibSource: cgo file linking against zlib (-lz).
 // The resolver should identify this as c-kit (non-rust, non-system well-known
-// library — zlib IS in the system libs list, so this resolves to "libc-system").
+// library: zlib IS in the system libs list, so this resolves to "libc-system").
 // We test c-kit explicitly below with a non-system lib.
 const cgoZlibSource = `package demo
 
@@ -195,7 +195,7 @@ func TestCgoResolver_CKit(t *testing.T) {
 
 // TestCgoResolver_NoSignalEmitsResolverError asserts that a cgo file whose
 // preamble has no LDFLAGS and no rust header emits edges with
-// targetSymbol = "resolver-error:<func>" — NOT a placeholder string.
+// targetSymbol = "resolver-error:<func>": NOT a placeholder string.
 // Spec #97 R2 forbids silent "unknown:foo" symbols.
 func TestCgoResolver_NoSignalEmitsResolverError(t *testing.T) {
 	edges := parseCgoEdges(t, cgoNoSignalSource, "demo.go")

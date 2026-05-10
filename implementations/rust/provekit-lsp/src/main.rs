@@ -108,7 +108,7 @@ struct DaemonDiagnostic {
 
 /// Convert a single daemon `DaemonDiagnostic` into an LSP `Diagnostic`.
 ///
-/// Range is (0,0)..(0,1) — whole-file marker — because the daemon MVP does
+/// Range is (0,0)..(0,1): whole-file marker: because the daemon MVP does
 /// not yet propagate call-site locus from `LinkerCallEdge` into `LinkerError`.
 /// Once that propagation is added upstream, this function should read locus
 /// fields and produce a precise range.
@@ -457,7 +457,7 @@ impl ProvekitLanguageServer {
                 }
             }
             None => {
-                // Unknown file type — try built-in Rust as fallback, or skip
+                // Unknown file type: try built-in Rust as fallback, or skip
                 if uri.path().ends_with(".rs") {
                     parser::parse_rust_source(&text)
                 } else {

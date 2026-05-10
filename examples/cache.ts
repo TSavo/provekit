@@ -22,7 +22,7 @@ export function cacheGet<T>(key: string): T | null {
   const age = Date.now() - entry.cachedAt;
   console.log(`Cache hit: ${key}, age=${age}ms, ttl=${entry.ttlMs}ms`);
 
-  // BUG: returns stale value — checks age but doesn't enforce TTL
+  // BUG: returns stale value: checks age but doesn't enforce TTL
   return entry.value;
 }
 

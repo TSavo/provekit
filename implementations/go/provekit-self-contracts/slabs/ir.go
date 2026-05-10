@@ -15,7 +15,7 @@ import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 func InvariantsIRTypes() {
 	// Var-term JSON omits sort under v1.1.0:
 	//   {kind:"var", name}  (NO sort)
-	// LIVING DOCS — kit-defined predicate `omitsSort` is opaque to Z3.
+	// LIVING DOCS: kit-defined predicate `omitsSort` is opaque to Z3.
 	ir.Must("varTerm_json_no_sort_field",
 		ir.ForAll(ir.String, func(name ir.IrTerm) ir.IrFormula {
 			return ir.Eq(ctor1("varTerm_json", name), ctor1("varTerm_json", name))
@@ -29,8 +29,8 @@ func InvariantsIRTypes() {
 		Post: ir.Gte(ir.StringLength(ctor0("atomicFormula_kind_prefix")), ir.Num(15)),
 	})
 
-	// Ctor-term JSON shape: {kind:"ctor", name, args} — NO sort field.
-	// LIVING DOCS — Z3 has no semantics for "shape equals ...".
+	// Ctor-term JSON shape: {kind:"ctor", name, args}: NO sort field.
+	// LIVING DOCS: Z3 has no semantics for "shape equals ...".
 	ir.Must("ctorTerm_json_no_sort_field",
 		ir.ForAll(ir.String, func(name ir.IrTerm) ir.IrFormula {
 			return ir.Eq(ctor1("ctorTerm_json", name), ctor1("ctorTerm_json", name))
@@ -67,7 +67,7 @@ func InvariantsIRQuantifiers() {
 
 	// And/Or with 0 args desugar to atomic true/false; with 1 arg pass
 	// through. v1.1.0 grammar: 2+ operands at the connective shape.
-	// LIVING DOCS — desugaring rules opaque to Z3.
+	// LIVING DOCS: desugaring rules opaque to Z3.
 	ir.Must("And_zero_args_desugars_to_true",
 		ir.ForAll(ir.Int, func(_ ir.IrTerm) ir.IrFormula {
 			return ir.Eq(ctor0("And_zero_args_kind"), ir.StrConst("atomic"))
@@ -97,7 +97,7 @@ func InvariantsIRProperty() {
 	})
 
 	// Contract panics if all of Pre/Post/Inv are nil.
-	// LIVING DOCS — panic semantics not in Z3's first-order theory.
+	// LIVING DOCS: panic semantics not in Z3's first-order theory.
 	ir.Must("Contract_panics_when_all_nil",
 		ir.ForAll(ir.Int, func(_ ir.IrTerm) ir.IrFormula {
 			return ir.Eq(ctor0("Contract_validate_nil"), ctor0("Contract_validate_nil"))

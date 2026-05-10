@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lsp-csharp — NDJSON LSP plugin for C#.
+// provekit-lsp-csharp: NDJSON LSP plugin for C#.
 //
 // Thin shell around Provekit.Lift.Core.SourceLifter (task #219). All
 // lift orchestration (Roslyn compile, DataAnnotations lift, annotation

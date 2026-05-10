@@ -243,7 +243,7 @@ fn b(n: i64) -> i64 { a(n) }
 
 // ---------------------------------------------------------------------------
 // Test 4: #[no_mangle] pub extern "C" fn foo lifts with name = "foo"
-//         and pre = (n > 0) — the Rust-side reciprocal for the Go cgo
+//         and pre = (n > 0): the Rust-side reciprocal for the Go cgo
 //         resolver round-trip (spec #114 R3 / dispatch Part 3).
 //
 // The Go resolver emits targetSymbol = "rust-kit:foo". The linker resolves
@@ -273,7 +273,7 @@ pub extern "C" fn foo(n: i32) -> i32 {
         adapter_out.warnings
     );
 
-    // Find the contract named "foo" — name must be the bare function name,
+    // Find the contract named "foo": name must be the bare function name,
     // not a mangled or namespace-prefixed variant. The Go resolver emits
     // targetSymbol = "rust-kit:foo"; the linker resolves by matching name "foo".
     let foo_contract = adapter_out

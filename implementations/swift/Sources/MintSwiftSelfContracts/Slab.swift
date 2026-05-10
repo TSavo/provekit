@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Slab.swift — the swift kit's self-contracts slab.
+// Slab.swift: the swift kit's self-contracts slab.
 //
 // Authors the 11 lift-plugin-protocol contracts (C1-C8, split into 11 facets)
 // matching the Rust canonical definitions in
@@ -60,7 +60,7 @@ func swiftSelfContracts() -> [Declaration] {
         inv: nil
     )
 
-    // C2a: initialize capabilities — authoring_surfaces is non-empty.
+    // C2a: initialize capabilities: authoring_surfaces is non-empty.
     let c2a = Declaration.contract(
         name: "lift_plugin_initialize_capabilities_authoring_surfaces_nonempty",
         outBinding: "out",
@@ -76,7 +76,7 @@ func swiftSelfContracts() -> [Declaration] {
         )
     )
 
-    // C2b: initialize capabilities — ir_version starts with "v".
+    // C2b: initialize capabilities: ir_version starts with "v".
     let c2b = Declaration.contract(
         name: "lift_plugin_initialize_capabilities_ir_version_starts_with_v",
         outBinding: "out",
@@ -88,7 +88,7 @@ func swiftSelfContracts() -> [Declaration] {
         inv: nil
     )
 
-    // C3a: lift request — surface is a string (spec lines 92-100).
+    // C3a: lift request: surface is a string (spec lines 92-100).
     let c3a = Declaration.contract(
         name: "lift_plugin_lift_request_surface_is_string",
         outBinding: "out",
@@ -100,7 +100,7 @@ func swiftSelfContracts() -> [Declaration] {
         inv: nil
     )
 
-    // C3b: lift request — source_paths is non-empty.
+    // C3b: lift request: source_paths is non-empty.
     let c3b = Declaration.contract(
         name: "lift_plugin_lift_request_source_paths_nonempty",
         outBinding: "out",
@@ -116,7 +116,7 @@ func swiftSelfContracts() -> [Declaration] {
         )
     )
 
-    // C3c: lift request — each source path is a non-empty string.
+    // C3c: lift request: each source path is a non-empty string.
     let c3c = Declaration.contract(
         name: "lift_plugin_lift_request_source_paths_each_nonempty",
         outBinding: "out",

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lsp-cpp — canonical NDJSON LSP plugin for C++.
+// provekit-lsp-cpp: canonical NDJSON LSP plugin for C++.
 //
 // Protocol (identical to provekit-lsp-go):
 //

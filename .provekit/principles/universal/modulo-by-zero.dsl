@@ -1,6 +1,6 @@
 // A8: DSL translation of modulo-by-zero.json
 // Match: any arithmetic modulo node.
-// Guard suppression: same pattern as division-by-zero — requires a narrows row
+// Guard suppression: same pattern as division-by-zero: requires a narrows row
 // on the rhs_node with narrowing_kind == "literal_eq" (e.g. x !== 0 check).
 //
 // FIXME(capability-gap): guard suppression currently non-functional. The same_value

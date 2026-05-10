@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# ffi_resolver — Ruby Fiddle + ffi gem FFI call-site resolver.
+# ffi_resolver: Ruby Fiddle + ffi gem FFI call-site resolver.
 #
 # Walks Ruby source via RubyVM::AbstractSyntaxTree and detects FFI load +
 # call patterns, emitting CallEdgeDecl mementos per
@@ -217,7 +217,7 @@ module Provekit
               lib_name = strip_lib_name(raw) if raw
             end
 
-            # extern "int process(int)" — extract function name from the C sig.
+            # extern "int process(int)": extract function name from the C sig.
             collect_nodes(body, :FCALL).each do |fcall|
               next unless fcall.children.first.to_s == "extern"
               args_node = fcall.children.last

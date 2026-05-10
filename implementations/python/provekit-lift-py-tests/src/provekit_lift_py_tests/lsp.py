@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit.lsp — Language Server Protocol plugin for Python.
+# provekit.lsp: Language Server Protocol plugin for Python.
 #
 # Implements the ProvekIt LSP plugin protocol: NDJSON over stdio.
 # Messages:

@@ -68,7 +68,7 @@ pub fn invariants() {
     //
     // The bridge resolves to THIS contract memento. Its `pre` is what
     // the verifier substitutes the call-site arg into. Uses
-    // kit-defined `roundTrips` atomic; Z3 returns "undecidable" — the
+    // kit-defined `roundTrips` atomic; Z3 returns "undecidable": the
     // honest outcome documented in the report. The IR expresses the
     // intent; a future Tier-1 (per-prop fact) layer would discharge it.
     // -----------------------------------------------------------------
@@ -139,7 +139,7 @@ pub fn invariants() {
     );
 
     // -----------------------------------------------------------------
-    // CONTRACT 6: implies-arity claim — disjunction over n=2.
+    // CONTRACT 6: implies-arity claim: disjunction over n=2.
     //
     // forall n: Int. NOT (n < 2) AND NOT (n > 2)
     // (i.e., n = 2 expressed via ASCII-only predicates < and >).

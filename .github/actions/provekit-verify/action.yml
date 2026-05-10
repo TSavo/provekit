@@ -52,7 +52,7 @@ runs:
         # Capture the JSON report. We run twice: once with --json to capture
         # the machine-readable verdict, once without for human-friendly logs.
         # The duplicate run is cheap because the cache is warm on the second
-        # call. Both go through `provekit verify` — the standing-
+        # call. Both go through `provekit verify`: the standing-
         # runtime gate, no LLM, no network.
         npx -y "provekit@${PROVEKIT_VERSION}" verify --json $verbose_flag > provekit-report.json 2> provekit-report.err
         json_exit=$?
@@ -108,10 +108,10 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
         # Exit-code policy:
-        #   0 — all invariants hold
-        #   1 — at least one violation (always fail)
-        #   2 — decay (gated by fail-on-decay)
-        #   3 — internal error (always fail)
+        #   0: all invariants hold
+        #   1: at least one violation (always fail)
+        #   2: decay (gated by fail-on-decay)
+        #   3: internal error (always fail)
         if [ "$verify_exit" -eq 0 ]; then
           exit 0
         elif [ "$verify_exit" -eq 2 ] && [ "$FAIL_ON_DECAY" = "false" ]; then

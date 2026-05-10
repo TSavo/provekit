@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// call_edges.rs — spec #114 §1: extract call-edge mementos from a syn AST.
+// call_edges.rs: spec #114 §1: extract call-edge mementos from a syn AST.
 //
 // For each function `B` that has a contract in the current compilation unit,
 // walk its body and collect every call site to a named callee `A`. Emit one
@@ -384,7 +384,7 @@ fn collect_call_sites_in_expr(
             collect_call_sites_in_expr(&e.expr, source_cid, locus, contract_cids, edges);
             collect_call_sites_in_expr(&e.len, source_cid, locus, contract_cids, edges);
         }
-        // Paths, literals, macros — no sub-expressions with calls.
+        // Paths, literals, macros: no sub-expressions with calls.
         _ => {}
     }
 }

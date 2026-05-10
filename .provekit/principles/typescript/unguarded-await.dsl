@@ -3,7 +3,7 @@
 // yields.yield_kind == "await" + is_inside_handler equivalent.
 //
 // NOTE: The throws capability tracks is_inside_handler for throw nodes.
-// The yields capability does NOT have an is_inside_handler column — the extractor
+// The yields capability does NOT have an is_inside_handler column: the extractor
 // records yield_kind and source_call_node only. The TemplateEngine's isInsideTryCatch
 // check for await_expression has no direct DSL equivalent without an
 // is_inside_handler column on yields.

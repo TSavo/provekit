@@ -1,4 +1,4 @@
-// ProvekIt LSP Language Plugin — Rust
+// ProvekIt LSP Language Plugin: Rust
 //
 // A standalone binary that speaks `provekit-lsp-plugin/1` over stdio.
 // Parses Rust source files and extracts provekit annotations.

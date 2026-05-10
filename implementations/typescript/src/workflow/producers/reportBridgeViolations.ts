@@ -1,5 +1,5 @@
 /**
- * report-bridge-violations — Stage 5 (action) of the bridge enforcement
+ * report-bridge-violations: Stage 5 (action) of the bridge enforcement
  * workflow.
  *
  * Aggregates per-callsite verdicts from solve-obligation into a unified
@@ -8,7 +8,7 @@
  * verifier's machine-readable output and the LSP's source for
  * diagnostics.
  *
- * This stage is an action (not a property memento) — it doesn't
+ * This stage is an action (not a property memento): it doesn't
  * produce a CID-addressable claim, just a derived report.
  */
 

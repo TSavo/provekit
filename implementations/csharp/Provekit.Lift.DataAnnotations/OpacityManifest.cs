@@ -85,7 +85,7 @@ public static class OpacityManifestBuilder
     /// distinct positionCid. Output ordering is JCS-canonical per
     /// spec §2.3 (positionCid ascending, then reasonCode).
     ///
-    /// An empty input — or one with only sound predicates — produces a
+    /// An empty input: or one with only sound predicates: produces a
     /// manifest with `Opacities = []` per spec §2.2: the envelope is
     /// mandatory even when no positions are opaque.
     /// </summary>

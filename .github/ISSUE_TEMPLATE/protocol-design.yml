@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        For RPC contract design — lift, parse, bridge-linkage, linker-daemon, bundle-attestation, substrate-layers.
+        For RPC contract design: lift, parse, bridge-linkage, linker-daemon, bundle-attestation, substrate-layers.
         Tag with the matching `protocol:<name>` label and any relevant `component:*` labels.
   - type: dropdown
     id: protocol
@@ -38,7 +38,7 @@ body:
     id: invariants
     attributes:
       label: Contracts (pre / post / inv)
-      description: Canonical contracts the substrate enforces. Mirror the C1–C8 pattern in `provekit-self-contracts`.
+      description: Canonical contracts the substrate enforces. Mirror the C1-C8 pattern in `provekit-self-contracts`.
   - type: textarea
     id: kit-impact
     attributes:

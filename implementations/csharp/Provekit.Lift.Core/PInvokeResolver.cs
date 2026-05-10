@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Provekit.Lift.Core.PInvokeResolver — Roslyn-driven P/Invoke call-edge
+// Provekit.Lift.Core.PInvokeResolver: Roslyn-driven P/Invoke call-edge
 // emitter for the C# kit, per spec #114 R3.
 //
 // Handles:
-//   Pattern A  — [DllImport("libname")] static extern T Method(...)
-//   Pattern B  — [DllImport("libname", EntryPoint = "name", CallingConvention = ...)]
-//   Pattern C  — [LibraryImport("libname", EntryPoint = "name")] partial T Method(...)
+//   Pattern A: [DllImport("libname")] static extern T Method(...)
+//   Pattern B: [DllImport("libname", EntryPoint = "name", CallingConvention = ...)]
+//   Pattern C: [LibraryImport("libname", EntryPoint = "name")] partial T Method(...)
 //
 // For each P/Invoke declaration found, the resolver:
 //   1. Extracts the library name and normalises it (strip lib prefix,

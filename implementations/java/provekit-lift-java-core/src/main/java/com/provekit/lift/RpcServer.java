@@ -111,7 +111,7 @@ public class RpcServer {
         while (pos < json.length()) {
             char c = json.charAt(pos);
             if (c == '"') {
-                // Closing quote — done.
+                // Closing quote: done.
                 break;
             } else if (c == '\\') {
                 pos++;
@@ -148,7 +148,7 @@ public class RpcServer {
     }
 
     /**
-     * Legacy field extractor — terminates at the first closing quote.
+     * Legacy field extractor: terminates at the first closing quote.
      * Safe for short fields like workspace_root and surface that never contain escapes.
      */
     static String extractStringField(String json, String field) {

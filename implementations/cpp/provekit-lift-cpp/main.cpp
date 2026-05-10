@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift-cpp — lifts C++ contracts to canonical IR.
+// provekit-lift-cpp: lifts C++ contracts to canonical IR.
 //
 // Besides explicit provekit annotations, this lifter recognizes a narrow,
 // deterministic production subset:

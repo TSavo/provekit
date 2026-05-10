@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Ruby Bridge IR v1.4 — CID conformance + round-trip tests.
+# Ruby Bridge IR v1.4: CID conformance + round-trip tests.
 # Pins against the canonical bridge_decl_v1_4 fixture in
 # conformance/fixtures.toml. Mirrors rust's
 # provekit-claim-envelope/tests/bridge_v14_roundtrip.rs.

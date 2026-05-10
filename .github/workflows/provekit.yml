@@ -5,7 +5,7 @@ on:
 
 jobs:
   prove:
-    # [self-hosted, Linux, X64] not bare `self-hosted` — otherwise the
+    # [self-hosted, Linux, X64] not bare `self-hosted`: otherwise the
     # macOS runner registered for #305 will pick up this Linux-only job
     # (apt-get) and fail.
     runs-on: [self-hosted, Linux, X64]

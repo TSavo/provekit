@@ -6,7 +6,7 @@
     "proofHash": "sha256:da2514f383e5ac82",
     "proofHashKind": "protocol-catalog",
     "proofHashCatalog": "docs/specs/2026-04-30-protocol-catalog.json",
-    "comment": "Hint only — the trust root is the .proof file at the package root, not this field. See docs/specs/2026-04-30-proof-file-format.md."
+    "comment": "Hint only: the trust root is the .proof file at the package root, not this field. See docs/specs/2026-04-30-proof-file-format.md."
   },
   "main": "./lib/provekit.cjs",
   "types": "./src/index.ts",

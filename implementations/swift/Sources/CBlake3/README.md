@@ -1,4 +1,4 @@
-# CBlake3 — vendored BLAKE3 portable C source for the Swift kit
+# CBlake3: vendored BLAKE3 portable C source for the Swift kit
 
 **Canonical source:** `tools/blake3-vendored/`. This directory is a
 **copy**, NOT a symlink, because SwiftPM does not discover targets

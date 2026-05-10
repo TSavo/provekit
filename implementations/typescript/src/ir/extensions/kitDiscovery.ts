@@ -1,5 +1,5 @@
 /**
- * Kit discovery — walks a project's node_modules looking for packages
+ * Kit discovery: walks a project's node_modules looking for packages
  * that ship a ProvekIt `.proof` file at their root, and registers the
  * bridges (and, in a future revision, extension declarations) carried
  * inside.
@@ -12,7 +12,7 @@
  * extension scan at the package root and selects any *.proof file.
  *
  * Trust root: the file's filename CID equals its bytes hash. This
- * shape mirrors the protocol exactly — no language runtime is loaded;
+ * shape mirrors the protocol exactly: no language runtime is loaded;
  * verification is pure file IO + CBOR decode + BLAKE3-512.
  *
  * Spec rules enforced by this walker:
@@ -216,7 +216,7 @@ function walkProofFile(cand: ProtocolPackageCandidate): WalkResult {
     // are silently skipped pending dispatcher implementations.
   }
 
-  // Spec rule 3 (signature) deferred — requires public-key memento walking.
+  // Spec rule 3 (signature) deferred: requires public-key memento walking.
 
   return { proofPath, proofCid: derivedCid, errors };
 }

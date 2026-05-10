@@ -1,6 +1,6 @@
 // Fixture: a representative slice of verus annotations. NOT compiled
 // (this file has no Cargo target); the lift adapter parses it as text
-// via syn and emits structured "skipped" warnings — verus has its own
+// via syn and emits structured "skipped" warnings: verus has its own
 // syntax-extension layer and v0 does not lift verus contracts.
 
 verus! {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Cbor — deterministic-CBOR encoder per RFC 8949 §4.2.1 (Core
+// Cbor: deterministic-CBOR encoder per RFC 8949 §4.2.1 (Core
 // Deterministic Encoding).
 //
 // Mirrors the go reference at
@@ -10,8 +10,8 @@
 // NOT support) the full CBOR data model; only:
 //
 //   major 0  unsigned ints (definite, shortest-form)
-//   major 2  byte strings  (raw bstr — used for ed25519 signatures + member envelope bodies)
-//   major 3  text strings  (UTF-8 — used for keys + most values)
+//   major 2  byte strings  (raw bstr: used for ed25519 signatures + member envelope bodies)
+//   major 3  text strings  (UTF-8: used for keys + most values)
 //   major 4  arrays        (definite-length)
 //   major 5  maps          (definite-length, keys sorted bytewise on CBOR-encoded form)
 //
@@ -99,7 +99,7 @@ public struct CborEncoder {
     }
 
     /// Append a pre-encoded blob of CBOR bytes (e.g. a value-blob from a
-    /// kvPair). Bypasses the encoder's structural state machine — the
+    /// kvPair). Bypasses the encoder's structural state machine: the
     /// caller asserts the blob is well-formed CBOR.
     public mutating func appendRaw(_ raw: Data) {
         bytes.append(raw)

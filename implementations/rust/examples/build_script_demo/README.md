@@ -66,7 +66,7 @@ runs the Tier-3 Z3 check on each verify body's call sites.
   * `always_positive` carries `post = forall(Int(), |_| gte(out(), num(1)))`.
   * `use_abs` is a `#[verify]` whose call site discharges cleanly.
   * `deliberate_violation` is a `#[verify]` whose `if x == 0` branch is
-    dead per the contract — Z3 returns `unsat` and the build script
+    dead per the contract: Z3 returns `unsat` and the build script
     emits a `cargo:warning=`. With `strict = true` this would fail the
     build.
 
@@ -80,11 +80,9 @@ which gets minted into the same `.proof` manifest as the inventory
 lane.
 
   * `proptest! { fn identity_holds(x: i64) { prop_assert_eq!(x, x); } }`
-    plus `fn nonneg_after_abs(x: i64) { prop_assert!(x >= 0); }` —
-    lifted by the proptest adapter into two universally-quantified
+    plus `fn nonneg_after_abs(x: i64) { prop_assert!(x >= 0); }`: lifted by the proptest adapter into two universally-quantified
     invariants.
-  * `#[contracts::requires(x > 0)] #[contracts::ensures(ret >= 0)] fn lifted_sqrt` —
-    lifted by the contracts adapter into a ContractDecl with both pre
+  * `#[contracts::requires(x > 0)] #[contracts::ensures(ret >= 0)] fn lifted_sqrt`: lifted by the contracts adapter into a ContractDecl with both pre
     and post slots populated.
 
 #### Why a separate file
@@ -95,7 +93,7 @@ adapters scan every `.rs` file under `src/` regardless of `mod`
 declarations. That lets the demo show the proptest / contracts
 annotations without dragging the proptest / contracts crates into the
 demo's actual compile graph. A real consumer who already uses those
-crates simply leaves their annotations where they are — the lift pass
+crates simply leaves their annotations where they are: the lift pass
 finds them.
 
 ## What the demo proves

@@ -224,7 +224,7 @@ public static class IREmit
                 sb.Append('}');
                 return;
             case Sort.Function f:
-                // Locked key order: kind, args, return — JCS-alphabetical.
+                // Locked key order: kind, args, return: JCS-alphabetical.
                 sb.Append("{\"args\":[");
                 for (int i = 0; i < f.Args.Length; i++)
                 {
@@ -236,7 +236,7 @@ public static class IREmit
                 sb.Append('}');
                 return;
             case Sort.Dependent d:
-                // Locked key order: kind, name, indexVar, indexSort — JCS-alphabetical.
+                // Locked key order: kind, name, indexVar, indexSort: JCS-alphabetical.
                 sb.Append("{\"indexSort\":");
                 WriteSort(sb, d.IndexSort);
                 sb.Append(",\"indexVar\":");

@@ -1,4 +1,4 @@
-# Doubleledger fixture — the headline `provekit must` demo
+# Doubleledger fixture: the headline `provekit must` demo
 
 This is the marketing demo: an English phrase ("not lose money") on a
 small TypeScript double-entry ledger gets translated by the configured

@@ -192,7 +192,7 @@ type BridgeSpec struct {
 // targetProofCid pinning per the IR formal grammar. Locked key order
 // (post PR #10): kind, name, sourceSymbol, sourceLayer,
 // sourceContractCid, targetContractCid, targetProofCid, targetLayer,
-// notes? — must be byte-equal across all four kits.
+// notes?: must be byte-equal across all four kits.
 type BridgeDeclaration struct {
 	Name              string
 	SourceSymbol      string

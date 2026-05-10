@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// MintSwiftSelfContracts — Swift kit self-contracts attestation minter.
+// MintSwiftSelfContracts: Swift kit self-contracts attestation minter.
 //
 // Two entry points:
 //

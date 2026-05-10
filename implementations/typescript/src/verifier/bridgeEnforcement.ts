@@ -1,5 +1,5 @@
 /**
- * Bridge enforcement runner — composes the 5-stage workflow into a
+ * Bridge enforcement runner: composes the 5-stage workflow into a
  * single entry point used by `provekit verify`.
  *
  * Stages (from src/workflow/producers/):
@@ -9,7 +9,7 @@
  *   4. solve-obligation          → IR formula → SMT-LIB → solver verdict
  *   5. report-bridge-violations  → aggregate
  *
- * Solver pulled from provekit.config.yaml (composite — multiple
+ * Solver pulled from provekit.config.yaml (composite: multiple
  * entries run in parallel, verdict is consensus). IR is the wire
  * format; solvers consume IR via emitSmtLibProblem at the dispatcher
  * edge.
@@ -168,7 +168,7 @@ export function formatBridgeEnforcementReport(report: BridgeEnforcementReport): 
   for (const row of report.rows) {
     if (row.status === "discharged") continue;
     const cs = row.callsite as { bridgeIrName: string; propertyName: string; propertyCid: string };
-    const reasonSuffix = row.reason ? ` — ${row.reason}` : "";
+    const reasonSuffix = row.reason ? `: ${row.reason}` : "";
     lines.push(`    ✗ ${cs.bridgeIrName} in ${cs.propertyName} (${cs.propertyCid.slice(0, 12)}…): ${row.status}${reasonSuffix}`);
   }
   return lines.join("\n") + "\n";

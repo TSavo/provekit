@@ -1279,7 +1279,7 @@ mod tests {
 
     #[test]
     fn skips_format_macro_in_operand_position() {
-        // `format!(...)` is `Expr::Macro` — explicitly NOT lifted in v0.5.
+        // `format!(...)` is `Expr::Macro`: explicitly NOT lifted in v0.5.
         // This is the negative-coverage test that documents what stays out.
         let src = r#"
             #[test]

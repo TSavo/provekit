@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt PHP LSP daemon — parses PHP source, extracts contracts + call edges.
+/** ProvekIt PHP LSP daemon: parses PHP source, extracts contracts + call edges.
  *  Mirrors the Go LSP (`provekit-lsp-go`).
  *  Methods: initialize, parse, shutdown.
  *  Response shape: declarations + callEdges.

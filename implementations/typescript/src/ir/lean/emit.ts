@@ -1,7 +1,7 @@
 /**
  * Recursive emission of an `IrFormula` to a Lean 4 expression string.
  *
- * Pure structural translation — no proof generation, no normalization. The
+ * Pure structural translation: no proof generation, no normalization. The
  * output is a Lean 4 prop-logic expression suitable as the body of a
  * `theorem` statement. Translating a proof is the next stage's job.
  *
@@ -177,7 +177,7 @@ function emitAtomic(predicateName: string, args: IrTerm[], ctx: EmitContext): st
       );
     }
     // Unary or n-ary chains have no Lean built-in; emit prefix as a
-    // structured fallback. The kit may not declare these — surface a
+    // structured fallback. The kit may not declare these: surface a
     // clear error so the operator is treated like a relation lemma.
     const argText = args.map((a) => emitTerm(a, ctx)).join(" ");
     return `(${predicateName} ${argText})`;

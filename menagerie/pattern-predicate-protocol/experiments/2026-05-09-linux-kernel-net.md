@@ -1,4 +1,4 @@
-# Experimental Record: 2026-05-09 — Linux kernel net/ substrate, five-predicate barrage
+# Experimental Record: 2026-05-09: Linux kernel net/ substrate, five-predicate barrage
 
 ## Context
 

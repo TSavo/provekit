@@ -1,4 +1,4 @@
--- Pattern: borrowed-pages-as-scratch (v2 — caller-aware)
+-- Pattern: borrowed-pages-as-scratch (v2: caller-aware)
 -- nefariousplan catalog: /patterns/borrowed-pages-as-scratch
 --
 -- v1 was function-local: a candidate is flagged when no local protective

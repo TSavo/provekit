@@ -1,7 +1,7 @@
 # ProvekIt: Prove `k(I)=t`
 
 > *Supra omnia, rectum.*
-> — T
+>: T
 
 ProvekIt is the geometry of how lossy abstract interpretations compose
 into a sound joint inference over a content-addressed federated substrate.
@@ -41,7 +41,7 @@ has to trust it again from scratch.
 Every test you have ever written is already a contribution to such a substrate.
 Every type annotation, every assertion, every kernel-doc comment, every
 OpenAPI schema, every Coq proof, every static-analyzer rule, every property
-test — each one is a `k_i` that projects some lossy view of the same code into
+test: each one is a `k_i` that projects some lossy view of the same code into
 its domain's expressible facts. They had nowhere to settle but their own
 isolated checker. ProvekIt is the place where they conjoin. The substrate is
 their joint inference: strictly more constraining than any single `k_i`,
@@ -115,7 +115,7 @@ accountable edges the rest of the graph must satisfy.
 | **Use the CLI** | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) to install and run `provekit`; [docs/reference/protocol-extensions.md#tool-surfaces](docs/reference/protocol-extensions.md#tool-surfaces) for the command surface |
 | **See a bug class map to an addressable shape CID across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` |
 | **See supported languages and kit coverage** | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
-| **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
+| **Understand the move** | [docs/papers/](docs/papers/): recommended order: paper 03 → 06 → 02 |
 | **Understand proofchains** | [docs/explanation/proofchain.md](docs/explanation/proofchain.md) |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |

@@ -1,11 +1,11 @@
 /**
  * Recursive emission of an `IrFormula` to an SMT-LIB s-expression
- * string. Pure structural translation — no constraint reordering, no
+ * string. Pure structural translation: no constraint reordering, no
  * simplification, no axiom generation. The output is the formula
  * verbatim in SMT-LIB form.
  *
  * Variable scoping: the IR's `IrFormulaLambda` carries a `varName`
- * that the quantifier builders mint as `_x0`, `_x1`, ... — already
+ * that the quantifier builders mint as `_x0`, `_x1`, ...: already
  * unique by construction. Every `var` term inside the body refers to
  * the enclosing binder by that name. We emit binders as
  *   (forall ((_x0 Sort)) <body>)
@@ -14,8 +14,7 @@
  *
  * If a name clash is observed (the same identifier used by two nested
  * binders), we rename inner binders with a "$<depth>" suffix. This is
- * defensive — the standard quantifier builders never produce clashes —
- * but a hand-rolled `IrFormula` could.
+ * defensive: the standard quantifier builders never produce clashes: * but a hand-rolled `IrFormula` could.
  */
 
 import type {

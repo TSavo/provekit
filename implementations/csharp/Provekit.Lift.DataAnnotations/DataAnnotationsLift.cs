@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Provekit.Lift.DataAnnotations — lifts System.ComponentModel.DataAnnotations
+// Provekit.Lift.DataAnnotations: lifts System.ComponentModel.DataAnnotations
 // attributes to canonical ProvekIt IR.
 //
 // Cross-domain equivalence: the same validation constraint expressed via
@@ -93,7 +93,7 @@ public static class DataAnnotationsLift
             UrlAttribute => Predicates.Atomic("kit:url", varTerm),
             PhoneAttribute => Predicates.Atomic("kit:phone", varTerm),
             CreditCardAttribute => Predicates.Atomic("kit:credit_card", varTerm),
-            _ => null, // unrecognized — skip
+            _ => null, // unrecognized: skip
         };
     }
 

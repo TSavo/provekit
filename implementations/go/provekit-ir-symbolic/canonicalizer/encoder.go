@@ -77,7 +77,7 @@ func (e *Encoder) writeValue(sb *strings.Builder, v interface{}) error {
 		for k := range x {
 			keys = append(keys, k)
 		}
-		// §7.3 — sort by Unicode code-point order. ASCII keys: byte-order suffices.
+		// §7.3: sort by Unicode code-point order. ASCII keys: byte-order suffices.
 		sort.Strings(keys)
 		sb.WriteByte('{')
 		for i, k := range keys {

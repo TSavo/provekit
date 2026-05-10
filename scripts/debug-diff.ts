@@ -5,13 +5,13 @@
  * Per advisor (2026-04-27): 10 of each beats 30 random. Three fixture
  * shapes that the diff classifier MUST get right:
  *
- *   1. pure-addition    — fix adds a guard before existing code
- *   2. in-place-mod     — fix swaps an operator or literal
- *   3. or-chain-extend  — fix appends a new clause to an OR-chain (the
+ *   1. pure-addition: fix adds a guard before existing code
+ *   2. in-place-mod: fix swaps an operator or literal
+ *   3. or-chain-extend: fix appends a new clause to an OR-chain (the
  *                          enum-disjunction principle's mining target)
  *
  * Each fixture asserts an expected (unchanged, modified, added, deleted)
- * shape — not exact counts, since ts-morph's child decomposition is
+ * shape: not exact counts, since ts-morph's child decomposition is
  * implementation-defined, but the qualitative pattern (e.g. "at least one
  * 'added' entry whose kindName indicates a throw" for pure-addition).
  */

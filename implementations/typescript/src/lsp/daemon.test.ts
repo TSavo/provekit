@@ -21,7 +21,7 @@ import { resolve } from "node:path";
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Resolve tsx/cli the same way the bin launchers do — works with pnpm's
+// Resolve tsx/cli the same way the bin launchers do: works with pnpm's
 // node_modules/.pnpm symlink layout without needing an explicit repo root path.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const TSX_CLI: string = require.resolve("tsx/cli");

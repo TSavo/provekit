@@ -1,5 +1,5 @@
 /**
- * Extension authoring + registry — public surface.
+ * Extension authoring + registry: public surface.
  *
  * See protocol/specs/2026-04-30-ir-extension-protocol.md.
  *

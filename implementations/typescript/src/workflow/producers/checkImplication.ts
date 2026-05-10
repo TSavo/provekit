@@ -1,5 +1,5 @@
 /**
- * check-implication Stage — directional implication test between two
+ * check-implication Stage: directional implication test between two
  * propertyHashes' SMT translations.
  *
  * The forensic core question for a library bump: when a propertyHash CID
@@ -19,7 +19,7 @@
  *
  * Either probe can return "unknown" (Z3 didn't decide within the budget).
  * The Stage surfaces the underlying verdicts so the caller can decide
- * how to handle undecidable corners — typically falling back to LLM
+ * how to handle undecidable corners: typically falling back to LLM
  * judgment OR surfacing "undecidable" as a load-bearing answer in the
  * forensic report ("the change crossed into a regime where mechanical
  * comparison fails").

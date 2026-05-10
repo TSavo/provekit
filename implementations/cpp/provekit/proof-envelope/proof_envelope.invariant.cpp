@@ -49,7 +49,7 @@ extern "C" void proof_envelope_invariants() {
              /*pre=*/nullptr,
              /*post=*/eq(ctor1("len", str_const("blake3-512:")), num(11)));
 
-    // Construction invariant — f(x(a)) = a shape. The proof envelope's
+    // Construction invariant: f(x(a)) = a shape. The proof envelope's
     // signer_cid field MUST equal compute_cid(pubkey_string_from_seed(seed))
     // for the signing seed used to build it. Without this contract, a
     // hardcoded placeholder signer_cid drifts undetected (this is exactly

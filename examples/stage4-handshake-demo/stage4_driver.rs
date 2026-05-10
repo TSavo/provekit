@@ -235,8 +235,7 @@ fn run() -> Result<(), String> {
     //
     // The verifier's enumerate_callsites stage finds the parseInt
     // ctor; resolve_target gives parseInt's pre. The handshake
-    // discovers that the arg_term is itself the validateInput ctor —
-    // looks up validateInput in pool.bridges_by_symbol → the Go
+    // discovers that the arg_term is itself the validateInput ctor: // looks up validateInput in pool.bridges_by_symbol → the Go
     // contract memento → its `post` formula. That post and the
     // parseInt pre are the (producer-post, consumer-pre) pair the
     // Tier 1 / Tier 2 / Tier 3 ladder exercises.
