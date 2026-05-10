@@ -185,7 +185,9 @@ static enum CXChildVisitResult exits_visitor(CXCursor cursor, CXCursor parent, C
     if (kind == CXCursor_CallExpr) {
         char *callee = pk_c_walk_call_callee(cursor);
 
-        if (callee != NULL && (strcmp(callee, "BUG") == 0 || strcmp(callee, "panic") == 0)) {
+        if (callee != NULL && (strcmp(callee, "BUG") == 0 ||
+            strcmp(callee, "panic") == 0 ||
+            strcmp(callee, "__builtin_trap") == 0)) {
             ctx->exits = 1;
             free(callee);
             return CXChildVisit_Break;
@@ -202,6 +204,17 @@ static int stmt_exits(CXCursor cursor) {
         clang_getCursorKind(cursor) == CXCursor_GotoStmt ||
         clang_getCursorKind(cursor) == CXCursor_BreakStmt) {
         return 1;
+    }
+    if (clang_getCursorKind(cursor) == CXCursor_CallExpr) {
+        char *callee = pk_c_walk_call_callee(cursor);
+        int exits = callee != NULL && (strcmp(callee, "BUG") == 0 ||
+            strcmp(callee, "panic") == 0 ||
+            strcmp(callee, "__builtin_trap") == 0);
+
+        free(callee);
+        if (exits) {
+            return 1;
+        }
     }
     (void)clang_visitChildren(cursor, exits_visitor, &ctx);
     return ctx.exits;

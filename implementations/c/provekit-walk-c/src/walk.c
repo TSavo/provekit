@@ -364,10 +364,17 @@ static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
         free(callee_name);
         return -1;
     }
+    if (pk_c_walk_apply_call_context(ctx->stmts[ctx->stmt_index], call_cursor, &wp, &chain, ctx->stmt_index) != 0) {
+        pk_c_walk_chain_free(&chain);
+        pk_c_walk_formula_free(wp);
+        free(callee_name);
+        return -1;
+    }
     for (size_t pos = ctx->stmt_index; pos > 0; pos--) {
         CXCursor prev = ctx->stmts[pos - 1];
 
         if (apply_decl_stmt(prev, &wp, &chain, pos - 1) != 0 ||
+            pk_c_walk_apply_two_armed_if_stmt(prev, &wp, &chain, pos - 1) != 0 ||
             apply_guard_stmt(prev, &wp) != 0) {
             pk_c_walk_chain_free(&chain);
             pk_c_walk_formula_free(wp);

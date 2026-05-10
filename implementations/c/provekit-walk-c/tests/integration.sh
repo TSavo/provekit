@@ -7,6 +7,7 @@ BIN="$SCRIPT_DIR/../provekit-walk-c"
 FIXTURE="$SCRIPT_DIR/fixtures/wp_basic.c"
 CHECKED_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo.c"
 OPAQUE_BUG_ON_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo_opaque_bug_on.c"
+TWO_ARMED_FIXTURE="$SCRIPT_DIR/fixtures/two_armed_if.c"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -25,6 +26,11 @@ fi
 
 if [ ! -f "$OPAQUE_BUG_ON_FIXTURE" ]; then
     echo "FAIL: fixture not found: $OPAQUE_BUG_ON_FIXTURE" >&2
+    exit 1
+fi
+
+if [ ! -f "$TWO_ARMED_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $TWO_ARMED_FIXTURE" >&2
     exit 1
 fi
 
@@ -203,4 +209,74 @@ if len(args) != 2 or args[0].get("kind") != "const" or args[0].get("value") != 4
     raise SystemExit(f"FAIL: {label} FunctionEntry WP should be 42 ≥ 10, got {entry_wp}")
 
 print("opaque-bug-on-chain", " -> ".join(f"{a['kind']}@{a.get('line', 0)}:{a.get('column', 0)}" for a in arrivals))
+PY
+
+TWO_ARMED_RESPONSES="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+        printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["two_armed_if.c"],"surface":"c-walk","parse_backend":"clang_ast"}}\n'
+        printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
+    } | "$BIN" --rpc
+)"
+
+TWO_ARMED_RESPONSES_JSON="$TWO_ARMED_RESPONSES" python3 - <<'PY'
+import json
+import os
+
+responses = [json.loads(line) for line in os.environ["TWO_ARMED_RESPONSES_JSON"].splitlines() if line.strip()]
+lift = next((r for r in responses if r.get("id") == 2), None)
+if lift is None:
+    raise SystemExit("FAIL: two_armed_if lift response missing")
+
+decls = lift["result"]["declarations"]
+chains = [
+    d for d in decls
+    if d.get("kind") == "function-contract"
+    and d.get("evidence", {}).get("kind") == "wp-walk-chain"
+    and d.get("evidence", {}).get("caller") == "two_armed"
+]
+
+def has_atom(formula, name, lhs, rhs):
+    if formula.get("kind") == "atomic" and formula.get("name") == name:
+        args = formula.get("args", [])
+        return (
+            len(args) == 2
+            and args[0].get("kind") == lhs[0]
+            and args[0].get(lhs[1]) == lhs[2]
+            and args[1].get("kind") == rhs[0]
+            and args[1].get(rhs[1]) == rhs[2]
+        )
+    return any(has_atom(op, name, lhs, rhs) for op in formula.get("operands", []))
+
+def find_chain(callee, branch, guard_name):
+    matches = [c for c in chains if c.get("evidence", {}).get("callee") == callee]
+    if not matches:
+        raise SystemExit(f"FAIL: no two_armed -> {callee} wp-walk-chain emitted")
+    chain = matches[0]
+    arrivals = chain["evidence"].get("arrivals", [])
+    arm = next((a for a in arrivals if a.get("kind") == "ConditionalArm"), None)
+    if arm is None:
+        raise SystemExit(f"FAIL: {callee} chain missing ConditionalArm arrival")
+    if arm.get("branch") != branch:
+        raise SystemExit(f"FAIL: {callee} ConditionalArm branch should be {branch}, got {arm.get('branch')}")
+    if not has_atom(arm.get("cond", {}), guard_name, ("var", "name", "x"), ("const", "value", 50)):
+        raise SystemExit(f"FAIL: {callee} ConditionalArm cond missing x {guard_name} 50: {arm.get('cond')}")
+    entry = next((a for a in arrivals if a.get("kind") == "FunctionEntry"), None)
+    if entry is None:
+        raise SystemExit(f"FAIL: {callee} FunctionEntry arrival missing")
+    entry_wp = entry.get("wp", {})
+    if entry_wp.get("kind") == "atomic" and entry_wp.get("name") == "true":
+        raise SystemExit(f"FAIL: {callee} FunctionEntry WP is trivial true")
+    if not has_atom(entry_wp, guard_name, ("var", "name", "x"), ("const", "value", 50)):
+        raise SystemExit(f"FAIL: {callee} FunctionEntry WP missing guard x {guard_name} 50: {entry_wp}")
+    if chain.get("post") != arrivals[0].get("wp"):
+        raise SystemExit(f"FAIL: {callee} chain post must match callsite WP")
+    if chain.get("pre") != entry.get("wp"):
+        raise SystemExit(f"FAIL: {callee} chain pre must match function entry WP")
+    print(f"two-armed-{callee}-chain", " -> ".join(f"{a['kind']}@{a.get('line', 0)}:{a.get('column', 0)}" for a in arrivals))
+
+find_chain("helper_a", "then", ">")
+find_chain("helper_b", "else", "≤")
 PY

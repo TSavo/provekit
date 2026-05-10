@@ -306,6 +306,10 @@ pk_c_walk_formula *pk_c_walk_formula_or_take(pk_c_walk_formula *lhs, pk_c_walk_f
     return formula_binary_take(PK_C_WALK_FORMULA_OR, lhs, rhs);
 }
 
+pk_c_walk_formula *pk_c_walk_formula_implies_take(pk_c_walk_formula *lhs, pk_c_walk_formula *rhs) {
+    return formula_binary_take(PK_C_WALK_FORMULA_IMPLIES, lhs, rhs);
+}
+
 pk_c_walk_formula *pk_c_walk_formula_not_take(pk_c_walk_formula *inner) {
     pk_c_walk_formula *formula = formula_new(PK_C_WALK_FORMULA_NOT);
 
@@ -946,10 +950,41 @@ void pk_c_walk_chain_free(pk_c_walk_chain *chain) {
     for (size_t i = 0; i < chain->n_arrivals; i++) {
         free(chain->arrivals[i].kind);
         free(chain->arrivals[i].name);
+        free(chain->arrivals[i].branch);
+        pk_c_walk_formula_free(chain->arrivals[i].cond);
         pk_c_walk_formula_free(chain->arrivals[i].wp);
     }
     free(chain->arrivals);
     memset(chain, 0, sizeof(*chain));
+}
+
+static pk_c_walk_arrival *chain_append_slot(pk_c_walk_chain *chain) {
+    pk_c_walk_arrival *items;
+    size_t cap;
+
+    if (chain->n_arrivals == chain->cap_arrivals) {
+        cap = chain->cap_arrivals == 0 ? 4 : chain->cap_arrivals * 2;
+        if (cap < chain->cap_arrivals) {
+            return NULL;
+        }
+        items = realloc(chain->arrivals, cap * sizeof(*items));
+        if (items == NULL) {
+            return NULL;
+        }
+        chain->arrivals = items;
+        chain->cap_arrivals = cap;
+    }
+    memset(&chain->arrivals[chain->n_arrivals], 0, sizeof(chain->arrivals[chain->n_arrivals]));
+    return &chain->arrivals[chain->n_arrivals];
+}
+
+static void arrival_clear(pk_c_walk_arrival *arrival) {
+    free(arrival->kind);
+    free(arrival->name);
+    free(arrival->branch);
+    pk_c_walk_formula_free(arrival->cond);
+    pk_c_walk_formula_free(arrival->wp);
+    memset(arrival, 0, sizeof(*arrival));
 }
 
 int pk_c_walk_chain_add_arrival(
@@ -961,34 +996,52 @@ int pk_c_walk_chain_add_arrival(
     int column,
     const pk_c_walk_formula *wp
 ) {
-    pk_c_walk_arrival *items;
-    size_t cap;
+    pk_c_walk_arrival *arrival = chain_append_slot(chain);
 
-    if (chain->n_arrivals == chain->cap_arrivals) {
-        cap = chain->cap_arrivals == 0 ? 4 : chain->cap_arrivals * 2;
-        if (cap < chain->cap_arrivals) {
-            return -1;
-        }
-        items = realloc(chain->arrivals, cap * sizeof(*items));
-        if (items == NULL) {
-            return -1;
-        }
-        chain->arrivals = items;
-        chain->cap_arrivals = cap;
+    if (arrival == NULL) {
+        return -1;
     }
-    chain->arrivals[chain->n_arrivals].kind = pk_c_walk_copy(kind);
-    chain->arrivals[chain->n_arrivals].name = pk_c_walk_copy(name == NULL ? "" : name);
-    chain->arrivals[chain->n_arrivals].stmt_index = stmt_index;
-    chain->arrivals[chain->n_arrivals].line = line;
-    chain->arrivals[chain->n_arrivals].column = column;
-    chain->arrivals[chain->n_arrivals].wp = pk_c_walk_formula_clone(wp);
-    if (chain->arrivals[chain->n_arrivals].kind == NULL ||
-        chain->arrivals[chain->n_arrivals].name == NULL ||
-        chain->arrivals[chain->n_arrivals].wp == NULL) {
-        free(chain->arrivals[chain->n_arrivals].kind);
-        free(chain->arrivals[chain->n_arrivals].name);
-        pk_c_walk_formula_free(chain->arrivals[chain->n_arrivals].wp);
-        memset(&chain->arrivals[chain->n_arrivals], 0, sizeof(chain->arrivals[chain->n_arrivals]));
+    arrival->kind = pk_c_walk_copy(kind);
+    arrival->name = pk_c_walk_copy(name == NULL ? "" : name);
+    arrival->stmt_index = stmt_index;
+    arrival->line = line;
+    arrival->column = column;
+    arrival->wp = pk_c_walk_formula_clone(wp);
+    if (arrival->kind == NULL || arrival->name == NULL || arrival->wp == NULL) {
+        arrival_clear(arrival);
+        return -1;
+    }
+    chain->n_arrivals++;
+    return 0;
+}
+
+int pk_c_walk_chain_add_conditional_arm_arrival(
+    pk_c_walk_chain *chain,
+    const char *branch,
+    size_t stmt_index,
+    size_t join_stmt_index,
+    int line,
+    int column,
+    const pk_c_walk_formula *cond,
+    const pk_c_walk_formula *wp
+) {
+    pk_c_walk_arrival *arrival = chain_append_slot(chain);
+
+    if (arrival == NULL) {
+        return -1;
+    }
+    arrival->kind = pk_c_walk_copy("ConditionalArm");
+    arrival->name = pk_c_walk_copy(branch == NULL ? "" : branch);
+    arrival->branch = pk_c_walk_copy(branch == NULL ? "" : branch);
+    arrival->stmt_index = stmt_index;
+    arrival->join_stmt_index = join_stmt_index;
+    arrival->line = line;
+    arrival->column = column;
+    arrival->cond = pk_c_walk_formula_clone(cond);
+    arrival->wp = pk_c_walk_formula_clone(wp);
+    if (arrival->kind == NULL || arrival->name == NULL || arrival->branch == NULL ||
+        arrival->cond == NULL || arrival->wp == NULL) {
+        arrival_clear(arrival);
         return -1;
     }
     chain->n_arrivals++;

@@ -47,9 +47,12 @@ struct pk_c_walk_formula {
 typedef struct {
     char *kind;
     char *name;
+    char *branch;
     size_t stmt_index;
+    size_t join_stmt_index;
     int line;
     int column;
+    pk_c_walk_formula *cond;
     pk_c_walk_formula *wp;
 } pk_c_walk_arrival;
 
@@ -79,6 +82,7 @@ pk_c_walk_formula *pk_c_walk_formula_true(void);
 pk_c_walk_formula *pk_c_walk_formula_atomic_take(const char *name, pk_c_walk_term **args, size_t n_args);
 pk_c_walk_formula *pk_c_walk_formula_and_take(pk_c_walk_formula *lhs, pk_c_walk_formula *rhs);
 pk_c_walk_formula *pk_c_walk_formula_or_take(pk_c_walk_formula *lhs, pk_c_walk_formula *rhs);
+pk_c_walk_formula *pk_c_walk_formula_implies_take(pk_c_walk_formula *lhs, pk_c_walk_formula *rhs);
 pk_c_walk_formula *pk_c_walk_formula_not_take(pk_c_walk_formula *inner);
 pk_c_walk_formula *pk_c_walk_formula_negate_take(pk_c_walk_formula *formula);
 pk_c_walk_formula *pk_c_walk_formula_clone(const pk_c_walk_formula *formula);
@@ -102,6 +106,15 @@ int pk_c_walk_chain_add_arrival(
     int line,
     int column,
     const pk_c_walk_formula *wp);
+int pk_c_walk_chain_add_conditional_arm_arrival(
+    pk_c_walk_chain *chain,
+    const char *branch,
+    size_t stmt_index,
+    size_t join_stmt_index,
+    int line,
+    int column,
+    const pk_c_walk_formula *cond,
+    const pk_c_walk_formula *wp);
 
 #ifdef PK_C_ENABLE_CLANG_AST
 char *pk_c_walk_cursor_source(CXCursor cursor);
@@ -114,6 +127,17 @@ char **pk_c_walk_lift_formals(CXCursor function_cursor, size_t *len_out);
 void pk_c_walk_lift_string_list_free(char **items, size_t len);
 void pk_c_walk_locus(CXCursor cursor, int *line, int *column);
 int pk_c_walk_emit_chain_contract(pk_c_lift_result *result, const pk_c_walk_chain *chain);
+int pk_c_walk_apply_call_context(
+    CXCursor top_stmt,
+    CXCursor call_cursor,
+    pk_c_walk_formula **wp,
+    pk_c_walk_chain *chain,
+    size_t stmt_index);
+int pk_c_walk_apply_two_armed_if_stmt(
+    CXCursor stmt,
+    pk_c_walk_formula **wp,
+    pk_c_walk_chain *chain,
+    size_t stmt_index);
 #endif
 
 pk_c_lift_result *pk_c_walk_lift_source(const char *path, const char *source);
