@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use base64::Engine;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
@@ -54,6 +54,7 @@ use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid, mint_authority, mint_contract, mint_implication,
     Authoring, MintAuthorityArgs, MintContractArgs, MintImplicationArgs,
 };
+use provekit_mint_amp as algebraic_mint;
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
     ProofEnvelopeInput,
@@ -822,6 +823,8 @@ fn find_attestation_dir(start: &Path) -> Result<PathBuf, String> {
 
 #[derive(Parser, Debug, Clone)]
 pub struct MintArgs {
+    #[command(subcommand)]
+    pub command: Option<MintCommand>,
     /// Project root containing `.provekit/config.toml`. Defaults to current dir.
     #[arg(long)]
     pub project: Option<PathBuf>,
@@ -843,7 +846,34 @@ pub struct MintArgs {
     pub flags: OutputFlags,
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum MintCommand {
+    Algorithm(AlgebraicMintArgs),
+    Binding(AlgebraicMintArgs),
+    Sort(AlgebraicMintArgs),
+    Equation(AlgebraicMintArgs),
+    EffectSignature(AlgebraicMintArgs),
+    LanguageSignature(AlgebraicMintArgs),
+    LanguageMorphism(AlgebraicMintArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct AlgebraicMintArgs {
+    #[arg(long)]
+    pub spec: PathBuf,
+    #[arg(long)]
+    pub signer: Option<PathBuf>,
+    #[arg(long)]
+    pub unsigned: bool,
+    #[arg(long)]
+    pub catalog: PathBuf,
+}
+
 pub fn run(args: MintArgs) -> u8 {
+    if let Some(command) = args.command {
+        return run_algebraic_mint(command);
+    }
+
     // Resolve (project_root, surface, lang_key) from --kit or --project.
     let (project_root, derived_surface, lang_key) = if let Some(kit) = &args.kit {
         match resolve_kit(kit) {
@@ -970,6 +1000,116 @@ pub fn run(args: MintArgs) -> u8 {
             EXIT_VERIFY_FAIL
         }
     }
+}
+
+fn run_algebraic_mint(command: MintCommand) -> u8 {
+    let result = match command {
+        MintCommand::Algorithm(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::AlgorithmSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_algorithm(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::Binding(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::BindingSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_binding(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::Sort(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::SortSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_sort(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::Equation(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::EquationSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_equation(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::EffectSignature(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::EffectSignatureSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_effect_signature(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::LanguageSignature(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::LanguageSignatureSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_language_signature(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::LanguageMorphism(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::LanguageMorphismSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_language_morphism(spec, &signer, &catalog)
+            })
+        }
+    };
+
+    match result {
+        Ok(minted) => {
+            println!("{}\t{}", minted.cid, minted.path.display());
+            EXIT_OK
+        }
+        Err(error) => {
+            print_algebraic_error(&error);
+            EXIT_USER_ERROR
+        }
+    }
+}
+
+fn signer_from_args(args: &AlgebraicMintArgs) -> algebraic_mint::Result<algebraic_mint::Signer> {
+    if args.unsigned && args.signer.is_some() {
+        return Err(algebraic_mint::MintError::Signer(
+            "`--unsigned` cannot be combined with `--signer`".into(),
+        ));
+    }
+    if args.unsigned {
+        return Ok(algebraic_mint::Signer::from_unsigned_test_only());
+    }
+    let signer_path = args.signer.as_ref().ok_or_else(|| {
+        algebraic_mint::MintError::Signer(
+            "missing `--signer PATH` unless `--unsigned` is set".into(),
+        )
+    })?;
+    algebraic_mint::Signer::from_pem_path(signer_path)
+}
+
+fn print_algebraic_error(error: &algebraic_mint::MintError) {
+    let kind = match error {
+        algebraic_mint::MintError::Validation(_) => "validation",
+        algebraic_mint::MintError::Catalog(_) => "catalog",
+        algebraic_mint::MintError::Signer(_) => "signer",
+        algebraic_mint::MintError::Canonical(_) => "canonical",
+        algebraic_mint::MintError::Io { .. } => "io",
+        algebraic_mint::MintError::Json { .. } => "json",
+    };
+    eprintln!(
+        "{}",
+        serde_json::to_string(&json!({
+            "error": {
+                "kind": kind,
+                "message": error.to_string()
+            }
+        }))
+        .expect("serialize algebraic mint error")
+    );
 }
 
 // ---------------------------------------------------------------------------

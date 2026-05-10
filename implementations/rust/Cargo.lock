@@ -1641,6 +1641,7 @@ dependencies = [
  "provekit-ir-types",
  "provekit-lift",
  "provekit-linker",
+ "provekit-mint-amp",
  "provekit-proof-envelope",
  "provekit-self-contracts",
  "provekit-verifier",
@@ -1928,6 +1929,20 @@ version = "0.1.0"
 dependencies = [
  "inventory",
  "provekit-ir-symbolic",
+]
+
+[[package]]
+name = "provekit-mint-amp"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "hex",
+ "libprovekit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
