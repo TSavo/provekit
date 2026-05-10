@@ -11,6 +11,7 @@ members = [
     "provekit-ir-compiler-smt-lib",
     "provekit-ir-compiler-stub",
     "provekit-ir-compiler-coq",
+    "provekit-ir-compiler-c",
     "provekit-ir-compiler-x86-64",
     "provekit-ir-compiler-wasm",
     "provekit-ir-compiler-jvm-bytecode",
