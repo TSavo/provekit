@@ -29,9 +29,11 @@
 //   * Dispatch                    - inspect the formula and pick the
 //                                   matching solver for that fragment.
 
+pub mod ceta;
 pub mod config;
 pub mod coq;
 pub mod dispatch;
+pub mod maude;
 pub mod plan;
 pub mod registry;
 pub mod stub;
@@ -77,9 +79,11 @@ pub trait Solver: Send + Sync {
 /// shared, cheaply-clonable handles.
 pub type SolverHandle = Arc<dyn Solver>;
 
+pub use ceta::{CetaGate, CetaGateConfig};
 pub use config::{DispatchConfig, PortfolioMode, SolverConfig, SolverPlan, SolversConfig};
 pub use coq::CoqSubprocessSolver;
 pub use dispatch::dispatch_for_formula;
+pub use maude::MaudeSubprocessSolver;
 pub use plan::{run_plan, SolverInvocation};
 pub use stub::StubSolver;
 pub use subprocess::SubprocessSolver;

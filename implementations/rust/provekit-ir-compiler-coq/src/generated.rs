@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED Coq compiler
 
+#![allow(unreachable_patterns)]
+
 use provekit_ir_compiler::FreeVar;
 use provekit_ir_types::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -10,7 +12,7 @@ pub fn emit_term(term: &Term) -> String {
         Term::Var { name, .. } => name.clone(),
         Term::Const { value, sort, .. } => {
             // Coq: Function/Dependent sorts on a Const are structurally unusual but
-            // not unsound — Coq's higher-order universe permits e.g. `(fun x => x) : nat -> nat`
+            // not unsound. Coq's higher-order universe permits e.g. `(fun x => x) : nat -> nat`
             // as a constant inhabiting a function sort. `emit_const_value` ignores the sort name
             // (it only branches on the JSON value shape), so we feed it the empty string for
             // non-primitive sorts and let the value's own JSON dictate the surface form.
@@ -150,7 +152,7 @@ fn emit_sort(sort: &Sort) -> String {
         // right-associative, so a function-typed argument MUST be parenthesized to
         // preserve meaning: `(A -> B) -> C` differs from `A -> B -> C`. Soundness
         // depends on this. Issue #331; see protocol/specs/multi-solver-protocol-v2.md
-        // — Coq's portfolio seat covers higher-order, so this position is NOT opaque.
+        // Coq's portfolio seat covers higher-order, so this position is NOT opaque.
         Sort::Function { args, ret } => {
             let mut parts: Vec<String> = args.iter().map(|a| emit_sort_paren(a)).collect();
             parts.push(emit_sort_paren(ret));

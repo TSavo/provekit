@@ -6,7 +6,7 @@
 //   [solvers]
 //   default = "z3"                            # OR
 //   chain = ["z3", "cvc5"]                    # OR
-//   portfolio = ["z3", "cvc5", "bitwuzla"]    # OR
+//   portfolio = ["maude", "z3", "cvc5", "bitwuzla"]    # OR
 //   mode = "first-wins"  or  "consensus"
 //
 //   [solvers.z3]
@@ -14,6 +14,14 @@
 //   ir_compiler = "smt-lib-v2.6"
 //   timeout_seconds = 5
 //   flags = ["-T:5"]
+//
+//   [solvers.maude]
+//   binary = "maude"
+//   ir_compiler = "maude"
+//   ceta_gate = true
+//   ceta_binary = "ceta"
+//   termination_prover = "aprove"
+//   confluence_checker = "csi"
 //
 //   [solvers.dispatch]
 //   "strings" = "cvc5"
@@ -47,6 +55,19 @@ pub struct SolverConfig {
     pub timeout_seconds: Option<u64>,
     #[serde(default)]
     pub flags: Vec<String>,
+    /// Enables the certified termination and confluence gate used by
+    /// Maude before a reduce-based equality can be trusted.
+    #[serde(default)]
+    pub ceta_gate: bool,
+    /// Path to the CeTA checker binary.
+    #[serde(default = "default_ceta_binary")]
+    pub ceta_binary: String,
+    /// Path to a termination prover that emits a CPF certificate.
+    #[serde(default = "default_termination_prover")]
+    pub termination_prover: String,
+    /// Path to a confluence checker that emits a CPF certificate.
+    #[serde(default = "default_confluence_checker")]
+    pub confluence_checker: String,
     /// Optional version pin to surface in the report and in minted
     /// implication-memento `body.prover` strings. Defaults to `0`.
     #[serde(default = "default_version")]
@@ -58,6 +79,15 @@ fn default_ir_compiler() -> String {
 }
 fn default_version() -> String {
     "0".into()
+}
+fn default_ceta_binary() -> String {
+    "ceta".into()
+}
+fn default_termination_prover() -> String {
+    "aprove".into()
+}
+fn default_confluence_checker() -> String {
+    "csi".into()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -75,6 +105,8 @@ impl Default for PortfolioMode {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct DispatchConfig {
+    #[serde(rename = "equational-theory", default)]
+    pub equational_theory: Option<String>,
     #[serde(default)]
     pub strings: Option<String>,
     #[serde(default)]

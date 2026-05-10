@@ -11,6 +11,7 @@ members = [
     "provekit-ir-compiler-smt-lib",
     "provekit-ir-compiler-stub",
     "provekit-ir-compiler-coq",
+    "provekit-ir-compiler-maude",
     "provekit-ir-codegen",
     "provekit-verifier",
     "provekit-self-contracts",

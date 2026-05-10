@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED SMT-LIB v2.6 compiler
 
+#![allow(unused_imports, unused_mut, unreachable_patterns)]
+
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_compiler::{CompiledFormula, FreeVar, OpacityEntry, OpacityManifest};
 use provekit_ir_types::*;
@@ -579,7 +581,7 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         opacities,
     };
 
-    // Check whether the formula references Outlives — if so, inject the
+    // Check whether the formula references Outlives. If so, inject the
     // kernel axioms (per protocol/specs/2026-05-05-outlives-kernel-axioms.md §2).
     let has_outlives = has_outlives_predicate(formula);
     let mut preamble = String::new();
@@ -588,11 +590,11 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         // Declare the Region sort and Outlives predicate.
         preamble.push_str("(declare-sort Region 0)\n");
         preamble.push_str("(declare-fun Outlives (Region Region) Bool)\n");
-        // Kernel axiom 1: reflexivity — Outlives(r, r) always holds.
+        // Kernel axiom 1: reflexivity. Outlives(r, r) always holds.
         preamble.push_str("(assert (forall ((r Region)) (Outlives r r)))\n");
-        // Kernel axiom 2: transitivity — Outlives(r1, r2) ∧ Outlives(r2, r3) → Outlives(r1, r3).
+        // Kernel axiom 2: transitivity. Outlives(r1, r2) and Outlives(r2, r3) imply Outlives(r1, r3).
         preamble.push_str("(assert (forall ((r1 Region) (r2 Region) (r3 Region)) (=> (and (Outlives r1 r2) (Outlives r2 r3)) (Outlives r1 r3))))\n");
-        // Kernel axiom 3: 'static top element — Outlives('static, r) for every region r.
+        // Kernel axiom 3: 'static top element. Outlives('static, r) for every region r.
         // 'static outlives every region per spec §2.3 (corrected in commit 655ab84).
         preamble.push_str("(declare-fun static_region () Region)\n");
         preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");

@@ -10,6 +10,10 @@
 //                            it reads IR-JSON, compiles to Coq via
 //                            `CoqCompiler`, and runs `coqc` on the
 //                            generated `.v` file.
+//   * MaudeSubprocessSolver - when `ir_compiler = "maude"`.
+//                            It compiles equational theory obligations
+//                            and trusts reduce only when the CeTA gate
+//                            accepts termination and confluence.
 //   * SubprocessSolver     - default. Generic SMT-LIB v2.6 driver
 //                            (Z3, cvc5, bitwuzla, MathSAT, ...).
 //
@@ -28,9 +32,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use provekit_ir_compiler_coq::DIALECT as COQ_DIALECT;
+use provekit_ir_compiler_maude::DIALECT as MAUDE_DIALECT;
 
 use crate::solvers::{
-    CoqSubprocessSolver, SolverConfig, SolverHandle, SolversConfig, StubSolver, SubprocessSolver,
+    CetaGateConfig, CoqSubprocessSolver, MaudeSubprocessSolver, SolverConfig, SolverHandle,
+    SolversConfig, StubSolver, SubprocessSolver,
 };
 
 pub fn build(cfg: &SolversConfig) -> HashMap<String, SolverHandle> {
@@ -50,6 +56,10 @@ fn is_coq_compiler(ir_compiler: &str) -> bool {
     ir_compiler == "coq" || ir_compiler == COQ_DIALECT
 }
 
+fn is_maude_compiler(ir_compiler: &str) -> bool {
+    ir_compiler == "maude" || ir_compiler == MAUDE_DIALECT
+}
+
 fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
     if let Some(stub) = StubSolver::from_binary(name, &sc.binary) {
         return Arc::new(stub) as SolverHandle;
@@ -66,6 +76,21 @@ fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
             bin,
             sc.version.clone(),
             timeout,
+        )) as SolverHandle;
+    }
+    if is_maude_compiler(&sc.ir_compiler) {
+        return Arc::new(MaudeSubprocessSolver::new(
+            name,
+            bin,
+            sc.version.clone(),
+            timeout,
+            CetaGateConfig {
+                enabled: sc.ceta_gate,
+                ceta_binary: sc.ceta_binary.clone(),
+                termination_prover: sc.termination_prover.clone(),
+                confluence_checker: sc.confluence_checker.clone(),
+                timeout,
+            },
         )) as SolverHandle;
     }
     Arc::new(SubprocessSolver::new(
@@ -199,8 +224,8 @@ ir_compiler = "coq"
         let c = SolversConfig::from_toml(&body).expect("config parses");
         let r = build(&c);
 
-        // All four seats register.
-        for name in ["z3", "cvc5", "vampire", "coq"] {
+        // All five seats register.
+        for name in ["z3", "cvc5", "vampire", "coq", "maude"] {
             assert!(r.contains_key(name), "{name} seat missing from registry");
         }
 
@@ -225,6 +250,8 @@ ir_compiler = "coq"
         // above.
         let coq = r.get("coq").unwrap();
         assert_eq!(coq.ir_compiler(), "coq");
+        let maude = r.get("maude").unwrap();
+        assert_eq!(maude.ir_compiler(), "maude");
     }
 
     #[test]

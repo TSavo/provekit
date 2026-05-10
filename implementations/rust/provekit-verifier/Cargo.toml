@@ -13,6 +13,7 @@ provekit-walk = { path = "../provekit-walk" }
 provekit-ir-compiler-smt-lib = { path = "../provekit-ir-compiler-smt-lib" }
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
 provekit-ir-compiler-coq = { path = "../provekit-ir-compiler-coq" }
+provekit-ir-compiler-maude = { path = "../provekit-ir-compiler-maude" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 walkdir = { workspace = true }
