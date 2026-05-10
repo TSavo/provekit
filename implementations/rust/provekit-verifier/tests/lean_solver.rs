@@ -1,9 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::PathBuf;
+use std::process::Command;
+
 use provekit_verifier::solvers::{
     plan::run_plan, registry, LeanSubprocessSolver, Solver, SolverPlan, SolversConfig,
 };
 use provekit_verifier::types::ObligationVerdict;
+
+fn binary_on_path(name: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {name} >/dev/null 2>&1"))
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn lean_project_dir() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("PROVEKIT_LEAN_PROJECT") {
+        let project = PathBuf::from(path);
+        if project.join("lakefile.lean").is_file() {
+            return Some(project);
+        }
+        eprintln!(
+            "skipping: PROVEKIT_LEAN_PROJECT does not contain lakefile.lean: {}",
+            project.display()
+        );
+        return None;
+    }
+
+    let project = PathBuf::from("/opt/lean-mathlib");
+    if project.join("lakefile.lean").is_file() {
+        Some(project)
+    } else {
+        eprintln!("skipping: PROVEKIT_LEAN_PROJECT is not set and /opt/lean-mathlib is absent");
+        None
+    }
+}
 
 #[test]
 fn lean_file_cid_uses_provekit_canonicalizer_hash() {
@@ -94,16 +128,24 @@ fn mathlib_commit_parser_reads_lake_manifest() {
 }
 
 #[test]
-#[ignore = "requires lake, lean, and a local mathlib lake project"]
 fn lean_solver_discharges_reflexivity_with_local_mathlib() {
-    let project = std::env::var("PROVEKIT_LEAN_PROJECT")
-        .expect("set PROVEKIT_LEAN_PROJECT to a mathlib lake project");
+    if !binary_on_path("lake") {
+        eprintln!("skipping: lake not on PATH");
+        return;
+    }
+    if !binary_on_path("lean") {
+        eprintln!("skipping: lean not on PATH");
+        return;
+    }
+    let Some(project) = lean_project_dir() else {
+        return;
+    };
     let solver = LeanSubprocessSolver::new(
         "lean",
         "lake",
         "4.x",
         Some(std::time::Duration::from_secs(60)),
-        Some(project),
+        Some(project.to_string_lossy().into_owned()),
         None,
     );
     let ir = serde_json::json!({

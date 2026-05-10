@@ -1,5 +1,7 @@
 # Lean 4 and mathlib Install Appendix
 
+Consolidated build: see `tools/portfolio/Dockerfile` and `tools/portfolio/README.md`.
+
 This appendix sets up the Lake project used by the verifier's Lean solver. It does not modify Dockerfiles.
 
 Pinned versions:
