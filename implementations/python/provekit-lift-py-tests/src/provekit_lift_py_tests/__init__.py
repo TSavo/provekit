@@ -1,21 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit-lift-py-tests : Layer 2 structural lift adapter for Python tests.
+# provekit-lift-py-tests : Python structural lift adapter.
 #
 # Layer 2 sits ABOVE Layer 0 (mechanical assert recognition; the future
 # Python Layer 0 will be analogous to the Rust one) and BELOW the
-# eventual Layer 3 LLM lift. It recognizes four structural patterns over
-# pytest/unittest test syntax that Layer 0 cannot, and emits canonical
-# IR mementos with content-addressed BLAKE3-512 hashes.
+# eventual Layer 3 LLM lift. It recognizes five structural patterns over
+# pytest/unittest test syntax that Layer 0 cannot. The production walker
+# mirrors Rust `provekit-walk`: callee preconditions are propagated
+# backward from Python production callsites to function entry as WP edges.
 #
 # Patterns:
 #   1. Bounded ``for`` loop -> forall-implies.
 #   2. Helper function inlined at each call site.
 #   3. Multi-assertion characterization conjunction.
 #   4. ``@pytest.mark.parametrize`` over a literal list -> enumerated and-conjunction.
+#   5. Callsite value-scope facts plus implication edges from tests.
 #
 # Out of scope for v0: ``hypothesis`` (Layer 1 already), ``pytest.raises``,
-# fixtures, parametrize over factories, nested loops, conditional bodies.
+# fixtures, parametrize over factories, nested loops.
 
 from .canonicalizer import (
     BLAKE3_512_PREFIX,
@@ -67,7 +69,7 @@ from .ir import (
     term_to_value,
 )
 from .decorators import contract, ContractViolation, collect_module
-from .layer2 import LiftWarning, Layer2Output, lift_file_layer2
+from .layer2 import ImplicationDecl, LiftWarning, Layer2Output, lift_file_layer2
 from .proof_envelope import ProofEnvelopeInput, envelope_body_to_value
 from .claim_envelope import (
     Authoring,
@@ -92,6 +94,7 @@ from .verifier import (
     HandshakeReport,
     VerifierNotFoundError,
 )
+from .walk import ProductionWalkOutput, lift_production_walk
 
 __all__ = [
     "Authoring",
@@ -112,11 +115,13 @@ __all__ = [
     "EvidenceTerm",
     "HandshakeReport",
     "Int",
+    "ImplicationDecl",
     "LAYERED_SCHEMA_VERSION",
     "Layer2Output",
     "LiftWarning",
     "Locus",
     "ProofEnvelopeInput",
+    "ProductionWalkOutput",
     "Real",
     "Signer",
     "Sort",
@@ -149,6 +154,7 @@ __all__ = [
     "implies",
     "jcs_hash",
     "lift_file_layer2",
+    "lift_production_walk",
     "locus_to_value",
     "lt",
     "lte",

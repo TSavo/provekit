@@ -1,10 +1,10 @@
 # provekit-lift-py-tests
 
-Layer 2 structural lift adapter for Python tests (pytest + unittest). Walks
-the `ast` of a source file, recognizes four structural patterns Layer 0
-cannot, and emits canonical IR mementos with content-addressed BLAKE3-512
-hashes that are byte-identical to the Rust, TypeScript, and C++
-canonicalizers.
+Layer 2 structural lift adapter for Python tests (pytest + unittest), plus a
+production-side WP walker for Python callsite composition. It walks the `ast`
+of a source file, recognizes structural test patterns Layer 0 cannot, and
+emits canonical IR mementos with content-addressed BLAKE3-512 hashes that are
+byte-identical to the Rust, TypeScript, and C++ canonicalizers.
 
 ## Patterns
 
@@ -22,9 +22,24 @@ canonicalizers.
 4. **`@pytest.mark.parametrize` over a literal arg list.** Each row is
    substituted into the body, then folded to `and(...)`. Memento name:
    `<test>::parametrize::<param-names>`.
+5. **Callsite value-scope facts plus implications.** Local assignments and
+   simple `if/else` branches around pytest/unittest assertions become
+   callsite-owned contracts named `<callee>@<file>:<line>:<col>::facts`
+   and `<callee>@<file>:<line>:<col>::assertion`, plus an implication
+   from facts to assertion. Tests describe these contracts; they do not own
+   the emitted contract identity.
 
 Out of scope: `hypothesis` (Layer 1 already), `pytest.raises`, fixtures,
 parametrize over factories, multi-stmt loop bodies.
+
+## Production WP walk
+
+The production walker mirrors `provekit-walk` for Rust. It lifts callee
+preconditions from defensive source patterns such as `if cond: raise ...` and
+`assert cond`, substitutes actual arguments at each production callsite, then
+walks backward through in-scope assignments with `wp(x := e, P) = P[e/x]`.
+Each arrival is emitted as a callsite-owned contract edge with `pre` and
+`post` slots plus a `python-wp-walk` implication from `pre` to `post`.
 
 ## Dispatch model
 

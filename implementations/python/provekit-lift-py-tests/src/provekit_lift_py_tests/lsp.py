@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 from dataclasses import dataclass, field
@@ -28,6 +29,7 @@ from .ir import (
 )
 from .canonicalizer import encode_jcs, jcs_hash
 from .layer2 import lift_file_layer2
+from .walk import lift_production_walk
 from .decorators import collect_module
 from .lift.pydantic import lift_pydantic_model
 from .cpython_ctypes_resolver import resolve_ctypes_calls
@@ -73,6 +75,74 @@ def handle_initialize(msg_id: Any) -> None:
     )
 
 
+def _implications_to_json(layer2) -> List[Dict[str, Any]]:
+    return [
+        {
+            "name": implication.name,
+            "antecedent": implication.antecedent,
+            "consequent": implication.consequent,
+            "antecedentSlot": implication.antecedent_slot,
+            "consequentSlot": implication.consequent_slot,
+            "prover": implication.prover,
+            "proofWitness": implication.proof_witness,
+        }
+        for implication in layer2.implications
+    ]
+
+
+def _lift_source(path: str, source: str) -> Dict[str, Any]:
+    decls: List[Any] = []
+
+    # Layer 2: pytest/unittest structural lift.
+    layer2 = lift_file_layer2(source, path)
+    decls.extend(layer2.decls)
+
+    # Production walk: lift callee preconditions and mint callsite WP edges.
+    production_walk = lift_production_walk(source, path)
+    decls.extend(production_walk.decls)
+
+    # Try to load the source as a module to collect @provekit.contract
+    # decorators. This only works when the source is importable; for
+    # standalone files we skip this path.
+    # TODO: use importlib.util to load from source string.
+
+    # Pydantic lift: if the file defines BaseModel subclasses, walk them.
+    # We do this by exec-ing the source in a clean namespace and
+    # inspecting for pydantic models. Only done when pydantic is available.
+    try:
+        pydantic_decls = _try_lift_pydantic(source)
+        decls.extend(pydantic_decls)
+    except Exception:
+        pass
+
+    # Build contract index for call-edge resolution.
+    # Maps function/contract name -> contractCid (blake3-512 hash of JCS).
+    contract_index: Dict[str, str] = {}
+    for d in decls:
+        if isinstance(d, ContractDecl):
+            cid = jcs_hash(contract_decl_to_value(d))
+            contract_index[d.name] = cid
+
+    # Emit ctypes call-edge stream per spec #114 R1.
+    ctypes_result = resolve_ctypes_calls(source, path, contract_index)
+    call_edges = ctypes_result.call_edges
+    call_edges_value = call_edges_to_value(call_edges)
+    call_edges_array = json.loads(encode_jcs(call_edges_value))
+
+    declarations_array: List[Any] = []
+    if decls:
+        value = declarations_to_value(decls)
+        declarations_array = json.loads(encode_jcs(value))
+
+    return {
+        "decls": decls,
+        "declarations": declarations_array,
+        "callEdges": call_edges_array,
+        "warnings": [w.__dict__ for w in layer2.warnings + production_walk.warnings],
+        "implications": _implications_to_json(layer2) + _implications_to_json(production_walk),
+    }
+
+
 def handle_parse(msg_id: Any, params: dict) -> None:
     path = params.get("path", "")
     source = params.get("source", "")
@@ -92,75 +162,99 @@ def handle_parse(msg_id: Any, params: dict) -> None:
         return
 
     try:
+        lifted = _lift_source(path, source)
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "declarations": lifted["declarations"],
+                    "callEdges": lifted["callEdges"],
+                    "warnings": lifted["warnings"],
+                    "implications": lifted["implications"],
+                },
+            }
+        )
+
+    except Exception as e:
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e),
+                    "data": traceback.format_exc(),
+                },
+            }
+        )
+
+
+def _iter_python_files(workspace_root: str, source_paths: List[Any]) -> List[str]:
+    root = os.path.abspath(workspace_root or ".")
+    paths = source_paths or ["."]
+    out: List[str] = []
+    for source_path in paths:
+        raw = str(source_path)
+        path = raw if os.path.isabs(raw) else os.path.join(root, raw)
+        if os.path.isfile(path):
+            if path.endswith(".py"):
+                out.append(path)
+            continue
+        if not os.path.isdir(path):
+            continue
+        for dirpath, dirnames, filenames in os.walk(path):
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in {".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache"}
+            ]
+            for filename in filenames:
+                if filename.endswith(".py"):
+                    out.append(os.path.join(dirpath, filename))
+    return sorted(set(out))
+
+
+def handle_lift(msg_id: Any, params: dict) -> None:
+    workspace_root = str(params.get("workspace_root", "."))
+    source_paths = params.get("source_paths", ["."])
+
+    try:
         decls: List[Any] = []
+        warnings: List[Any] = []
+        implications: List[Any] = []
+        for path in _iter_python_files(workspace_root, source_paths):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    source = f.read()
+            except OSError as e:
+                warnings.append({
+                    "source_path": path,
+                    "item_name": "<file>",
+                    "reason": f"read failed: {e}",
+                })
+                continue
+            lifted = _lift_source(path, source)
+            decls.extend(lifted["decls"])
+            warnings.extend(lifted["warnings"])
+            implications.extend(lifted["implications"])
 
-        # Layer 2: pytest/unittest structural lift.
-        layer2 = lift_file_layer2(source, path)
-        decls.extend(layer2.decls)
-
-        # Try to load the source as a module to collect @provekit.contract
-        # decorators. This only works when the source is importable; for
-        # standalone files we skip this path.
-        # TODO: use importlib.util to load from source string.
-
-        # Pydantic lift: if the file defines BaseModel subclasses, walk them.
-        # We do this by exec-ing the source in a clean namespace and
-        # inspecting for pydantic models. Only done when pydantic is available.
-        try:
-            pydantic_decls = _try_lift_pydantic(source)
-            decls.extend(pydantic_decls)
-        except Exception:
-            pass
-
-        # Build contract index for call-edge resolution.
-        # Maps function/contract name -> contractCid (blake3-512 hash of JCS).
-        contract_index: Dict[str, str] = {}
-        for d in decls:
-            if isinstance(d, ContractDecl):
-                cid = jcs_hash(contract_decl_to_value(d))
-                contract_index[d.name] = cid
-
-        # Emit ctypes call-edge stream per spec #114 R1.
-        ctypes_result = resolve_ctypes_calls(source, path, contract_index)
-        call_edges = ctypes_result.call_edges
-        call_edges_value = call_edges_to_value(call_edges)
-        # encode_jcs returns a str; parse it back to a native list so the
-        # outer json.dumps embeds it as a JSON array, not a JSON-encoded string.
-        call_edges_array = json.loads(encode_jcs(call_edges_value))
-
-        if not decls:
-            _send(
-                {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "declarations": [],
-                        "callEdges": call_edges_array,
-                        "warnings": [],
-                    },
-                }
-            )
-            return
-
-        # Emit canonical IR JSON; parse JCS string to native list so
-        # json.dumps emits an array, not a JSON-encoded string.
-        value = declarations_to_value(decls)
-        declarations_array = json.loads(encode_jcs(value))
-
-        warnings = [w.__dict__ for w in layer2.warnings]
+        ir: List[Any] = []
+        if decls:
+            ir = json.loads(encode_jcs(declarations_to_value(decls)))
 
         _send(
             {
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "declarations": declarations_array,
-                    "callEdges": call_edges_array,
+                    "kind": "ir-document",
+                    "ir": ir,
+                    "implications": implications,
+                    "diagnostics": [],
                     "warnings": warnings,
                 },
             }
         )
-
     except Exception as e:
         _send(
             {
@@ -222,6 +316,8 @@ def main() -> None:
             handle_initialize(msg_id)
         elif method == "parse":
             handle_parse(msg_id, params)
+        elif method == "lift":
+            handle_lift(msg_id, params)
         elif method == "shutdown":
             handle_shutdown(msg_id)
         else:
