@@ -137,7 +137,7 @@ fn identical_predicates_discharged_without_solver() {
 
 // -------------------------------------------------------------------
 // Acceptance case 1b: identical-modulo-key-order via JCS
-// (no solver work — JCS canonicalizes object key ordering)
+// (no solver work: JCS canonicalizes object key ordering)
 // -------------------------------------------------------------------
 
 #[test]

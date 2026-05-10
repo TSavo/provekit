@@ -240,13 +240,13 @@ pub fn buildProofEnvelope(
 }
 
 // ---------------------------------------------------------------------------
-// Verifier — checks CID match, CBOR shape, and Ed25519 signature.
+// Verifier: checks CID match, CBOR shape, and Ed25519 signature.
 // ---------------------------------------------------------------------------
 
 /// Verify a .proof envelope against expected_cid and signer_pubkey (raw 32 bytes).
 /// Returns true iff CID, shape, and signature all check out. Fails closed.
 ///
-/// NOTE: This is a deliberately minimal verifier — it re-encodes the
+/// NOTE: This is a deliberately minimal verifier: it re-encodes the
 /// unsigned body from the input fields the caller passes (since fully
 /// parsing arbitrary CBOR is out of scope for this substrate). For
 /// canonical fixtures, callers pass the same ProofEnvelopeInput they
@@ -346,7 +346,7 @@ test "deterministic across runs" {
 //   cargo run --release -p provekit-proof-envelope --example proof_envelope_bytes
 //
 // If any test below fails, the divergence is a real cross-kit impedance
-// mismatch. Surface it with a clear message — DO NOT paper over.
+// mismatch. Surface it with a clear message: DO NOT paper over.
 // ---------------------------------------------------------------------------
 
 const RUST_FIXTURE_CID =

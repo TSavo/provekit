@@ -1,5 +1,5 @@
 /**
- * BV cross-language fixture — TS-only golden hash regression.
+ * BV cross-language fixture: TS-only golden hash regression.
  *
  * The cross-language harness at scripts/cross-lang-equivalence/ verifies
  * that TS, Rust, Go, and C++ kits all emit byte-identical compact JSON
@@ -47,7 +47,7 @@ beforeEach(() => {
  *
  * When this fixture moves into the cross-language harness, the Rust/Go/
  * C++ kits will need to settle on the same on-the-wire form for BV
- * literals — either a numeric string here or a base-16 representation.
+ * literals: either a numeric string here or a base-16 representation.
  * Picking one now keeps the future cross-kit alignment straightforward.
  */
 function bigIntSafeStringify(value: unknown): string {

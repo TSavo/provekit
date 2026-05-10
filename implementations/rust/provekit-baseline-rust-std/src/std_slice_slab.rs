@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// std::slice slab — builtins on `[T]`.
+// std::slice slab: builtins on `[T]`.
 //
 // Coverage (8 builtins): slice_len, slice_is_empty, slice_iter,
 // slice_get, slice_first, slice_last, slice_contains, slice_to_vec.

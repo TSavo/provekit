@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Provekit::BridgeV14 — v1.4 BridgeDeclaration IR types.
+# Provekit::BridgeV14: v1.4 BridgeDeclaration IR types.
 #
 # Per protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
 # and substrate-layers-envelope-header-body.md §1-2.

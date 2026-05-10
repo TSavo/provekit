@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-zig-self-contracts — Zig peer-implementation orchestrator.
+// mint-zig-self-contracts: Zig peer-implementation orchestrator.
 //
 // Modes:
 //
@@ -44,7 +44,7 @@ const WRITE_BUF: usize = 256 * 1024;
 
 const ParsedReq = struct {
     /// Verbatim JSON `id` value (number, string, or `null`). May be
-    /// empty when the request omitted the field — caller should default
+    /// empty when the request omitted the field: caller should default
     /// to `"null"`.
     id_raw: []const u8,
     /// Bare method name (no quotes), or empty when malformed.
@@ -230,7 +230,7 @@ fn runRpcMode(alloc: std.mem.Allocator, io: std.Io) !void {
 }
 
 // ---------------------------------------------------------------------------
-// CLI mode — banner + determinism check + write production .proof.
+// CLI mode: banner + determinism check + write production .proof.
 // ---------------------------------------------------------------------------
 
 fn writeFile(io: std.Io, dir: std.Io.Dir, name: []const u8, bytes: []const u8) !void {
@@ -319,7 +319,7 @@ pub fn main(init: std.process.Init) !void {
 }
 
 // ---------------------------------------------------------------------------
-// Tests — pull in sibling test files.
+// Tests: pull in sibling test files.
 // ---------------------------------------------------------------------------
 
 test {

@@ -1,4 +1,4 @@
-# `provekit lift` — propose contracts authored in the kit
+# `provekit lift`: propose contracts authored in the kit
 
 You are reading a source file and proposing one or more **ContractDecl**
 candidates: pre/post/inv triples that capture each public function's
@@ -25,7 +25,7 @@ signatures, and the function's intent.
   ```
 - **Function name** (optional filter; empty = propose for all
   public functions): `{{function_name}}`
-- **Existing contracts**: `{{existing_contracts}}` — don't propose
+- **Existing contracts**: `{{existing_contracts}}`: don't propose
   these again unless you're replacing them with a strictly tighter
   version.
 - **Previous rejection**: `{{previous_rejection}}`
@@ -93,7 +93,7 @@ candidate doesn't sink the others.
    yields `post: ge(out, num(0))`. State it.
 4. **Input domain restrictions**: if the function panics on negative
    input, that's a `pre`: `pre: Some(ge(arg, num(0)))`.
-5. **Conservation laws**: ledgers, queues, stacks — anything with an
+5. **Conservation laws**: ledgers, queues, stacks: anything with an
    "in equals out" reading is an `inv` quantified over the relevant
    domain.
 

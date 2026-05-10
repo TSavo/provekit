@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/import-semgrep.ts — generate corpus scenarios from a local clone of
+ * scripts/import-semgrep.ts: generate corpus scenarios from a local clone of
  * github.com/semgrep/semgrep-rules.
  *
  * Usage:

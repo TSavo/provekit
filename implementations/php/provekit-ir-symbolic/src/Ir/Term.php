@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt IR — Term types. Mirrors the Go `ir` package. */
+/** ProvekIt IR: Term types. Mirrors the Go `ir` package. */
 
 namespace ProvekIt\Ir;
 

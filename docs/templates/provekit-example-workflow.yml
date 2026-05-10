@@ -1,7 +1,7 @@
-# ProvekIt — example workflow
+# ProvekIt: example workflow
 #
 # This file is a TEMPLATE for downstream consumers. ProvekIt itself does not
-# run this workflow on its own commits — it lives here so a developer can
+# run this workflow on its own commits: it lives here so a developer can
 # copy it into their own repository and have a working CI gate immediately.
 #
 # Drop this verbatim into `.github/workflows/provekit.yml` in your repo.

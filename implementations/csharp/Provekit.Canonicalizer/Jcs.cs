@@ -14,7 +14,7 @@
 //   - Strings: UTF-8 verbatim, escape `"` and `\\` and U+0000..U+001F
 //     as `\u00XX` (lowercase hex). RFC 8785 also permits the named
 //     short escapes (\n etc.); the C++/Rust peers chose `\u00XX` for
-//     determinism — we match.
+//     determinism: we match.
 //   - true / false / null verbatim.
 //   - No whitespace anywhere.
 //

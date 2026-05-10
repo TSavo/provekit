@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Deterministic CBOR decoder — inverse of cbor.hpp's encoder. Subset
+// Deterministic CBOR decoder: inverse of cbor.hpp's encoder. Subset
 // matching the encoder: uint, tstr, bstr, array, map. Used by the
 // verifier to read .proof files written by any conformant kit.
 
@@ -18,7 +18,7 @@ namespace provekit::proof_envelope {
 
 // CborValue is a tagged union for the subset we decode. Maps preserve
 // insertion order from the wire (which is the lex-sort order under
-// §4.2.1, but the decoder doesn't enforce sort — just records).
+// §4.2.1, but the decoder doesn't enforce sort: just records).
 struct CborValue;
 using CborValuePtr = std::shared_ptr<CborValue>;
 

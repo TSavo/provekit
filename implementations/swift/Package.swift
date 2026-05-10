@@ -136,7 +136,7 @@ let package = Package(
         ),
         // CryptoTests: substrate determinism + cross-kit byte-equivalence.
         // Standalone executable runner mirroring LSPTests' pattern (no
-        // XCTest/Testing dep — neither is available on CI without full Xcode).
+        // XCTest/Testing dep: neither is available on CI without full Xcode).
         // `swift run test-swift-crypto` exits 0 on pass, 1 on any fail.
         .executableTarget(
             name: "CryptoTests",

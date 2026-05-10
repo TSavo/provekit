@@ -1,4 +1,4 @@
-# C++ proof-envelope builder — produces deterministic CBOR .proof
+# C++ proof-envelope builder: produces deterministic CBOR .proof
 # bytes per protocol/specs/2026-04-30-proof-file-format.md.
 #
 # γ-step-1: deterministic CBOR encoder (this BUILD).

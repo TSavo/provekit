@@ -7,7 +7,7 @@ authors.workspace = true
 description = "ProvekIt agent trait + types + stub backend + propose/validate/mint loop."
 
 [dependencies]
-# Workspace internals — agents speak the same canonical IR everything else does.
+# Workspace internals: agents speak the same canonical IR everything else does.
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic    = { path = "../provekit-ir-symbolic" }

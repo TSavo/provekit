@@ -1,5 +1,5 @@
 /**
- * `provekit-lift` — CLI entry point for the TS lift toolchain.
+ * `provekit-lift`: CLI entry point for the TS lift toolchain.
  *
  * Usage:
  *   provekit-lift [<dir>] [--out <dir>] [--quiet]
@@ -69,7 +69,7 @@ export function parseCliArgs(argv: string[]): CliFlags {
 
 function printHelp(): void {
   process.stdout.write(
-    `provekit-lift — promote existing zod schemas and fast-check properties to signed contracts.
+    `provekit-lift: promote existing zod schemas and fast-check properties to signed contracts.
 
 USAGE:
   provekit-lift [<workspace-dir>] [--out <dir>] [--quiet]
@@ -181,7 +181,7 @@ function runRpcMode(): void {
 }
 
 /**
- * Top-level entry — invoked by the `provekit-lift` bin shim.
+ * Top-level entry: invoked by the `provekit-lift` bin shim.
  *
  * Exported separately from runCli so tests can inject argv without
  * triggering process.exit.

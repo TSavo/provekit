@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit-lift` — direct invocation entry point.
+// `provekit-lift`: direct invocation entry point.
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

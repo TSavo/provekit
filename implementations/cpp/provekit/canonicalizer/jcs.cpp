@@ -39,7 +39,7 @@ void encode_string(const std::string& s, std::ostringstream& out) {
             //
             // SPEC NOTE: §7.5 doesn't mandate which form to use for
             // these particular control chars (\b \t \n \f \r). RFC 8785
-            // mandates the named-escape form. Spec hole? Maybe — but
+            // mandates the named-escape form. Spec hole? Maybe: but
             // for this v1 fixture there are no control chars in the
             // input, so it's not exercised. If a future fixture tests
             // control chars, the spec MUST disambiguate.
@@ -76,7 +76,7 @@ void encode_array(const Value& v, std::ostringstream& out) {
 void encode_object(const Value& v, std::ostringstream& out) {
     // §7.3: keys sorted by Unicode code point order. For ASCII keys
     // (all keys produced by the canonical AST grammar are ASCII per
-    // §4–§5), this is byte-order on the key strings.
+    // §4-§5), this is byte-order on the key strings.
     //
     // SPEC NOTE: §7.3 says "Unicode code point order"; for non-ASCII
     // keys this requires comparing code points, not bytes. For this

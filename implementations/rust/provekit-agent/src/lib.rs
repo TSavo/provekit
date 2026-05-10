@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-agent — pluggable coding-agent surface for ProvekIt.
+// provekit-agent: pluggable coding-agent surface for ProvekIt.
 //
 // Two directions, both first-class:
 //
@@ -56,7 +56,7 @@ pub enum AgentError {
 }
 
 // ---------------------------------------------------------------------------
-// Provenance — recorded on every minted memento so the lattice knows
+// Provenance: recorded on every minted memento so the lattice knows
 // who proposed what.
 // ---------------------------------------------------------------------------
 
@@ -79,7 +79,7 @@ pub struct AgentProvenance {
 }
 
 // ---------------------------------------------------------------------------
-// Candidate contract — one proposal in IR-JSON canonical form. The
+// Candidate contract: one proposal in IR-JSON canonical form. The
 // agent serializes its formula trees to IR-JSON strings; we parse +
 // validate before minting.
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ fn default_out_binding() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// File patch — minimal shape: { path, new_content }. Optional
+// File patch: minimal shape: { path, new_content }. Optional
 // old_content lets the patch carry a precondition (matches what's on
 // disk). Unified-diff parsing is intentionally not on the table for
 // v0; full-file replacement is the simplest contract that survives
@@ -211,7 +211,7 @@ pub trait ProvekitAgent: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// Validation — shared between the lift / must loops. Parses the
+// Validation: shared between the lift / must loops. Parses the
 // candidate's IR-JSON, returns a typed `ContractDecl` on success or a
 // rejection reason the agent can read.
 // ---------------------------------------------------------------------------
@@ -386,7 +386,7 @@ fn hex_zero_pad(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Tool descriptor — dropped into Claude Code / Continue / Cursor /
+// Tool descriptor: dropped into Claude Code / Continue / Cursor /
 // Aider config so external agents can call ProvekIt as a tool.
 // ---------------------------------------------------------------------------
 

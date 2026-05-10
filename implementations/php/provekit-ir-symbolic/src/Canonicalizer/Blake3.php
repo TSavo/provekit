@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt — BLAKE3-512 hasher. Uses b3sum/blake3 CLI until a native binding lands. */
+/** ProvekIt: BLAKE3-512 hasher. Uses b3sum/blake3 CLI until a native binding lands. */
 
 namespace ProvekIt\Canonicalizer;
 

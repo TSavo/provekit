@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Provekit.Lift.Core.AnnotationScanner — shared //provekit: annotation
+// Provekit.Lift.Core.AnnotationScanner: shared //provekit: annotation
 // scanner for the C# kit. Used by both Provekit.Lsp.Plugin (live editing)
 // and any future batch-CLI lift binary that consumes annotated source.
 //
 // Recognized annotations:
-//   //provekit:contract                  — declares the next function as a contract
-//   //provekit:implement <cid>           — declares the next function as an
+//   //provekit:contract: declares the next function as a contract
+//   //provekit:implement <cid>: declares the next function as an
 //                                          implementation bridge to <cid>
 
 using System.Text.RegularExpressions;

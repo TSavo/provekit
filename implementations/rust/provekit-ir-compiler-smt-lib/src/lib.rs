@@ -145,15 +145,15 @@ pub fn emit(ir_formula: &Json) -> Result<String, String> {
 /// Compile to (preamble, body, free_vars). Pure; no I/O.
 pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
     let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
-        .map_err(|e| CompileError::MalformedIr(e.to_string().into()))?;
-    validate_formula(&formula).map_err(|e| CompileError::MalformedIr(e.into()))?;
+        .map_err(|e| CompileError::MalformedIr(e.to_string()))?;
+    validate_formula(&formula).map_err(CompileError::MalformedIr)?;
     Ok(generated::compile_formula(&formula))
 }
 
 pub fn compile_asserted_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
     let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
-        .map_err(|e| CompileError::MalformedIr(e.to_string().into()))?;
-    validate_formula(&formula).map_err(|e| CompileError::MalformedIr(e.into()))?;
+        .map_err(|e| CompileError::MalformedIr(e.to_string()))?;
+    validate_formula(&formula).map_err(CompileError::MalformedIr)?;
     Ok(generated::compile_asserted_formula(&formula))
 }
 
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn functionsort_quantifier_emits_opacity_entry() {
-        // forall (f: Function) . true — FunctionSort in quantifier
+        // forall (f: Function) . true: FunctionSort in quantifier
         let ir = serde_json::json!({
             "kind": "forall",
             "name": "f",
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn dependent_sort_quantifier_emits_opacity_entry() {
-        // exists (n: Dependent) . true — DependentSort in quantifier
+        // exists (n: Dependent) . true: DependentSort in quantifier
         let ir = serde_json::json!({
             "kind": "exists",
             "name": "n",
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn primitive_sort_quantifier_no_opacity() {
-        // forall (x: Int) . x >= 0 — Int is supported
+        // forall (x: Int) . x >= 0: Int is supported
         let ir = serde_json::json!({
             "kind": "forall",
             "name": "x",
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn opacity_entries_sorted_by_position_cid() {
-        // Two quantifiers over opaque sorts — entries should be sorted.
+        // Two quantifiers over opaque sorts: entries should be sorted.
         let ir = serde_json::json!({
             "kind": "and",
             "operands": [

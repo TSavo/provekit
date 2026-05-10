@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit mint` — the lift-plugin protocol dispatcher.
+// `provekit mint`: the lift-plugin protocol dispatcher.
 //
 // Architecture (substrate-as-only-mint-pipeline):
 //
 //   One Rust CLI; N language kits. The CLI is the sole mint pipeline for
-//   every kit — including the rust kit itself. Rust is NOT special-cased.
+//   every kit: including the rust kit itself. Rust is NOT special-cased.
 //   Every kit exposes a lifter binary that speaks the lift-protocol RPC
 //   (`initialize` + `lift`). The CLI drives that RPC, receives a
 //   `proof-envelope` response, and then:
@@ -78,9 +78,9 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 
 /// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
 ///
-/// * `project_subdir` — path segment under `implementations/` (the project root passed to the lifter)
-/// * `lift_surface` — subdirectory name under `.provekit/lift/<surface>/` (the manifest to load)
-/// * `lang_key` — the `lang` field in the signed attestation JSON (and the
+/// * `project_subdir`: path segment under `implementations/` (the project root passed to the lifter)
+/// * `lift_surface`: subdirectory name under `.provekit/lift/<surface>/` (the manifest to load)
+/// * `lang_key`: the `lang` field in the signed attestation JSON (and the
 ///   key for the `.provekit/self-contracts-attestations/<lang>.json` filename)
 ///
 /// Naming diverges for several kits:
@@ -96,7 +96,7 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 /// produce content-empty CIDs. The `--project=implementations/<lang>
 /// --surface=<lang>` form still reaches the workspace/test-fixture lifters
 /// for tooling that needs them.
-/// Fix: issue #176 Tier 1, option (c) — route every kit to its
+/// Fix: issue #176 Tier 1, option (c): route every kit to its
 /// self-contracts lifter (PR #180 for go, PR #183 for rust).
 pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     // (kit_alias, project_subdir, lift_surface,           lang_key)
@@ -155,7 +155,7 @@ fn dispatch(
         Err(LiftPluginError::MissingBinary { binary }) => {
             if !quiet {
                 println!(
-                    "{}: lifter binary `{}` not found — producing empty-set attestation",
+                    "{}: lifter binary `{}` not found: producing empty-set attestation",
                     "warn".yellow().bold(),
                     binary
                 );
@@ -725,7 +725,7 @@ fn json_to_cvalue(j: &Value) -> Arc<CValue> {
 /// `signature`. JCS encoding of that body is what the foundation key signs.
 ///
 /// When `bundle_cid` is empty (lifter binary not found), the attestation
-/// records `cid: ""` — callers can detect the empty-lifter case via this
+/// records `cid: ""`: callers can detect the empty-lifter case via this
 /// field. The `contractSetCid` is still valid (it's the empty-set CID).
 fn build_signed_attestation(lang: &str, bundle_cid: &str, contract_set_cid: &str) -> Value {
     let signer_pubkey = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
@@ -966,7 +966,7 @@ pub fn run(args: MintArgs) -> u8 {
                             .display()
                     );
                 } else {
-                    println!("  (no .proof written — lifter binary not found)");
+                    println!("  (no .proof written: lifter binary not found)");
                 }
             } else {
                 // Quiet mode: first line = bundle CID, second line = contractSetCid.
@@ -1186,7 +1186,7 @@ mod tests {
             .expect("source_paths must be an array");
         assert!(
             !paths.is_empty(),
-            "source_paths must not be empty — was C3 violation (issue #166)"
+            "source_paths must not be empty: was C3 violation (issue #166)"
         );
         assert_eq!(paths[0].as_str(), Some("."), "first entry should be '.'");
     }

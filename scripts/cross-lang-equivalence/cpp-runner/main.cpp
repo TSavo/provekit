@@ -1,4 +1,4 @@
-// Cross-language equivalence runner — C++ path.
+// Cross-language equivalence runner: C++ path.
 //
 // Usage: ./cross-lang-runner <fixture-name>
 // Emits: compact JSON of the Declaration[] for the named fixture.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// snapshot.rs — warm-start snapshot persistence (R14).
+// snapshot.rs: warm-start snapshot persistence (R14).
 //
 // On shutdown the daemon writes its state to
 //   ${XDG_CACHE_HOME}/provekit/linkerd/<projectCid>/snapshot.bin
@@ -61,7 +61,7 @@ pub fn load(path: &Path) -> Result<Option<ProjectState>, String> {
             ));
         }
     } else {
-        // No checksum file — treat as corrupt.
+        // No checksum file: treat as corrupt.
         return Err("snapshot exists but checksum file is missing; starting cold".into());
     }
 

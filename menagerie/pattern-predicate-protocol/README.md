@@ -1,4 +1,4 @@
-# Pattern Predicate Protocol — Reference Destination
+# Pattern Predicate Protocol: Reference Destination
 
 Companion artifact set for the [Pattern Predicate Protocol
 spec](../../protocol/specs/2026-05-09-pattern-predicate-protocol.md)

@@ -9,7 +9,7 @@ common --enable_bzlmod
 common --noenable_workspace
 
 # Build tooling: don't surface upstream warnings for vendor dirs
-# (node_modules etc. — those aren't Bazel inputs anyway).
+# (node_modules etc.: those aren't Bazel inputs anyway).
 build --incompatible_strict_action_env
 
 # Stamp build with VCS info for reproducibility / forensic traceability.

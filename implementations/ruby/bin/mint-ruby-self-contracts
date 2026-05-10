@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: Apache-2.0
 #
-# mint-ruby-self-contracts — RPC entry point for the ruby-self-contracts
+# mint-ruby-self-contracts: RPC entry point for the ruby-self-contracts
 # lift surface, plus direct CLI invocation.
 #
 # Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on stdio

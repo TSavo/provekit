@@ -24,12 +24,12 @@ public static class TermInvariants
     public static void Register()
     {
         // Out() is a VarTerm whose name is exactly "out" (the default
-        // outBinding). This pin is protocol-load-bearing — `post`
+        // outBinding). This pin is protocol-load-bearing: `post`
         // formulas reference `out` symbolically.
         Contract("csharp_terms_out_name_is_out",
             post: Eq(Ctor("VarName", Ctor("Out")), StrConst("out")));
 
-        // Var(name).Name == name — Var preserves its name.
+        // Var(name).Name == name: Var preserves its name.
         Must("csharp_terms_var_round_trips_name",
             ForAll(Sort.String, n =>
                 Eq(Ctor("VarName", Ctor("Var", n)), n)));

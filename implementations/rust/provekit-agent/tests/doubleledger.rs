@@ -28,7 +28,7 @@ fn doubleledger_must_produces_conservation_contract() {
     let path = fixture_path();
     assert!(
         path.exists(),
-        "fixture missing at {} — examples/agent-plugins/doubleledger-fixture must exist",
+        "fixture missing at {}: examples/agent-plugins/doubleledger-fixture must exist",
         path.display()
     );
     let source_text = std::fs::read_to_string(&path).expect("read fixture");

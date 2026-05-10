@@ -20,7 +20,7 @@ describe("ts-self-contracts: mint orchestrator", () => {
       const a = runMintSelfContracts(dirA);
       const b = runMintSelfContracts(dirB);
 
-      // The bluepaper-documented banner — vitest captures stdout with
+      // The bluepaper-documented banner: vitest captures stdout with
       // its default reporter, so this output IS the deliverable.
       console.log("");
       console.log("== ProvekIt TypeScript self-contracts orchestrator ==");
@@ -59,7 +59,7 @@ describe("ts-self-contracts: mint orchestrator", () => {
       expect(stat.size).toBe(b.bytesLen);
       expect(stat.size).toBeGreaterThan(0);
 
-      // Each slab authored at least one contract — no zero-contract files.
+      // Each slab authored at least one contract: no zero-contract files.
       for (const { label, count } of b.perSourceCounts) {
         expect(count, `slab ${label}`).toBeGreaterThan(0);
       }

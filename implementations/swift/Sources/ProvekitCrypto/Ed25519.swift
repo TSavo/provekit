@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Ed25519 — sign / verify wrapper over the vendored OpenSSL backend.
+// Ed25519: sign / verify wrapper over the vendored OpenSSL backend.
 //
 // Why NOT CryptoKit: Apple's CryptoKit on macOS / iOS implements
 // `Curve25519.Signing` with intentional signature randomization (a
@@ -15,8 +15,8 @@
 // (the BoringSSL backend is gated off via the `CRYPTO_IN_SWIFTPM`
 // platform check; see swift-crypto's Package.swift), so it inherits the
 // same randomization. We use OpenSSL libcrypto via the kit's existing
-// `tools/ed25519-vendored/` thin wrapper — the same backing the C and
-// C++ peer kits use — for byte-identical signatures with rust's
+// `tools/ed25519-vendored/` thin wrapper: the same backing the C and
+// C++ peer kits use: for byte-identical signatures with rust's
 // ed25519-dalek and go's crypto/ed25519.
 //
 // Cross-kit conformance: the protocol pins the Foundation v0 ed25519

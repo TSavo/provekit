@@ -1,11 +1,11 @@
 /**
- * load-all-proofs — Stage 0/1 of the bridge enforcement workflow.
+ * load-all-proofs: Stage 0/1 of the bridge enforcement workflow.
  *
  * Walks every `.proof` file in the project root (every package under
  * node_modules including scoped packages, plus the project root itself),
  * decodes each, and returns a unified
  * CID-keyed pool of all member mementos. All downstream stages do
- * hash lookups against this pool — no further file IO.
+ * hash lookups against this pool: no further file IO.
  *
  * Also indexes the bridge envelopes separately so the
  * enumerate-callsites stage can match Ctor names to bridges in O(1).

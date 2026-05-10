@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// ReportStage — Stage 6. Aggregates per-callsite verdicts into a Report.
+// ReportStage: Stage 6. Aggregates per-callsite verdicts into a Report.
 
 #pragma once
 

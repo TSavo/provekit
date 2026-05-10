@@ -1,4 +1,4 @@
-# java/ — Java principle partition
+# java/: Java principle partition
 
 TBD: language-specific axioms for Java go here.
 

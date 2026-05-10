@@ -109,7 +109,7 @@ module Provekit
     # Bridge declaration. Locked spec key order:
     #   kind, name, sourceSymbol, sourceLayer, sourceContractCid,
     #   targetContractCid, targetProofCid, targetLayer, notes (optional).
-    # `notes` is OMITTED entirely when nil — never emitted as null.
+    # `notes` is OMITTED entirely when nil: never emitted as null.
     # Ruby Struct fields are snake_case; the JSON keys are camelCase
     # and produced by the marshaler, not by `to_h`.
     Bridge = Struct.new(

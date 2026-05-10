@@ -33,7 +33,7 @@
  *   z.boolean()                      -> kind-of(x.field, "Bool")
  *
  * Top-level schemas that are not z.object(...) (e.g., a bare
- * z.string().email()) are also lifted — the contract's pre is the
+ * z.string().email()) are also lifted: the contract's pre is the
  * conjunction of constraints applied to a single binding `x`.
  *
  * Refinements with arbitrary callbacks (z.string().refine(fn)) are
@@ -53,7 +53,7 @@ import type { AdapterOutput, ContractDecl, AdapterWarning } from "../types.js";
 
 const ADAPTER = "zod";
 
-/** Public adapter entry point — mirrors the Rust adapter's `lift_file`. */
+/** Public adapter entry point: mirrors the Rust adapter's `lift_file`. */
 export function liftFile(sourceFile: ts.SourceFile, sourcePath: string): AdapterOutput {
   const decls: ContractDecl[] = [];
   const warnings: AdapterWarning[] = [];
@@ -88,7 +88,7 @@ interface ZodCandidate {
 /**
  * A "candidate" for the zod adapter is any top-level
  * `const|let|var <Name> = <expr>;` whose RHS root call is z.<something>.
- * We pre-screen by syntactic shape only — the lift step does the actual
+ * We pre-screen by syntactic shape only: the lift step does the actual
  * chain decoding.
  */
 function extractZodCandidate(node: ts.Node): ZodCandidate | null {
@@ -124,7 +124,7 @@ type LiftResult =
   | { kind: "skip"; reason: string };
 
 function liftSchema(name: string, expr: ts.Expression, sourcePath: string): LiftResult {
-  // z.object({...}) — lift each field as a clause over u.<field>.
+  // z.object({...}): lift each field as a clause over u.<field>.
   const objectFields = extractZObjectFields(expr);
   if (objectFields !== null) {
     if (objectFields === "skip-refine") {
@@ -192,7 +192,7 @@ interface ChainStep {
   /** Argument literals, if any, decoded to JS values. Non-literal arguments
    * cause the whole chain to skip. */
   args: Array<number | string | boolean>;
-  /** Set when an argument was unsupported (regex literal source, etc.) — we still
+  /** Set when an argument was unsupported (regex literal source, etc.): we still
    * lift the call, encoding via a Ctor whose payload is the raw source. */
   rawArgs?: string[];
 }
@@ -242,7 +242,7 @@ function decodeChain(expr: ts.Expression): ChainResult {
       continue;
     }
     if (ts.isPropertyAccessExpression(cur)) {
-      // e.g., `z.string` accessed without call — uncommon, skip.
+      // e.g., `z.string` accessed without call: uncommon, skip.
       cur = cur.expression;
       continue;
     }
@@ -324,9 +324,9 @@ function readObjectLiteralFields(call: ts.CallExpression): FieldSpec[] | "skip-r
     if (!name) continue;
     const decoded = decodeChain(prop.initializer);
     if (decoded.kind === "skip") {
-      // The skip reason might be refine/transform — bubble up to the caller.
+      // The skip reason might be refine/transform: bubble up to the caller.
       if (decoded.reason.includes("not liftable")) return "skip-refine";
-      // Otherwise drop this field silently — but keep the others.
+      // Otherwise drop this field silently: but keep the others.
       continue;
     }
     out.push({ name, chain: decoded.steps });
@@ -345,7 +345,7 @@ function chainToConstraints(subject: IrTerm, chain: ChainStep[]): ConstraintsRes
 
   for (const step of chain) {
     switch (step.method) {
-      // Roots — set the kind constraint and the rootKind.
+      // Roots: set the kind constraint and the rootKind.
       case "string": {
         rootKind = "string";
         constraints.push(kindOf(subject, "String"));
@@ -424,7 +424,7 @@ function chainToConstraints(subject: IrTerm, chain: ChainStep[]): ConstraintsRes
         constraints.push(ctorPred("is_safe_int", [subject]));
         break;
       }
-      // String-format checks — all encoded as Ctor predicates with kit-defined
+      // String-format checks: all encoded as Ctor predicates with kit-defined
       // names. The verifier will report them as undecidable when discharged
       // via Z3 with no native semantics; that's the honest v0 outcome.
       case "email": {
@@ -503,7 +503,7 @@ function sortForChainRoot(steps: ChainStep[]): Sort {
 
 // ---------------------------------------------------------------------------
 // IR-builder helpers (kept local so adapters don't drag in the symbolic
-// collector — it has a global counter that breaks CID determinism across
+// collector: it has a global counter that breaks CID determinism across
 // multiple lift runs, see comment in ir/symbolic/property.ts).
 // ---------------------------------------------------------------------------
 

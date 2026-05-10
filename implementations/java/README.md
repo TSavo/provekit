@@ -11,7 +11,7 @@ A `@NotNull` in Jakarta Bean Validation, a `//@ requires x != null` in JML, and 
 ## Architecture
 
 ```
-provekit-lift-java-core              (facade — RPC, walking, IR emission)
+provekit-lift-java-core              (facade: RPC, walking, IR emission)
 ├── provekit-lift-java-bean-validation   (@NotNull, @Email, @Min, @Size...)
 ├── provekit-lift-java-junit             (assertEquals, local value-scope lemmas)
 ├── provekit-lift-java-jml               (//@ requires, //@ ensures)

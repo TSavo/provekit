@@ -5,8 +5,8 @@
 // Public surface covered:
 //   * Serialize.SortToValue(Sort): Value
 //   * Serialize.TermToValue(Term): Value
-//   * Serialize.FormulaToValue(Formula): Value      — drives the hashing flow
-//   * Serialize.MarshalDeclarations(decls): string  — insertion-order JSON
+//   * Serialize.FormulaToValue(Formula): Value: drives the hashing flow
+//   * Serialize.MarshalDeclarations(decls): string: insertion-order JSON
 //
 // Honest scope:
 //   Serialize is a pure conversion; same Formula → same Value;

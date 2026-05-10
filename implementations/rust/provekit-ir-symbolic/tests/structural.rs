@@ -128,7 +128,7 @@ fn contract_with_only_inv_succeeds() {
 }
 
 // ---------------------------------------------------------------------------
-// Quantifier — fresh bound names
+// Quantifier: fresh bound names
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -257,7 +257,7 @@ fn or_passes_through_caller_arity() {
 }
 
 // ---------------------------------------------------------------------------
-// Atomic predicate names — Unicode round-trip
+// Atomic predicate names: Unicode round-trip
 // ---------------------------------------------------------------------------
 
 fn atomic_name(f: &Rc<Formula>) -> String {

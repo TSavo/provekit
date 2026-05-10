@@ -1,5 +1,5 @@
 /**
- * Unified verifier — protocol-first surface.
+ * Unified verifier: protocol-first surface.
  *
  * The legacy per-invariant Z3 verifier (verifyAllCached) and its
  * ValidityReport shape have been removed; bridge enforcement is the

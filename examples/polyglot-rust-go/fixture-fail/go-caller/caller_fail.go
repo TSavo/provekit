@@ -1,4 +1,4 @@
-// caller_fail.go — FAILURE CASE
+// caller_fail.go: FAILURE CASE
 //
 // This Go file calls C.process(-1) without any guard.
 // The Go lifter emits a cgo call-edge from GoCallerFail → rust-kit:process.

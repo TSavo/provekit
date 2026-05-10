@@ -1,7 +1,7 @@
 /**
  * Tests for the command-alias expansion.
  *
- * The aliases are purely lexical — argv[0] is rewritten to the
+ * The aliases are purely lexical: argv[0] is rewritten to the
  * canonical verb before parseArgv sees it. Test exercises the
  * expansion function directly; spawning the binary would re-run the
  * workflow setup per case, which the unit-test layer doesn't need.

@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-tag-sample-by-principle.ts — pull a sample of recognized
+ * scripts/harvest-tag-sample-by-principle.ts: pull a sample of recognized
  * candidates that match a specific principle. For precision spot-checks.
  *
  * Usage:

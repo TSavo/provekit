@@ -10,15 +10,15 @@ require_relative "../lib/provekit/ir"
 class TestJcsConformance < Minitest::Test
   IR = Provekit::IR
 
-  # Fixture: eq_atomic — parse_int('42') = 42
+  # Fixture: eq_atomic: parse_int('42') = 42
   EXPECTED_EQ_ATOMIC =
     '{"args":[{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"42"}],"kind":"ctor","name":"parse_int"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":42}],"kind":"atomic","name":"="}'
 
-  # Fixture: pattern1_bounded_loop — forall x: (x ≥ 0 ∧ x < 100) ⇒ x ≥ 0
+  # Fixture: pattern1_bounded_loop: forall x: (x ≥ 0 ∧ x < 100) ⇒ x ≥ 0
   EXPECTED_PATTERN1 =
     '{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}}'
 
-  # Fixture: bridge_decl_v1_1 — single v1.1 Bridge declaration object with
+  # Fixture: bridge_decl_v1_1: single v1.1 Bridge declaration object with
   # all fields including optional `notes`. `marshal_declarations` wraps a
   # single decl in a JSON array per the Document grammar (`"[" Declaration* "]"`),
   # so the full expected output is `[FIXTURE]`.

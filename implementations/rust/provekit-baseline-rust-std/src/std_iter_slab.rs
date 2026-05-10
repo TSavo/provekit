@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// std::iter slab — iterator + numeric stragglers.
+// std::iter slab: iterator + numeric stragglers.
 //
 // Coverage (6 builtins): Iter_count, Iter_collect, Iter_fold,
 // Iter_map, Iter_filter, Iter_next.

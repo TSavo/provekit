@@ -15,7 +15,7 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — zod is consumed AST-only by the lifter; not executed here.
+// @ts-ignore: zod is consumed AST-only by the lifter; not executed here.
 import { z } from "zod";
 import * as fc from "fast-check";
 
@@ -39,7 +39,7 @@ export const UuidSchema = z.string().uuid();
 
 export const NameSchema = z.string().nonempty();
 
-/** Skipped: arbitrary callback in .refine — lifter logs and bails. */
+/** Skipped: arbitrary callback in .refine: lifter logs and bails. */
 export const CustomCheckedString = z
   .string()
   .refine((s) => s.indexOf("@") >= 0, { message: "must contain @" });

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// v1.4 BridgeDeclaration — layered envelope/header/body, tagged-union target.
+// v1.4 BridgeDeclaration: layered envelope/header/body, tagged-union target.
 //
 // Per protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6.
 // Canonical reference: rust/provekit-claim-envelope/src/lib.rs fn mint_bridge_v14.

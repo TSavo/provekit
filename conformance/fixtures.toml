@@ -17,14 +17,14 @@ catalog_cid = "blake3-512:09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6b
 [[fixture]]
 name = "eq_atomic"
 capability = "ir.formula.jcs"
-description = "parse_int('42') = 42 — tests var, const (str, int), ctor, atomic formula"
+description = "parse_int('42') = 42: tests var, const (str, int), ctor, atomic formula"
 jcs = '{"args":[{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"42"}],"kind":"ctor","name":"parse_int"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":42}],"kind":"atomic","name":"="}'
 hash = "blake3-512:5eade72c08811b2d38adcb158eced38f3d319de090d59b2fa7a77ad830169e18539d2b75d2a2838c545e644a688cf137603674523ff37f1586a650f6dd05aeaa"
 
 [[fixture]]
 name = "pattern1_bounded_loop"
 capability = "ir.formula.jcs"
-description = "forall x: (x >= 0 && x < 100) => x >= 0 — tests forall, and, implies, nested compare"
+description = "forall x: (x >= 0 && x < 100) => x >= 0: tests forall, and, implies, nested compare"
 jcs = '{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}}'
 hash = "blake3-512:edace2a0634b696ec24a369d37580cf9ab77f2d7c3e83869240b77305aaefc4868054bc3cee789f74408e1adf0b1d88e6fdfcd9cc2e351ff586077dbb3a3bcea"
 

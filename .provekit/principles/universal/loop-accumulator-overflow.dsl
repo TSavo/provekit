@@ -1,11 +1,10 @@
 // 2026-04-26: hard-bug 2 closure. Augmented-assignment (+=) inside a loop
-// body — unbounded iteration count can overflow the accumulator past
+// body: unbounded iteration count can overflow the accumulator past
 // Number.MAX_SAFE_INTEGER. The original JSON spec described the shape but
 // no DSL existed (capability gap: AST containment relation).
 //
 // Substrate addition (this commit): `encloses($outer, $inner)` relation,
-// implemented via source-range nesting (no recursive closure required —
-// ts-morph guarantees properly nested ranges).
+// implemented via source-range nesting (no recursive closure required: // ts-morph guarantees properly nested ranges).
 //
 // Match shape: an assigns row with assign_kind = "+=" whose source range
 // is enclosed by some iterates row's body_node range.
@@ -26,6 +25,6 @@ principle loop-accumulator-overflow {
   report violation {
     at $assn
     captures { accumulator: $assn }
-    message "+= inside loop body — unbounded iteration count can overflow Number.MAX_SAFE_INTEGER"
+    message "+= inside loop body: unbounded iteration count can overflow Number.MAX_SAFE_INTEGER"
   }
 }

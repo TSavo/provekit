@@ -262,7 +262,7 @@ public final class ProofEnvelope {
             // Snapshot the current pos before consuming value.
             String stringValueOrNull = peekIsTstr(c) ? readTstr(c) : null;
             if (stringValueOrNull == null) {
-                // Reset — peek consumed bytes only if it was a tstr; otherwise
+                // Reset: peek consumed bytes only if it was a tstr; otherwise
                 // we still need to consume the value as raw bytes. We use a
                 // straight-line skip to advance past the value.
                 c.pos = valStart;

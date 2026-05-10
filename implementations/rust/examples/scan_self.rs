@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// scan_self — ProvekIt's first self-application.
+// scan_self: ProvekIt's first self-application.
 //
 // 1. Authors 5+ contracts ABOUT the Rust impl's IR-JSON parser via
 //    `provekit_self_contracts::author_self_contracts`.
@@ -16,7 +16,7 @@
 //     (Z3 has no semantics for `roundTrips` / `isErr` /
 //     `isMalformed`). That's the protocol's HONEST outcome.
 //   - Standard-algebra contracts (5, 6, 7) don't enumerate as
-//     callsites in their *own* memento — there's no bridge mapping
+//     callsites in their *own* memento: there's no bridge mapping
 //     `not_arity_bounds` etc. to an IR symbol. They sit in the
 //     pool as authored but verifiable-by-inspection mementos.
 //

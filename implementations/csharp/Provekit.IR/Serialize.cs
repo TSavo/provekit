@@ -15,7 +15,7 @@
 // `ToValue` produces a Provekit.Canonicalizer.Value tree (used by the
 // hashing path; the canonicalizer's JCS encoder re-sorts at emit time).
 // `MarshalDeclarations` produces insertion-order JSON (mirrors the C++
-// kit's behavior — the mint adapter receives that JSON, parses it,
+// kit's behavior: the mint adapter receives that JSON, parses it,
 // and re-canonicalizes through JCS for hashing).
 
 using Provekit.Canonicalizer;
@@ -131,7 +131,7 @@ public static class Serialize
     //     "sourceContractCid", "targetContractCid", "targetProofCid",
     //     "targetLayer", "notes"? }
     //
-    // Insertion order here is irrelevant — `Jcs.Encode` re-sorts keys to
+    // Insertion order here is irrelevant: `Jcs.Encode` re-sorts keys to
     // Unicode code-point order at emit time (same discipline as
     // `FormulaToValue`). `Notes` is omitted when null so JCS doesn't
     // emit `"notes":null`; this matches the Rust peer's

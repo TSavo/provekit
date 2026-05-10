@@ -8,9 +8,9 @@
 //
 // Architecture mirror:
 //   1. Go kit shipped a .proof file with parseInt's precondition
-//      (forall n: Int. n > 0) — produced by cmd/go-kit-publish.
+//      (forall n: Int. n > 0): produced by cmd/go-kit-publish.
 //   2. C++ consumer authors invariants via kit primitives parse_int(num(...))
-//      — every call emits a Ctor("parseInt", [arg]) IrTerm.
+//: every call emits a Ctor("parseInt", [arg]) IrTerm.
 //   3. C++ consumer mints + signs its property mementos in pure C++.
 //   4. C++ consumer bundles them into its own .proof file in pure C++.
 //   5. C++ bridge enforcement runner walks both .proofs:
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
 
     if (!fs::exists(go_proof_path)) {
         std::fprintf(stderr,
-                     "ERROR: Go .proof not found at %s — run go-kit-publish first.\n",
+                     "ERROR: Go .proof not found at %s: run go-kit-publish first.\n",
                      go_proof_path.c_str());
         return 2;
     }
@@ -107,10 +107,10 @@ int main(int argc, char* argv[]) {
     begin_collecting();
     ensure_kit_bridges_registered();
 
-    // parse_int(num(5)) — should DISCHARGE
+    // parse_int(num(5)): should DISCHARGE
     must("calls-parseInt-with-positive-5",
          eq(parse_int(num(5)), num(5)));
-    // parse_int(num(0)) — should be UNSATISFIED (caught by Go's precondition)
+    // parse_int(num(0)): should be UNSATISFIED (caught by Go's precondition)
     must("calls-parseInt-with-zero",
          eq(parse_int(num(0)), num(0)));
 
@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
         std::printf("    %s: %s%s%s\n",
                     row.callsite.property_name.c_str(),
                     row.status.c_str(),
-                    row.reason.empty() ? "" : " — ",
+                    row.reason.empty() ? "" : ": ",
                     row.reason.c_str());
         if (row.callsite.property_name == "calls-parseInt-with-positive-5") passing = &row;
         if (row.callsite.property_name == "calls-parseInt-with-zero") failing = &row;

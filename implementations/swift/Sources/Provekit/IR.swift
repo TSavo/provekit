@@ -256,7 +256,7 @@ public enum Jcs {
     }
 }
 
-// BLAKE3 — delegates to the native pure-Swift / vendored-C implementation
+// BLAKE3: delegates to the native pure-Swift / vendored-C implementation
 // in ProvekitCrypto. The legacy python-shellout has been retired; output
 // is byte-equivalent to the previous shell-out behavior because both
 // ultimately call the BLAKE3 reference implementation.

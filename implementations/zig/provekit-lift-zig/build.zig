@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // lift module — pure parse logic, no IO.
+    // lift module: pure parse logic, no IO.
     // Registered as a public module so provekit-lsp-zig can depend on it.
     const lift_mod = b.addModule("provekit-lift-zig", .{
         .root_source_file = b.path("src/lift.zig"),

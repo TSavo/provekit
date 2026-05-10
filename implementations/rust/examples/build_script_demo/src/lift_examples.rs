@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// LIFT FIXTURE — NOT IN THE COMPILED MODULE TREE.
+// LIFT FIXTURE: NOT IN THE COMPILED MODULE TREE.
 //
 // This file is intentionally NOT declared via `mod lift_examples;`
 // anywhere. The build script's source-walker (and the lift pass)
