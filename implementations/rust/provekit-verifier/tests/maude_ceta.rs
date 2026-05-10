@@ -1,5 +1,90 @@
+use std::process::Command;
+use std::time::Duration;
+
 use provekit_verifier::solvers::ceta::{parse_ceta_output, CetaDecision};
 use provekit_verifier::solvers::maude::{parse_maude_output, MaudeDecision};
+use provekit_verifier::solvers::{CetaGateConfig, MaudeSubprocessSolver, Solver};
+use provekit_verifier::types::ObligationVerdict;
+use serde_json::{json, Value as Json};
+
+fn binary_on_path(name: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {name} >/dev/null 2>&1"))
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn skip_unless_binaries_exist(names: &[&str]) -> bool {
+    for name in names {
+        if !binary_on_path(name) {
+            eprintln!("skipping: {name} not on PATH");
+            return false;
+        }
+    }
+    true
+}
+
+fn nat_discharge_obligation() -> Json {
+    json!({
+        "kind": "atomic",
+        "name": "equational_theory",
+        "theory": {
+            "name": "provekit-nat",
+            "sorts": ["Nat"],
+            "operators": [
+                {"name": "zero", "arity": [], "result": "Nat"},
+                {"name": "s", "arity": ["Nat"], "result": "Nat"},
+                {"name": "plus", "arity": ["Nat", "Nat"], "result": "Nat"}
+            ],
+            "variables": [
+                {"name": "N", "sort": "Nat"},
+                {"name": "M", "sort": "Nat"}
+            ],
+            "equations": [
+                {
+                    "label": "plus-zero-left",
+                    "lhs": {"kind": "ctor", "name": "plus", "args": [
+                        {"kind": "ctor", "name": "zero", "args": []},
+                        {"kind": "var", "name": "N"}
+                    ]},
+                    "rhs": {"kind": "var", "name": "N"}
+                },
+                {
+                    "label": "plus-s-left",
+                    "lhs": {"kind": "ctor", "name": "plus", "args": [
+                        {"kind": "ctor", "name": "s", "args": [
+                            {"kind": "var", "name": "N"}
+                        ]},
+                        {"kind": "var", "name": "M"}
+                    ]},
+                    "rhs": {"kind": "ctor", "name": "s", "args": [
+                        {"kind": "ctor", "name": "plus", "args": [
+                            {"kind": "var", "name": "N"},
+                            {"kind": "var", "name": "M"}
+                        ]}
+                    ]}
+                }
+            ]
+        },
+        "obligation": {
+            "lhs": {"kind": "ctor", "name": "plus", "args": [
+                {"kind": "ctor", "name": "s", "args": [
+                    {"kind": "ctor", "name": "zero", "args": []}
+                ]},
+                {"kind": "ctor", "name": "s", "args": [
+                    {"kind": "ctor", "name": "zero", "args": []}
+                ]}
+            ]},
+            "rhs": {"kind": "ctor", "name": "s", "args": [
+                {"kind": "ctor", "name": "s", "args": [
+                    {"kind": "ctor", "name": "zero", "args": []}
+                ]}
+            ]}
+        }
+    })
+}
 
 #[test]
 fn maude_parser_accepts_equal_reduce_normal_forms() {
@@ -76,7 +161,41 @@ No solution.
 }
 
 #[test]
-#[ignore = "requires maude, termination provers, confluence checker, and ceta on PATH"]
 fn binary_dependent_maude_and_ceta_gate_smoke() {
-    panic!("enable locally after installing the Maude and CeTA portfolio tools");
+    if !skip_unless_binaries_exist(&["maude", "aprove", "ceta", "csi"]) {
+        return;
+    }
+
+    let solver = MaudeSubprocessSolver::new(
+        "maude",
+        "maude",
+        "3.x",
+        Some(Duration::from_secs(30)),
+        CetaGateConfig {
+            enabled: true,
+            ceta_binary: "ceta".to_string(),
+            termination_prover: "aprove".to_string(),
+            confluence_checker: "csi".to_string(),
+            timeout: Some(Duration::from_secs(30)),
+        },
+    );
+
+    let result = solver.solve(&nat_discharge_obligation().to_string());
+    assert_eq!(
+        result.verdict,
+        ObligationVerdict::Discharged,
+        "Maude should discharge the Nat reflexivity obligation, error: {}, stdout: {}",
+        result.error,
+        result.solver_stdout
+    );
+    assert!(
+        result.solver_stdout.contains("\"ceta_gate\""),
+        "expected a CeTA gate receipt, got: {}",
+        result.solver_stdout
+    );
+    assert!(
+        !result.solver_stdout.contains("\"bypassed\":true"),
+        "expected the CeTA gate to run on a nonempty TRS, got: {}",
+        result.solver_stdout
+    );
 }

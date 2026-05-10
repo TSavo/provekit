@@ -1,5 +1,7 @@
 # Maude and CeTA Portfolio Tool Install
 
+Consolidated build: see `tools/portfolio/Dockerfile` and `tools/portfolio/README.md`.
+
 This appendix pins a Debian-based image setup for the Maude equational backend and the certified termination and confluence gate. It does not modify any Dockerfile.
 
 Pinned versions:
