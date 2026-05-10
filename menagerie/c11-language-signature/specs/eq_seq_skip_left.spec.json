@@ -1,0 +1,41 @@
+{
+  "kind": "equation",
+  "fn_name": "c11:seq-skip-left",
+  "formals": [
+    "a"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        },
+        {
+          "kind": "var",
+          "name": "a"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "a"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:effect:input",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "input",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Value",
+    "wp": "read one external input value"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "IO"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

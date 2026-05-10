@@ -1,0 +1,49 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:call",
+  "formals": [
+    "callee",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FnContract",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "ListOfExpr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "call",
+    "arity": [
+      "FnContract",
+      "ListOf<Expr>"
+    ],
+    "result": "Stmt",
+    "wp": "callee pre under bound args implies callee post under caller state"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "callee.effects"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:effect:trap",
+    "formals": [
+      "reason"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Reason",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "trap",
+      "arity": [
+        "Reason"
+      ],
+      "result": "Bottom",
+      "wp": "diverge due to undefined behavior or trap"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Trap"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bottom",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:ae0f7603a712fddfe024c86a354ecd7819b4828061a37f2c0f937d0f6e685241126a53632e755edd5e9105ffac8d8540ae325d9bfadaf00e4d95a0426ef5c5c3",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "H+fBm7zNEokoZ7vaxsGfWJBvMiEDMJQ6MWc1RNtSm4wh4Gc6Z90NKjeteHpq6h+jRrEUhFBnlT0ypdE3erqPDg=="
+  }
+}

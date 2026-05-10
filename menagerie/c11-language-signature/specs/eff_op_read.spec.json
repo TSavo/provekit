@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:effect:read",
+  "formals": [
+    "addr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Addr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "read",
+    "arity": [
+      "Addr"
+    ],
+    "result": "Value",
+    "wp": "read memory value at addr"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

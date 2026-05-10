@@ -1,0 +1,42 @@
+{
+  "kind": "equation",
+  "fn_name": "c11:if-idemp",
+  "formals": [
+    "p",
+    "a"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "if",
+      "args": [
+        {
+          "kind": "var",
+          "name": "p"
+        },
+        {
+          "kind": "var",
+          "name": "a"
+        },
+        {
+          "kind": "var",
+          "name": "a"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "a"
+    }
+  }
+}

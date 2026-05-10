@@ -1,0 +1,118 @@
+{
+  "kind": "function-contract",
+  "fn_name": "foo",
+  "formals": [
+    "x"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "i32"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "i32"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "connective",
+    "op": "and",
+    "operands": [
+      {
+        "kind": "connective",
+        "op": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              },
+              {
+                "kind": "const",
+                "value": 0,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "i32"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+              {
+                "kind": "var",
+                "name": "result"
+              },
+              {
+                "kind": "const",
+                "value": -22,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "i32"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "connective",
+        "op": "implies",
+        "operands": [
+          {
+            "kind": "connective",
+            "op": "not",
+            "operands": [
+              {
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "x"
+                  },
+                  {
+                    "kind": "const",
+                    "value": 0,
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "i32"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+              {
+                "kind": "var",
+                "name": "result"
+              },
+              {
+                "kind": "var",
+                "name": "x"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": []
+  },
+  "source_term": "foo.term.json"
+}

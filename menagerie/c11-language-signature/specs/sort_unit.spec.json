@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "c11:Unit",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Unit",
+    "description": "The unit input and output sort"
+  }
+}
