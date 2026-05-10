@@ -24,6 +24,7 @@ typedef struct {
 } pk_c_walker_contract;
 
 typedef struct {
+    const char *source_start;
     const char *signature_start;
     const char *params_start;
     const char *params_end;
