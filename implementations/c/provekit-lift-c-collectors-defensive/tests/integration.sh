@@ -3,7 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN="$SCRIPT_DIR/../provekit-lift-c-walker"
+BIN="$SCRIPT_DIR/../provekit-lift-c-collectors-defensive"
 FIXTURE="$SCRIPT_DIR/fixtures/trivial.c"
 DEFENSIVE_FIXTURE="$SCRIPT_DIR/fixtures/defensive.c"
 
@@ -27,7 +27,7 @@ RESPONSES="$(
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
         printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
         printf '"%s"' "$SCRIPT_DIR/fixtures"
-        printf ',"source_paths":["trivial.c","defensive.c"],"surface":"c-walker"}}\n'
+        printf ',"source_paths":["trivial.c","defensive.c"],"surface":"c-collectors-defensive"}}\n'
         printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
     } | "$BIN" --rpc
 )"
@@ -38,8 +38,8 @@ printf '%s\n' "$RESPONSES" | grep -q '"id":1' || {
     exit 1
 }
 
-printf '%s\n' "$RESPONSES" | grep -q '"name":"c-walker"' || {
-    echo "FAIL: initialize missing c-walker name" >&2
+printf '%s\n' "$RESPONSES" | grep -q '"name":"c-collectors-defensive"' || {
+    echo "FAIL: initialize missing c-collectors-defensive name" >&2
     echo "$RESPONSES" >&2
     exit 1
 }
@@ -262,4 +262,4 @@ for fn_name, expected in effect_checks:
         fail(f"{fn_name} missing effect {expected}")
 PY
 
-echo "provekit-lift-c-walker integration passed"
+echo "provekit-lift-c-collectors-defensive integration passed"

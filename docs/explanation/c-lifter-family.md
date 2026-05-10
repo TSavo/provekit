@@ -65,9 +65,9 @@ Whatever any C lifter emits as a contract MUST conform to this struct shape.
 
 Three deliverables (one new Rust crate, one new C lifter, one extension to existing):
 
-### Deliverable 1: `provekit-lift-c-walker` (new C lifter)
+### Deliverable 1: `provekit-lift-c-collectors-defensive` (new C lifter)
 
-New C lifter at `implementations/c/provekit-lift-c-walker/`, mirroring the sibling C lifter pattern (kernel-doc, sparse, assertions). Emits synthesized contracts as `declarations[]` entries via the same JSON-RPC `lift` method.
+New C lifter at `implementations/c/provekit-lift-c-collectors-defensive/`, mirroring the sibling C lifter pattern (kernel-doc, sparse, assertions). Emits synthesized contracts as `declarations[]` entries via the same JSON-RPC `lift` method.
 
 - `src/main.c` — JSON-RPC scaffold (copy from kernel-doc lifter; identical protocol handling)
 - `src/walker.c` — synthesis pass: walk `clang_ast.c`'s emitted AST + `effects.c`'s per-function effects, recognize defensive patterns, build contract JSON per function
@@ -76,7 +76,7 @@ New C lifter at `implementations/c/provekit-lift-c-walker/`, mirroring the sibli
 - `Makefile` — same shape as `provekit-lift-c-kernel-doc` Makefile (libclang-enabled with effects.c, fallback to stub)
 - `tests/integration.sh` — smoke tests on fixture C files (BUG_ON, if-return-error, assert patterns)
 
-**JSON-RPC surface:** `c-walker`. Reads source files, emits `pk_c_lift_result`-shaped JSON with synthesized contracts in `declarations[]`. Plug-compatible with existing `provekit lift` / `provekit compose --rpc` consumers.
+**JSON-RPC surface:** `c-collectors-defensive`. Reads source files, emits `pk_c_lift_result`-shaped JSON with synthesized contracts in `declarations[]`. Plug-compatible with existing `provekit lift` / `provekit compose --rpc` consumers.
 
 **Why C instead of Rust:** keeps the lifter in `implementations/c/` family (consistent build, test, RPC pattern). `clang_ast.c` already does the libclang AST traversal — synthesis adds a new pass over the existing visitor, no clang-sys binding overhead. `effects.c` already linked in (per #519). The pattern recognition algorithms transfer from `provekit-walk::lift` regardless of language; we don't get to reuse `lift.rs` source either way (it's tightly bound to `syn::Expr`/`syn::Stmt` types). The C path is ~800-1200 lines of new code; Rust would be ~1500+ (clang-sys bindings + visitor + algorithm port).
 
@@ -122,28 +122,28 @@ Pattern set for assertions lifter (production code):
 
 | Tier | What it adds | Coverage | Engineering scope | Lifter |
 |---|---|---|---|---|
-| (a.1) Trivial | `{pre=true, post=true, effects=<from libclang>}` per function | All functions in lifted files | Smallest. Just package effects.c output as contract. | `provekit-lift-c-walker` skeleton |
-| (a.2) Pattern-derived | Real preconditions from BUG_ON, if-return-error, assert, goto-error | All functions with defensive patterns (most kernel functions have at least one) | Medium. Port lift.rs algorithms C-side. | `provekit-lift-c-walker` + extended assertions lifter |
+| (a.1) Trivial | `{pre=true, post=true, effects=<from libclang>}` per function | All functions in lifted files | Smallest. Just package effects.c output as contract. | `provekit-lift-c-collectors-defensive` skeleton |
+| (a.2) Pattern-derived | Real preconditions from BUG_ON, if-return-error, assert, goto-error | All functions with defensive patterns (most kernel functions have at least one) | Medium. Port lift.rs algorithms C-side. | `provekit-lift-c-collectors-defensive` + extended assertions lifter |
 | (a.3) Test-derived | Real semantic claims from KUnit assertion macros | All functions covered by KUnit tests | Medium. Mirror JUnitExtractor. | `provekit-lift-c-kunit` |
-| (a.4) Type-derived | Constraints from `__user`, `__rcu`, `__must_hold(lock)`, `size_t`, `loff_t`, `gfp_t`, `__bitwise`, etc. | All functions touching kernel-typed parameters (essentially every kernel function) | Medium-hard. Per-attribute predicate library. | `provekit-lift-c-walker` extension (folds into PR 2) |
+| (a.4) Type-derived | Constraints from `__user`, `__rcu`, `__must_hold(lock)`, `size_t`, `loff_t`, `gfp_t`, `__bitwise`, etc. | All functions touching kernel-typed parameters (essentially every kernel function) | Medium-hard. Per-attribute predicate library. | `provekit-lift-c-collectors-defensive` extension (folds into PR 2) |
 
 ## PR sequence with explicit gates
 
-### PR 1: `provekit-lift-c-walker` skeleton + (a.1) trivial synthesis
+### PR 1: `provekit-lift-c-collectors-defensive` skeleton + (a.1) trivial synthesis
 
 **Deliverable:**
-- New C lifter `implementations/c/provekit-lift-c-walker/` with src/main.c (RPC scaffold copied from kernel-doc lifter), src/walker.c (synthesis driver), Makefile (libclang + effects.c, mirror kernel-doc Makefile)
+- New C lifter `implementations/c/provekit-lift-c-collectors-defensive/` with src/main.c (RPC scaffold copied from kernel-doc lifter), src/walker.c (synthesis driver), Makefile (libclang + effects.c, mirror kernel-doc Makefile)
 - Skeleton: walk libclang AST via existing clang_ast.c infrastructure, enumerate functions, emit one declaration per function with `pre=true, post=true, effects=<from effects.c>`
-- CLI binary with `--rpc` mode, surface `c-walker`
+- CLI binary with `--rpc` mode, surface `c-collectors-defensive`
 
 **Smoke gate:**
-1. Lift `net/rxrpc/rxkad.c` via `c-walker` surface → expect ~30-50 declarations (one per function)
+1. Lift `net/rxrpc/rxkad.c` via `c-collectors-defensive` surface → expect ~30-50 declarations (one per function)
 2. `provekit compose --rpc` consumes the declarations → expect composed contracts emitted
 3. `provekit prove --formula <one_composed>` returns a verdict (will be trivial discharge since pre=post=true, but pipeline is end-to-end)
 
 **Merge condition:** all three smoke steps green. Trivial discharge is OK at this tier.
 
-### PR 2: (a.2) defensive-pattern derivation + (a.4) type-derived predicates in `provekit-lift-c-walker`
+### PR 2: (a.2) defensive-pattern derivation + (a.4) type-derived predicates in `provekit-lift-c-collectors-defensive`
 
 **Deliverable:**
 - Port `provekit-walk::lift` algorithms to `src/patterns.c`:
@@ -180,7 +180,7 @@ Pattern set for assertions lifter (production code):
 1. Lift `lib/kunit_test.c` (or whichever KUnit self-test file) via `c-kunit` surface
 2. Expect declarations[] populated with per-assertion contracts
 3. Verify contract names follow `testFunction::N` pattern
-4. Compose with PR 1's c-walker output for the production functions; verify the kunit contracts cite production functions
+4. Compose with PR 1's c-collectors-defensive output for the production functions; verify the kunit contracts cite production functions
 
 **Merge condition:** at least one composed contract that joins a KUnit assertion with a production function's body, prove portfolio dispatched on it.
 
@@ -212,7 +212,7 @@ Pattern set for assertions lifter (production code):
 ## Verification once all four PRs land
 
 End-to-end smoke on the full kernel:
-1. Lift entire kernel with c-walker (a.1+a.2) → atomic contract per function with real preconditions where defensive patterns exist
+1. Lift entire kernel with c-collectors-defensive (a.1+a.2) → atomic contract per function with real preconditions where defensive patterns exist
 2. Lift KUnit tests with c-kunit (a.3) → test-body contracts on tested functions
 3. Lift production assertions with c-assertions (a.4 production patterns) → BUG_ON / WARN_ON contracts
 4. Optionally lift kernel-doc / sparse where they exist
