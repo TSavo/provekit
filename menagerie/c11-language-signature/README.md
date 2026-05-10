@@ -134,7 +134,7 @@ Branch-sensitive WP value:
 
 ```text
 pre: true
-post: (x = 0 implies result = -22) and (not(x = 0) implies result = x)
+post: result = ite(x == 0, -22, x)
 effects: []
 ```
 
@@ -144,11 +144,11 @@ Real lifter output:
 
 ```text
 pre: true
-post: result = x
+post: result = ite(x == 0, -22, x)
 effects: []
 ```
 
-The JSON-RPC output from `provekit-lift-c-collectors-defensive` is saved in `example/foo.lift-rpc.jsonl`, and the emitted `function-contract` declaration is saved in `example/foo.contract.json`. The available C lifter currently emits a coarse trailing-return contract for this specific early-return shape. That gap is documented here instead of replacing the emitted contract with a hand-authored one.
+The JSON-RPC output from `provekit-lift-c-collectors-defensive` is saved in `example/foo.lift-rpc.jsonl`, and the emitted `function-contract` declaration is saved in `example/foo.contract.json`. The collectors-defensive lifter now emits the branch-sensitive early-return contract directly.
 
 `provekit-walk-c` was also built and run. It emits WP call-chain contracts, but this example has no internal calls, so `example/foo.walk-c-contract.json` contains only a `function-effects` declaration and no `function-contract` WP chain.
 

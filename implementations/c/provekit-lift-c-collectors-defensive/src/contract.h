@@ -57,5 +57,6 @@ int pk_c_walker_extract_type_predicates(
     const char *source,
     const char *fn_name,
     pk_c_walker_contract *contract);
+int pk_c_walker_function_has_loop(const char *source, const char *fn_name);
 
 #endif

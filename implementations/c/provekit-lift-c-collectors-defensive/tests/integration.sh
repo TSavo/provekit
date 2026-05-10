@@ -7,6 +7,7 @@ BIN="$SCRIPT_DIR/../provekit-lift-c-collectors-defensive"
 FIXTURE="$SCRIPT_DIR/fixtures/trivial.c"
 DEFENSIVE_FIXTURE="$SCRIPT_DIR/fixtures/defensive.c"
 CHECKED_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo.c"
+BRANCH_FIXTURE="$SCRIPT_DIR/fixtures/branch_returns.c"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -28,12 +29,17 @@ if [ ! -f "$CHECKED_FIXTURE" ]; then
     exit 1
 fi
 
+if [ ! -f "$BRANCH_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $BRANCH_FIXTURE" >&2
+    exit 1
+fi
+
 RESPONSES="$(
     {
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
         printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
         printf '"%s"' "$SCRIPT_DIR/fixtures"
-        printf ',"source_paths":["trivial.c","defensive.c","checked_demo.c"],"surface":"c-collectors-defensive"}}\n'
+        printf ',"source_paths":["trivial.c","defensive.c","checked_demo.c","branch_returns.c"],"surface":"c-collectors-defensive"}}\n'
         printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
     } | "$BIN" --rpc
 )"
@@ -169,6 +175,15 @@ def ctor(name, args):
 def atom(name, args):
     return {"kind": "atomic", "name": name, "args": args}
 
+def post_term(name):
+    post = by_name[name].get("post", {})
+    if post.get("kind") != "atomic" or post.get("name") != "=":
+        fail(f"{name} post is not an equality: {post}")
+    args = post.get("args", [])
+    if len(args) != 2 or args[0] != var("result"):
+        fail(f"{name} post does not equate result: {post}")
+    return args[1]
+
 def contains_formula(formula, expected):
     if formula == expected:
         return True
@@ -271,6 +286,54 @@ if checked_decl is None:
     fail("checked function not found in declarations")
 if contains_formula(checked_decl.get("post"), atom("=", [var("result"), const_int(-1)])):
     fail("checked postcondition used BUG_ON macro return -1 instead of trailing return x")
+
+branch_checks = {
+    "branch_foo": ctor("ite", [
+        ctor("=", [var("x"), const_int(0)]),
+        const_int(-22),
+        var("x"),
+    ]),
+    "branch_else": ctor("ite", [
+        ctor("=", [var("x"), const_int(0)]),
+        const_int(-22),
+        var("x"),
+    ]),
+    "branch_block": ctor("ite", [
+        ctor("<", [var("x"), const_int(0)]),
+        const_int(-1),
+        ctor("+", [var("x"), const_int(1)]),
+    ]),
+    "branch_nested": ctor("ite", [
+        ctor("<", [var("x"), const_int(0)]),
+        ctor("ite", [
+            ctor("<", [var("x"), const_int(-10)]),
+            const_int(-10),
+            const_int(-1),
+        ]),
+        var("x"),
+    ]),
+    "early_return": ctor("ite", [
+        ctor("truthy", [var("err")]),
+        const_int(-5),
+        var("ok"),
+    ]),
+}
+
+for fn_name, expected in branch_checks.items():
+    if fn_name not in by_name:
+        fail(f"{fn_name} function not found in declarations")
+    actual = post_term(fn_name)
+    if actual != expected:
+        fail(f"{fn_name} post term mismatch: {actual}")
+
+refusals = lift["result"].get("refusals", [])
+if not any(
+    r.get("kind") == "loop-requires-invariant"
+    and r.get("surface") == "c-collectors-defensive"
+    and r.get("reason") == "loop body requires an invariant-backed contract"
+    for r in refusals
+):
+    fail(f"loop_refusal did not emit loop refusal: {refusals}")
 
 effect_checks = [
     ("acquire_lock", {"kind": "lock_acquire", "target": "lock"}),

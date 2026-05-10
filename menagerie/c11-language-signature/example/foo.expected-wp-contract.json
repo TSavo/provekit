@@ -1,118 +1,79 @@
 {
-  "kind": "function-contract",
+  "auto_minted_mementos": [],
+  "body_cid": null,
   "fn_name": "foo",
-  "formals": [
-    "x"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
       "name": "i32"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "i32"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
+  "formals": [
+    "x"
+  ],
+  "kind": "function-contract",
+  "locus": {
+    "col": 0,
+    "file": null,
+    "line": 0
   },
   "post": {
-    "kind": "connective",
-    "op": "and",
-    "operands": [
+    "args": [
       {
-        "kind": "connective",
-        "op": "implies",
-        "operands": [
-          {
-            "kind": "atomic",
-            "name": "=",
-            "args": [
-              {
-                "kind": "var",
-                "name": "x"
-              },
-              {
-                "kind": "const",
-                "value": 0,
-                "sort": {
-                  "kind": "primitive",
-                  "name": "i32"
-                }
-              }
-            ]
-          },
-          {
-            "kind": "atomic",
-            "name": "=",
-            "args": [
-              {
-                "kind": "var",
-                "name": "result"
-              },
-              {
-                "kind": "const",
-                "value": -22,
-                "sort": {
-                  "kind": "primitive",
-                  "name": "i32"
-                }
-              }
-            ]
-          }
-        ]
+        "kind": "var",
+        "name": "result"
       },
       {
-        "kind": "connective",
-        "op": "implies",
-        "operands": [
+        "args": [
           {
-            "kind": "connective",
-            "op": "not",
-            "operands": [
-              {
-                "kind": "atomic",
-                "name": "=",
-                "args": [
-                  {
-                    "kind": "var",
-                    "name": "x"
-                  },
-                  {
-                    "kind": "const",
-                    "value": 0,
-                    "sort": {
-                      "kind": "primitive",
-                      "name": "i32"
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "atomic",
-            "name": "=",
             "args": [
               {
                 "kind": "var",
-                "name": "result"
+                "name": "x"
               },
               {
-                "kind": "var",
-                "name": "x"
+                "kind": "const",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                },
+                "value": 0
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "="
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "Int"
+            },
+            "value": -22
+          },
+          {
+            "kind": "var",
+            "name": "x"
           }
-        ]
+        ],
+        "kind": "ctor",
+        "name": "ite"
       }
-    ]
+    ],
+    "kind": "atomic",
+    "name": "="
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
   "effects": {
     "effects": []
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "i32"
   },
   "source_term": "foo.term.json"
 }

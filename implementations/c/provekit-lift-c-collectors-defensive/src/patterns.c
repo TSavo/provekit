@@ -1037,6 +1037,110 @@ static char *parse_formula_json(const char *start, size_t len, int negate) {
     return formula_to_json_take(formula);
 }
 
+static int formula_term_serialize_into(PkBuf *b, const PkFormula *formula) {
+    const char *name;
+
+    if (formula == NULL) {
+        return -1;
+    }
+    if (formula->kind == PK_FORMULA_ATOMIC) {
+        name = formula->name;
+    } else if (formula->kind == PK_FORMULA_AND) {
+        name = "and";
+    } else if (formula->kind == PK_FORMULA_OR) {
+        name = "or";
+    } else {
+        name = "not";
+    }
+    if (buf_append(b, "{\"kind\":\"ctor\",\"name\":") != 0 ||
+        buf_append_quoted(b, name) != 0 ||
+        buf_append(b, ",\"args\":[") != 0) {
+        return -1;
+    }
+    if (formula->kind == PK_FORMULA_ATOMIC) {
+        for (size_t i = 0; i < formula->n_args; i++) {
+            if ((i > 0 && buf_append_char(b, ',') != 0) ||
+                buf_append(b, formula->args[i]) != 0) {
+                return -1;
+            }
+        }
+    } else {
+        for (size_t i = 0; i < formula->n_ops; i++) {
+            if ((i > 0 && buf_append_char(b, ',') != 0) ||
+                formula_term_serialize_into(b, formula->ops[i]) != 0) {
+                return -1;
+            }
+        }
+    }
+    return buf_append(b, "]}");
+}
+
+static char *formula_to_term_json_take(PkFormula *formula) {
+    PkBuf b;
+    char *out = NULL;
+
+    if (formula == NULL || buf_init(&b) != 0) {
+        formula_free(formula);
+        return NULL;
+    }
+    if (formula_term_serialize_into(&b, formula) == 0) {
+        out = buf_take(&b);
+    }
+    buf_free(&b);
+    formula_free(formula);
+    return out;
+}
+
+static char *parse_condition_term_json(const char *start, size_t len) {
+    PkParser parser = {start, start + len};
+
+    return formula_to_term_json_take(parse_formula_or(&parser));
+}
+
+static char *parse_term_json(const char *start, size_t len) {
+    PkParser parser = {start, start + len};
+
+    return parse_term_expr(&parser);
+}
+
+static char *term_ite_take(char *condition, char *then_term, char *else_term) {
+    char **args = calloc(3, sizeof(*args));
+
+    if (args == NULL) {
+        free(condition);
+        free(then_term);
+        free(else_term);
+        return NULL;
+    }
+    args[0] = condition;
+    args[1] = then_term;
+    args[2] = else_term;
+    return term_ctor_consume("ite", args, 3);
+}
+
+static char *post_eq_result_take(char *term) {
+    char **args = calloc(2, sizeof(*args));
+
+    if (args == NULL) {
+        free(term);
+        return NULL;
+    }
+    args[0] = pk_c_walker_term_var("result");
+    args[1] = term;
+    if (args[0] == NULL || args[1] == NULL) {
+        for (size_t i = 0; i < 2; i++) {
+            free(args[i]);
+        }
+        free(args);
+        return NULL;
+    }
+    return atomic_json_take("=", args, 2);
+}
+
+static char *true_formula_json(void) {
+    return atomic_json_take("true", NULL, 0);
+}
+
 static const char *match_balanced(const char *open, const char *end, char lhs, char rhs) {
     int depth = 0;
 
@@ -1517,92 +1621,366 @@ static int add_if_preconditions(
     return 0;
 }
 
-static int add_trailing_return_post(
+typedef struct {
+    char *term;
+    int has_return;
+    int unsupported_loop;
+} ReturnTerm;
+
+static void return_term_free(ReturnTerm *ret) {
+    if (ret == NULL) {
+        return;
+    }
+    free(ret->term);
+    memset(ret, 0, sizeof(*ret));
+}
+
+static const char *skip_ws_and_non_code(
+    const char *source,
+    const char *p,
+    const char *end
+) {
+    for (;;) {
+        const char *next;
+
+        while (p < end && isspace((unsigned char)*p)) {
+            p++;
+        }
+        if (p >= end) {
+            return p;
+        }
+        next = skip_non_code_at(source, p, end);
+        if (next == p) {
+            return p;
+        }
+        p = next;
+    }
+}
+
+static int starts_keyword(
+    const char *source,
+    const char *p,
+    const char *end,
+    const char *keyword
+) {
+    size_t len = strlen(keyword);
+
+    return p + len <= end &&
+        strncmp(p, keyword, len) == 0 &&
+        token_boundary_before(source, p) &&
+        token_boundary_after(p + len);
+}
+
+static int starts_loop_keyword(const char *source, const char *p, const char *end) {
+    return starts_keyword(source, p, end, "while") ||
+        starts_keyword(source, p, end, "for") ||
+        starts_keyword(source, p, end, "do");
+}
+
+static const char *if_statement_end(const char *source, const char *if_start, const char *end);
+static const char *statement_or_block_end(const char *source, const char *start, const char *end);
+static int scan_sequence_return(
+    const char *source,
+    const char *start,
+    const char *end,
+    ReturnTerm *ret);
+
+static const char *statement_or_block_end(
+    const char *source,
+    const char *start,
+    const char *end
+) {
+    const char *p = skip_ws_and_non_code(source, start, end);
+
+    if (p >= end) {
+        return end;
+    }
+    if (*p == '{') {
+        const char *close = match_balanced(p, end, '{', '}');
+
+        return close == NULL ? NULL : close + 1;
+    }
+    if (starts_keyword(source, p, end, "if")) {
+        return if_statement_end(source, p, end);
+    }
+    return statement_end(source, p, end);
+}
+
+static const char *if_statement_end(const char *source, const char *if_start, const char *end) {
+    const char *open = if_start + strlen("if");
+    const char *cond_start;
+    const char *cond_end;
+    const char *then_start;
+    const char *then_finish;
+    const char *after_then;
+
+    while (open < end && isspace((unsigned char)*open)) {
+        open++;
+    }
+    if (!extract_paren_payload(open, end, &cond_start, &cond_end)) {
+        return NULL;
+    }
+    then_start = skip_ws_and_non_code(source, cond_end + 1, end);
+    then_finish = statement_or_block_end(source, then_start, end);
+    if (then_finish == NULL) {
+        return NULL;
+    }
+    after_then = skip_ws_and_non_code(source, then_finish, end);
+    if (starts_keyword(source, after_then, end, "else")) {
+        const char *else_start = skip_ws_and_non_code(
+            source,
+            after_then + strlen("else"),
+            end);
+
+        return statement_or_block_end(source, else_start, end);
+    }
+    return then_finish;
+}
+
+static char *return_statement_term(const char *stmt_start, const char *stmt_end) {
+    char *expr = return_expr_copy(stmt_start, stmt_end);
+    char *term;
+
+    if (expr == NULL) {
+        return NULL;
+    }
+    term = parse_term_json(expr, strlen(expr));
+    free(expr);
+    return term;
+}
+
+static int scan_single_statement_return(
+    const char *source,
+    const char *stmt_start,
+    const char *stmt_end,
+    ReturnTerm *ret
+);
+
+static int scan_if_return(
+    const char *source,
+    const char *if_start,
+    const char *end,
+    const char **after_if,
+    ReturnTerm *ret
+) {
+    const char *open = if_start + strlen("if");
+    const char *cond_start;
+    const char *cond_end;
+    const char *then_start;
+    const char *then_finish;
+    const char *after_then;
+    const char *else_start = NULL;
+    const char *else_finish = NULL;
+    ReturnTerm then_ret = {0};
+    ReturnTerm else_ret = {0};
+    ReturnTerm rest_ret = {0};
+    char *cond_term = NULL;
+    int has_else = 0;
+    int rc = -1;
+
+    while (open < end && isspace((unsigned char)*open)) {
+        open++;
+    }
+    if (!extract_paren_payload(open, end, &cond_start, &cond_end)) {
+        return 0;
+    }
+    then_start = skip_ws_and_non_code(source, cond_end + 1, end);
+    then_finish = statement_or_block_end(source, then_start, end);
+    if (then_finish == NULL) {
+        return -1;
+    }
+    after_then = skip_ws_and_non_code(source, then_finish, end);
+    if (starts_keyword(source, after_then, end, "else")) {
+        has_else = 1;
+        else_start = skip_ws_and_non_code(source, after_then + strlen("else"), end);
+        else_finish = statement_or_block_end(source, else_start, end);
+        if (else_finish == NULL) {
+            return -1;
+        }
+        *after_if = else_finish;
+    } else {
+        *after_if = then_finish;
+    }
+
+    if (scan_single_statement_return(source, then_start, then_finish, &then_ret) != 0 ||
+        (has_else &&
+            scan_single_statement_return(source, else_start, else_finish, &else_ret) != 0)) {
+        goto done;
+    }
+    ret->unsupported_loop = then_ret.unsupported_loop || else_ret.unsupported_loop;
+    if (ret->unsupported_loop) {
+        rc = 0;
+        goto done;
+    }
+
+    if (then_ret.has_return && else_ret.has_return) {
+        cond_term = parse_condition_term_json(cond_start, (size_t)(cond_end - cond_start));
+        if (cond_term == NULL) {
+            rc = 0;
+            goto done;
+        }
+        ret->term = term_ite_take(cond_term, then_ret.term, else_ret.term);
+        cond_term = NULL;
+        then_ret.term = NULL;
+        else_ret.term = NULL;
+        ret->has_return = ret->term != NULL;
+        rc = ret->term == NULL ? -1 : 0;
+        goto done;
+    }
+
+    if (then_ret.has_return || else_ret.has_return) {
+        const char *rest_start = *after_if;
+
+        if (scan_sequence_return(source, rest_start, end, &rest_ret) != 0) {
+            goto done;
+        }
+        ret->unsupported_loop = rest_ret.unsupported_loop;
+        if (ret->unsupported_loop || !rest_ret.has_return) {
+            rc = 0;
+            goto done;
+        }
+        cond_term = parse_condition_term_json(cond_start, (size_t)(cond_end - cond_start));
+        if (cond_term == NULL) {
+            rc = 0;
+            goto done;
+        }
+        if (then_ret.has_return) {
+            ret->term = term_ite_take(cond_term, then_ret.term, rest_ret.term);
+            then_ret.term = NULL;
+        } else {
+            ret->term = term_ite_take(cond_term, rest_ret.term, else_ret.term);
+            else_ret.term = NULL;
+        }
+        cond_term = NULL;
+        rest_ret.term = NULL;
+        ret->has_return = ret->term != NULL;
+        rc = ret->term == NULL ? -1 : 0;
+        goto done;
+    }
+
+    rc = 0;
+
+done:
+    free(cond_term);
+    return_term_free(&then_ret);
+    return_term_free(&else_ret);
+    return_term_free(&rest_ret);
+    return rc;
+}
+
+static int scan_single_statement_return(
+    const char *source,
+    const char *stmt_start,
+    const char *stmt_end,
+    ReturnTerm *ret
+) {
+    const char *p = skip_ws_and_non_code(source, stmt_start, stmt_end);
+
+    if (p >= stmt_end) {
+        return 0;
+    }
+    if (*p == '{') {
+        const char *close = match_balanced(p, stmt_end, '{', '}');
+
+        if (close == NULL) {
+            return -1;
+        }
+        return scan_sequence_return(source, p + 1, close, ret);
+    }
+    if (starts_loop_keyword(source, p, stmt_end)) {
+        ret->unsupported_loop = 1;
+        return 0;
+    }
+    if (starts_keyword(source, p, stmt_end, "return")) {
+        ret->term = return_statement_term(p, stmt_end);
+        ret->has_return = ret->term != NULL;
+        return 0;
+    }
+    if (starts_keyword(source, p, stmt_end, "if")) {
+        const char *after_if = p;
+
+        return scan_if_return(source, p, stmt_end, &after_if, ret);
+    }
+    return 0;
+}
+
+static int scan_sequence_return(
+    const char *source,
+    const char *start,
+    const char *end,
+    ReturnTerm *ret
+) {
+    const char *p = start;
+
+    while (p < end) {
+        const char *stmt_finish;
+
+        p = skip_ws_and_non_code(source, p, end);
+        if (p >= end) {
+            break;
+        }
+        if (starts_loop_keyword(source, p, end)) {
+            ret->unsupported_loop = 1;
+            return 0;
+        }
+        if (starts_keyword(source, p, end, "if")) {
+            const char *after_if = p;
+            ReturnTerm if_ret = {0};
+
+            if (scan_if_return(source, p, end, &after_if, &if_ret) != 0) {
+                return -1;
+            }
+            if (if_ret.unsupported_loop) {
+                ret->unsupported_loop = 1;
+                return_term_free(&if_ret);
+                return 0;
+            }
+            if (if_ret.has_return) {
+                *ret = if_ret;
+                return 0;
+            }
+            p = after_if;
+            continue;
+        }
+        stmt_finish = statement_or_block_end(source, p, end);
+        if (stmt_finish == NULL) {
+            return -1;
+        }
+        if (starts_keyword(source, p, stmt_finish, "return")) {
+            if (return_has_local_label(&(pk_c_walker_function_span){.body_start = start}, p)) {
+                return 0;
+            }
+            ret->term = return_statement_term(p, stmt_finish);
+            ret->has_return = ret->term != NULL;
+            return 0;
+        }
+        p = stmt_finish;
+    }
+    return 0;
+}
+
+static int add_branch_sensitive_return_post(
     const pk_c_walker_function_span *span,
     pk_c_walker_contract *contract
 ) {
-    const char *last_return = NULL;
-    const char *last_stmt_end = NULL;
-    const char *p = span->body_start;
-    int brace_depth = 0;
+    ReturnTerm ret = {0};
+    int rc;
 
-    while (p < span->body_end) {
-        const char *next = skip_non_code_at(span->source_start, p, span->body_end);
-
-        if (next != p) {
-            p = next;
-            continue;
-        }
-        if (*p == '{') {
-            brace_depth++;
-            p++;
-            continue;
-        }
-        if (*p == '}') {
-            if (brace_depth > 0) {
-                brace_depth--;
-            }
-            p++;
-            continue;
-        }
-        if (brace_depth == 0 &&
-            (size_t)(span->body_end - p) >= strlen("return") &&
-            strncmp(p, "return", strlen("return")) == 0 &&
-            token_boundary_before(span->source_start, p) &&
-            token_boundary_after(p + strlen("return"))) {
-            last_return = p;
-            last_stmt_end = statement_end(span->source_start, p, span->body_end);
-            p = last_stmt_end;
-            continue;
-        }
-        p++;
+    if (scan_sequence_return(span->source_start, span->body_start, span->body_end, &ret) != 0) {
+        return -1;
     }
-    if (last_return != NULL && last_stmt_end != NULL) {
-        const char *tail = last_stmt_end;
-        char *expr;
-        PkParser parser;
-        char *term;
-        char **args;
-
-        if (return_has_local_label(span, last_return)) {
-            return 0;
-        }
-        while (tail < span->body_end && isspace((unsigned char)*tail)) {
-            tail++;
-        }
-        if (tail != span->body_end) {
-            return 0;
-        }
-        expr = return_expr_copy(last_return, last_stmt_end);
-        if (expr == NULL) {
-            return 0;
-        }
-        parser.p = expr;
-        parser.end = expr + strlen(expr);
-        term = parse_term_expr(&parser);
-        free(expr);
-        if (term == NULL) {
-            return 0;
-        }
-        args = calloc(2, sizeof(*args));
-        if (args == NULL) {
-            free(term);
-            return -1;
-        }
-        args[0] = pk_c_walker_term_var("result");
-        args[1] = term;
-        if (args[0] == NULL) {
-            for (size_t i = 0; i < 2; i++) {
-                free(args[i]);
-            }
-            free(args);
-            return -1;
-        }
-        if (pk_c_walker_contract_set_post_take(contract, atomic_json_take("=", args, 2)) != 0) {
-            return -1;
-        }
+    if (ret.unsupported_loop) {
+        rc = pk_c_walker_contract_set_post_take(contract, true_formula_json());
+        return_term_free(&ret);
+        return rc;
     }
-    return 0;
+    if (!ret.has_return) {
+        return 0;
+    }
+    rc = pk_c_walker_contract_set_post_take(contract, post_eq_result_take(ret.term));
+    ret.term = NULL;
+    return_term_free(&ret);
+    return rc;
 }
 
 int pk_c_walker_extract_defensive_patterns(
@@ -1621,5 +1999,28 @@ int pk_c_walker_extract_defensive_patterns(
     if (add_if_preconditions(&span, contract) != 0) {
         return -1;
     }
-    return add_trailing_return_post(&span, contract);
+    return add_branch_sensitive_return_post(&span, contract);
+}
+
+int pk_c_walker_function_has_loop(const char *source, const char *fn_name) {
+    pk_c_walker_function_span span;
+    const char *p;
+
+    if (!pk_c_walker_find_function_source(source, fn_name, &span)) {
+        return 0;
+    }
+    p = span.body_start;
+    while (p < span.body_end) {
+        const char *next = skip_non_code_at(span.source_start, p, span.body_end);
+
+        if (next != p) {
+            p = next;
+            continue;
+        }
+        if (starts_loop_keyword(span.source_start, p, span.body_end)) {
+            return 1;
+        }
+        p++;
+    }
+    return 0;
 }
