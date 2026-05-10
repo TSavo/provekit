@@ -332,6 +332,8 @@ pub struct DomainClaim {
     pub contract: Contract,
     /// Input endpoint CIDs.
     pub from: Vec<Cid>,
+    /// Immediate input claim CIDs used to derive this claim.
+    pub premises: Vec<Cid>,
     /// Output endpoint CID.
     pub to: Cid,
     /// Optional content-addressed witness.
@@ -367,14 +369,38 @@ impl DomainClaim {
 /// recompute the address, check any signature, then re-walk the witness in
 /// `Domain::discharge(Check)` mode.
 #[derive(Debug, Clone)]
-pub struct Truth(pub DomainClaim);
+pub struct Truth(DomainClaim);
 
 /// A refuted domain claim.
 ///
 /// A `Refutation` is the finding type. It is also valid input to a fresh
 /// transform, which is what lets droppers operate on negative space.
 #[derive(Debug, Clone)]
-pub struct Refutation(pub DomainClaim);
+pub struct Refutation(DomainClaim);
+
+impl Truth {
+    /// Borrow the proved claim.
+    pub fn claim(&self) -> &DomainClaim {
+        &self.0
+    }
+
+    /// Consume the wrapper and return the proved claim.
+    pub fn into_claim(self) -> DomainClaim {
+        self.0
+    }
+}
+
+impl Refutation {
+    /// Borrow the refuted claim.
+    pub fn claim(&self) -> &DomainClaim {
+        &self.0
+    }
+
+    /// Consume the wrapper and return the refuted claim.
+    pub fn into_claim(self) -> DomainClaim {
+        self.0
+    }
+}
 
 impl TryFrom<DomainClaim> for Truth {
     type Error = VerdictCoercionError;
@@ -599,6 +625,11 @@ fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
         .iter()
         .map(|cid| CValue::string(cid.as_str().to_string()))
         .collect();
+    let premise_values: Vec<Arc<CValue>> = claim
+        .premises
+        .iter()
+        .map(|cid| CValue::string(cid.as_str().to_string()))
+        .collect();
     let term_value = match &claim.term {
         Some(term) => json_to_cvalue(serde_json::to_value(term).expect("term serializes")),
         None => CValue::null(),
@@ -615,6 +646,7 @@ fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
             json_to_cvalue(serde_json::to_value(&claim.domain).expect("domain serializes")),
         ),
         ("from", CValue::array(from_values)),
+        ("premises", CValue::array(premise_values)),
         ("term", term_value),
         ("to", CValue::string(claim.to.as_str().to_string())),
         (

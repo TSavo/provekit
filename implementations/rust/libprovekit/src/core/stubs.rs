@@ -176,17 +176,19 @@ fn parse_stub_input(expected: &Dialect, input: &Input) -> Result<Term, KitError>
                 dialect: expected.clone(),
                 message: "claim has no faithful term".to_string(),
             }),
-        Input::Truth(truth) => truth
-            .0
-            .term
-            .clone()
-            .ok_or_else(|| KitError::UnsupportedInput {
-                dialect: expected.clone(),
-                message: "truth has no faithful term".to_string(),
-            }),
+        Input::Truth(truth) => {
+            truth
+                .claim()
+                .term
+                .clone()
+                .ok_or_else(|| KitError::UnsupportedInput {
+                    dialect: expected.clone(),
+                    message: "truth has no faithful term".to_string(),
+                })
+        }
         Input::Refutation(refutation) => {
             refutation
-                .0
+                .claim()
                 .term
                 .clone()
                 .ok_or_else(|| KitError::UnsupportedInput {

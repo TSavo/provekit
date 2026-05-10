@@ -148,9 +148,19 @@ fn compose_function_contract_claims(
         .ok_or(ComposeError::FunctionContractCompositionFailed)?;
     let contract = composed_to_contract(&composed, &outer_claim.contract, &inner_claim.contract);
     let to = Cid::try_from(composed.cid.clone()).map_err(|_| ComposeError::InvalidComposedCid)?;
-    let mut from = vec![inner_claim.to.clone(), outer_claim.to.clone()];
+    let mut from = inner_claim.from.clone();
+    from.extend(
+        outer_claim
+            .from
+            .iter()
+            .filter(|cid| *cid != &inner_claim.to)
+            .cloned(),
+    );
     from.sort();
     from.dedup();
+    let mut premises = vec![inner_claim.cid(), outer_claim.cid()];
+    premises.sort();
+    premises.dedup();
 
     Ok(DomainClaim {
         domain: DomainKind::FunctionContract,
@@ -160,6 +170,7 @@ fn compose_function_contract_claims(
             .or_else(|| inner_claim.term.clone()),
         contract,
         from,
+        premises,
         to,
         witness: None,
         verdict: compose_verdict(inner_claim.verdict, outer_claim.verdict),

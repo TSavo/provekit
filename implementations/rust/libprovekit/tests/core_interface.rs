@@ -87,6 +87,7 @@ fn claim_for_contract(contract: FunctionContractMemento) -> DomainClaim {
         }),
         contract,
         from: vec![],
+        premises: vec![],
         to,
         witness: None,
         verdict: Verdict::Unresolved,
@@ -144,6 +145,31 @@ fn core_compose_agrees_with_legacy_function_contract_composition() {
 }
 
 #[test]
+fn core_compose_tracks_source_endpoints_and_input_claims() {
+    let inner = pure_identity_contract("inner_sources", "y");
+    let outer = pure_identity_contract("outer_sources", "x");
+
+    let mut a = claim_for_contract(inner);
+    let source_cid = address(&"source-endpoint");
+    a.from.push(source_cid.clone());
+
+    let mut b = claim_for_contract(outer);
+    let ambient_cid = address(&"ambient-endpoint");
+    b.from.push(a.to.clone());
+    b.from.push(ambient_cid.clone());
+
+    let mut expected_from = vec![source_cid, ambient_cid];
+    expected_from.sort();
+
+    let mut expected_premises = vec![a.cid(), b.cid()];
+    expected_premises.sort();
+
+    let actual = compose(&a, &b).expect("core compose works");
+    assert_eq!(actual.from, expected_from);
+    assert_eq!(actual.premises, expected_premises);
+}
+
+#[test]
 fn transform_and_prove_build_a_contract_claim_with_stub_kits() {
     let kit = CKit::default();
     let domain = FunctionContractDomain;
@@ -197,7 +223,8 @@ fn truth_and_refutation_are_valid_inputs() {
     let Input::Truth(round_tripped) = input else {
         panic!("truth input changed variant");
     };
-    assert_eq!(round_tripped.0.verdict, Verdict::Proved);
+    assert_eq!(round_tripped.claim().verdict, Verdict::Proved);
+    assert!(Truth::try_from(claim_for_contract(pure_identity_contract("not_truth", "x"))).is_err());
 
     let mut refuted_claim = claim_for_contract(pure_identity_contract("refuted_input", "x"));
     refuted_claim.verdict = Verdict::Refuted;
@@ -209,7 +236,14 @@ fn truth_and_refutation_are_valid_inputs() {
     let Input::Refutation(round_tripped) = input else {
         panic!("refutation input changed variant");
     };
-    assert_eq!(round_tripped.0.verdict, Verdict::Refuted);
+    assert_eq!(round_tripped.claim().verdict, Verdict::Refuted);
+    assert!(
+        Refutation::try_from(claim_for_contract(pure_identity_contract(
+            "not_refutation",
+            "x"
+        )))
+        .is_err()
+    );
 }
 
 #[test]

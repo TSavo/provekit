@@ -24,6 +24,7 @@ pub fn transform(
         term: Some(term),
         contract,
         from,
+        premises: vec![],
         to,
         witness: None,
         verdict: Verdict::Unresolved,
@@ -51,7 +52,7 @@ pub fn prove(
 /// Domain::discharge(Check)`. This is the bluepaper's constant-size,
 /// complete verification theorem expressed as primitive composition.
 pub fn verify(truth: &Truth, domain: &dyn Domain, catalog: &dyn Catalog) -> bool {
-    let claim = &truth.0;
+    let claim = truth.claim();
     let cid = claim.cid();
     let Some(bytes) = catalog.get(&cid) else {
         return false;
