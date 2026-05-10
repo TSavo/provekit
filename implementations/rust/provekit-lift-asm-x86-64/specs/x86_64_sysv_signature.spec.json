@@ -1,0 +1,315 @@
+{
+  "schemaVersion": "language-signature-draft-v0.1.0",
+  "kind": "LanguageSignatureMemento",
+  "status": "draft",
+  "language": "x86-64:sysv",
+  "author": "T Savo",
+  "sorts": [
+    {
+      "name": "Reg64",
+      "denotation": "BitVector64"
+    },
+    {
+      "name": "Reg32",
+      "denotation": "BitVector32"
+    },
+    {
+      "name": "Reg16",
+      "denotation": "BitVector16"
+    },
+    {
+      "name": "Reg8",
+      "denotation": "BitVector8"
+    },
+    {
+      "name": "RFLAGS",
+      "fields": ["CF", "PF", "AF", "ZF", "SF", "OF"]
+    },
+    {
+      "name": "Memory",
+      "denotation": "Addr to Byte"
+    },
+    {
+      "name": "Addr",
+      "denotation": "BitVector64"
+    },
+    {
+      "name": "MachineState",
+      "fields": ["registers", "rflags", "memory"]
+    }
+  ],
+  "operations": [
+    {
+      "name": "seq",
+      "sharedFlowControl": true,
+      "shape": ["Stmt", "Stmt", "Stmt"]
+    },
+    {
+      "name": "if",
+      "sharedFlowControl": true,
+      "shape": ["Bool", "Stmt", "Stmt", "Stmt"]
+    },
+    {
+      "name": "while",
+      "sharedFlowControl": true,
+      "shape": ["Bool", "Stmt", "Stmt"]
+    },
+    {
+      "name": "switch",
+      "sharedFlowControl": true,
+      "shape": ["Value", "Cases", "Stmt"]
+    },
+    {
+      "name": "call",
+      "sharedFlowControl": true,
+      "shape": ["Target", "Args", "Stmt"]
+    },
+    {
+      "name": "return",
+      "sharedFlowControl": true,
+      "shape": ["MachineState", "Stmt"]
+    },
+    {
+      "name": "break",
+      "sharedFlowControl": true,
+      "shape": ["Stmt"]
+    },
+    {
+      "name": "continue",
+      "sharedFlowControl": true,
+      "shape": ["Stmt"]
+    },
+    {
+      "name": "skip",
+      "sharedFlowControl": true,
+      "shape": ["Stmt"]
+    },
+    {
+      "name": "mov",
+      "primitive": true,
+      "stateTransformer": "dst := src, with 32-bit register writes zero-extending into the parent 64-bit register"
+    },
+    {
+      "name": "movzx",
+      "primitive": true,
+      "stateTransformer": "dst := zero_extend(src)"
+    },
+    {
+      "name": "movsx",
+      "primitive": true,
+      "stateTransformer": "dst := sign_extend(src)"
+    },
+    {
+      "name": "lea",
+      "primitive": true,
+      "stateTransformer": "dst := effective_address(src)"
+    },
+    {
+      "name": "add",
+      "primitive": true,
+      "stateTransformer": "dst := dst + src modulo width; update ZF, SF, CF, OF"
+    },
+    {
+      "name": "sub",
+      "primitive": true,
+      "stateTransformer": "dst := dst - src modulo width; update ZF, SF, CF, OF"
+    },
+    {
+      "name": "inc",
+      "primitive": true,
+      "stateTransformer": "dst := dst + 1 modulo width; update ZF, SF, OF; preserve CF"
+    },
+    {
+      "name": "dec",
+      "primitive": true,
+      "stateTransformer": "dst := dst - 1 modulo width; update ZF, SF, OF; preserve CF"
+    },
+    {
+      "name": "and",
+      "primitive": true,
+      "stateTransformer": "dst := dst bitand src; update ZF and SF; clear CF and OF"
+    },
+    {
+      "name": "or",
+      "primitive": true,
+      "stateTransformer": "dst := dst bitor src; update ZF and SF; clear CF and OF"
+    },
+    {
+      "name": "xor",
+      "primitive": true,
+      "stateTransformer": "dst := dst bitxor src; update ZF and SF; clear CF and OF"
+    },
+    {
+      "name": "shl",
+      "primitive": true,
+      "stateTransformer": "dst := dst << count modulo width; update ZF, SF, CF, OF"
+    },
+    {
+      "name": "shr",
+      "primitive": true,
+      "stateTransformer": "dst := logical_right_shift(dst, count); update ZF, SF, CF, OF"
+    },
+    {
+      "name": "sar",
+      "primitive": true,
+      "stateTransformer": "dst := arithmetic_right_shift(dst, count); update ZF, SF, CF, OF"
+    },
+    {
+      "name": "cmp",
+      "primitive": true,
+      "stateTransformer": "compute lhs - rhs modulo width; update ZF, SF, CF, OF; do not store result"
+    },
+    {
+      "name": "test",
+      "primitive": true,
+      "stateTransformer": "compute lhs bitand rhs; update ZF and SF; clear CF and OF; do not store result"
+    },
+    {
+      "name": "push",
+      "primitive": true,
+      "stateTransformer": "rsp := rsp - 8; memory[rsp] := src"
+    },
+    {
+      "name": "pop",
+      "primitive": true,
+      "stateTransformer": "dst := memory[rsp]; rsp := rsp + 8"
+    },
+    {
+      "name": "leave",
+      "primitive": true,
+      "stateTransformer": "rsp := rbp; rbp := memory[rsp]; rsp := rsp + 8"
+    },
+    {
+      "name": "jmp",
+      "primitive": true,
+      "stateTransformer": "pc := target"
+    },
+    {
+      "name": "je",
+      "primitive": true,
+      "stateTransformer": "branch when ZF is true"
+    },
+    {
+      "name": "jne",
+      "primitive": true,
+      "stateTransformer": "branch when ZF is false"
+    },
+    {
+      "name": "jl",
+      "primitive": true,
+      "stateTransformer": "branch when signed-less condition holds"
+    },
+    {
+      "name": "jle",
+      "primitive": true,
+      "stateTransformer": "branch when signed-less-or-equal condition holds"
+    },
+    {
+      "name": "jg",
+      "primitive": true,
+      "stateTransformer": "branch when signed-greater condition holds"
+    },
+    {
+      "name": "jge",
+      "primitive": true,
+      "stateTransformer": "branch when signed-greater-or-equal condition holds"
+    },
+    {
+      "name": "js",
+      "primitive": true,
+      "stateTransformer": "branch when SF is true"
+    },
+    {
+      "name": "jns",
+      "primitive": true,
+      "stateTransformer": "branch when SF is false"
+    },
+    {
+      "name": "call",
+      "primitive": true,
+      "stateTransformer": "push return address and transfer control to target"
+    },
+    {
+      "name": "ret",
+      "primitive": true,
+      "stateTransformer": "pop return address and return current machine state"
+    },
+    {
+      "name": "nop",
+      "primitive": true,
+      "stateTransformer": "identity"
+    }
+  ],
+  "equations": [
+    {
+      "name": "seq-assoc",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "seq(seq(a, b), c) = seq(a, seq(b, c))"
+    },
+    {
+      "name": "if-true",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "if(true, a, b) = a"
+    },
+    {
+      "name": "if-false",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "if(false, a, b) = b"
+    },
+    {
+      "name": "if-idemp",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "if(c, a, a) = a"
+    },
+    {
+      "name": "while-false",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "while(false, body) = skip"
+    },
+    {
+      "name": "for-desugar",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "for(init, cond, step, body) = seq(init, while(cond, seq(body, step)))"
+    },
+    {
+      "name": "short-circuit-and",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "and_lazy(a, b) = if(a, b, false)"
+    },
+    {
+      "name": "short-circuit-or",
+      "sharedWith": ["c:c11", "aarch64"],
+      "law": "or_lazy(a, b) = if(a, true, b)"
+    }
+  ],
+  "effectSignatures": [
+    {
+      "name": "MemRead",
+      "operation": "read(memory, addr, width)",
+      "trapOn": ["invalid address", "page fault"]
+    },
+    {
+      "name": "MemWrite",
+      "operation": "write(memory, addr, width, value)",
+      "trapOn": ["invalid address", "page fault", "protection fault"]
+    },
+    {
+      "name": "IO",
+      "operation": "port_io_or_mmio(op, addr, value)",
+      "covers": ["in", "out", "MMIO"]
+    },
+    {
+      "name": "Trap",
+      "operation": "trap(vector)",
+      "covers": ["#UD", "#GP", "#PF"]
+    }
+  ],
+  "cidNotes": [
+    "Shared flow-control operations and laws are expected to collide by CID with C11 and aarch64 once byte-identical operation mementos are minted.",
+    "This file is a draft spec artifact. It is not signed or minted in this crate."
+  ],
+  "semanticsNotes": [
+    "The checked-in lifter hand-writes a core subset only.",
+    "Full x86-64 semantics should be generated from sail-x86, k-x86, or x86sem."
+  ]
+}
