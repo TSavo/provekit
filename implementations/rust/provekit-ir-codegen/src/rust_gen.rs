@@ -1,4 +1,4 @@
-//! Rust code AST and emitter: generate valid Rust source from structured nodes.
+//! Rust code AST and emitter — generate valid Rust source from structured nodes.
 
 use crate::cddl_parser::{Field, IrSchema, TypeDef, TypeKind, Variant};
 
@@ -11,7 +11,7 @@ pub fn emit_module(ir: &IrSchema, _kind: ModuleKind) -> String {
     let mut out = String::new();
     out.push_str("// SPDX-License-Identifier: Apache-2.0\n");
     out.push_str("//\n");
-    out.push_str("// GENERATED FILE: DO NOT EDIT\n");
+    out.push_str("// GENERATED FILE — DO NOT EDIT\n");
     out.push_str("// Source: protocol/provekit-ir.cddl\n");
     out.push_str("// Generator: provekit-ir-codegen\n");
     out.push('\n');
@@ -205,26 +205,6 @@ pub fn emit_block(out: &mut String, block: &Block, indent: usize) {
     }
 }
 
-fn emit_block_with_tail_expr(out: &mut String, block: &Block, indent: usize) {
-    let Some((tail, prefix)) = block.stmts.split_last() else {
-        return;
-    };
-
-    for stmt in prefix {
-        emit_stmt(out, stmt, indent);
-    }
-
-    let pad = "    ".repeat(indent);
-    match tail {
-        Stmt::Expr(expr) | Stmt::Return(expr) => {
-            out.push_str(&pad);
-            emit_expr_inline_indent(out, expr, indent);
-            out.push('\n');
-        }
-        stmt => emit_stmt(out, stmt, indent),
-    }
-}
-
 fn emit_stmt(out: &mut String, stmt: &Stmt, indent: usize) {
     let pad = "    ".repeat(indent);
     match stmt {
@@ -285,7 +265,7 @@ fn emit_stmt(out: &mut String, stmt: &Stmt, indent: usize) {
                     }
                 } else {
                     out.push_str("{\n");
-                    emit_block_with_tail_expr(out, &arm.body, indent + 2);
+                    emit_block(out, &arm.body, indent + 2);
                     out.push_str(&format!("{}    }},\n", pad));
                 }
             }
@@ -323,35 +303,6 @@ fn emit_expr_inline_indent(out: &mut String, expr: &Expr, indent: usize) {
             out.push('.');
             out.push_str(method);
             out.push('(');
-            let optimized_args;
-            let args = if method == "map" && args.len() == 1 {
-                if let Expr::Closure { params, body } = &args[0] {
-                    if params.len() == 1 {
-                        if let Expr::Call {
-                            func,
-                            args: call_args,
-                        } = body.as_ref()
-                        {
-                            if call_args.len() == 1
-                                && matches!(&call_args[0], Expr::Var(name) if name == &params[0])
-                            {
-                                optimized_args = vec![Expr::Raw(func.clone())];
-                                &optimized_args
-                            } else {
-                                args
-                            }
-                        } else {
-                            args
-                        }
-                    } else {
-                        args
-                    }
-                } else {
-                    args
-                }
-            } else {
-                args
-            };
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     out.push_str(", ");
@@ -391,14 +342,14 @@ fn emit_expr_inline_indent(out: &mut String, expr: &Expr, indent: usize) {
                         }
                         _ => {
                             out.push_str("{\n");
-                            emit_block_with_tail_expr(out, &arm.body, indent + 2);
+                            emit_block(out, &arm.body, indent + 2);
                             out.push_str(&arm_pad);
                             out.push_str("},\n");
                         }
                     }
                 } else {
                     out.push_str("{\n");
-                    emit_block_with_tail_expr(out, &arm.body, indent + 2);
+                    emit_block(out, &arm.body, indent + 2);
                     out.push_str(&arm_pad);
                     out.push_str("},\n");
                 }
@@ -431,12 +382,12 @@ fn emit_expr_inline_indent(out: &mut String, expr: &Expr, indent: usize) {
             out.push_str("if ");
             emit_expr_inline_indent(out, cond, indent);
             out.push_str(" {\n");
-            emit_block_with_tail_expr(out, then_branch, indent + 1);
+            emit_block(out, then_branch, indent + 1);
             out.push_str(&"    ".repeat(indent));
             out.push('}');
             if let Some(else_b) = else_branch {
                 out.push_str(" else {\n");
-                emit_block_with_tail_expr(out, else_b, indent + 1);
+                emit_block(out, else_b, indent + 1);
                 out.push_str(&"    ".repeat(indent));
                 out.push('}');
             }
@@ -520,6 +471,6 @@ pub fn emit_function(
         out.push_str(r);
     }
     out.push_str(" {\n");
-    emit_block_with_tail_expr(out, body, 1);
+    emit_block(out, body, 1);
     out.push_str("}\n");
 }

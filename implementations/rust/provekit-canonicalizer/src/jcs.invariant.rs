@@ -85,7 +85,7 @@ pub fn invariants() {
         },
     );
 
-    // -- Object key ordering: structural claim. ----------------------------
+    // -- Object key ordering — structural claim. ----------------------------
     //
     // RFC 8785 §3.2.3 mandates Unicode-codepoint sort of keys. The IR
     // can express the call-site invariant "encode_jcs is a function"

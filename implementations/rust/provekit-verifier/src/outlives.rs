@@ -57,12 +57,12 @@ impl RegionGraph {
             return DischargeOutcome::Discharged;
         }
 
-        // Direct fact
+        // Axiom 2: direct fact
         if self.facts.iter().any(|f| f.longer == a && f.shorter == b) {
             return DischargeOutcome::Discharged;
         }
 
-        // Axiom 2: transitivity via DFS reachability
+        // Axiom 4: transitivity via DFS reachability
         if self.reachable(a, b, &mut Vec::new()) {
             return DischargeOutcome::Discharged;
         }

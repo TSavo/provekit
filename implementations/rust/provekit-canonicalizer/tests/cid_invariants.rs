@@ -95,7 +95,7 @@ fn blake3_512_hex_helper_matches_blake3_512_of() {
 
 #[test]
 fn cid_distinguishes_byte_strings_from_text() {
-    // The hash function operates on bytes: hashing the same bytes
+    // The hash function operates on bytes — hashing the same bytes
     // through different APIs (str vs &[u8]) yields the same CID.
     let s: &str = "abc";
     let b: &[u8] = b"abc";
