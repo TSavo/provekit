@@ -1,5 +1,5 @@
 /**
- * The `property()` constructor — the top-level entry point for
+ * The `property()` constructor: the top-level entry point for
  * declaring IR properties. Every property is a named claim about
  * a scoped piece of code, expressed as an IrFormula.
  */
@@ -36,7 +36,7 @@ export interface Property {
  *
  * `bindings` maps variable names to Sort values. When `formula` is a
  * function, it receives an object of `IrTerm` handles keyed by the
- * same names — one `var`-term per binding. This lets authors write:
+ * same names: one `var`-term per binding. This lets authors write:
  *
  *   formula: ({ b }) => assert.notEqual(b, 0)
  *

@@ -50,7 +50,7 @@ export function liftFile(sourceFile: ts.SourceFile, sourcePath: string): Adapter
           itemName: cand.name,
           reason: r.reason,
         });
-      // Don't descend into a recognized candidate — the inner
+      // Don't descend into a recognized candidate: the inner
       // fc.assert(fc.property(...)) would otherwise re-match as a
       // module-scope candidate and double-count.
       return;
@@ -182,7 +182,7 @@ function liftCandidate(c: Candidate, sourcePath: string): LiftResult {
     };
   }
 
-  // Predicate body — require a single `return <expr>` or expression body.
+  // Predicate body: require a single `return <expr>` or expression body.
   const bodyExpr = extractPredicateBodyExpression(predicate);
   if (!bodyExpr) {
     return { kind: "skip", reason: "predicate body must be a single expression" };
@@ -313,7 +313,7 @@ function liftOperand(expr: ts.Expression): OperandLift {
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
     return { kind: "ok", term: { kind: "const", value: expr.text, sort: StringSort } };
   }
-  // Arithmetic binary on simple terms — encode as Ctor (kit-extension).
+  // Arithmetic binary on simple terms: encode as Ctor (kit-extension).
   if (ts.isBinaryExpression(expr)) {
     const arithName = arithOp(expr.operatorToken.kind);
     if (!arithName) {
@@ -328,7 +328,7 @@ function liftOperand(expr: ts.Expression): OperandLift {
       term: { kind: "ctor", name: arithName, args: [l.term, r.term] },
     };
   }
-  // Single-argument call — treat as a Ctor in the IR.
+  // Single-argument call: treat as a Ctor in the IR.
   if (ts.isCallExpression(expr) && expr.arguments.length <= 2) {
     const callee = expr.expression;
     let name: string | null = null;

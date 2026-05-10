@@ -1,4 +1,4 @@
-//! Cross-language equivalence runner — Rust path.
+//! Cross-language equivalence runner: Rust path.
 //!
 //! Usage: cargo run -- <fixture-name>
 //! Emits: compact JSON of the Declaration[] for the named fixture.

@@ -31,7 +31,7 @@ all the way down to V8's signed catalog (when published).
 ## Why install it
 
 The user installs this for the **types + helpers** they wanted. They
-get the **protocol substrate** along for the ride — adoption asymmetry
+get the **protocol substrate** along for the ride: adoption asymmetry
 in action: refusing means giving up typed helpers, which nobody does.
 
 Once installed:
@@ -49,8 +49,8 @@ types. The protocol came along.
 ## Deprecation roadmap
 
 When upstream ts-types (the canonical types package the ecosystem
-converges on) adopts the protocol natively — registering the same
-bridge declarations at module load — this shim deprecates with a
+converges on) adopts the protocol natively: registering the same
+bridge declarations at module load: this shim deprecates with a
 one-line dependency swap.
 
 **Critically: propertyHash CIDs stay stable across the migration.**
@@ -73,7 +73,7 @@ publish: it's not a fork of the protocol, it's a delivery vehicle.
   detection at semantic level (per the supply-chain spec).
 - **VS Code users**: install this + the ProvekIt LSP, see live
   diagnostics for invariants in your editor.
-- **CI gates**: install this, run `provekit verify` — a PR that
+- **CI gates**: install this, run `provekit verify`: a PR that
   breaks an invariant fails the gate before reaching production.
 
 All from one `npm install`.

@@ -9,7 +9,7 @@
 //   * `mintImplication(args) -> ClaimEnvelope`
 //
 // Honest scope: signature validity is cryptographic; the IR captures
-// shape — every minted envelope carries a CID with the standard prefix
+// shape: every minted envelope carries a CID with the standard prefix
 // and a signature with the ed25519 prefix.
 
 import {
@@ -47,7 +47,7 @@ export function invariants(): void {
 
   // -- mintContract requires at least one of pre/post/inv. ----------------
   // Modeled as: invocation count for non-empty contracts is >= 1. The
-  // CALL with all three undefined throws — operationally enforced by
+  // CALL with all three undefined throws: operationally enforced by
   // the implementation; we record the obligation as a length floor on
   // the produced contractName field.
   must(

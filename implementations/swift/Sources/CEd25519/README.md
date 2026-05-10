@@ -1,4 +1,4 @@
-# CEd25519 — vendored Ed25519 thin wrapper for the Swift kit
+# CEd25519: vendored Ed25519 thin wrapper for the Swift kit
 
 **Canonical source:** `tools/ed25519-vendored/`. This directory is a
 **copy**, NOT a symlink, because SwiftPM does not discover targets

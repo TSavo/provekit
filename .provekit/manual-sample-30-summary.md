@@ -1,4 +1,4 @@
-# #115 step 2 — manual-30 gate summary (ROUND 2 / v3)
+# #115 step 2: manual-30 gate summary (ROUND 2 / v3)
 
 **Sample salt:** `115-step2-v1`
 **Reviewer:** manual-30 labeler (Claude Opus 4.7 1M)
@@ -51,7 +51,7 @@ The two architectural fixes worked exactly as designed:
 
 ## What round-1 fixes did NOT address
 
-Both architectural fixes are *structural* — they verify the matched node is on the changed side of the diff. They do not verify that the principle's *semantic claim* matches the bug's *intent*.
+Both architectural fixes are *structural*: they verify the matched node is on the changed side of the diff. They do not verify that the principle's *semantic claim* matches the bug's *intent*.
 
 ### Failure mode 1: `variable-staleness` shape-matches almost any if-with-assignment
 
@@ -73,17 +73,17 @@ The principle's stated claim is "fall-through path sees the unmodified value", b
 
 The `was_replaced_by_addition` relation accepts any `added` post node that strictly encloses the unchanged BinaryExpression.
 
-- **#19 hexo/Bug-12** — post adds `.toString()` around `(data.slug || data.title)`. The encloser is a CallExpression on a MemberExpression, not a BinaryExpression. No clause was added.
-- **#24 eslint/Bug-184** — fix is `expected = false` → `expected = leadingComments.length > 0`. The matched falsy_default has to be elsewhere in the file's surrounding code; no OR-chain extension exists.
+- **#19 hexo/Bug-12**: post adds `.toString()` around `(data.slug || data.title)`. The encloser is a CallExpression on a MemberExpression, not a BinaryExpression. No clause was added.
+- **#24 eslint/Bug-184**: fix is `expected = false` → `expected = leadingComments.length > 0`. The matched falsy_default has to be elsewhere in the file's surrounding code; no OR-chain extension exists.
 
 The principle's stated claim is "OR-chain was extended in the production fix; the matched version is missing a clause that the maintainer added", but the relation does not require the encloser to itself be a `BinaryExpression` (or a `falsy_default` truthiness coercion).
 
 ### Failure mode 3: arithmetic principles still co-fire on incidental arithmetic
 
-- **#18 eslint/Bug-246** — `subtraction-underflow + variable-staleness`. The actual fix is a comment-scoping rewrite using `getCommentsInNode` + `isLocatedBefore`. The subtraction `commentGroup.length - 1` is in the dirty zone but is incidental to the bug. The dirty-set filter caught the worst class of FP but not this one.
-- **#27 eslint/Bug-301** — `multiplication-overflow + variable-staleness`. The fix discriminates `typeof options[parent.type] === "number"` vs string `"first"`. Multiplication is small-scale indent arithmetic, not overflow-prone. The principle has a known capability gap (`value_comparison` not implemented) so it cannot suppress on small-domain operands.
+- **#18 eslint/Bug-246**: `subtraction-underflow + variable-staleness`. The actual fix is a comment-scoping rewrite using `getCommentsInNode` + `isLocatedBefore`. The subtraction `commentGroup.length - 1` is in the dirty zone but is incidental to the bug. The dirty-set filter caught the worst class of FP but not this one.
+- **#27 eslint/Bug-301**: `multiplication-overflow + variable-staleness`. The fix discriminates `typeof options[parent.type] === "number"` vs string `"first"`. Multiplication is small-scale indent arithmetic, not overflow-prone. The principle has a known capability gap (`value_comparison` not implemented) so it cannot suppress on small-domain operands.
 
-## Disagrees — full list with corrections
+## Disagrees: full list with corrections
 
 - **#17 eslint/Bug-232 (variable-staleness):** null-guard, not staleness → pending
 - **#18 eslint/Bug-246 (subtraction-underflow + variable-staleness):** comment-padding rewrite → pending

@@ -1,4 +1,4 @@
-// Package verifier is Go's bridge enforcement workflow — the protocol-
+// Package verifier is Go's bridge enforcement workflow: the protocol-
 // first verifier. Mirrors the TS impl's 6-stage pipeline:
 //  1. load-all-proofs        → unified CID-keyed pool
 //  2. enumerate-callsites    → bridge call sites in property mementos
@@ -28,7 +28,7 @@ import (
 // formulaToMemento indexes formula CIDs → memento CIDs for O(1) verification.
 //
 // BundleMembers tracks bundle CID → set of member CIDs for the forward
-// pin (BridgeDeclaration.ConsequentBundlePinned, NORMATIVE — see
+// pin (BridgeDeclaration.ConsequentBundlePinned, NORMATIVE: see
 // protocol/specs/2026-04-30-ir-formal-grammar.md § "Bridge target
 // pinning: the shim-poisoning vector"). Multi-valued because the same
 // member CID can legitimately appear in more than one bundle (one
@@ -260,7 +260,7 @@ type LoadError struct {
 	Reason    string
 }
 
-// CallSite is a (bridge, property memento, arg term) triple — the
+// CallSite is a (bridge, property memento, arg term) triple: the
 // per-call-site obligation downstream stages discharge.
 //
 // BridgeSourceContractCID and BridgeTargetProofCID mirror the

@@ -1,8 +1,8 @@
 /**
  * Stub declarations for the SURFACE form of `provekit/ir` and
  * `provekit/sorts`, used to make test fixtures type-check under
- * tsc.createProgram. The lifter never reads these — it works at
- * the AST level — but the TypeChecker needs them to resolve
+ * tsc.createProgram. The lifter never reads these: it works at
+ * the AST level: but the TypeChecker needs them to resolve
  * imports without flooding diagnostics.
  *
  * The shape mirrors spec §7 and §5.

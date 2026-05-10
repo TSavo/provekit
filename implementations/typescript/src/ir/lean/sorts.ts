@@ -35,7 +35,7 @@ export class LeanUnsupportedError extends Error {
  * primitives are emitted as bare identifiers (the caller is responsible for
  * declaring them as opaque types in the preamble).
  *
- * Tuple, set, and function sorts throw — they require Mathlib lemmas that
+ * Tuple, set, and function sorts throw: they require Mathlib lemmas that
  * the translator does not commit to.
  */
 export function emitSort(sort: Sort): string {

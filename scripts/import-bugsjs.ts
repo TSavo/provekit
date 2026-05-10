@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/import-bugsjs.ts — generate corpus scenarios from a local clone of
+ * scripts/import-bugsjs.ts: generate corpus scenarios from a local clone of
  * github.com/BugsJS/bugs-data.
  *
  * Usage:

@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-discover.ts — calibration runner for Phase 2-B (discovery).
+ * scripts/harvest-discover.ts: calibration runner for Phase 2-B (discovery).
  *
  * For each candidate that recognition mode does NOT cover, ask the LLM to
  * distill a principle from the diff + commit message. Writes results to
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   mkdirSync(stagingDir, { recursive: true });
 
   // Build provider + bridge to the fix-layer LLMProvider shape (see
-  // cli.fix.ts:632 for the original — same pattern).
+  // cli.fix.ts:632 for the original: same pattern).
   const realProvider = createProvider();
   const llm: LLMProvider = {
     complete: async (params: { prompt: string; model?: "haiku" | "sonnet" | "opus" }) => {
@@ -106,7 +106,7 @@ async function main(): Promise<void> {
 
   let processed = 0;
   let skippedRecognized = 0;
-  // All candidates we examined, indexed by "<project>-<bugId>" — used by the
+  // All candidates we examined, indexed by "<project>-<bugId>": used by the
   // promotion pass at end-of-run as the negative cohort source.
   const candidatesById = new Map<string, HarvestCandidate>();
   // Recognized provenance entries to write at end (if --persist-provenance).

@@ -1,5 +1,5 @@
 /**
- * MementoPool — the verification state machine.
+ * MementoPool: the verification state machine.
  *
  * Architecture principle: the memento IS the verification.
  * To verify something is to find its memento in the pool.

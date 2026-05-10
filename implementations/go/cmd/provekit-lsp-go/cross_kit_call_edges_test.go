@@ -1,11 +1,11 @@
-// cross_kit_call_edges_test.go — conformance tests for call-edge stream
+// cross_kit_call_edges_test.go: conformance tests for call-edge stream
 // emission per protocol/specs/2026-05-03-bridge-linkage-protocol.md §1 R1.
 //
-// Test 1: same-kit call edge — Go function calling another Go function.
+// Test 1: same-kit call edge: Go function calling another Go function.
 //
 //	Both sourceContractCid and targetContractCid are populated.
 //
-// Test 2: cross-kit cgo call edge — Go function calling C.rustFunc(...).
+// Test 2: cross-kit cgo call edge: Go function calling C.rustFunc(...).
 //
 //	targetContractCid is null; targetSymbol is "rust-kit:rustFunc".
 //
@@ -204,7 +204,7 @@ func TestCallEdge_CgoRustKit(t *testing.T) {
 }
 
 // TestCallEdge_JCSBytesDeterministic asserts that lifting the same
-// source twice produces byte-identical callEdge JSON — confirming the
+// source twice produces byte-identical callEdge JSON: confirming the
 // call-edge stream is content-addressed and deterministic.
 func TestCallEdge_JCSBytesDeterministic(t *testing.T) {
 	parseOnce := func() string {

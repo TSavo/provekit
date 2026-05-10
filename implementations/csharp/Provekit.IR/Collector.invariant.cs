@@ -3,13 +3,13 @@
 // .invariant.cs for Provekit.IR/Collector.cs
 //
 // Public surface covered:
-//   * BeginCollecting()           — clears state + counter
-//   * Must(name, precondition)    — registers pre-only contract
-//   * Contract(name, pre?, post?, inv?) — registers any contract
-//   * Finish() / FinishBridges()  — drains state
+//   * BeginCollecting(): clears state + counter
+//   * Must(name, precondition): registers pre-only contract
+//   * Contract(name, pre?, post?, inv?): registers any contract
+//   * Finish() / FinishBridges(): drains state
 //
 // Honest scope:
-//   Lifecycle invariants — Finish() after BeginCollecting() with no
+//   Lifecycle invariants: Finish() after BeginCollecting() with no
 //   intervening Must/Contract returns an empty list. Contract() with
 //   all three of pre/post/inv null throws.
 
@@ -35,7 +35,7 @@ public static class CollectorInvariants
         Contract("csharp_collector_must_appends_one",
             post: Eq(Ctor("MustAppendCount"), Num(1)));
 
-        // Contract(...) with all-null pre/post/inv throws — encoded as
+        // Contract(...) with all-null pre/post/inv throws: encoded as
         // a contract whose post asserts the length-0 of the throw path.
         Contract("csharp_collector_contract_all_null_throws",
             post: Eq(Ctor("ThrowsOnAllNull"), Num(1)));

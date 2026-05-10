@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// ClaimEnvelope — mints signed contract / bridge ClaimEnvelopes.
+// ClaimEnvelope: mints signed contract / bridge ClaimEnvelopes.
 //
 // Mirrors the go reference at
 // implementations/go/provekit-ir-symbolic/claim_envelope/. v1.1.0 cut:
@@ -442,7 +442,7 @@ public struct ClaimMinter: Sendable {
 
 // MARK: - Helpers shared with the orchestrator
 
-/// `hashValue(v) := ComputeCID(JCS(v))` — the v1.1.0 protocol's standard
+/// `hashValue(v) := ComputeCID(JCS(v))`: the v1.1.0 protocol's standard
 /// content-address used for preHash / postHash / invHash, propertyHash,
 /// and bindingHash.
 public func hashValue(_ v: JcsCanonical) -> String {

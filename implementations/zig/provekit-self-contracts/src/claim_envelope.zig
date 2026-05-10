@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// claim_envelope — `mint_contract` / `mint_bridge` build a signed memento
+// claim_envelope: `mint_contract` / `mint_bridge` build a signed memento
 // in the v1.2 LAYERED shape introduced by
 // `protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md`:
 //
@@ -128,7 +128,7 @@ fn assembleLayered(
     try envelope_b.add("declaredAt", try Value.newString(alloc, declared_at));
     try envelope_b.add("signature", try Value.newString(alloc, signature_str));
     const envelope_v = try envelope_b.finish();
-    // envelope_v owned — we need to encode it (for attestation CID), then
+    // envelope_v owned: we need to encode it (for attestation CID), then
     // re-use it as part of the outer memento.
 
     const envelope_jcs = try jcs.encode(alloc, envelope_v);
@@ -600,7 +600,7 @@ test "empty out binding rejected" {
 
 test "minimal contract mint produces well-formed CID" {
     const alloc = std.testing.allocator;
-    // pre = atomic(">") — we just feed a small Value; full IR-shape ergonomics
+    // pre = atomic(">"): we just feed a small Value; full IR-shape ergonomics
     // live in the sibling provekit-ir package.
     var pre_b = ObjectBuilder.init(alloc);
     try pre_b.add("kind", try Value.newString(alloc, "atomic"));
@@ -662,7 +662,7 @@ test "compute contract set CID order-independent" {
 
 test "empty contract set CID matches the value pinned in attestation" {
     // The pinned value in .provekit/self-contracts-attestations/zig.json is
-    // the contractSetCid for the empty contract array — i.e. JCS([]) hashed.
+    // the contractSetCid for the empty contract array: i.e. JCS([]) hashed.
     const alloc = std.testing.allocator;
     const empty: [][]const u8 = &.{};
     const cid = try computeContractSetCid(alloc, @constCast(empty));

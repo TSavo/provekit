@@ -1,6 +1,6 @@
 # ProvekIt principle library
 
-This directory holds the **starter principle library** — universally-true
+This directory holds the **starter principle library**: universally-true
 axioms that ProvekIt's runtime matcher fires against every commit.
 
 The runtime path is the DSL evaluator (`src/dsl/evaluator.ts`). Only
@@ -79,7 +79,7 @@ principle regardless of project language.
 When a principle is minted at runtime (harvest promotion,
 `PrincipleStore.add`), it writes into the partition matching the
 language tag captured at derivation time. Without a tag, it defaults
-to `universal/` — the conservative choice (a candidate that turns out
+to `universal/`: the conservative choice (a candidate that turns out
 to be language-specific can be moved later, but a candidate filed
 under a specific language that turns out to be universal would be
 invisible to projects in other languages).
@@ -160,19 +160,19 @@ summary: 11 pass, 4 diff-context-only, 1 known-capability-gap, 0 skipped, 0 fail
 ```
 
 Status legend:
-- **PASS** — fires on the buggy fixture, does NOT fire on the clean
+- **PASS**: fires on the buggy fixture, does NOT fire on the clean
   fixture. Strict adversarial validation.
-- **DIFF-CONTEXT-ONLY** — DSL gates on `is_in_dirty_set` /
+- **DIFF-CONTEXT-ONLY**: DSL gates on `is_in_dirty_set` /
   `was_replaced_by_addition`. These principles only fire during corpus
   mining where pre/post diff context is active. Static fixture pairs
   cannot exercise them by design; their adversarial story is
   corpus-precision measurement (`scripts/run-principles-corpus.ts`),
   not the fixture pair.
-- **KNOWN-CAPABILITY-GAP** — over-matches owing to a documented gap in
+- **KNOWN-CAPABILITY-GAP**: over-matches owing to a documented gap in
   the SAST extractor. Acknowledged in the DSL file's own header.
   Not strictly adversarially valid today; kept because the locus is
   still useful signal.
-- **FAIL-NO-FIRE / FAIL-FALSE-POSITIVE / ERROR** — would force a
+- **FAIL-NO-FIRE / FAIL-FALSE-POSITIVE / ERROR**: would force a
   retirement to `disabled/`. Currently zero entries.
 
 ## Retired entries
@@ -182,7 +182,7 @@ task #129 were heuristics, DSL-pending stubs, or capability-gap stuck
 entries that did not match the curation rules above. Each has a
 `<name>.retired.json` sidecar capturing reason + timestamp.
 
-`disabled/` stays flat (NOT partitioned) — these are retired entries
+`disabled/` stays flat (NOT partitioned): these are retired entries
 that no longer load. Re-partitioning retired heuristics would imply
 they're candidates for revival, which contradicts their status.
 
@@ -191,8 +191,8 @@ they're candidates for revival, which contradicts their status.
 The original task brief asked to "drop the heuristic tier code path."
 Audit found **no heuristic tier exists in the codebase**. The closest
 mechanism is `principlesLibrary.confidenceTier` in
-`src/db/schema/principlesLibrary.ts` — values
-`"advisory" | "warning" | "blocking"` — which is a trust-progression
+`src/db/schema/principlesLibrary.ts`: values
+`"advisory" | "warning" | "blocking"`: which is a trust-progression
 ladder for harvest-mined principles, not a heuristic-vs-axiom
 distinction. It was left intact.
 

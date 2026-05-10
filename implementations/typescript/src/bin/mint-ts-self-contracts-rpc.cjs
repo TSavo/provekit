@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-ts-self-contracts-rpc — RPC entry point for the typescript-self-contracts
+// mint-ts-self-contracts-rpc: RPC entry point for the typescript-self-contracts
 // lift surface.
 //
 // Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on stdio.

@@ -5,7 +5,7 @@
 //   name        = "test"
 //   version     = "1.0.0"
 //   declaredAt  = "2026-04-30T12:00:00.000Z"
-//   members     = {} (empty — simplest fixture)
+//   members     = {} (empty: simplest fixture)
 //   signerCid   = "sha256:000000000000abcd"
 //   signerSeed  = 32 bytes of 0x42
 

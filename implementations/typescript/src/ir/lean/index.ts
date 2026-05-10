@@ -11,8 +11,7 @@
  *     theorem wrapper). Useful when the caller assembles its own file.
  *   - emitLeanTheorem({ axioms, assertion, name? }): full Lean 4 source
  *     for the theorem statement, with axiom declarations for user sorts,
- *     ctors, and uninterpreted predicates. Output is the statement only —
- *     the proof body is `:= sorry` so the file parses; the proof is the
+ *     ctors, and uninterpreted predicates. Output is the statement only: *     the proof body is `:= sorry` so the file parses; the proof is the
  *     next stage's job (the Action concatenates the user's proof file).
  *
  * Scope (per spec): plain Lean 4. Bool / Int / String / user-defined
@@ -79,7 +78,7 @@ export interface LeanTheoremOutput {
  * into the statement as `A -> <assertion>`. This keeps the theorem self-
  * contained and avoids relying on Lean's `axiom` declarations for content
  * (we use `axiom` only for opaque types and uninterpreted symbols, not
- * for asserted axioms — those are folded into the statement so the proof
+ * for asserted axioms: those are folded into the statement so the proof
  * gets them as hypotheses).
  */
 export function emitLeanTheorem(args: LeanTheoremArgs): LeanTheoremOutput {

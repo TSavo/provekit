@@ -4,10 +4,10 @@
 // emits literal_gt and literal_gte for those comparisons.
 //
 // We use literal_gt (matches `x > N` and `N < x` mirrored) on the LHS variable to
-// suppress. literal_gte would also be a valid guard but gives narrower coverage — pick
+// suppress. literal_gte would also be a valid guard but gives narrower coverage: pick
 // literal_gt as the dominant idiom; revisit if false-positive count remains high.
 //
-// One-sided check (LHS only) — same DSL limit as addition-overflow.
+// One-sided check (LHS only): same DSL limit as addition-overflow.
 //
 // Tightened (2026-04-27, #115 step 2.5): added is_in_dirty_set guard so the
 // principle only fires on subtractions actually changed by the fix, not stable

@@ -29,7 +29,7 @@ parity assertions.
 JSON byte-equivalence is a sanity proxy. Per
 `docs/specs/2026-04-29-ast-canonicalizer.md`, the load-bearing
 cross-language hash is CBOR over the canonicalized FOL form (NNF +
-de-Bruijn + AC-sorted) — not the raw IR JSON. A future canonicalizer
+de-Bruijn + AC-sorted): not the raw IR JSON. A future canonicalizer
 pass consumes either kit's IR and produces matching bytes for hashing.
 
 ## Usage
@@ -63,10 +63,10 @@ go test ./ir/...
 ```
 
 Coverage:
-- `types_test.go` — type construction + JSON marshal field order
-- `primitives_test.go` — every primitive's IR shape and sort
-- `property_test.go` — collector, describe paths, skips, recovery
-- `canonical_form_test.go` — byte-identical JSON parity with TS
+- `types_test.go`: type construction + JSON marshal field order
+- `primitives_test.go`: every primitive's IR shape and sort
+- `property_test.go`: collector, describe paths, skips, recovery
+- `canonical_form_test.go`: byte-identical JSON parity with TS
 
 ## Spec gap
 

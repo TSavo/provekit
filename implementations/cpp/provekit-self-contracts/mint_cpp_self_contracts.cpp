@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint_cpp_self_contracts — the C++ peer self-contracts orchestrator.
+// mint_cpp_self_contracts: the C++ peer self-contracts orchestrator.
 //
 // Walks every .invariant.cpp file in the C++ workspace by calling its
 // extern "C" registrar, mints all collected contracts as signed

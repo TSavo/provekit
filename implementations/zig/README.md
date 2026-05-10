@@ -109,7 +109,7 @@ The binary installs to `zig-out/bin/provekit-lift-zig`.
 
 - **Zero dependencies**: Only Zig standard library.
 - **Union enums**: Zig's `union(enum)` maps perfectly to the CDDL `kind`-tagged unions.
-- **Allocator explicit**: All heap usage takes an allocator parameter — no hidden allocations.
+- **Allocator explicit**: All heap usage takes an allocator parameter: no hidden allocations.
 - **Comptime-ready**: IR types are plain data; suitable for comptime code generation.
 
 ## LSP Plugin

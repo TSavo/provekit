@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
  * Placeholder self-identifying signer CID for tests. v1.1.0 hashes are
  * full BLAKE3-512 digests prefixed with "blake3-512:"; this is a
  * shape-conformant test stub (`s` repeated to 128 hex chars worth of
- * `1`s — the value never gets re-derived in these unit tests).
+ * `1`s: the value never gets re-derived in these unit tests).
  */
 const SIGNER_CID = "blake3-512:" + "1".repeat(128);
 
@@ -153,7 +153,7 @@ describe("proofEnvelope", () => {
 });
 
 // ---------------------------------------------------------------------------
-// binaryCid (proof-file-format spec — supply-chain anchor)
+// binaryCid (proof-file-format spec: supply-chain anchor)
 // ---------------------------------------------------------------------------
 
 describe("proofEnvelope binaryCid", () => {

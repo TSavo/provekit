@@ -23,7 +23,7 @@
  * The TP/FP labeling step is manual (read the diff; is the matched
  * BinaryExpression actually an enum-disjunction that the fix extended?).
  * Aim for ~30 matches across the corpus so we can pick 10 for inspection
- * — that's enough to give a stable precision read at the per-shape level.
+ *: that's enough to give a stable precision read at the per-shape level.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs";
 import { dirname, join } from "path";

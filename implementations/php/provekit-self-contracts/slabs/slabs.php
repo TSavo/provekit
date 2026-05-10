@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt PHP self-contracts — Canonical contract definitions.
+/** ProvekIt PHP self-contracts: Canonical contract definitions.
  *  Mirrors the Ruby/Go/Rust self-contracts slab pattern.
  *  Contract names prefixed with `php_` per kit convention.
  */

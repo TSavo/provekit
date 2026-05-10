@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Provekit.Lift.Core.SourceLifter — Roslyn-driven source-to-IR pipeline
+// Provekit.Lift.Core.SourceLifter: Roslyn-driven source-to-IR pipeline
 // for the C# kit. Compiles a C# source string in-process, applies
 // DataAnnotations reflection lift to every public class, and adds any
 // //provekit: annotation declarations.

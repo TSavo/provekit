@@ -327,7 +327,7 @@ test "unicode_atomic_predicates_round_trip_verbatim" {
         }
         const enc = try encode(alloc, v);
         defer alloc.free(enc);
-        // Encoded form is `"<sym>"` — the same UTF-8 bytes wrapped in quotes.
+        // Encoded form is `"<sym>"`: the same UTF-8 bytes wrapped in quotes.
         try std.testing.expectEqual(@as(usize, sym.len + 2), enc.len);
         try std.testing.expectEqual(@as(u8, '"'), enc[0]);
         try std.testing.expectEqual(@as(u8, '"'), enc[enc.len - 1]);

@@ -1,8 +1,8 @@
 /**
- * Layered bridges demo — the DAG forms via bridge mementos.
+ * Layered bridges demo: the DAG forms via bridge mementos.
  *
  * Premise: a TS user calls parseInt. The TS-kit's `parseInt.invariant.ts`
- * doesn't redefine parseInt's contract — it BRIDGES from the TS surface
+ * doesn't redefine parseInt's contract: it BRIDGES from the TS surface
  * symbol to V8's published parseInt contract. V8's contract bridges to
  * ECMA-262's spec leaf. ECMA-262's spec leaf bridges to IEEE 754. IEEE
  * 754 bridges to a hardware FPU verification artifact.
@@ -122,7 +122,7 @@ function mintBridgeMemento(args: {
   return signed;
 }
 
-console.log("Layered bridges demo — the DAG forms via bridge mementos");
+console.log("Layered bridges demo: the DAG forms via bridge mementos");
 console.log("=".repeat(70));
 console.log();
 
@@ -199,9 +199,9 @@ console.log(`  cid: ${layer3_v8.cid}`);
 console.log();
 
 // ---------------------------------------------------------------------------
-// LAYER 2: TS-kit bridge — parseInt.invariant.ts
+// LAYER 2: TS-kit bridge: parseInt.invariant.ts
 // ---------------------------------------------------------------------------
-console.log("Layer 2: TS-kit bridge (parseInt.invariant.ts — bridges to V8)");
+console.log("Layer 2: TS-kit bridge (parseInt.invariant.ts: bridges to V8)");
 
 const layer2_tsKit = mintBridgeMemento({
   bindingHash: hash16("ts-kit:global.parseInt"),

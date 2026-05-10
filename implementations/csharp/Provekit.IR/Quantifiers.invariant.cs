@@ -3,9 +3,9 @@
 // .invariant.cs for Provekit.IR/Quantifiers.cs
 //
 // Public surface covered:
-//   * ForAll(sort, body) — auto-named bound variable (_xN)
+//   * ForAll(sort, body): auto-named bound variable (_xN)
 //   * Exists(sort, body)
-//   * ResetCounter() — used by Collector.BeginCollecting
+//   * ResetCounter(): used by Collector.BeginCollecting
 //
 // Honest scope:
 //   Bound-variable naming follows a deterministic counter pattern:

@@ -4,10 +4,10 @@
 // + index.ts (`hashIrJson`, `propertyHashFromFormula`, `contractPropertyHash`).
 //
 // Public surface covered:
-//   * `propertyHashFromFormula(formula) -> string` — self-identifying,
+//   * `propertyHashFromFormula(formula) -> string`: self-identifying,
 //     length 139 ("blake3-512:" + 128 hex).
-//   * `hashIrJson(value) -> string` — same shape.
-//   * `contractPropertyHash(spec) -> string` — hashes {pre?,post?,inv?,outBinding}.
+//   * `hashIrJson(value) -> string`: same shape.
+//   * `contractPropertyHash(spec) -> string`: hashes {pre?,post?,inv?,outBinding}.
 //
 // Honest scope: the IR cannot prove BLAKE3 collision resistance.
 // We can assert shape: output length, prefix presence, determinism.

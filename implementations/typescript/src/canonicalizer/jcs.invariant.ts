@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // .invariant.ts for implementations/typescript/src/claimEnvelope/canonicalize.ts
-// (the JCS encoder for claim envelopes — RFC 8785).
+// (the JCS encoder for claim envelopes: RFC 8785).
 //
 // Public surface covered:
-//   * `canonicalEncode(value) -> Buffer` — UTF-8 bytes of canonical JSON.
-//   * `canonicalJsonString(value) -> string` — sorted-keys, no whitespace.
+//   * `canonicalEncode(value) -> Buffer`: UTF-8 bytes of canonical JSON.
+//   * `canonicalJsonString(value) -> string`: sorted-keys, no whitespace.
 //
 // Honest scope: the IR cannot model RFC 8785 §3.2.3 key-order at the
 // byte-shape level. It CAN say: encode is a function (deterministic),

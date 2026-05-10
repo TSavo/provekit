@@ -1,5 +1,5 @@
 /**
- * Cross-language demo — TypeScript surface form.
+ * Cross-language demo: TypeScript surface form.
  *
  * Logical claim: for all integers x, the successor x+1 is greater than x.
  *

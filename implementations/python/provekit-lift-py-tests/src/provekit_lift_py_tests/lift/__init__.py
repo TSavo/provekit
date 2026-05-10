@@ -1,1 +1,1 @@
-# provekit.lift — lift adapters for Python validation libraries.
+# provekit.lift: lift adapters for Python validation libraries.

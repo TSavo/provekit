@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-proof-envelope-zig — Side B (language-native) crypto
+// provekit-proof-envelope-zig: Side B (language-native) crypto
 // substrate for the zig kit.
 //
 // Surface (idiomatic Zig):
-//   - BLAKE3-512 hashing                — std.crypto.hash.Blake3 (stdlib)
-//   - JCS canonicalization (RFC 8785)   — re-exported from provekit-ir
-//   - Ed25519 sign/verify               — std.crypto.sign.Ed25519 (stdlib)
-//   - Deterministic CBOR (RFC 8949 §4.2.1) — local encoder, ~90 LOC
-//   - .proof envelope build/verify      — local, byte-identical to rust
+//   - BLAKE3-512 hashing: std.crypto.hash.Blake3 (stdlib)
+//   - JCS canonicalization (RFC 8785): re-exported from provekit-ir
+//   - Ed25519 sign/verify: std.crypto.sign.Ed25519 (stdlib)
+//   - Deterministic CBOR (RFC 8949 §4.2.1): local encoder, ~90 LOC
+//   - .proof envelope build/verify: local, byte-identical to rust
 //
 // All four primitives ship from the language stdlib or this package;
 // nothing vendored. JCS is hand-rolled in provekit-ir using Zig's
@@ -76,7 +76,7 @@ pub fn blake3_512_of(alloc: std.mem.Allocator, bytes: []const u8) ![]u8 {
 }
 
 // ---------------------------------------------------------------------------
-// Tests — pull in sibling test binaries.
+// Tests: pull in sibling test binaries.
 // ---------------------------------------------------------------------------
 
 test {

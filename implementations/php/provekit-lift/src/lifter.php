@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt PHP Lifter — parses PHP source, lifts contracts, speaks RPC.
+/** ProvekIt PHP Lifter: parses PHP source, lifts contracts, speaks RPC.
  *  Single-binary entry: `php lifter.php --rpc`
  */
 
@@ -95,7 +95,7 @@ class PhpFileParser
 
             // PHP 8 attributes
             if ($t['raw'] === '#[' || $t['kind'] === 'T_ATTRIBUTE') {
-                // Skip for now — complex parse
+                // Skip for now: complex parse
             }
 
             // Function definition followed by contract
@@ -162,7 +162,7 @@ class PhpFileParser
         }
 
         if ($target) {
-            // Target only — create placeholder contract
+            // Target only: create placeholder contract
             return new ContractDecl(
                 name: $funcName,
                 post: new \ProvekIt\Ir\AtomicFormula('true', []),

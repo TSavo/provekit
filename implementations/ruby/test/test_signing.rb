@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Ed25519 signing tests. Determinism + known-vector parity with the
-# Rust kit (ed25519-dalek) and Python kit (PyNaCl) — all three
+# Rust kit (ed25519-dalek) and Python kit (PyNaCl): all three
 # implement RFC 8032 Ed25519 and produce byte-identical signatures
 # for the same (seed, message) pair.
 

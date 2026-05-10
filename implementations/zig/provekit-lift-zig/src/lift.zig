@@ -1,6 +1,6 @@
 // provekit-lift-zig/src/lift.zig
 //
-// Pure parsing logic — no IO.  Imported by provekit-lift-zig (the CLI binary)
+// Pure parsing logic: no IO.  Imported by provekit-lift-zig (the CLI binary)
 // and by provekit-lsp-zig (the LSP plugin).
 
 const std = @import("std");

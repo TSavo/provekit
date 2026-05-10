@@ -12,11 +12,11 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — zod consumed AST-only.
+// @ts-ignore: zod consumed AST-only.
 import { z } from "zod";
 import * as fc from "fast-check";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — class-validator consumed AST-only.
+// @ts-ignore: class-validator consumed AST-only.
 import {
   IsNotEmpty,
   MinLength,
@@ -94,7 +94,7 @@ export class CreateProductDto {
 /** Skipped: contains an unsupported decorator (custom validator). */
 export class UnsupportedDto {
   @IsNotEmpty()
-  // @ts-ignore — fictional custom decorator the adapter must skip on.
+  // @ts-ignore: fictional custom decorator the adapter must skip on.
   @CustomMagicCheck()
   payload: string;
 }

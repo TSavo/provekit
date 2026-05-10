@@ -4,11 +4,11 @@ Drives the verifier four times against the same fixture obligation,
 once per mode defined in
 [`protocol/specs/2026-04-30-multi-solver-protocol.md`](../../protocol/specs/2026-04-30-multi-solver-protocol.md):
 
-* **single (default)** — invoke one solver, return its verdict
-* **chain** — sequential fall-through; first definitive verdict wins
-* **portfolio first-wins** — parallel via rayon; first definitive verdict wins
-* **portfolio consensus** — parallel; ALL must agree, otherwise loud disagreement
-* **per-fragment dispatch** — pick the matching solver by formula theory
+* **single (default)**: invoke one solver, return its verdict
+* **chain**: sequential fall-through; first definitive verdict wins
+* **portfolio first-wins**: parallel via rayon; first definitive verdict wins
+* **portfolio consensus**: parallel; ALL must agree, otherwise loud disagreement
+* **per-fragment dispatch**: pick the matching solver by formula theory
 
 Uses `binary = "stub:..."` solvers so the demo runs in CI without any
 solver binaries installed. Swap to a real binary path

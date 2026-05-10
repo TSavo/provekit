@@ -218,7 +218,7 @@ console.log();
 // COMPOSE THE CATALOG ROOT
 //
 // The catalog root memento composes all bridges as inputCids. Its CID is
-// the kit's proofHash — the single 32-character hex value that goes in
+// the kit's proofHash: the single 32-character hex value that goes in
 // package.json's provekit.proofHash field.
 // ---------------------------------------------------------------------------
 
@@ -274,7 +274,7 @@ writeFileSync(join(OUTPUT_DIR, "public-key.b64"), publicKeyB64 + "\n");
 const packageFragment = {
   name: KIT_NAME,
   version: KIT_VERSION,
-  description: "The TypeScript kit for ProvekIt — built-in symbol bridges to V8 / ECMA-262 / IEEE 754 / hardware",
+  description: "The TypeScript kit for ProvekIt: built-in symbol bridges to V8 / ECMA-262 / IEEE 754 / hardware",
   files: [
     "dist/",
     "lib/",

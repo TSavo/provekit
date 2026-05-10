@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// LoadAllProofsStage — Stage 1 of the bridge enforcement workflow.
+// LoadAllProofsStage: Stage 1 of the bridge enforcement workflow.
 // Walks every .proof file under projectRoot (project root +
 // node_modules/{*,@*/*}/) and builds the unified MementoPool that
 // every downstream stage hash-looks up against.

@@ -17,7 +17,7 @@
 //   3. The .proof file is installed in node_modules at the kit's
 //      package root (mimics `npm install @example/cpp-kit`).
 //   4. The TS consumer authors invariants by CALLING the bridged
-//      kit primitive `parseInt(...)` — that call emits a
+//      kit primitive `parseInt(...)`: that call emits a
 //      Ctor("parseInt", [arg]) IrTerm.
 //   5. The consumer's collected declarations get minted + bundled
 //      into the consumer's own .proof.

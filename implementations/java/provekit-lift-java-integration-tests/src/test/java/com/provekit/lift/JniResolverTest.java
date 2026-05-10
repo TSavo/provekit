@@ -10,7 +10,7 @@ import com.provekit.ir.CallEdgeDecl;
 import java.util.*;
 
 /**
- * Tests for JniResolver — Java JNI FFI call-site resolver per spec #114 R3.
+ * Tests for JniResolver: Java JNI FFI call-site resolver per spec #114 R3.
  *
  * Tests mirror Go's cgo_resolver_test.go (PR #127) and Python's
  * test_ctypes_resolver.py (PR #131): same five structural tests, same
@@ -163,7 +163,7 @@ public class JniResolverTest {
     }
 
     // -----------------------------------------------------------------------
-    // Test 5: Byte-determinism — two runs over same source produce identical output
+    // Test 5: Byte-determinism: two runs over same source produce identical output
     // -----------------------------------------------------------------------
 
     @Test

@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-tag-sample-corrective.ts — pull a sample of pending-principle
+ * scripts/harvest-tag-sample-corrective.ts: pull a sample of pending-principle
  * candidates whose diff has at least one deletion. Per the advisor's call:
  * pure-additive fixes (deletions == 0) are bugs where the fix is "write new
  * code", not "correct wrong code". Those are out-of-scope for the principle

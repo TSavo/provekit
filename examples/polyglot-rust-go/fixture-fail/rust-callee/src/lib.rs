@@ -1,4 +1,4 @@
-// rust-callee/src/lib.rs — FAILURE FIXTURE
+// rust-callee/src/lib.rs: FAILURE FIXTURE
 //
 // Exposes `process(n: i32) -> i32` via C FFI.
 //

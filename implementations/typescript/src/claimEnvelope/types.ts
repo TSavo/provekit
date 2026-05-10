@@ -1,5 +1,5 @@
 /**
- * Universal claim envelope — TypeScript types.
+ * Universal claim envelope: TypeScript types.
  *
  * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
  *
@@ -144,7 +144,7 @@ export interface WorkflowRunEvidence {
 }
 
 /**
- * BridgeEvidence — declares that a host-language symbol is the surface
+ * BridgeEvidence: declares that a host-language symbol is the surface
  * realization of a deeper-layer published contract. The bridge composes
  * by hash; it does NOT redefine the contract.
  */
@@ -210,7 +210,7 @@ export interface LlmAuthoring {
 export type ContractAuthoring = KitAuthorAuthoring | LiftAuthoring | LlmAuthoring;
 
 /**
- * ContractEvidence — a behavior contract for a function-shaped binding.
+ * ContractEvidence: a behavior contract for a function-shaped binding.
  * Carries any combination of precondition (pre), postcondition (post),
  * and inductive invariant (inv); at least one MUST be present.
  *
@@ -229,21 +229,21 @@ export interface ContractEvidence {
     post?: unknown;
     /** Optional inductive invariant formula (IR-JSON). */
     inv?: unknown;
-    /** DERIVED: computeCid(canonical(pre)) — present iff pre is present. */
+    /** DERIVED: computeCid(canonical(pre)): present iff pre is present. */
     preHash?: string;
-    /** DERIVED: computeCid(canonical(post)) — present iff post is present. */
+    /** DERIVED: computeCid(canonical(post)): present iff post is present. */
     postHash?: string;
-    /** DERIVED: computeCid(canonical(inv)) — present iff inv is present. */
+    /** DERIVED: computeCid(canonical(inv)): present iff inv is present. */
     invHash?: string;
     /** Optional IR-level proof certificate (EvidenceTerm) attached at authoring time. */
     irEvidence?: EvidenceTerm;
-    /** Authoring provenance — typed union per spec. */
+    /** Authoring provenance: typed union per spec. */
     authoring: ContractAuthoring;
   };
 }
 
 /**
- * ImplicationEvidence — a signed proof witness that one IR formula
+ * ImplicationEvidence: a signed proof witness that one IR formula
  * universally implies another. Cached implication mementos are how the
  * handshake algorithm shortcuts a future solver call.
  */
@@ -265,7 +265,7 @@ export interface ImplicationEvidence {
 }
 
 /**
- * ExtensionDeclarationEvidence — wraps an IR extension declaration
+ * ExtensionDeclarationEvidence: wraps an IR extension declaration
  * (sort / predicate / ctor introduction) per the IR extension protocol
  * (protocol/specs/2026-04-30-ir-extension-protocol.md).
  *
@@ -287,7 +287,7 @@ export interface ExtensionDeclarationEvidence {
      * The IR extension declaration. Conforms to ExtensionDeclaration in
      * src/ir/extensions/registry.ts (sort | predicate | ctor variants).
      * Stored as a JSON value; the embedded signer/signature fields (if
-     * any) are unused — the envelope's producerSignature is the
+     * any) are unused: the envelope's producerSignature is the
      * authority.
      */
     declaration: unknown;

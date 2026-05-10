@@ -12,9 +12,9 @@
  *   PROVEKIT_SQL_TRACE=1 npx tsx scratch/c6-repro.ts < my-dsl.txt
  *
  * Exit codes:
- *   0 — all principles compiled and prepared cleanly
- *   1 — at least one principle's SQL failed to prepare (bug reproduced)
- *   2 — DSL parse or compile-time error (separate bug class)
+ *   0: all principles compiled and prepared cleanly
+ *   1: at least one principle's SQL failed to prepare (bug reproduced)
+ *   2: DSL parse or compile-time error (separate bug class)
  */
 
 import { readFileSync } from "fs";
@@ -45,7 +45,7 @@ principle division-by-zero {
 }
   `.trim(),
 
-  // A principle that contains "SQL" as a literal — first guess at what
+  // A principle that contains "SQL" as a literal: first guess at what
   // the LLM might have emitted. The DSL grammar permits string literals
   // inside `where ... == "..."`, so this should compile but may produce
   // surprising SQL. (Currently fails at compile-time: 'ts' isn't a
@@ -61,7 +61,7 @@ principle sql-mention {
 }
   `.trim(),
 
-  // Probe: callee_name is a Text column on calls — does the compiler
+  // Probe: callee_name is a Text column on calls: does the compiler
   // emit valid SQL when the literal contains a SQL keyword?
   "calls-named-sql": `
 principle calls-sql {
@@ -75,7 +75,7 @@ principle calls-sql {
   `.trim(),
 
   // Probe: capture name that resembles a SQL keyword. Compiler builds
-  // alias __cap_<name> — if cap.name is "SQL" the alias becomes
+  // alias __cap_<name>: if cap.name is "SQL" the alias becomes
   // __cap_SQL which is a valid identifier; should compile fine, but
   // worth verifying.
   "capture-named-sql": `

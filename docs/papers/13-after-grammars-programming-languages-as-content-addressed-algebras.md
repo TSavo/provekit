@@ -8,11 +8,11 @@
 >
 > **Premise the earlier papers established.** A content-addressed federated substrate of canonical predicates. Lifters that emit canonical contracts. After Languages (paper 12) closed the meta-level: the lifters' algorithms themselves become content-addressed mementos under AMP, with verifiable refinement-claims per language port. Federation by CID; drift mechanically detectable; the substrate hosts its own production mechanism.
 >
-> **What this paper argues.** That paper 12's mechanism extends one level further: programming language grammars themselves are content-addressable algebras. Every language is a finite signature — a set of sorts, operations, and equational laws. The substrate's catalog already has the apparatus to host them. Compilation between languages becomes a content-addressed algebra homomorphism. Cross-language verification becomes composition of morphisms. The substrate becomes the federation of programming language theory itself, where every claim about behavior in any language at any abstraction layer settles into one algebraic structure. We prove signature identity, morphism soundness, compilation correctness as homomorphism, and initial-algebra completeness, in nine lemmas.
+> **What this paper argues.** That paper 12's mechanism extends one level further: programming language grammars themselves are content-addressable algebras. Every language is a finite signature: a set of sorts, operations, and equational laws. The substrate's catalog already has the apparatus to host them. Compilation between languages becomes a content-addressed algebra homomorphism. Cross-language verification becomes composition of morphisms. The substrate becomes the federation of programming language theory itself, where every claim about behavior in any language at any abstraction layer settles into one algebraic structure. We prove signature identity, morphism soundness, compilation correctness as homomorphism, and initial-algebra completeness, in nine lemmas.
 
 ## §0: The claim
 
-Universal algebra and category theory established, decades ago, that programming language grammars ARE algebras. Goguen's institutions, Mosses' action semantics, Plotkin & Power's algebraic effects, Reynolds' polymorphic type theory, Mac Lane's categorical semantics — all settled the mathematical question. A grammar is a signature. A typing rule is an equation. A semantics is an algebra homomorphism into a target structure.
+Universal algebra and category theory established, decades ago, that programming language grammars ARE algebras. Goguen's institutions, Mosses' action semantics, Plotkin & Power's algebraic effects, Reynolds' polymorphic type theory, Mac Lane's categorical semantics: all settled the mathematical question. A grammar is a signature. A typing rule is an equation. A semantics is an algebra homomorphism into a target structure.
 
 What has not been done before is making those algebras CONTENT-ADDRESSED and FEDERATED.
 
@@ -50,7 +50,7 @@ Plotkin's structural operational semantics gives reduction rules. Big-step seman
 
 ### §1.5 Effect structure
 
-Plotkin & Power: every observable computational effect arises from an algebraic theory (a Lawvere theory) — a set of operations and equational laws. Bauer & Pretnar: handlers are algebra homomorphisms. Koka, OCaml 5, Eff, Frank operationalize this. We landed it as the algebraic-effects design.
+Plotkin & Power: every observable computational effect arises from an algebraic theory (a Lawvere theory): a set of operations and equational laws. Bauer & Pretnar: handlers are algebra homomorphisms. Koka, OCaml 5, Eff, Frank operationalize this. We landed it as the algebraic-effects design.
 
 ### §1.6 Whole languages
 
@@ -69,7 +69,7 @@ A `LanguageSignatureMemento` is a `FunctionContractMemento` (per CCP) with conve
 - **`equations`**: a content-addressed list of `EquationMemento` references (algebraic laws over the operations)
 - **`effect_signatures`**: a content-addressed list of `EffectSignatureMemento` references (the language's interaction primitives, per algebraic-effects design)
 
-A `LanguageMorphismMemento` is a `FunctionContractMemento` describing a translation between two language signatures. Its `pre` cites the source signature CID; its `post` asserts the homomorphism property — for each operation in the source, its image under the morphism satisfies the target signature's equations. Discharge of a morphism's homomorphism obligation produces a signed receipt.
+A `LanguageMorphismMemento` is a `FunctionContractMemento` describing a translation between two language signatures. Its `pre` cites the source signature CID; its `post` asserts the homomorphism property: for each operation in the source, its image under the morphism satisfies the target signature's equations. Discharge of a morphism's homomorphism obligation produces a signed receipt.
 
 This adds NO new primitives to the substrate. The catalog already hosts FunctionContractMementos (CCP). LSP defines conventions on what specific FunctionContractMementos describe. Federation, signing, evolution all inherit from the existing protocols.
 
@@ -99,7 +99,7 @@ Implication: cross-language verification chains compose mechanically. Verifying 
 
 *Proof.* Standard universal algebra. The term algebra `T_L` is the set of finite trees built from `L`'s operations, modulo `L`'s equations. Universality follows from the freeness of the term construction: given any algebra `A` interpreting `L`'s sorts and operations, the unique homomorphism is defined by structural induction on terms. □
 
-This makes EVERY semantics for a language an instance of one canonical pattern: define the target algebra, derive the unique homomorphism, that is the semantics. Operational, denotational, axiomatic, type-theoretic — all are L-algebras differing only in their target.
+This makes EVERY semantics for a language an instance of one canonical pattern: define the target algebra, derive the unique homomorphism, that is the semantics. Operational, denotational, axiomatic, type-theoretic: all are L-algebras differing only in their target.
 
 ### Lemma 4 (Cross-Language Soundness via Homomorphism)
 
@@ -153,27 +153,27 @@ Implication: programming language design becomes a substrate-hosted, content-add
 
 We address the strongest objections.
 
-### Objection A: "Real languages are not finite signatures. Macros, reflection, eval, dynamic linking, dependent types — these aren't tractable as algebras."
+### Objection A: "Real languages are not finite signatures. Macros, reflection, eval, dynamic linking, dependent types: these aren't tractable as algebras."
 
-Granted, partly. A language with macro-expansion has a meta-level signature governing the macro language; the expanded language is the colimit. A language with eval has a HIGHER-ORDER signature whose operations include "interpret a term." These are extensions, not refutations: the substrate's catalog can host higher-order signatures (they are still finitely-presentable in the meta-language). The harder cases — dependent types, type-level computation, full reflection — push toward Martin-Löf type theory or CIC, both of which ARE finitely-presentable algebraic theories at the meta-level. The substrate's hosting capacity is the expressive ceiling of universal algebra extended with higher-order constructions, which is the same ceiling as the prove portfolio's solvers (Coq for CIC; Lean for HoTT-flavored constructions).
+Granted, partly. A language with macro-expansion has a meta-level signature governing the macro language; the expanded language is the colimit. A language with eval has a HIGHER-ORDER signature whose operations include "interpret a term." These are extensions, not refutations: the substrate's catalog can host higher-order signatures (they are still finitely-presentable in the meta-language). The harder cases: dependent types, type-level computation, full reflection: push toward Martin-Löf type theory or CIC, both of which ARE finitely-presentable algebraic theories at the meta-level. The substrate's hosting capacity is the expressive ceiling of universal algebra extended with higher-order constructions, which is the same ceiling as the prove portfolio's solvers (Coq for CIC; Lean for HoTT-flavored constructions).
 
 ### Objection B: "Compilation correctness as a single homomorphism oversimplifies. CompCert took 200 person-years."
 
-CompCert proved correctness for a specific source/target pair via 200 person-years of mechanized Coq work. Lemma 5 says compiler correctness IS a homomorphism property — it does not claim discharging the homomorphism is cheap. What changes under LSP is that the artifact CompCert produced (a Coq proof of refinement) becomes a content-addressed receipt usable across the substrate, citable from any other compiler effort, and composable with any other morphism for cross-language chains. The work is still hard; the work is now federated.
+CompCert proved correctness for a specific source/target pair via 200 person-years of mechanized Coq work. Lemma 5 says compiler correctness IS a homomorphism property: it does not claim discharging the homomorphism is cheap. What changes under LSP is that the artifact CompCert produced (a Coq proof of refinement) becomes a content-addressed receipt usable across the substrate, citable from any other compiler effort, and composable with any other morphism for cross-language chains. The work is still hard; the work is now federated.
 
 ### Objection C: "Adding a sort or operation to the catalog requires consensus on what 'integer addition' or 'function call' means. Federation will fragment."
 
-The catalog admits multiple distinct mementos for the same intuitive concept. There can be `IntegerAddition_TwosComplement_64bit` and `IntegerAddition_BigNum_Unbounded` and `IntegerAddition_Modular_p` as three distinct mementos with three distinct CIDs. They are not the same algorithm; they should not have the same CID. Where they CAN be related — when one refines another, or when a morphism between languages translates one to another — the relationship is itself a memento, content-addressed and signed. Federation is not by intuition; federation is by mechanical CID equality with explicit refinement links. This is the discipline; it is the point.
+The catalog admits multiple distinct mementos for the same intuitive concept. There can be `IntegerAddition_TwosComplement_64bit` and `IntegerAddition_BigNum_Unbounded` and `IntegerAddition_Modular_p` as three distinct mementos with three distinct CIDs. They are not the same algorithm; they should not have the same CID. Where they CAN be related: when one refines another, or when a morphism between languages translates one to another: the relationship is itself a memento, content-addressed and signed. Federation is not by intuition; federation is by mechanical CID equality with explicit refinement links. This is the discipline; it is the point.
 
 ### Objection D: "Language designers will not use this. Catalog-minting is overhead they will not adopt."
 
-Language designers already produce signatures — they call them BNF grammars, type-system descriptions, formal semantics papers. The substrate's catalog is the place to put what they already produce. The overhead is replacing prose-and-LaTeX descriptions with content-addressed JSON mementos. The payoff is mechanical federation, drift detection, and cross-language reasoning. Adoption follows tooling: when the next mainstream language ships with a `LanguageSignatureMemento` and a discharged morphism to LLVM, every other language gets free interop verification with it.
+Language designers already produce signatures: they call them BNF grammars, type-system descriptions, formal semantics papers. The substrate's catalog is the place to put what they already produce. The overhead is replacing prose-and-LaTeX descriptions with content-addressed JSON mementos. The payoff is mechanical federation, drift detection, and cross-language reasoning. Adoption follows tooling: when the next mainstream language ships with a `LanguageSignatureMemento` and a discharged morphism to LLVM, every other language gets free interop verification with it.
 
 ### Objection E: "Initial algebras and Lawvere theories are abstract; this paper is a category-theory pitch with no engineering payoff."
 
 The engineering payoff is concrete. Federation Lemma 4 says: a contract proven in language A is mechanically valid in language B given a discharged morphism. Lemma 5 says: compiler correctness is a single attestable claim. Lemma 6 says: cross-language effect federation (Python `yield` and Go `Send` binding to the same effect signature) is mechanical. These are deliverable engineering outcomes. The category theory is the framework that makes them composable; it is not the deliverable.
 
-### Objection F: "What about non-algebraic semantics — probabilistic, quantum, hyperproperties?"
+### Objection F: "What about non-algebraic semantics: probabilistic, quantum, hyperproperties?"
 
 Probabilistic semantics extend to algebraic theories over distribution monads (Giry monad, Plotkin's probabilistic powerdomain). Quantum semantics extend to algebraic theories over completely positive maps (Selinger). Hyperproperties extend via product algebras. Each is a substantial extension; each is well-studied in the literature; each can be a future signature class in the catalog. The substrate's mechanism (catalog of content-addressed signatures) is general enough to host them as they are formalized.
 
@@ -232,7 +232,7 @@ After v0.5.0, the substrate's federation works at the language level, not just t
 
 The substrate's first axiom is *Supra omnia, rectum*. Paper 12 (After Languages) closed the inconsistency at the algorithm layer: the lifters' algorithms become content-addressed mementos under AMP. This paper closes the inconsistency at the language layer: the languages themselves become content-addressed signatures under LSP.
 
-After Grammars, every claim about behavior — in any language, at any abstraction layer, derived from any k_i — settles into one algebraic structure. Cross-language federation becomes morphism composition. Compilation correctness becomes morphism discharge. Programming language design becomes substrate-native R&D.
+After Grammars, every claim about behavior: in any language, at any abstraction layer, derived from any k_i: settles into one algebraic structure. Cross-language federation becomes morphism composition. Compilation correctness becomes morphism discharge. Programming language design becomes substrate-native R&D.
 
 The substrate's first axiom now applies one more level inward: not just to its outputs, not just to its production mechanism, but to the LANGUAGES IT REASONS ABOUT. The federation is complete. Every layer is auditable substrate.
 

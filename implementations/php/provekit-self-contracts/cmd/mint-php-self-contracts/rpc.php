@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt PHP self-contracts — JSON-RPC 2.0 NDJSON handler.
+/** ProvekIt PHP self-contracts: JSON-RPC 2.0 NDJSON handler.
  *  Daemon lifecycle: initialize -> (lift)* -> shutdown.
  *  Persists across lift calls, exits on EOF or shutdown method.
  */

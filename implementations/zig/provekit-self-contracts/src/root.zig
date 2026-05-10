@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-self-contracts (zig) — Side B substrate library.
+// provekit-self-contracts (zig): Side B substrate library.
 //
 // Native Zig implementation of the substrate primitives required to mint
 // claim envelopes (JCS-canonical layered mementos) and proof envelopes

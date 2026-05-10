@@ -1,4 +1,4 @@
-// ProvekIt LSP Language Plugin — Go
+// ProvekIt LSP Language Plugin: Go
 //
 // A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
 // Parses Go source files and extracts provekit annotations.

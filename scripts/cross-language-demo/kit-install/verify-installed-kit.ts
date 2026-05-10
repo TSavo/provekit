@@ -29,7 +29,7 @@
  * on the bridge claim "this symbol bridges to that CID."
  *
  * Auditing into deeper layers is a downstream tool's job. This script
- * does install-time verification only — local signatures, local CIDs.
+ * does install-time verification only: local signatures, local CIDs.
  *
  * Run:
  *   npx tsx scripts/cross-language-demo/kit-install/verify-installed-kit.ts
@@ -235,7 +235,7 @@ if (installVerification.verdict === "holds") {
   console.log();
   console.log("The consumer's project can now compose against this kit's bridges.");
   console.log("The consumer's local DAG references each bridge by CID. No walking");
-  console.log("into V8 / ECMA-262 / IEEE / hardware was needed — those are bridge");
+  console.log("into V8 / ECMA-262 / IEEE / hardware was needed: those are bridge");
   console.log("targets referenced by hash, audited only if the consumer's policy");
   console.log("demands it.");
 } else {
