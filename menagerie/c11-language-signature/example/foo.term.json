@@ -74,5 +74,5 @@
       }
     ]
   },
-  "wp_value_note": "The branch-sensitive WP value is recorded in foo.expected-wp-contract.json. The current c-collectors-defensive lifter emits a coarser trailing-return contract, recorded in foo.contract.json."
+  "wp_value_note": "The branch-sensitive WP value is recorded in foo.expected-wp-contract.json. The current c-collectors-defensive lifter emits the same branch-sensitive contract in foo.contract.json."
 }

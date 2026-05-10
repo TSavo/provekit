@@ -299,7 +299,7 @@ pk_c_lift_result *pk_c_walker_lift_source_with_options(
         return NULL;
     }
 
-    /* Emit one trivial function-contract per function with a body. */
+    /* Emit one synthesized function-contract per function with a body. */
     for (i = 0; i < facts->n_functions; i++) {
         const pk_c_function_fact *fn = &facts->functions[i];
         WBuf b;
@@ -309,6 +309,20 @@ pk_c_lift_result *pk_c_walker_lift_source_with_options(
             continue;
         }
         pk_c_walker_contract_init(&contract);
+        if (pk_c_walker_function_has_loop(source, fn->name) &&
+            pk_c_lift_result_add_refusal_entry(
+                result,
+                "loop-requires-invariant",
+                path == NULL ? "" : path,
+                fn->locus.line,
+                fn->locus.column,
+                "c-collectors-defensive",
+                "loop body requires an invariant-backed contract") != 0) {
+            pk_c_walker_contract_free(&contract);
+            pk_c_source_facts_free(facts);
+            pk_c_lift_result_free(result);
+            return NULL;
+        }
         if (pk_c_walker_extract_type_predicates(source, fn->name, &contract) != 0 ||
             pk_c_walker_extract_defensive_patterns(source, fn->name, &contract) != 0) {
             pk_c_walker_contract_free(&contract);

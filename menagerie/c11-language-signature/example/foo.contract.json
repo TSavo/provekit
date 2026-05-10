@@ -25,8 +25,40 @@
           "name": "result"
         },
         {
-          "kind": "var",
-          "name": "x"
+          "args": [
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "x"
+                },
+                {
+                  "kind": "const",
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  },
+                  "value": 0
+                }
+              ],
+              "kind": "ctor",
+              "name": "="
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              },
+              "value": -22
+            },
+            {
+              "kind": "var",
+              "name": "x"
+            }
+          ],
+          "kind": "ctor",
+          "name": "ite"
         }
       ],
       "kind": "atomic",
