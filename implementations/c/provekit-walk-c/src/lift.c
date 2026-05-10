@@ -253,6 +253,13 @@ static enum CXChildVisitResult pre_visitor(CXCursor cursor, CXCursor parent, CXC
                 free(callee);
                 return CXChildVisit_Break;
             }
+        } else if (callee != NULL && strcmp(callee, "BUG_ON") == 0 && clang_Cursor_getNumArguments(cursor) == 1) {
+            CXCursor arg = clang_Cursor_getArgument(cursor, 0);
+
+            if (add_pre(ctx, pk_c_walk_formula_negate_take(pk_c_walk_lift_condition(arg))) != 0) {
+                free(callee);
+                return CXChildVisit_Break;
+            }
         }
         free(callee);
     }
