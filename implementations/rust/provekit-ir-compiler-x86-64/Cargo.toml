@@ -1,0 +1,22 @@
+[package]
+name = "provekit-ir-compiler-x86-64"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: x86-64 SysV compile-mode IR term compiler."
+
+[dependencies]
+provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "provekit-ir-x86-64"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_ir_compiler_x86_64"
+path = "src/lib.rs"

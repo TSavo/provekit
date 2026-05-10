@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "language-morphism-draft-v0.1.0",
+  "kind": "LanguageMorphismMemento",
+  "status": "draft",
+  "name": "proofir-c11-algebra-to-x86-64-sysv-core",
+  "author": "T Savo",
+  "mode": "compile",
+  "source": {
+    "kind": "ProofIRTermSignature",
+    "language": "c:c11",
+    "signatureCid": "blake3-512:c942ba70e4b701e139a46590116f5cdc16ab41db277e80e54c01f23e4a7cf6241d4431c60473409cb3f0b61ce27f593071c1c224291f04c61aa04b4773764945",
+    "termEnvelopeKind": "c11-algebra-term",
+    "operationSet": "menagerie/c11-language-signature/catalog/algorithms"
+  },
+  "target": {
+    "kind": "TargetSignature",
+    "language": "x86-64:sysv",
+    "artifactKind": "assembly-source",
+    "mediaType": "text/x-asm",
+    "syntax": "intel",
+    "abi": "System V AMD64 integer subset",
+    "targetSignatureSpec": "../../provekit-lift-asm-x86-64/specs/x86_64_sysv_signature.spec.json"
+  },
+  "compiler": {
+    "crate": "provekit-ir-compiler-x86-64",
+    "binary": "provekit-ir-x86-64",
+    "version": "0.1.0",
+    "determinism": "byte-equal term JSON and target descriptor produce byte-equal assembly"
+  },
+  "operationRealizations": [
+    {
+      "sourceOperation": "seq",
+      "targetRealization": "emit first statement followed by second statement",
+      "x86Instructions": []
+    },
+    {
+      "sourceOperation": "if",
+      "targetRealization": "compile condition to eax, compare against zero, branch to else label with je",
+      "x86Instructions": ["cmp", "je", "jmp"]
+    },
+    {
+      "sourceOperation": "while",
+      "targetRealization": "emit loop head label, condition compare, exit branch, body, and back edge",
+      "x86Instructions": ["cmp", "je", "jmp"],
+      "refusal": "nontrivial invariant payloads are refused until invariant discharge is represented"
+    },
+    {
+      "sourceOperation": "return",
+      "targetRealization": "compile expression to eax and ret",
+      "x86Instructions": ["mov", "ret"]
+    },
+    {
+      "sourceOperation": "call",
+      "targetRealization": "compile up to six integer arguments into rdi, rsi, rdx, rcx, r8, r9 with SysV stack alignment, then call",
+      "x86Instructions": ["mov", "push", "pop", "sub", "call", "add"]
+    },
+    {
+      "sourceOperation": "break",
+      "targetRealization": "jump to the innermost loop exit label",
+      "x86Instructions": ["jmp"]
+    },
+    {
+      "sourceOperation": "continue",
+      "targetRealization": "jump to the innermost loop head label",
+      "x86Instructions": ["jmp"]
+    },
+    {
+      "sourceOperation": "skip",
+      "targetRealization": "emit no instruction",
+      "x86Instructions": []
+    },
+    {
+      "sourceOperation": "eq",
+      "targetRealization": "cmp operands and set al with sete, then zero extend to eax",
+      "x86Instructions": ["cmp", "sete", "movzx"]
+    },
+    {
+      "sourceOperation": "lt",
+      "targetRealization": "cmp operands and set al with setl, then zero extend to eax",
+      "x86Instructions": ["cmp", "setl", "movzx"]
+    },
+    {
+      "sourceOperation": "le",
+      "targetRealization": "cmp operands and set al with setle, then zero extend to eax",
+      "x86Instructions": ["cmp", "setle", "movzx"]
+    },
+    {
+      "sourceOperation": "add",
+      "targetRealization": "compile lhs to eax, rhs to ecx, add eax, ecx",
+      "x86Instructions": ["push", "pop", "add"]
+    },
+    {
+      "sourceOperation": "sub",
+      "targetRealization": "compile lhs to eax, rhs to ecx, sub eax, ecx",
+      "x86Instructions": ["push", "pop", "sub"]
+    },
+    {
+      "sourceOperation": "mul",
+      "targetRealization": "compile lhs to eax, rhs to ecx, imul eax, ecx",
+      "x86Instructions": ["push", "pop", "imul"]
+    },
+    {
+      "sourceOperation": "neg",
+      "targetRealization": "compile operand to eax and neg eax",
+      "x86Instructions": ["neg"]
+    },
+    {
+      "sourceOperation": "and",
+      "targetRealization": "normalize operands to zero or one and emit and eax, ecx",
+      "x86Instructions": ["cmp", "setne", "movzx", "and"]
+    },
+    {
+      "sourceOperation": "or",
+      "targetRealization": "normalize operands to zero or one and emit or eax, ecx",
+      "x86Instructions": ["cmp", "setne", "movzx", "or"]
+    },
+    {
+      "sourceOperation": "not",
+      "targetRealization": "compare operand against zero and emit sete",
+      "x86Instructions": ["cmp", "sete", "movzx"]
+    },
+    {
+      "sourceOperation": "var",
+      "targetRealization": "read the deterministic SysV integer argument register assigned by first occurrence order",
+      "x86Instructions": ["mov"]
+    },
+    {
+      "sourceOperation": "const",
+      "targetRealization": "move integer literal into eax",
+      "x86Instructions": ["mov"]
+    },
+    {
+      "sourceOperation": "deref",
+      "targetRealization": "compile address to rax and load DWORD PTR [rax] into eax",
+      "x86Instructions": ["mov"]
+    },
+    {
+      "sourceOperation": "assign",
+      "targetRealization": "store eax into an assigned variable register or DWORD PTR [address]",
+      "x86Instructions": ["mov"]
+    }
+  ],
+  "homomorphismObligation": {
+    "statement": "For every supported source operation op, compile(apply(op, args)) equals target_apply(image(op), compile(args)) under the x86-64:sysv operational semantics.",
+    "equations": [
+      "seq-assoc",
+      "seq-skip-left",
+      "seq-skip-right",
+      "if-true",
+      "if-false",
+      "if-idemp",
+      "while-false",
+      "not-not",
+      "and-true",
+      "and-false",
+      "or-true",
+      "or-false"
+    ],
+    "dischargeStatus": "draft only, no MorphismDischargeReceipt minted in this crate"
+  },
+  "contractPreservation": {
+    "statement": "For any accepted term t in the core subset, contract(lift_x86_64_sysv(compile_x86_64_sysv(t))) equals repr_x86_64_sysv(contract(t)).",
+    "composition": "A C lifter receipt plus this compile morphism receipt plus the x86-64 lifter receipt gives the ORP v0.2 round trip theorem."
+  },
+  "refusalPolicy": {
+    "unsupportedOperations": "return a refusal through CompileError rather than emit opaque or partial assembly",
+    "unsupportedSorts": "non-integer constants and non-core target shapes are refused",
+    "loops": "loop invariant payloads outside the unit or absent shape are refused"
+  },
+  "notes": [
+    "This is a draft spec artifact. It is not signed or minted in this crate.",
+    "The core subset is hand mapped. The full operation set is mint-more-realizations, not new machinery."
+  ]
+}
