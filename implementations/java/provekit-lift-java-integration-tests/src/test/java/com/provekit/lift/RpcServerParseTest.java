@@ -7,19 +7,19 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Integration test: RpcServer parse method — daemon wire-protocol conformance.
+ * Integration test: RpcServer parse method: daemon wire-protocol conformance.
  *
  * Verifies that the Java LSP plugin correctly handles the canonical NDJSON
  * "parse" method with {path, source} params and returns {declarations, callEdges}
  * per protocol/specs/2026-05-03-bridge-linkage-protocol.md §1 R1.
  *
  * We exercise the RpcServer directly (not as a subprocess) by swapping its
- * PrintWriter target and invoking handle() — the same pattern used by the
+ * PrintWriter target and invoking handle(): the same pattern used by the
  * existing CrossDomainContractEquivalenceTest.
  */
 public class RpcServerParseTest {
 
-    // Java fixture with @NotNull annotations — the core "@NotNull → Scala IDE" demo.
+    // Java fixture with @NotNull annotations: the core "@NotNull → Scala IDE" demo.
     private static final String NOT_NULL_SOURCE = """
             import jakarta.validation.constraints.NotNull;
             public class UserService {
@@ -31,7 +31,7 @@ public class RpcServerParseTest {
             }
             """;
 
-    // Source with embedded double-quotes in a string literal — exercises decodeJsonStringField.
+    // Source with embedded double-quotes in a string literal: exercises decodeJsonStringField.
     private static final String QUOTED_SOURCE = """
             import jakarta.validation.constraints.NotNull;
             public class QuoteService {
@@ -155,7 +155,7 @@ public class RpcServerParseTest {
 
         String response = invokeHandle(request);
 
-        // callEdges must be a JSON array (may be empty — no JNI in fixture).
+        // callEdges must be a JSON array (may be empty: no JNI in fixture).
         int ceIdx = response.indexOf("\"callEdges\":");
         assertTrue(ceIdx >= 0, "Response must have callEdges key");
         int arrStart = response.indexOf('[', ceIdx);

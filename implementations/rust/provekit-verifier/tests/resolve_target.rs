@@ -202,7 +202,7 @@ fn rejects_when_target_proof_cid_does_not_match_bundle() {
     };
 
     let r = resolve_target::run(&cs, &pool);
-    let err = format!("{:?}", r.err().expect("must reject"));
+    let err = format!("{:?}", r.expect_err("must reject"));
     assert!(
         err.contains("BridgeTargetProofCidMismatch"),
         "expected BridgeTargetProofCidMismatch, got: {err}"
@@ -247,7 +247,7 @@ fn rejects_when_pinned_bundle_is_not_loaded() {
     };
 
     let r = resolve_target::run(&cs, &pool);
-    let err = format!("{:?}", r.err().expect("must reject"));
+    let err = format!("{:?}", r.expect_err("must reject"));
     assert!(
         err.contains("BridgeTargetProofCidMismatch"),
         "expected BridgeTargetProofCidMismatch, got: {err}"

@@ -1,5 +1,5 @@
 /**
- * provekit_blake3 — Ruby C extension wrapping vendored BLAKE3.
+ * provekit_blake3: Ruby C extension wrapping vendored BLAKE3.
  *
  * Exposes three methods on Provekit::Blake3 (class-level):
  *   Blake3.hasher_init                            → Ruby String (sizeof(blake3_hasher) bytes,
@@ -88,7 +88,7 @@ provekit_rb_blake3_hasher_finalize(VALUE self, VALUE hasher_str, VALUE out_len_v
     /* No ruby_xfree here: hasher_str's buffer is owned by the Ruby
      * String, freed by GC when the string goes out of scope. The
      * previous code ruby_xfree'd RSTRING_PTR(hasher_str), which
-     * freed memory the GC also tries to free — invalid free. */
+     * freed memory the GC also tries to free: invalid free. */
 
     return out_str;
 }

@@ -130,7 +130,7 @@ fn main() -> ExitCode {
     let built = build_proof_envelope(&proof_input);
 
     // ----- 5. Write <full-cid>.proof to disk -----
-    // v1.1.0 filename shape is `blake3-512:<hex>.proof` — same as the
+    // v1.1.0 filename shape is `blake3-512:<hex>.proof`: same as the
     // C++ and Go peers. Self-identifying so cross-language verifiers
     // can match by regex. The full self-identifying CID is also printed
     // to stdout for downstream consumers.

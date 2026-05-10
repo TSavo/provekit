@@ -1,5 +1,5 @@
 /**
- * instantiate-obligation — Stage 3 of the bridge enforcement workflow.
+ * instantiate-obligation: Stage 3 of the bridge enforcement workflow.
  *
  * Takes a property memento's IrFormula (a forall over the parameter
  * sort) plus the call site's lifted argument term, and returns the

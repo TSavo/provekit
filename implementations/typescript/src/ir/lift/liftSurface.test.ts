@@ -1,5 +1,5 @@
 /**
- * Unit tests for liftSurfaceText — the in-memory `string -> ts.Program ->
+ * Unit tests for liftSurfaceText: the in-memory `string -> ts.Program ->
  * liftProject` helper used by the formulate-via-lifter producer.
  */
 import { describe, it, expect } from "vitest";

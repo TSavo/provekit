@@ -1,5 +1,5 @@
 /**
- * @provekit/ir — TypeScript reference IR library.
+ * @provekit/ir: TypeScript reference IR library.
  *
  * Two surfaces:
  * - Type-dialect: branded types (NonZero, NonEmpty, …) verified by tsserver.

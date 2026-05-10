@@ -1,5 +1,5 @@
 /**
- * Type-dialect brands. Zero runtime cost — the brand field exists only
+ * Type-dialect brands. Zero runtime cost: the brand field exists only
  * in TypeScript's type system. Constructor functions carry the runtime
  * check that constitutes the proof for the brand.
  *
@@ -19,7 +19,7 @@ declare const __brand: unique symbol;
  * is a specialization of this type.
  *
  * A `Branded<T, BrandName>` is assignment-compatible with `T` but
- * not the other way around — tsserver enforces the brand at every
+ * not the other way around: tsserver enforces the brand at every
  * consumption site.
  */
 export type Branded<T, BrandName extends string> = T & {
@@ -67,7 +67,7 @@ export type Range<T extends number | bigint, lo extends number, hi extends numbe
 /**
  * Wrap `x` as NonZero if it is not zero; return null otherwise.
  * The null return is the constructor's way of surfacing the failure
- * without throwing — callers must handle the null case, which
+ * without throwing: callers must handle the null case, which
  * forces them to acknowledge the possibility.
  */
 export function nonZero<T extends number | bigint>(x: T): NonZero<T> | null {
@@ -96,8 +96,7 @@ export function assertNonEmpty<T>(arr: T[]): NonEmpty<T[]> {
 }
 
 /**
- * Wrap `arr` as Sorted. This is a trust-the-caller constructor —
- * runtime verification of sorted-ness is O(n) and not always desired.
+ * Wrap `arr` as Sorted. This is a trust-the-caller constructor: * runtime verification of sorted-ness is O(n) and not always desired.
  * Use `assertSorted` if you want the check.
  */
 export function sorted<T>(arr: T[]): Sorted<T[]> {
@@ -141,7 +140,7 @@ export function refined<T, Description extends string>(
 
 /**
  * Trust-the-caller: mark `x` as Range<T, lo, hi>.
- * Does NOT do a runtime bounds check — use `assertRange` for that.
+ * Does NOT do a runtime bounds check: use `assertRange` for that.
  */
 export function range<T extends number | bigint, lo extends number, hi extends number>(
   x: T,

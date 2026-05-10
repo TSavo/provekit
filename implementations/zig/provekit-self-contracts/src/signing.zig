@@ -67,7 +67,7 @@ fn encodePrefixed(alloc: std.mem.Allocator, prefix: []const u8, raw: []const u8)
 
 /// Verify `message` against `sig_string` (spec form `"ed25519:" + base64(sig)`)
 /// using `pubkey_string` (spec form `"ed25519:" + base64(pubkey)`).
-/// Returns `true` iff valid, `false` for any malformed input — verifiers
+/// Returns `true` iff valid, `false` for any malformed input: verifiers
 /// must fail closed, on a separate code path.
 pub fn verifyString(pubkey_string_: []const u8, sig_string_: []const u8, message: []const u8) bool {
     if (!std.mem.startsWith(u8, pubkey_string_, KEY_PREFIX)) return false;

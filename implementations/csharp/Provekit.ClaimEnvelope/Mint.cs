@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `MintContract` / `MintBridge` / `MintImplication` — build a signed
+// `MintContract` / `MintBridge` / `MintImplication`: build a signed
 // memento envelope (the universal claim-envelope wrapper around a
 // role-specific evidence body). Each returns
 // <see cref="MintedEnvelope"/> with canonical bytes + CID.
@@ -340,7 +340,7 @@ public static class Mint
 
         // Build envelope (signer + declaredAt + signature). Construct
         // with the signature inline rather than mutating an existing
-        // V.Object — V.Object's underlying list is read-only.
+        // V.Object: V.Object's underlying list is read-only.
         var signerPubkey = Sign.Ed25519PubkeyString(args.SignerSeed);
         var envelope = V.Object(
             ("signer", V.String(signerPubkey)),

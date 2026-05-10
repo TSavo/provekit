@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Blake3 — native BLAKE3-512 via the vendored portable C reference impl.
+// Blake3: native BLAKE3-512 via the vendored portable C reference impl.
 //
 // Replaces the python-shellout in `Sources/Provekit/IR.swift`'s legacy
 // `Blake3.hex(_:)`. Same output shape ("blake3-512:" + 128 lowercase hex

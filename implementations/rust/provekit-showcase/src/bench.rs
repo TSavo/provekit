@@ -80,10 +80,10 @@ struct LatticePool {
     /// Antecedent-hash -> list of implication record indices.
     by_antecedent: HashMap<String, Vec<usize>>,
     impls: Vec<ImpRecord>,
-    /// All publisher-post hashes we observed in any contract — used
+    /// All publisher-post hashes we observed in any contract: used
     /// as the source of "post" sample values.
     post_hashes: Vec<String>,
-    /// All consumer-pre hashes we observed in any contract — used as
+    /// All consumer-pre hashes we observed in any contract: used as
     /// the source of "pre" sample values.
     pre_hashes: Vec<String>,
     /// Total bytes on disk.
@@ -142,7 +142,7 @@ pub fn run(args: &BenchmarkArgs) -> Result<(), BenchError> {
 
     // Half the queries are guaranteed cache-hits (we sample an
     // existing implication and ask its (antecedent, consequent)
-    // pair). The other half are random — these measure the
+    // pair). The other half are random: these measure the
     // tier-2 negative-lookup cost (hash-into-pool miss). The
     // mix gives an honest overall median.
     let imp_keys: Vec<(&String, &String)> = pool
@@ -793,7 +793,7 @@ fn scan_value_end(bytes: &[u8], start: usize) -> usize {
             i
         }
         _ => {
-            // bare scalar (number, true, false, null) — runs until ',' or '}' or ']'
+            // bare scalar (number, true, false, null): runs until ',' or '}' or ']'
             while i < bytes.len() && bytes[i] != b',' && bytes[i] != b'}' && bytes[i] != b']' {
                 i += 1;
             }

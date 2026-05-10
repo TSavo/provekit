@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-extract-report.ts — run extractBugs against each BugsJS
+ * scripts/harvest-extract-report.ts: run extractBugs against each BugsJS
  * project clone and print survival stats. Inspection-only; no LLM, no library
  * writes. Used to calibrate filters before running the full harvest pipeline.
  *

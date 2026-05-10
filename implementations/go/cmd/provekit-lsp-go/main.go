@@ -1,4 +1,4 @@
-// provekit-lsp-go — NDJSON LSP plugin for Go.
+// provekit-lsp-go: NDJSON LSP plugin for Go.
 //
 // Protocol:
 //
@@ -591,7 +591,7 @@ func liftStructFromAST(structName string, st *ast.StructType) []ir.Declaration {
 			continue
 		}
 		tag := field.Tag.Value
-		// Tag is like `validate:"required,min=1"` — strip outer backticks
+		// Tag is like `validate:"required,min=1"`: strip outer backticks
 		tag = strings.TrimPrefix(tag, "`")
 		tag = strings.TrimSuffix(tag, "`")
 		tag = strings.TrimSpace(tag)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// PInvokeResolver tests — six conformance tests per spec #114 R3.
+// PInvokeResolver tests: six conformance tests per spec #114 R3.
 //
 // Tests mirror the six scenarios named in the dispatch:
 //   1. Classic [DllImport] + call site → "rust-kit:Process"

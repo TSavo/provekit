@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// cmd witness — mint a witness memento extending the proof lattice.
+// cmd witness: mint a witness memento extending the proof lattice.
 //
 // Anyone can witness: prove a new property from an existing contract.
 // This is permissionless extension of the proof blockchain.
@@ -94,16 +94,16 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
             EXIT_OK
         }
         SolverOutput::Sat => {
-            eprintln!("witness: FAILED — solver found counterexample");
+            eprintln!("witness: FAILED: solver found counterexample");
             eprintln!("  The property does NOT follow from the contract.");
             EXIT_VERIFY_FAIL
         }
         SolverOutput::Unknown => {
-            eprintln!("witness: UNDECIDABLE — solver could not determine");
+            eprintln!("witness: UNDECIDABLE: solver could not determine");
             EXIT_SOLVER_FAIL
         }
         SolverOutput::Error(e) => {
-            eprintln!("witness: SOLVER ERROR — {e}");
+            eprintln!("witness: SOLVER ERROR: {e}");
             EXIT_SOLVER_FAIL
         }
     }

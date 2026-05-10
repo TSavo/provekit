@@ -1,4 +1,4 @@
-# python/ — Python principle partition
+# python/: Python principle partition
 
 TBD: language-specific axioms for Python go here.
 

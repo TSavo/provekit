@@ -1,4 +1,4 @@
-// C++ consumer of the C++ divide library — direct call.
+// C++ consumer of the C++ divide library: direct call.
 
 #include "divide.h"
 #include <stdexcept>

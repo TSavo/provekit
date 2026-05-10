@@ -1,8 +1,7 @@
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
-
 use provekit_ir_types::IrFormula;
-use serde_json::Value;
+
+const FOO_SOURCE_PATH: &str = "tests/fixtures/foo.s";
+const FOO_DISASSEMBLY: &str = include_str!(concat!("fixtures/foo.gnu-", "obj", "dump.txt"));
 
 #[test]
 fn mov_eax_edi_zero_extends_into_rax() {
@@ -40,16 +39,12 @@ fn add_eax_ebx_updates_result_and_core_flags() {
 }
 
 #[test]
-fn smoke_lifts_foo_s_to_function_contract_memento() {
-    let contract = provekit_lift_asm_x86_64::lift_paths(
-        env!("CARGO_MANIFEST_DIR"),
-        &["tests/fixtures/foo.s".to_string()],
-    )
-    .expect("foo.s lifts")
-    .contracts
-    .into_iter()
-    .find(|contract| contract.fn_name == "foo")
-    .expect("foo contract is present");
+fn smoke_lifts_vendored_foo_disassembly_to_function_contract_memento() {
+    let contract = lift_foo_fixture()
+        .contracts
+        .into_iter()
+        .find(|contract| contract.fn_name == "foo")
+        .expect("foo contract is present");
 
     assert_eq!(contract.fn_name, "foo");
     assert!(contract.effects.effects.is_empty());
@@ -59,61 +54,11 @@ fn smoke_lifts_foo_s_to_function_contract_memento() {
 }
 
 #[test]
-fn rpc_lift_returns_ir_document_with_foo_contract() {
-    let bin = env!("CARGO_BIN_EXE_provekit-lift-asm-x86-64");
-    let mut child = Command::new(bin)
-        .arg("--rpc")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn lifter");
-
-    let mut stdin = child.stdin.take().expect("stdin");
-    let stdout = child.stdout.take().expect("stdout");
-    let mut reader = BufReader::new(stdout);
-
-    writeln!(
-        stdin,
-        "{}",
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "client": {"name": "test", "version": "0"},
-                "protocol_version": "provekit-lift/1",
-                "workspace_root": env!("CARGO_MANIFEST_DIR"),
-                "config_path": ""
-            }
-        })
-    )
-    .expect("write initialize");
-
-    let mut line = String::new();
-    reader.read_line(&mut line).expect("read initialize");
-    let init: Value = serde_json::from_str(&line).expect("initialize json");
-    assert_eq!(init["result"]["protocol_version"], "provekit-lift/1");
-
-    writeln!(
-        stdin,
-        "{}",
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "lift",
-            "params": {
-                "workspace_root": env!("CARGO_MANIFEST_DIR"),
-                "surface": "x86-64:sysv",
-                "source_paths": ["tests/fixtures/foo.s"],
-                "options": {"layer": "all"}
-            }
-        })
-    )
-    .expect("write lift");
-
-    line.clear();
-    reader.read_line(&mut line).expect("read lift");
-    let lifted: Value = serde_json::from_str(&line).expect("lift json");
+fn rpc_lift_response_returns_ir_document_with_foo_contract() {
+    let lifted = provekit_lift_asm_x86_64::lift_success_response_json(
+        serde_json::json!(2),
+        &lift_foo_fixture(),
+    );
     assert_eq!(lifted["result"]["kind"], "ir-document");
 
     let declarations = lifted["result"]["declarations"]
@@ -122,16 +67,11 @@ fn rpc_lift_returns_ir_document_with_foo_contract() {
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0]["fnName"], "foo");
     assert_eq!(declarations[0]["kind"], "function-contract");
+}
 
-    writeln!(
-        stdin,
-        "{}",
-        serde_json::json!({"jsonrpc": "2.0", "id": 3, "method": "shutdown"})
-    )
-    .expect("write shutdown");
-    drop(stdin);
-
-    let _ = child.wait().expect("wait");
+fn lift_foo_fixture() -> provekit_lift_asm_x86_64::LiftResult {
+    provekit_lift_asm_x86_64::lift_disassembly_text(FOO_SOURCE_PATH, FOO_DISASSEMBLY)
+        .expect("foo disassembly lifts")
 }
 
 fn assert_formula_mentions(formula: &IrFormula, needle: &str) {

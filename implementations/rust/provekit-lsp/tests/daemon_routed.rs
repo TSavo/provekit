@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// daemon_routed.rs — integration tests for the provekit-lsp daemon-client mode.
+// daemon_routed.rs: integration tests for the provekit-lsp daemon-client mode.
 //
 // Tests 1-3 exercise the new daemon-client path: spawn provekit-linkerd, then
 // spawn provekit-lsp with --daemon-socket, drive it via hand-rolled LSP
@@ -299,7 +299,7 @@ impl LspServer {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: smoke test — didOpen with daemon active gets publishDiagnostics
+// Test 1: smoke test: didOpen with daemon active gets publishDiagnostics
 // ---------------------------------------------------------------------------
 
 #[test]

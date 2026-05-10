@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// cli.mint.new-ir.test.ts — Mint witnesses for new IR constructs
+// cli.mint.new-ir.test.ts: Mint witnesses for new IR constructs
 //
 // Exercises the `provekit mint` CLI with lambda, let, and choice
 // formulas to produce signed mementos (witnesses).

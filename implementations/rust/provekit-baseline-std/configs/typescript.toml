@@ -1,4 +1,4 @@
-# TypeScript std baseline — v1 catalog
+# TypeScript std baseline: v1 catalog
 lang = "typescript"
 kit = "ts-kit"
 language_version = "ES2022"

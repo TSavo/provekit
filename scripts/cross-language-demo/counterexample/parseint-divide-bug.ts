@@ -28,7 +28,7 @@
  *
  * Run: npx tsx scripts/cross-language-demo/counterexample/parseint-divide-bug.ts
  *
- * Output: scripts/output/counterexample/*.json — the proof DAG of the
+ * Output: scripts/output/counterexample/*.json: the proof DAG of the
  * counterexample.
  */
 
@@ -62,7 +62,7 @@ console.log("=".repeat(70));
 console.log();
 
 // ---------------------------------------------------------------------------
-// SETUP — six months ago, an LLM wrote divide() and an invariant
+// SETUP: six months ago, an LLM wrote divide() and an invariant
 // ---------------------------------------------------------------------------
 
 console.log("[t-6mo] An LLM wrote divide() and a shitty invariant");
@@ -100,14 +100,14 @@ console.log(`    cid:          ${divideContractMemento.cid}`);
 console.log();
 
 // ---------------------------------------------------------------------------
-// THE V8 / TS-KIT CONTRACT FOR parseInt — already in the substrate
+// THE V8 / TS-KIT CONTRACT FOR parseInt: already in the substrate
 // ---------------------------------------------------------------------------
 
 console.log("[ambient] V8 / TS-kit's published contract for parseInt");
 console.log("  (already in the substrate; user's project pulls it from the kit)");
 console.log();
 
-// V8's published contract for parseInt — kit-shipped memento.
+// V8's published contract for parseInt: kit-shipped memento.
 const v8ParseIntMemento = mintAndVerifyMemento(
   {
     bindingHash: hash16("v8:12.4:parseInt"),
@@ -154,7 +154,7 @@ console.log(`    targetContract: ${v8ParseIntMemento.cid}`);
 console.log();
 
 // ---------------------------------------------------------------------------
-// TODAY — an LLM adds a new code path
+// TODAY: an LLM adds a new code path
 // ---------------------------------------------------------------------------
 
 console.log("[today] An LLM adds a new code path: divide(x, parseInt(args[1]))");
@@ -194,7 +194,7 @@ for (const cid of newCodepathMemento.inputCids) {
 console.log();
 
 // ---------------------------------------------------------------------------
-// THE PROVER COMPOSES — counterexample emerges
+// THE PROVER COMPOSES: counterexample emerges
 // ---------------------------------------------------------------------------
 
 console.log("[prover] Walks the DAG. Composes parseInt-can-return-zero with");

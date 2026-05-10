@@ -1,17 +1,17 @@
-# ProvekIt — C# peer
+# ProvekIt: C# peer
 
 C# (.NET 10) implementation of the ProvekIt protocol, peer to the Rust,
 C++, Go, and TypeScript reference implementations. Phases 1+2 only:
 
-- **Phase 1 — Library** (this directory):
-  - `Provekit.Canonicalizer` — JCS-JSON encoder (RFC 8785) + BLAKE3-512
+- **Phase 1: Library** (this directory):
+  - `Provekit.Canonicalizer`: JCS-JSON encoder (RFC 8785) + BLAKE3-512
     self-identifying CIDs
-  - `Provekit.ProofEnvelope` — deterministic CBOR (RFC 8949 §4.2.1) +
+  - `Provekit.ProofEnvelope`: deterministic CBOR (RFC 8949 §4.2.1) +
     Ed25519 signing + `.proof` envelope builder
-  - `Provekit.ClaimEnvelope` — `MintContract` / `MintBridge` /
+  - `Provekit.ClaimEnvelope`: `MintContract` / `MintBridge` /
     `MintImplication`
-- **Phase 2 — Kit-authoring API**:
-  - `Provekit.IR` — `Must`, `Contract`, `ForAll`, `Exists`, `And`, `Or`,
+- **Phase 2: Kit-authoring API**:
+  - `Provekit.IR`: `Must`, `Contract`, `ForAll`, `Exists`, `And`, `Or`,
     `Not`, `Implies`, `Eq`, `Gt`, `Gte`, `Lt`, `Lte`, `Atomic`, `Num`,
     `StrConst`, `Var`, `Ctor`, `Int()`, `String()`, `Bool()`, plus the
     `Collector.BeginCollecting` / `Finish` lifecycle.
@@ -30,16 +30,16 @@ dotnet test
 
 All cross-language conformance tests should pass:
 
-- `CanonicalizerConformanceTests` — asserts the canonicalizer's JCS
+- `CanonicalizerConformanceTests`: asserts the canonicalizer's JCS
   bytes for the spec fixture `x > 0` (de Bruijn form) are byte-
   identical to the C++ peer, and the BLAKE3-512 propertyHash is
   `c592f835...23a5`.
-- `IrKitConformanceTests` — asserts the kit-authoring API's
+- `IrKitConformanceTests`: asserts the kit-authoring API's
   `Gt(Var("x"), Num(0))` produces the v1.1.0 IR-JSON-shape bytes that
   match the Rust peer byte-for-byte.
-- `ProofEnvelopeTests` — CBOR shortest-form integers, Ed25519 round-
+- `ProofEnvelopeTests`: CBOR shortest-form integers, Ed25519 round-
   trip, deterministic .proof envelopes.
-- `ClaimEnvelopeTests` — full mint flow for contract / bridge /
+- `ClaimEnvelopeTests`: full mint flow for contract / bridge /
   implication mementos with proper hash derivation.
 
 ## NuGet dependencies

@@ -7,7 +7,7 @@
  * What this script demonstrates:
  * 1. The library's contract has a propertyHash H_divide. The hash is
  *    derived from canonicalizing the IR formula representing the
- *    contract — independent of the host language the contract was
+ *    contract: independent of the host language the contract was
  *    authored in.
  * 2. Each consumer's invariant file describes its OWN code's behavior.
  *    Each consumer's invariant has its own propertyHash. Each consumer's
@@ -22,7 +22,7 @@
  * Implementation note: the TS kit's lifter is real (src/ir/lift/). The
  * Rust / Go / C++ kits don't yet exist as code. For each non-TS
  * consumer, this script hand-constructs the equivalent IrFormula in
- * TypeScript — representing what the corresponding kit's lifter would
+ * TypeScript: representing what the corresponding kit's lifter would
  * produce given the surface form in `<consumer>/usage.invariant.<lang>.example`.
  *
  * The IrFormula is the SAME shape across all four. The canonicalizer
@@ -159,7 +159,7 @@ console.log("Cross-language DAG composition demo");
 console.log("=".repeat(70));
 console.log();
 
-// 1. Library contract — minted ONCE by the C++ kit author.
+// 1. Library contract: minted ONCE by the C++ kit author.
 const libraryContract = buildLibraryContract();
 const libraryPropertyHash = propertyHashFromFormula(libraryContract);
 const libraryBindingHash = hash16("cpp-libs:divide");
@@ -183,7 +183,7 @@ const libraryEnvelope = mintMemento(
 console.log(`  cid:          ${libraryEnvelope.cid}`);
 console.log();
 
-// 2. Each consumer's invariant — same structural form, language-specific
+// 2. Each consumer's invariant: same structural form, language-specific
 //    wrapper name. The canonical FOL is identical; the propertyHash is
 //    derived from the canonical FOL; therefore the propertyHash is the
 //    same across all four consumers IF they describe the same contract.
@@ -196,7 +196,7 @@ const CONSUMERS = [
   { lang: "cpp",  wrapperName: "safe_divide",  producerId: "cpp-kit-demo@0.0.1" },
 ];
 
-console.log("Step 2: Four consumers, four invariants — different surfaces, same FOL structure");
+console.log("Step 2: Four consumers, four invariants: different surfaces, same FOL structure");
 
 const consumerEnvelopes: ClaimEnvelope[] = [];
 for (const consumer of CONSUMERS) {

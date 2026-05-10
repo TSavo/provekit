@@ -1,10 +1,10 @@
 /**
- * @provekit/ts-types-proof — Trojan-horse shim that delivers the
+ * @provekit/ts-types-proof: Trojan-horse shim that delivers the
  * ProvekIt protocol substrate to TypeScript projects via a single
  * `npm install`.
  *
  * The user installs this package because they want typed wrappers
- * for parseInt / Math.* / String.* / Array.*. They get those — same
+ * for parseInt / Math.* / String.* / Array.*. They get those: same
  * shape they'd find in any TypeScript primitive-helper package. As
  * a SIDE EFFECT, this package's import registers V8 bridge
  * declarations in the protocol's process-local registry, so any
@@ -20,7 +20,7 @@
  * Deprecation roadmap: when upstream ts-types (the ecosystem's
  * canonical types package) adopts the protocol natively, this shim
  * deprecates with a one-line dependency swap. PropertyHash CIDs are
- * stable across the migration because content addressing — the
+ * stable across the migration because content addressing: the
  * shim's parseInt produces the same CID as a protocol-native
  * ts-types' parseInt, since both bridge to V8's parseInt
  * declaration via the same canonical IR.

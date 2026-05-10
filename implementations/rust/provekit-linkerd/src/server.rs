@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// server.rs — JSON-RPC NDJSON dispatch loop.
+// server.rs: JSON-RPC NDJSON dispatch loop.
 //
 // Binds a Unix domain socket, accepts clients, dispatches NDJSON
 // JSON-RPC 2.0 messages to method handlers, and manages daemon lifecycle:
@@ -144,7 +144,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
             loop {
                 tokio::time::sleep(idle_timeout).await;
                 if client_count.load(Ordering::SeqCst) == 0 {
-                    info!("idle timeout — shutting down");
+                    info!("idle timeout: shutting down");
                     shutdown_notify.notify_one();
                     return;
                 }
@@ -172,7 +172,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
                                     warn!("peer_cred() failed: {e}; rejecting connection");
                                     continue;
                                 }
-                                Ok(_) => {} // same uid — allow
+                                Ok(_) => {} // same uid: allow
                             }
                         }
 
@@ -201,7 +201,7 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
                 }
             }
             _ = shutdown_notify.notified() => {
-                info!("shutdown signal received — writing snapshot and exiting");
+                info!("shutdown signal received: writing snapshot and exiting");
                 {
                     let st = state.lock().await;
                     if let Err(e) = snapshot::save(&config.snapshot_path, &st) {

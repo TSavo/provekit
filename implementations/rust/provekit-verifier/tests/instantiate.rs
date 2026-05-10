@@ -158,7 +158,7 @@ fn substitution_propagates_through_ctor_args() {
 
 #[test]
 fn inner_quantifier_with_same_name_blocks_substitution() {
-    // forall n. forall n. n > 0  — when we instantiate the OUTER n,
+    // forall n. forall n. n > 0: when we instantiate the OUTER n,
     // the inner forall rebinds n, so the body's "n" remains untouched.
     let formula = json!({
         "kind": "forall",
@@ -194,7 +194,7 @@ fn inner_quantifier_with_same_name_blocks_substitution() {
 
 #[test]
 fn inner_quantifier_with_different_name_allows_substitution() {
-    // forall n. forall m. n > m  — instantiate n as 5; m is left alone.
+    // forall n. forall m. n > m: instantiate n as 5; m is left alone.
     let formula = json!({
         "kind": "forall",
         "name": "n",

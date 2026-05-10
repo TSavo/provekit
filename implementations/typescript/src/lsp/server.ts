@@ -1,5 +1,5 @@
 /**
- * ProvekIt Language Server — surfaces bridge enforcement diagnostics.
+ * ProvekIt Language Server: surfaces bridge enforcement diagnostics.
  *
  * On save: runs runBridgeEnforcement() against the project, renders
  * each unsatisfied / unresolved-target / lift-error row as a workspace
@@ -99,7 +99,7 @@ function publishDiagnosticsForProject(
         propertyName: string;
         propertyCid: string;
       };
-      const reasonSuffix = row.reason ? ` — ${row.reason}` : "";
+      const reasonSuffix = row.reason ? `: ${row.reason}` : "";
       diagnostics.push({
         severity:
           row.status === "undecidable"

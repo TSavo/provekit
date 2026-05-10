@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-cli — user-facing CLI binary.
+// provekit-cli: user-facing CLI binary.
 //
 // Pure routing crate: parses argv via clap, dispatches into the
 // existing workspace crates (canonicalizer, proof-envelope,

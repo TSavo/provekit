@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit-lsp-ruby — NDJSON LSP plugin for Ruby.
+# provekit-lsp-ruby: NDJSON LSP plugin for Ruby.
 #
 # Protocol:
 #   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
@@ -100,7 +100,7 @@ STDIN.each_line do |line|
         end
       end
     rescue => e
-      # source eval failed — just use annotation scan
+      # source eval failed: just use annotation scan
     end
 
     jcs = decls.empty? ? "[]" : Provekit::IR.marshal_declarations(decls)

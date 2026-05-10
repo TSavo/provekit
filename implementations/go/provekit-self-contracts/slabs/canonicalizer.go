@@ -3,10 +3,10 @@ package slabs
 // Invariants for canonicalizer/encoder.go and canonicalizer/hasher.go.
 //
 // Public surface covered:
-//   * EncodeJCS(v interface{}) ([]byte, error) — RFC 8785 JCS-JSON.
+//   * EncodeJCS(v interface{}) ([]byte, error): RFC 8785 JCS-JSON.
 //   * Encoder, NewEncoder, (*Encoder).Encode.
-//   * Blake3_512Hex(bytes []byte) string — un-prefixed 128-hex digest.
-//   * ComputeCID(canonical []byte) string — "blake3-512:" + 128 hex.
+//   * Blake3_512Hex(bytes []byte) string: un-prefixed 128-hex digest.
+//   * ComputeCID(canonical []byte) string: "blake3-512:" + 128 hex.
 //   * HashTagPrefix = "blake3-512:".
 //
 // Honest scope: same as Rust's hash.invariant.rs / jcs.invariant.rs.

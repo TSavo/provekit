@@ -28,7 +28,7 @@ func InvariantsLoadAllProofs() {
 	})
 
 	// Run on an empty directory yields a pool with empty Mementos and
-	// empty BridgesBySymbol (no errors raised). LIVING DOCS — Z3 has no
+	// empty BridgesBySymbol (no errors raised). LIVING DOCS: Z3 has no
 	// semantics for "filesystem is empty".
 	ir.Must("Run_empty_dir_yields_empty_pool",
 		ir.ForAll(ir.String, func(_ ir.IrTerm) ir.IrFormula {

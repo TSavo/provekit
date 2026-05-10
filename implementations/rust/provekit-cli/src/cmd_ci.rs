@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit ci ...` — CICP reference admission surface.
+// `provekit ci ...`: CICP reference admission surface.
 //
 // Language libraries may emit CICP JSON bodies natively. The Rust CLI
 // is the universal checker: it parses the body, runs the reference

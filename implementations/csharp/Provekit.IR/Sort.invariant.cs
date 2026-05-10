@@ -3,7 +3,7 @@
 // .invariant.cs for Provekit.IR/Sort.cs
 //
 // Public surface covered:
-//   * Sort.Int / Real / String / Bool — primitive sort constructors
+//   * Sort.Int / Real / String / Bool: primitive sort constructors
 //
 // Honest scope:
 //   Sort is a record carrying a Name; the four named primitives MUST
@@ -19,7 +19,7 @@ public static class SortInvariants
 {
     public static void Register()
     {
-        // Sort.Int.Name = "Int" — names are protocol-locked.
+        // Sort.Int.Name = "Int": names are protocol-locked.
         Contract("csharp_sort_int_name_is_Int",
             post: Eq(Ctor("Name", Ctor("Sort_Int")), StrConst("Int")));
 

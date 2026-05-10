@@ -7,7 +7,7 @@ The active runtime path is the DSL evaluator (`src/dsl/evaluator.ts`),
 which only iterates `*.dsl` files in `.provekit/principles/`. JSON-only
 principles never fire even when present in the active dir, but they are
 still loaded by the legacy `PrincipleStore` for hashing and provenance
-purposes — moving them here removes them from that path too.
+purposes: moving them here removes them from that path too.
 
 ## Retirement reasons (task #129, 2026-04-27)
 

@@ -1,5 +1,5 @@
 /**
- * Bridge enforcement workflow — end-to-end integration test.
+ * Bridge enforcement workflow: end-to-end integration test.
  *
  * Architecture (per the protocol):
  *   - Kit emits IR when its invariant code runs

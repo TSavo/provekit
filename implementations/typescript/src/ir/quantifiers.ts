@@ -1,12 +1,12 @@
 /**
- * Quantifier builders — forAll, exists, forSome.
+ * Quantifier builders: forAll, exists, forSome.
  *
  * Each takes a Sort and a callback that receives an IrTerm (the bound
  * variable) and returns an IrFormula. The callback is called immediately
  * at construction time; the resulting body is stored as pure data
  * (no JS closures in the IR tree).
  *
- * Variable names generated here are NOT semantically meaningful — the
+ * Variable names generated here are NOT semantically meaningful: the
  * AST canonicalizer replaces them with de Bruijn indices. We generate
  * stable monotonically-incrementing names to make debug output readable.
  */
@@ -19,7 +19,7 @@ import type { IrFormula, IrTerm, Sort, VarTerm } from "./formulas.js";
 
 let _counter = 0;
 
-/** Reset counter — for test isolation only. */
+/** Reset counter: for test isolation only. */
 export function _resetCounter(): void {
   _counter = 0;
 }
@@ -78,7 +78,7 @@ export function exists(sort: Sort, body: (x: IrTerm) => IrFormula): IrFormula {
 }
 
 /**
- * Bounded existential quantifier — `exists` restricted to a set domain.
+ * Bounded existential quantifier: `exists` restricted to a set domain.
  * Convenience alias: `forSome(domain, sort, body)` is sugar for
  * `exists(sort, x => and(member(x, domain), body(x)))`.
  *

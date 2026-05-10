@@ -28,7 +28,7 @@ import { Int } from "../sorts.js";
 import { gt, num } from "../symbolic/primitives.js";
 import { propertyHashFromFormula } from "../../canonicalizer/canonicalize.js";
 
-describe("grammar parser — in-memory IR round-trip", () => {
+describe("grammar parser: in-memory IR round-trip", () => {
   beforeEach(() => {
     _resetCollector();
   });
@@ -46,7 +46,7 @@ describe("grammar parser — in-memory IR round-trip", () => {
   });
 });
 
-describe("grammar parser — declaration shape", () => {
+describe("grammar parser: declaration shape", () => {
   it("parses a contract declaration with pre+post", () => {
     const json = JSON.stringify([
       {
@@ -169,7 +169,7 @@ describe("grammar parser — declaration shape", () => {
   });
 });
 
-describe("grammar parser — formula round-trip", () => {
+describe("grammar parser: formula round-trip", () => {
   it("parses a flat-shape forall", () => {
     const json = JSON.stringify({
       kind: "forall",
@@ -225,7 +225,7 @@ describe("grammar parser — formula round-trip", () => {
   });
 });
 
-describe("grammar parser — propertyHash seam", () => {
+describe("grammar parser: propertyHash seam", () => {
   beforeEach(() => {
     _resetCollector();
   });

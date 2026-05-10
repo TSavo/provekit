@@ -1,5 +1,5 @@
 /**
- * Extension registry — process-local store of extension declarations.
+ * Extension registry: process-local store of extension declarations.
  *
  * Per the IR extension protocol (protocol/specs/2026-04-30-ir-extension-protocol.md):
  * a kit that authors invariants using extensions registers each extension
@@ -18,7 +18,7 @@
 import type { Sort } from "../formulas.js";
 
 // ---------------------------------------------------------------------------
-// Public types — match the extension-declaration memento shape
+// Public types: match the extension-declaration memento shape
 // ---------------------------------------------------------------------------
 
 export type SemanticDeclaration =

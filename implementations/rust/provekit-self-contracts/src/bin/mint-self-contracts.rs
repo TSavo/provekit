@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-self-contracts — the orchestrator binary.
+// mint-self-contracts: the orchestrator binary.
 //
 // 1. Walks every `.invariant.rs` file in the workspace via the
 //    orchestrator at `provekit-self-contracts/src/lib.rs`.
@@ -19,7 +19,7 @@
 //   semantics for (`roundTrips`, `isErr`, `isMalformed`,
 //   `cidMatchesFilename`, `bridgeKnownInPool`, etc.). Those callsite
 //   verdicts resolve to "undecidable", which is the protocol's HONEST
-//   outcome — the value of these contracts is the LIVING DOCS shape,
+//   outcome: the value of these contracts is the LIVING DOCS shape,
 //   not the discharge. Standard-algebra contracts (=, <, >, integer
 //   constants) reach Z3 cleanly and discharge or unsatisfy.
 //

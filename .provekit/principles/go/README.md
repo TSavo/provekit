@@ -1,4 +1,4 @@
-# go/ — Go principle partition
+# go/: Go principle partition
 
 TBD: language-specific axioms for Go go here.
 

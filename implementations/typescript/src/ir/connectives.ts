@@ -1,5 +1,5 @@
 /**
- * Logical connective builders — and, or, not, implies, iff.
+ * Logical connective builders: and, or, not, implies, iff.
  */
 
 import type { IrFormula } from "./formulas.js";

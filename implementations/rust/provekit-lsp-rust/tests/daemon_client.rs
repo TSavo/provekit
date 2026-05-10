@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// daemon_client.rs — integration tests for provekit-lsp-rust daemon-client mode.
+// daemon_client.rs: integration tests for provekit-lsp-rust daemon-client mode.
 //
 // Test 1: spawn daemon, run lsp-rust with --daemon-socket, assert parse response
 //         has result.diagnostics (shape test, empty is fine for no-violation source).
 // Test 2: existing round_trip tests on result.declarations still pass in default mode.
-//         (Covered by round_trip.rs — verified by running the full suite.)
-// Test 3: byte-determinism — two parse calls with byte-identical source produce
+//         (Covered by round_trip.rs: verified by running the full suite.)
+// Test 3: byte-determinism: two parse calls with byte-identical source produce
 //         byte-identical daemon parseFile output.
 
 use std::io::{BufRead, BufReader, Write};
@@ -220,7 +220,7 @@ fn value_is_non_negative() {
         "result.diagnostics must be an array in daemon-client mode; got: {result}"
     );
 
-    // In daemon-client mode there must NOT be a `declarations` key — that's
+    // In daemon-client mode there must NOT be a `declarations` key: that's
     // the default-mode shape.
     assert!(
         result.get("declarations").is_none(),
@@ -233,7 +233,7 @@ fn value_is_non_negative() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: byte-determinism — same source => same diagnostics from daemon
+// Test 2: byte-determinism: same source => same diagnostics from daemon
 // ---------------------------------------------------------------------------
 
 #[test]

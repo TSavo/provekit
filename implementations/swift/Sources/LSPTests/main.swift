@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// LSPTests — standalone integration test runner for provekit-lsp-swift.
+// LSPTests: standalone integration test runner for provekit-lsp-swift.
 //
 // Does NOT depend on XCTest or Swift Testing (neither is available
 // without full Xcode on CI). Uses Foundation Process + Pipe to spawn

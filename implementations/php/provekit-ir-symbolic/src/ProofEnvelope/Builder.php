@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt — Deterministic CBOR catalog builder. Simplified for hand-rolled CBOR. */
+/** ProvekIt: Deterministic CBOR catalog builder. Simplified for hand-rolled CBOR. */
 
 namespace ProvekIt\ProofEnvelope;
 

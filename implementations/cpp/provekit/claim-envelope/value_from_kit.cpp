@@ -142,7 +142,7 @@ ValuePtr formula_to_value(const ::provekit::ir::Formula& formula) {
                     {"operands", Value::array(operand_values)},
                 });
             } else if constexpr (std::is_same_v<F, ::provekit::ir::QuantifierFormula>) {
-                // Locked key order: kind, name, sort, body. (Flat — no Lambda wrapper.)
+                // Locked key order: kind, name, sort, body. (Flat: no Lambda wrapper.)
                 return Value::object({
                     {"kind", Value::string(f.kind)},
                     {"name", Value::string(f.name)},

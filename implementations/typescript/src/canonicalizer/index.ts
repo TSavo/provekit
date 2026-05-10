@@ -1,10 +1,10 @@
 /**
- * @provekit/canonicalizer — AST canonicalizer entrypoint.
+ * @provekit/canonicalizer: AST canonicalizer entrypoint.
  *
  * Implements the AstCanonicalizer interface from the spec
  * (protocol/specs/2026-04-29-ast-canonicalizer.md §"The AstCanonicalizer interface").
  *
- * Serialization format: canonical JSON (RFC 8785 / JCS) — the v1 fallback
+ * Serialization format: canonical JSON (RFC 8785 / JCS): the v1 fallback
  * permitted by the spec. CBOR (RFC 8949 §4.2) is the preferred format;
  * see serialize.ts for the rationale.
  *

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit prove` / `provekit verify` — runs the six-stage pipeline,
+// `provekit prove` / `provekit verify`: runs the six-stage pipeline,
 // or (when --kit is given) the lift-plugin-protocol conformance gate.
 //
 // Conformance gate (--kit=<kit>):
@@ -66,7 +66,7 @@ fn resolve_kit(kit: &str) -> Option<(PathBuf, String)> {
 }
 
 // ---------------------------------------------------------------------------
-// Plugin manifest (mirrors cmd_mint — kept local to avoid coupling)
+// Plugin manifest (mirrors cmd_mint: kept local to avoid coupling)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Default)]
@@ -144,12 +144,12 @@ fn find_manifest(project_root: &std::path::Path, surface: &str) -> Result<Plugin
 /// Raw RPC messages captured during a lift-plugin-protocol session.
 ///
 /// The verifiers in `lift_plugin_protocol` take:
-/// - `init_params`  — the `params` object from the initialize request (not the
+/// - `init_params`: the `params` object from the initialize request (not the
 ///   full envelope, just params).
-/// - `init_response` — the FULL initialize response envelope
+/// - `init_response`: the FULL initialize response envelope
 ///   (`{"jsonrpc":"2.0","id":1,"result":{...}}`).
-/// - `lift_params` — the `params` object from the lift request.
-/// - `lift_response` — the FULL lift response envelope.
+/// - `lift_params`: the `params` object from the lift request.
+/// - `lift_response`: the FULL lift response envelope.
 struct CapturedRpc {
     init_params: Value,
     init_response: Value,
@@ -227,7 +227,7 @@ fn capture_rpc(
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             format!(
-                "lifter binary `{}` not found — cannot verify conformance without a running lifter",
+                "lifter binary `{}` not found: cannot verify conformance without a running lifter",
                 manifest.command[0]
             )
         } else {
@@ -265,7 +265,7 @@ fn capture_rpc(
         }
     }
 
-    // 2. lift — use source_paths: ["."] to satisfy C3 non-empty invariant.
+    // 2. lift: use source_paths: ["."] to satisfy C3 non-empty invariant.
     //    Most lifters ignore source_paths and walk their own working dir.
     let lift_params = json!({
         "surface": surface,
@@ -377,7 +377,7 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
     // Pre-flight: print which contracts will be checked.
     if !quiet && !json_out {
         println!(
-            "{}: kit=`{}` surface=`{}` — checking 8 lift-plugin-protocol contracts (C1-C8)",
+            "{}: kit=`{}` surface=`{}`: checking 8 lift-plugin-protocol contracts (C1-C8)",
             "provekit".cyan().bold(),
             kit,
             surface
@@ -453,14 +453,14 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
             let total = results.len();
             if all_pass {
                 println!(
-                    "{}: kit=`{}` — all {total} contracts hold",
+                    "{}: kit=`{}`: all {total} contracts hold",
                     "pass".green().bold(),
                     kit
                 );
             } else {
                 let fail_count = total - pass_count;
                 println!(
-                    "{}: kit=`{}` — {fail_count}/{total} contracts violated",
+                    "{}: kit=`{}`: {fail_count}/{total} contracts violated",
                     "FAIL".red().bold(),
                     kit
                 );
@@ -477,7 +477,7 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
 }
 
 // ---------------------------------------------------------------------------
-// pub fn run — entry point from main.rs
+// pub fn run: entry point from main.rs
 // ---------------------------------------------------------------------------
 
 pub fn run(args: ProveArgs) -> u8 {
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     /// Regression test for #325: `provekit prove --kit=swift` was dispatching
-    /// to a hardcoded `provekit-lift-swift` binary (ENOENT — the swift kit
+    /// to a hardcoded `provekit-lift-swift` binary (ENOENT: the swift kit
     /// builds `mint-swift-self-contracts`, not `provekit-lift-swift`).
     /// After the fix, surface must be `swift-self-contracts` and the binary
     /// is read from the manifest, not synthesized.
@@ -1127,7 +1127,7 @@ mod tests {
     }
 
     /// Issue #325: every kit alias must agree between prove and mint.
-    /// If any pair drifts, this test fails — preventing a recurrence of the
+    /// If any pair drifts, this test fails: preventing a recurrence of the
     /// duplicated-table bug that motivated this fix.
     #[test]
     fn resolve_kit_agrees_with_cmd_mint_for_all_kits() {
@@ -1213,7 +1213,7 @@ mod tests {
                 "kind": "proof-envelope",
                 "members": {"blake3-512:abc": "bytes"},
                 "filename_cid": "blake3-512:def",
-                // call_edges absent — C8 violation
+                // call_edges absent: C8 violation
             },
         });
         let results = run_verifiers(&rpc);

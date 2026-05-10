@@ -402,7 +402,7 @@ pub struct VerificationReport {
     pub mint_cid: Option<String>,
     /// Number of contracts produced by lift adapters (proptest, contracts,
     /// kani, prusti, creusot, flux, quickcheck, verus). Not the same
-    /// thing as `contract_count` — these came from third-party
+    /// thing as `contract_count`: these came from third-party
     /// annotations the consumer already had, not from `#[provekit::*]`
     /// decorators. Populated by the lift pass that runs alongside the
     /// source walk.
@@ -440,7 +440,7 @@ impl VerificationReport {
             .filter(|c| c.verdict == SolverVerdict::Undecidable)
             .count()
     }
-    /// True iff at least one call site is `Unsatisfied` — i.e. the
+    /// True iff at least one call site is `Unsatisfied`: i.e. the
     /// solver returned a counterexample. Used by strict mode to fail
     /// the build.
     pub fn has_violations(&self) -> bool {
@@ -640,7 +640,7 @@ pub fn run_verification_inner(
 ) -> VerificationReport {
     let walk = source_walk::walk(manifest_dir);
     // Lift pass: walk the same source tree, dispatch to every enabled
-    // lift adapter, collect ContractDecls. This runs by default — the
+    // lift adapter, collect ContractDecls. This runs by default: the
     // user does NOT type "lift" anywhere; just `cargo build`.
     let enabled = cfg.enabled_lift_adapters();
     let lift_report = run_lift_pass(manifest_dir, &enabled);
@@ -688,7 +688,7 @@ pub fn run_verification_inner(
                 //     unsat -> Unsatisfied  (post is itself contradictory; loud)
                 //
                 //   surrounding `if x == K` check:
-                //     unsat -> Unsatisfied  (branch is DEAD per contract — warn)
+                //     unsat -> Unsatisfied  (branch is DEAD per contract: warn)
                 //     sat   -> Discharged   (branch is reachable; fine)
                 //
                 // The strict-mode failure path keys off `Unsatisfied`,
@@ -937,7 +937,7 @@ pub mod __for_tests {
 }
 
 // Required to satisfy the `use syn::visit::Visit` import even when not
-// directly referenced — keeps the dep graph honest.
+// directly referenced: keeps the dep graph honest.
 const _: fn() = || {
     fn _is_visit<T: Visit<'static>>() {}
 };

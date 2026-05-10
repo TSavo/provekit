@@ -6,8 +6,8 @@
 // Uses the NEW explicit relation-call syntax:
 //   where same_value($guard.narrows.target_node, $div.arithmetic.rhs_node)
 //
-// LHS: the narrows row's target_node column — the node that the guard is checking.
-// RHS: the arithmetic row's rhs_node column — the denominator of the division.
+// LHS: the narrows row's target_node column: the node that the guard is checking.
+// RHS: the arithmetic row's rhs_node column: the denominator of the division.
 // same_value: holds iff both nodes share the same data_flow.from_node (same declared variable).
 //
 // The predicate zero_guard finds any narrows row with narrowing_kind == "literal_eq".

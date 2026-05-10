@@ -114,7 +114,7 @@ console.log("[provekit] Verifying proof graph...");
 // Resolution order:
 //   1. node_modules/.bin/provekit in the consumer project (standard consumer path)
 //   2. node_modules/provekit/bin/provekit.cjs   (pnpm deep-layout path)
-//   3. Not found — warn and exit 0 (don't fail the install over a missing binary)
+//   3. Not found: warn and exit 0 (don't fail the install over a missing binary)
 function resolveProvekitBinary(projectRoot) {
   const candidates = [
     join(projectRoot, "node_modules", ".bin", "provekit"),

@@ -6,7 +6,6 @@
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_compiler::{CompiledFormula, FreeVar, OpacityEntry, OpacityManifest};
 use provekit_ir_types::*;
-use serde_json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -25,16 +24,16 @@ pub fn emit_term(term: &Term) -> String {
                     panic!("smt-lib: Const cannot carry a Function/Dependent/Float/Region sort in pure SMT-LIB v2.6");
                 }
             };
-            return emit_const_value(value, sort_name);
+            emit_const_value(value, sort_name)
         }
         Term::Ctor { name, args, .. } => {
             if args.is_empty() {
                 return name.clone();
             };
             let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
+            let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            return format!("({} {})", name, args_str.join(" "));
+            format!("({} {})", name, args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -44,7 +43,7 @@ pub fn emit_term(term: &Term) -> String {
         } => {
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
-            return format!("(lambda (({} {})) {})", param_name, sort_str, body_str);
+            format!("(lambda (({} {})) {})", param_name, sort_str, body_str)
         }
         Term::Let { bindings, body, .. } => {
             let mut binding_strs = bindings.iter();
@@ -52,16 +51,16 @@ pub fn emit_term(term: &Term) -> String {
                 binding_strs.map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)));
             let binding_strs: Vec<String> = binding_strs.collect();
             let body_str = emit_term(body);
-            return format!("(let ({}) {})", binding_strs.join(" "), body_str);
+            format!("(let ({}) {})", binding_strs.join(" "), body_str)
         }
         Term::Ctor { name, args } => {
             if args.is_empty() {
                 return name.clone();
             };
             let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
+            let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            return format!("({} {})", name, args_str.join(" "));
+            format!("({} {})", name, args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -70,7 +69,7 @@ pub fn emit_term(term: &Term) -> String {
         } => {
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
-            return format!("(lambda (({} {})) {})", param_name, sort_str, body_str);
+            format!("(lambda (({} {})) {})", param_name, sort_str, body_str)
         }
         Term::Let { bindings, body } => {
             let binding_strs = bindings.iter();
@@ -78,7 +77,7 @@ pub fn emit_term(term: &Term) -> String {
                 binding_strs.map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)));
             let binding_strs: Vec<String> = binding_strs.collect();
             let body_str = emit_term(body);
-            return format!("(let ({}) {})", binding_strs.join(" "), body_str);
+            format!("(let ({}) {})", binding_strs.join(" "), body_str)
         }
     }
 }
@@ -116,21 +115,21 @@ pub fn emit_formula(formula: &Formula) -> String {
                 return smt_name.to_string();
             };
             let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
+            let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            return format!("({} {})", smt_name, args_str.join(" "));
+            format!("({} {})", smt_name, args_str.join(" "))
         }
         Formula::And { operands } => {
             let ops_str = operands.iter();
-            let ops_str = ops_str.map(|o| emit_formula(o));
+            let ops_str = ops_str.map(emit_formula);
             let ops_str: Vec<String> = ops_str.collect();
-            return format!("({} {})", "and", ops_str.join(" "));
+            format!("({} {})", "and", ops_str.join(" "))
         }
         Formula::Or { operands } => {
             let ops_str = operands.iter();
-            let ops_str = ops_str.map(|o| emit_formula(o));
+            let ops_str = ops_str.map(emit_formula);
             let ops_str: Vec<String> = ops_str.collect();
-            return format!("({} {})", "or", ops_str.join(" "));
+            format!("({} {})", "or", ops_str.join(" "))
         }
         Formula::Not { operands } => format!("(not {})", emit_formula(&operands[0])),
         Formula::Implies { operands } => format!(
@@ -145,7 +144,7 @@ pub fn emit_formula(formula: &Formula) -> String {
                 // Quantifier over opaque sort: assert true as placeholder
                 return "(true)".to_string();
             }
-            return format!("(forall (({} {})) {})", name, sort_str, body_str);
+            format!("(forall (({} {})) {})", name, sort_str, body_str)
         }
         Formula::Exists { name, sort, body } => {
             let (sort_str, reason) = emit_sort_with_reason(sort);
@@ -153,7 +152,7 @@ pub fn emit_formula(formula: &Formula) -> String {
             if let Some(_r) = reason {
                 return "(true)".to_string();
             }
-            return format!("(exists (({} {})) {})", name, sort_str, body_str);
+            format!("(exists (({} {})) {})", name, sort_str, body_str)
         }
         Formula::Choice {
             var_name,
@@ -171,7 +170,7 @@ pub fn emit_formula(formula: &Formula) -> String {
                 "(and {} (forall (({} {})) (=> {} (= {} {}))))",
                 body_str, var_y, sort_str, body_y, var_y, var_name
             );
-            return format!("(exists (({} {})) {})", var_name, sort_str, unique);
+            format!("(exists (({} {})) {})", var_name, sort_str, unique)
         }
     }
 }
@@ -235,7 +234,7 @@ fn to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
             }
         }
         serde_json::Value::String(s) => CValue::string(s.clone()),
-        serde_json::Value::Array(arr) => CValue::array(arr.iter().map(|v| to_cvalue(v)).collect()),
+        serde_json::Value::Array(arr) => CValue::array(arr.iter().map(to_cvalue).collect()),
         serde_json::Value::Object(obj) => {
             CValue::object(obj.iter().map(|(k, v)| (k.clone(), to_cvalue(v))))
         }
@@ -682,9 +681,9 @@ fn has_outlives_predicate(formula: &Formula) -> bool {
     match formula {
         Formula::Atomic { name, .. } => name == "Outlives",
         Formula::And { operands } | Formula::Or { operands } | Formula::Implies { operands } => {
-            operands.iter().any(|o| has_outlives_predicate(o))
+            operands.iter().any(has_outlives_predicate)
         }
-        Formula::Not { operands } => operands.iter().any(|o| has_outlives_predicate(o)),
+        Formula::Not { operands } => operands.iter().any(has_outlives_predicate),
         Formula::Forall { body, .. } | Formula::Exists { body, .. } => has_outlives_predicate(body),
         Formula::Choice { body, .. } => has_outlives_predicate(body),
     }

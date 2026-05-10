@@ -1,4 +1,4 @@
-// Cross-language equivalence runner — Go path.
+// Cross-language equivalence runner: Go path.
 //
 // Usage: go run main.go <fixture-name>
 // Emits: compact JSON of the Declaration[] for the named fixture.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit agent list`         — enumerate installed plugins.
-// `provekit agent describe <n>` — emit a tool descriptor for one.
+// `provekit agent list`: enumerate installed plugins.
+// `provekit agent describe <n>`: emit a tool descriptor for one.
 //
 // Discovery: walks `~/.config/provekit/agents/*/manifest.toml`. Each
 // manifest declares: name, version, protocol_version, binary,

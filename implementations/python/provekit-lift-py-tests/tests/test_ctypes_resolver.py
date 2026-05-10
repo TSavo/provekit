@@ -49,7 +49,7 @@ def _resolve(source: str, contract_index: dict = None, path: str = "test.py"):
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Pattern A — CDLL load + call resolves to rust-kit
+# Test 1: Pattern A: CDLL load + call resolves to rust-kit
 # ---------------------------------------------------------------------------
 
 
@@ -74,7 +74,7 @@ def test_cdll_rust_callee_emits_call_edge():
 
 
 # ---------------------------------------------------------------------------
-# Test 2: Pattern A with libc — emits libc-system pseudo-kit
+# Test 2: Pattern A with libc: emits libc-system pseudo-kit
 # ---------------------------------------------------------------------------
 
 
@@ -140,7 +140,7 @@ def test_unknown_library_emits_linker_error():
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Byte-determinism — two runs produce identical call-edge stream
+# Test 5: Byte-determinism: two runs produce identical call-edge stream
 # ---------------------------------------------------------------------------
 
 
@@ -169,7 +169,7 @@ def test_byte_determinism():
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Cross-pattern coverage — all four patterns A, B, C, D
+# Test 6: Cross-pattern coverage: all four patterns A, B, C, D
 # ---------------------------------------------------------------------------
 
 

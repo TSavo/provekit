@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Runner — orchestrates all 6 stages of the C++ bridge enforcement
+// Runner: orchestrates all 6 stages of the C++ bridge enforcement
 // pipeline. Mirrors the Go verifier's `runner.go`. Per-callsite work
 // (resolve → instantiate → emit → solve) is fanned out via std::async
 // for parallelism.

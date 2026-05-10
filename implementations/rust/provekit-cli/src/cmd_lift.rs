@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit lift <PROJECT>` — dispatch the configured lift-plugin protocol
+// `provekit lift <PROJECT>`: dispatch the configured lift-plugin protocol
 // and emit the raw lifted ProofIR response. Minting is a separate composition
 // step owned by `provekit mint`.
 

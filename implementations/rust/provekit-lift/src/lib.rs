@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift — workspace lift toolchain.
+// provekit-lift: workspace lift toolchain.
 //
 // Walks a Rust workspace (or single crate), parses every `.rs` file
 // with syn, dispatches each parsed file to all registered adapters,
@@ -610,7 +610,7 @@ pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutp
 
         if let Some(prev_cid) = contract_cids.get(&d.name) {
             if prev_cid == &m.cid {
-                // Same name, identical IR — semantic dedup.
+                // Same name, identical IR: semantic dedup.
                 deduplicated += 1;
                 continue;
             } else {
@@ -719,7 +719,7 @@ pub fn parse_cli_flags(args: impl IntoIterator<Item = String>) -> CliFlags {
 
 fn print_help() {
     println!(
-        "provekit-lift — promote existing Rust annotations to signed contracts.\n\n\
+        "provekit-lift: promote existing Rust annotations to signed contracts.\n\n\
          USAGE:\n  \
            cargo provekit-lift [--workspace <dir>] [--target-dir <dir>] [--quiet]\n  \
            provekit-lift     [--workspace <dir>] [--target-dir <dir>] [--quiet]\n\n\
@@ -875,7 +875,7 @@ fn sqrt(x: i64) -> i64 {{ x }}
         .unwrap();
         let b = dir.join("b.rs");
         let mut f = std::fs::File::create(&b).unwrap();
-        // Same property, expressed identically — should dedup.
+        // Same property, expressed identically: should dedup.
         writeln!(
             f,
             r#"
@@ -999,12 +999,12 @@ fn nonzero(a: i64) -> i64 {{ a }}
         )
         .unwrap();
 
-        // Build artifact directory — must be filtered.
+        // Build artifact directory: must be filtered.
         let target = dir.join("target").join("release");
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("artifact.rs"), b"fn build_artifact() {}").unwrap();
 
-        // macOS noise file — must be filtered.
+        // macOS noise file: must be filtered.
         std::fs::write(dir.join(".DS_Store"), b"").unwrap();
     }
 
@@ -1098,7 +1098,7 @@ fn nonzero(a: i64) -> i64 {{ a }}
             );
         }
 
-        // enumerate_rs_files returns (rel_posix, abs) — verify the posix strings too.
+        // enumerate_rs_files returns (rel_posix, abs): verify the posix strings too.
         let entries = enumerate_rs_files(td.path());
         for (rel, _) in &entries {
             assert!(

@@ -1,4 +1,4 @@
-# Sparse-annotation-as-predicate — Linux kernel angles via the C lifter
+# Sparse-annotation-as-predicate: Linux kernel angles via the C lifter
 
 Status: research note, 2026-05-09. Author: triage agent. Surface: `c-sparse`.
 
@@ -17,7 +17,7 @@ walks `facts->sparse_annotations[]`. Each annotation has `(name, argument_text, 
 
 Not yet emitted: `__iomem`, `__percpu`, `__force`, `__bitwise`, `__safe`. No callEdges, no
 member-access nodes, no dereference sites. Integration test asserts `"callEdges":[]`. The
-contract is a *type-level marker on a parameter named "ptr"* — it does not yet bind to a
+contract is a *type-level marker on a parameter named "ptr"*: it does not yet bind to a
 specific function parameter, struct field, or expression in the IR. That gap is the work.
 
 Kernel header sample confirms scale: in `include/linux/fs.h` and `sched.h` alone, dozens
@@ -41,11 +41,11 @@ substrate extensions: a `parameter_name` field on the annotation fact (today it'
 hardcoded "ptr"), a `deref_sites` table (member access, unary `*`, array-subscript,
 `memcpy`/`memmove` first/second-arg call), and a callsite table indexing the safe-API
 allowlist. Bug class: arbitrary kernel read/write triggered from userspace (KASAN
-out-of-bounds, info leak, the entire `__copy_from_user`-was-missing genre — CVE-2017-5123
+out-of-bounds, info leak, the entire `__copy_from_user`-was-missing genre: CVE-2017-5123
 `waitid`, CVE-2022-32250 `nf_tables`). Effort: roughly two engineering days for the
 substrate extensions (parameter binding + deref + callsite), one day for the predicate
 and its allowlist, half a day for the false-positive triage on a single subsystem
-(start with `fs/read_write.c`). Substrate today: insufficient — needs deref-site facts.
+(start with `fs/read_write.c`). Substrate today: insufficient: needs deref-site facts.
 
 ### 2. `__rcu` field read without `rcu_dereference` (UAF starter)
 
@@ -63,7 +63,7 @@ a callsite-wraps-expression relation; honor `__must_hold(rcu)` / `rcu_read_lock(
 as exemption. Bug class: use-after-free where the writer races a reader who skipped the
 `smp_read_barrier_depends`/`READ_ONCE` (CVE-2017-15265 ALSA seq, CVE-2023-32233
 `nft_set`). Effort: three days, dominated by member-access lifting and lexical
-RCU-read-side-critical-section detection. Substrate today: insufficient — same
+RCU-read-side-critical-section detection. Substrate today: insufficient: same
 deref-site gap as #1, plus the field-binding gap.
 
 ### 3. `__force` casts that erase a `__user` or `__rcu` discipline
@@ -75,7 +75,7 @@ source operand's address-space annotation (if any) and the destination type. Pre
 shape: `SELECT cast.expr_cid, cast.src_annotation, cast.dst_annotation FROM force_casts
 cast WHERE cast.src_annotation IN ('__user','__rcu','__iomem','__percpu') AND
 cast.dst_annotation = '' AND cast.function_cid NOT IN (SELECT cid FROM
-trusted_force_sites)`. Bug class: contract-laundering — the kernel pattern that
+trusted_force_sites)`. Bug class: contract-laundering: the kernel pattern that
 suppresses Sparse warnings by casting away an address space, sometimes correctly (uaccess
 helpers, RCU-protected publish), sometimes a real bug (`fmode_t` arithmetic that loses
 the `__force` re-cast; the genuinely-unsafe `(void *)(unsigned long)user_addr`
@@ -83,7 +83,7 @@ pattern). Most hits will be intentional, so the value is the *manifest*: a subst
 ledger of every type-discipline escape, ranked by call-site context. Effort: half a day
 to emit the cast facts, half a day for the predicate, one day to land a curated
 allow-list of legitimate sites (`uaccess.h`, `compat_ioctl`, `bpf_jit`). Substrate
-today: insufficient — `__force` is currently dropped on the floor.
+today: insufficient: `__force` is currently dropped on the floor.
 
 ### 4. `__iomem` direct deref (hardware-crash starter)
 
@@ -96,7 +96,7 @@ non-x86 (ARM64, POWER) where a direct `*addr` over MMIO triggers an SError; on x
 is more often silent but contributes to the read-ordering bug class (CVE-2019-19332 KVM
 `vmx_emulate_invvpid`, the `pcie_aspm` MMIO-ordering family). Effort: matches #1 once
 deref-site lifting exists; small additional cost is one new annotation branch. Substrate
-today: insufficient on two axes — need `__iomem` emission *and* deref sites.
+today: insufficient on two axes: need `__iomem` emission *and* deref sites.
 
 ### 5. `__bitwise` cross-type contamination (audit not safety)
 
@@ -109,9 +109,9 @@ r.name AND b.op IN ('|','&','^','==','!=') AND NOT EXISTS (SELECT 1 FROM force_c
 WHERE c.expr_cid IN (b.lhs_cid,b.rhs_cid))`. Bug class: silent flag-namespace
 collision (e.g., a `__GFP_*` flag accidentally OR'd with a `FMODE_*` flag, byte-order
 confusion when a `__be32` is compared with a host-order `__le32`). Far rarer than the
-deref classes but uniquely *only findable through Sparse* — no other static analyzer
+deref classes but uniquely *only findable through Sparse*: no other static analyzer
 preserves `__bitwise`. Effort: one day to emit `typedef_facts` with `bitwise=1`, one day
-for the predicate, half a day to triage. Substrate today: insufficient — needs a
+for the predicate, half a day to triage. Substrate today: insufficient: needs a
 `typedefs` fact stream and `binary_ops` with operand types.
 
 ## Priority recommendation

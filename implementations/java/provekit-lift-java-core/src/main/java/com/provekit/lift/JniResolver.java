@@ -17,9 +17,9 @@ import com.provekit.ir.Term;
  *
  * Walks a Java CompilationUnit and detects JNI FFI patterns:
  *   - System.loadLibrary("name") or System.load("/path/to/lib") in static
- *     initializers — extracts the library name.
- *   - native method declarations — registers class.method -> (kit, symbol).
- *   - Method call sites that invoke native methods — emits CallEdgeDecl
+ *     initializers: extracts the library name.
+ *   - native method declarations: registers class.method -> (kit, symbol).
+ *   - Method call sites that invoke native methods: emits CallEdgeDecl
  *     mementos with targetContractCid = null and
  *     targetSymbol = "<kit>:<ClassName>.<methodName>".
  *

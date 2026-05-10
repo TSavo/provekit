@@ -1,5 +1,5 @@
 /**
- * @provekit/ir/symbolic — runtime-eval lifting via symbolic primitives.
+ * @provekit/ir/symbolic: runtime-eval lifting via symbolic primitives.
  *
  * The kit's IR-emission mechanism. Users import primitives from this
  * module, write invariant code with them, and RUNNING the code produces

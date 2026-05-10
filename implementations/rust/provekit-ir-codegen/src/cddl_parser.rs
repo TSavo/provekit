@@ -67,7 +67,7 @@ pub fn extract_ir(cddl: &cddl::ast::CDDL) -> IrSchema {
                                     .cloned()
                                     .collect();
                                 if tag_values.is_empty() {
-                                    // No tag found — keep original variant name
+                                    // No tag found, keep original variant name.
                                     new_variants.push(v.clone());
                                 } else {
                                     for tag_value in tag_values {

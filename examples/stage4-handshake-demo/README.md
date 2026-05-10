@@ -77,7 +77,7 @@ the next time the verifier runs.
 Go restores `validateInput.post = forall n. n >= 1`. The
 propertyHash on the post returns to its Run B value. The cache key
 the verifier computes once again addresses the implication memento
-that was minted in Run B — still on disk, never deleted. Tier 2
+that was minted in Run B: still on disk, never deleted. Tier 2
 hits. **Zero Z3 invocations.** No "re-validation" step is needed;
 the content-addressed cache restored itself the moment the input
 shape did.
@@ -100,7 +100,7 @@ shape did.
 
 4. **Z3 does work once per (post, pre) pair, project-wide.** Run B
    cold mints a memento. Every consumer that ever pairs the same
-   `(post, pre)` will get a Tier 2 hit and skip Z3 forever — until
+   `(post, pre)` will get a Tier 2 hit and skip Z3 forever: until
    the bytes change.
 
 ## Headline metrics
@@ -119,8 +119,7 @@ The `hash` and `cache` columns count *real handshake* discharge
 events: a publisher post and a consumer pre were paired, and either
 their canonical hashes matched (Tier 1) or a signed implication
 memento covering the pair was on disk (Tier 2). `vacuous` separately
-counts call sites whose bridged target had only a `post` slot —
-those are vacuously discharged, but they don't represent real
+counts call sites whose bridged target had only a `post` slot: those are vacuously discharged, but they don't represent real
 handshake work, so they get their own counter.
 
 The headline pitch reads off Z3 invocations: **0 / 1 / 0 / 1 / 0**.

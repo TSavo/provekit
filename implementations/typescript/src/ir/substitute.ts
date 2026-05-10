@@ -1,11 +1,11 @@
 /**
- * IR substitution — instantiate a forall-quantified IrFormula at a
+ * IR substitution: instantiate a forall-quantified IrFormula at a
  * specific term.
  *
  * Used by the bridge-enforcement engine: given a precondition formula
  * `forall s: String. nonempty(s)` from a property memento, and a
  * call-site argument (e.g., the Const `""` from `parseInt("")`),
- * produce the obligation formula `nonempty("")` — which the solver
+ * produce the obligation formula `nonempty("")`: which the solver
  * dispatcher then decides.
  *
  * Today's IR uses NAMED bound variables. Substitution by name match is

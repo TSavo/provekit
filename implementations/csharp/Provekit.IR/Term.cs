@@ -11,7 +11,7 @@ public abstract record Term;
 
 public sealed record VarTerm(string Name) : Term;
 
-/// <summary>Const value variant — Int / String / Bool.</summary>
+/// <summary>Const value variant: Int / String / Bool.</summary>
 public abstract record ConstValue
 {
     public sealed record Int(long Value) : ConstValue;

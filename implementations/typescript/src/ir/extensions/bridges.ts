@@ -1,5 +1,5 @@
 /**
- * Primitive bridge authoring — kit "built-ins" that aren't actually
+ * Primitive bridge authoring: kit "built-ins" that aren't actually
  * kit-owned.
  *
  * Most TS-kit "built-in" primitives (parseInt, abs, floor, ceil,
@@ -85,7 +85,7 @@ export interface PrimitiveBridgeDeclaration {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge registry — process-local mirror of registered bridges
+// Bridge registry: process-local mirror of registered bridges
 // ---------------------------------------------------------------------------
 
 interface BridgeRegistryState {
@@ -110,7 +110,7 @@ export function _resetBridges(): void {
 }
 
 // ---------------------------------------------------------------------------
-// primitiveBridge — the factory
+// primitiveBridge: the factory
 // ---------------------------------------------------------------------------
 
 export interface PrimitiveBridgeInput {

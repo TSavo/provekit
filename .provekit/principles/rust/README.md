@@ -1,4 +1,4 @@
-# rust/ — Rust principle partition
+# rust/: Rust principle partition
 
 TBD: language-specific axioms for Rust go here.
 

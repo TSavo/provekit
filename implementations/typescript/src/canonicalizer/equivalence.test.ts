@@ -15,7 +15,7 @@
  *   5. De Morgan cases
  *   6. Implies-removal cases
  *   7. Equality argument sorting
- *   8. Negative cases — formulas that DIFFER and must produce different hashes
+ *   8. Negative cases: formulas that DIFFER and must produce different hashes
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -127,7 +127,7 @@ function implies_(ante: IrFormula, cons: IrFormula): IrFormula {
 
 describe("1. Pure quantifier-free formulas", () => {
   it("atomic equality: =(a, b) is the same formula regardless of variable names", () => {
-    // Same predicate, same shape — different variable names don't affect
+    // Same predicate, same shape: different variable names don't affect
     // quantifier-free formulas (no binders to rename).
     // Both produce the same canonical form because the vars have the same
     // structural role (both are free vars at depth 0).
@@ -226,7 +226,7 @@ describe("1. Pure quantifier-free formulas", () => {
 });
 
 // -----------------------------------------------------------------------
-// 2. Single-quantifier formulas — alpha-equivalence (bound-variable renaming)
+// 2. Single-quantifier formulas: alpha-equivalence (bound-variable renaming)
 // -----------------------------------------------------------------------
 
 describe("2. Single-quantifier / alpha-equivalence", () => {
@@ -272,7 +272,7 @@ describe("2. Single-quantifier / alpha-equivalence", () => {
 });
 
 // -----------------------------------------------------------------------
-// 3. Multi-quantifier formulas — nested binders
+// 3. Multi-quantifier formulas: nested binders
 // -----------------------------------------------------------------------
 
 describe("3. Multi-quantifier / nested binders", () => {
@@ -308,7 +308,7 @@ describe("3. Multi-quantifier / nested binders", () => {
     // So these ARE the same! Equality argument sorting makes them equal.
     const f1 = forall("a", Int, forall("b", Int, atomicEq("a", "b")));
     const f2 = forall("a", Int, forall("b", Int, atomicEq("b", "a")));
-    // Equality is symmetric — argument sorting collapses them.
+    // Equality is symmetric: argument sorting collapses them.
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
   });
 
@@ -351,21 +351,21 @@ describe("4. AC normalization", () => {
     args: [{ kind: "const", value: 2, sort: Int }, { kind: "const", value: 3, sort: Int }],
   };
 
-  it("and(p, q) ≡ and(q, p) — commutativity", () => {
+  it("and(p, q) ≡ and(q, p): commutativity", () => {
     expect(propertyHashFromFormula(and_(p, q))).toBe(propertyHashFromFormula(and_(q, p)));
   });
 
-  it("or(p, q) ≡ or(q, p) — commutativity", () => {
+  it("or(p, q) ≡ or(q, p): commutativity", () => {
     expect(propertyHashFromFormula(or_(p, q))).toBe(propertyHashFromFormula(or_(q, p)));
   });
 
-  it("and(and(p, q), r) ≡ and(p, q, r) — associativity flattening", () => {
+  it("and(and(p, q), r) ≡ and(p, q, r): associativity flattening", () => {
     const nested = and_(and_(p, q), r);
     const flat = and_(p, q, r);
     expect(propertyHashFromFormula(nested)).toBe(propertyHashFromFormula(flat));
   });
 
-  it("or(or(p, q), r) ≡ or(p, q, r) — associativity flattening", () => {
+  it("or(or(p, q), r) ≡ or(p, q, r): associativity flattening", () => {
     const nested = or_(or_(p, q), r);
     const flat = or_(p, q, r);
     expect(propertyHashFromFormula(nested)).toBe(propertyHashFromFormula(flat));
@@ -494,7 +494,7 @@ describe("6. Implies removal", () => {
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const impl = implies_(p, implies_(q, r));
-    // or(not(p), or(not(q), r)) — then AC-normalizes or nesting
+    // or(not(p), or(not(q), r)): then AC-normalizes or nesting
     const expanded = or_(not_(p), or_(not_(q), r));
     expect(propertyHashFromFormula(impl)).toBe(propertyHashFromFormula(expanded));
   });
@@ -552,10 +552,10 @@ describe("7. Equality argument sorting", () => {
 });
 
 // -----------------------------------------------------------------------
-// 8. Negative cases — formulas that DIFFER
+// 8. Negative cases: formulas that DIFFER
 // -----------------------------------------------------------------------
 
-describe("8. Negative cases — formulas that must differ", () => {
+describe("8. Negative cases: formulas that must differ", () => {
   it("different predicate: < vs ≤", () => {
     const lt: IrFormula = {
       kind: "atomic",
@@ -631,8 +631,8 @@ describe("8. Negative cases — formulas that must differ", () => {
   });
 
   it("different bound-variable index: single binder vs two binders", () => {
-    // forall(a. forall(b. a < b)) — outer is index 1 in body
-    // forall(a. forall(b. b < a)) — outer is index 1 in body, inner is 0
+    // forall(a. forall(b. a < b)): outer is index 1 in body
+    // forall(a. forall(b. b < a)): outer is index 1 in body, inner is 0
     // < is not commutative so these differ
     const outerLtInner = forall("a", Int, forall("b", Int, {
       kind: "atomic",
@@ -695,7 +695,7 @@ describe("9. Hash format", () => {
     expect(ast).toEqual({ kind: "atomic", name: "false", args: [] });
   });
 
-  it("forall body formula: spec example — forAll(b => b ≠ 0)", () => {
+  it("forall body formula: spec example: forAll(b => b ≠ 0)", () => {
     const formula = forall("b", Int, atomicNeq("b", 0));
     const ast = formulaToCanonicalAst(formula);
     expect(ast.kind).toBe("forall");
@@ -731,7 +731,7 @@ describe("9. Hash format", () => {
  * If TypeScript ever rejects one of these calls, the IR-library /
  * canonicalizer types have drifted apart. If a hash drifts, either
  * the canonicalizer's pipeline changed or the IR library started
- * emitting a different shape — both are alignment regressions.
+ * emitting a different shape: both are alignment regressions.
  */
 describe("10. IR-library → canonicalizer roundtrip", () => {
   beforeEach(() => {
@@ -740,13 +740,13 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
     _resetIrCounter();
   });
 
-  it("forAll(Int, b => assert.notEqual(b, 0)) — spec example, pinned hash", () => {
+  it("forAll(Int, b => assert.notEqual(b, 0)): spec example, pinned hash", () => {
     // Surface (TypeScript): forAll<Int>(b => assert.notEqual(b, 0))
     // Canonical FOL:        forall(b: Int).¬(b = 0)
     // Spec:                 protocol/specs/2026-04-29-ir-library.md §"Cross-language equivalence"
     const formula = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
 
-    // No cast — the IR library returns IrFormula, the canonicalizer
+    // No cast: the IR library returns IrFormula, the canonicalizer
     // accepts IrFormula. Alignment is "this line type-checks".
     const hash = propertyHashFromFormula(formula);
 
@@ -764,7 +764,7 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
     // Library-dialect surface
     const fromLib = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
 
-    // Hand-built — must produce the same canonical hash as the
+    // Hand-built: must produce the same canonical hash as the
     // library output, since both encode `forall(b: Int).¬(b = 0)`.
     // Variable names differ ("_x0" vs "b"); de Bruijn erases them.
     const handBuilt: IrFormula = forall("b", Int, atomicNeq("b", 0));
@@ -772,7 +772,7 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
     expect(propertyHashFromFormula(fromLib)).toBe(propertyHashFromFormula(handBuilt));
   });
 
-  it("IR-library nested quantifiers — forAll(a => exists(b => a < b))", () => {
+  it("IR-library nested quantifiers: forAll(a => exists(b => a < b))", () => {
     const formula = irForAll(IrInt, (a) =>
       irExists(IrInt, (b) => irAssert.lessThan(a, b)),
     );
@@ -783,7 +783,7 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
   });
 
   it("IR-library implies + connectives canonicalize through implies-removal + NNF", () => {
-    // forAll(x. (x = 0) → ¬(x ≠ 0))  — tautology after rewrites.
+    // forAll(x. (x = 0) → ¬(x ≠ 0)): tautology after rewrites.
     const formula = irForAll(IrInt, (x) =>
       irImplies(irAssert.equal(x, 0), irAssert.notEqual(x, 0)),
     );
@@ -821,13 +821,13 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
 /**
  * RFC 8785 §3.2.2.3 normatively delegates JSON number serialization to
  * ECMA-262 §7.1.12.1 (Number::toString incl. "Note 2"). On V8/Node,
- * `JSON.stringify(n)` for a finite number IS that algorithm — RFC 8785
+ * `JSON.stringify(n)` for a finite number IS that algorithm: RFC 8785
  * cites V8 as the reference implementation, and Appendix A's reference
  * canonicalizer uses `JSON.stringify` for the number path verbatim.
  *
  * These tests pin the contract so a future hand-rolled formatter that
  * drifts from §3.2.2.3 fails immediately. The fixtures are RFC 8785
- * Appendix B, "Number Serialization Samples" — the canonical conformance
+ * Appendix B, "Number Serialization Samples": the canonical conformance
  * suite for the numeric subset of §3.2.2.3.
  *
  * Cross-kit note: this conformance argument is V8/Node-specific. Each
@@ -841,7 +841,7 @@ describe("11. RFC 8785 §3.2.2.3 number serialization", () => {
    * wrapping it in a minimal Atomic AST node. Returns the byte string
    * produced by `serializeCanonicalAst`. The returned form is:
    *   {"args":[{"kind":"const","sort":{"kind":"primitive","name":"Real"},"value":<N>}],"kind":"atomic","predicate":"P"}
-   * — useful for asserting that the <N> substring is the §3.2.2.3
+   *: useful for asserting that the <N> substring is the §3.2.2.3
    * canonical form for the input.
    */
   function serializeNumberInAst(n: number): string {
@@ -860,7 +860,7 @@ describe("11. RFC 8785 §3.2.2.3 number serialization", () => {
     return m[1];
   }
 
-  // RFC 8785 Appendix B — IEEE-754 hex → expected JSON serialization.
+  // RFC 8785 Appendix B: IEEE-754 hex → expected JSON serialization.
   // Each row is a contractual fixture: drift here breaks cross-impl
   // hash equivalence and must be treated as a regression.
   const APPENDIX_B: Array<{ hex: string; expected: string; comment: string }> = [
@@ -924,7 +924,7 @@ describe("11. RFC 8785 §3.2.2.3 number serialization", () => {
 });
 
 // -----------------------------------------------------------------------
-// 12. Pass-level unit tests — passes/sorts.ts (canonicalizeSort)
+// 12. Pass-level unit tests: passes/sorts.ts (canonicalizeSort)
 // -----------------------------------------------------------------------
 
 describe("12. canonicalizeSort", () => {
@@ -995,7 +995,7 @@ describe("12. canonicalizeSort", () => {
 });
 
 // -----------------------------------------------------------------------
-// 13. passes/deBruijn.ts — applyDeBruijn
+// 13. passes/deBruijn.ts: applyDeBruijn
 // -----------------------------------------------------------------------
 
 describe("13. applyDeBruijn", () => {
@@ -1069,7 +1069,7 @@ describe("13. applyDeBruijn", () => {
 });
 
 // -----------------------------------------------------------------------
-// 14. passes/predicates.ts — canonicalizeTerm, termSortKey, canonicalizePredicate
+// 14. passes/predicates.ts: canonicalizeTerm, termSortKey, canonicalizePredicate
 // -----------------------------------------------------------------------
 
 describe("14. canonicalizeTerm", () => {
@@ -1197,7 +1197,7 @@ describe("14c. canonicalizePredicate", () => {
 });
 
 // -----------------------------------------------------------------------
-// 15. passes/nnf.ts — toNnf
+// 15. passes/nnf.ts: toNnf
 // -----------------------------------------------------------------------
 
 describe("15. toNnf", () => {
@@ -1275,7 +1275,7 @@ describe("15. toNnf", () => {
 });
 
 // -----------------------------------------------------------------------
-// 16. passes/acNormalize.ts — acNormalize + astSortKey
+// 16. passes/acNormalize.ts: acNormalize + astSortKey
 // -----------------------------------------------------------------------
 
 describe("16. acNormalize + astSortKey", () => {
@@ -1359,7 +1359,7 @@ describe("16. acNormalize + astSortKey", () => {
 });
 
 // -----------------------------------------------------------------------
-// 17. passes/impliesRemoval.ts — removeImplies
+// 17. passes/impliesRemoval.ts: removeImplies
 // -----------------------------------------------------------------------
 
 describe("17. removeImplies", () => {
@@ -1425,7 +1425,7 @@ describe("17. removeImplies", () => {
 });
 
 // -----------------------------------------------------------------------
-// 18. serialize.ts — SERIALIZATION_FORMAT + bigint encodings
+// 18. serialize.ts: SERIALIZATION_FORMAT + bigint encodings
 // -----------------------------------------------------------------------
 
 describe("18. serialize.ts", () => {
@@ -1495,7 +1495,7 @@ describe("18. serialize.ts", () => {
 });
 
 // -----------------------------------------------------------------------
-// 19. hash.ts — BLAKE3-512 self-identifying hash (protocol v1.1.0)
+// 19. hash.ts: BLAKE3-512 self-identifying hash (protocol v1.1.0)
 // -----------------------------------------------------------------------
 
 describe("19. computeCid (BLAKE3-512 self-identifying hash)", () => {
@@ -1532,7 +1532,7 @@ describe("19. computeCid (BLAKE3-512 self-identifying hash)", () => {
 });
 
 // -----------------------------------------------------------------------
-// 20. canonicalize.ts — propertyHashFromAst direct
+// 20. canonicalize.ts: propertyHashFromAst direct
 // -----------------------------------------------------------------------
 
 describe("20. propertyHashFromAst", () => {

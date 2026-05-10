@@ -68,7 +68,7 @@ async function main() {
     if (cached) {
       harness = cached.harness || null;
       untestable = cached.untestable || null;
-      console.log(`[cache] hit — ${harness ? "harness" : untestable ? "untestable" : "empty"}`);
+      console.log(`[cache] hit: ${harness ? "harness" : untestable ? "untestable" : "empty"}`);
     }
   }
 
@@ -105,7 +105,7 @@ async function main() {
     return;
   }
   if (!harness) {
-    console.log(`VERDICT: synthesis-failed — no harness and no UNTESTABLE line`);
+    console.log(`VERDICT: synthesis-failed: no harness and no UNTESTABLE line`);
     return;
   }
 

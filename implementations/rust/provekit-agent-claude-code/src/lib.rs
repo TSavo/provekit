@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-agent-claude-code — drives the `claude` CLI (Anthropic
+// provekit-agent-claude-code: drives the `claude` CLI (Anthropic
 // Claude Code) as a subprocess. The agent reads code, edits files,
 // runs tests, and returns ContractCandidate / FixResult JSON to us.
 //
@@ -15,7 +15,7 @@ use provekit_agent::{
     ProposeContext, ProvekitAgent,
 };
 
-/// Pluggable transport — abstracts the subprocess so tests can drop
+/// Pluggable transport: abstracts the subprocess so tests can drop
 /// in a canned-response harness.
 pub trait Transport: Send + Sync {
     fn invoke(
