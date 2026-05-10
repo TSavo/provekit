@@ -1,0 +1,54 @@
+{
+  "kind": "equation",
+  "fn_name": "rust:effect:read-after-write",
+  "formals": [
+    "addr",
+    "v"
+  ],
+  "formal_sorts": [
+    "sort_addr.spec.json",
+    "sort_value.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "after",
+      "args": [
+        {
+          "kind": "op",
+          "name": "read",
+          "args": [
+            {
+              "kind": "var",
+              "name": "addr"
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "name": "write",
+          "args": [
+            {
+              "kind": "var",
+              "name": "addr"
+            },
+            {
+              "kind": "var",
+              "name": "v"
+            }
+          ]
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "v"
+    }
+  }
+}

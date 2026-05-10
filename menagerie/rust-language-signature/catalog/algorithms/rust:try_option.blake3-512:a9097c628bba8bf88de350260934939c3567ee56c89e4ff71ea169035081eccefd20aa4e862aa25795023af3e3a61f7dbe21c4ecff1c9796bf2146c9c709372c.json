@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:try_option",
+    "formals": [
+      "carrier"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Option",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "try_option",
+      "arity": [
+        "Option"
+      ],
+      "result": "Expr",
+      "wp": "Some payload or early return of None"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "early-return None"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:a9097c628bba8bf88de350260934939c3567ee56c89e4ff71ea169035081eccefd20aa4e862aa25795023af3e3a61f7dbe21c4ecff1c9796bf2146c9c709372c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "neK8npZtfctFSEs2lZlyjJH+jEUYdmXbRC5q6Oa5phG9WZoPOIuBzbWlRoWeKArFWQvVs35Gcp1AyQmCtnO6BA=="
+  }
+}

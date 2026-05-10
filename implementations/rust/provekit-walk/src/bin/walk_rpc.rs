@@ -6,6 +6,8 @@
 //
 //   walk.lift_pre        { src, fn_name }            → IrFormula
 //   walk.lift_post       { src, fn_name }            → IrFormula
+//   walk.contract        { src, fn_name, file? }     → FunctionContractMemento
+//   walk.term            { src, fn_name, source? }   → rust algebra term JSON
 //   walk.shadow_source   { src, callee, caller }     → { cid, slots, arrivals_total, bundle_cid }
 //   walk.proof_ir        { src, callee, caller }     → { cid, bytes_b64, length }
 //
@@ -20,9 +22,10 @@
 use std::io::{self, BufRead, Write};
 
 use base64::Engine;
-use provekit_walk::emit::{shadow_proof_ir_cid, shadow_to_proof_ir};
+use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
 use provekit_walk::{
-    build_shadow_source, lift_function_postcondition, lift_function_precondition, CalleeContract,
+    build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
+    lift_function_precondition, CalleeContract,
 };
 use serde_json::{json, Value};
 
@@ -64,6 +67,8 @@ fn handle_line(line: &str) -> Value {
     let result = match method {
         "walk.lift_pre" => lift_pre(&params),
         "walk.lift_post" => lift_post(&params),
+        "walk.contract" => contract(&params),
+        "walk.term" => term(&params),
         "walk.shadow_source" => shadow_source(&params),
         "walk.proof_ir" => proof_ir(&params),
         _ => Err(format!("unknown method: {}", method)),
@@ -94,7 +99,7 @@ fn lift_pre(params: &Value) -> Result<Value, String> {
         .ok_or("missing `fn_name`")?;
     let item = parse_fn(src, fn_name)?;
     let pre = lift_function_precondition(&item);
-    Ok(serde_json::to_value(pre.as_formula()).map_err(|e| e.to_string())?)
+    serde_json::to_value(pre.as_formula()).map_err(|e| e.to_string())
 }
 
 fn lift_post(params: &Value) -> Result<Value, String> {
@@ -108,7 +113,40 @@ fn lift_post(params: &Value) -> Result<Value, String> {
         .ok_or("missing `fn_name`")?;
     let item = parse_fn(src, fn_name)?;
     let post = lift_function_postcondition(&item);
-    Ok(serde_json::to_value(post.as_formula()).map_err(|e| e.to_string())?)
+    serde_json::to_value(post.as_formula()).map_err(|e| e.to_string())
+}
+
+fn contract(params: &Value) -> Result<Value, String> {
+    let src = params
+        .get("src")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `src`")?;
+    let fn_name = params
+        .get("fn_name")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `fn_name`")?;
+    let file = params.get("file").and_then(|v| v.as_str());
+    let item = parse_fn(src, fn_name)?;
+    let contract = build_function_contract_with_file(&item, None, file);
+    serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())
+}
+
+fn term(params: &Value) -> Result<Value, String> {
+    let src = params
+        .get("src")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `src`")?;
+    let fn_name = params
+        .get("fn_name")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `fn_name`")?;
+    let source = params
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<rpc>");
+    let item = parse_fn(src, fn_name)?;
+    let bytes = rust_function_term_json(&item, source)?;
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 
 fn shadow_source(params: &Value) -> Result<Value, String> {

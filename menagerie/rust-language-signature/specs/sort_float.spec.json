@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Float",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Float",
+    "description": "Rust floating point values as IEEE bit patterns"
+  }
+}

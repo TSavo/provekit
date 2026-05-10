@@ -1,0 +1,51 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:while_let",
+  "formals": [
+    "pattern",
+    "expr",
+    "body"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Pattern",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "while_let",
+    "arity": [
+      "Pattern",
+      "Expr",
+      "Stmt"
+    ],
+    "result": "Stmt",
+    "wp": "while let surface form, desugars to loop and match"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

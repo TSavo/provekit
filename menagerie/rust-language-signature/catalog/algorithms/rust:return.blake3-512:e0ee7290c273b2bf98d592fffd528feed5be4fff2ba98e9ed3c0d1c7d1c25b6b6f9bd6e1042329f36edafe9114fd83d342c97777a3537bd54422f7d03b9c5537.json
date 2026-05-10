@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:return",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "return",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Stmt",
+      "wp": "bind function out value and exit current body"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "early-return"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:e0ee7290c273b2bf98d592fffd528feed5be4fff2ba98e9ed3c0d1c7d1c25b6b6f9bd6e1042329f36edafe9114fd83d342c97777a3537bd54422f7d03b9c5537",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "PAF7DBXUcGEKYXCDwTHgzNw/ux+PKm/nziz//V6l9YNrs/RYcfJbx6XkAvlSkDi38RzYrcspJYxOTN3dP/lHDA=="
+  }
+}

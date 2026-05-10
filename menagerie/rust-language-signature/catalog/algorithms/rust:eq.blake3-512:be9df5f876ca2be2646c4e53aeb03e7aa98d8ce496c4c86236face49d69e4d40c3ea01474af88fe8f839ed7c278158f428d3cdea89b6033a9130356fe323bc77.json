@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:eq",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "eq",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Bool",
+      "wp": "integer equality comparison"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:be9df5f876ca2be2646c4e53aeb03e7aa98d8ce496c4c86236face49d69e4d40c3ea01474af88fe8f839ed7c278158f428d3cdea89b6033a9130356fe323bc77",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "rFXDEDQPcwKdtbfPnFbd8LADYeXy9I8m43ptZIj7ewNRx10h6PtmjUgJcxSRR0+tc9p4km4bS9RYOkR7s0JyBA=="
+  }
+}

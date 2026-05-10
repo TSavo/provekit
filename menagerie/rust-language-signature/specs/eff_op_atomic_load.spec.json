@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:effect:atomic_load",
+  "formals": [
+    "addr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Addr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "atomic_load",
+    "arity": [
+      "Addr"
+    ],
+    "result": "Value",
+    "wp": "atomic load"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "AtomicAccess"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

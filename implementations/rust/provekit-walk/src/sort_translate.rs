@@ -405,10 +405,8 @@ fn charon_adt_sort_name(adt: &serde_json::Value, type_decls: Option<&serde_json:
     // id may be a number or an {"Adt": <num>} shape.
     let adt_numeric_id: Option<u64> = if let Some(n) = id.as_u64() {
         Some(n)
-    } else if let Some(n) = id.get("Adt").and_then(|v| v.as_u64()) {
-        Some(n)
     } else {
-        None
+        id.get("Adt").and_then(|v| v.as_u64())
     };
 
     if let Some(num_id) = adt_numeric_id {

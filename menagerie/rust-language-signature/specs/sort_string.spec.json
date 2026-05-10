@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:String",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "String",
+    "description": "Rust string values"
+  }
+}

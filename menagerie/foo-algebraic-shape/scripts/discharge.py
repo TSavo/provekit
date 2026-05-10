@@ -16,6 +16,7 @@ PROVEKIT = TARGET / "provekit"
 CANON = TARGET / "compute_fixture_cid"
 AARCH64_LIFTER = TARGET / "provekit-lift-asm-aarch64"
 X86_LIFTER = TARGET / "provekit-lift-asm-x86-64"
+RUST_WALK_EMIT = TARGET / "provekit-walk-emit"
 
 SPEC_DIR = BASE / "specs"
 SOURCE_DIR = BASE / "sources"
@@ -137,6 +138,8 @@ def build_tools():
             "provekit-lift-asm-x86-64",
             "-p",
             "provekit-canonicalizer",
+            "-p",
+            "provekit-walk",
         ],
         cwd=RUST_DIR,
     )
@@ -456,6 +459,12 @@ def write_sources():
     source_c = ROOT / "menagerie" / "c11-language-signature" / "example" / "foo.expected-wp-contract.json"
     shutil.copyfile(source_c, SOURCE_DIR / "c_foo.contract.json")
 
+    rust_example = ROOT / "menagerie" / "rust-language-signature" / "example"
+    rust_contract = json.loads(
+        run([RUST_WALK_EMIT, "contract", "foo.rs", "foo"], cwd=rust_example)
+    )
+    write_json(SOURCE_DIR / "rust_foo.contract.json", rust_contract)
+
     aarch64_contract = lift_contract(
         AARCH64_LIFTER,
         RUST_DIR / "provekit-lift-asm-aarch64",
@@ -509,7 +518,7 @@ int foo(int x) {{
 }}
 ```
 
-The C, AArch64, and x86-64 lifts have different names, return slots, and value representations. Under a quotient that renames the input to `arg_0`, renames the return slot to `ret`, and interprets 32 bit machine literals as signed `Int`, all three collapse to one algebraic shape:
+The C, Rust, AArch64, and x86-64 lifts have different names, return slots, and value representations. Under a quotient that renames the input to `arg_0`, renames the return slot to `ret`, and interprets 32 bit machine literals as signed `Int`, all four collapse to one algebraic shape:
 
 ```text
 lambda arg_0. ite(arg_0 == 0, -22, arg_0)
@@ -536,6 +545,7 @@ The quotient maps source names and representations into the shared shape.
 | Source | Renaming | Representation |
 | --- | --- | --- |
 | C | `x -> arg_0`, `result -> ret` | `i32 -> Int` |
+| Rust | `x -> arg_0`, `result -> ret` | `I32 -> Int` |
 | AArch64 | `w0 -> arg_0`, `w0_out -> ret` | `BitVector32 -> Int` |
 | x86-64 | `edi -> arg_0`, `eax_post -> ret` | `BitVector -> Int`, `0xffffffea -> -22` |
 
@@ -547,7 +557,7 @@ The discharge is not an SMT proof. The script applies the renaming and represent
 | --- | --- | --- |
 {discharge_rows}
 
-All three after-substitution CIDs must equal the shape CID. The receipts live in `receipts/` and are also stored under `catalog/receipts/`.
+All four after-substitution CIDs must equal the shape CID. The receipts live in `receipts/` and are also stored under `catalog/receipts/`.
 
 ## C Lifter Gap
 
@@ -561,7 +571,7 @@ Run:
 menagerie/foo-algebraic-shape/mint.sh
 ```
 
-The script builds the Rust CLI and the two asm lifters, refreshes `sources/`, mints the shape and morphisms into `catalog/`, writes receipts, updates `cids.tsv`, and scans this exhibit for forbidden dash characters and the forbidden sign-off name.
+The script builds the Rust CLI, Rust walker, and the two asm lifters, refreshes `sources/`, mints the shape and morphisms into `catalog/`, writes receipts, updates `cids.tsv`, and scans this exhibit for forbidden dash characters and the forbidden sign-off name.
 
 ## References
 
@@ -604,7 +614,7 @@ def main():
 
     source_cids = {}
     file_cids = {}
-    for name in ["c", "aarch64", "x86_64"]:
+    for name in ["c", "rust", "aarch64", "x86_64"]:
         cid, file_cid = source_contract_cid(SOURCE_DIR / f"{name}_foo.contract.json")
         source_cids[name] = cid
         file_cids[name] = file_cid
@@ -619,6 +629,12 @@ def main():
             "source": "c",
             "renaming": {"x": "arg_0", "result": "ret"},
             "representation": {"i32": "Int"},
+            "literal": {},
+        },
+        "morphism_rust_to_shape": {
+            "source": "rust",
+            "renaming": {"x": "arg_0", "result": "ret"},
+            "representation": {"I32": "Int"},
             "literal": {},
         },
         "morphism_aarch64_to_shape": {
@@ -642,6 +658,12 @@ def main():
             "name": "c_foo",
             "cid": source_cids["c"],
             "path": str(SOURCE_DIR / "c_foo.contract.json"),
+        },
+        {
+            "kind": "source",
+            "name": "rust_foo",
+            "cid": source_cids["rust"],
+            "path": str(SOURCE_DIR / "rust_foo.contract.json"),
         },
         {
             "kind": "source",
@@ -724,7 +746,7 @@ def main():
     scan_created_text()
 
     print(f"shape_cid\t{shape_cid}")
-    for key in ["c", "aarch64", "x86_64"]:
+    for key in ["c", "rust", "aarch64", "x86_64"]:
         print(f"source_cid\t{key}\t{source_cids[key]}")
     for name, after_cid, target_cid in discharge_status:
         print(f"discharge\t{name}\t{after_cid}\t{target_cid}")

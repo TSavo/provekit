@@ -1,0 +1,49 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:effect:write",
+  "formals": [
+    "addr",
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Addr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "write",
+    "arity": [
+      "Addr",
+      "Value"
+    ],
+    "result": "Unit",
+    "wp": "write value to memory addr"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemWrite"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

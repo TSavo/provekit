@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:deref",
+    "formals": [
+      "ref"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Ref",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "deref",
+      "arity": [
+        "Ref"
+      ],
+      "result": "Place",
+      "wp": "safe reference dereference"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemRead"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Place",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:ed6457a34f0f17cb9ffe6f485635538f90bf97b9076695ff94c83a70086becb9a9054719b58a0eeab9f455849d2b21504dca4f2adba8f5918f43643b4382736d",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "sq8+UFPKCXn+cvY0GXZaqb2BU3dMYqeYAXyx/cRgZBsc+ArFIwr2VBUdktgx6vzSK7hNxpMkEabYWuqY0apQBw=="
+  }
+}

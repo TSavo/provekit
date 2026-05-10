@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:pattern_none",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Pattern",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "pattern_none",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Pattern",
+    "wp": "None pattern"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

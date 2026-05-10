@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:field",
+    "formals": [
+      "base",
+      "field"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "FieldName",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "field",
+      "arity": [
+        "Expr",
+        "FieldName"
+      ],
+      "result": "Expr",
+      "wp": "field expression projection emitted by the walker"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:2c417eae7fbfcfaa10386bb33ea364eda1df3faa480b3d6b1125cb28052444efe83c5b6328e2cea044956fa4a360fad0c27e3569cddb67df6762809e0fabfeeb",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "J1fDF/DcPNl5x1rP2Rdr+7ktt4UckJhZuC8FQIPZTesAnbBZTkZuFVPUFeZxxZMIIndChuYkIUsfaZ53bsw3CA=="
+  }
+}

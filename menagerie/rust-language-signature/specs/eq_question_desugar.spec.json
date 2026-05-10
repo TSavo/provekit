@@ -1,0 +1,105 @@
+{
+  "kind": "equation",
+  "fn_name": "rust:question-desugar",
+  "formals": [
+    "e",
+    "v",
+    "err"
+  ],
+  "formal_sorts": [
+    "sort_result.spec.json",
+    "sort_pattern.spec.json",
+    "sort_pattern.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "try",
+      "args": [
+        {
+          "kind": "var",
+          "name": "e"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "match_expr",
+      "args": [
+        {
+          "kind": "var",
+          "name": "e"
+        },
+        {
+          "kind": "op",
+          "name": "arms",
+          "args": [
+            {
+              "kind": "op",
+              "name": "arm",
+              "args": [
+                {
+                  "kind": "op",
+                  "name": "pattern_ok",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "v"
+                    }
+                  ]
+                },
+                {
+                  "kind": "var",
+                  "name": "v"
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "name": "arm",
+              "args": [
+                {
+                  "kind": "op",
+                  "name": "pattern_err",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "err"
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "name": "return",
+                  "args": [
+                    {
+                      "kind": "op",
+                      "name": "call_result",
+                      "args": [
+                        {
+                          "kind": "var",
+                          "name": "into_contract"
+                        },
+                        {
+                          "kind": "var",
+                          "name": "err"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "notes": "Uses match_expr because try returns a payload expression. The statement match operation remains primitive."
+  }
+}

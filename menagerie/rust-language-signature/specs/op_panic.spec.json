@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:panic",
+  "formals": [
+    "reason"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Reason",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bottom",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "panic",
+    "arity": [
+      "Reason"
+    ],
+    "result": "Bottom",
+    "wp": "controlled divergence through Rust panic"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

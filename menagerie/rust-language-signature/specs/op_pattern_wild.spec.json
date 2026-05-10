@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:pattern_wild",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Pattern",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "pattern_wild",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Pattern",
+    "wp": "wildcard pattern"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

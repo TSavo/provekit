@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // `provekit-walk-emit`: take a Rust source file, lift + walk + shadow,
-// emit a proof.ir bundle as JCS-canonical bytes on stdout.
+// emit a proof.ir bundle as JCS-canonical bytes on stdout. It also has
+// term and contract modes for single-function rust:rust exhibits.
 //
 // Usage:
 //   provekit-walk-emit <source.rs> <callee_name> <caller_name>
+//   provekit-walk-emit term <source.rs> <function_name> [output.term.json]
+//   provekit-walk-emit contract <source.rs> <function_name> [output.contract.json]
 //
 // Example:
 //   echo '<<bare-demo source>>' > demo.rs
@@ -17,12 +20,29 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use provekit_walk::emit::{shadow_proof_ir_cid, shadow_to_proof_ir};
-use provekit_walk::{build_shadow_source, lift_function_precondition, CalleeContract};
+use provekit_walk::{
+    build_function_contract_with_file, build_shadow_source, lift_function_precondition,
+    CalleeContract,
+};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
+    if args.get(1).map(String::as_str) == Some("term") {
+        return emit_term_mode(&args);
+    }
+    if args.get(1).map(String::as_str) == Some("contract") {
+        return emit_contract_mode(&args);
+    }
     if args.len() != 4 {
         eprintln!("usage: {} <source.rs> <callee_name> <caller_name>", args[0]);
+        eprintln!(
+            "   or: {} term <source.rs> <function_name> [output.term.json]",
+            args[0]
+        );
+        eprintln!(
+            "   or: {} contract <source.rs> <function_name> [output.contract.json]",
+            args[0]
+        );
         return ExitCode::from(1);
     }
     let source_path = &args[1];
@@ -86,6 +106,121 @@ fn main() -> ExitCode {
         s.slots.iter().map(|sl| sl.arrivals.len()).sum::<usize>()
     );
 
+    let mut stdout = io::stdout().lock();
+    if let Err(e) = stdout.write_all(&bytes) {
+        eprintln!("error writing stdout: {}", e);
+        return ExitCode::from(6);
+    }
+    let _ = stdout.write_all(b"\n");
+    ExitCode::SUCCESS
+}
+
+fn emit_contract_mode(args: &[String]) -> ExitCode {
+    if args.len() != 4 && args.len() != 5 {
+        eprintln!(
+            "usage: {} contract <source.rs> <function_name> [output.contract.json]",
+            args[0]
+        );
+        return ExitCode::from(1);
+    }
+    let source_path = &args[2];
+    let function_name = &args[3];
+    let src = match fs::read_to_string(source_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error reading {}: {}", source_path, e);
+            return ExitCode::from(2);
+        }
+    };
+    let file: syn::File = match syn::parse_str(&src) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error parsing {}: {}", source_path, e);
+            return ExitCode::from(3);
+        }
+    };
+    let item_fn = match find_fn(&file, function_name) {
+        Some(f) => f,
+        None => {
+            eprintln!("function `{}` not found in {}", function_name, source_path);
+            return ExitCode::from(4);
+        }
+    };
+    let contract = build_function_contract_with_file(&item_fn, None, Some(source_path));
+    eprintln!("# rust contract for function={}", function_name);
+    eprintln!("# contract CID: {}", contract.cid);
+    eprintln!("# contract bytes: {}", contract.canonical_bytes.len());
+    if let Some(output_path) = args.get(4) {
+        if let Err(e) = fs::write(output_path, &contract.canonical_bytes) {
+            eprintln!("error writing {}: {}", output_path, e);
+            return ExitCode::from(6);
+        }
+        return ExitCode::SUCCESS;
+    }
+    let mut stdout = io::stdout().lock();
+    if let Err(e) = stdout.write_all(&contract.canonical_bytes) {
+        eprintln!("error writing stdout: {}", e);
+        return ExitCode::from(6);
+    }
+    let _ = stdout.write_all(b"\n");
+    ExitCode::SUCCESS
+}
+
+fn emit_term_mode(args: &[String]) -> ExitCode {
+    if args.len() != 4 && args.len() != 5 {
+        eprintln!(
+            "usage: {} term <source.rs> <function_name> [output.term.json]",
+            args[0]
+        );
+        return ExitCode::from(1);
+    }
+    let source_path = &args[2];
+    let function_name = &args[3];
+    let src = match fs::read_to_string(source_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error reading {}: {}", source_path, e);
+            return ExitCode::from(2);
+        }
+    };
+    let file: syn::File = match syn::parse_str(&src) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error parsing {}: {}", source_path, e);
+            return ExitCode::from(3);
+        }
+    };
+    let item_fn = match find_fn(&file, function_name) {
+        Some(f) => f,
+        None => {
+            eprintln!("function `{}` not found in {}", function_name, source_path);
+            return ExitCode::from(4);
+        }
+    };
+    let bytes = match provekit_walk::emit::rust_function_term_json(&item_fn, source_path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            eprintln!("term-emit skipped fn={}: {}", function_name, e);
+            return ExitCode::from(5);
+        }
+    };
+    let cid = match provekit_walk::emit::rust_function_term_json_cid(&item_fn, source_path) {
+        Ok(cid) => cid,
+        Err(e) => {
+            eprintln!("term-emit skipped fn={}: {}", function_name, e);
+            return ExitCode::from(5);
+        }
+    };
+    eprintln!("# rust term for function={}", function_name);
+    eprintln!("# term CID: {}", cid);
+    eprintln!("# term bytes: {}", bytes.len());
+    if let Some(output_path) = args.get(4) {
+        if let Err(e) = fs::write(output_path, &bytes) {
+            eprintln!("error writing {}: {}", output_path, e);
+            return ExitCode::from(6);
+        }
+        return ExitCode::SUCCESS;
+    }
     let mut stdout = io::stdout().lock();
     if let Err(e) = stdout.write_all(&bytes) {
         eprintln!("error writing stdout: {}", e);

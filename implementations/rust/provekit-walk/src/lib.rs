@@ -1,30 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Backward WP propagation from callsite to allocation over Rust source.
-// Implements the launch-demo algorithm from issue #368.
+// Rust source to substrate walking.
 //
-// Scope of this MVP:
-//  - Parse Rust source via `syn`.
-//  - Locate every callsite to a target callee in a caller function.
-//  - Walk the caller's body backward through statements, applying
-//    Dijkstra's WP rules at each step.
-//  - Emit a chain of (WP, location) arrivals from callsite back to
-//    function entry, plus the final WP at function entry as the
-//    proof obligation that must be discharged by the caller's caller.
-//  - Use `provekit-ir-types::IrFormula` as the canonical predicate
-//    representation so downstream code can content-address arrivals
-//    via the existing JCS pipeline.
+// This crate combines a syn surface lift, Charon LLBC lift, layered marriage,
+// effect detection, aliasing, region and pin mementos, and the dropper
+// generative-completion path. It emits FunctionContractMemento values,
+// proof.ir walk bundles, and algebra terms over the minted rust:rust language
+// signature. The crate keeps the IR representation in provekit-ir-types and
+// content-addresses emitted artifacts with the shared JCS plus BLAKE3 pipeline.
 //
-// Out of scope for the MVP (tracked separately in #368 stretch goals):
-//  - rustc MIR integration (this MVP uses surface AST; MIR is planned).
-//  - Match-arm narrowing, while-let, if-let.
-//  - Cross-function call-graph propagation.
-//  - C kit (Clang CFG).
-//  - Pointer aliasing.
-//
-// The dropper / generative-completion path (paper 07 §7) is implemented in
-// dropper.rs (issue #382, Phases 1-3). Phase 4 (mint-on-miss via solver
-// portfolio) is deferred.
+// Remaining growth is incremental signature and memento coverage for more
+// Rust syntax, library contracts, and solver-discharged opacity sites.
 
 pub mod aliasing;
 pub mod canonical;
@@ -45,6 +31,7 @@ pub mod locus;
 pub mod loops_and_exceptions;
 pub mod marriage;
 pub mod shadow;
+pub mod signature;
 pub mod sort_translate;
 pub mod type_decl;
 pub mod walk;
@@ -53,6 +40,7 @@ pub mod wp;
 pub use canonical::{
     cid_of_value, formula_to_canonical, jcs_bytes_of_value, serde_to_canonical, term_to_canonical,
 };
+pub use contract::{build_function_contract, build_function_contract_with_file};
 pub use dropper::{
     detect_gaps, drop_gap, emit_drop, formula_contains_predicate, predicate_var_arg,
     verify_closure, DropFailure, DropTemplate, EmitResult, Gap, NotNullPredicate, NotRenderable,

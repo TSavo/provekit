@@ -1,8 +1,8 @@
 {
   "schema_version": "1",
   "kind": "MorphismDischargeReceipt",
-  "morphism_cid": "blake3-512:af8fb003b25ea40a5ea8a9bc7e41c3b37c08265b03a20c5d00b3d41905487006f6440955749b4cd97c681594c9cb8911e3d2fcf9a0f2275f972463587f94569b",
-  "source_contract_cid": "blake3-512:3423071e79d49d1862b91f97f3f9c01890bb2d83f084344cf6d3ccbffe88aa5bc7d2552080fdc20cec005bb445b111a6ba91cd053527b9856ad919a35235e62a",
+  "morphism_cid": "blake3-512:bf775b92b935539f113dca3aa02815a0992047fa2dbffa38bba42ddd291b6cd44017fe6d2ccabbff34b7107581817c1bc933a3e73f027635276ce7ee0b92a945",
+  "source_contract_cid": "blake3-512:d34500ea7d3c9698c9047d456115093fb1b858a6f1768fc7f3caa70e158a80e5e708e5e06ae4b6aa5be12fe1f8aee1500852de06eec1e27794de280913fa6b02",
   "renaming_map": {
     "edi": "arg_0",
     "eax_post": "ret"

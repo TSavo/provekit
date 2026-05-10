@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:ListOfStmt",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "ListOfStmt",
+    "description": "Finite ordered statement lists"
+  }
+}

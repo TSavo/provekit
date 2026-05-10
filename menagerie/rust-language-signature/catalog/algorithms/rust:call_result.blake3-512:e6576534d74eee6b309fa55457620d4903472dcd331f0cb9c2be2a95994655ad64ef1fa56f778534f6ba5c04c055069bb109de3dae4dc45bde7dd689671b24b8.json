@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:call_result",
+    "formals": [
+      "callee",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "FnContract",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfExpr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "call_result",
+      "arity": [
+        "FnContract",
+        "ListOfExpr"
+      ],
+      "result": "Expr",
+      "wp": "call result expression, walker call:name ctors resolve here"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "UnresolvedCall"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "oth64LHe5tskpVZfHc6xBBJ6kMFTnmGsmmuMD8WImHEXMYB1diyAzpqfrZhogPIKOKyehmat0sLxQX332IZLCg=="
+  }
+}

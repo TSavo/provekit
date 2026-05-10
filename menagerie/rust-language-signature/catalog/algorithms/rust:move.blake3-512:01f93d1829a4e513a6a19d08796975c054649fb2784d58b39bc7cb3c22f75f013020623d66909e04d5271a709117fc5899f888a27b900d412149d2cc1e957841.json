@@ -1,0 +1,58 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:move",
+    "formals": [
+      "place"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Place",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "place_live",
+      "args": [
+        {
+          "kind": "var",
+          "name": "place"
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "move",
+      "arity": [
+        "Place"
+      ],
+      "result": "Expr",
+      "wp": "read value and invalidate source place"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemRead"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:01f93d1829a4e513a6a19d08796975c054649fb2784d58b39bc7cb3c22f75f013020623d66909e04d5271a709117fc5899f888a27b900d412149d2cc1e957841",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "xvnScyF9b9I4Ni5QMMkaabCYm29hzpWXLvCgjK6JnjZuC7sJjqA6dgcXO+VONbQYxNg2lXJi9V14g8ntRikQBw=="
+  }
+}

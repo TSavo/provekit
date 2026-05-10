@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Expr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Expr",
+    "description": "Rust expression terms"
+  }
+}

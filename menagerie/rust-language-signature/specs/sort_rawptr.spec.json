@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:RawPtr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "RawPtr",
+    "description": "Unsafe raw pointer values"
+  }
+}

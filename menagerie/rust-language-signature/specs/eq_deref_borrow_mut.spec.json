@@ -1,0 +1,39 @@
+{
+  "kind": "equation",
+  "fn_name": "rust:deref-borrow-mut",
+  "formals": [
+    "p"
+  ],
+  "formal_sorts": [
+    "sort_place.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "deref",
+      "args": [
+        {
+          "kind": "op",
+          "name": "borrow_mut",
+          "args": [
+            {
+              "kind": "var",
+              "name": "p"
+            }
+          ]
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "p"
+    },
+    "notes": "Modulo aliasing side conditions."
+  }
+}

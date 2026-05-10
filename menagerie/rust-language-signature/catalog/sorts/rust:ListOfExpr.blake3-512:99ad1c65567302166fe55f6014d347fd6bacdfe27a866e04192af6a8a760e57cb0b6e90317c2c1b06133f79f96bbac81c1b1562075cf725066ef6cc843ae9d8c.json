@@ -1,0 +1,34 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "rust:ListOfExpr",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "ListOfExpr",
+      "description": "Finite ordered expression lists"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    }
+  },
+  "cid": "blake3-512:99ad1c65567302166fe55f6014d347fd6bacdfe27a866e04192af6a8a760e57cb0b6e90317c2c1b06133f79f96bbac81c1b1562075cf725066ef6cc843ae9d8c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "nDzZ+vw1XuFmxLLa6uve8niRxw726puIrpPGzT5Xhqskg374yoCUSk0CAK1PB1kNcZggS6YmGYOMYPLjhfgnAg=="
+  }
+}

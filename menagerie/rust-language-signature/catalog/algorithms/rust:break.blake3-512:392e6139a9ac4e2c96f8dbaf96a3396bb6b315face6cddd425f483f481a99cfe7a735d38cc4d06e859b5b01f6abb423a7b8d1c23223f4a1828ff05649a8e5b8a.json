@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:break",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "break",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Stmt",
+      "wp": "exit nearest enclosing match or loop"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "control-transfer"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:392e6139a9ac4e2c96f8dbaf96a3396bb6b315face6cddd425f483f481a99cfe7a735d38cc4d06e859b5b01f6abb423a7b8d1c23223f4a1828ff05649a8e5b8a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "Wtp8xJTrKV0QonmnA91uAUmNS5LebqHZjQjMDZmkGlyb1Bf2BKIkYSUV7ywtCJFBEPUSNKOtp/BthCdgQeMJBw=="
+  }
+}

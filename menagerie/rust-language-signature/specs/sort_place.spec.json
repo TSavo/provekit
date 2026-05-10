@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Place",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Place",
+    "description": "Assignable Rust places"
+  }
+}

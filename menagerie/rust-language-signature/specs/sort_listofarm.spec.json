@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:ListOfArm",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "ListOfArm",
+    "description": "Finite ordered match arm lists"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:member",
+    "formals": [
+      "base",
+      "field"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Place",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "FieldName",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "member",
+      "arity": [
+        "Place",
+        "FieldName"
+      ],
+      "result": "Place",
+      "wp": "field place projection"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Place",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:564c92fc34751a840967fa9c40b651f2141de3589bb3d2e20d23700233430d3aa78c4e7f879784af44234fa9978634de5d8fc28ae49e6496c8a155c739cd6796",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "Qg9B3AcrKhMl6Ksce53tfoqT5V3+hbEb9PN05pTmRW4QhlE3nKyO1JSHoRecExtShlCYHhEWgPIUsbMAfJIXDA=="
+  }
+}

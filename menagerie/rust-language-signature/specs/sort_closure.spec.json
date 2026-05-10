@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Closure",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Closure",
+    "description": "Closure values with captured environment"
+  }
+}

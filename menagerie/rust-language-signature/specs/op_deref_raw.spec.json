@@ -1,0 +1,51 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:deref_raw",
+  "formals": [
+    "ptr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "RawPtr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Place",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "valid_raw_ptr",
+    "args": [
+      {
+        "kind": "var",
+        "name": "ptr"
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "deref_raw",
+    "arity": [
+      "RawPtr"
+    ],
+    "result": "Place",
+    "wp": "unsafe raw pointer dereference"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Unsafe"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

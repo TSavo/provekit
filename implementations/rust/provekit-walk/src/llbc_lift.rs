@@ -217,7 +217,7 @@ pub fn lift_llbc_function_with_registry(
         .filter(|(idx, _)| {
             formal_ty_raws
                 .get(idx)
-                .map(|ty| crate::aliasing::is_mut_ref_charon_ty(ty))
+                .map(crate::aliasing::is_mut_ref_charon_ty)
                 .unwrap_or(false)
         })
         .map(|(_, name)| name.as_str())
@@ -447,12 +447,9 @@ pub fn lift_llbc_function_with_registry(
     // satisfying the marriage test's byte-equality invariant.
     contract.formal_sorts = formals
         .iter()
-        .map(|(idx, _)| {
-            crate::sort_translate::ty_to_sort(formal_ty_raws.get(idx).map(|v| v), type_decls)
-        })
+        .map(|(idx, _)| crate::sort_translate::ty_to_sort(formal_ty_raws.get(idx), type_decls))
         .collect();
-    contract.return_sort =
-        crate::sort_translate::ty_to_sort(formal_ty_raws.get(&0).map(|v| v), type_decls);
+    contract.return_sort = crate::sort_translate::ty_to_sort(formal_ty_raws.get(&0), type_decls);
 
     // Set C.9 region fields on the contract.
     contract.formal_regions = formal_regions;
@@ -619,10 +616,8 @@ fn rvalue_to_ir_term_for_post(
     // UnaryOp([op_descriptor, operand]): handle Cast transparently.
     // Charon encodes `x as T` as `UnaryOp([{"Cast": ...}, operand])`.
     if let Some(arr) = rvalue.get("UnaryOp").and_then(|v| v.as_array()) {
-        if arr.len() == 2 {
-            if arr[0].get("Cast").is_some() {
-                return operand_to_ir_term(&arr[1], prior, formals, named_locals);
-            }
+        if arr.len() == 2 && arr[0].get("Cast").is_some() {
+            return operand_to_ir_term(&arr[1], prior, formals, named_locals);
         }
     }
     None
@@ -955,6 +950,7 @@ fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
 ///     Switch::If whose then- or else-branch leads to Abort (the
 ///     canonical panic pattern emitted by Charon for `if cond { panic!() }`).
 ///   - `Io`: any Call to a function whose resolved name contains I/O
+///
 /// Return true when the Charon Adt described by `adt_id` (a numeric
 /// `def_id.index`) corresponds to `core::pin::Pin` in `type_decls`.
 /// We check that the type_decl's `item_meta.name` path ends with the
@@ -1606,7 +1602,7 @@ fn block_leads_to_abort(block: &Value, parent_falls_through_to_abort: bool) -> b
     }
     // All bookkeeping → falling through this block reaches the parent's
     // post-switch position.
-    if stmts.iter().all(|s| is_bookkeeping(s)) {
+    if stmts.iter().all(is_bookkeeping) {
         return parent_falls_through_to_abort;
     }
     false
