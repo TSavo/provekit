@@ -1,31 +1,26 @@
 [
   {
     "kind": "contract",
-    "symbol": "parsesRequiredSample::0",
+    "symbol": "parseInt@AmountParserTest.java:10:21",
     "invariant": {
-      "kind": "implies",
-      "operands": [
+      "kind": "atomic",
+      "name": "eq",
+      "args": [
         {
-          "kind": "atomic",
-          "name": "eq",
+          "kind": "ctor",
+          "name": "AmountParser.parseInt",
           "args": [
-            { "kind": "var", "name": "value$0" },
             {
-              "kind": "ctor",
-              "name": "AmountParser.parseInt",
-              "args": [
-                { "kind": "const", "value": "43", "sort": { "kind": "primitive", "name": "String" } }
-              ]
+              "kind": "const",
+              "value": "43",
+              "sort": { "kind": "primitive", "name": "String" }
             }
           ]
         },
         {
-          "kind": "atomic",
-          "name": "eq",
-          "args": [
-            { "kind": "var", "name": "value$0" },
-            { "kind": "const", "value": 43, "sort": { "kind": "primitive", "name": "Int" } }
-          ]
+          "kind": "const",
+          "value": 43,
+          "sort": { "kind": "primitive", "name": "Int" }
         }
       ]
     }

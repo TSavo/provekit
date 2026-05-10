@@ -935,3 +935,137 @@ surface = "cpp"
     assert_eq!(wp_implications, 3);
     assert_eq!(test_implications, 2);
 }
+
+#[test]
+fn lift_php_shows_production_composes_but_unit_tests_conflict() {
+    let root = repo_root();
+    let project = tempfile::tempdir().expect("create tempdir");
+    fs::write(
+        project.path().join("app.php"),
+        r#"<?php
+
+function checked($x) {
+    if ($x < 10) {
+        throw new InvalidArgumentException("too small");
+    }
+    return $x;
+}
+
+function composed_ok() {
+    $y = 42;
+    return checked($y);
+}
+
+final class CheckedContracts extends TestCase {
+    public function testCheckedReturns42(): void {
+        $actual = checked(42);
+        $this->assertSame(42, $actual);
+    }
+
+    public function testCheckedDoesNotReturn42(): void {
+        $actual = checked(42);
+        $this->assertNotSame(42, $actual);
+    }
+}
+"#,
+    )
+    .expect("write php fixture");
+    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::write(
+        project.path().join(".provekit/config.toml"),
+        r#"[authoring.lift]
+surface = "php"
+"#,
+    )
+    .expect("write config");
+    let manifest_dir = project.path().join(".provekit/lift/php");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"php-lift\"\ncommand = [\"php\", \"provekit-lift/src/lifter.php\", \"--rpc\"]\nworking_dir = \"{}\"\n",
+            root.join("implementations/php").display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(project.path())
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit lift php");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift php failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
+    let ir = report["ir"].as_array().expect("ir array");
+    let implications = report["implications"]
+        .as_array()
+        .expect("implications array");
+
+    let production: Vec<_> = ir
+        .iter()
+        .filter(|decl| {
+            let name = decl["name"].as_str().unwrap_or_default();
+            name.starts_with("checked@app.php:")
+                && (name.ends_with("::callsite")
+                    || name.ends_with("::let:y")
+                    || name.ends_with("::entry"))
+        })
+        .collect();
+    assert_eq!(
+        production.len(),
+        3,
+        "expected production callsite, let, and entry WP edges: {report:#}"
+    );
+    let let_edge = production
+        .iter()
+        .copied()
+        .find(|decl| {
+            decl["name"]
+                .as_str()
+                .unwrap_or_default()
+                .ends_with("::let:y")
+        })
+        .expect("let edge");
+    assert_eq!(let_edge["pre"]["name"], "≥");
+    assert_eq!(let_edge["pre"]["args"][0]["value"], 42);
+    assert_eq!(let_edge["pre"]["args"][1]["value"], 10);
+
+    let test_assertions: Vec<_> = ir
+        .iter()
+        .filter(|decl| {
+            let name = decl["name"].as_str().unwrap_or_default();
+            name.starts_with("checked@app.php:") && name.ends_with("::assertion")
+        })
+        .collect();
+    assert_eq!(
+        test_assertions.len(),
+        2,
+        "expected two PHPUnit-derived assertion contracts: {report:#}"
+    );
+    let mut assertion_ops: Vec<_> = test_assertions
+        .iter()
+        .map(|decl| decl["inv"]["name"].as_str().unwrap_or_default())
+        .collect();
+    assertion_ops.sort_unstable();
+    assert_eq!(assertion_ops, vec!["=", "≠"]);
+
+    let wp_implications = implications
+        .iter()
+        .filter(|imp| imp["prover"] == "php-wp-walk")
+        .count();
+    let test_implications = implications
+        .iter()
+        .filter(|imp| imp["prover"] == "php-test-value-scope")
+        .count();
+    assert_eq!(wp_implications, 3);
+    assert_eq!(test_implications, 2);
+}
