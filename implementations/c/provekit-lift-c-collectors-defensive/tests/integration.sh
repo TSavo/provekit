@@ -42,7 +42,7 @@ if [ ! -f "$TERM_UNSUPPORTED_FIXTURE" ]; then
     exit 1
 fi
 
-if [ ! -f "$FOO_EXPECTED_TERM" ]; then
+if [ "${PK_C_ENABLE_CLANG_AST:-}" = "1" ] && [ ! -f "$FOO_EXPECTED_TERM" ]; then
     echo "FAIL: expected term fixture not found: $FOO_EXPECTED_TERM" >&2
     exit 1
 fi
@@ -362,17 +362,18 @@ for fn_name, expected in effect_checks:
         fail(f"{fn_name} missing effect {expected}")
 PY
 
-TERM_RESPONSES="$(
-    {
-        printf '%s\n' '{"jsonrpc":"2.0","id":10,"method":"initialize","params":{}}'
-        printf '{"jsonrpc":"2.0","id":11,"method":"lift","params":{"workspace_root":'
-        printf '"%s"' "$REPO_ROOT"
-        printf ',"source_paths":["menagerie/c11-language-signature/example/foo.c","implementations/c/provekit-lift-c-collectors-defensive/tests/fixtures/term_unsupported.c"],"surface":"c-collectors-defensive"}}\n'
-        printf '%s\n' '{"jsonrpc":"2.0","id":12,"method":"shutdown"}'
-    } | "$BIN" --rpc
-)"
+if [ "${PK_C_ENABLE_CLANG_AST:-}" = "1" ]; then
+    TERM_RESPONSES="$(
+        {
+            printf '%s\n' '{"jsonrpc":"2.0","id":10,"method":"initialize","params":{}}'
+            printf '{"jsonrpc":"2.0","id":11,"method":"lift","params":{"workspace_root":'
+            printf '"%s"' "$REPO_ROOT"
+            printf ',"source_paths":["menagerie/c11-language-signature/example/foo.c","implementations/c/provekit-lift-c-collectors-defensive/tests/fixtures/term_unsupported.c"],"surface":"c-collectors-defensive"}}\n'
+            printf '%s\n' '{"jsonrpc":"2.0","id":12,"method":"shutdown"}'
+        } | "$BIN" --rpc
+    )"
 
-TERM_RESPONSES_JSON="$TERM_RESPONSES" FOO_EXPECTED_TERM="$FOO_EXPECTED_TERM" python3 - <<'PY'
+    TERM_RESPONSES_JSON="$TERM_RESPONSES" FOO_EXPECTED_TERM="$FOO_EXPECTED_TERM" python3 - <<'PY'
 import json
 import os
 
@@ -437,5 +438,8 @@ for name in unsupported_names:
     if not any(needle in message for message in messages):
         fail(f"missing fail-closed diagnostic for {name}: {messages}")
 PY
+else
+    echo "SKIP: c11-algebra-term checks (PK_C_ENABLE_CLANG_AST not set)"
+fi
 
 echo "provekit-lift-c-collectors-defensive integration passed"

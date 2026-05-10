@@ -46,7 +46,7 @@ endif
 
 test: $(BIN) $(TEST_SH)
 	@chmod +x $(TEST_SH)
-	@$(TEST_SH)
+	@PK_C_ENABLE_CLANG_AST=1 $(TEST_SH)
 
 clean:
 	rm -f $(BIN)
