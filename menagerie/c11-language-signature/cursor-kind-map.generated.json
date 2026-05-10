@@ -1,6 +1,6 @@
 {
   "generated_by": "tools/generate-c11-from-cursorkind.py",
-  "source": "/usr/local/Cellar/llvm/22.1.4/include/clang-c/Index.h",
+  "source": "tools/c11gen/cxcursorkind-snapshot.h",
   "signature_cid": "blake3-512:fdfb3b7d6b5f034be120b2bb566931c0cfc7de4375cde62c37116475deaeba849549a277b3c36e2d42b9080845103604c18f0986f64f326d2cdcb73d60ceb558",
   "cursor_kind_count": 292,
   "rows": [
