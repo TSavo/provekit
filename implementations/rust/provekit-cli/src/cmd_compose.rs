@@ -245,11 +245,7 @@ impl RpcError {
         }
     }
 
-    fn refused_with_atom(
-        kind: &'static str,
-        message: impl Into<String>,
-        atom_cid: String,
-    ) -> Self {
+    fn refused_with_atom(kind: &'static str, message: impl Into<String>, atom_cid: String) -> Self {
         Self {
             code: ERR_COMPOSE_REFUSED,
             message: message.into(),
@@ -293,7 +289,8 @@ fn handle_compose(params: JsonValue) -> Result<JsonValue, RpcError> {
         let contract = wire_atom.to_lib();
         if let Some(eff_param) = parsed.effects.as_ref().and_then(|v| v.get(i)) {
             let advisory = eff_param.to_lib();
-            if effect_set_canonical_bytes(&advisory) != effect_set_canonical_bytes(&contract.effects)
+            if effect_set_canonical_bytes(&advisory)
+                != effect_set_canonical_bytes(&contract.effects)
             {
                 return Err(RpcError::refused_with_atom(
                     "effects_mismatch",
@@ -425,8 +422,11 @@ impl WireFunctionContractMemento {
     fn to_lib(&self) -> FunctionContractMemento {
         let effects = self.effects.to_lib();
         let locus = self.locus.to_lib();
-        let auto: Vec<AliasingMemento> =
-            self.auto_minted_mementos.iter().map(|m| m.to_lib()).collect();
+        let auto: Vec<AliasingMemento> = self
+            .auto_minted_mementos
+            .iter()
+            .map(|m| m.to_lib())
+            .collect();
 
         let value: Arc<Value> = build_value(
             &self.fn_name,

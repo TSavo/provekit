@@ -192,12 +192,7 @@ impl EffectDto {
                     "store" => AtomicKind::Store,
                     "rmw" => AtomicKind::Rmw,
                     "cas" => AtomicKind::Cas,
-                    other => {
-                        return Err(FfiError::Schema(format!(
-                            "unknown atomicKind {}",
-                            other
-                        )))
-                    }
+                    other => return Err(FfiError::Schema(format!("unknown atomicKind {}", other))),
                 };
                 Effect::AtomicAccess {
                     target,
@@ -251,10 +246,7 @@ enum FfiError {
     InvalidJson(String),
     Schema(String),
     EffectsMismatch(usize),
-    LengthMismatch {
-        atoms: usize,
-        effects: usize,
-    },
+    LengthMismatch { atoms: usize, effects: usize },
     ChainTooShort(usize),
     ComposeRefused,
 }
@@ -266,15 +258,15 @@ impl FfiError {
             FfiError::InvalidUtf8(name) => format!("input is not valid UTF-8: {}", name),
             FfiError::InvalidJson(msg) => format!("invalid JCS JSON: {}", msg),
             FfiError::Schema(msg) => format!("schema error: {}", msg),
-            FfiError::EffectsMismatch(idx) => format!(
-                "effects_jcs[{idx}] does not match memento.effects at the same index"
-            ),
-            FfiError::LengthMismatch { atoms, effects } => format!(
-                "atoms_jcs and effects_jcs have different lengths: {atoms} vs {effects}"
-            ),
-            FfiError::ChainTooShort(n) => format!(
-                "chain has {n} atoms; compose_chain_contracts requires at least 2"
-            ),
+            FfiError::EffectsMismatch(idx) => {
+                format!("effects_jcs[{idx}] does not match memento.effects at the same index")
+            }
+            FfiError::LengthMismatch { atoms, effects } => {
+                format!("atoms_jcs and effects_jcs have different lengths: {atoms} vs {effects}")
+            }
+            FfiError::ChainTooShort(n) => {
+                format!("chain has {n} atoms; compose_chain_contracts requires at least 2")
+            }
             FfiError::ComposeRefused => {
                 "compose_chain_contracts refused (impure inputs or non-result post)".to_string()
             }
@@ -298,10 +290,7 @@ pub fn compose_chain_contracts_jcs(
     inner_compose(atoms_jcs, effects_jcs).map_err(|e| e.message())
 }
 
-fn inner_compose(
-    atoms_jcs: &str,
-    effects_jcs: &str,
-) -> Result<(String, String), FfiError> {
+fn inner_compose(atoms_jcs: &str, effects_jcs: &str) -> Result<(String, String), FfiError> {
     let atom_envs: Vec<AtomEnvelope> = serde_json::from_str(atoms_jcs)
         .map_err(|e| FfiError::InvalidJson(format!("atoms_jcs: {}", e)))?;
     let parallel_effects: Vec<Vec<EffectDto>> = serde_json::from_str(effects_jcs)
@@ -320,9 +309,7 @@ fn inner_compose(
     // Cross-check: per CCP §6.2 effects are passed twice (embedded in
     // memento body, plus parallel effects_jcs). Embedded is
     // authoritative; the parallel array must agree by-value.
-    for (idx, (env, par_effects)) in
-        atom_envs.iter().zip(parallel_effects.iter()).enumerate()
-    {
+    for (idx, (env, par_effects)) in atom_envs.iter().zip(parallel_effects.iter()).enumerate() {
         if &env.memento.effects != par_effects {
             return Err(FfiError::EffectsMismatch(idx));
         }
@@ -331,8 +318,7 @@ fn inner_compose(
     // Convert envelopes into FunctionContractMemento + formal_idx
     // pairs, recomputing canonical_bytes / cid via `build_value` so
     // wire-side CIDs match Rust-side CIDs byte-for-byte.
-    let mut owned: Vec<(FunctionContractMemento, usize)> =
-        Vec::with_capacity(atom_envs.len());
+    let mut owned: Vec<(FunctionContractMemento, usize)> = Vec::with_capacity(atom_envs.len());
     for env in atom_envs {
         let formal_idx = env.formal_idx;
         let body = env.memento;
@@ -392,8 +378,7 @@ fn inner_compose(
         })
         .collect();
 
-    let composed =
-        compose_chain_contracts(&steps).ok_or(FfiError::ComposeRefused)?;
+    let composed = compose_chain_contracts(&steps).ok_or(FfiError::ComposeRefused)?;
     let body_jcs = String::from_utf8(composed.canonical_bytes.clone())
         .map_err(|e| FfiError::Schema(format!("composed body not utf-8: {}", e)))?;
     Ok((composed.cid, body_jcs))

@@ -24,9 +24,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
 
-use libprovekit::compose::{
-    build_value, cid_of_value, jcs_bytes_of_value, EffectSet, Locus,
-};
+use libprovekit::compose::{build_value, cid_of_value, jcs_bytes_of_value, EffectSet, Locus};
 use libprovekit::ffi::{
     compose_chain_contracts_jcs, pk_compose_chain_contracts, pk_composition_result_body_jcs,
     pk_composition_result_cid, pk_composition_result_error, pk_composition_result_free,
@@ -135,7 +133,10 @@ fn extern_c_entrypoint_pins_cid() {
             atoms_bytes.len(),
             effects_bytes.len(),
         );
-        assert!(!result.is_null(), "FFI must always return a non-null handle");
+        assert!(
+            !result.is_null(),
+            "FFI must always return a non-null handle"
+        );
 
         let err_ptr = pk_composition_result_error(result);
         if !err_ptr.is_null() {
@@ -145,7 +146,10 @@ fn extern_c_entrypoint_pins_cid() {
         }
 
         let cid_ptr = pk_composition_result_cid(result);
-        assert!(!cid_ptr.is_null(), "cid pointer must be non-null on success");
+        assert!(
+            !cid_ptr.is_null(),
+            "cid pointer must be non-null on success"
+        );
         let cid = CStr::from_ptr(cid_ptr).to_string_lossy().into_owned();
 
         let body_ptr = pk_composition_result_body_jcs(result);

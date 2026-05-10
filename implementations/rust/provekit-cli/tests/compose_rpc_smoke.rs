@@ -112,7 +112,8 @@ fn compose_rpc_returns_pinned_cid() {
         "initialize must advertise the protocol version named in CCP §6.3"
     );
     assert_eq!(
-        init["result"]["ccp_version"], json!("1.0.0"),
+        init["result"]["ccp_version"],
+        json!("1.0.0"),
         "initialize must report libprovekit::compose::CCP_VERSION"
     );
 

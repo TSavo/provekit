@@ -18,8 +18,8 @@
 use std::sync::Arc;
 
 use libprovekit::compose::{
-    build_value, cid_of_value, compose_chain_contracts, jcs_bytes_of_value, ChainStep,
-    EffectSet, FunctionContractMemento, Locus,
+    build_value, cid_of_value, compose_chain_contracts, jcs_bytes_of_value, ChainStep, EffectSet,
+    FunctionContractMemento, Locus,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{IrFormula, IrTerm, Sort};
