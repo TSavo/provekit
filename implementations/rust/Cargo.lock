@@ -1778,6 +1778,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-asm-x86-64"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "provekit-lift-contracts"
 version = "0.1.0"
 dependencies = [
