@@ -1682,6 +1682,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-jvm-bytecode"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-ir-compiler-lean"
 version = "0.1.0"
 dependencies = [
