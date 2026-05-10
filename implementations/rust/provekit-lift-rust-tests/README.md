@@ -9,25 +9,28 @@ Lift unit tests as point-specific behavior witnesses.
 ## What it does
 
 Walks the `syn` AST of a Rust source file looking for `#[test]` and
-`#[tokio::test]` functions. Inside each function body, every assertion macro
-invocation (`assert_eq!`, `assert_ne!`, `assert!`, `assert_matches!`) becomes
-its own `ContractDecl` whose `inv` field is the lifted atomic predicate.
+`#[tokio::test]` functions. Inside each function body, assertion macros
+(`assert_eq!`, `assert_ne!`, `assert!`, `assert_matches!`) become
+`ContractDecl`s only when the asserted value can be tied to a producer
+callsite. Let-bound observations such as `let r = foo(5); assert_eq!(r, 10);`
+are attached to the `foo(5)` callsite and substitute the binding into the
+lifted formula.
 
-Naming: `<test_function_name>::<assertion_index>` (zero-indexed, in source
-order). Three asserts in one test produce three contracts.
+Naming: `<callee>@<file>:<line>:<col>`. Multi-call assertions produce one
+contract per callsite. Assertions with no identifiable callsite skip with a
+warning.
 
-## v0 grammar (whitelist)
+## v0.5 grammar (whitelist)
 
-For each side of an assertion expression we accept:
+For assertion expressions we accept identifiers, integer/string/byte-string/bool
+literals, paths, calls, method calls, references, casts, parens, arrays,
+tuples, `vec![]`, and supported binary/unary operand shapes. Calls are lifted
+as constructors in the formula; method calls use the same one-level UFCS
+flattening as the adapter code.
 
-- identifier (lifted to `Var`)
-- integer literal (lifted to `Const(Int)`)
-- string literal (lifted to `Const(String)`)
-- single-arg call (lifted to `Ctor` with one arg)
-
-Anything else (method calls, field access, indexing, multi-arg non-ctor
-calls, arithmetic in the test body, randomness, filesystem ops) is SKIPPED
-with a warning. Honest skips beat polluted lattices.
+Anything outside the whitelist, or any liftable assertion with no identifiable
+producer callsite, is SKIPPED with a warning. Honest skips beat polluted
+lattices.
 
 `assert_matches!` is recognized only when the pattern is `Ok(<lit>)` /
 `Err(<lit>)` / `Some(<lit>)` / `None` / a single bare ctor over literals;
