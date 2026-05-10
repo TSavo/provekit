@@ -5,7 +5,7 @@ CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../provekit-lift-core/include -g
 LLVM_CONFIG ?= $(shell command -v llvm-config 2>/dev/null || command -v /usr/local/opt/llvm/bin/llvm-config 2>/dev/null || command -v /usr/local/opt/llvm@21/bin/llvm-config 2>/dev/null)
 
 BIN = provekit-walk-c
-SRC = src/main.c src/walk.c src/wp.c src/lift.c src/contract.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c ../provekit-lift-core/src/compile_context.c
+SRC = src/main.c src/walk.c src/wp.c src/lift.c src/contract.c src/conditional.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c ../provekit-lift-core/src/compile_context.c
 TEST_SH = tests/integration.sh
 
 ifneq ($(strip $(LLVM_CONFIG)),)

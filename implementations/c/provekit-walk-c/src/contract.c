@@ -124,10 +124,12 @@ static int append_formula(ContractBuf *b, const pk_c_walk_formula *formula) {
 
 static int append_arrival(ContractBuf *b, const pk_c_walk_arrival *arrival) {
     char idx[32];
+    char join_idx[32];
     char line[32];
     char col[32];
 
     (void)snprintf(idx, sizeof(idx), "%zu", arrival->stmt_index);
+    (void)snprintf(join_idx, sizeof(join_idx), "%zu", arrival->join_stmt_index);
     (void)snprintf(line, sizeof(line), "%d", arrival->line);
     (void)snprintf(col, sizeof(col), "%d", arrival->column);
     if (buf_append(b, "{\"column\":") != 0 ||
@@ -139,8 +141,21 @@ static int append_arrival(ContractBuf *b, const pk_c_walk_arrival *arrival) {
         buf_append(b, ",\"name\":") != 0 ||
         buf_append_quoted(b, arrival->name) != 0 ||
         buf_append(b, ",\"stmt_index\":") != 0 ||
-        buf_append(b, idx) != 0 ||
-        buf_append(b, ",\"wp\":") != 0 ||
+        buf_append(b, idx) != 0) {
+        return -1;
+    }
+    if (strcmp(arrival->kind, "ConditionalArm") == 0) {
+        if (arrival->branch == NULL || arrival->cond == NULL ||
+            buf_append(b, ",\"branch\":") != 0 ||
+            buf_append_quoted(b, arrival->branch) != 0 ||
+            buf_append(b, ",\"cond\":") != 0 ||
+            append_formula(b, arrival->cond) != 0 ||
+            buf_append(b, ",\"join_stmt_index\":") != 0 ||
+            buf_append(b, join_idx) != 0) {
+            return -1;
+        }
+    }
+    if (buf_append(b, ",\"wp\":") != 0 ||
         append_formula(b, arrival->wp) != 0 ||
         buf_append_char(b, '}') != 0) {
         return -1;
