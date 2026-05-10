@@ -861,14 +861,6 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
                     language.id, check.id, check.witness_exhibit
                 ));
             }
-            if check.witness_source == CompositionWitnessSource::Lab
-                && check.phase != CompositionPhase::Exhibit
-            {
-                errors.push(format!(
-                    "language `{}` composition check `{}` lab witness source is only valid for exhibit checks",
-                    language.id, check.id
-                ));
-            }
             if let Some(requirement_exhibit) = &check.requirement_exhibit {
                 if !proof_exhibit_ids.contains(requirement_exhibit) {
                     errors.push(format!(
