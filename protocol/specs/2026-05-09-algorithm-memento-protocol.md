@@ -30,7 +30,7 @@ After AMP lands, the substrate hosts not just claims about user code but claims 
 
 An **algorithm** is a deterministic transformation `A : Input → Output`. In the substrate, all algorithms have the shape:
 
-```
+```text
 A : ASTPattern × Context → IrFormula
 ```
 
@@ -48,7 +48,7 @@ Examples of algorithms in the current substrate's lifters:
 
 An **algorithm memento** is the canonical content-addressed description of an algorithm. It is a `FunctionContractMemento` (per CCP §2) over the abstract function `A` defined in §1.1, with conventions on what the formal contract describes.
 
-```
+```text
 AlgorithmMemento ⊆ FunctionContractMemento where:
   - fn_name           : the algorithm's canonical short name (e.g. "if-then-fail-fast")
   - formals           : ["ast_pattern", "context"]
@@ -68,7 +68,7 @@ The algorithm's identity is the BLAKE3-512 CID of this memento (canonicalized vi
 
 A **binding-claim memento** is a verifiable assertion that a specific piece of language-specific code implements a specific algorithm memento. It is also a `FunctionContractMemento`, with conventions:
 
-```
+```text
 BindingClaimMemento ⊆ FunctionContractMemento where:
   - fn_name           : "<algorithm_short_name>:<language>:<version>"
                         (e.g. "if-then-fail-fast:c-libclang:0.1.0")
@@ -79,9 +79,9 @@ BindingClaimMemento ⊆ FunctionContractMemento where:
   - post              : binding refines algorithm CID X — see §2
   - effects           : the binding's effects (typically pure for thin bindings)
   - locus             : pointer to the binding code (file:line:col)
-  - body_cid          : CID of the binding source code (BLAKE3-512 of the source bytes)
+  - body_cid          : CID of the binding source code per the §4 normalization rule
   - auto_minted_mementos : EMPTY
-  - input_cids        : [<algorithm_cid>] — must include the algorithm being bound
+  - input_cids        : [<algorithm_cid>, <projection_memento_cid>] - must include both the bound algorithm CID and the language projection (P_lang) CID
 ```
 
 A binding-claim memento ASSERTS that, for any input the binding's `pre` matches, the binding produces an output equal to what the algorithm memento's `post` would produce on the corresponding `ASTPattern` (the language-AST projected to the canonical AST shape). See §2 for the formalization.
@@ -100,7 +100,7 @@ The `project` function maps the language-specific AST to the canonical `ASTPatte
 
 The **algorithm catalog** is a content-addressed collection of algorithm mementos, signed under the foundation key. Entries are added by minting (see §3) and refined by issuing successor mementos with explicit `refines` links.
 
-```
+```text
 AlgorithmCatalog := {
   algorithms: { algorithm_cid → AlgorithmMemento },
   bindings:   { (algorithm_cid, language) → [BindingClaimMemento] },
@@ -119,8 +119,8 @@ Given:
 
 The refinement claim is:
 
-```
-∀ (i : LangAST). B.pre(i) →
+```text
+∀ (i : LangAST) (ctx : Context). B.pre(i) →
   ∃ (a : ASTPattern). P_lang.project(i) = Some(a)
                     ∧ A.pre(a)
                     ∧ B.post(i, ctx) = A.post(a, ctx)
@@ -128,8 +128,8 @@ The refinement claim is:
 
 Encoded as IrFormula in `B.post`:
 
-```
-B.post = forall i:LangAST.
+```text
+B.post = forall (i:LangAST) (ctx:Context).
            B.pre(i) → ∃ a:ASTPattern.
              P_lang.project(i) = Some(a)
              ∧ A.pre(a)
@@ -157,7 +157,7 @@ The minted memento is now a substrate citizen. Bindings can refer to its CID.
 To mint a binding-claim `B` for algorithm `A` in language `L`:
 
 1. Identify the binding code (the lifter's source files).
-2. Compute `B.body_cid` as `BLAKE3-512` of the binding source code bytes (concatenated with file separators per a normalization rule TBD).
+2. Compute `B.body_cid` as `BLAKE3-512(JCS(M))`, where `M = { "files": <array of objects { "path": <repo-relative POSIX path, Unicode NFC normalized>, "content_cid": "blake3-512:" + lowercase-hex(BLAKE3-512(<raw file bytes>)) }, sorted ascending by "path"> }`. This rule is order-independent, separator-free, and byte-reproducible across producers and platforms: file ordering, newline conventions, and path encoding cannot affect the result.
 3. Define `B.pre` as the language-AST recognizer matching the same shape as `A.pre`'s `ASTPattern` projection.
 4. Define `B.post` per §2's refinement obligation, citing `A.cid`.
 5. Set `B.input_cids = [A.cid, P_lang.cid]`.
@@ -180,7 +180,7 @@ The receipt's CID is the proof that the binding is correct. Without the receipt,
 
 Each language has an `ASTProjectionMemento`:
 
-```
+```text
 ASTProjectionMemento {
   language        : "c" | "rust" | "python" | "java" | "zig" | ...
   ast_library     : "libclang" | "syn" | "ast" | "javaparser" | "std.zig.Ast" | ...
