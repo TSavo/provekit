@@ -1,0 +1,205 @@
+{
+  "autoMintedMementos": [],
+  "bodyCid": null,
+  "effects": [],
+  "fnName": "foo",
+  "formalSorts": [
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "Reg64"
+    },
+    {
+      "kind": "primitive",
+      "name": "RFLAGS"
+    },
+    {
+      "kind": "primitive",
+      "name": "Memory"
+    }
+  ],
+  "formals": [
+    "rax",
+    "rbx",
+    "rcx",
+    "rdx",
+    "rsi",
+    "rdi",
+    "rbp",
+    "rsp",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15",
+    "rflags",
+    "memory"
+  ],
+  "kind": "function-contract",
+  "locus": {
+    "col": 0,
+    "file": "/private/tmp/pk-foo-morphism/implementations/rust/provekit-lift-asm-x86-64/tests/fixtures/foo.s",
+    "line": 0
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "not",
+            "operands": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "edi"
+                  },
+                  {
+                    "kind": "const",
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "Int"
+                    },
+                    "value": 0
+                  }
+                ],
+                "kind": "atomic",
+                "name": "="
+              }
+            ]
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "eax_post"
+              },
+              {
+                "kind": "var",
+                "name": "edi"
+              }
+            ],
+            "kind": "atomic",
+            "name": "="
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "edi"
+              },
+              {
+                "kind": "const",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                },
+                "value": 0
+              }
+            ],
+            "kind": "atomic",
+            "name": "="
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "eax_post"
+              },
+              {
+                "kind": "const",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "BitVector"
+                },
+                "value": "0xffffffea"
+              }
+            ],
+            "kind": "atomic",
+            "name": "="
+          }
+        ]
+      }
+    ]
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "returnSort": {
+    "kind": "primitive",
+    "name": "MachineState"
+  },
+  "schemaVersion": "1",
+  "cid": "blake3-512:3423071e79d49d1862b91f97f3f9c01890bb2d83f084344cf6d3ccbffe88aa5bc7d2552080fdc20cec005bb445b111a6ba91cd053527b9856ad919a35235e62a"
+}
