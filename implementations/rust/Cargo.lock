@@ -1768,6 +1768,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-asm-aarch64"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "provekit-lift-contracts"
 version = "0.1.0"
 dependencies = [
