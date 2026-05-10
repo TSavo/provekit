@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit hash [FILE]` — print blake3-512:<hex> of file or stdin.
+// `provekit hash [FILE]`: print blake3-512:<hex> of file or stdin.
 
 use std::io::Read;
 use std::path::PathBuf;

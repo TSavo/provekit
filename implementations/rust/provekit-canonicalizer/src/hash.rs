@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn empty_string_hashes_to_known_blake3() {
-        // BLAKE3 of empty input, XOF to 64 bytes — known vector
+        // BLAKE3 of empty input, XOF to 64 bytes: known vector
         let h = blake3_512_of(b"");
         assert!(h.starts_with(BLAKE3_512_PREFIX));
         // Total length: prefix + 128 hex chars = 11 + 128 = 139.

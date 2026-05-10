@@ -192,7 +192,7 @@ fn dedup_collapses_identical_ir_across_files() {
     let a = provekit_lift::adapter_proptest::lift_file(&f, "a.rs");
     let b = provekit_lift::adapter_proptest::lift_file(&f, "b.rs");
     let mut decls = a.decls;
-    // Same name same IR — should dedup at mint.
+    // Same name same IR: should dedup at mint.
     decls.extend(b.decls);
     assert_eq!(decls.len(), 2);
 

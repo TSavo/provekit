@@ -1,4 +1,4 @@
-# BLAKE3 — vendored portable C sources
+# BLAKE3: vendored portable C sources
 
 Upstream: https://github.com/BLAKE3-team/BLAKE3
 Version: 1.8.5
@@ -10,12 +10,12 @@ Linux / macOS host without requiring `libblake3-dev` / `brew install blake3`
 to be installed.
 
 Files vendored:
-- `blake3.c`           — front-end API (`blake3_hasher_*`)
-- `blake3.h`           — public header
-- `blake3_dispatch.c`  — feature dispatcher; falls back to portable when
+- `blake3.c`: front-end API (`blake3_hasher_*`)
+- `blake3.h`: public header
+- `blake3_dispatch.c`: feature dispatcher; falls back to portable when
                          AVX2/AVX512/SSE2/SSE41/NEON are disabled
-- `blake3_impl.h`      — internal definitions
-- `blake3_portable.c`  — pure-C compression function (no SIMD)
+- `blake3_impl.h`: internal definitions
+- `blake3_portable.c`: pure-C compression function (no SIMD)
 
 The build script `tools/build-cpp-self-contracts.sh` compiles these with
 `-DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41

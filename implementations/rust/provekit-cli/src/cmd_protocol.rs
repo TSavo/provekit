@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit protocol ...` — protocol-catalog evolution workflow.
+// `provekit protocol ...`: protocol-catalog evolution workflow.
 //
 // The core verifier does not execute PEP. This command is extension-aware
 // tooling: it builds or checks a signed-byte-graph-shaped claim that a

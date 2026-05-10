@@ -4,7 +4,7 @@
 // mint cycle for one source file. Validation rejection reasons are fed
 // back to the agent for refinement, up to N retries.
 //
-// Pure logic — no IO. Callers (the CLI) read the source file, supply
+// Pure logic: no IO. Callers (the CLI) read the source file, supply
 // the kit's authoring-API doc, and persist minted mementos.
 
 use crate::{

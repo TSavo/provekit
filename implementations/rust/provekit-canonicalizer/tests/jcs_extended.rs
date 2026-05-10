@@ -3,7 +3,7 @@
 // Extended JCS-JSON encoder tests. Covers the RFC 8785 / spec-pass-7
 // invariants the unit tests in jcs.rs only sample.
 //
-// NOTE: the Value tree is i64-only — there is no Float variant. The
+// NOTE: the Value tree is i64-only: there is no Float variant. The
 // "integer-valued floats render without decimal" rule from RFC 8785
 // §3.2.2.3 is satisfied trivially: integers always render without a
 // decimal point because there is no float path. The first test below
@@ -50,7 +50,7 @@ fn booleans_and_null() {
 }
 
 // ---------------------------------------------------------------------------
-// Strings — escaping rules
+// Strings: escaping rules
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -79,7 +79,7 @@ fn backslash_is_escaped() {
 #[test]
 fn control_characters_are_unicode_escaped() {
     // U+0000..U+001F render as `\u00XX` (lowercase hex). The encoder
-    // does NOT use the named short escapes (\n, \t, etc.) — it uses
+    // does NOT use the named short escapes (\n, \t, etc.): it uses
     // \u00XX uniformly for determinism.
     assert_eq!(encode_jcs(&Value::String("\u{0000}".into())), "\"\\u0000\"");
     assert_eq!(encode_jcs(&Value::String("\u{001f}".into())), "\"\\u001f\"");
@@ -155,7 +155,7 @@ fn long_string() {
 }
 
 // ---------------------------------------------------------------------------
-// Objects — sort order, no whitespace
+// Objects: sort order, no whitespace
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -228,7 +228,7 @@ fn duplicate_keys_in_input_both_emitted() {
 }
 
 // ---------------------------------------------------------------------------
-// Arrays — order preserved, no whitespace
+// Arrays: order preserved, no whitespace
 // ---------------------------------------------------------------------------
 
 #[test]

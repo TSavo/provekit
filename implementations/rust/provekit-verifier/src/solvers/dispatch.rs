@@ -102,15 +102,13 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
                     *theory = FormulaTheory::Strings;
                     return;
                 }
-                if BV_OPS.contains(&name) {
-                    if *theory != FormulaTheory::Strings {
-                        *theory = FormulaTheory::Bitvectors;
-                    }
+                if BV_OPS.contains(&name) && *theory != FormulaTheory::Strings {
+                    *theory = FormulaTheory::Bitvectors;
                 }
-                if matches!(name, ">" | "<" | ">=" | "<=" | "=" | "+" | "-" | "*") {
-                    if *theory == FormulaTheory::Default {
-                        *theory = FormulaTheory::LinearArithmetic;
-                    }
+                if matches!(name, ">" | "<" | ">=" | "<=" | "=" | "+" | "-" | "*")
+                    && *theory == FormulaTheory::Default
+                {
+                    *theory = FormulaTheory::LinearArithmetic;
                 }
             }
             // Detect bitvector sorts: {"kind":"primitive","name":"BitVec"} or BV<n>.
@@ -129,13 +127,12 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
                             *theory = FormulaTheory::Strings;
                             return;
                         }
-                        if srt_name.starts_with("BitVec")
+                        if (srt_name.starts_with("BitVec")
                             || srt_name.starts_with("bv")
-                            || srt_name.starts_with("BV")
+                            || srt_name.starts_with("BV"))
+                            && *theory != FormulaTheory::Strings
                         {
-                            if *theory != FormulaTheory::Strings {
-                                *theory = FormulaTheory::Bitvectors;
-                            }
+                            *theory = FormulaTheory::Bitvectors;
                         }
                     }
                 }

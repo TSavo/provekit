@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// conformance.rs — spec §8 conformance tests.
+// conformance.rs: spec §8 conformance tests.
 //
 // 1. All five methods implemented per documented semantics.
 // 2. LRU eviction does not affect output correctness.
@@ -12,7 +12,7 @@
 // and spawn the daemon for conformance items that require the full stack.
 
 // -------------------------------------------------------------------
-// §8 items 1, 2, 4 — state-level (unit tests, fast).
+// §8 items 1, 2, 4: state-level (unit tests, fast).
 // -------------------------------------------------------------------
 
 // We test the five methods via the state module and method handlers
@@ -152,7 +152,7 @@ mod state_conformance {
         assert!(out1.bridge_set_cid.starts_with("blake3-512:"));
 
         // flushCache (R8): after flush the next link produces identical output.
-        // (Flush just means re-computing from cold — same inputs => same output.)
+        // (Flush just means re-computing from cold: same inputs => same output.)
         let out3 = link(LinkerInputs {
             contracts: vec![fixture_contract(
                 "process",
@@ -169,7 +169,7 @@ mod state_conformance {
 }
 
 // -------------------------------------------------------------------
-// §8 item 3 — concurrent clients (integration test via daemon process).
+// §8 item 3: concurrent clients (integration test via daemon process).
 // -------------------------------------------------------------------
 
 // This test spawns the daemon and two concurrent client threads that send

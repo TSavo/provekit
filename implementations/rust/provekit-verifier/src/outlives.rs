@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// outlives.rs — C.9 region-quantifier composition + substitution.
+// outlives.rs: C.9 region-quantifier composition + substitution.
 // Implements `compose_region_demands` per protocol/specs/2026-05-05-outlives-kernel-axioms.md §4.
 
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ pub struct RegionFact {
 
 /// Summarizes a caller's region knowledge: explicit Outlives facts from
 /// the contract's `region_facts` field, plus the implicit axioms.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RegionGraph {
     facts: Vec<RegionFact>,
     regions: Vec<String>,
@@ -22,10 +22,7 @@ pub struct RegionGraph {
 
 impl RegionGraph {
     pub fn new() -> Self {
-        RegionGraph {
-            facts: Vec::new(),
-            regions: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn add_fact(&mut self, longer: &str, shorter: &str) {
@@ -54,7 +51,7 @@ impl RegionGraph {
             return DischargeOutcome::Discharged;
         }
 
-        // Axiom 3: 'static top — any region outlives 'static
+        // Axiom 3: 'static top: any region outlives 'static
         // When b is 'static, a always outlives it.
         if b == "'static" || a == "'static" {
             return DischargeOutcome::Discharged;
@@ -220,7 +217,7 @@ mod tests {
         let demands = vec![
             ("'a".to_string(), "'b".to_string()),
             ("'c".to_string(), "'d".to_string()),
-            ("'e".to_string(), "'e".to_string()), // reflexivity — succeeds
+            ("'e".to_string(), "'e".to_string()), // reflexivity: succeeds
         ];
         let r = compose_region_demands(&g, &demands, &subst);
         assert!(r.is_err());

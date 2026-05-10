@@ -16,7 +16,7 @@ use provekit_proof_envelope::{
 };
 
 // ---------------------------------------------------------------------------
-// Unsigned int — boundary table per RFC 8949 §4.2.1 (shortest form)
+// Unsigned int: boundary table per RFC 8949 §4.2.1 (shortest form)
 // ---------------------------------------------------------------------------
 
 fn enc_uint(v: u64) -> Vec<u8> {

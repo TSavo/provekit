@@ -14,9 +14,9 @@ Cargo executes a crate's `build.rs` once before compiling the crate
 itself. The build script can communicate with cargo by writing
 `cargo:KEY=VALUE` lines to its stdout. The handful that matter for us:
 
-- `cargo:rerun-if-changed=<path>` — declare an input dependency.
+- `cargo:rerun-if-changed=<path>`: declare an input dependency.
   Cargo skips the script next build if no listed path has changed.
-- `cargo:warning=<text>` — emit a warning that cargo prints with the
+- `cargo:warning=<text>`: emit a warning that cargo prints with the
   build output. We use this for every undischarged call site.
 
 A non-zero exit from the build script is treated as a build failure;

@@ -5,14 +5,14 @@
 // Two parallel declarative concerns, both written by `provekit init`
 // and both edited by the user. ProvekIt does not auto-detect either:
 //
-//   1. **Authoring surface** — which annotation library the agent
+//   1. **Authoring surface**: which annotation library the agent
 //      should target ("ts-zod", "rust-contracts-crate", "default", ...).
-//   2. **Agent backend** — which coding-agent drives the work
+//   2. **Agent backend**: which coding-agent drives the work
 //      ("claude-code", "openai", "stub", ...).
 //
 // Resolution order for both is identical:
 //
-//   - CLI flag (`--surface`, `--agent`) — one-shot override.
+//   - CLI flag (`--surface`, `--agent`): one-shot override.
 //   - Project per-command override   `[authoring.must]`, `[agent.must]`.
 //   - Project default                `[authoring]`,        `[agent]`.
 //   - User per-command override      (in `~/.config/provekit/config.toml`).

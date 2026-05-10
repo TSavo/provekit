@@ -13,7 +13,7 @@
 //   derivation are cryptographic claims outside the IR's first-order
 //   predicate domain. The IR CAN say:
 //     - signing is deterministic given a fixed seed (ed25519 is
-//       deterministic — RFC 8032 §5.1.6),
+//       deterministic: RFC 8032 §5.1.6),
 //     - the string-form output starts with "ed25519:" (length-floor
 //       proxy: prefix is 8 bytes; full output is at least 9 bytes for
 //       a 1-byte signature, but real signatures are 64 bytes so the

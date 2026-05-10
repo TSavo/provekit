@@ -3,8 +3,8 @@
 // .invariant.rs for provekit-canonicalizer/src/hash.rs
 //
 // Public surface covered:
-//   * `blake3_512_of(&[u8]) -> String`  — emits "blake3-512:" + 128 hex.
-//   * `blake3_512_hex<S: AsRef<[u8]>>(S) -> String` — convenience.
+//   * `blake3_512_of(&[u8]) -> String`: emits "blake3-512:" + 128 hex.
+//   * `blake3_512_hex<S: AsRef<[u8]>>(S) -> String`: convenience.
 //   * `BLAKE3_512_PREFIX = "blake3-512:"`.
 //
 // Honest scope:
@@ -69,7 +69,7 @@ pub fn invariants() {
     //
     // The constant "blake3-512:" is exactly 11 bytes. We assert >= 10
     // so future-proof prefix changes (e.g., "blake3-512-v2:") don't
-    // need to bump this contract — they'd still hold.
+    // need to bump this contract: they'd still hold.
     contract(
         "blake3_512_prefix_min_length",
         ContractArgs {

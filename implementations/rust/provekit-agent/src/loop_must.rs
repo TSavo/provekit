@@ -130,7 +130,7 @@ mod tests {
             fn translate_must(&self, ctx: &MustContext) -> Result<ContractCandidate, AgentError> {
                 let n = self.calls.fetch_add(1, Ordering::SeqCst);
                 if n == 0 {
-                    // Malformed — empty contract.
+                    // Malformed: empty contract.
                     Ok(ContractCandidate {
                         name: "bad".into(),
                         pre: None,

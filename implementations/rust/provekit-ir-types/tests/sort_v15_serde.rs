@@ -14,7 +14,7 @@
 //   * `Sort::Dependent` serializes to `{"kind": "dependent", "name": ..., "indexVar": ..., "indexSort": ...}`
 //     and round-trips through serde_json without loss.
 //   * `Sort::Primitive` continues to deserialize from the v1.4 wire shape
-//     (backward compatibility — existing kits emit only Primitive today).
+//     (backward compatibility: existing kits emit only Primitive today).
 
 use provekit_ir_types::Sort;
 
@@ -62,7 +62,7 @@ fn function_sort_serializes_to_cddl_shape() {
         obj.contains_key("return"),
         "function sort must have `return`"
     );
-    // No leaked rust field name (`ret`) — must be JSON `return`.
+    // No leaked rust field name (`ret`): must be JSON `return`.
     assert!(
         !obj.contains_key("ret"),
         "rust field `ret` must serialize as `return`"
@@ -215,7 +215,7 @@ fn dependent_sort_deserializes_from_cddl_wire_shape() {
 
 #[test]
 fn nested_sorts_round_trip() {
-    // (Vec<n: Int> -> Bool) — a function that takes a length-indexed Vec and
+    // (Vec<n: Int> -> Bool): a function that takes a length-indexed Vec and
     // returns Bool. Exercises Box<Sort> recursion through both new variants.
     let sort = Sort::Function {
         args: vec![Sort::Dependent {

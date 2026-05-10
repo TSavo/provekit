@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint_kit_integration — integration test for `provekit mint --kit=<kit>`.
+// mint_kit_integration: integration test for `provekit mint --kit=<kit>`.
 //
 // Verifies that the unified mint pipeline:
 //   1. Produces a valid signed attestation JSON for all 11 kits.
@@ -26,7 +26,7 @@ use serial_test::serial;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// BLAKE3-512 of JCS(`[]`) — the empty-set contractSetCid.
+/// BLAKE3-512 of JCS(`[]`): the empty-set contractSetCid.
 /// Produced by `compute_contract_set_cid(vec![])`. Verified empirically.
 const EMPTY_SET_CID: &str = "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229";
 
@@ -126,7 +126,7 @@ impl ScratchRepo {
         for kit_dir_name in kits {
             let canonical_kit = canonical.join("implementations").join(kit_dir_name);
             if !canonical_kit.exists() {
-                // Skip kits that don't exist in this checkout — the test will
+                // Skip kits that don't exist in this checkout: the test will
                 // surface that gap via mint's ENOENT-empty-set behavior.
                 continue;
             }
@@ -277,7 +277,7 @@ const KITS_WITH_LIFTERS: &[&str] = &[
     "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c", "ruby", "zig",
 ];
 
-/// Kits without a lifter binary yet — produce the empty-set CID because the
+/// Kits without a lifter binary yet: produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
 /// the binary is not installed; the gap surfaces as an empty-set attestation.
 const KITS_WITHOUT_LIFTERS: &[&str] = &[];
@@ -401,7 +401,7 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
         let (ok, _, stderr) = run_mint(root, kit);
         if !ok {
             eprintln!("kit `{kit}`: mint failed (lifter may not be built yet)\n  stderr: {stderr}");
-            // Skip rather than fail — lifter may not be built in test environment.
+            // Skip rather than fail: lifter may not be built in test environment.
             continue;
         }
 
@@ -436,7 +436,7 @@ fn rust_kit_mint_is_byte_deterministic() {
     // First mint
     let (ok1, _, _) = run_mint(root, "rust");
     if !ok1 {
-        eprintln!("rust kit: first mint failed — skipping determinism test (lifter not built)");
+        eprintln!("rust kit: first mint failed: skipping determinism test (lifter not built)");
         return;
     }
     let attest1 = read_attestation(root, "rust");
@@ -493,7 +493,7 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         .expect("spawn provekit --project");
 
     if !kit_out.status.success() || !proj_out.status.success() {
-        eprintln!("rust lifter not available — skipping equivalence test");
+        eprintln!("rust lifter not available: skipping equivalence test");
         return;
     }
 
@@ -609,7 +609,7 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
         eprintln!(
             "rust kit: mint failed (mint-self-contracts may not be built)\n  stderr: {stderr}"
         );
-        // Skip rather than fail — binary may not be built in this environment.
+        // Skip rather than fail: binary may not be built in this environment.
         return;
     }
 
@@ -631,7 +631,7 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     // Belt-and-suspenders: must NOT be the empty-set sentinel.
     assert_ne!(
         cset, EMPTY_SET_CID,
-        "rust kit must not produce the empty-set CID — the self-contracts binary is missing or broken"
+        "rust kit must not produce the empty-set CID: the self-contracts binary is missing or broken"
     );
 
     eprintln!("rust kit pinned contractSetCid confirmed: {cset}");
@@ -1160,7 +1160,7 @@ fn php_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 
     if PHP_KIT_CANONICAL_CONTRACT_SET_CID.is_empty() {
         eprintln!(
-            "php kit: placeholder CID — update PHP_KIT_CANONICAL_CONTRACT_SET_CID after first mint"
+            "php kit: placeholder CID: update PHP_KIT_CANONICAL_CONTRACT_SET_CID after first mint"
         );
         return;
     }
