@@ -1,4 +1,4 @@
-# The vertical stack, and the road to standardization
+# After the Standardization Question: The Vertical Stack and the Road to Standardization
 
 > A `.proof` and a chain of formally verified software from quantum physics to bytecode and everything in between are 1:1 identical. This paper unpacks why, and what it takes to get there.
 
