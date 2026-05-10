@@ -6,6 +6,7 @@
 
 #include "provekit/c_lift_core.h"
 #include "contract.h"
+#include "term.h"
 
 /*
  * Emit a function-contract memento for each function found in source_facts.
@@ -356,6 +357,12 @@ pk_c_lift_result *pk_c_walker_lift_source_with_options(
 
         pk_c_walker_contract_free(&contract);
         wbuf_free(&b);
+    }
+
+    if (pk_c_walker_emit_c11_terms(result, path, source, options) != 0) {
+        pk_c_source_facts_free(facts);
+        pk_c_lift_result_free(result);
+        return NULL;
     }
 
     pk_c_source_facts_free(facts);

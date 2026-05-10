@@ -8,6 +8,9 @@ FIXTURE="$SCRIPT_DIR/fixtures/trivial.c"
 DEFENSIVE_FIXTURE="$SCRIPT_DIR/fixtures/defensive.c"
 CHECKED_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo.c"
 BRANCH_FIXTURE="$SCRIPT_DIR/fixtures/branch_returns.c"
+TERM_UNSUPPORTED_FIXTURE="$SCRIPT_DIR/fixtures/term_unsupported.c"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+FOO_EXPECTED_TERM="$REPO_ROOT/menagerie/c11-language-signature/example/foo.term.json"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -31,6 +34,16 @@ fi
 
 if [ ! -f "$BRANCH_FIXTURE" ]; then
     echo "FAIL: fixture not found: $BRANCH_FIXTURE" >&2
+    exit 1
+fi
+
+if [ ! -f "$TERM_UNSUPPORTED_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $TERM_UNSUPPORTED_FIXTURE" >&2
+    exit 1
+fi
+
+if [ "${PK_C_ENABLE_CLANG_AST:-}" = "1" ] && [ ! -f "$FOO_EXPECTED_TERM" ]; then
+    echo "FAIL: expected term fixture not found: $FOO_EXPECTED_TERM" >&2
     exit 1
 fi
 
@@ -348,5 +361,85 @@ for fn_name, expected in effect_checks:
     if expected not in effects:
         fail(f"{fn_name} missing effect {expected}")
 PY
+
+if [ "${PK_C_ENABLE_CLANG_AST:-}" = "1" ]; then
+    TERM_RESPONSES="$(
+        {
+            printf '%s\n' '{"jsonrpc":"2.0","id":10,"method":"initialize","params":{}}'
+            printf '{"jsonrpc":"2.0","id":11,"method":"lift","params":{"workspace_root":'
+            printf '"%s"' "$REPO_ROOT"
+            printf ',"source_paths":["menagerie/c11-language-signature/example/foo.c","implementations/c/provekit-lift-c-collectors-defensive/tests/fixtures/term_unsupported.c"],"surface":"c-collectors-defensive"}}\n'
+            printf '%s\n' '{"jsonrpc":"2.0","id":12,"method":"shutdown"}'
+        } | "$BIN" --rpc
+    )"
+
+    TERM_RESPONSES_JSON="$TERM_RESPONSES" FOO_EXPECTED_TERM="$FOO_EXPECTED_TERM" python3 - <<'PY'
+import json
+import os
+
+responses = [json.loads(line) for line in os.environ["TERM_RESPONSES_JSON"].splitlines() if line.strip()]
+lift = next((r for r in responses if r.get("id") == 11), None)
+if lift is None:
+    raise SystemExit("FAIL: term lift response missing")
+
+decls = lift["result"]["declarations"]
+terms = [decl for decl in decls if decl.get("kind") == "c11-algebra-term"]
+contracts = [decl for decl in decls if decl.get("kind") == "function-contract"]
+
+def fail(message):
+    raise SystemExit(f"FAIL: {message}\n{json.dumps(lift, sort_keys=True)}")
+
+def surface_key(text):
+    return "".join((text or "").split())
+
+def normalize_term(value):
+    if isinstance(value, dict):
+        return {
+            key: normalize_term(child)
+            for key, child in value.items()
+            if key != "op_cid"
+        }
+    if isinstance(value, list):
+        return [normalize_term(child) for child in value]
+    return value
+
+foo_terms = [
+    term for term in terms
+    if term.get("fn_name") == "foo" or term.get("source") == "foo.c"
+]
+if len(foo_terms) != 1:
+    fail(f"expected exactly one c11-algebra-term for foo, found {len(foo_terms)}")
+foo = foo_terms[0]
+
+expected = json.load(open(os.environ["FOO_EXPECTED_TERM"], encoding="utf-8"))
+expected_surface = "seq(if(eq(x, 0), return(neg(22)), skip), return(x))"
+if surface_key(foo.get("term_surface")) != surface_key(expected_surface):
+    fail(f"foo term_surface mismatch: {foo.get('term_surface')!r}")
+
+if normalize_term(foo.get("term")) != normalize_term(expected["term"]):
+    fail(f"foo term AST mismatch: {foo.get('term')}")
+
+unsupported_names = {"unsupported_goto", "unsupported_ternary"}
+contract_names = {decl.get("fn_name") for decl in contracts}
+if not unsupported_names <= contract_names:
+    fail(f"unsupported fixture did not still emit function-contracts: {contract_names}")
+
+term_names = {term.get("fn_name") for term in terms}
+if unsupported_names & term_names:
+    fail(f"unsupported functions emitted c11-algebra-term declarations: {term_names}")
+
+messages = [
+    diag.get("message", "")
+    for diag in lift["result"].get("diagnostics", [])
+    if isinstance(diag, dict)
+]
+for name in unsupported_names:
+    needle = f"term-emit skipped fn={name}: unsupported AST node"
+    if not any(needle in message for message in messages):
+        fail(f"missing fail-closed diagnostic for {name}: {messages}")
+PY
+else
+    echo "SKIP: c11-algebra-term checks (PK_C_ENABLE_CLANG_AST not set)"
+fi
 
 echo "provekit-lift-c-collectors-defensive integration passed"
