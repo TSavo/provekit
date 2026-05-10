@@ -1,4 +1,4 @@
-# Substrate, Not Blockchain
+# After Bluepapers: Substrate, Not Blockchain
 
 ProvekIt builds proofchains: portable chains of formal proofs over content-addressed claims. Proofchains are blockchain-adjacent, not blockchain-derived. They share the same older primitives blockchains assembled so effectively: hash chains, Merkle structure, signatures, content addressing, witness publication, and local verification. The difference is the payload. A blockchain carries state transitions ordered by a distributed timestamp server. A proofchain carries formal proofs checked by a local verifier.
 

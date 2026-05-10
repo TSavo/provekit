@@ -1,4 +1,4 @@
-# Lossy Boundary Compression: Why ProofIR Is Universal Because It Forgets
+# After Universal-Language Ambitions: Lossy Boundary Compression (ProofIR Is Universal Because It Forgets)
 
 > **Status.** Draft whitepaper. Sustained argument. Contains a lemma. Written to be cite-able after review.
 >

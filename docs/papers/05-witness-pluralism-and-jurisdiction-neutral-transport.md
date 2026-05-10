@@ -1,4 +1,4 @@
-# Witness Pluralism and Jurisdiction-Neutral Transport
+# After Single-Party Transport: Witness Pluralism and Jurisdiction-Neutral Transport
 
 > The marketplace property, the security model, and the standardization restructure that fall out of v1.4's substrate-vs-metadata cut.
 
