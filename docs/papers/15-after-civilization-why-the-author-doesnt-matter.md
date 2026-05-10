@@ -222,7 +222,7 @@ The CID of this document is its authority.
 
 Read it. Recompute it. Verify it.
 
-The line below is a courtesy.
+The signature is a courtesy.
 
 Information wants to be free.
 
