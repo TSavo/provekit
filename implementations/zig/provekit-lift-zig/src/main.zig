@@ -39,7 +39,7 @@ fn runRpcMode(alloc: std.mem.Allocator, io: Io) !void {
         // Discard the trailing newline byte that takeDelimiter left in buffer.
         stdin_reader.toss(@min(1, stdin_reader.bufferedLen()));
 
-        const keep_going = try handleLine(alloc, line, stdout_writer);
+        const keep_going = try handleLine(alloc, io, line, stdout_writer);
         try stdout_writer.flush();
         if (!keep_going) break;
     }
@@ -47,6 +47,7 @@ fn runRpcMode(alloc: std.mem.Allocator, io: Io) !void {
 
 fn handleLine(
     alloc: std.mem.Allocator,
+    io: Io,
     line: []const u8,
     writer: *Io.Writer,
 ) !bool {
@@ -54,7 +55,7 @@ fn handleLine(
 
     if (std.mem.indexOf(u8, line, "\"initialize\"") != null) {
         try writer.print(
-            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}}}}\n",
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\",\"lift\"]}}}}\n",
             .{id},
         );
         return true;
@@ -62,6 +63,11 @@ fn handleLine(
 
     if (std.mem.indexOf(u8, line, "\"parse\"") != null) {
         try handleParse(alloc, line, id, writer);
+        return true;
+    }
+
+    if (std.mem.indexOf(u8, line, "\"lift\"") != null) {
+        try handleLift(alloc, io, line, id, writer);
         return true;
     }
 
@@ -91,21 +97,82 @@ fn handleParse(
     const source_raw = extractJsonStringField(line, "source") orelse "";
     const source = try unescapeJsonString(alloc, source_raw);
     defer alloc.free(source);
+    const path_raw = extractJsonStringField(line, "path") orelse "input.zig";
+    const path = try unescapeJsonString(alloc, path_raw);
+    defer alloc.free(path);
 
-    // Lift to IR declarations via the lift module.
-    const decls = try lift.liftToDecls(alloc, source);
-    defer alloc.free(decls);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    const lifted = try lift.liftSource(arena_alloc, source, sourceFileName(path));
 
     // Serialize declarations as a JSON array.
-    const decls_json = try std.json.Stringify.valueAlloc(alloc, decls, .{ .whitespace = .minified });
+    const decls_json = try std.json.Stringify.valueAlloc(alloc, lifted.declarations, .{ .whitespace = .minified });
     defer alloc.free(decls_json);
+    const implications_json = try std.json.Stringify.valueAlloc(alloc, lifted.implications, .{ .whitespace = .minified });
+    defer alloc.free(implications_json);
 
     // callEdges: zig kit emits empty array (no cross-kit call tracking yet).
     // warnings: empty.
     try writer.print(
-        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"callEdges\":[],\"warnings\":[]}}}}\n",
-        .{ id, decls_json },
+        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"callEdges\":[],\"implications\":{s},\"warnings\":[]}}}}\n",
+        .{ id, decls_json, implications_json },
     );
+}
+
+fn handleLift(
+    alloc: std.mem.Allocator,
+    io: Io,
+    line: []const u8,
+    id: []const u8,
+    writer: *Io.Writer,
+) !void {
+    const workspace_raw = extractJsonStringField(line, "workspace_root") orelse ".";
+    const workspace = try unescapeJsonString(alloc, workspace_raw);
+    defer alloc.free(workspace);
+
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    var declarations: std.ArrayList(provekit.Decl) = .empty;
+    var implications: std.ArrayList(lift.ImplicationDecl) = .empty;
+
+    var dir = try Dir.openDir(Dir.cwd(), io, workspace, .{ .iterate = true });
+    defer dir.close(io);
+
+    var walker = try dir.walk(arena_alloc);
+    defer walker.deinit();
+
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+
+        const file_text = try Dir.readFileAlloc(entry.dir, io, entry.basename, arena_alloc, .unlimited);
+        const lifted = try lift.liftSource(arena_alloc, file_text, entry.basename);
+        for (lifted.declarations) |decl| try declarations.append(arena_alloc, decl);
+        for (lifted.implications) |implication| try implications.append(arena_alloc, implication);
+    }
+
+    const declarations_slice = try declarations.toOwnedSlice(arena_alloc);
+    const implications_slice = try implications.toOwnedSlice(arena_alloc);
+    const decls_json = try std.json.Stringify.valueAlloc(alloc, declarations_slice, .{ .whitespace = .minified });
+    defer alloc.free(decls_json);
+    const implications_json = try std.json.Stringify.valueAlloc(alloc, implications_slice, .{ .whitespace = .minified });
+    defer alloc.free(implications_json);
+
+    try writer.print(
+        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"ir\":{s},\"implications\":{s},\"diagnostics\":[]}}}}\n",
+        .{ id, decls_json, implications_json },
+    );
+}
+
+fn sourceFileName(path: []const u8) []const u8 {
+    if (std.mem.lastIndexOfAny(u8, path, "/\\")) |idx| {
+        return path[idx + 1 ..];
+    }
+    return path;
 }
 
 fn runStandaloneMode(alloc: std.mem.Allocator, io: Io, workspace_path: []const u8, output_path: []const u8) !void {
