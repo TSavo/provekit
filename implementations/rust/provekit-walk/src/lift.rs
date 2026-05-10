@@ -176,7 +176,7 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
     //    expression is the function's return value. Derive
     //    `result = <lifted expression>` and add to the postcondition.
     if let Some(Stmt::Expr(e, None)) = stmts.last() {
-        if let Some(term) = lift_expr_to_term_inner(e, &mut ctx) {
+        if let Some(term) = lift_tail_expr_to_result_term(e, &mut ctx) {
             let result_var = IrTerm::Var {
                 name: "result".to_string(),
             };
@@ -196,6 +196,63 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
     }
 
     Wp(simplify_conjunction(accum))
+}
+
+fn lift_tail_expr_to_result_term(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
+    match expr {
+        Expr::If(if_expr) => lift_tail_if_to_ite_term(if_expr, ctx),
+        _ => lift_expr_to_term_inner(expr, ctx),
+    }
+}
+
+fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTerm> {
+    let cond = lift_predicate_inner(&if_expr.cond, ctx)?;
+    let cond_term = formula_to_term(cond)?;
+    let then_expr = block_single_tail_expr(&if_expr.then_branch)?;
+    let then_term = lift_expr_to_term_inner(then_expr, ctx)?;
+    let (_, else_expr) = if_expr.else_branch.as_ref()?;
+    let else_tail = expr_single_tail_expr(else_expr)?;
+    let else_term = lift_expr_to_term_inner(else_tail, ctx)?;
+    Some(IrTerm::Ctor {
+        name: "ite".to_string(),
+        args: vec![cond_term, then_term, else_term],
+    })
+}
+
+fn formula_to_term(formula: IrFormula) -> Option<IrTerm> {
+    match formula {
+        IrFormula::Atomic { name, args } => Some(IrTerm::Ctor { name, args }),
+        IrFormula::And { operands } => formula_operands_to_term("and", operands),
+        IrFormula::Or { operands } => formula_operands_to_term("or", operands),
+        IrFormula::Not { operands } => formula_operands_to_term("not", operands),
+        IrFormula::Implies { operands } => formula_operands_to_term("implies", operands),
+        IrFormula::Forall { .. } | IrFormula::Exists { .. } | IrFormula::Choice { .. } => None,
+    }
+}
+
+fn formula_operands_to_term(name: &str, operands: Vec<IrFormula>) -> Option<IrTerm> {
+    let args = operands
+        .into_iter()
+        .map(formula_to_term)
+        .collect::<Option<Vec<_>>>()?;
+    Some(IrTerm::Ctor {
+        name: name.to_string(),
+        args,
+    })
+}
+
+fn block_single_tail_expr(block: &syn::Block) -> Option<&Expr> {
+    match block.stmts.as_slice() {
+        [Stmt::Expr(expr, None)] => Some(expr),
+        _ => None,
+    }
+}
+
+fn expr_single_tail_expr(expr: &Expr) -> Option<&Expr> {
+    match expr {
+        Expr::Block(block) => block_single_tail_expr(&block.block),
+        other => Some(other),
+    }
 }
 
 /// Collect all names bound by `let` patterns at the top level of a statement.
@@ -419,6 +476,7 @@ fn lift_predicate_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
 ///     `Ctor("neg" / "bit-not", [...])`.
 ///   - Binary arithmetic (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`,
 ///     `<<`, `>>`): lifts to `Ctor(<op>, [lhs, rhs])`.
+///
 /// Anything else returns None.
 pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
     let mut ctx = LiftCtx::new();
@@ -621,7 +679,17 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
         Expr::Unary(ExprUnary { op, expr, .. }) => {
             let inner = lift_expr_to_term_inner(expr, ctx)?;
             let name = match op {
-                UnOp::Neg(_) => "neg",
+                UnOp::Neg(_) => {
+                    if let IrTerm::Const { value, sort } = &inner {
+                        if let Some(n) = value.as_i64() {
+                            return Some(IrTerm::Const {
+                                value: serde_json::json!(-n),
+                                sort: sort.clone(),
+                            });
+                        }
+                    }
+                    "neg"
+                }
                 UnOp::Not(_) => "bit-not",
                 UnOp::Deref(_) => return Some(inner), // *x is x for substitution
                 _ => return None,
@@ -866,6 +934,38 @@ mod tests {
             json
         );
         assert!(json.contains("\"x\""));
+    }
+
+    #[test]
+    fn postcondition_for_tail_if_expression_is_branch_sensitive() {
+        let item_fn = parse_fn(
+            r#"
+            fn foo(x: i32) -> i32 {
+                if x == 0 { -22 } else { x }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let expected = IrFormula::Atomic {
+            name: "=".to_string(),
+            args: vec![
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
+                IrTerm::Ctor {
+                    name: "ite".to_string(),
+                    args: vec![
+                        IrTerm::Ctor {
+                            name: "=".to_string(),
+                            args: vec![var("x"), const_int(0)],
+                        },
+                        const_int(-22),
+                        var("x"),
+                    ],
+                },
+            ],
+        };
+        assert_eq!(post, expected);
     }
 
     #[test]

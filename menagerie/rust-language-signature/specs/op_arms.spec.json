@@ -1,0 +1,44 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:arms",
+  "formals": [
+    "head",
+    "tail"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "MatchArm",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "ListOfArm",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "ListOfArm",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "arms",
+    "arity": [
+      "MatchArm",
+      "ListOfArm"
+    ],
+    "result": "ListOfArm",
+    "wp": "match arm list constructor"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

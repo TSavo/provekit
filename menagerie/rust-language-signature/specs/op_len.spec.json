@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:len",
+  "formals": [
+    "slice"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Slice",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "len",
+    "arity": [
+      "Slice"
+    ],
+    "result": "Int",
+    "wp": "slice length metadata"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

@@ -1,0 +1,70 @@
+{
+  "kind": "equation",
+  "fn_name": "rust:seq-assoc",
+  "formals": [
+    "a",
+    "b",
+    "c"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "seq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "a"
+            },
+            {
+              "kind": "var",
+              "name": "b"
+            }
+          ]
+        },
+        {
+          "kind": "var",
+          "name": "c"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "seq",
+      "args": [
+        {
+          "kind": "var",
+          "name": "a"
+        },
+        {
+          "kind": "op",
+          "name": "seq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "b"
+            },
+            {
+              "kind": "var",
+              "name": "c"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

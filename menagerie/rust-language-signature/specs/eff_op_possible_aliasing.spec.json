@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:effect:possible_aliasing",
+  "formals": [
+    "formals"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "ListOfExpr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "possible_aliasing",
+    "arity": [
+      "ListOfExpr"
+    ],
+    "result": "Unit",
+    "wp": "shared references may alias through interior mutability"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "PossibleAliasing"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

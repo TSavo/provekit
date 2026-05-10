@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Ref",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Ref",
+    "description": "Safe borrowed reference values"
+  }
+}

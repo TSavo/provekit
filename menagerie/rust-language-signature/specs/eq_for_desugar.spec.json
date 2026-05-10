@@ -1,0 +1,195 @@
+{
+  "kind": "equation",
+  "fn_name": "rust:for-desugar",
+  "formals": [
+    "pat",
+    "iter",
+    "body"
+  ],
+  "formal_sorts": [
+    "sort_pattern.spec.json",
+    "sort_expr.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "for",
+      "args": [
+        {
+          "kind": "op",
+          "name": "let",
+          "args": [
+            {
+              "kind": "var",
+              "name": "pat"
+            },
+            {
+              "kind": "var",
+              "name": "iter"
+            },
+            {
+              "kind": "op",
+              "name": "skip",
+              "args": [
+                {
+                  "kind": "unit"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "const",
+          "value": true,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        },
+        {
+          "kind": "op",
+          "name": "skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        },
+        {
+          "kind": "var",
+          "name": "body"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "let",
+          "args": [
+            {
+              "kind": "var",
+              "name": "it"
+            },
+            {
+              "kind": "op",
+              "name": "into_iter",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "iter"
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "name": "skip",
+              "args": [
+                {
+                  "kind": "unit"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "name": "loop",
+          "args": [
+            {
+              "kind": "op",
+              "name": "match",
+              "args": [
+                {
+                  "kind": "op",
+                  "name": "next",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "it"
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "name": "arms",
+                  "args": [
+                    {
+                      "kind": "op",
+                      "name": "arm",
+                      "args": [
+                        {
+                          "kind": "op",
+                          "name": "pattern_some",
+                          "args": [
+                            {
+                              "kind": "var",
+                              "name": "pat"
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "op",
+                          "name": "seq",
+                          "args": [
+                            {
+                              "kind": "var",
+                              "name": "body"
+                            },
+                            {
+                              "kind": "op",
+                              "name": "continue",
+                              "args": [
+                                {
+                                  "kind": "unit"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "op",
+                      "name": "arm",
+                      "args": [
+                        {
+                          "kind": "op",
+                          "name": "pattern_none",
+                          "args": [
+                            {
+                              "kind": "unit"
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "op",
+                          "name": "break",
+                          "args": [
+                            {
+                              "kind": "unit"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

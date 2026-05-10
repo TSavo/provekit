@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:FieldName",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "FieldName",
+    "description": "Struct, tuple, or enum field names"
+  }
+}

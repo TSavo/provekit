@@ -1,0 +1,34 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "rust:Stmt",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "Stmt",
+      "description": "Rust statement terms, the carrier sort for statement-level algebra terms"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    }
+  },
+  "cid": "blake3-512:75fc250ff9c62d4934b6728a1cbbd2a306f6df1c29bbcb8c7d8b77697a54ed3ac0e5bfcc4c424aed9b8aca825cb313cef5b94c023e071bb73878bde57135b106",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "IJHcFJ1XVfzlQpFMDXdb3GE0TP31C8N0leogk4N+t99uYlOotgU8esMXCQVdeMJkYwY5z5XaybLh3YE/3c5ZDA=="
+  }
+}

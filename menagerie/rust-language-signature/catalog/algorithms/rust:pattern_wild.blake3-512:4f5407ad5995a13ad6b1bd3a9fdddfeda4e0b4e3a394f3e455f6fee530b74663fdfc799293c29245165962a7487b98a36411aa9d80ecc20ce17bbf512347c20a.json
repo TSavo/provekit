@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:pattern_wild",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "pattern_wild",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Pattern",
+      "wp": "wildcard pattern"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Pattern",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:4f5407ad5995a13ad6b1bd3a9fdddfeda4e0b4e3a394f3e455f6fee530b74663fdfc799293c29245165962a7487b98a36411aa9d80ecc20ce17bbf512347c20a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "qehSiUsoJuLdzyzX4vXlsO4w+ALvgQV2LNDbH8ENp9F4coMSMqeYzbwfJI8dvkvObT6zmQ/jQW/Cakyd4VfxDg=="
+  }
+}

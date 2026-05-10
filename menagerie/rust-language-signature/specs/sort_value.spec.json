@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Value",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Value",
+    "description": "Abstract memory or IO values for effect signatures"
+  }
+}

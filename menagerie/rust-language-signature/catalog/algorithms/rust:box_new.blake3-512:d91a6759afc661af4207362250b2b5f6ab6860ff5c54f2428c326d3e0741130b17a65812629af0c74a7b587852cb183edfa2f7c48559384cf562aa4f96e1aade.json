@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:box_new",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "box_new",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Box",
+      "wp": "allocate owned heap value"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Alloc"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Box",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:d91a6759afc661af4207362250b2b5f6ab6860ff5c54f2428c326d3e0741130b17a65812629af0c74a7b587852cb183edfa2f7c48559384cf562aa4f96e1aade",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "xL0wLSHsGdw5R+txNPSFIwPbNUko6mzAasTgclqukp3jFqDkwBWDWQgYoV6Doh76h+GFGMx+M46mJoZ9hn24AQ=="
+  }
+}

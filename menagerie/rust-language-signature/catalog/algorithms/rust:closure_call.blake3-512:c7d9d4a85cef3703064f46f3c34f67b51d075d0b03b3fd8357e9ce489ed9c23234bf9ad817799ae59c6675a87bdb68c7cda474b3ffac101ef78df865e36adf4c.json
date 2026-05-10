@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:closure_call",
+    "formals": [
+      "closure",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Closure",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfExpr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "closure_call",
+      "arity": [
+        "Closure",
+        "ListOfExpr"
+      ],
+      "result": "Stmt",
+      "wp": "call a closure contract"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "closure body effects"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:c7d9d4a85cef3703064f46f3c34f67b51d075d0b03b3fd8357e9ce489ed9c23234bf9ad817799ae59c6675a87bdb68c7cda474b3ffac101ef78df865e36adf4c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "DaLxCOXrnMljGDFWCvGLH0IpKnNcdZmATJdSVEepkiKAryKgTw24Sx3Yo7DYiAGaqQSm9o4sD33kacQr5WUwDw=="
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:borrow",
+    "formals": [
+      "place"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Place",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "place_live",
+      "args": [
+        {
+          "kind": "var",
+          "name": "place"
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "borrow",
+      "arity": [
+        "Place"
+      ],
+      "result": "Ref",
+      "wp": "shared borrow introducing a lifetime"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Ref",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:38bcc85f882da5681d3739ccf3242a6af216844870cce1a77cc54bd00779b5c7712edda9a4ca81e96dd5571a35a56d76ba59d17f63799266179e325a5edcaac8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "GPLPCYI9qxRHmOeYbZLQAxpu7d8QGs9CtxVGGBWeZTEsfdBLBMLsNENuEC2/1gA8diLeqrykPx0fKZdWrZ9LBg=="
+  }
+}

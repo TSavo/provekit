@@ -1,0 +1,57 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "rust:deref-borrow",
+    "formals": [
+      "p"
+    ],
+    "formal_sorts": [
+      "blake3-512:24f6cf091e35e2b6d7a5405602e5e938158637f66ae8389615f0051620108a20a16f5bd77d71bf070ec52451fbaebf4f25cc98fa60cbf6ece0c0f23ca9265851"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "deref",
+        "args": [
+          {
+            "kind": "op",
+            "name": "borrow",
+            "args": [
+              {
+                "kind": "var",
+                "name": "p"
+              }
+            ]
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "var",
+        "name": "p"
+      },
+      "notes": "Modulo aliasing side conditions."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:31507f2ea18da0fb97c04411d2788699e0200add3fe585fb32e9ff016d9257d33cb22e4c5c489e1359f6ddb975638e285705b398213c1552d5c7bcad01c0147f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "XM5jSb5CdO4Qa8+xtXIWgt4/Fh/brFT6c88nIukVPjyh1khsOGfK6GvTx1ZnEsEOsiCBj5aUdQrfBIhD/5KQAw=="
+  }
+}

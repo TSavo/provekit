@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "rust:drop-skip",
+    "formals": [
+      "p"
+    ],
+    "formal_sorts": [
+      "blake3-512:24f6cf091e35e2b6d7a5405602e5e938158637f66ae8389615f0051620108a20a16f5bd77d71bf070ec52451fbaebf4f25cc98fa60cbf6ece0c0f23ca9265851"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "has_no_drop_glue",
+      "args": [
+        {
+          "kind": "var",
+          "name": "p"
+        }
+      ]
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "drop",
+        "args": [
+          {
+            "kind": "var",
+            "name": "p"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "skip",
+        "args": [
+          {
+            "kind": "unit"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:2508f31c77b861b719ea978da76fdb4e439a8e1dd08d9ca756e6e643774772e7250fe551cdf7b9ac263bc3444ad281a5350e94fa358faa1ceb392e4dd2c0e41d",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "k0iCtWkL6t2DcU0sqZ5vpxO7xCsdSNvUVRHJRmBQtsFEc52oZxfbGNmKqji1732G8MLjZhxvUctz8Qfd2U8nBg=="
+  }
+}

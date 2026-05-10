@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Slice",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Slice",
+    "description": "Slice and array view values"
+  }
+}

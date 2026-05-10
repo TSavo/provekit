@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:unsafe_marker",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unsafe_marker",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Unit",
+      "wp": "unsafe code marker"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Unsafe"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:f651f5a503831fdff46cb50bdff55c6ef354ab627b23a67c31e995c1d833a8152e4f4530ff73e38fe96131c01d0613e15ccca328a59e9f9a9fc3c020572c17cf",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "r1sTq3Bb4+aO6PBNzGvoDGaTri9ATn6LM8gC2S67oz+xs173i5CLqrSi2J34h59S6A+Blvq+9d0EU+2AV2bwBA=="
+  }
+}

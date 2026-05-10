@@ -1,0 +1,113 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "rust:if-let-desugar",
+    "formals": [
+      "p",
+      "e",
+      "a",
+      "b"
+    ],
+    "formal_sorts": [
+      "blake3-512:98bb317baed6f18f64f50a86ac718d09288c69cb9d4eafcfdc8e7690e4baf90a8b9b35af3c09b717cf597bc71518e0385c794c0f0c07ea4578cbdb01a2600e96",
+      "blake3-512:f1b137f21b67db4ad2b4cff0b3e91baab04e1e2eee3cf262df42d9dcc1b2d1fb5a946ac69c4ce7dc9cdc581af080e52cbb9e6669ac2a1ecbd84f1542f84fd026",
+      "blake3-512:75fc250ff9c62d4934b6728a1cbbd2a306f6df1c29bbcb8c7d8b77697a54ed3ac0e5bfcc4c424aed9b8aca825cb313cef5b94c023e071bb73878bde57135b106",
+      "blake3-512:75fc250ff9c62d4934b6728a1cbbd2a306f6df1c29bbcb8c7d8b77697a54ed3ac0e5bfcc4c424aed9b8aca825cb313cef5b94c023e071bb73878bde57135b106"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "if_let",
+        "args": [
+          {
+            "kind": "var",
+            "name": "p"
+          },
+          {
+            "kind": "var",
+            "name": "e"
+          },
+          {
+            "kind": "var",
+            "name": "a"
+          },
+          {
+            "kind": "var",
+            "name": "b"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "match",
+        "args": [
+          {
+            "kind": "var",
+            "name": "e"
+          },
+          {
+            "kind": "op",
+            "name": "arms",
+            "args": [
+              {
+                "kind": "op",
+                "name": "arm",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "p"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "a"
+                  }
+                ]
+              },
+              {
+                "kind": "op",
+                "name": "arm",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "pattern_wild",
+                    "args": [
+                      {
+                        "kind": "unit"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "var",
+                    "name": "b"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:b7edae4453ba3a7f45600e81b56e4656155dbfe02686dd576c6dffa2e68a6f4727df3b51c1ee900ac2d7562db41bab89da1c5888192d05bf015e2a49ecb682a9",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "RVbqNPAC6lHgZSzKf3uCxb+xYcOWmH4X+HPQGR+Q6q7HafimDkPQK/1EnlyOtMkumS5ziSBPzHeVBnd2Q393AQ=="
+  }
+}

@@ -67,6 +67,7 @@ fn int_sort() -> Sort {
 ///   - +0.0 (f32) → bits = 0x00000000
 ///   - -0.0 (f32) → bits = 0x80000000
 ///   - NaN, +inf, -inf: stored as their exact bit patterns.
+///
 /// Downstream solvers must apply their own float theory to interpret
 /// comparisons. We do NOT model NaN-inequality here.
 pub fn const_float(bits: u64, width: u8) -> IrTerm {

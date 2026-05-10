@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:loop",
+  "formals": [
+    "body"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "loop",
+    "arity": [
+      "Stmt"
+    ],
+    "result": "Stmt",
+    "wp": "unconditional Rust loop requiring an invariant"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "OpaqueLoop"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

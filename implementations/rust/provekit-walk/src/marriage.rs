@@ -169,10 +169,10 @@ fn compare_layers(ast: &FunctionContractMemento, llbc: &FunctionContractMemento)
     let ast_post_atoms = atom_byte_set(&ast.post);
     let llbc_post_atoms = atom_byte_set(&llbc.post);
 
-    let ast_only = !ast_pre_atoms.difference(&llbc_pre_atoms).next().is_none()
-        || !ast_post_atoms.difference(&llbc_post_atoms).next().is_none();
-    let llbc_only = !llbc_pre_atoms.difference(&ast_pre_atoms).next().is_none()
-        || !llbc_post_atoms.difference(&ast_post_atoms).next().is_none();
+    let ast_only = ast_pre_atoms.difference(&llbc_pre_atoms).next().is_some()
+        || ast_post_atoms.difference(&llbc_post_atoms).next().is_some();
+    let llbc_only = llbc_pre_atoms.difference(&ast_pre_atoms).next().is_some()
+        || llbc_post_atoms.difference(&ast_post_atoms).next().is_some();
 
     // Collect the LLBC-exclusive atoms for category classification.
     let llbc_extras_pre: Vec<IrFormula> = conjuncts(&llbc.pre)

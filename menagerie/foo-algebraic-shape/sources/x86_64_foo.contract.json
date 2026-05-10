@@ -100,7 +100,7 @@
   "kind": "function-contract",
   "locus": {
     "col": 0,
-    "file": "/private/tmp/pk-foo-morphism/implementations/rust/provekit-lift-asm-x86-64/tests/fixtures/foo.s",
+    "file": "/private/tmp/pk-walk-codex/implementations/rust/provekit-lift-asm-x86-64/tests/fixtures/foo.s",
     "line": 0
   },
   "post": {
@@ -201,5 +201,5 @@
     "name": "MachineState"
   },
   "schemaVersion": "1",
-  "cid": "blake3-512:3423071e79d49d1862b91f97f3f9c01890bb2d83f084344cf6d3ccbffe88aa5bc7d2552080fdc20cec005bb445b111a6ba91cd053527b9856ad919a35235e62a"
+  "cid": "blake3-512:d34500ea7d3c9698c9047d456115093fb1b858a6f1768fc7f3caa70e158a80e5e708e5e06ae4b6aa5be12fe1f8aee1500852de06eec1e27794de280913fa6b02"
 }

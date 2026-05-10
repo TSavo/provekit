@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:drop_glue",
+    "formals": [
+      "addr"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Addr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "drop_glue",
+      "arity": [
+        "Addr"
+      ],
+      "result": "Unit",
+      "wp": "run drop glue for address"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Drop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:813c798f4488345dd9a43ad24a9393d92168581b69130887e18687fc564fa303c230391b24c9bbaab1801e10e994f19a890ddfad27e90380a8c48fedf09b2e51",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "MDmv/G4natw5clfEsVyR2r1EArLdxzg5AB2xXownMvKOxBpheJPCKi4konZq3uTBXixoc3pS7F11+mzYCJoPDw=="
+  }
+}

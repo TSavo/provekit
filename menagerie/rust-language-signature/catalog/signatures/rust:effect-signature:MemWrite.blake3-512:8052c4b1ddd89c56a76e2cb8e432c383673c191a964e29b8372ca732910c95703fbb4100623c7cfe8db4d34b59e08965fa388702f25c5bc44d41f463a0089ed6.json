@@ -1,0 +1,44 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EffectSignatureMemento",
+    "fn_name": "rust:effect-signature:MemWrite",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "sorts": [
+        "blake3-512:9a337f72fdc364759b49b0416c3565acab5361775b4be0335348a637d1c157dd51eb7a0a024734229dc7a7c7f873e3522af7cd73c3bfacaa367ebf7523470419",
+        "blake3-512:b80072371372cfc3d0608cca91783a5db02863e1342b455c75d6a60523cde24818b9907ef1342b9ac3e7b0589bb4f5c75760f05b32762aba9339ca05f6405f0a",
+        "blake3-512:6cad7697e46880bfa421570f92e14f1e376d395ec8e666d2391c4cad64bf143a176b6c58228aa3eaeae32ad39eae128dd1236d30b55d5683d642de9fedc6c0ea"
+      ],
+      "operations": [
+        "blake3-512:028e541deef2a9e154b9a4965cf5800445f5c46ba5c1d0a4a1fee635c872285538478984569788f339968627088e8d11d01d88b798f9d904275a5aea955f8122"
+      ],
+      "equations": [
+        "blake3-512:53333275f8c06cf11fc6a319a061335603ef5771e2f6bec59a9438340910436a30b02365e74335cf1a1ea6beba7c25ee16fa2d3da95a5e394914cbbec8d520d0"
+      ],
+      "effect_signatures": []
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "EffectSignature",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:8052c4b1ddd89c56a76e2cb8e432c383673c191a964e29b8372ca732910c95703fbb4100623c7cfe8db4d34b59e08965fa388702f25c5bc44d41f463a0089ed6",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "XANxib4BnVqbu90G95BHJAZuyee1y/tAeutnEO5wBjrCoZZsc7CojcVUkz5jbO2NxOwop809DS9QHT8zsPsEDA=="
+  }
+}

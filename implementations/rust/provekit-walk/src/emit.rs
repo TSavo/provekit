@@ -19,9 +19,12 @@
 use std::sync::Arc;
 
 use provekit_canonicalizer::Value;
+use serde_json::{json, Value as JsonValue};
+use syn::{BinOp, Expr, ExprIf, Lit, Stmt, UnOp};
 
-use crate::canonical::{cid_of_value, jcs_bytes_of_value};
+use crate::canonical::{cid_of_value, jcs_bytes_of_value, serde_to_canonical};
 use crate::shadow::{compose_chain, edge_memento_value, ShadowSource};
+use crate::signature::{op_cid, RUST_LANGUAGE_SIGNATURE_CID};
 
 /// Emit a single proof.ir bundle for the given shadow source.
 /// Returns JCS-canonical bytes ready for write or transmit. The bundle's
@@ -35,6 +38,338 @@ pub fn shadow_to_proof_ir(s: &ShadowSource) -> Vec<u8> {
 pub fn shadow_proof_ir_cid(s: &ShadowSource) -> String {
     let bundle = build_bundle_value(s);
     cid_of_value(&bundle)
+}
+
+/// Emit a Rust algebra term over the minted rust:rust signature.
+pub fn rust_function_term_json(
+    item_fn: &syn::ItemFn,
+    source: impl Into<String>,
+) -> Result<Vec<u8>, String> {
+    let value = rust_function_term_json_value(item_fn, source)?;
+    let canonical = serde_to_canonical(value);
+    Ok(jcs_bytes_of_value(&canonical))
+}
+
+/// CID of the emitted Rust algebra term JSON document.
+pub fn rust_function_term_json_cid(
+    item_fn: &syn::ItemFn,
+    source: impl Into<String>,
+) -> Result<String, String> {
+    let value = rust_function_term_json_value(item_fn, source)?;
+    let canonical = serde_to_canonical(value);
+    Ok(cid_of_value(&canonical))
+}
+
+/// Build the inspectable JSON value before JCS encoding.
+pub fn rust_function_term_json_value(
+    item_fn: &syn::ItemFn,
+    source: impl Into<String>,
+) -> Result<JsonValue, String> {
+    let term = lower_function_body_to_term(item_fn)?;
+    let term_surface = term.surface();
+    Ok(json!({
+        "kind": "rust-algebra-term",
+        "signature_cid": RUST_LANGUAGE_SIGNATURE_CID,
+        "source": source.into(),
+        "term_surface": term_surface,
+        "term": term.to_json()?,
+    }))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AlgebraTerm {
+    Op {
+        name: String,
+        args: Vec<AlgebraTerm>,
+    },
+    Var(String),
+    ConstInt(i64),
+    ConstBool(bool),
+    Unit,
+}
+
+impl AlgebraTerm {
+    fn op(name: impl Into<String>, args: Vec<AlgebraTerm>) -> Self {
+        Self::Op {
+            name: name.into(),
+            args,
+        }
+    }
+
+    fn skip() -> Self {
+        Self::op("skip", vec![Self::Unit])
+    }
+
+    fn to_json(&self) -> Result<JsonValue, String> {
+        match self {
+            AlgebraTerm::Op { name, args } => {
+                let Some(cid) = op_cid(name) else {
+                    return Err(format!("operation `{name}` is not in the Rust signature"));
+                };
+                let args = args
+                    .iter()
+                    .map(AlgebraTerm::to_json)
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(json!({
+                    "kind": "op",
+                    "name": name,
+                    "op_cid": cid,
+                    "args": args,
+                }))
+            }
+            AlgebraTerm::Var(name) => Ok(json!({"kind": "var", "name": name})),
+            AlgebraTerm::ConstInt(value) => Ok(json!({
+                "kind": "const",
+                "value": value,
+                "sort": {"kind": "ctor", "name": "Int", "args": []}
+            })),
+            AlgebraTerm::ConstBool(value) => Ok(json!({
+                "kind": "const",
+                "value": value,
+                "sort": {"kind": "ctor", "name": "Bool", "args": []}
+            })),
+            AlgebraTerm::Unit => Ok(json!({"kind": "unit"})),
+        }
+    }
+
+    fn surface(&self) -> String {
+        match self {
+            AlgebraTerm::Op { name, args }
+                if name == "skip" && matches!(args.as_slice(), [AlgebraTerm::Unit]) =>
+            {
+                "skip".to_string()
+            }
+            AlgebraTerm::Op { name, args } => {
+                let args = args
+                    .iter()
+                    .map(AlgebraTerm::surface)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{name}({args})")
+            }
+            AlgebraTerm::Var(name) => name.clone(),
+            AlgebraTerm::ConstInt(value) => value.to_string(),
+            AlgebraTerm::ConstBool(value) => value.to_string(),
+            AlgebraTerm::Unit => "unit".to_string(),
+        }
+    }
+}
+
+fn lower_function_body_to_term(item_fn: &syn::ItemFn) -> Result<AlgebraTerm, String> {
+    lower_stmts_to_stmt(&item_fn.block.stmts)
+}
+
+fn lower_stmts_to_stmt(stmts: &[Stmt]) -> Result<AlgebraTerm, String> {
+    let mut lowered = Vec::new();
+    for (idx, stmt) in stmts.iter().enumerate() {
+        let is_tail = idx + 1 == stmts.len();
+        match stmt {
+            Stmt::Expr(expr, None) if is_tail => lowered.push(lower_tail_expr_to_stmt(expr)?),
+            Stmt::Expr(expr, _) => lowered.push(lower_expr_to_stmt(expr)?),
+            Stmt::Local(_) | Stmt::Item(_) | Stmt::Macro(_) => {}
+        }
+    }
+    Ok(seq_all(lowered))
+}
+
+fn seq_all(terms: Vec<AlgebraTerm>) -> AlgebraTerm {
+    let mut iter = terms.into_iter();
+    let Some(first) = iter.next() else {
+        return AlgebraTerm::skip();
+    };
+    iter.fold(first, |acc, term| AlgebraTerm::op("seq", vec![acc, term]))
+}
+
+fn lower_tail_expr_to_stmt(expr: &Expr) -> Result<AlgebraTerm, String> {
+    if let Expr::If(if_expr) = expr {
+        if let Some(term) = lower_tail_if_expr_to_stmt(if_expr)? {
+            return Ok(term);
+        }
+    }
+    Ok(AlgebraTerm::op(
+        "return",
+        vec![lower_expr_to_value_term(expr)?],
+    ))
+}
+
+fn lower_tail_if_expr_to_stmt(if_expr: &ExprIf) -> Result<Option<AlgebraTerm>, String> {
+    let Some((_, else_expr)) = &if_expr.else_branch else {
+        return Ok(None);
+    };
+    let Some(then_expr) = block_single_tail_expr(&if_expr.then_branch) else {
+        return Ok(None);
+    };
+    let Some(else_tail) = expr_single_tail_expr(else_expr) else {
+        return Ok(None);
+    };
+    let cond = lower_expr_to_bool_term(&if_expr.cond)?;
+    let then_return = AlgebraTerm::op("return", vec![lower_expr_to_value_term(then_expr)?]);
+    let if_stmt = AlgebraTerm::op("if", vec![cond, then_return, AlgebraTerm::skip()]);
+    let trailing_return = AlgebraTerm::op("return", vec![lower_expr_to_value_term(else_tail)?]);
+    Ok(Some(AlgebraTerm::op("seq", vec![if_stmt, trailing_return])))
+}
+
+fn lower_expr_to_stmt(expr: &Expr) -> Result<AlgebraTerm, String> {
+    match expr {
+        Expr::Return(ret) => {
+            let value = match &ret.expr {
+                Some(value) => lower_expr_to_value_term(value)?,
+                None => AlgebraTerm::Unit,
+            };
+            Ok(AlgebraTerm::op("return", vec![value]))
+        }
+        Expr::If(if_expr) => {
+            let cond = lower_expr_to_bool_term(&if_expr.cond)?;
+            let then_branch = lower_stmts_to_stmt(&if_expr.then_branch.stmts)?;
+            let else_branch = match &if_expr.else_branch {
+                Some((_, else_expr)) => lower_expr_to_stmt(else_expr)?,
+                None => AlgebraTerm::skip(),
+            };
+            Ok(AlgebraTerm::op("if", vec![cond, then_branch, else_branch]))
+        }
+        Expr::Block(block) => lower_stmts_to_stmt(&block.block.stmts),
+        _ => Ok(AlgebraTerm::skip()),
+    }
+}
+
+fn lower_expr_to_bool_term(expr: &Expr) -> Result<AlgebraTerm, String> {
+    match expr {
+        Expr::Binary(binary) => {
+            let op = match &binary.op {
+                BinOp::Eq(_) => Some("eq"),
+                BinOp::Ne(_) => Some("ne"),
+                BinOp::Lt(_) => Some("lt"),
+                BinOp::Le(_) => Some("le"),
+                BinOp::Gt(_) => Some("gt"),
+                BinOp::Ge(_) => Some("ge"),
+                BinOp::And(_) => Some("and"),
+                BinOp::Or(_) => Some("or"),
+                _ => None,
+            };
+            let Some(op) = op else {
+                return Err(format!("unsupported boolean operator: {:?}", binary.op));
+            };
+            Ok(AlgebraTerm::op(
+                op,
+                vec![
+                    lower_expr_to_value_term(&binary.left)?,
+                    lower_expr_to_value_term(&binary.right)?,
+                ],
+            ))
+        }
+        Expr::Unary(unary) if matches!(unary.op, UnOp::Not(_)) => Ok(AlgebraTerm::op(
+            "not",
+            vec![lower_expr_to_bool_term(&unary.expr)?],
+        )),
+        Expr::Paren(paren) => lower_expr_to_bool_term(&paren.expr),
+        Expr::Lit(lit) => match &lit.lit {
+            Lit::Bool(value) => Ok(AlgebraTerm::ConstBool(value.value)),
+            _ => Err("non-bool literal in boolean term".to_string()),
+        },
+        Expr::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| AlgebraTerm::Var(segment.ident.to_string()))
+            .ok_or_else(|| "empty path in boolean term".to_string()),
+        _ => Err(format!("unsupported boolean expression: {expr:?}")),
+    }
+}
+
+fn lower_expr_to_value_term(expr: &Expr) -> Result<AlgebraTerm, String> {
+    match expr {
+        Expr::Lit(lit) => match &lit.lit {
+            Lit::Int(value) => value
+                .base10_parse::<i64>()
+                .map(AlgebraTerm::ConstInt)
+                .map_err(|err| format!("integer literal does not fit i64: {err}")),
+            Lit::Bool(value) => Ok(AlgebraTerm::ConstBool(value.value)),
+            _ => Err("unsupported literal expression".to_string()),
+        },
+        Expr::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| AlgebraTerm::Var(segment.ident.to_string()))
+            .ok_or_else(|| "empty path expression".to_string()),
+        Expr::Paren(paren) => lower_expr_to_value_term(&paren.expr),
+        Expr::Block(block) => {
+            let Some(tail) = block_single_tail_expr(&block.block) else {
+                return Err("block expression has no single tail expression".to_string());
+            };
+            lower_expr_to_value_term(tail)
+        }
+        Expr::Unary(unary) => {
+            let op = match &unary.op {
+                UnOp::Neg(_) => "neg",
+                UnOp::Not(_) => "bit_not",
+                UnOp::Deref(_) => "deref",
+                _ => return Err(format!("unsupported unary operator: {:?}", unary.op)),
+            };
+            Ok(AlgebraTerm::op(
+                op,
+                vec![lower_expr_to_value_term(&unary.expr)?],
+            ))
+        }
+        Expr::Binary(binary) => {
+            let op = match &binary.op {
+                BinOp::Add(_) => Some("add"),
+                BinOp::Sub(_) => Some("sub"),
+                BinOp::Mul(_) => Some("mul"),
+                BinOp::Div(_) => Some("div"),
+                BinOp::Rem(_) => Some("rem"),
+                BinOp::BitAnd(_) => Some("bit_and"),
+                BinOp::BitOr(_) => Some("bit_or"),
+                BinOp::BitXor(_) => Some("bit_xor"),
+                BinOp::Shl(_) => Some("shl"),
+                BinOp::Shr(_) => Some("shr"),
+                BinOp::Eq(_) => Some("eq"),
+                BinOp::Ne(_) => Some("ne"),
+                BinOp::Lt(_) => Some("lt"),
+                BinOp::Le(_) => Some("le"),
+                BinOp::Gt(_) => Some("gt"),
+                BinOp::Ge(_) => Some("ge"),
+                _ => None,
+            };
+            let Some(op) = op else {
+                return Err(format!("unsupported value operator: {:?}", binary.op));
+            };
+            Ok(AlgebraTerm::op(
+                op,
+                vec![
+                    lower_expr_to_value_term(&binary.left)?,
+                    lower_expr_to_value_term(&binary.right)?,
+                ],
+            ))
+        }
+        Expr::Reference(reference) => {
+            let op = if reference.mutability.is_some() {
+                "borrow_mut"
+            } else {
+                "borrow"
+            };
+            Ok(AlgebraTerm::op(
+                op,
+                vec![lower_expr_to_value_term(&reference.expr)?],
+            ))
+        }
+        Expr::Cast(cast) => lower_expr_to_value_term(&cast.expr),
+        _ => Err(format!("unsupported value expression: {expr:?}")),
+    }
+}
+
+fn block_single_tail_expr(block: &syn::Block) -> Option<&Expr> {
+    match block.stmts.as_slice() {
+        [Stmt::Expr(expr, None)] => Some(expr),
+        _ => None,
+    }
+}
+
+fn expr_single_tail_expr(expr: &Expr) -> Option<&Expr> {
+    match expr {
+        Expr::Block(block) => block_single_tail_expr(&block.block),
+        other => Some(other),
+    }
 }
 
 fn build_bundle_value(s: &ShadowSource) -> Arc<Value> {
@@ -117,6 +452,50 @@ mod tests {
                 _ => None,
             })
             .unwrap()
+    }
+
+    #[test]
+    fn rust_term_json_round_trips_with_stable_cid() {
+        let src = r#"
+            fn foo(x: i32) -> i32 { if x == 0 { -22 } else { x } }
+        "#;
+        let foo_fn = parse_named(src, "foo");
+        let bytes = rust_function_term_json(&foo_fn, "foo.rs").unwrap();
+        let cid = rust_function_term_json_cid(&foo_fn, "foo.rs").unwrap();
+        assert!(cid.starts_with("blake3-512:"));
+        assert_eq!(bytes, rust_function_term_json(&foo_fn, "foo.rs").unwrap());
+        assert_eq!(cid, rust_function_term_json_cid(&foo_fn, "foo.rs").unwrap());
+
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+        assert_eq!(parsed["kind"].as_str(), Some("rust-algebra-term"));
+        assert_eq!(
+            parsed["signature_cid"].as_str(),
+            Some(crate::signature::RUST_LANGUAGE_SIGNATURE_CID)
+        );
+        assert_eq!(
+            parsed["term_surface"].as_str(),
+            Some("seq(if(eq(x, 0), return(neg(22)), skip), return(x))")
+        );
+        assert_eq!(parsed["term"]["name"].as_str(), Some("seq"));
+        assert_eq!(
+            parsed["term"]["op_cid"].as_str(),
+            crate::signature::op_cid("seq")
+        );
+    }
+
+    #[test]
+    fn rust_term_json_distinct_for_distinct_sources() {
+        let src_a = r#"
+            fn foo(x: i32) -> i32 { if x == 0 { -22 } else { x } }
+        "#;
+        let src_b = r#"
+            fn foo(x: i32) -> i32 { if x == 1 { -22 } else { x } }
+        "#;
+        let a_fn = parse_named(src_a, "foo");
+        let b_fn = parse_named(src_b, "foo");
+        let cid_a = rust_function_term_json_cid(&a_fn, "foo.rs").unwrap();
+        let cid_b = rust_function_term_json_cid(&b_fn, "foo.rs").unwrap();
+        assert_ne!(cid_a, cid_b);
     }
 
     #[test]

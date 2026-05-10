@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:dealloc",
+    "formals": [
+      "addr"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Addr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "dealloc",
+      "arity": [
+        "Addr"
+      ],
+      "result": "Unit",
+      "wp": "deallocate an address"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Alloc"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:16fb16695997b6c593190d4ed047b6eed2fe00e009ae224a4cff4869cfb242bfe8dbce87d2f8f3150dbfd89f4b413d7c6bab5c0213cae65448e9f1d52b00f502",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "/PsVWR7ECt764wBqW54YM83cDztT9qo2WqpnH+5zJIC7lRAUPraiUKONbV0Jf/N+NmL/a9DlqlxA1ekSooH/Bg=="
+  }
+}

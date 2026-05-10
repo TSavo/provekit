@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:effect:raw_ptr_provenance",
+  "formals": [
+    "target"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "raw_ptr_provenance",
+    "arity": [
+      "Value"
+    ],
+    "result": "Unit",
+    "wp": "raw pointer provenance obligation"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "RawPointerProvenance"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

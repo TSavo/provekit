@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Int",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Int",
+    "description": "Rust integer values with debug overflow modeled as Panic"
+  }
+}

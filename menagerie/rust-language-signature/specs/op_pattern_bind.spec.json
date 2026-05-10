@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:pattern_bind",
+  "formals": [
+    "name"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Pattern",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "pattern_bind",
+    "arity": [
+      "Value"
+    ],
+    "result": "Pattern",
+    "wp": "binding pattern"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

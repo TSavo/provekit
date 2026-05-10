@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:await",
+  "formals": [
+    "future"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "await",
+    "arity": [
+      "Expr"
+    ],
+    "result": "Expr",
+    "wp": "wp_of_resumed_continuation"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Async"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

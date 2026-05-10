@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:try",
+    "formals": [
+      "carrier"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Result",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "try",
+      "arity": [
+        "Result"
+      ],
+      "result": "Expr",
+      "wp": "Ok payload or early return of converted Err"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Panic"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:376f8bcf1e186aff73e0c4a8c4a31bf1b00c7eb8142ac71d7391c142fae47364049760c7ab95cd3de47757f118727c8d161c95c97f1dc52ce0b8837348e745db",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "B8JbvGCypeFwYakHFGibIVHqT96+hsjoWMzoQ2CoRFygbmYOMxN9uGo9N1oQ81MP5YWQjxKLJkFnjDe9b153Aw=="
+  }
+}

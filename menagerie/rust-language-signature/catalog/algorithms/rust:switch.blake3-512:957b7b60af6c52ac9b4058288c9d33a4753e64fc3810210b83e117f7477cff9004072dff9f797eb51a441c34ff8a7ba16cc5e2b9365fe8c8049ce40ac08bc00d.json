@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:switch",
+    "formals": [
+      "scrutinee",
+      "arms"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfStmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "switch",
+      "arity": [
+        "Int",
+        "ListOf<Stmt>"
+      ],
+      "result": "Stmt",
+      "wp": "integer SwitchInt special case of match"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "union(arm.effects for arm in arms)"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:957b7b60af6c52ac9b4058288c9d33a4753e64fc3810210b83e117f7477cff9004072dff9f797eb51a441c34ff8a7ba16cc5e2b9365fe8c8049ce40ac08bc00d",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "v6CQN490SQ19SHe0bGMxIXa/IKf5GoNnjqWHwbWGCfqlL4TZCcLj8QWYI485SFKX47FfiC0pRvi5WvhxdyndDg=="
+  }
+}

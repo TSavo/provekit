@@ -80,7 +80,7 @@
   "bodyCid": null,
   "effects": [],
   "locus": {
-    "file": "/private/tmp/pk-foo-morphism/implementations/rust/provekit-lift-asm-aarch64/tests/fixtures/foo.s",
+    "file": "/private/tmp/pk-walk-codex/implementations/rust/provekit-lift-asm-aarch64/tests/fixtures/foo.s",
     "line": 3,
     "col": 1
   },

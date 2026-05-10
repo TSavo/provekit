@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:pin_invariant",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "pin_invariant",
+      "arity": [
+        "Value"
+      ],
+      "result": "Unit",
+      "wp": "pinned reference invariant obligation"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "PinnedReference"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:18554280d3b7aa703d5fc23ce13ef19991d5c21da365715478a1226f612279a8bef4258e16dc8482db3a6a5e83bc70eadd4eacf93a7621ffe26f208b43ae6866",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "QUfLLAWIBTTIN8ITJD1jEtPb6fYGTRyUV4jmdVnffUXeHu6vF7hMAmgc6pni+cIg5VaI9KpGVkEzzuvz84IiAw=="
+  }
+}

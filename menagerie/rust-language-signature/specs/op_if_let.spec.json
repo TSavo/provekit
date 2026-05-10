@@ -1,0 +1,58 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:if_let",
+  "formals": [
+    "pattern",
+    "expr",
+    "then_branch",
+    "else_branch"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Pattern",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "if_let",
+    "arity": [
+      "Pattern",
+      "Expr",
+      "Stmt",
+      "Stmt"
+    ],
+    "result": "Stmt",
+    "wp": "if let surface form, desugars to match"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}
