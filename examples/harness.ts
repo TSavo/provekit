@@ -41,7 +41,7 @@ logger.info({
   reserved: sku1.reserved,
 }, "Reserving 5 of SKU-001");
 
-// --- Test 2: Overdraw — quantity > available ---
+// --- Test 2: Overdraw: quantity > available ---
 console.log("\n=== Test 2: Overdraw (quantity > available) ===");
 const sku2 = inventory["SKU-002"]!;
 logger.info({

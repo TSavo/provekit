@@ -46,7 +46,7 @@
  *
  * Cross-kit note: this conformance argument is V8/Node-specific. Each
  * non-TS kit's serializer (Go, Rust, Python, ...) needs its own
- * §3.2.2.3 conformance suite — a host-language `n.toString()` does NOT
+ * §3.2.2.3 conformance suite: a host-language `n.toString()` does NOT
  * match V8's output for many edge cases.
  */
 
@@ -95,7 +95,7 @@ function stringify(value: unknown): string {
     });
     return "{" + pairs.join(",") + "}";
   }
-  // Fallback (undefined, symbol, function — should not appear in AST).
+  // Fallback (undefined, symbol, function: should not appear in AST).
   return "null";
 }
 

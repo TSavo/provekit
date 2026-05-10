@@ -220,7 +220,7 @@ fn no_callsite_for_ctor_name_with_no_matching_bridge() {
 #[test]
 fn skips_non_contract_envelopes() {
     let mut pool = MementoPool::default();
-    // A bridge envelope (kind=bridge) — should not be walked.
+    // A bridge envelope (kind=bridge): should not be walked.
     pool.mementos.insert(
         "blake3-512:bridge".into(),
         json!({

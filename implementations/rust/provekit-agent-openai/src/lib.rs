@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-agent-openai — agent backend speaking the OpenAI chat
+// provekit-agent-openai: agent backend speaking the OpenAI chat
 // completions API. Compatible with any provider that implements that
 // API: Codex, vLLM, LMStudio, Ollama (with LiteLLM proxy), Together,
 // Anyscale, etc.

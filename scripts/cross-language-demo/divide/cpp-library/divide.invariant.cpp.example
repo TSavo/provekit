@@ -6,7 +6,7 @@
 // language references this propertyHash in their inputCids.
 //
 // In the framework's universal contract format, this file's role is
-// identical to TS-kit's parseInt.invariant.ts — different surface
+// identical to TS-kit's parseInt.invariant.ts: different surface
 // language; same FOL; same hash; same architectural primitive.
 
 #include "divide.h"
@@ -29,6 +29,6 @@ PROVEKIT_PROPERTY("divideReturnsQuotient",
 // Note: the C++ kit's lifter does not yet exist. This file documents
 // the surface form a C++ kit would consume. The propertyHashes shown
 // in dag-demo.ts are produced by canonicalizing the equivalent
-// IrFormula values in the existing TS canonicalizer — demonstrating
+// IrFormula values in the existing TS canonicalizer: demonstrating
 // that hash equivalence holds across the spec, not just within one
 // implementation.

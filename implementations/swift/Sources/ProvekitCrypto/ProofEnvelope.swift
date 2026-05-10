@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// ProofEnvelope — assemble a complete .proof file.
+// ProofEnvelope: assemble a complete .proof file.
 //
 // Mirrors the go reference at
 // implementations/go/provekit-ir-symbolic/proof_envelope/builder.go and
@@ -90,7 +90,7 @@ public enum ProofEnvelopeBuilder {
         return ProofEnvelopeOutput(bytes: finalBytes, filenameCid: cid)
     }
 
-    /// `bodyPairsUnsigned` — emit every catalog field except `signature`.
+    /// `bodyPairsUnsigned`: emit every catalog field except `signature`.
     /// `binaryCid` is appended only when set (mirrors rust's
     /// `Option<String>` skip-when-None); the outer emitSortedMap
     /// re-sorts by CBOR-encoded-key form, so insertion order does not

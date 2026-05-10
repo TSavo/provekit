@@ -12,15 +12,15 @@
 // for the full disclaimer + change log.
 //
 // Layout:
-//   * `src/lib.rs` — orchestrator + envelope assembly (this file).
-//   * `src/std_string_slab.rs` — String / &str builtins.
-//   * `src/std_vec_slab.rs` — Vec<T> builtins.
-//   * `src/std_option_slab.rs` — Option<T> builtins.
-//   * `src/std_result_slab.rs` — Result<T, E> builtins.
-//   * `src/std_slice_slab.rs` — slice (`[T]`) builtins.
-//   * `src/std_hashmap_slab.rs` — HashMap / BTreeMap builtins.
-//   * `src/std_iter_slab.rs` — numeric / Iterator builtins.
-//   * `src/bin/mint-rust-std-baseline.rs` — orchestrator binary.
+//   * `src/lib.rs`: orchestrator + envelope assembly (this file).
+//   * `src/std_string_slab.rs`: String / &str builtins.
+//   * `src/std_vec_slab.rs`: Vec<T> builtins.
+//   * `src/std_option_slab.rs`: Option<T> builtins.
+//   * `src/std_result_slab.rs`: Result<T, E> builtins.
+//   * `src/std_slice_slab.rs`: slice (`[T]`) builtins.
+//   * `src/std_hashmap_slab.rs`: HashMap / BTreeMap builtins.
+//   * `src/std_iter_slab.rs`: numeric / Iterator builtins.
+//   * `src/bin/mint-rust-std-baseline.rs`: orchestrator binary.
 //
 // Each slab file ships a `pub fn invariants()` that calls into the
 // shared kit DSL (`must`/`contract`/`forall`/`eq`/`gte`/`ctor` via
@@ -32,11 +32,11 @@
 //   forall(sort, |v| body)
 //   eq(a, b)
 //   gte(a, b)
-//   ctor("name", args)        — kit-defined operations like `len`,
+//   ctor("name", args): kit-defined operations like `len`,
 //                              `type_of`, `starts_with`
-//   num(n) / str_const(s)     — primitives
-//   must(name, formula)       — `pre`-only convenience
-//   contract(name, args)      — full pre/post/inv shape
+//   num(n) / str_const(s): primitives
+//   must(name, formula): `pre`-only convenience
+//   contract(name, args): full pre/post/inv shape
 //
 // Predicates G1-G4 (lt / lte / between / member_of / or / not) land in
 // a follow-up after #285's full DSL extension across all 12 kits. This
@@ -228,7 +228,7 @@ fn run_one_slab(source: InvariantSource, f: fn()) -> AuthoredSlab {
 // memento with `header.kind = "disclaimer"`. The verifier's `load_one`
 // indexes the member by attestation CID; unrecognized `header.kind`
 // values sit inertly (see `provekit-verifier/src/load_all_proofs.rs`
-// — only `header.kind == "bridge"` triggers special indexing).
+//: only `header.kind == "bridge"` triggers special indexing).
 
 fn signing_bytes(header: &Arc<Value>, metadata: &Arc<Value>) -> Vec<u8> {
     let msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
@@ -294,7 +294,7 @@ fn mint_disclaimer_memento(text: &str, signer_seed: &Ed25519Seed) -> (String, Ve
 
 /// Compute `disclaimer_cid` (the BLAKE3-512 of the disclaimer bytes).
 /// This is the value stamped into envelope metadata as
-/// `baseline.disclaimer_cid` — independent of the disclaimer's
+/// `baseline.disclaimer_cid`: independent of the disclaimer's
 /// attestation envelope CID.
 pub fn compute_disclaimer_cid(text: &str) -> String {
     blake3_512_of(text.as_bytes())
@@ -484,8 +484,8 @@ mod tests {
     }
 
     /// Skeleton-validation: the orchestrator runs end-to-end and emits
-    /// at least one slab. (Scaling target — `>= 50` builtins, `>= 100`
-    /// contracts — is enforced by `pinned_thresholds_met` once all
+    /// at least one slab. (Scaling target: `>= 50` builtins, `>= 100`
+    /// contracts: is enforced by `pinned_thresholds_met` once all
     /// slabs are populated.)
     #[test]
     fn author_all_invariants_returns_seven_slabs() {
@@ -593,7 +593,7 @@ mod tests {
 
         // Re-decode the catalog to pull metadata out of the on-disk bytes.
         // We don't ship a full CBOR decoder reader here; the assertion
-        // is structural — the mint pipeline ALWAYS sets these keys, so
+        // is structural: the mint pipeline ALWAYS sets these keys, so
         // they're guaranteed on-disk if the call returned Ok.
         assert!(m.disclaimer_cid.starts_with("blake3-512:"));
         assert_eq!(BASELINE_LANGUAGE, "rust");

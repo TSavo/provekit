@@ -40,7 +40,7 @@ func (s *ReportStage) Format(report *Report) string {
 		}
 		reason := ""
 		if row.Reason != "" {
-			reason = " — " + row.Reason
+			reason = ": " + row.Reason
 		}
 		out += fmt.Sprintf("    ✗ %s in %s (%s…): %s%s\n",
 			row.CallSite.BridgeIRName,

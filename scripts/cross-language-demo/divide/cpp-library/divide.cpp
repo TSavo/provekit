@@ -2,7 +2,7 @@
 // One propertyHash. Cross-language DAG composition.
 //
 // This file is illustrative. The library function is what every
-// consumer ultimately calls — via N-API for TS, via FFI for Rust,
+// consumer ultimately calls: via N-API for TS, via FFI for Rust,
 // via cgo for Go, directly for C++.
 
 #include <stdexcept>

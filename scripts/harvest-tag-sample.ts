@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-tag-sample.ts — print a stratified sample of expressibility
+ * scripts/harvest-tag-sample.ts: print a stratified sample of expressibility
  * tags for the manual-precision review gate.
  *
  * Per the tightening spec: tagger v1 must hit ≥ 90% precision on a 30-sample

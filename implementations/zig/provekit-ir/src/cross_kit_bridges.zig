@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Cross-kit conformance bridges (Phase 2) — zig kit -> rust kit's
+// Cross-kit conformance bridges (Phase 2): zig kit -> rust kit's
 // `lift_plugin_protocol` slab. Mirrors PR #89 (python), PR #92 (go), and
 // PR #93 (typescript).
 //
@@ -21,7 +21,7 @@
 //     The verifier resolves "satisfies" through the bridge.
 //
 //   * Counterpart CID = `blake3-512(JCS(ContractDecl))` via `jcsStringify`
-//     + `jcsHash` — the helpers already shipped in `root.zig`. The python
+//     + `jcsHash`: the helpers already shipped in `root.zig`. The python
 //     and zig kits do NOT re-implement rust's signed-CBOR envelope, so
 //     peer counterpart CIDs and rust contract CIDs are NOT in the same
 //     identity space; the bridge wires them by content.
@@ -34,7 +34,7 @@
 //   * `BridgeDecl.source_contract_cid` = pinned rust envelope CID
 //     (extracted via `cargo run --release -p provekit-self-contracts
 //     --bin print-lift-plugin-protocol-cids`; pasted from the python /
-//     go / ts kits' pinned tables — they all read the same rust mint).
+//     go / ts kits' pinned tables: they all read the same rust mint).
 //
 // Test design:
 //   * Pin every counterpart CID and the bridges-array CID. Drift in any
@@ -73,7 +73,7 @@ pub const PHASE_2_BRIDGE_NOTES: []const u8 =
 // ---------------------------------------------------------------------------
 //
 // Source: `cargo run --release -p provekit-self-contracts \
-//          --bin print-lift-plugin-protocol-cids` — the rust kit's
+//          --bin print-lift-plugin-protocol-cids`: the rust kit's
 // extraction binary that walks `mint_self_proof()` and prints
 // `(contract_name, cid)` pairs as NDJSON for the lift_plugin_protocol slab.
 //
@@ -123,13 +123,13 @@ comptime {
 // Counterpart + bridge name helpers
 // ---------------------------------------------------------------------------
 
-/// Counterpart contract name builder — `zig_<rust_name>_counterpart`.
+/// Counterpart contract name builder: `zig_<rust_name>_counterpart`.
 /// Allocated; caller frees.
 pub fn counterpartName(alloc: std.mem.Allocator, rust_contract_name: []const u8) ![]u8 {
     return std.fmt.allocPrint(alloc, "zig_{s}_counterpart", .{rust_contract_name});
 }
 
-/// Bridge name builder — `bridge_to_<rust_name>`. Matches the python /
+/// Bridge name builder: `bridge_to_<rust_name>`. Matches the python /
 /// go / ts kits' convention. Allocated; caller frees.
 pub fn bridgeName(alloc: std.mem.Allocator, rust_contract_name: []const u8) ![]u8 {
     return std.fmt.allocPrint(alloc, "bridge_to_{s}", .{rust_contract_name});
@@ -237,7 +237,7 @@ pub fn buildAll(arena: *std.heap.ArenaAllocator) !BuiltBridges {
     var out: BuiltBridges = undefined;
 
     // Backing storage for the per-counterpart `Atomic("satisfies", &[2]Term)`
-    // args lives in the arena, NOT on this function's stack — `out.bridges`
+    // args lives in the arena, NOT on this function's stack: `out.bridges`
     // is returned by value and references these slices via each
     // counterpart Decl's `inv` formula. Arena lifetime > buildAll lifetime.
     const inv_args_storage = try aa.alloc([2]Term, 10);

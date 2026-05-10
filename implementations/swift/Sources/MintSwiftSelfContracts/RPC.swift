@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// RPC.swift — `--rpc` mode for mint-swift-self-contracts.
+// RPC.swift: `--rpc` mode for mint-swift-self-contracts.
 //
 // Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on stdio.
 // Mirrors implementations/typescript/src/bin/mint-ts-self-contracts-rpc.cjs

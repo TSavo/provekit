@@ -9,7 +9,7 @@
 // expression.
 //
 // Substrate machinery (this commit's full version):
-//   stale_assignment($if, $assn) — true iff:
+//   stale_assignment($if, $assn): true iff:
 //     (1) $assn is structurally inside $if's `decides.consequent_node`
 //         (source-range nesting), AND
 //     (2) the variable that $assn writes (assigns.target_node) has at

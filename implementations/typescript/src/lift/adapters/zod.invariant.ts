@@ -4,7 +4,7 @@
 //
 // Public surface covered: zod schema -> IR-formula adapter.
 //
-// Honest scope: the IR can pin shape — lifted declarations carry
+// Honest scope: the IR can pin shape: lifted declarations carry
 // outBinding "out", produce IR-JSON conforming to v1.1.0, are
 // deterministic for a fixed input schema.
 

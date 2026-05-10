@@ -16,7 +16,7 @@ researcher gets the heads-up before any public writeup.
 | Date | 2026-05-09 |
 | Channel | direct email |
 | Recipient | imv4bel@gmail.com (Hyunwoo Kim, V4bel) |
-| Subject | `rxkad_verify_packet_2 — same-class sibling of CVE-2026-43500` |
+| Subject | `rxkad_verify_packet_2: same-class sibling of CVE-2026-43500` |
 | Signing key | Kevlar `<evilgenius@nefariousplan.com>`, fp `5FD2 1B4F E7E4 A3CA 7971 CB09 DE66 3978 8E09 1026` |
 | Signing algorithm | Ed25519 GPG clearsign over UTF-8 body (PGP/INLINE) |
 | Body BLAKE2b-512 | `d76af715e78dfe03e93e4f0fe78f15abfb1d2bbba7a27efdf58b61046f9279f0071fa1e0a1762664040bd0e79db54ea0187b6dba48353d1a775e20c5dde19301` |

@@ -4,8 +4,8 @@
 // correctly indexes aliasing-memento entries and answers
 // has_aliasing_memento queries with canonical pair ordering.
 
+use libprovekit::compose::OpacityMementoLookup;
 use provekit_verifier::types::MementoPool;
-use provekit_walk::contract::OpacityMementoLookup;
 
 fn blake3_cid(_data: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -44,11 +44,11 @@ fn aliasing_memento_pool_insert_and_query() {
     );
     assert!(
         pool.has_aliasing_memento("y", "x"),
-        "pool must find aliasing memento for (y, x) — order-independent lookup "
+        "pool must find aliasing memento for (y, x): order-independent lookup "
     );
     assert!(
         pool.has_aliasing_memento("x", "y"),
-        "pool must find aliasing memento for (x, y) — idempotent "
+        "pool must find aliasing memento for (x, y): idempotent "
     );
 }
 
@@ -106,7 +106,7 @@ fn aliasing_memento_pool_multiple_pairs() {
     );
     assert!(
         !pool.has_aliasing_memento("a", "c"),
-        "must NOT find (a, c) — no memento for that pair "
+        "must NOT find (a, c): no memento for that pair "
     );
 }
 

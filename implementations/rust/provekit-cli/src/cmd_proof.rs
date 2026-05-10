@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit proof ...` — Rust CLI proof-artifact workflow.
+// `provekit proof ...`: Rust CLI proof-artifact workflow.
 //
 // Other kits expose RPC surfaces and libraries. The Rust CLI is the
 // operator surface that drives them and checks the universal `.proof`

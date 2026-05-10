@@ -1,5 +1,5 @@
 /**
- * Contract precondition resolver — given a contract memento CID, walk
+ * Contract precondition resolver: given a contract memento CID, walk
  * all locally-available `.proof` files in a project's node_modules and
  * return the matching member envelope's `pre` formula. Callers walking
  * bridge targets use this to discharge call-site obligations.

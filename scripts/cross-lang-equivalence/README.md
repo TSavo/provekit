@@ -16,7 +16,7 @@ This is the load-bearing test for the architectural claim:
 | Kit binary crashes                          | crashed     |
 | Toolchain missing                           | skipped     |
 
-A DIVERGE is a per-kit bug — find which kit is producing the wrong
+A DIVERGE is a per-kit bug: find which kit is producing the wrong
 bytes and fix it. A DRIFT means a canonical-form change happened
 intentionally and goldens.txt needs updating, OR an accidental drift
 got into all kits at once (much rarer; investigate before updating).
@@ -57,6 +57,6 @@ toolchains (npx, cargo, go, clang++) are present, and skips otherwise.
 The C++ kit is currently minimum-viable (header-only, only the types
 required for the fixture set). Connectives, exists, bridge, parseInt,
 the full primitive set, and the AST canonicalizer are tracked for
-future work — not blockers on the architectural claim, since
+future work: not blockers on the architectural claim, since
 substrate identity is already proven across four languages on the
 fixtures that exist.

@@ -1,4 +1,4 @@
-// mint-go-self-contracts — the Go peer self-contracts orchestrator.
+// mint-go-self-contracts: the Go peer self-contracts orchestrator.
 //
 // Mirrors implementations/rust/provekit-self-contracts/src/bin/
 // mint-self-contracts.rs.

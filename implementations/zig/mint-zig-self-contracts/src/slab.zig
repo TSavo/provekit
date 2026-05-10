@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// slab.zig — canonical self-contracts for the zig kit.
+// slab.zig: canonical self-contracts for the zig kit.
 //
 // Mirrors the canonical contract set authored by other Side A kits
 // (rust, go, cpp, ts) about the kit's public crypto+canonicalization
@@ -83,7 +83,7 @@ pub fn authorAll(child_alloc: std.mem.Allocator) !Authoring {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers — arena-allocated formula builders.
+// Helpers: arena-allocated formula builders.
 // ---------------------------------------------------------------------------
 
 fn dupTerms(a: std.mem.Allocator, ts: []const Term) ![]Term {
@@ -117,19 +117,19 @@ fn atomic2(a: std.mem.Allocator, name: []const u8, lhs: Term, rhs: Term) !Formul
     return provekit.Atomic(name, args);
 }
 
-/// `len(t) >= n` — string-length lower bound.
+/// `len(t) >= n`: string-length lower bound.
 fn lenGte(a: std.mem.Allocator, t: Term, n: i64) !Formula {
     const len_t = try ctor1(a, "stringLength", t);
     return atomic2(a, "≥", len_t, provekit.Num(n));
 }
 
-/// `len(t) = n` — string-length equality.
+/// `len(t) = n`: string-length equality.
 fn lenEq(a: std.mem.Allocator, t: Term, n: i64) !Formula {
     const len_t = try ctor1(a, "stringLength", t);
     return atomic2(a, "=", len_t, provekit.Num(n));
 }
 
-/// `f(x) = f(x)` — determinism witness for unary fn `name` over sort `s`.
+/// `f(x) = f(x)`: determinism witness for unary fn `name` over sort `s`.
 fn determinismContract(
     a: std.mem.Allocator,
     contract_name: []const u8,
@@ -192,7 +192,7 @@ fn constLenGteContract(
 }
 
 // ---------------------------------------------------------------------------
-// Slab 1 — JCS (provekit-ir/src/root.zig: jcsStringify)
+// Slab 1: JCS (provekit-ir/src/root.zig: jcsStringify)
 // ---------------------------------------------------------------------------
 
 fn buildJcsSlab(a: std.mem.Allocator) !AuthoredSlab {
@@ -224,7 +224,7 @@ fn buildJcsSlab(a: std.mem.Allocator) !AuthoredSlab {
 }
 
 // ---------------------------------------------------------------------------
-// Slab 2 — BLAKE3 hash (provekit-proof-envelope-zig/src/root.zig: blake3_512_of)
+// Slab 2: BLAKE3 hash (provekit-proof-envelope-zig/src/root.zig: blake3_512_of)
 // ---------------------------------------------------------------------------
 
 fn buildHashSlab(a: std.mem.Allocator) !AuthoredSlab {
@@ -245,7 +245,7 @@ fn buildHashSlab(a: std.mem.Allocator) !AuthoredSlab {
 }
 
 // ---------------------------------------------------------------------------
-// Slab 3 — Ed25519 sign (provekit-proof-envelope-zig/src/sign.zig)
+// Slab 3: Ed25519 sign (provekit-proof-envelope-zig/src/sign.zig)
 // ---------------------------------------------------------------------------
 
 fn buildSignSlab(a: std.mem.Allocator) !AuthoredSlab {
@@ -278,7 +278,7 @@ fn buildSignSlab(a: std.mem.Allocator) !AuthoredSlab {
 }
 
 // ---------------------------------------------------------------------------
-// Slab 4 — CBOR (provekit-proof-envelope-zig/src/cbor.zig)
+// Slab 4: CBOR (provekit-proof-envelope-zig/src/cbor.zig)
 // ---------------------------------------------------------------------------
 
 fn buildCborSlab(a: std.mem.Allocator) !AuthoredSlab {
@@ -297,7 +297,7 @@ fn buildCborSlab(a: std.mem.Allocator) !AuthoredSlab {
 }
 
 // ---------------------------------------------------------------------------
-// Slab 5 — proof envelope (provekit-proof-envelope-zig/src/proof.zig)
+// Slab 5: proof envelope (provekit-proof-envelope-zig/src/proof.zig)
 // ---------------------------------------------------------------------------
 
 fn buildProofEnvelopeSlab(a: std.mem.Allocator) !AuthoredSlab {
@@ -318,7 +318,7 @@ fn buildProofEnvelopeSlab(a: std.mem.Allocator) !AuthoredSlab {
 }
 
 // ---------------------------------------------------------------------------
-// Slab 6 — lift-plugin-protocol (provekit-lift-zig speakers)
+// Slab 6: lift-plugin-protocol (provekit-lift-zig speakers)
 //
 // Spec: protocol/specs/2026-04-30-lift-plugin-protocol.md
 // The kit's --rpc speaker (this binary, plus provekit-lift-zig's --rpc

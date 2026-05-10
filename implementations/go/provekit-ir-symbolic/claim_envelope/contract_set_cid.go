@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// contract_set_cid.go — spec #94 contractSetCid helpers.
+// contract_set_cid.go: spec #94 contractSetCid helpers.
 //
 // Two functions:
 //

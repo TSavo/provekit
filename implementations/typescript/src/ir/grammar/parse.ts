@@ -728,7 +728,7 @@ function parseDependentSort(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers — type-guard wrappers that throw GrammarParseError
+// Helpers: type-guard wrappers that throw GrammarParseError
 // ---------------------------------------------------------------------------
 
 function expectObject(value: unknown, path: string): Record<string, unknown> {

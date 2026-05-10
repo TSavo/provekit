@@ -102,7 +102,7 @@ func InvariantsFromKit() {
 
 	// FormulaToValue round-trips json.Marshal then json.Unmarshal; the
 	// result is a JSON-shape value (no IR types leak through).
-	// LIVING DOCS — kit-defined predicate `isJSONShape` has no Z3 semantics.
+	// LIVING DOCS: kit-defined predicate `isJSONShape` has no Z3 semantics.
 	ir.Must("FormulaToValue_returns_json_shape",
 		ir.ForAll(ir.String, func(f ir.IrTerm) ir.IrFormula {
 			// gesture: roundtrip stability

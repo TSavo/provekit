@@ -1,5 +1,5 @@
 /**
- * Producer-signature key management — protocol-first surface.
+ * Producer-signature key management: protocol-first surface.
  *
  * v1 minimal: ed25519 keypair generation only. The legacy persistence
  * layer (publishPublicKey / rotateKey / revokeKey via SQLite memento

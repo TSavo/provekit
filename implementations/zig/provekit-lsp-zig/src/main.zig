@@ -1,4 +1,4 @@
-// provekit-lsp-zig — NDJSON LSP plugin for Zig.
+// provekit-lsp-zig: NDJSON LSP plugin for Zig.
 //
 // Protocol (canonical wire shape):
 //   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
@@ -41,7 +41,7 @@ pub fn main(init: std.process.Init) !void {
         // takeDelimiter returns null when stream ends with no remaining data.
         const maybe_line = stdin_reader.takeDelimiter('\n') catch |err| switch (err) {
             error.StreamTooLong => {
-                // Line too long — discard and continue.
+                // Line too long: discard and continue.
                 _ = stdin_reader.discardDelimiterInclusive('\n') catch break;
                 continue;
             },
@@ -63,7 +63,7 @@ fn handleLine(
     line: []const u8,
     writer: *Io.Writer,
 ) !bool {
-    // Extract "id" value naively — we want the raw token (number or string).
+    // Extract "id" value naively: we want the raw token (number or string).
     const id = extractId(line);
 
     if (std.mem.indexOf(u8, line, "\"initialize\"") != null) {
@@ -101,7 +101,7 @@ fn handleParse(
     id: []const u8,
     writer: *Io.Writer,
 ) !void {
-    // Extract "source" field value — naive string extraction.
+    // Extract "source" field value: naive string extraction.
     // The source is a JSON string with escape sequences.  We unescape only the
     // common cases (\n, \t, \\, \") since we only need to scan for annotations.
     const source_raw = extractJsonStringField(line, "source") orelse "";

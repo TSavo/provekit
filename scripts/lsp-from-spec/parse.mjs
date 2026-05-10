@@ -44,7 +44,7 @@ function checkKeys(node, kindKey, path) {
   if (!allowed) throw new GrammarParseError("unknown node kind", path, "a known kind", kindKey);
   for (const k of Object.keys(node)) {
     if (!allowed.includes(k)) {
-      // For bridge.notes (optional), present-with-undefined is also rejected — only present-with-string is valid.
+      // For bridge.notes (optional), present-with-undefined is also rejected: only present-with-string is valid.
       throw new GrammarParseError("extra key forbidden by closed-object policy", `${path}.${k}`, `one of [${allowed.join(", ")}]`, k);
     }
   }

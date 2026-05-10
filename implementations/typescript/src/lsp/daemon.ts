@@ -1,5 +1,5 @@
 /**
- * provekit-lsp-ts — NDJSON LSP plugin for TypeScript.
+ * provekit-lsp-ts: NDJSON LSP plugin for TypeScript.
  *
  * Protocol (NDJSON over stdin/stdout):
  *
@@ -11,10 +11,10 @@
  * multi-kit dispatch can use it via `spawn_kit_lifter`.
  *
  * Wire shape for parse response:
- *   result.declarations — JSON array of IR contract objects:
+ *   result.declarations: JSON array of IR contract objects:
  *     { kind: "contract", name, outBinding, pre?, post?, inv? }
- *   result.callEdges — JSON array (empty; TS lifter does not emit call edges)
- *   result.warnings — JSON array of warning strings
+ *   result.callEdges: JSON array (empty; TS lifter does not emit call edges)
+ *   result.warnings: JSON array of warning strings
  *
  * Mirrors implementations/go/cmd/provekit-lsp-go/main.go and
  * implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/lsp.py.
@@ -149,7 +149,7 @@ function handleParse(id: unknown, params: Record<string, unknown>): void {
     for (const w of vt.warnings) warnings.push(`vitest-tests: ${w.itemName}: ${w.reason}`);
 
     // Convert ContractDecl[] to wire-format array.
-    // IrFormula values are plain objects — JSON.parse(JSON.stringify(x)) is
+    // IrFormula values are plain objects: JSON.parse(JSON.stringify(x)) is
     // equivalent to a deep clone; we skip it and embed directly since the
     // values are already plain JSON-serializable objects. The `send()` call
     // will serialize via JSON.stringify.
@@ -182,7 +182,7 @@ export function handleRequest(line: string): boolean {
   try {
     req = JSON.parse(line) as RpcRequest;
   } catch {
-    // Malformed JSON — skip.
+    // Malformed JSON: skip.
     return true;
   }
 

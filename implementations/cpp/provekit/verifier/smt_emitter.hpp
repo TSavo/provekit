@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// SmtEmitter — translates an obligation IR formula into an SMT-LIB
+// SmtEmitter: translates an obligation IR formula into an SMT-LIB
 // v2.6 script for a Z3-compatible solver.
 //
 // Strategy: assert (not <formula>); a sat reply means the obligation

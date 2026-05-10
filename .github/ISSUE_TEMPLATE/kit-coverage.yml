@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Per the dogfood architecture, every kit exposes 4 RPC services to the Rust CLI.
-        One CLI, N kits — every component speaks canonical substrate RPC.
+        One CLI, N kits: every component speaks canonical substrate RPC.
         Tag this issue with the matching `kit:<lang>` label.
   - type: dropdown
     id: kit
@@ -22,12 +22,12 @@ body:
       label: 1. IR (canonical contracts mirrored from rust)
       options:
         - label: IR slab present at `implementations/<kit>/.../slabs/`
-        - label: All canonical contracts mirrored from `provekit-self-contracts/src/lift_plugin_protocol.rs` (currently C1–C8)
+        - label: All canonical contracts mirrored from `provekit-self-contracts/src/lift_plugin_protocol.rs` (currently C1-C8)
         - label: Speaks substrate IR-RPC with the canonical wire shape
   - type: checkboxes
     id: lifters
     attributes:
-      label: 2. Lifters (the family — IR kit + annotation + test + proptest + …)
+      label: 2. Lifters (the family: IR kit + annotation + test + proptest + …)
       options:
         - label: IR-kit lifter (lifts hand-authored contract types)
         - label: Annotation lifter (`//provekit:contract` markers or kit-equivalent)

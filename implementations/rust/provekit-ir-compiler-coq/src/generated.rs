@@ -23,16 +23,16 @@ pub fn emit_term(term: &Term) -> String {
                 | Sort::Float { .. }
                 | Sort::Region { .. } => "",
             };
-            return emit_const_value(value, sort_name);
+            emit_const_value(value, sort_name)
         }
         Term::Ctor { name, args, .. } => {
             if args.is_empty() {
                 return name.clone();
             };
             let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
+            let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            return format!("({} {})", name, args_str.join(" "));
+            format!("({} {})", name, args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -42,7 +42,7 @@ pub fn emit_term(term: &Term) -> String {
         } => {
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
-            return format!("fun ({} : {}) => {}", param_name, sort_str, body_str);
+            format!("fun ({} : {}) => {}", param_name, sort_str, body_str)
         }
         Term::Let { bindings, body, .. } => {
             let mut parts = Vec::new();
@@ -50,16 +50,16 @@ pub fn emit_term(term: &Term) -> String {
                 parts.push(format!("let {} := {} in", b.name, emit_term(&b.bound_term)));
             }
             let body_str = emit_term(body);
-            return format!("{} {}", parts.join(" "), body_str);
+            format!("{} {}", parts.join(" "), body_str)
         }
         Term::Ctor { name, args } => {
             if args.is_empty() {
                 return name.clone();
             };
             let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
+            let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            return format!("({} {})", name, args_str.join(" "));
+            format!("({} {})", name, args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -68,7 +68,7 @@ pub fn emit_term(term: &Term) -> String {
         } => {
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
-            return format!("fun ({} : {}) => {}", param_name, sort_str, body_str);
+            format!("fun ({} : {}) => {}", param_name, sort_str, body_str)
         }
         Term::Let { bindings, body } => {
             let mut parts = Vec::new();
@@ -76,7 +76,7 @@ pub fn emit_term(term: &Term) -> String {
                 parts.push(format!("let {} := {} in", b.name, emit_term(&b.bound_term)));
             }
             let body_str = emit_term(body);
-            return format!("{} {}", parts.join(" "), body_str);
+            format!("{} {}", parts.join(" "), body_str)
         }
     }
 }
@@ -84,9 +84,9 @@ pub fn emit_formula(formula: &Formula) -> String {
     match formula {
         Formula::Atomic { name, args } => {
             let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
+            let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            return match name.as_str() {
+            match name.as_str() {
                 "=" => format!("({} = {})", args_str[0].clone(), args_str[1].clone()),
                 ">" => format!("({} > {})", args_str[0].clone(), args_str[1].clone()),
                 "<" => format!("({} < {})", args_str[0].clone(), args_str[1].clone()),
@@ -96,19 +96,19 @@ pub fn emit_formula(formula: &Formula) -> String {
                 "true" => "True".to_string(),
                 "false" => "False".to_string(),
                 _ => format!("{} {}", name, args_str.join(" ")),
-            };
+            }
         }
         Formula::And { operands } => {
             let ops = operands.iter();
-            let ops = ops.map(|o| emit_formula(o));
+            let ops = ops.map(emit_formula);
             let ops: Vec<String> = ops.collect();
-            return format!("({})", ops.join(r#" /\ "#));
+            format!("({})", ops.join(r#" /\ "#))
         }
         Formula::Or { operands } => {
             let ops = operands.iter();
-            let ops = ops.map(|o| emit_formula(o));
+            let ops = ops.map(emit_formula);
             let ops: Vec<String> = ops.collect();
-            return format!("({})", ops.join(r#" \/ "#));
+            format!("({})", ops.join(r#" \/ "#))
         }
         Formula::Not { operands } => format!("(~{})", emit_formula(&operands[0])),
         Formula::Implies { operands } => format!(
@@ -119,12 +119,12 @@ pub fn emit_formula(formula: &Formula) -> String {
         Formula::Forall { name, sort, body } => {
             let coq_sort = sort_to_coq(sort);
             let body_str = emit_formula(body);
-            return format!("forall {} : {}, {}", name, coq_sort, body_str);
+            format!("forall {} : {}, {}", name, coq_sort, body_str)
         }
         Formula::Exists { name, sort, body } => {
             let coq_sort = sort_to_coq(sort);
             let body_str = emit_formula(body);
-            return format!("exists {} : {}, {}", name, coq_sort, body_str);
+            format!("exists {} : {}, {}", name, coq_sort, body_str)
         }
         Formula::Choice {
             var_name,
@@ -133,10 +133,10 @@ pub fn emit_formula(formula: &Formula) -> String {
         } => {
             let coq_sort = sort_to_coq(sort);
             let body_str = emit_formula(body);
-            return format!(
+            format!(
                 "@sig {} {} (fun {} => {})",
                 var_name, coq_sort, var_name, body_str
-            );
+            )
         }
     }
 }
@@ -154,9 +154,9 @@ fn emit_sort(sort: &Sort) -> String {
         // depends on this. Issue #331; see protocol/specs/multi-solver-protocol-v2.md
         // Coq's portfolio seat covers higher-order, so this position is NOT opaque.
         Sort::Function { args, ret } => {
-            let mut parts: Vec<String> = args.iter().map(|a| emit_sort_paren(a)).collect();
+            let mut parts: Vec<String> = args.iter().map(emit_sort_paren).collect();
             parts.push(emit_sort_paren(ret));
-            return parts.join(" -> ");
+            parts.join(" -> ")
         }
         // DependentSort: Coq Π-type. `Vec` indexed by `n: nat` becomes
         // `forall n : nat, Vec n`. The instantiated form (`<name> <index_var>`)
@@ -167,13 +167,13 @@ fn emit_sort(sort: &Sort) -> String {
             index_var,
             index_sort,
         } => {
-            return format!(
+            format!(
                 "forall {} : {}, {} {}",
                 index_var,
                 emit_sort(index_sort),
                 name,
                 index_var
-            );
+            )
         }
         // FloatSort: IEEE-754 floats are opaque to the Coq compiler; emit as Z (integer
         // bit-pattern representation). Full FP reasoning is deferred (#332 / #385).
@@ -209,22 +209,22 @@ fn sort_to_coq(sort: &Sort) -> String {
         // binder positions (Forall/Exists/Choice). See `emit_sort` for soundness
         // notes on associativity (Function) and Π-type shape (Dependent).
         Sort::Function { args, ret } => {
-            let mut parts: Vec<String> = args.iter().map(|a| sort_to_coq_paren(a)).collect();
+            let mut parts: Vec<String> = args.iter().map(sort_to_coq_paren).collect();
             parts.push(sort_to_coq_paren(ret));
-            return parts.join(" -> ");
+            parts.join(" -> ")
         }
         Sort::Dependent {
             name,
             index_var,
             index_sort,
         } => {
-            return format!(
+            format!(
                 "forall {} : {}, {} {}",
                 index_var,
                 sort_to_coq(index_sort),
                 name,
                 index_var
-            );
+            )
         }
         // FloatSort: opaque to the Coq binder positions; emit as Z (bit-pattern). #385.
         Sort::Float { .. } => "Z".to_string(),
@@ -285,7 +285,7 @@ pub fn compile_formula(formula: &Formula) -> (String, String, Vec<FreeVar>) {
         .into_iter()
         .map(|(name, sort)| FreeVar { name, sort });
     let free_vars_vec = free_vars_vec.collect();
-    return (preamble, body, free_vars_vec);
+    (preamble, body, free_vars_vec)
 }
 pub fn collect_free_vars_formula(
     formula: &Formula,

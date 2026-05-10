@@ -91,10 +91,10 @@ describe("sorts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Brands — construction
+// Brands: construction
 // ---------------------------------------------------------------------------
 
-describe("brands — nonZero", () => {
+describe("brands: nonZero", () => {
   it("nonZero returns value for non-zero input", () => {
     expect(nonZero(5)).toBe(5);
     expect(nonZero(-1)).toBe(-1);
@@ -114,7 +114,7 @@ describe("brands — nonZero", () => {
   });
 });
 
-describe("brands — nonEmpty", () => {
+describe("brands: nonEmpty", () => {
   it("nonEmpty returns array for non-empty input", () => {
     const arr = [1, 2, 3];
     expect(nonEmpty(arr)).toBe(arr);
@@ -129,7 +129,7 @@ describe("brands — nonEmpty", () => {
   });
 });
 
-describe("brands — sorted", () => {
+describe("brands: sorted", () => {
   it("sorted wraps without checking", () => {
     const arr = [3, 1, 2]; // intentionally unsorted
     expect(sorted(arr)).toBe(arr);
@@ -144,7 +144,7 @@ describe("brands — sorted", () => {
   });
 });
 
-describe("brands — nonNull", () => {
+describe("brands: nonNull", () => {
   it("nonNull returns value when not null", () => {
     expect(nonNull(42)).toBe(42);
     expect(nonNull("hello")).toBe("hello");
@@ -163,7 +163,7 @@ describe("brands — nonNull", () => {
   });
 });
 
-describe("brands — refined and range", () => {
+describe("brands: refined and range", () => {
   it("refined wraps the value identity", () => {
     const x = refined(42, "is positive integer");
     expect(x).toBe(42);
@@ -607,7 +607,7 @@ describe("scope builders", () => {
 });
 
 // ---------------------------------------------------------------------------
-// liftToTerm — direct coverage of every JS-primitive branch
+// liftToTerm: direct coverage of every JS-primitive branch
 // ---------------------------------------------------------------------------
 
 describe("liftToTerm", () => {
@@ -668,10 +668,10 @@ describe("liftToTerm", () => {
 });
 
 // ---------------------------------------------------------------------------
-// connectives — edge cases not covered above
+// connectives: edge cases not covered above
 // ---------------------------------------------------------------------------
 
-describe("connectives — edge cases", () => {
+describe("connectives: edge cases", () => {
   const a: IrFormula = assert.equal(0, 0);
 
   it("or with no args returns false atomic", () => {
@@ -693,7 +693,7 @@ describe("connectives — edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// quantifiers — _resetCounter
+// quantifiers: _resetCounter
 // ---------------------------------------------------------------------------
 
 describe("_resetCounter", () => {
@@ -708,10 +708,10 @@ describe("_resetCounter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// assert — additional predicates not covered above
+// assert: additional predicates not covered above
 // ---------------------------------------------------------------------------
 
-describe("assert — remaining predicates", () => {
+describe("assert: remaining predicates", () => {
   const x: IrTerm = { kind: "var", name: "x"};
   const y: IrTerm = { kind: "var", name: "y"};
 
@@ -747,7 +747,7 @@ describe("assert — remaining predicates", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * TYPE-DIALECT REJECTION TEST (doc-test — not a runtime assertion)
+ * TYPE-DIALECT REJECTION TEST (doc-test: not a runtime assertion)
  *
  * The following shows how tsserver enforces the brand at compile time.
  * It is NOT exercised by `vitest run`. To verify, run `npx tsc --noEmit`
@@ -760,11 +760,11 @@ describe("assert — remaining predicates", () => {
  *   return a / b;
  * }
  *
- * // Line A — tsc must produce an error here because `0` is not NonZero<number>.
+ * // Line A: tsc must produce an error here because `0` is not NonZero<number>.
  * // @ts-expect-error
  * divide(10, 0);
  *
- * // Line B — this must compile successfully.
+ * // Line B: this must compile successfully.
  * import { assertNonZero } from "./brands.js";
  * divide(10, assertNonZero(5)); // ok: assertNonZero(5) returns NonZero<number>
  * ```

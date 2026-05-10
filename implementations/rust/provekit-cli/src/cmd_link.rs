@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit link` — linker pass per spec
+// `provekit link`: linker pass per spec
 // `protocol/specs/2026-05-03-bridge-linkage-protocol.md` R2-R5.
 //
 // Orchestrates:
 //   1. Lift rust source in <project>/rust-callee/ via provekit-lift.
 //   2. Spawn go-lsp-lifter over <project>/go-caller/ to get call-edges.
-//   3. Call provekit_linker::link_with_solvers() — pure derivation with
+//   3. Call provekit_linker::link_with_solvers(): pure derivation with
 //      the same solver-plan config shape as `provekit prove`.
 //   4. Write the resulting LinkBundle JSON to disk.
 //
@@ -60,7 +60,7 @@ pub fn run(args: LinkArgs) -> u8 {
 
             if error_count > 0 {
                 eprintln!(
-                    "{}: {} linker error(s) — see {}",
+                    "{}: {} linker error(s): see {}",
                     "linker".yellow().bold(),
                     error_count,
                     out_path.display()
@@ -81,7 +81,7 @@ pub fn run(args: LinkArgs) -> u8 {
 }
 
 // -------------------------------------------------------------------
-// I/O gathering — lift both kits, then delegate to provekit-linker.
+// I/O gathering: lift both kits, then delegate to provekit-linker.
 // -------------------------------------------------------------------
 
 fn gather_and_link(

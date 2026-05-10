@@ -5,7 +5,7 @@
 // The fixture: build `x > 0` using the kit (Gt(Var("x"), Num(0))),
 // serialize via FormulaToValue, then JCS-encode. The expected bytes
 // are the v1.1.0 IR-JSON shape (NOT the canonicalizer fixture's shape
-// — see CanonicalizerConformanceTests for that one).
+//: see CanonicalizerConformanceTests for that one).
 //
 // Both expected values were CAPTURED from the Rust peer's
 // provekit-ir-symbolic crate running the equivalent program:
@@ -49,7 +49,7 @@ public class IrKitConformanceTests
         var f = Gt(Var("x"), Num(0));
         // 2. Serialize to canonicalizer Value
         var v = Serialize.FormulaToValue(f);
-        // 3. JCS-encode — keys re-sort at this layer
+        // 3. JCS-encode: keys re-sort at this layer
         var bytes = Jcs.Encode(v);
         Assert.Equal(ExpectedKitJcsBytes, bytes);
     }
@@ -90,8 +90,7 @@ public class IrKitConformanceTests
     [Fact]
     public void Connective_UsesUnifiedOperandsArray()
     {
-        // and / or / not / implies all use the same `operands` field —
-        // that's the v1.1.0 maximal-uniformity property.
+        // and / or / not / implies all use the same `operands` field: // that's the v1.1.0 maximal-uniformity property.
         var a = Gt(Var("x"), Num(0));
         var b = Lt(Var("x"), Num(10));
         var both = And(a, b);

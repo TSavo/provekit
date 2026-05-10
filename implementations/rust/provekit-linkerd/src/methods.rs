@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// methods.rs — implementations of the five JSON-RPC methods per spec R5-R9.
+// methods.rs: implementations of the five JSON-RPC methods per spec R5-R9.
 //
 // parseFile    (R5): update kit stream + re-link + return per-file diagnostics.
 // getDiagnostics (R6): return cached diagnostics for a file without re-lifting.
@@ -14,7 +14,7 @@
 //     spawn the kit's LSP plugin binary, send a JSON-RPC `parse` request,
 //     read the `{declarations, callEdges}` response, and map into
 //     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
-//   For `zig`: spawn `provekit-lsp-zig` (no args — reads stdin directly).
+//   For `zig`: spawn `provekit-lsp-zig` (no args: reads stdin directly).
 //     `callEdges` may be omitted from the response and is treated as empty.
 //   For `python`: the LSP module has no installed binary (it's a Python module,
 //     invoked as `python -m provekit_lift_py_tests.lsp`); additionally, its
@@ -24,11 +24,11 @@
 //   For `java`: spawn `provekit-lsp-java --rpc`, same protocol as go/csharp/ruby.
 //     Requires `mvn package` in implementations/java/provekit-lift-java-core first;
 //     returns LifterUnavailable if the binary is not on PATH.
-//   For `swift`: spawn `provekit-lsp-swift` (no args — reads stdin directly).
+//   For `swift`: spawn `provekit-lsp-swift` (no args: reads stdin directly).
 //     Binary is built via `swift build -c release` in implementations/swift.
-//   For `ts`: spawn `provekit-lsp-ts` (no args — node-based CJS binary).
+//   For `ts`: spawn `provekit-lsp-ts` (no args: node-based CJS binary).
 //     Binary must be on PATH; returns LifterUnavailable if not installed.
-//   For `cpp`: spawn `provekit-lsp-cpp` (no args — native binary, int main()).
+//   For `cpp`: spawn `provekit-lsp-cpp` (no args: native binary, int main()).
 //     Binary built via `g++ -std=c++17 -o provekit-lsp-cpp main.cpp`.
 //   For `c`: spawn `provekit-lsp-c --rpc` (requires --rpc flag).
 //     Binary built via `cc -std=c11 -o provekit-lsp-c main.c`.
@@ -218,7 +218,7 @@ pub async fn handle_flush_cache(
 }
 
 // -------------------------------------------------------------------
-// R9: shutdown (handled in server.rs — snapshot write happens there)
+// R9: shutdown (handled in server.rs: snapshot write happens there)
 // -------------------------------------------------------------------
 
 // The shutdown method is handled directly in server.rs because it needs
@@ -454,7 +454,7 @@ fn find_binary(name: &str) -> Option<String> {
 ///   Cross-kit linker resolution works via `targetSymbol` lookup rather than CID
 ///   matching, so this discrepancy does not break bridge derivation for targets.
 ///   Source-contract post-condition lookup will return None for cross-kit sources
-///   (discharge checking is skipped, not errored) — acceptable MVP behaviour.
+///   (discharge checking is skipped, not errored): acceptable MVP behaviour.
 ///
 /// Missing fields:
 ///   - `callEdges` absent from response: treated as empty (zig case).
@@ -571,7 +571,7 @@ async fn spawn_kit_lifter(
 /// Extract a JSON array from a field in a result object.
 ///
 /// Handles the case where the field is absent (returns empty vec) or where the
-/// field is a JSON-encoded string (a shape used by some kit lifters) — in that
+/// field is a JSON-encoded string (a shape used by some kit lifters): in that
 /// case the string is re-parsed as JSON.
 fn extract_array_field<'a>(result: &'a Json, field: &str) -> Vec<Json> {
     match result.get(field) {

@@ -41,7 +41,7 @@ public class SwaggerExtractor implements Extractor {
             String name = simpleName(ann.getNameAsString());
             switch (name) {
                 case "ApiOperation","Operation" -> {
-                    // Metadata — non-normative, but valuable for documentation
+                    // Metadata: non-normative, but valuable for documentation
                     extractString(ann, "value").ifPresent(v ->
                         pres.add(metaAtom("api_description", v)));
                     extractString(ann, "notes").ifPresent(v ->

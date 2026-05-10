@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-compiler-coq — Coq compiler for IR contracts.
+// provekit-ir-compiler-coq: Coq compiler for IR contracts.
 //
 // Emits Coq .v files that can be verified with coqc.
 // Supports kit-defined predicates via Definitions (unlike SMT-LIB!).
@@ -53,7 +53,7 @@ impl CoqCompiler {
         let kind = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         if is_term_kind(kind) {
             let term: provekit_ir_types::Term = serde_json::from_value(ir.clone())
-                .map_err(|e| CompileError::MalformedIr(format!("{e}").into()))?;
+                .map_err(|e| CompileError::MalformedIr(format!("{e}")))?;
             let term_str = generated::emit_term(&term);
             let preamble =
                 "Require Import ZArith String List.\nOpen Scope Z.\nOpen Scope string.\n\n"
@@ -62,7 +62,7 @@ impl CoqCompiler {
             Ok((preamble, body, vec![]))
         } else {
             let formula: provekit_ir_types::Formula = serde_json::from_value(ir.clone())
-                .map_err(|e| CompileError::MalformedIr(format!("{e}").into()))?;
+                .map_err(|e| CompileError::MalformedIr(format!("{e}")))?;
             Ok(generated::compile_formula(&formula))
         }
     }

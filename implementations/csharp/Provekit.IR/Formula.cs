@@ -6,7 +6,7 @@
 //   - QuantifierFormula: { kind: "forall"|"exists", name, sort, body }
 //
 // Five formula kinds total when you flatten the four connectives. This
-// IS the "maximal-uniformity" v1.1.0 IR — every node has `kind`, every
+// IS the "maximal-uniformity" v1.1.0 IR: every node has `kind`, every
 // applicable node has `name`, the operands array unifies the four
 // boolean connectives. Mirrors Rust/C++ peers exactly.
 

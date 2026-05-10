@@ -1,5 +1,5 @@
 /**
- * Memento minting utilities — high-level helpers for producers.
+ * Memento minting utilities: high-level helpers for producers.
  *
  * Lower-level primitives are at:
  *   - sign.ts (signEnvelope, verifyEnvelopeSignature)
@@ -93,7 +93,7 @@ export interface MintBridgeArgs {
 }
 
 /**
- * Mint a bridge memento — a content-addressed edge declaring that a
+ * Mint a bridge memento: a content-addressed edge declaring that a
  * host-language symbol bridges to a deeper-layer published contract.
  *
  * Wrapper hashes are DERIVED per the bridge role's spec:
@@ -257,7 +257,7 @@ export interface MintImplicationArgs {
 }
 
 /**
- * Mint an implication memento — a signed proof witness that one IR
+ * Mint an implication memento: a signed proof witness that one IR
  * formula universally implies another. DERIVED fields:
  *   bindingHash  = computeCid(canonical({antecedentHash, consequentHash}))
  *   propertyHash = computeCid(canonical("implication:" + antecedentHash + ":" + consequentHash))
@@ -324,7 +324,7 @@ export interface MintExtensionDeclarationArgs {
 }
 
 /**
- * Mint an extension-declaration memento — a content-addressed claim
+ * Mint an extension-declaration memento: a content-addressed claim
  * that introduces a new sort, predicate, or ctor into the IR
  * extension protocol.
  */

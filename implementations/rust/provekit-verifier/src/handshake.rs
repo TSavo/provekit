@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Stage 4 handshake — Tier 1 (hash equality) and Tier 2 (cached
+// Stage 4 handshake: Tier 1 (hash equality) and Tier 2 (cached
 // implication memento) discharge for cross-language pre/post pairs.
 //
 // The handshake fires when a callsite's `arg_term` is itself a Ctor

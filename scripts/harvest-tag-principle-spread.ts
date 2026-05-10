@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-tag-principle-spread.ts — for each principle that fires
+ * scripts/harvest-tag-principle-spread.ts: for each principle that fires
  * in harvest_expressibility, sample N candidates and print the upstream
  * commit subjects so we can eyeball topic-spread.
  *

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// multi_kit.rs — tests for polyglot kit dispatch in the linkerd daemon.
+// multi_kit.rs: tests for polyglot kit dispatch in the linkerd daemon.
 //
 // Test 1: parseFile(kit="go", ...) invokes the go lifter and returns a
 //         LinkerOutput with non-empty contracts when provekit-lsp-go is on PATH.

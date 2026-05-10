@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
@@ -37,7 +37,7 @@ fn make_unique_dir(suffix: &str) -> PathBuf {
     p
 }
 
-fn publish_parseint_proof(dir: &PathBuf) -> String {
+fn publish_parseint_proof(dir: &Path) -> String {
     // Publish a real parseInt .proof via the Rust kit, return its CID.
     reset_collector();
     must("parseInt", forall(Int(), |n| gt(n, num(0))));

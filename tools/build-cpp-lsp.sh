@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build the C++ LSP plugin binary (provekit-lsp-cpp).
 #
-# Prereqs: same as build-cpp-self-contracts.sh — no extra deps needed beyond
+# Prereqs: same as build-cpp-self-contracts.sh: no extra deps needed beyond
 # the provekit/ir.hpp header-only library (already in the repo).
 #
 # Usage:

@@ -134,7 +134,7 @@ func TestSquaresAreNonneg(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	// JCS-alphabetical key order (enforced by ir.MarshalDeclarations
-	// after PR #72 — the marshaler now sorts every object's keys).
+	// after PR #72: the marshaler now sorts every object's keys).
 	want := `[{"inv":{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}},"kind":"contract","name":"TestSquaresAreNonneg","outBinding":"out"}]`
 	if string(body) != want {
 		t.Fatalf("canonical bytes diverged:\n got: %s\nwant: %s", string(body), want)

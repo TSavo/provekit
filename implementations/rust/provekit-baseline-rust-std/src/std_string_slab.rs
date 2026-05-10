@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// std::string slab — builtins on `String` and `&str`.
+// std::string slab: builtins on `String` and `&str`.
 //
 // Each builtin gets >=2 ContractDecls per the rubric floor:
-//   * `<builtin>__type_signature` — encodes the static type of the
+//   * `<builtin>__type_signature`: encodes the static type of the
 //     return value via the kit-defined `type_of` ctor.
-//   * `<builtin>__determinism` — same input, same output (forall x.
+//   * `<builtin>__determinism`: same input, same output (forall x.
 //     f(x) = f(x)). Deterministic by language definition; the explicit
 //     contract documents that fact.
-//   * `<builtin>__<structural>` — additional structural predicate where
+//   * `<builtin>__<structural>`: additional structural predicate where
 //     natural (length floor, idempotence, output-shape). Satisfies the
 //     rubric's "aspiration: 4-5 predicates" target where reachable.
 //

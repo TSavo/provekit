@@ -1,4 +1,4 @@
-// ProvekIt LSP Language Plugin — C++
+// ProvekIt LSP Language Plugin: C++
 //
 // A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
 // Parses C++ source files and extracts provekit annotations.

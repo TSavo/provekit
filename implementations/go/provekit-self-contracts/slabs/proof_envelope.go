@@ -36,7 +36,7 @@ func InvariantsProofBuilder() {
 
 func InvariantsProofCBOR() {
 	// CBOREncoder.AppendHead is shortest-form (RFC 8949 §4.2.1).
-	// LIVING DOCS — `shortestForm` opaque to Z3.
+	// LIVING DOCS: `shortestForm` opaque to Z3.
 	ir.Must("AppendHead_is_shortest_form",
 		ir.ForAll(ir.Int, func(arg ir.IrTerm) ir.IrFormula {
 			return ir.Eq(ctor1("AppendHead", arg), ctor1("AppendHead", arg))

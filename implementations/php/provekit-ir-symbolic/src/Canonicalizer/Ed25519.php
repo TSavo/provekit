@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt — Ed25519 signer. Uses PHP sodium when available. */
+/** ProvekIt: Ed25519 signer. Uses PHP sodium when available. */
 
 namespace ProvekIt\Canonicalizer;
 
@@ -19,7 +19,7 @@ class Ed25519
             $this->privKey = sodium_crypto_sign_secretkey($kp);
             $this->pubKey = sodium_crypto_sign_publickey($kp);
         } else {
-            // Fallback: derive dummy (testing only — NOT cryptographically valid)
+            // Fallback: derive dummy (testing only: NOT cryptographically valid)
             $this->pubKey = hash('sha256', 'pk:' . $seed, true);
             $this->privKey = hash('sha256', 'sk:' . $seed, true);
         }

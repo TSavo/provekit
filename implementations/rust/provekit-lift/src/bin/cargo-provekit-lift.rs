@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `cargo-provekit-lift` — Cargo subcommand entry point.
+// `cargo-provekit-lift`: Cargo subcommand entry point.
 //
 // When the user runs `cargo provekit-lift ...`, Cargo finds this
 // binary on PATH and invokes it with argv[1] = "provekit-lift". The

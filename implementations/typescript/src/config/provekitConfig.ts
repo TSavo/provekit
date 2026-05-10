@@ -1,5 +1,5 @@
 /**
- * provekit.config.yaml — per-project provider configuration.
+ * provekit.config.yaml: per-project provider configuration.
  *
  * Same shape as tsconfig.json / vite.config.ts: ONE invocation entry
  * point per workflow, project-level config picks the implementations.
@@ -9,7 +9,7 @@
  *
  * Provider lists are arrays. One entry = run that provider. Multiple
  * entries = run all in parallel, agreement is the verdict. There's no
- * special case for "two solvers" or "both" — the array IS the choice.
+ * special case for "two solvers" or "both": the array IS the choice.
  *
  * Schema (v1):
  *
@@ -46,7 +46,7 @@ import { parse as parseYaml } from "yaml";
  * YAML entry; adding a new solver class is one entry plus one compiler
  * implementation.
  *
- * `flags` is a template — strings may contain `{{TIMEOUT_S}}` and
+ * `flags` is a template: strings may contain `{{TIMEOUT_S}}` and
  * `{{TIMEOUT_MS}}` placeholders that the runtime substitutes. The
  * compiled script is delivered on stdin; verdict is read from the
  * last non-empty line of stdout (sat / unsat / unknown for SMT-LIB).
@@ -100,7 +100,7 @@ const DEFAULT_CONFIG: ProvekitConfig = {
 /**
  * Load + parse provekit.config.yaml at the project root. Returns
  * defaults when the file is missing or malformed (with a stderr warning
- * for malformed cases — silent ignore would hide config typos).
+ * for malformed cases: silent ignore would hide config typos).
  */
 export function loadProvekitConfig(projectRoot: string): ProvekitConfig {
   const path = join(projectRoot, "provekit.config.yaml");
@@ -117,7 +117,7 @@ export function loadProvekitConfig(projectRoot: string): ProvekitConfig {
 
 /**
  * Resolve the solver entries from a loaded ProvekitConfig. Returns the
- * array as-is — workflows iterate it; one entry runs once, multiple
+ * array as-is: workflows iterate it; one entry runs once, multiple
  * entries run in parallel.
  */
 export function resolveSolverEntries(config: ProvekitConfig): SolverEntry[] {

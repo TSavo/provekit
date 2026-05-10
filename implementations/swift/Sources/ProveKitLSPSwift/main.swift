@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lsp-swift — NDJSON LSP plugin for Swift.
+// provekit-lsp-swift: NDJSON LSP plugin for Swift.
 //
 // Protocol (parse-protocol v1):
 //   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
@@ -11,7 +11,7 @@
 // Each line is one JSON-RPC message.
 //
 // Corresponds to the Go LSP plugin at
-// implementations/go/cmd/provekit-lsp-go/main.go — same wire shape.
+// implementations/go/cmd/provekit-lsp-go/main.go: same wire shape.
 //
 // Regex-based lifter (v0). SwiftSyntax-based AST lifting is future work.
 

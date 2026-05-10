@@ -147,7 +147,7 @@ function extractItBlock(node: ts.Node): ItBlock | null {
   const callee = node.expression;
   if (!ts.isIdentifier(callee)) return null;
   // Recognize bare `it` / `test` only. (it.skip / it.only are not
-  // contracts of the SUT — they're scaffolding.)
+  // contracts of the SUT: they're scaffolding.)
   if (callee.text !== "it" && callee.text !== "test") return null;
   const [first, second] = node.arguments;
   if (!first) return null;
@@ -160,7 +160,7 @@ function extractItBlock(node: ts.Node): ItBlock | null {
 /**
  * Find every `expect(...)<matcher chain>` call expression in the test
  * body, in source order. We want the OUTERMOST call expression of the
- * chain — `expect(x).toBe(1)` is one candidate, not two.
+ * chain: `expect(x).toBe(1)` is one candidate, not two.
  *
  * Strategy: walk the body; for each ExpressionStatement / call site
  * whose top-level call's callee is a property access whose root
@@ -254,7 +254,7 @@ function liftExpect(call: ts.CallExpression): LiftResult {
   if (!chain) {
     return { kind: "skip", reason: "expect chain shape not recognized" };
   }
-  // Async / promise modifiers — skip in v0.
+  // Async / promise modifiers: skip in v0.
   for (const m of chain.modifiers) {
     if (PROMISE_MODIFIERS.has(m)) {
       return {
@@ -263,7 +263,7 @@ function liftExpect(call: ts.CallExpression): LiftResult {
       };
     }
   }
-  // toThrow — skip in v0 (negative-fact, function-valued actual).
+  // toThrow: skip in v0 (negative-fact, function-valued actual).
   if (chain.matcher === "toThrow" || chain.matcher === "toThrowError") {
     return { kind: "skip", reason: "expect(fn).toThrow(...) is not liftable in v0" };
   }

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// baseline_pin — regression test pinning the Rust std baseline v1
+// baseline_pin: regression test pinning the Rust std baseline v1
 // catalog's contractSetCid + disclaimer_cid.
 //
 // Either of these CIDs changing means the catalog body changed
 // (predicates, builtins, disclaimer text, foundation seed). That's a
-// signing event, not a Makefile string edit — bump v1 to v1.1 (minor
+// signing event, not a Makefile string edit: bump v1 to v1.1 (minor
 // extension) or v2 (major), and update the pinned values below.
 //
 // Per the rubric §"Versioning":
@@ -15,7 +15,7 @@
 // The bundle CID intentionally is NOT pinned here: it covers the
 // signed envelope metadata + signer pubkey + signature, which is
 // orthogonal to "the contracts are the same." The contractSetCid IS
-// the trust anchor — same contracts, same set CID across signers,
+// the trust anchor: same contracts, same set CID across signers,
 // across kits, across rebuilds.
 
 use provekit_baseline_rust_std::{compute_disclaimer_cid, disclaimer_text, mint_baseline};
@@ -75,7 +75,7 @@ fn disclaimer_cid_is_pinned() {
 /// Substrate verification: the verifier's `load_all_proofs` re-derives
 /// every member's CID from its bytes (rule 2) and rejects mismatches.
 /// Running it against the freshly-minted catalog asserts every member
-/// — including the `kind=disclaimer` envelope — round-trips cleanly.
+///: including the `kind=disclaimer` envelope: round-trips cleanly.
 ///
 /// This is the issue #257 AC clause "at minimum the substrate verifies
 /// the bytes": instead of wiring a new `provekit verify --baseline=rust`

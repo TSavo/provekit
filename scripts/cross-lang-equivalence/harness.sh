@@ -4,7 +4,7 @@
 # For each fixture in fixtures.txt, runs the TS / Rust / Go / C++ runners
 # and asserts they emit byte-identical compact JSON. Also asserts the
 # SHA256 matches the golden value in goldens.txt (catches any kit drifting
-# in a way that all kits drift to — i.e. a canonical-form change).
+# in a way that all kits drift to: i.e. a canonical-form change).
 #
 # Exit 0: all fixtures pass.
 # Exit 1: at least one fixture diverges across kits OR drifts from golden.
@@ -23,7 +23,7 @@ if ! command -v cargo >/dev/null 2>&1; then
   if [ -x "$HOME/.cargo/bin/cargo" ]; then
     export PATH="$HOME/.cargo/bin:$PATH"
   else
-    echo "[harness] cargo not found — install rust toolchain to run this gate" >&2
+    echo "[harness] cargo not found: install rust toolchain to run this gate" >&2
     exit 2
   fi
 fi
@@ -60,7 +60,7 @@ while IFS= read -r fixture; do
   cpp_out=$("$CPP_BIN" "$fixture") || { echo "[$fixture] C++ crashed"; fail_count=$((fail_count+1)); continue; }
 
   if [ "$ts_out" != "$rust_out" ] || [ "$ts_out" != "$go_out" ] || [ "$ts_out" != "$cpp_out" ]; then
-    echo "[$fixture] DIVERGE — outputs differ across kits"
+    echo "[$fixture] DIVERGE: outputs differ across kits"
     echo "  ts:   $ts_out"
     echo "  rust: $rust_out"
     echo "  go:   $go_out"
@@ -72,7 +72,7 @@ while IFS= read -r fixture; do
   sha=$(printf '%s' "$ts_out" | shasum -a 256 | awk '{print $1}')
   golden=$(lookup_golden "$fixture" || true)
   if [ -n "$golden" ] && [ "$sha" != "$golden" ]; then
-    echo "[$fixture] DRIFT — kits agree but diverged from golden"
+    echo "[$fixture] DRIFT: kits agree but diverged from golden"
     echo "  expected: $golden"
     echo "  actual:   $sha"
     fail_count=$((fail_count+1))
@@ -80,7 +80,7 @@ while IFS= read -r fixture; do
   fi
 
   if [ -z "$golden" ]; then
-    echo "[$fixture] PASS sha256=$sha (no golden — add to goldens.txt to lock)"
+    echo "[$fixture] PASS sha256=$sha (no golden: add to goldens.txt to lock)"
   else
     echo "[$fixture] PASS sha256=$sha"
   fi

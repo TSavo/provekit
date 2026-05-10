@@ -78,7 +78,7 @@ describe("vitest-plugin / runLiftOnce", () => {
     const td = tempDir();
     const src = join(td, "src");
     mkdirSync(src);
-    // No liftable contracts — strict should reject.
+    // No liftable contracts: strict should reject.
     writeFileSync(join(src, "empty.ts"), `export const x = 1;`);
     process.env.PROVEKIT_LIFT_STRICT = "1";
     expect(() =>

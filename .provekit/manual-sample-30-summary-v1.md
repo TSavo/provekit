@@ -1,4 +1,4 @@
-# #115 step 2 — manual-30 gate summary
+# #115 step 2: manual-30 gate summary
 
 **Sample salt:** `115-step2-v1`
 **Reviewer:** manual-30 labeler (Claude Opus 4.7 1M)
@@ -39,11 +39,11 @@ healthy.
 match on AST `BinaryExpression` operator without distinguishing **numeric
 addition** from **string concatenation**. Half the disagrees are this.
 
-- **karma/Bug-22** — `URL_REGEXP = new RegExp('http' + config.hostname + ...)` is regex string assembly. addition-overflow misfires on string `+`.
-- **eslint/Bug-51** — bug splits one sentinel regex into three; the matched `+` is string concat in regex literal.
-- **eslint/Bug-64** — bug adds `requiresTrailingSpace` helper. The `+` is string concat in fixer text `(prefix + parenthesizedSource + (suffix ? " " : ""))`.
-- **hexo/Bug-12** — bug adds `.toString()` coercion before slugize. The `+` is string concat `'^' + escapeRegExp(slug)`.
-- **eslint/Bug-49** — bug rewrites object-shorthand fixer ranges. The `+` is string concat in `keyPrefix + keyText + sourceCode.text.slice(...)`.
+- **karma/Bug-22**: `URL_REGEXP = new RegExp('http' + config.hostname + ...)` is regex string assembly. addition-overflow misfires on string `+`.
+- **eslint/Bug-51**: bug splits one sentinel regex into three; the matched `+` is string concat in regex literal.
+- **eslint/Bug-64**: bug adds `requiresTrailingSpace` helper. The `+` is string concat in fixer text `(prefix + parenthesizedSource + (suffix ? " " : ""))`.
+- **hexo/Bug-12**: bug adds `.toString()` coercion before slugize. The `+` is string concat `'^' + escapeRegExp(slug)`.
+- **eslint/Bug-49**: bug rewrites object-shorthand fixer ranges. The `+` is string concat in `keyPrefix + keyText + sourceCode.text.slice(...)`.
 
 ### The second systemic failure: principle fires at unchanged code at the locus
 
@@ -51,24 +51,24 @@ Audit says "principles hit at locus" but the matched arithmetic isn't what the
 fix changed. The principle has no "is the matched node actually dirty in the
 diff?" filter.
 
-- **eslint/Bug-232** — bug is a null-guard `parentElements[0] && ...`. There is no arithmetic in the fix at all; addition-overflow + multiplication-overflow are completely unrelated.
-- **eslint/Bug-246** — bug rewrites comment scoping with new helpers. `blockStart + 2` and `blockEnd - 2` are at the locus but unchanged. Principles fire on stable arithmetic.
-- **eslint/Bug-60** — bug is "missing baseline indent additive offset" (`indentSize * options...` → `getNodeIndent(node).goodChar + indentSize * options...`). The multiplication is at the locus but the bug class is "missing addend," not multiplication overflow.
-- **eslint/Bug-182** — bug guards against fixing block comments containing leading `/`. `commentGroup.length - 1` is at the locus and unchanged. subtraction-underflow misfires.
-- **hessian.js/Bug-6** — bug filters synthetic `this$N` keys. `byteBuffer.position() - 1` is unchanged at the locus.
+- **eslint/Bug-232**: bug is a null-guard `parentElements[0] && ...`. There is no arithmetic in the fix at all; addition-overflow + multiplication-overflow are completely unrelated.
+- **eslint/Bug-246**: bug rewrites comment scoping with new helpers. `blockStart + 2` and `blockEnd - 2` are at the locus but unchanged. Principles fire on stable arithmetic.
+- **eslint/Bug-60**: bug is "missing baseline indent additive offset" (`indentSize * options...` → `getNodeIndent(node).goodChar + indentSize * options...`). The multiplication is at the locus but the bug class is "missing addend," not multiplication overflow.
+- **eslint/Bug-182**: bug guards against fixing block comments containing leading `/`. `commentGroup.length - 1` is at the locus and unchanged. subtraction-underflow misfires.
+- **hessian.js/Bug-6**: bug filters synthetic `this$N` keys. `byteBuffer.position() - 1` is unchanged at the locus.
 
 ### Wrong-locus falsy-default
 
-- **express/Bug-21** — bug is missing `req.params` in the save/restore wrap; fix introduces `restore()` helper. The `parentUrl = req.baseUrl || ''` line is unchanged but is what `falsy-default` matched on. Same "principle fires at unchanged dirty-zone code" failure mode.
+- **express/Bug-21**: bug is missing `req.params` in the save/restore wrap; fix introduces `restore()` helper. The `parentUrl = req.baseUrl || ''` line is unchanged but is what `falsy-default` matched on. Same "principle fires at unchanged dirty-zone code" failure mode.
 
 ### Regex content outside substrate
 
-- **eslint/Bug-80** (pending-principle row) — bug is `(.+?)` → `([^{}]+?)`. Pure regex literal change, no logic change. Substrate has no regex-pattern capability. Should have been `unknown`.
-- **eslint/Bug-244** (needs-new-relation row) — bug is `/set(?:Timeout|Interval)|execScript/` → `/^(setTimeout|setInterval|execScript)$/`. Pure regex anchoring; no multi-node relation needed. Should have been `unknown`.
+- **eslint/Bug-80** (pending-principle row): bug is `(.+?)` → `([^{}]+?)`. Pure regex literal change, no logic change. Substrate has no regex-pattern capability. Should have been `unknown`.
+- **eslint/Bug-244** (needs-new-relation row): bug is `/set(?:Timeout|Interval)|execScript/` → `/^(setTimeout|setInterval|execScript)$/`. Pure regex anchoring; no multi-node relation needed. Should have been `unknown`.
 
 ### Parser robustness
 
-- **pencilblue/Bug-7** (unknown row) — typo fix `protoype` → `prototype` in fully readable JS. Tagger said "parser failed on every changed file." Should have been `expressible-now-pending-principle`. The audit reason is honest about the failure but the classification is wrong on substrate criteria.
+- **pencilblue/Bug-7** (unknown row): typo fix `protoype` → `prototype` in fully readable JS. Tagger said "parser failed on every changed file." Should have been `expressible-now-pending-principle`. The audit reason is honest about the failure but the classification is wrong on substrate criteria.
 
 ## Tagger failure modes (in order of impact)
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Foundation v0 ed25519 seed — the cross-kit anchor for substrate
+// Foundation v0 ed25519 seed: the cross-kit anchor for substrate
 // signing. Documented as a deterministic test seed; v1 is HSM-generated.
 // A signed catalog under this seed is structurally valid but offers no
 // trust beyond "the bytes match the public seed in the repo."

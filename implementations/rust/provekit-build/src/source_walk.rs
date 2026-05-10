@@ -36,11 +36,11 @@ use syn::{
 /// `Opaque` skips the encoding and yields `undecidable`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormulaShape {
-    /// `gte(out(), num(N))` — return value is at least N.
+    /// `gte(out(), num(N))`: return value is at least N.
     GteConst(i64),
-    /// `gt(out(), num(N))` — return value is strictly greater than N.
+    /// `gt(out(), num(N))`: return value is strictly greater than N.
     GtConst(i64),
-    /// `eq(out(), num(N))` — return value is exactly N.
+    /// `eq(out(), num(N))`: return value is exactly N.
     EqConst(i64),
     /// Anything we couldn't classify. The verifier flags as undecidable.
     Opaque,

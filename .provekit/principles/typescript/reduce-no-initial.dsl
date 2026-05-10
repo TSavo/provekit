@@ -1,7 +1,7 @@
 // A8: DSL translation of reduce-no-initial.json
 // Match: call to Array.reduce() with exactly 1 argument (no initial value).
 // calls.arg_count == 1 is the direct encoding of "no initial value argument".
-// This is a COMPLETE translation — no guard suppression needed because the check
+// This is a COMPLETE translation: no guard suppression needed because the check
 // is structural (arg count), not semantic.
 //
 // NOTE: arg_count == 1 means only the callback is passed; arg_count >= 2 means

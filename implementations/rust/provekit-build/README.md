@@ -69,10 +69,10 @@ crate without the table still gets useful diagnostics.
 
 ## Environment variables
 
-- `PROVEKIT_Z3_PATH` — path to the `z3` binary. Defaults to `z3` on
+- `PROVEKIT_Z3_PATH`: path to the `z3` binary. Defaults to `z3` on
   `$PATH`. The build script reads it once per invocation; you do not
   need to put it in `Cargo.toml`.
-- `PROVEKIT_VERBOSE=1` — emit a `cargo:warning=` line for discharged
+- `PROVEKIT_VERBOSE=1`: emit a `cargo:warning=` line for discharged
   call sites too. Off by default to keep build output quiet.
 
 ## Tier handshake
@@ -85,9 +85,9 @@ implication-store work.
 
 The recognized post-condition shapes for v0:
 
-- `gte(out(), num(N))` — return value is at-least N.
-- `gt(out(), num(N))` — return value is strictly greater than N.
-- `eq(out(), num(N))` — return value is exactly N.
+- `gte(out(), num(N))`: return value is at-least N.
+- `gt(out(), num(N))`: return value is strictly greater than N.
+- `eq(out(), num(N))`: return value is exactly N.
 
 Anything else classifies as `Opaque` and surfaces as `undecidable`.
 The protocol's full IR is intentionally not lowered into SMT here;
@@ -140,17 +140,15 @@ cannot lift.
 
 ## Public API
 
-- `run_verification()` — entry point for `build.rs`.
-- `run_verification_inner(manifest_dir, cargo_toml, out_dir, cfg)` —
-  programmatic entry point for tests.
-- `ProvekitConfig`, `parse_config_from_str`, `parse_config_from_path`
-  — config parsing.
-- `mint_proof_file(target_dir, walk)` — produce `<cid>.proof`.
-- `solve(z3_path, smt2_script, timeout_ms)` — wall-clock-guarded
+- `run_verification()`: entry point for `build.rs`.
+- `run_verification_inner(manifest_dir, cargo_toml, out_dir, cfg)`: programmatic entry point for tests.
+- `ProvekitConfig`, `parse_config_from_str`, `parse_config_from_path`: config parsing.
+- `mint_proof_file(target_dir, walk)`: produce `<cid>.proof`.
+- `solve(z3_path, smt2_script, timeout_ms)`: wall-clock-guarded
   Z3 subprocess driver.
-- `build_obligation_script(cfg, label, post, surrounding_eq)` — emit
+- `build_obligation_script(cfg, label, post, surrounding_eq)`: emit
   the SMT-LIB 2 source for one call site.
-- `source_walk::walk(manifest_dir)` — syn-based source walker. Public
+- `source_walk::walk(manifest_dir)`: syn-based source walker. Public
   so other build-script integrations can re-use the visitor.
 
 ## Tests

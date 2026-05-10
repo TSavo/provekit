@@ -1,6 +1,6 @@
 #!/usr/bin/env ts-node
 /**
- * scripts/fuzz.ts — run the corpus sweep and report the dashboard.
+ * scripts/fuzz.ts: run the corpus sweep and report the dashboard.
  *
  * Usage:
  *   npx ts-node scripts/fuzz.ts [--threshold 0.10] [--bug-class division-by-zero]

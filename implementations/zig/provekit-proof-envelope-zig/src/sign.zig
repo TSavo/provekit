@@ -6,7 +6,7 @@
 //
 // Notes on stdlib mapping:
 //   * `KeyPair.generateDeterministic(seed)` corresponds to ed25519-dalek's
-//     `SigningKey::from_bytes(seed)` — both interpret the 32 bytes as the
+//     `SigningKey::from_bytes(seed)`: both interpret the 32 bytes as the
 //     RFC 8032 secret seed and SHA-512 expand it.
 //   * Passing `null` for `noise` to `kp.sign(msg, null)` selects the pure
 //     deterministic RFC 8032 mode, which matches ed25519-dalek's default.
@@ -83,7 +83,7 @@ pub fn pubkeyString(alloc: std.mem.Allocator, seed: Ed25519Seed) ![]u8 {
 
 /// Verify `message` against `sig_string` (spec form
 /// `"ed25519:" + base64(sig)`) using `pubkey_string`. Returns false for
-/// any malformed input rather than erroring — verifiers fail closed.
+/// any malformed input rather than erroring: verifiers fail closed.
 pub fn verifyString(pubkey_string: []const u8, sig_string: []const u8, message: []const u8) bool {
     if (!std.mem.startsWith(u8, pubkey_string, KEY_PREFIX)) return false;
     if (!std.mem.startsWith(u8, sig_string, SIG_PREFIX)) return false;
@@ -188,7 +188,7 @@ test "stdlib Ed25519 matches ed25519-dalek for foundation seed and canonical uns
     // Sort by bytewise lex of CBOR-encoded key. All keys are short text
     // strings, so the prefix byte is the same and lex follows raw key
     // bytes after that. Hand-sorted: kind < name < signer < members
-    // < version < declaredAt? No — let's compute properly: each key is
+    // < version < declaredAt? No: let's compute properly: each key is
     // tstr, head 0x6N (text + len), so the first byte differs by len.
     //   "kind"      (4) -> 0x64
     //   "name"      (4) -> 0x64
@@ -221,7 +221,7 @@ test "stdlib Ed25519 matches ed25519-dalek for foundation seed and canonical uns
 
     // Pinned 64-byte signature from the rust kit's reference output.
     // If this fails: zig stdlib Ed25519 disagrees with ed25519-dalek
-    // for the same seed + message. Hard blocker — STOP.
+    // for the same seed + message. Hard blocker: STOP.
     const expected_sig: [64]u8 = .{
         0x6a, 0x21, 0xdd, 0x42, 0x8a, 0x54, 0xe2, 0x2c,
         0x82, 0xca, 0x6d, 0x61, 0x25, 0xa7, 0x29, 0x3c,

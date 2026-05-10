@@ -6,10 +6,10 @@
 // to deeper-layer authorities (V8 in TS, Rust core in Rust, Go runtime
 // in Go) via the registry's two factory shapes.
 //
-// extensionSort / extensionPredicate / extensionCtor — kit OWNS the
+// extensionSort / extensionPredicate / extensionCtor: kit OWNS the
 //   semantics. For kit-idiomatic primitives or user-authored extensions.
 //
-// PrimitiveBridge — kit REFERENCES a deeper layer. The kit emits IR ctor
+// PrimitiveBridge: kit REFERENCES a deeper layer. The kit emits IR ctor
 //   nodes referencing the bridged name; the verifier resolves through
 //   the protocol to the deeper layer's signed declaration.
 

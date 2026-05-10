@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// print-lift-plugin-protocol-cids — extraction binary for cross-kit bridges.
+// print-lift-plugin-protocol-cids: extraction binary for cross-kit bridges.
 //
 // Walks the canonical `lift_plugin_protocol` slab and prints the
 // `(contract_name, contractCid)` map for the protocol contract set as
