@@ -114,23 +114,7 @@ fn handle_lift(id: Value, params: Value) -> Value {
         Err(err) => return error_response(id, 1007, err.to_string()),
     };
 
-    let declarations = result
-        .contracts
-        .iter()
-        .map(provekit_lift_asm_x86_64::contract_to_json)
-        .collect::<Vec<_>>();
-
-    json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "result": {
-            "kind": "ir-document",
-            "declarations": declarations,
-            "ir": declarations,
-            "diagnostics": result.diagnostics,
-            "refusals": result.refusals
-        }
-    })
+    provekit_lift_asm_x86_64::lift_success_response_json(id, &result)
 }
 
 fn error_response(id: Value, code: i64, message: String) -> Value {
