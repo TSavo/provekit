@@ -7,7 +7,7 @@ LLVM_CONFIG ?= $(shell command -v llvm-config 2>/dev/null || command -v /usr/loc
 UNAME_S := $(shell uname -s)
 
 BIN = provekit-lift-c-collectors-defensive
-SRC = src/main.c src/walker.c src/patterns.c src/types.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c ../provekit-lift-core/src/compile_context.c
+SRC = src/main.c src/walker.c src/patterns.c src/types.c src/term.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c ../provekit-lift-core/src/compile_context.c
 TEST_SH = tests/integration.sh
 
 # Path to libprovekit's C ABI staticlib + header (CCP §6.2). Built via
