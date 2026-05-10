@@ -68,6 +68,7 @@ pub fn default_root() -> Option<PathBuf> {
 /// - `key = "string"`
 /// - `key = ["a", "b"]`
 /// - `# comment` lines
+///
 /// Anything else is silently ignored.
 pub fn parse(body: &str) -> Option<Manifest> {
     let mut name = None;
