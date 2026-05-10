@@ -150,10 +150,26 @@ pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileErr
     Ok(generated::compile_formula(&formula))
 }
 
+pub fn compile_asserted_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
+    let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
+        .map_err(|e| CompileError::MalformedIr(e.to_string().into()))?;
+    validate_formula(&formula).map_err(|e| CompileError::MalformedIr(e.into()))?;
+    Ok(generated::compile_asserted_formula(&formula))
+}
+
+pub fn emit_asserted(ir_formula: &Json) -> Result<String, String> {
+    compile_asserted_to_parts(ir_formula)
+        .map(|c| {
+            let mut s = c.preamble;
+            s.push_str(&c.body);
+            s
+        })
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_ir_compiler::OpacityManifest;
 
     #[test]
     fn functionsort_quantifier_emits_opacity_entry() {
