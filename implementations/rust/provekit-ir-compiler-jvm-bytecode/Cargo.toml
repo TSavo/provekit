@@ -1,0 +1,20 @@
+[package]
+name = "provekit-ir-compiler-jvm-bytecode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: JVM bytecode compiler for ProofIR terms."
+
+[dependencies]
+provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+provekit-ir-types = { path = "../provekit-ir-types" }
+serde_json.workspace = true
+
+[[bin]]
+name = "provekit-ir-jvm-bytecode"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_ir_compiler_jvm_bytecode"
+path = "src/lib.rs"
