@@ -37,7 +37,31 @@
     "op_or.spec.json",
     "op_not.spec.json",
     "op_assign.spec.json",
-    "op_neg.spec.json"
+    "op_neg.spec.json",
+    "op_opaque.spec.json",
+    "op_decl.spec.json",
+    "op_case.spec.json",
+    "op_default.spec.json",
+    "op_label.spec.json",
+    "op_goto.spec.json",
+    "op_do.spec.json",
+    "op_cast.spec.json",
+    "op_array_subscript.spec.json",
+    "op_conditional.spec.json",
+    "op_compound_literal.spec.json",
+    "op_init_list.spec.json",
+    "op_string_literal.spec.json",
+    "op_char_literal.spec.json",
+    "op_float_literal.spec.json",
+    "op_imaginary_literal.spec.json",
+    "op_null.spec.json",
+    "op_generic_selection.spec.json",
+    "op_stmt_expr.spec.json",
+    "op_addr_label.spec.json",
+    "op_unexposed_stmt.spec.json",
+    "op_unexposed_expr.spec.json",
+    "op_binary_operator.spec.json",
+    "op_unary_operator.spec.json"
   ],
   "equations": [
     "eq_seq_assoc.spec.json",
@@ -52,7 +76,8 @@
     "eq_and_true.spec.json",
     "eq_or_true.spec.json",
     "eq_or_false.spec.json",
-    "eq_not_not.spec.json"
+    "eq_not_not.spec.json",
+    "eff_eq_read_after_write.spec.json"
   ],
   "effect_signatures": [
     "effsig_memread.spec.json",

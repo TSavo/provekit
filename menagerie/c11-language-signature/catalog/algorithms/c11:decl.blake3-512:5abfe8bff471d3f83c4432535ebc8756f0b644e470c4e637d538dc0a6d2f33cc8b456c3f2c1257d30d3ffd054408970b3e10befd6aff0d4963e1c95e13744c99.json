@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:decl",
+    "formals": [
+      "name",
+      "initializer"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "decl",
+      "arity": [
+        "Expr",
+        "Expr"
+      ],
+      "result": "Stmt",
+      "wp": "bind local name to initializer before continuing"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "oXWTxrB9fD9/YP2hvyle1s0agIxY0OTE/VwXseg2r3g4R0m5q89gQPusjwhKKl2MkzmN3jV/9cAqTKaU5VLXCg=="
+  }
+}

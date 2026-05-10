@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:addr-label",
+    "formals": [
+      "label"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "addr-label",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Expr",
+      "wp": "GNU address-of-label expression"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:c8a0a1404292e5dd6b50e7dd5cc096f96e5d97c7c0e8172eb86bf35d981d35b8ad06486d7f682e58e44db377eda89d2870d5c064b4580e87e13d682bec3cd0fa",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "402roQ9Cgg+NPPzwKhwOdnMyNzMfowJyNDy6Ofgjl1IgP0w8n87J0019DdRTSKud3cykRa4m7xY/2PojKqb6Bw=="
+  }
+}

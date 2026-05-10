@@ -1,0 +1,49 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:imaginary-literal",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "imaginary-literal",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Expr",
+      "wp": "imaginary literal token payload elided at this layer",
+      "notes": "Serializer is stubbed until literal payload terms are added."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:f49dec04735ac1c96e75e9a2044c189f2ac742f319e10237e9b3f1247d89ffab046f07072556e4dd3f075ba4eac4a672510428a850469429dbd0f2b3e045b107",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "DocdqXG90YdIThakvefwqSwGtvpGumez36FCiRUobK7cDj2FF0XZWasFkN+5Qh2frx2g0/wmZmzCvr3c9lYhBA=="
+  }
+}
