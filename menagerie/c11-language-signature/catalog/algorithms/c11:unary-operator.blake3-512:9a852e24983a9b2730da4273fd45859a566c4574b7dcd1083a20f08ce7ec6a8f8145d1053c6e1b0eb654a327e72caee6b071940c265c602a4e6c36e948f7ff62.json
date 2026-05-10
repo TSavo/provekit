@@ -1,0 +1,49 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:unary-operator",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unary-operator",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Expr",
+      "wp": "fallback unary operator when no core C11 operator is selected",
+      "notes": "Negation, boolean not, and dereference dispatch to existing op CIDs."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:9a852e24983a9b2730da4273fd45859a566c4574b7dcd1083a20f08ce7ec6a8f8145d1053c6e1b0eb654a327e72caee6b071940c265c602a4e6c36e948f7ff62",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "+OgvfxAw9H8HwiyiySAoTCHgfTHdsKM62NetRJK96RGbgQfsfsfXKmgkGoGw3jP39+s3bWVDpkif0ui7eh1tAA=="
+  }
+}

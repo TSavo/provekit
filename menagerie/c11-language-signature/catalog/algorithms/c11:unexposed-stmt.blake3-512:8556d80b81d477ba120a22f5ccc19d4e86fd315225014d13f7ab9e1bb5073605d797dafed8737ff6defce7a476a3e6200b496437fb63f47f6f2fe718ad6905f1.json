@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:unexposed-stmt",
+    "formals": [
+      "children"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "ListOfStmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unexposed-stmt",
+      "arity": [
+        "ListOfStmt"
+      ],
+      "result": "Stmt",
+      "wp": "libclang unexposed statement with lifted child sequence"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:8556d80b81d477ba120a22f5ccc19d4e86fd315225014d13f7ab9e1bb5073605d797dafed8737ff6defce7a476a3e6200b496437fb63f47f6f2fe718ad6905f1",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "lKbRotrcGqof0ZRMa4XY9KQK2NXy0+qfskBy2SVpf056i9a1TGuh4aih76OvKHRgZjSsN4HMVU9rM3/P6TplCA=="
+  }
+}

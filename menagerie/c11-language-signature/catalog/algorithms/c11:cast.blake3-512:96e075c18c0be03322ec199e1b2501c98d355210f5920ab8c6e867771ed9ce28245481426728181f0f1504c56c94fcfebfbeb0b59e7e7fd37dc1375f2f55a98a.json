@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:cast",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "cast",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Expr",
+      "wp": "C cast expression preserving lifted child value"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:96e075c18c0be03322ec199e1b2501c98d355210f5920ab8c6e867771ed9ce28245481426728181f0f1504c56c94fcfebfbeb0b59e7e7fd37dc1375f2f55a98a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "51phZ4DEzQLzPZBgu9n/oJloh7bgQU0IUj8WEXrFtpc3orCAu5LjLc4Lm8nNwaJhBoIzazI3ZRAceeyfzbIMDA=="
+  }
+}

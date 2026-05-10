@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:addr-label",
+  "formals": [
+    "label"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "addr-label",
+    "arity": [
+      "Expr"
+    ],
+    "result": "Expr",
+    "wp": "GNU address-of-label expression"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

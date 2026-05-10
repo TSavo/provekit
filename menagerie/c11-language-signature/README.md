@@ -4,7 +4,7 @@ C is emitted as a content-addressed algebra over contracts. Here is the algebra.
 
 The minted C11 `LanguageSignatureMemento` is:
 
-`blake3-512:c942ba70e4b701e139a46590116f5cdc16ab41db277e80e54c01f23e4a7cf6241d4431c60473409cb3f0b61ce27f593071c1c224291f04c61aa04b4773764945`
+`blake3-512:fdfb3b7d6b5f034be120b2bb566931c0cfc7de4375cde62c37116475deaeba849549a277b3c36e2d42b9080845103604c18f0986f64f326d2cdcb73d60ceb558`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted C function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 
@@ -30,29 +30,57 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 
 | Operation | Arity | Result | Contract meaning |
 | --- | --- | --- | --- |
-| `skip` | `Unit` | `Stmt` | Identity statement, unchanged state |
-| `seq` | `Stmt x Stmt` | `Stmt` | WP composition |
-| `if` | `Bool x Stmt x Stmt` | `Stmt` | Branch-selected WP |
-| `while` | `Bool x Stmt` | `Stmt` | Loop invariant plus false condition at exit |
-| `for` | `Stmt x Bool x Stmt x Stmt` | `Stmt` | Desugars to init plus while |
-| `switch` | `Int x ListOf<Stmt>` | `Stmt` | Case-dispatched WP join |
-| `call` | `FnContract x ListOf<Expr>` | `Stmt` | CCP composition at call site |
-| `return` | `Expr` | `Stmt` | Bind output and exit |
-| `break` | `Unit` | `Stmt` | Exit enclosing switch or loop |
-| `continue` | `Unit` | `Stmt` | Jump to next loop iteration |
-| `deref` | `Ptr` | `LValue` | Requires non-null valid pointer, effect `MemRead` |
-| `member` | `LValue x FieldName` | `LValue` | Field projection |
-| `add` | `Int x Int` | `Int` | No signed overflow, otherwise `Trap` |
-| `sub` | `Int x Int` | `Int` | No signed overflow, otherwise `Trap` |
-| `mul` | `Int x Int` | `Int` | No signed overflow, otherwise `Trap` |
-| `eq` | `Int x Int` | `Bool` | Integer equality |
-| `lt` | `Int x Int` | `Bool` | Integer less than |
-| `le` | `Int x Int` | `Bool` | Integer less than or equal |
-| `and` | `Bool x Bool` | `Bool` | Short-circuit conjunction |
-| `or` | `Bool x Bool` | `Bool` | Short-circuit disjunction |
-| `not` | `Bool` | `Bool` | Boolean negation |
-| `assign` | `LValue x Expr` | `Stmt` | Store, effect `MemWrite` |
-| `neg` | `Int` | `Int` | No signed overflow, otherwise `Trap` |
+| `skip` | `Unit` | `Stmt` | state unchanged |
+| `seq` | `Stmt x Stmt` | `Stmt` | wp(first, wp(second, post)) |
+| `if` | `Bool x Stmt x Stmt` | `Stmt` | cond ? wp(then_branch, post) : wp(else_branch, post) |
+| `while` | `Bool x Stmt` | `Stmt` | loop invariant holds and cond is false at exit |
+| `for` | `Stmt x Bool x Stmt x Stmt` | `Stmt` | seq(init, while(cond, seq(body, step))) |
+| `switch` | `Int x ListOf<Stmt>` | `Stmt` | case-dispatched WP join over arms |
+| `call` | `FnContract x ListOf<Expr>` | `Stmt` | callee pre under bound args implies callee post under caller state |
+| `return` | `Expr` | `Stmt` | bind function out value and exit current body |
+| `break` | `Unit` | `Stmt` | exit nearest enclosing switch or loop |
+| `continue` | `Unit` | `Stmt` | jump to next loop iteration |
+| `deref` | `Ptr` | `LValue` | lvalue at ptr |
+| `member` | `LValue x FieldName` | `LValue` | field lvalue projection |
+| `add` | `Int x Int` | `Int` | mathematical integer addition when no overflow holds |
+| `sub` | `Int x Int` | `Int` | mathematical integer subtraction when no overflow holds |
+| `mul` | `Int x Int` | `Int` | mathematical integer multiplication when no overflow holds |
+| `eq` | `Int x Int` | `Bool` | integer equality comparison |
+| `lt` | `Int x Int` | `Bool` | integer less-than comparison |
+| `le` | `Int x Int` | `Bool` | integer less-than-or-equal comparison |
+| `and` | `Bool x Bool` | `Bool` | short-circuit conjunction |
+| `or` | `Bool x Bool` | `Bool` | short-circuit disjunction |
+| `not` | `Bool` | `Bool` | boolean negation |
+| `assign` | `LValue x Expr` | `Stmt` | store value into target and update state |
+| `neg` | `Int` | `Int` | integer arithmetic negation when no overflow holds |
+| `opaque` | `Unit` | `Stmt` | stable placeholder for non-lifted or intentionally opaque cursor kinds |
+| `decl` | `Expr x Expr` | `Stmt` | bind local name to initializer before continuing |
+| `case` | `Expr x Stmt` | `Stmt` | switch case arm body guarded by value |
+| `default` | `Stmt` | `Stmt` | switch default arm body |
+| `label` | `Expr x Stmt` | `Stmt` | statement label with body |
+| `goto` | `Expr` | `Stmt` | control transfer to label target |
+| `do` | `Stmt x Bool` | `Stmt` | do body once, then loop while cond |
+| `cast` | `Expr` | `Expr` | C cast expression preserving lifted child value |
+| `array-subscript` | `Expr x Expr` | `LValue` | array element lvalue projection |
+| `conditional` | `Bool x Expr x Expr` | `Expr` | ternary expression selected by cond |
+| `compound-literal` | `Expr` | `Expr` | compound literal expression payload |
+| `init-list` | `ListOfExpr` | `Expr` | initializer list expression payload |
+| `string-literal` | `Unit` | `Expr` | string literal token payload elided at this layer |
+| `char-literal` | `Unit` | `Expr` | character literal token payload elided at this layer |
+| `float-literal` | `Unit` | `Expr` | floating literal token payload elided at this layer |
+| `imaginary-literal` | `Unit` | `Expr` | imaginary literal token payload elided at this layer |
+| `null` | `Unit` | `Expr` | null pointer constant expression |
+| `generic-selection` | `Expr x ListOfExpr` | `Expr` | C11 generic selection expression |
+| `stmt-expr` | `Stmt` | `Expr` | GNU statement expression payload |
+| `addr-label` | `Expr` | `Expr` | GNU address-of-label expression |
+| `unexposed-stmt` | `ListOfStmt` | `Stmt` | libclang unexposed statement with lifted child sequence |
+| `unexposed-expr` | `ListOfExpr` | `Expr` | libclang unexposed expression with lifted child sequence |
+| `binary-operator` | `Expr x Expr` | `Expr` | fallback binary operator when no core C11 operator is selected |
+| `unary-operator` | `Expr` | `Expr` | fallback unary operator when no core C11 operator is selected |
+
+## Generated Cursor Kind Operations
+
+Additional operations below are generated from `enum CXCursorKind` for cursor kinds that do not fit the hand-curated core. Non-lifted declarations, attributes, preprocessing cursors, and non-C-family extensions map to `opaque`.
 
 ## Equations
 

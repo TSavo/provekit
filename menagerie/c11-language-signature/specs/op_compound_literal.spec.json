@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:compound-literal",
+  "formals": [
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "compound-literal",
+    "arity": [
+      "Expr"
+    ],
+    "result": "Expr",
+    "wp": "compound literal expression payload"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

@@ -1,0 +1,44 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:label",
+  "formals": [
+    "name",
+    "body"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "label",
+    "arity": [
+      "Expr",
+      "Stmt"
+    ],
+    "result": "Stmt",
+    "wp": "statement label with body"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

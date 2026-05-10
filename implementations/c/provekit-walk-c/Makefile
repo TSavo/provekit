@@ -5,27 +5,35 @@ CFLAGS = -Wall -Wextra -Wpedantic -std=c11 -I../provekit-lift-core/include -g
 LLVM_CONFIG ?= $(shell command -v llvm-config 2>/dev/null || command -v /usr/local/opt/llvm/bin/llvm-config 2>/dev/null || command -v /usr/local/opt/llvm@21/bin/llvm-config 2>/dev/null)
 
 BIN = provekit-walk-c
+TERM_BIN = provekit-c11-term-project
 SRC = src/main.c src/walk.c src/wp.c src/lift.c src/contract.c src/conditional.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c ../provekit-lift-core/src/compile_context.c
+TERM_SRC = src/term_project_main.c src/wp.c src/lift.c src/c11_cursor_dispatch.generated.c
 TEST_SH = tests/integration.sh
+TERM_TEST_SH = tests/term_project.sh
 
 ifneq ($(strip $(LLVM_CONFIG)),)
 CFLAGS += -DPK_C_ENABLE_CLANG_AST -I$(shell $(LLVM_CONFIG) --includedir)
 LDFLAGS += -L$(shell $(LLVM_CONFIG) --libdir) -Wl,-rpath,$(shell $(LLVM_CONFIG) --libdir) -lclang
-SRC += ../provekit-lift-core/src/clang_ast.c ../provekit-lift-core/src/effects.c
+SRC += src/c11_cursor_dispatch.generated.c ../provekit-lift-core/src/clang_ast.c ../provekit-lift-core/src/effects.c
 else
 SRC += ../provekit-lift-core/src/clang_ast_stub.c
 endif
 
 .PHONY: all test clean
 
-all: $(BIN)
+all: $(BIN) $(TERM_BIN)
 
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS)
 
-test: $(BIN) $(TEST_SH)
+$(TERM_BIN): $(TERM_SRC)
+	$(CC) $(CFLAGS) -o $@ $(TERM_SRC) $(LDFLAGS)
+
+test: $(BIN) $(TERM_BIN) $(TEST_SH) $(TERM_TEST_SH)
 	@chmod +x $(TEST_SH)
 	@$(TEST_SH)
+	@chmod +x $(TERM_TEST_SH)
+	@$(TERM_TEST_SH)
 
 clean:
-	rm -rf $(BIN) $(BIN).dSYM
+	rm -rf $(BIN) $(TERM_BIN) $(BIN).dSYM $(TERM_BIN).dSYM

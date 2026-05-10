@@ -502,12 +502,16 @@ prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-java prove-
 catalog-verify:
 	cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
 
+.PHONY: c11-cursorkind-check
+c11-cursorkind-check:
+	python3 tools/generate-c11-from-cursorkind.py --check
+
 .PHONY: protocol-verify
 protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
 .PHONY: conformance
-conformance: catalog-verify protocol-verify all-mint test-self-contracts conformance-region-fixture cross-kit-conformance
+conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-self-contracts conformance-region-fixture cross-kit-conformance
 	@echo ""
 	@echo "==== conformance: PASS ===="
 
