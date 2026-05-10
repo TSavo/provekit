@@ -200,14 +200,14 @@ fn emit_term_mode(args: &[String]) -> ExitCode {
     let bytes = match provekit_walk::emit::rust_function_term_json(&item_fn, source_path) {
         Ok(bytes) => bytes,
         Err(e) => {
-            eprintln!("error emitting term json: {}", e);
+            eprintln!("term-emit skipped fn={}: {}", function_name, e);
             return ExitCode::from(5);
         }
     };
     let cid = match provekit_walk::emit::rust_function_term_json_cid(&item_fn, source_path) {
         Ok(cid) => cid,
         Err(e) => {
-            eprintln!("error computing term json cid: {}", e);
+            eprintln!("term-emit skipped fn={}: {}", function_name, e);
             return ExitCode::from(5);
         }
     };

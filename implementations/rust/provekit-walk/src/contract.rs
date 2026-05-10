@@ -637,15 +637,14 @@ mod tests {
             _function_cid: &str,
             target: &str,
         ) -> Option<PinInvariantMementoView> {
-            if let Some(invariant) = self.pin_invariant_targets.get(target).cloned() {
-                Some(PinInvariantMementoView {
+            self.pin_invariant_targets
+                .get(target)
+                .cloned()
+                .map(|invariant| PinInvariantMementoView {
                     function_cid: _function_cid.to_string(),
                     pinned_target: target.to_string(),
                     invariant,
                 })
-            } else {
-                None
-            }
         }
     }
 
