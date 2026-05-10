@@ -356,21 +356,10 @@ pub fn lift_paths(
             }
         };
 
-        if streams.is_empty() {
-            diagnostics.push(format!("no x86-64 functions found in {source_path}"));
-        }
-
-        for stream in streams {
-            match lift_function(&stream) {
-                Ok(contract) => contracts.push(contract),
-                Err(err) => refusals.push(Refusal {
-                    kind: "function-refused".to_string(),
-                    function: stream.name,
-                    address: None,
-                    reason: err.to_string(),
-                }),
-            }
-        }
+        let lifted = lift_streams(source_path, streams);
+        contracts.extend(lifted.contracts);
+        diagnostics.extend(lifted.diagnostics);
+        refusals.extend(lifted.refusals);
     }
 
     Ok(LiftResult {
@@ -378,6 +367,44 @@ pub fn lift_paths(
         diagnostics,
         refusals,
     })
+}
+
+pub fn lift_disassembly_text(
+    source_path: impl AsRef<Path>,
+    disassembly: &str,
+) -> Result<LiftResult, LiftError> {
+    let source_path = source_path.as_ref();
+    let streams = parse_objdump(disassembly, source_path)?;
+    let source_path = source_path.to_string_lossy();
+    Ok(lift_streams(&source_path, streams))
+}
+
+fn lift_streams(source_path: &str, streams: Vec<FunctionStream>) -> LiftResult {
+    let mut diagnostics = Vec::new();
+    let mut refusals = Vec::new();
+    let mut contracts = Vec::new();
+
+    if streams.is_empty() {
+        diagnostics.push(format!("no x86-64 functions found in {source_path}"));
+    }
+
+    for stream in streams {
+        match lift_function(&stream) {
+            Ok(contract) => contracts.push(contract),
+            Err(err) => refusals.push(Refusal {
+                kind: "function-refused".to_string(),
+                function: stream.name,
+                address: None,
+                reason: err.to_string(),
+            }),
+        }
+    }
+
+    LiftResult {
+        contracts,
+        diagnostics,
+        refusals,
+    }
 }
 
 pub fn apply_instruction(
@@ -574,6 +601,30 @@ pub fn contract_to_json(contract: &FunctionContractMemento) -> serde_json::Value
         );
     }
     json
+}
+
+pub fn ir_document_json(result: &LiftResult) -> serde_json::Value {
+    let declarations = result
+        .contracts
+        .iter()
+        .map(contract_to_json)
+        .collect::<Vec<_>>();
+
+    json!({
+        "kind": "ir-document",
+        "declarations": declarations.clone(),
+        "ir": declarations,
+        "diagnostics": &result.diagnostics,
+        "refusals": &result.refusals
+    })
+}
+
+pub fn lift_success_response_json(id: serde_json::Value, result: &LiftResult) -> serde_json::Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": ir_document_json(result)
+    })
 }
 
 fn build_memento_value(contract: &FunctionContractMemento) -> Arc<CanonicalValue> {
