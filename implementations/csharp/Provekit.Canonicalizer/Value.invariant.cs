@@ -7,7 +7,7 @@
 //   * AsBool / AsInt / AsString / AsArray / AsObject (kind-tagged accessors)
 //
 // Honest scope:
-//   Kind invariants — every constructor returns a Value whose Kind matches
+//   Kind invariants: every constructor returns a Value whose Kind matches
 //   the factory; Boolean(true) reuses the True singleton (idempotence).
 
 using static Provekit.IR.Predicates;

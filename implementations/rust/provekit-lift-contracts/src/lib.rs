@@ -260,7 +260,7 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
                 })
             }
         }
-        _ => f.clone(), // Choice — TODO: implement
+        _ => f.clone(), // Choice: TODO: implement
     }
 }
 
@@ -274,7 +274,7 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
             name: name.clone(),
             args: args.iter().map(|a| subst_term(a, from, to)).collect(),
         }),
-        _ => t.clone(), // Lambda, Let — TODO: implement
+        _ => t.clone(), // Lambda, Let: TODO: implement
     }
 }
 

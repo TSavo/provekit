@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// std::result slab — builtins on `Result<T, E>`.
+// std::result slab: builtins on `Result<T, E>`.
 //
 // Coverage (8 builtins): Result_is_ok, Result_is_err, Result_unwrap,
 // Result_unwrap_or, Result_unwrap_err, Result_map, Result_map_err,

@@ -6,7 +6,7 @@
 //     where binding_kind = 'param')
 //
 // The witness predicate `any_param_decl` produces any param-binding decl in the
-// file as the existential witness — the binding is required by the DSL grammar
+// file as the existential witness: the binding is required by the DSL grammar
 // but the semantic constraint is in the where-relation. flows_from_param itself
 // checks whether any param-bound source reaches operand_node transitively.
 //

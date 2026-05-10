@@ -1,6 +1,6 @@
 ---
 name: producer-extractor
-description: Wraps an existing function in `src/fix/` (or similar) as a workflow producer — a `Stage<I, O>` factory in `src/workflow/producers/<name>.ts` plus a vi.hoisted-mocked test file. Use when the underlying function already exists and the work is the wrapping, not the logic. Mechanical refactor; one commit per producer.
+description: Wraps an existing function in `src/fix/` (or similar) as a workflow producer: a `Stage<I, O>` factory in `src/workflow/producers/<name>.ts` plus a vi.hoisted-mocked test file. Use when the underlying function already exists and the work is the wrapping, not the logic. Mechanical refactor; one commit per producer.
 tools: Bash, Read, Write, Edit, Glob, Grep
 model: sonnet
 ---
@@ -32,7 +32,7 @@ export function makeXStage(deps: MakeXStageDeps): Stage<XStageInput, OutputType>
 }
 ```
 
-For side-effecting operations, use `Action<I, R>` instead — see `docs/specs/2026-04-29-stages-vs-actions.md` and `src/workflow/producers/openOverlay.ts` (the canonical Action example).
+For side-effecting operations, use `Action<I, R>` instead: see `docs/specs/2026-04-29-stages-vs-actions.md` and `src/workflow/producers/openOverlay.ts` (the canonical Action example).
 
 ## Test pattern
 
@@ -44,7 +44,7 @@ vi.mock("../../fix/.../underlyingFile.js", () => ({ underlyingImpl: underlyingIm
 
 // Tests:
 //  1. runs through WorkflowRunner.runStage and returns expected output
-//  2. caches identical input — second run is a hit, impl not invoked
+//  2. caches identical input: second run is a hit, impl not invoked
 //  3. canonical-input handling (undefined optionals collapse)
 //  4. dispatches via the registry as the named capability
 //  + stage-specific edge cases as needed (4-6 tests total)
@@ -76,6 +76,6 @@ When in doubt: if it changes between calls AND affects the output, it's per-call
 
 - Commit SHA, test count delta.
 - Whether the underlying function is genuinely pure (Stage candidate) or side-effecting (Action candidate).
-- Any spec-relevant observation (e.g., "this producer's binding-hash should include the principle library state but currently doesn't — flagging for the v1.1 follow-up").
+- Any spec-relevant observation (e.g., "this producer's binding-hash should include the principle library state but currently doesn't: flagging for the v1.1 follow-up").
 
 Single commit per producer. Conventional commit. Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>.

@@ -3,9 +3,9 @@
 // .invariant.cs for Provekit.IR/Formula.cs
 //
 // Public surface covered:
-//   * AtomicFormula(name, args)        — kind: "atomic"
-//   * ConnectiveFormula(kind, operands) — kind: "and"/"or"/"not"/"implies"
-//   * QuantifierFormula(kind, name, sort, body) — kind: "forall"/"exists"
+//   * AtomicFormula(name, args): kind: "atomic"
+//   * ConnectiveFormula(kind, operands): kind: "and"/"or"/"not"/"implies"
+//   * QuantifierFormula(kind, name, sort, body): kind: "forall"/"exists"
 //
 // Honest scope:
 //   Five formula kinds total when you flatten the four connectives. v1.1.0

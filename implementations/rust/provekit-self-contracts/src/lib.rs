@@ -13,10 +13,10 @@
 // single `provekit-self-contracts.proof` envelope.
 //
 // File layout:
-//   * `src/lib.rs` — the orchestrator (this file). Pulls in every
+//   * `src/lib.rs`: the orchestrator (this file). Pulls in every
 //     `.invariant.rs` via `#[path]` so they compile as plain Rust
 //     modules without polluting their host crate's dep graph.
-//   * `src/bin/mint-self-contracts.rs` — the runnable binary. Calls
+//   * `src/bin/mint-self-contracts.rs`: the runnable binary. Calls
 //     into `mint_self_proof()` here and prints the resulting CID;
 //     also runs the verifier against the produced .proof and prints
 //     the report.
@@ -577,7 +577,7 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Property tests — invariants the IR contracts gesture at, enforced in code.
+// Property tests: invariants the IR contracts gesture at, enforced in code.
 // ---------------------------------------------------------------------------
 //
 // The .proof verifier scans static IR. Behavioral parser invariants

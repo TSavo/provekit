@@ -76,7 +76,7 @@ pub fn encodeMapHead(out: *std.ArrayList(u8), alloc: std.mem.Allocator, count: u
 }
 
 // ---------------------------------------------------------------------------
-// Tests — pinned vectors from RFC 8949 §3.3 + the rust kit.
+// Tests: pinned vectors from RFC 8949 §3.3 + the rust kit.
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# cpython_ctypes_resolver — Python ctypes FFI call-site resolver.
+# cpython_ctypes_resolver: Python ctypes FFI call-site resolver.
 #
 # Walks a Python AST module and detects ctypes FFI load + call patterns,
 # emitting CallEdgeDecl mementos per

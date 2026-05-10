@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// CryptoTests — standalone integration test runner for ProvekitCrypto.
+// CryptoTests: standalone integration test runner for ProvekitCrypto.
 //
 // Does NOT depend on XCTest or Swift Testing (neither is available on
 // CI without full Xcode). Uses the kit-local PASS/FAIL idiom from
@@ -675,7 +675,7 @@ test("cross-kit signature equivalence: swift self-contracts attestation") {
     let declaredAt = "2026-05-03T18:00:00Z"
     let signerPubkey = Ed25519.publicKeyString(fromSeed: Ed25519.foundationV0Seed)
 
-    // Build message — same field set as build_self_contracts_message
+    // Build message: same field set as build_self_contracts_message
     // in tools/foundation-keygen/src/lib.rs.
     let message: JcsCanonical = .object([
         ("schemaVersion", .string("1")),

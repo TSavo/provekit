@@ -1,4 +1,4 @@
-# C Lifter Family — Design Proposal
+# C Lifter Family: Design Proposal
 
 **Status:** draft for review
 **Author:** T Savo
@@ -29,7 +29,7 @@ typedef struct pk_c_lift_result {
 } pk_c_lift_result;
 ```
 
-### `provekit-walk` (Rust) — the model
+### `provekit-walk` (Rust): the model
 
 `implementations/rust/provekit-walk/src/lift.rs` does real predicate derivation from Rust source via `syn`:
 
@@ -49,13 +49,13 @@ Pre and post end up as real `IrFormula` (the canonical ProofIR formula type) and
 
 The walk module (`walk.rs`) does Dijkstra-style backward WP propagation: from each callsite, walk backward through statements applying `wp(let x = e, P) = P[e/x]`. Final WP at function entry is the proof obligation.
 
-### JUnit extractor (Java) — the test-body model
+### JUnit extractor (Java): the test-body model
 
 `JUnitExtractor.java` walks `@Test` method bodies. Each `assertEquals(expected, actual)` becomes a postcondition `eq(actual, expected)`. Each `assertTrue(expr)` becomes `expr`. `if/else` branches yield scoped contracts. The contract is named `testMethod::assertion_index` and represents a real semantic claim about whatever the test calls.
 
 This generalizes: **test code is de facto specification.** Every assertion is an executable contract.
 
-### `libprovekit::compose` — the consumer
+### `libprovekit::compose`: the consumer
 
 The composition primitive consumes `FunctionContractMemento { name, formals, formal_sorts, return_sort, pre, post, effects, locus, body_cid? }`. The `pre` and `post` are `IrFormula` (canonical ProofIR). The `effects` is an `EffectSet`. `compose_chain_contracts` walks call chains and produces `ComposedFunctionContract` mementos with byte-deterministic CIDs via JCS.
 
@@ -69,16 +69,16 @@ Three deliverables (one new Rust crate, one new C lifter, one extension to exist
 
 New C lifter at `implementations/c/provekit-lift-c-collectors-defensive/`, mirroring the sibling C lifter pattern (kernel-doc, sparse, assertions). Emits synthesized contracts as `declarations[]` entries via the same JSON-RPC `lift` method.
 
-- `src/main.c` — JSON-RPC scaffold (copy from kernel-doc lifter; identical protocol handling)
-- `src/walker.c` — synthesis pass: walk `clang_ast.c`'s emitted AST + `effects.c`'s per-function effects, recognize defensive patterns, build contract JSON per function
-- `src/patterns.c` — C-side pattern recognition (port of `provekit-walk::lift::lift_function_precondition` / `lift_function_postcondition` algorithms to libclang cursor types)
-- `src/formula.c` — builds the JSON shape that deserializes to `provekit_ir_types::IrFormula` on the Rust consumer side
-- `Makefile` — same shape as `provekit-lift-c-kernel-doc` Makefile (libclang-enabled with effects.c, fallback to stub)
-- `tests/integration.sh` — smoke tests on fixture C files (BUG_ON, if-return-error, assert patterns)
+- `src/main.c`: JSON-RPC scaffold (copy from kernel-doc lifter; identical protocol handling)
+- `src/walker.c`: synthesis pass: walk `clang_ast.c`'s emitted AST + `effects.c`'s per-function effects, recognize defensive patterns, build contract JSON per function
+- `src/patterns.c`: C-side pattern recognition (port of `provekit-walk::lift::lift_function_precondition` / `lift_function_postcondition` algorithms to libclang cursor types)
+- `src/formula.c`: builds the JSON shape that deserializes to `provekit_ir_types::IrFormula` on the Rust consumer side
+- `Makefile`: same shape as `provekit-lift-c-kernel-doc` Makefile (libclang-enabled with effects.c, fallback to stub)
+- `tests/integration.sh`: smoke tests on fixture C files (BUG_ON, if-return-error, assert patterns)
 
 **JSON-RPC surface:** `c-collectors-defensive`. Reads source files, emits `pk_c_lift_result`-shaped JSON with synthesized contracts in `declarations[]`. Plug-compatible with existing `provekit lift` / `provekit compose --rpc` consumers.
 
-**Why C instead of Rust:** keeps the lifter in `implementations/c/` family (consistent build, test, RPC pattern). `clang_ast.c` already does the libclang AST traversal — synthesis adds a new pass over the existing visitor, no clang-sys binding overhead. `effects.c` already linked in (per #519). The pattern recognition algorithms transfer from `provekit-walk::lift` regardless of language; we don't get to reuse `lift.rs` source either way (it's tightly bound to `syn::Expr`/`syn::Stmt` types). The C path is ~800-1200 lines of new code; Rust would be ~1500+ (clang-sys bindings + visitor + algorithm port).
+**Why C instead of Rust:** keeps the lifter in `implementations/c/` family (consistent build, test, RPC pattern). `clang_ast.c` already does the libclang AST traversal: synthesis adds a new pass over the existing visitor, no clang-sys binding overhead. `effects.c` already linked in (per #519). The pattern recognition algorithms transfer from `provekit-walk::lift` regardless of language; we don't get to reuse `lift.rs` source either way (it's tightly bound to `syn::Expr`/`syn::Stmt` types). The C path is ~800-1200 lines of new code; Rust would be ~1500+ (clang-sys bindings + visitor + algorithm port).
 
 **Formula representation:** the contracts emitted in `declarations[]` use the JSON shape that the canonical `provekit_ir_types::IrFormula` deserializes from. The Rust consumer side (provekit compose, prove) sees them as ordinary IrFormula values and feeds them into `libprovekit::compose::FunctionContractMemento`. No new schema, no FFI from C side.
 
@@ -111,7 +111,7 @@ Pattern set for assertions lifter (production code):
 | Pattern | Lifts to |
 |---|---|
 | `BUG_ON(cond);` | `¬cond` precondition (BUG_ON aborts; ¬cond must hold for normal continuation) |
-| `WARN_ON(cond);` | Weaker — log it as an opacity entry, don't lift as hard contract |
+| `WARN_ON(cond);` | Weaker: log it as an opacity entry, don't lift as hard contract |
 | `if (cond) BUG();` | `¬cond` precondition |
 | `if (!ptr) return -ENOMEM;` | `ptr ≠ NULL` precondition (post-return continuation requires it) |
 | `if (ret < 0) return ret;` | `ret ≥ 0` for non-error continuation |
@@ -200,11 +200,11 @@ Pattern set for assertions lifter (production code):
 
 ### PR 5 (folded into PR 2): formerly (a.4)
 
-(a.4) type-derived predicates are now part of PR 2 per the user's "in scope" call. The MVP must include kernel-typed parameter constraints (`__user`, `__rcu`, `__must_hold`, `__acquires`, `__releases`, `size_t`, `gfp_t`) — most kernel functions touch at least one of these and the type-derived constraints are often the only contract signal available for a given function.
+(a.4) type-derived predicates are now part of PR 2 per the user's "in scope" call. The MVP must include kernel-typed parameter constraints (`__user`, `__rcu`, `__must_hold`, `__acquires`, `__releases`, `size_t`, `gfp_t`): most kernel functions touch at least one of these and the type-derived constraints are often the only contract signal available for a given function.
 
 ## Open questions
 
-1. **Where does `provekit-walk-c` live?** Sibling crate `implementations/rust/provekit-walk-c/`, or extension module inside `provekit-walk` (`provekit-walk::c`)? Sibling probably cleaner — different parser, different binary, different test fixtures.
+1. **Where does `provekit-walk-c` live?** Sibling crate `implementations/rust/provekit-walk-c/`, or extension module inside `provekit-walk` (`provekit-walk::c`)? Sibling probably cleaner: different parser, different binary, different test fixtures.
 2. **Do we need clang-sys or the higher-level `clang` crate?** Higher-level is friendlier; clang-sys is closer to the libclang C API. Likely start with `clang` crate (Rust idiomatic), drop to clang-sys if we hit limits.
 3. **How does the kunit lifter resolve which production function a `KUNIT_EXPECT_EQ(test, foo(5), 10)` constrains?** The Java pattern names contracts after the test method. C analogue: same. The contract's name is `testFunction::N`; consumers (compose, prove) treat the test method itself as the function whose contract this is. The fact that the assertion CALLS foo is captured via call_edges, and composition then propagates the test's postcondition through the call chain to foo.
 4. **Sparse + assertions Makefile fix (#519)** already landed. PR 1 should not re-touch those Makefiles.
@@ -224,7 +224,7 @@ End-to-end smoke on the full kernel:
 ## Out of scope (this design)
 
 - Implementing `provekit-walk-c` (this is the design; implementation comes after Sir's review)
-- Type-derived contracts (a.4) — deferred to PR 5
+- Type-derived contracts (a.4): deferred to PR 5
 - Cross-language federation (C contracts composed with Rust contracts via canonical CCP)
 - ProofIR formula language extensions for kernel-specific predicates (e.g. lock state, RCU read-side critical section)
 - Performance / scaling (libclang on full kernel takes hours; that's a phase-tuning concern, not architectural)

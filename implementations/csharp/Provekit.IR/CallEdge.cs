@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// CallEdgeDeclaration — call-edge memento emitted by lifters per
+// CallEdgeDeclaration: call-edge memento emitted by lifters per
 // protocol/specs/2026-05-03-bridge-linkage-protocol.md §1 R1.
 //
 // Wire form (spec §1):

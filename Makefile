@@ -1,25 +1,25 @@
-# ProvekIt — top-level orchestrator
+# ProvekIt: top-level orchestrator
 #
 # Twelve-kit polyglot. TypeScript is the center surface, but every kit
 # owns its native build tool;
 # this Makefile is glue, not a build system. `make ci` runs the Linux-profile
 # gate used by the main GitHub Actions job.
 # Swift is macOS-only; use `make build-swift`, `make test-swift`, `make mint-swift`
-# directly on a macOS host — those targets are excluded from the CI aggregates.
+# directly on a macOS host: those targets are excluded from the CI aggregates.
 #
 # Mainline targets:
-#   make help        — print this help
-#   make ci          — Linux-profile gate (catalog + protocol + live mints + tests)
-#   make conformance — catalog + protocol + live mint CIDs + self-contract tests
-#   make all-mint    — run all 11 Linux-profile mint commands; print CIDs
-#   make bootstrap-self-contracts — re-sign attestations from live artifacts
-#   make ci-accept-check — rebuild release CLI, then validate CICP accepted witnesses
-#   make ci-accept-refresh — rebuild release CLI, then refresh CICP accepted witnesses
-#   make test-all    — run the Linux native test aggregate
+#   make help: print this help
+#   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
+#   make conformance: catalog + protocol + live mint CIDs + self-contract tests
+#   make all-mint: run all 11 Linux-profile mint commands; print CIDs
+#   make bootstrap-self-contracts: re-sign attestations from live artifacts
+#   make ci-accept-check: rebuild release CLI, then validate CICP accepted witnesses
+#   make ci-accept-refresh: rebuild release CLI, then refresh CICP accepted witnesses
+#   make test-all: run the Linux native test aggregate
 #
 # Per-language targets:
-#   make build-rust  — cargo build --release for workspace + tools
-#   make build-cpp   — vendored-blake3 clang++ build of the C++ orchestrator
+#   make build-rust: cargo build --release for workspace + tools
+#   make build-cpp: vendored-blake3 clang++ build of the C++ orchestrator
 #   make test-rust / test-go / test-ts / test-csharp / test-python
 #
 # Determinism:
@@ -75,7 +75,7 @@ endif
 
 .PHONY: help
 help:
-	@echo "ProvekIt — top-level orchestrator"
+	@echo "ProvekIt: top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
 	@echo "  make ci             Linux-profile gate (conformance + test-all)"
@@ -131,7 +131,7 @@ help:
 # Build every kit's binaries. Useful before `make conformance` or before
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
-# NOTE: build-swift is intentionally excluded — it requires a macOS host
+# NOTE: build-swift is intentionally excluded: it requires a macOS host
 # with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
 # directly on macOS.
 .PHONY: build-all
@@ -647,7 +647,7 @@ build-zig:
 	cd implementations/zig/provekit-proof-envelope-zig && zig build
 	cd implementations/zig/mint-zig-self-contracts && zig build
 
-# NOTE: test-swift is intentionally excluded from test-all — it requires a
+# NOTE: test-swift is intentionally excluded from test-all: it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
 .PHONY: test-all
 test-all: test-rust test-go test-ts test-csharp test-python test-java

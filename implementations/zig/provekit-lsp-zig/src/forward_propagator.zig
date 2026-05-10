@@ -1,4 +1,4 @@
-// ForwardPropagator — accumulate posts and emit implication-check diagnostics.
+// ForwardPropagator: accumulate posts and emit implication-check diagnostics.
 // Per: docs/lsp/forward-propagation-floor-v1.md
 const std = @import("std");
 

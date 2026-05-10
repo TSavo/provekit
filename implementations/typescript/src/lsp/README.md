@@ -2,9 +2,9 @@
 
 VS Code (and any LSP-aware editor) integration for ProvekIt. Surfaces:
 
-- **"Proven wrong" diagnostics** — invariants that fail verification
+- **"Proven wrong" diagnostics**: invariants that fail verification
   appear as red squiggles in the editor with the Z3 witness inline.
-- **"What must be true here" hover** — hovering anywhere shows every
+- **"What must be true here" hover**: hovering anywhere shows every
   invariant whose locus contains the hovered line.
 
 ## Architecture
@@ -22,7 +22,7 @@ behind the `verifyProject()` function. The LSP:
 
 When new spec pieces land (full Ed25519 signature verification,
 extension-protocol resolver wired into the verifier, additional
-verdict statuses), the LSP inherits without changes — the verifier
+verdict statuses), the LSP inherits without changes: the verifier
 picks them up.
 
 ## Running

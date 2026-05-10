@@ -54,7 +54,7 @@ def generate_rust(rules: dict) -> str:
     output = []
     output.append("// SPDX-License-Identifier: Apache-2.0")
     output.append("//")
-    output.append("// GENERATED FILE — DO NOT EDIT")
+    output.append("// GENERATED FILE: DO NOT EDIT")
     output.append("// Source: protocol/provekit-ir.cddl")
     output.append("// Generator: tools/generate-from-cddl.py")
     output.append("")
@@ -210,7 +210,7 @@ def generate_typescript(rules: dict) -> str:
     """Generate TypeScript types from CDDL rules."""
     output = []
     output.append("/**")
-    output.append(" * GENERATED FILE — DO NOT EDIT")
+    output.append(" * GENERATED FILE: DO NOT EDIT")
     output.append(" * Source: protocol/provekit-ir.cddl")
     output.append(" * Generator: tools/generate-from-cddl.py")
     output.append(" */")

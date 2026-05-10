@@ -1,4 +1,4 @@
-# Experimental Record: 2026-05-09 — Linux kernel wide substrate
+# Experimental Record: 2026-05-09: Linux kernel wide substrate
 
 ## Context
 
@@ -27,7 +27,7 @@ Substrate is 12.5× larger than the net/-only run.
 | `borrowed-pages-as-scratch-v2.sql` | 2 | 2 | 0 |
 | `copy_from_user-no-bounds.sql` | 9 | 28 | +19 (drivers/net PPP, TUN, debugfs; security/apparmor; security/keys) |
 | `spin-lock-no-unlock.sql` | 2 | 5 | +3 (drivers/net/ethernet: benet, ks8851, cassini) |
-| `rcu-read-lock-no-unlock.sql` | 0 | 1 | +1 (security/smack: smk_seq_start, likely an FP — seq_file lock-start / unlock-stop pattern) |
+| `rcu-read-lock-no-unlock.sql` | 0 | 1 | +1 (security/smack: smk_seq_start, likely an FP: seq_file lock-start / unlock-stop pattern) |
 | `kmalloc-no-free-locally.sql` | 43 | 459 | +416 (crypto/, security/, drivers/net/) |
 
 ## Observation: borrowed-pages-as-scratch is concentrated

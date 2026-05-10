@@ -26,7 +26,7 @@
 // the cpp self-contracts orchestrator runs. The registrar pushes
 // counterparts into the kit collector (same path as every other
 // .invariant.cpp slab); bridges are not yet wired into the cpp bundle
-// because the orchestrator has no bridge-marshal pass — phase-3 work
+// because the orchestrator has no bridge-marshal pass: phase-3 work
 // will fix that and re-mint the bridges with real target_contract_cid
 // values.
 //

@@ -141,7 +141,7 @@ impl Runner {
 
         // Report resolved call-edge obligations using the single
         // `obligations` computation above (do not call process_call_edges
-        // a second time — it's an O(callgraph) walk over all loaded
+        // a second time: it's an O(callgraph) walk over all loaded
         // mementos).
         for (source_cid, target_cid, locus) in &obligations {
             let file = locus
@@ -631,7 +631,6 @@ fn build_implication_obligation(post_formula: &Json, pre_formula: &Json) -> Resu
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Mint an implication memento and cache it to disk.
 /// Returns (cid, envelope_json) so the caller can insert into the pool.
 #[allow(clippy::too_many_arguments)]

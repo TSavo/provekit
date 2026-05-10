@@ -231,7 +231,7 @@ function validateVariantBody(
       break;
     }
     default:
-      // Unknown variant — verdict-trustworthy but witness-opaque.
+      // Unknown variant: verdict-trustworthy but witness-opaque.
       // No error; future variants are allowed.
       break;
   }
@@ -328,7 +328,7 @@ export function validateEnvelope(
   }
 
   // ------------------------------------------------------------------
-  // 2. CID integrity — only if wrapper shape is OK enough to canonicalize
+  // 2. CID integrity: only if wrapper shape is OK enough to canonicalize
   // ------------------------------------------------------------------
 
   const wrapperOk = errors.length === 0;

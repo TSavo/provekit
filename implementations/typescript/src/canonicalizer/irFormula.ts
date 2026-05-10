@@ -1,5 +1,5 @@
 /**
- * IrFormula — input shape consumed by the AST canonicalizer.
+ * IrFormula: input shape consumed by the AST canonicalizer.
  *
  * Re-exported from the IR library (`src/ir/formulas.ts`) so the
  * canonicalizer's pipeline accepts what the IR library emits without

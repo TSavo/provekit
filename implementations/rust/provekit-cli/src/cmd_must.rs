@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit must <file> "<english>"` — translate English to a verified
+// `provekit must <file> "<english>"`: translate English to a verified
 // contract via the configured agent. Drives the propose / validate /
 // mint loop and writes the minted contract memento.
 

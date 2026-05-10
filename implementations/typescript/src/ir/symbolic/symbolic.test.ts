@@ -513,7 +513,7 @@ test("bridge() outside an active collector throws", () => {
 
 test("_resetCollector lets a new beginCollecting succeed even if previous was leaked", () => {
   beginCollecting();
-  // Don't call finish — simulate an exception leaking the active collector.
+  // Don't call finish: simulate an exception leaking the active collector.
   _resetCollector();
   // Now this must NOT throw "already active".
   const finish = beginCollecting();

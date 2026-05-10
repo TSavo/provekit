@@ -11,7 +11,7 @@
  * argument positions are flattened into curried form by callers when
  * needed (SMT-LIB doesn't have first-class function sorts in the AUFLIA
  * fragment; ALL logic supports them via parametric arrays for some
- * solvers — for now we declare uninterpreted function symbols by their
+ * solvers: for now we declare uninterpreted function symbols by their
  * args/return, not by their function-sort).
  */
 

@@ -3,7 +3,7 @@
 # BLAKE3-512 hash for ProvekIt (64-byte XOF output).
 #
 # Backed by a vendored C extension that statically links
-# tools/blake3-vendored/. Zero system deps — no libblake3,
+# tools/blake3-vendored/. Zero system deps: no libblake3,
 # no FFI, no subprocess.
 #
 # Usage:

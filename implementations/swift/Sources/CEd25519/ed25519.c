@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Ed25519 thin wrapper — OpenSSL EVP_PKEY_ED25519 backend.
+ * Ed25519 thin wrapper: OpenSSL EVP_PKEY_ED25519 backend.
  *
  * The C kit uses OpenSSL libcrypto for the same reason the C++ kit does:
  * byte-identical signatures without vendoring ~1500 LOC of field arithmetic.

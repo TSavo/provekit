@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// GENERATED FILE — DO NOT EDIT
+// GENERATED FILE: DO NOT EDIT
 // Source: protocol/provekit-ir.cddl
 // Generator: provekit-ir-codegen
 
@@ -204,7 +204,7 @@ pub enum Sort {
     /// IEEE-754 floating-point sort. `width` is 16, 32, 64, or 128 bits,
     /// matching Charon's FloatTy (F16/F32/F64/F128).
     ///
-    /// ## NaN / IEEE-754 semantics — deliberately NOT modelled here
+    /// ## NaN / IEEE-754 semantics: deliberately NOT modelled here
     ///
     /// This sort carries only the bit-width. It does NOT model:
     ///   - NaN equality (NaN ≠ NaN in IEEE 754, but substrate equality

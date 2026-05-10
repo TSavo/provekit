@@ -1,5 +1,5 @@
 /**
- * `provekit mint` — mint a signed memento from a JSON specification.
+ * `provekit mint`: mint a signed memento from a JSON specification.
  *
  * The framework's core primitive operation, exposed as a CLI command.
  * Reads a memento spec from a file (or stdin), produces a signed
@@ -308,7 +308,7 @@ function parseFlags(argv: string[]): Record<string, string | true> {
 }
 
 function printMintHelp(): void {
-  process.stderr.write(`provekit mint — mint a signed memento
+  process.stderr.write(`provekit mint: mint a signed memento
 
 Usage:
   provekit mint property  [--spec <path>] [--key <path>] [--out <path>]

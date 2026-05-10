@@ -6,8 +6,8 @@
 // (sections 2, 5, 9), this module is the single canonical home for the
 // compose primitive. Every per-language lifter (Rust walk, C kernel-doc,
 // future Java / Go / TypeScript / Python lifters) calls into THIS function
-// either directly (Rust linkage), via the C ABI wrapper (planned in a
-// follow-up), or via the JSON-RPC subprocess transport (also planned).
+// either directly (Rust linkage), via the C ABI wrapper in `ffi`, or via
+// subprocess transports.
 //
 // CCP §5 mandates:
 //   1. Pure. No state, no I/O, no clock, no random.
@@ -440,7 +440,7 @@ pub fn build_memento_value(c: &FunctionContractMemento) -> Arc<Value> {
 /// Construct the canonical Value tree for a function-contract memento.
 /// Public so walk's AST-side builders can compute their own CIDs without
 /// having to round-trip through a memento struct first.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: schema-shaped public API used by provekit-walk, which this pass must not edit.
 pub fn build_value(
     fn_name: &str,
     formals: &[String],

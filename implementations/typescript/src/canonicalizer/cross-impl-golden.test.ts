@@ -284,7 +284,7 @@ describe("cross-impl golden: TS IR fixture CIDs", () => {
   }
 
   for (const fixture of formulaFixtures) {
-    it(`"${fixture.name}" — BLAKE3-512 CID matches catalog pin`, () => {
+    it(`"${fixture.name}": BLAKE3-512 CID matches catalog pin`, () => {
       const formula = buildFormulaFor(fixture.name)!;
       const bytes = canonicalEncode(formula);
       const actualHash = computeCid(bytes);
@@ -296,7 +296,7 @@ describe("cross-impl golden: TS IR fixture CIDs", () => {
   }
 
   for (const fixture of declarationFixtures) {
-    it(`"${fixture.name}" — declaration BLAKE3-512 CID matches catalog pin`, () => {
+    it(`"${fixture.name}": declaration BLAKE3-512 CID matches catalog pin`, () => {
       const value = buildDeclarationsFor(fixture.name)!;
       const bytes = canonicalEncode(value);
       const actualHash = computeCid(bytes);

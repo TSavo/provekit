@@ -1,5 +1,5 @@
 /**
- * provekit-lift (TypeScript) — workspace lift toolchain.
+ * provekit-lift (TypeScript): workspace lift toolchain.
  *
  * Walks a TS project, parses every `.ts` file with the TypeScript
  * Compiler API, dispatches each parsed source to all registered
@@ -125,7 +125,7 @@ function enumerateTsFiles(root: string): string[] {
       } else if (st.isFile()) {
         const ext = extname(e);
         if (ext === ".ts" || ext === ".tsx" || ext === ".mts" || ext === ".cts") {
-          // Skip declaration files — no value, no annotations to lift.
+          // Skip declaration files: no value, no annotations to lift.
           if (e.endsWith(".d.ts")) continue;
           out.push(p);
         }
@@ -273,7 +273,7 @@ export function mintProof(decls: ContractDecl[], opts: LiftOptions): MintOutput 
         deduplicated += 1;
         continue;
       }
-      // Skip duplicate with different body — log warning but don't fail
+      // Skip duplicate with different body: log warning but don't fail
       if (!opts.quiet) {
         process.stderr.write(
           `provekit-lift: warn: skipping duplicate contract "${d.name}" with different body (from ${d.sourcePath})\n`,

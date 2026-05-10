@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Authoring tag — typed union mirrored from the Rust/C++ kits. Lifted
+// Authoring tag: typed union mirrored from the Rust/C++ kits. Lifted
 // to a discriminated record hierarchy.
 
 using V = Provekit.Canonicalizer.Value;

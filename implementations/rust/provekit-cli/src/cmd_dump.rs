@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit dump <PROOF-FILE>` — pretty-print catalog members + bodies.
+// `provekit dump <PROOF-FILE>`: pretty-print catalog members + bodies.
 //
 // Uses `provekit_verifier::cbor_decode` to parse the CBOR catalog, then
 // re-decodes each member's JCS-JSON body via serde_json. We surface the

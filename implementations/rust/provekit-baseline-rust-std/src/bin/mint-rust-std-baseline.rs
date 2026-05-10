@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-rust-std-baseline — orchestrator binary for the rust-std
+// mint-rust-std-baseline: orchestrator binary for the rust-std
 // foundation-baseline catalog.
 //
 // 1. Walks the seven slab files (string/vec/option/result/slice/

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Bridge IR v1.4 — C# CID conformance + round-trip test.
+// Bridge IR v1.4: C# CID conformance + round-trip test.
 // Pins against the canonical bridge_decl_v1_4 fixture in
 // conformance/fixtures.toml. Mirrors rust's
 // provekit-claim-envelope/tests/bridge_v14_roundtrip.rs.

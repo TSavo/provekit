@@ -27,7 +27,7 @@ body:
     attributes:
       label: Affected kit (if specific)
       options:
-        - "n/a — substrate-level"
+        - "n/a: substrate-level"
         - rust
         - go
         - java

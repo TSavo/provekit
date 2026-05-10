@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint.zig — slab walker + content CID + proof envelope assembler.
+// mint.zig: slab walker + content CID + proof envelope assembler.
 //
 // What this module DOES:
 //   1. Walks `slab.authorAll` to gather the canonical contract set.

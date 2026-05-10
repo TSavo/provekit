@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// std::vec slab — builtins on `Vec<T>`.
+// std::vec slab: builtins on `Vec<T>`.
 //
 // Coverage (10 builtins): Vec_new, Vec_with_capacity, Vec_len,
 // Vec_is_empty, Vec_push, Vec_pop, Vec_clear, Vec_iter, Vec_as_slice,

@@ -1,14 +1,14 @@
 /**
- * resolve-bridge-target — Stage 3 of the bridge enforcement workflow.
+ * resolve-bridge-target: Stage 3 of the bridge enforcement workflow.
  *
  * Hash lookup: given a bridge's targetContractCid + the unified
  * memento pool from load-all-proofs, returns the resolved contract
  * memento's pre-formula (the precondition the verifier instantiates
- * at the call site). O(1) — no file IO; the pool was built once at
+ * at the call site). O(1): no file IO; the pool was built once at
  * Stage 1.
  *
  * Returns null when the target CID isn't in the pool (target memento
- * not locally available — install the missing kit), when the matched
+ * not locally available: install the missing kit), when the matched
  * memento isn't a contract variant, or when the contract has no `pre`
  * formula (preconditions are the bridge-enforcement obligation source).
  *

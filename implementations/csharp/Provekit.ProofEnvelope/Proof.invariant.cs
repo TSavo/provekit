@@ -9,7 +9,7 @@
 //   Build is the deterministic .proof catalog encoder. Its `Cid` field
 //   IS the catalog filename ("blake3-512:" + 128 hex). Identical input
 //   produces byte-identical output (the framework's most important
-//   determinism claim — verified empirically by mint-twice in this
+//   determinism claim: verified empirically by mint-twice in this
 //   orchestrator's main).
 
 using static Provekit.IR.Predicates;

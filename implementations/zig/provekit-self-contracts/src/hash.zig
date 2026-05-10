@@ -63,6 +63,6 @@ test "distinct inputs distinct hashes" {
 //     contract Decls against rust/python/go/ts.
 //   * `byte_equivalence_test.zig` (this package) pins the empty
 //     contractSetCid against the value committed in
-//     `.provekit/self-contracts-attestations/zig.json` — that pin
+//     `.provekit/self-contracts-attestations/zig.json`: that pin
 //     transitively exercises hash.zig.
 // No additional vector is pinned here.

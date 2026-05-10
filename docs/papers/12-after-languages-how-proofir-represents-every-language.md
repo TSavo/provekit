@@ -18,7 +18,7 @@ Today, the lifter family is the largest violation of that axiom. The "if/else tw
 
 This paper argues that the right shape is:
 
-1. Each algorithm gets a content-addressed memento — its identity is its CID.
+1. Each algorithm gets a content-addressed memento: its identity is its CID.
 2. Each language's lifter source becomes a *binding-claim* memento that asserts correspondence with an algorithm CID.
 3. Discharge of the binding-claim's refinement obligation produces a signed receipt.
 4. Federation across language ports happens by the algorithm CID, not by source-code sharing.
@@ -49,7 +49,7 @@ Earlier After-X papers established:
 - Protocol Evolution Protocol (PEP) handling spec changes (paper 10).
 - Proof-Carrying Change as the commit-level discipline (paper 11).
 
-This paper extends the federation principle one level inward. The substrate's *production mechanism* — the lifters that emit canonical predicates — is itself reified as substrate participants under PEP-governed evolution.
+This paper extends the federation principle one level inward. The substrate's *production mechanism*: the lifters that emit canonical predicates: is itself reified as substrate participants under PEP-governed evolution.
 
 ## §3: The mechanism (summary)
 
@@ -76,7 +76,7 @@ We state and prove the load-bearing properties of this discipline. Notation: `A`
 
 > If algorithm `A` is sound (i.e. `A.post` holds whenever `A.pre` holds, under `A.effects`) and binding `B` refines `A` with `discharge(B) = UNSAT`, then `B` is sound.
 
-*Proof.* By AMP §1.4's refinement clauses (1)–(3): every input B accepts is in A's pre-image after projection; B's output equals A's; B's effects are a subset of A's. Soundness composes through these inclusions. □
+*Proof.* By AMP §1.4's refinement clauses (1)-(3): every input B accepts is in A's pre-image after projection; B's output equals A's; B's effects are a subset of A's. Soundness composes through these inclusions. □
 
 ### Lemma 3 (Drift Detection)
 
@@ -114,7 +114,7 @@ The catalog's coverage of any language is determined by which algorithms have be
 
 > Each algorithm memento `A` corresponds to an abstract domain pair `(γ, α)` in Cousot's sense, where `γ : IrFormula → ConcreteSemantics` is the concretization of A's output and `α : ConcreteSemantics → IrFormula` is the abstraction implicit in `A.pre`'s recognizer. The algorithm catalog as a whole is the reduced product of all registered abstract domains.
 
-*Proof sketch.* `A.pre` partitions the concrete input space into "matched" and "unmatched"; the matched subset is the abstract domain's denotation. `A.post` gives the abstract value (an IrFormula) for each matched input. The pair `(α, γ)` is a Galois connection over the partial order on IrFormula (entailment). The catalog's joint inference over an input is the meet (in IrFormula's lattice) of every matching algorithm's output — this is precisely Cousot's reduced product. □
+*Proof sketch.* `A.pre` partitions the concrete input space into "matched" and "unmatched"; the matched subset is the abstract domain's denotation. `A.post` gives the abstract value (an IrFormula) for each matched input. The pair `(α, γ)` is a Galois connection over the partial order on IrFormula (entailment). The catalog's joint inference over an input is the meet (in IrFormula's lattice) of every matching algorithm's output: this is precisely Cousot's reduced product. □
 
 Implication: the substrate's algorithm catalog *is* Cousot's lattice of abstractions, made content-addressed. Cousot 1977 named the structure; the substrate gives it a federation mechanism. After Verification (paper 07) anticipated this with the Heyting category framing; this paper makes the lattice explicit.
 
@@ -130,7 +130,7 @@ The unification: the seemingly-vast list of language-specific interaction primit
 
 > The substrate's lifter family is itself a substrate participant. Each lifter binary's source code is content-addressable (`body_cid` of its binding-claim memento). The lifter's correctness is a substrate-verifiable claim. The substrate's first axiom *Supra omnia, rectum* applies to its own production mechanism by the same mechanism it applies to user code.
 
-*Proof.* The binding-claim memento's `body_cid` field references the lifter's source code bytes (BLAKE3-512). The refinement obligation in `B.post` is itself an IrFormula. The discharge of that obligation is mechanical via the prove portfolio — the same portfolio that discharges any user-code contract. The lifter's correctness receipt is signed and stored in the substrate alongside any other receipt. □
+*Proof.* The binding-claim memento's `body_cid` field references the lifter's source code bytes (BLAKE3-512). The refinement obligation in `B.post` is itself an IrFormula. The discharge of that obligation is mechanical via the prove portfolio: the same portfolio that discharges any user-code contract. The lifter's correctness receipt is signed and stored in the substrate alongside any other receipt. □
 
 This closes the inconsistency stated in §0. The substrate now applies its first axiom to itself, by the same mechanisms it applies to everything else, via the same content-addressed federation, with the same composability properties.
 
@@ -208,9 +208,9 @@ The catalog mechanism extends naturally to algorithms whose specifications cite 
 
 ## §8: The closing principle
 
-The substrate's first axiom is *Supra omnia, rectum*. The substrate must apply that axiom to itself. Until today, it did not — the lifter family's algorithms were uncontrolled drift across language ports, no canonical reference, no content-addressed identity, no mechanical drift detection. The substrate produced canonical contracts via uncanonical machinery.
+The substrate's first axiom is *Supra omnia, rectum*. The substrate must apply that axiom to itself. Until today, it did not: the lifter family's algorithms were uncontrolled drift across language ports, no canonical reference, no content-addressed identity, no mechanical drift detection. The substrate produced canonical contracts via uncanonical machinery.
 
-This paper's mechanism — algorithm mementos, binding-claim mementos, discharge receipts — closes the inconsistency. Federation by CID. Drift mechanically detectable. Soundness preserved across bindings. The catalog is Cousot's lattice of abstractions made content-addressed. The substrate's production mechanism becomes auditable substrate.
+This paper's mechanism: algorithm mementos, binding-claim mementos, discharge receipts: closes the inconsistency. Federation by CID. Drift mechanically detectable. Soundness preserved across bindings. The catalog is Cousot's lattice of abstractions made content-addressed. The substrate's production mechanism becomes auditable substrate.
 
 After Languages, every claim emitted by every lifter carries provenance to a content-addressed algorithm + a content-addressed binding-claim + a discharge receipt. The substrate's first axiom finally applies to its own machinery.
 

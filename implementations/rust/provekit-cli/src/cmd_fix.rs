@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit fix <bug>` — agent produces patches; we apply them in a
+// `provekit fix <bug>`: agent produces patches; we apply them in a
 // sandbox, verify, and either ship or feed back. v1: stub agent +
 // trivial verifier (always-green when stub is used; the verifier hook
 // is a closure callers can override).
@@ -44,7 +44,7 @@ pub struct FixArgs {
     pub out: OutputFlags,
 }
 
-/// Default verifier — accepts any patch set. v1 placeholder; the real
+/// Default verifier: accepts any patch set. v1 placeholder; the real
 /// hook will run cargo build / pnpm test in a sandbox. For the stub
 /// agent path this is sufficient because the stub does not produce
 /// breaking patches.

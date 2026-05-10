@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-symbolic — Rust kit. Mirrors the C++ kit at
+// provekit-ir-symbolic: Rust kit. Mirrors the C++ kit at
 // implementations/cpp/provekit-ir-symbolic/include/provekit/ir.hpp.
 //
 // Maximal-uniformity IR per protocol/specs/2026-04-30-ir-formal-grammar.md
@@ -82,7 +82,7 @@ pub fn Bool() -> Sort {
 }
 
 // ---------------------------------------------------------------------------
-// Term — VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort)
+// Term: VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -147,7 +147,7 @@ pub fn out() -> Rc<Term> {
     make_var("out")
 }
 
-/// `parse_int(s)` — bridge primitive. Registers with the bridge
+/// `parse_int(s)`: bridge primitive. Registers with the bridge
 /// registry on first call (process-local). Returns a CtorTerm.
 pub fn parse_int(s: Rc<Term>) -> Rc<Term> {
     ensure_kit_bridges_registered();
@@ -158,7 +158,7 @@ pub fn parse_int(s: Rc<Term>) -> Rc<Term> {
 }
 
 // ---------------------------------------------------------------------------
-// Formula — three kinds: atomic / connective / quantifier
+// Formula: three kinds: atomic / connective / quantifier
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -230,7 +230,7 @@ pub fn or_(operands: Vec<Rc<Formula>>) -> Rc<Formula> {
 }
 
 // ---------------------------------------------------------------------------
-// Quantifier counter — fresh names for bound variables
+// Quantifier counter: fresh names for bound variables
 // ---------------------------------------------------------------------------
 
 thread_local! {

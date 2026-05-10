@@ -1,4 +1,4 @@
-// polyglot_smoke.rs — integration test for the rust↔go linker pass.
+// polyglot_smoke.rs: integration test for the rust↔go linker pass.
 //
 // Verifies:
 //   1. Failure case: a Go caller without a post-condition calls a Rust
@@ -24,7 +24,7 @@
 // (contracts ∪ call-edges).  The smoke test passing is the empirical
 // confirmation of that claim.
 
-// Use provekit-linker directly — the extracted library the CLI now delegates
+// Use provekit-linker directly: the extracted library the CLI now delegates
 // to.  No more provekit_cli_test_support shim needed.
 
 use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
@@ -119,7 +119,7 @@ fn rpc(sock: &PathBuf, req: &serde_json::Value) -> serde_json::Value {
 // once and use it throughout.
 
 fn make_process_contract() -> LinkerContract {
-    // Use a stable CID for test reproducibility — the actual byte value
+    // Use a stable CID for test reproducibility: the actual byte value
     // is derived from the JCS-canonical form of
     // {name:"process", outBinding:"out", pre:{...}} hashed with BLAKE3-512.
     // For the smoke test we use a pre-computed stable fixture CID.
@@ -146,7 +146,7 @@ fn make_process_contract() -> LinkerContract {
 //
 // GoCallerFail has a //provekit:contract annotation but no post-condition.
 // (The go lifter emits `post: true` as a trivial placeholder, but the
-// linker sees it as effectively unconstrained — any caller without a
+// linker sees it as effectively unconstrained: any caller without a
 // meaningful post cannot discharge the callee's pre.)
 //
 // For the smoke test we model this as post_json: None, which is what the
@@ -263,14 +263,14 @@ fn test_failure_case_emits_linker_error() {
 }
 
 // -------------------------------------------------------------------
-// Test 2: Success case — clean bundle, zero errors
+// Test 2: Success case: clean bundle, zero errors
 // -------------------------------------------------------------------
 
 #[test]
 fn test_success_case_clean_bundle() {
     let rust_contract = make_process_contract();
     let go_contract = make_go_caller_ok_contract();
-    // No cgo call-edge — GoCallerOk doesn't call C.process
+    // No cgo call-edge: GoCallerOk doesn't call C.process
 
     let output = link(LinkerInputs {
         contracts: vec![rust_contract, go_contract],
@@ -302,7 +302,7 @@ fn test_success_case_clean_bundle() {
 }
 
 // -------------------------------------------------------------------
-// Test 3: Byte-determinism — two runs same inputs → same linkBundleCid
+// Test 3: Byte-determinism: two runs same inputs → same linkBundleCid
 // -------------------------------------------------------------------
 
 #[test]
@@ -388,13 +388,13 @@ fn test_failure_and_success_cids_differ() {
 // Test 5: Daemon-level polyglot smoke
 //
 // Spawns `provekit-linkerd` and simulates an LSP plugin:
-//   a. parseFile (success case — no call edges) → clean diagnostics
+//   a. parseFile (success case: no call edges) → clean diagnostics
 //   b. parseFile again same source → projectStatus CID is byte-identical
 //      (daemon-level byte-identity; note: the CID values differ from the
 //       library-fixture CIDs because the daemon uses synthetic-source lift
-//       which produces synthetic contracts — exact values deferred to a
+//       which produces synthetic contracts: exact values deferred to a
 //       dedicated byte-identity audit; determinism is asserted here)
-//   c. parseFile (failure case — source triggers lifter) → diagnostics shape OK
+//   c. parseFile (failure case: source triggers lifter) → diagnostics shape OK
 //   d. shutdown → daemon exits cleanly
 //
 // The test uses the `--idle-timeout-ms 30000` flag (30 s) so the daemon

@@ -5,7 +5,7 @@
  * Node 12). No external dependency.
  *
  * Signing scope: canonicalized envelope with `cid` and `producerSignature`
- * elided — same bytes used for CID construction.
+ * elided: same bytes used for CID construction.
  *
  * Signature encoding (v1.1.0): self-identifying
  *   `"ed25519:" + base64(raw_signature_bytes)`
@@ -61,7 +61,7 @@ export function signEnvelope(
 ): string {
   const input = envelopeForHashing(envelope);
   const bytes = canonicalEncode(input);
-  // `sign(algorithm, data, key)` — algorithm is null for ed25519
+  // `sign(algorithm, data, key)`: algorithm is null for ed25519
   // because the algorithm is encoded in the key itself.
   const sig = sign(null, bytes, privateKey);
   return SIGNATURE_PREFIX + sig.toString("base64");

@@ -9,7 +9,7 @@ Any language. Any binary. One RPC protocol. Red underlines in VS Code.
 3. You add one line to `.provekit/config.toml` pointing at your binary.
 4. `provekit-lsp` spawns it, sends source files, gets back contract annotations, verifies them, and paints red underlines in the IDE.
 
-That's it. No recompilation of the main LSP server. No Rust required. Your plugin can be written in Go, C#, C++, Zig, Python, JavaScript, OCaml — whatever parses your source language best.
+That's it. No recompilation of the main LSP server. No Rust required. Your plugin can be written in Go, C#, C++, Zig, Python, JavaScript, OCaml: whatever parses your source language best.
 
 ## Plugin Protocol (`provekit-lsp-plugin/1`)
 
@@ -43,9 +43,9 @@ The main LSP server spawns your binary with `--rpc` appended, then speaks line-d
 ```
 
 Annotation kinds:
-- `"implement"` — function bound to a contract CID. Must include `target_cid`.
-- `"contract"` — function declares its own contract.
-- `"verify"` — function marked for verification.
+- `"implement"`: function bound to a contract CID. Must include `target_cid`.
+- `"contract"`: function declares its own contract.
+- `"verify"`: function marked for verification.
 
 ### 3. `shutdown`
 
@@ -122,7 +122,7 @@ Each example is ~100-150 lines, zero dependencies (or minimal stdlib-only deps),
 
 ## Source annotation conventions per language
 
-Plugins should detect whatever syntax makes sense for the host language. There is no mandated syntax — the plugin owns the surface. Common patterns:
+Plugins should detect whatever syntax makes sense for the host language. There is no mandated syntax: the plugin owns the surface. Common patterns:
 
 **Go:**
 ```go

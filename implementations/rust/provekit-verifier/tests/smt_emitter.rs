@@ -311,7 +311,7 @@ fn free_var_outside_quantifier_is_declared_at_top() {
 
 #[test]
 fn shadowing_quantifier_does_not_declare_outer_var() {
-    // forall n. forall n. n > 0  — inner n shadows; only one declare needed (none, since both bind).
+    // forall n. forall n. n > 0: inner n shadows; only one declare needed (none, since both bind).
     let f = json!({
         "kind": "forall",
         "name": "n",
@@ -394,7 +394,7 @@ fn emitted_script_ends_with_check_sat() {
 }
 
 // ---------------------------------------------------------------------------
-// Bad inputs — fail-closed
+// Bad inputs: fail-closed
 // ---------------------------------------------------------------------------
 
 #[test]

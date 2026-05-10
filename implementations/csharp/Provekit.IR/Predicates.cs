@@ -3,7 +3,7 @@
 // Atomic predicate constructors + connective constructors. The atomic
 // predicate names are protocol-locked: ASCII "=", ">", "<" and the
 // UTF-8 sequences for ≥, ≤, ≠ (U+2265, U+2264, U+2260). Cross-language
-// hash agreement requires these exact byte sequences — see the
+// hash agreement requires these exact byte sequences: see the
 // canonicalizer's unicode round-trip tests.
 
 namespace Provekit.IR;
@@ -20,7 +20,7 @@ public static class Predicates
     public static Formula Lt(Term a, Term b) => Atomic("<", a, b);
     public static Formula Lte(Term a, Term b) => Atomic("≤", a, b); // ≤
 
-    // Connectives — unified `operands` array. `not` takes one operand;
+    // Connectives: unified `operands` array. `not` takes one operand;
     // `implies` takes two (antecedent, consequent); `and`/`or` take any.
     private static Formula Conn(string kind, params Formula[] ops) =>
         new ConnectiveFormula(kind, ops);

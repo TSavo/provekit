@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// JcsValue + JcsCanonical — RFC 8785 JSON Canonicalization Scheme.
+// JcsValue + JcsCanonical: RFC 8785 JSON Canonicalization Scheme.
 //
 // Mirrors the go reference at
 // implementations/go/provekit-ir-symbolic/canonicalizer/encoder.go and the

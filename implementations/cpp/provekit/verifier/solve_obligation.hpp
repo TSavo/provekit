@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// SolveObligationStage — Stage 5. Runs Z3 on the SMT-LIB script and
+// SolveObligationStage: Stage 5. Runs Z3 on the SMT-LIB script and
 // classifies the verdict. Uses std::async + std::future to allow the
 // orchestrator to fan callsites out in parallel while still letting
 // the solver invocation itself remain a clean blocking subprocess.

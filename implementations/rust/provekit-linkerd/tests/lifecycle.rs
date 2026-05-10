@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// lifecycle.rs — daemon lifecycle integration tests per spec §8.
+// lifecycle.rs: daemon lifecycle integration tests per spec §8.
 //
 // Tests:
 //   1. start -> connect -> send parseFile -> get valid response -> shutdown -> daemon exits.
@@ -186,7 +186,7 @@ fn test_02_parse_file_response_shape() {
 
     assert_eq!(resp["jsonrpc"], "2.0", "jsonrpc field");
     assert_eq!(resp["id"], 2, "id field matches");
-    // Should have a result (not an error) — rust-kit lifter is implemented.
+    // Should have a result (not an error): rust-kit lifter is implemented.
     assert!(
         resp.get("error").is_none() || resp["error"].is_null(),
         "parseFile should not error for rust-kit source: {:?}",
@@ -217,7 +217,7 @@ fn test_02_parse_file_response_shape() {
 }
 
 // -------------------------------------------------------------------
-// Test 3: idle timeout — daemon shuts down after idle period.
+// Test 3: idle timeout: daemon shuts down after idle period.
 // -------------------------------------------------------------------
 
 #[test]
@@ -239,7 +239,7 @@ fn test_03_idle_timeout_exits() {
     drop(stream); // disconnect immediately
 
     // Give the daemon time to detect zero clients and trigger idle timeout.
-    // The idle watcher sleeps for `idle_timeout` then checks — so worst case
+    // The idle watcher sleeps for `idle_timeout` then checks: so worst case
     // we wait 400ms + some poll overhead. Give it 3s total.
     let start = Instant::now();
     let mut exited = false;
@@ -303,7 +303,7 @@ fn test_04_socket_permissions() {
 }
 
 // -------------------------------------------------------------------
-// Test 5: cache hit / miss — projectStatus differs only when content changes.
+// Test 5: cache hit / miss: projectStatus differs only when content changes.
 // -------------------------------------------------------------------
 
 #[test]
@@ -348,7 +348,7 @@ fn test_05_cache_hit_miss_via_project_status() {
         .unwrap_or("")
         .to_string();
 
-    // Same parseFile again — cache hit, same CID.
+    // Same parseFile again: cache hit, same CID.
     let _ = send_recv(&mut stream, &parse_a.clone());
     let status_a2_resp = send_recv(&mut stream, &status_req.clone());
     let cid_a2 = status_a2_resp["result"]["linkBundleCid"]
@@ -360,7 +360,7 @@ fn test_05_cache_hit_miss_via_project_status() {
         "cache hit: same source => same linkBundleCid"
     );
 
-    // Different source — cache miss, different CID.
+    // Different source: cache miss, different CID.
     let parse_b = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 12,

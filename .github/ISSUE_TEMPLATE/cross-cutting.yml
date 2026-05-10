@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        For substrate-level work that touches multiple kits or components — mint pipeline,
+        For substrate-level work that touches multiple kits or components: mint pipeline,
         linkerd dispatch consolidation, conformance gate, CI provisioning, etc.
         Add `kit:*` / `component:*` / `protocol:*` / `area:*` labels as relevant.
   - type: textarea

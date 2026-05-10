@@ -8,7 +8,7 @@
 //
 // IMPORTANT: Provekit.IR.Collector is process-global static. This test
 // shares the "CollectorSerial" collection with any other test that calls
-// BeginCollecting/Finish, so xUnit serializes them — guaranteeing no
+// BeginCollecting/Finish, so xUnit serializes them: guaranteeing no
 // cross-test collector pollution.
 //
 // No CID value pin yet: first run establishes the CID via the

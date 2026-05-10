@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// lift_pass — runs every registered lift adapter against the consumer
+// lift_pass: runs every registered lift adapter against the consumer
 // crate's `src/` tree as part of `cargo build`.
 //
 // This is the wiring that makes "lift" disappear as a separate command.
@@ -22,12 +22,12 @@
 //     verus). Discovered here and reported under
 //     `VerificationReport::lift_count`.
 //
-// The two lanes are kept parallel — we deliberately do NOT collapse the
+// The two lanes are kept parallel: we deliberately do NOT collapse the
 // rich `ContractDecl` IR from the lift adapters into the coarse
 // `FormulaShape` the source-walker uses to drive Z3. The Z3-driven Tier 3
 // verification still keys off the inventory lane only; lift-derived
 // contracts mint into the `.proof` manifest but don't (yet) drive the
-// Tier 3 SMT round-trip. That's a deliberate v0 boundary — the lift
+// Tier 3 SMT round-trip. That's a deliberate v0 boundary: the lift
 // IR is rich enough to mint, but routing the rich IR into the existing
 // shape-based Z3 emitter would require a second-pass translator, which
 // is out of scope for this PR.
@@ -136,7 +136,7 @@ pub fn run_lift_pass(manifest_dir: &Path, enabled: &[&str]) -> LiftPassReport {
         let parsed = match syn::parse_file(&text) {
             Ok(p) => p,
             Err(e) => {
-                // Lifters don't own parse errors — this is the same
+                // Lifters don't own parse errors: this is the same
                 // tree rustc is about to compile. Log silently and move
                 // on so a single bad file doesn't kill the build.
                 report

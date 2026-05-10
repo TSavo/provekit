@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Library validation runner — task #129.
+ * Library validation runner: task #129.
  *
  * For every `.dsl` file in `.provekit/principles/`, exercise the DSL
  * against a buggy fixture and a clean fixture. Report:
@@ -50,7 +50,7 @@ interface FixturePair {
   clean: string;
   // Substitution applied to the DSL source before evaluation, if needed.
   // Mirrors the production-extractor quirk where callee_name is the full
-  // member-access text (`arr.find` not `find`) — see the equivalence test
+  // member-access text (`arr.find` not `find`): see the equivalence test
   // harness for prior art.
   dslPatch?: (src: string) => string;
 }
@@ -118,7 +118,7 @@ const FIXTURES: Record<string, FixturePair> = {
     clean: "function f(x: string | null) { return x?.length; }",
   },
   "loop-accumulator-overflow": {
-    // DSL filters on iterates.loop_kind == "for" — must be a classic
+    // DSL filters on iterates.loop_kind == "for": must be a classic
     // `for (...)`, not for-of (extractor capability gap acknowledged).
     buggy:
       "function f(n: number) { let s = 0; for (let i = 0; i < n; i++) { s += i; } return s; }",
@@ -131,7 +131,7 @@ const FIXTURES: Record<string, FixturePair> = {
     clean: "function f(cond: boolean) { let x = 0; if (cond) { x = 1; } else { x = 2; } return x; }",
   },
   "or-chain-extended-by-fix": {
-    // No matching buggy/clean pair — this principle relies on
+    // No matching buggy/clean pair: this principle relies on
     // `was_replaced_by_addition`, a diff-context relation. It cannot be
     // exercised by a static fixture pair without a synthetic diff context.
     // We mark it accordingly below.
@@ -193,7 +193,7 @@ interface Row {
 
 // Principles whose DSL gates on diff-context-only relations
 // (`is_in_dirty_set`, `was_replaced_by_addition`). These cannot fire on a
-// static fixture pair by design — they're only meaningful during corpus
+// static fixture pair by design: they're only meaningful during corpus
 // mining where pre/post diff context is active. Their adversarial story
 // is a corpus-precision measurement, not a fixture-pair test.
 const DIFF_CONTEXT_ONLY = new Set([

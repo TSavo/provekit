@@ -1,13 +1,13 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-recognize-report.ts — for each cloned BugsJS project,
+ * scripts/harvest-recognize-report.ts: for each cloned BugsJS project,
  * extract HarvestCandidates (Phase 1) and run recognition (Phase 2-A) against
  * the current principle library. Inspection-only.
  *
  * The headline number this report produces: of the candidates that survive
  * Phase 1 filters, how many are already covered by an existing principle?
  * That ratio determines how many candidates would need Phase 2-B (discovery)
- * — the expensive LLM path.
+ *: the expensive LLM path.
  *
  * Usage:
  *   npx tsx scripts/harvest-recognize-report.ts                # default ~/bugsjs, all projects

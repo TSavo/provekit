@@ -9,7 +9,7 @@
 // `npm install -g provekit` distribution channel without that conversion.
 //
 // tsx is a dependency (not devDependency) so it ships with the global install.
-// next/vite/vitest ship similarly under the hood — this is a known-good shape.
+// next/vite/vitest ship similarly under the hood: this is a known-good shape.
 
 const { spawn } = require("child_process");
 const path = require("path");
