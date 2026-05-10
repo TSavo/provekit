@@ -1,0 +1,24 @@
+[package]
+name = "provekit-ir-compiler-c"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: C11 compile-mode IR term compiler."
+
+[dependencies]
+provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+provekit-ir-types = { path = "../provekit-ir-types" }
+serde_json.workspace = true
+
+[dev-dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+tempfile = "3"
+
+[[bin]]
+name = "provekit-ir-c"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_ir_compiler_c"
+path = "src/lib.rs"

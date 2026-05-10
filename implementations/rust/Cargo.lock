@@ -1673,6 +1673,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-c"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "provekit-ir-compiler-coq"
 version = "0.1.0"
 dependencies = [
