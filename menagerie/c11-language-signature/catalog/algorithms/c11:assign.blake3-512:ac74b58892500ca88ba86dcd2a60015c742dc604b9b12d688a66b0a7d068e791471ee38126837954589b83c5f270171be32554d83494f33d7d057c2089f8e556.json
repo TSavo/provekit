@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:assign",
+    "formals": [
+      "target",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "LValue",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "assign",
+      "arity": [
+        "LValue",
+        "Expr"
+      ],
+      "result": "Stmt",
+      "wp": "store value into target and update state"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemWrite"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "ENGtauI98UC7z/sMbUoOyUPm3TnSJUk27CvxjfvVCTRitJKvGbnNRfRtZjcZXJxtCfg/E+Afhs+dcYMfuMBCBg=="
+  }
+}

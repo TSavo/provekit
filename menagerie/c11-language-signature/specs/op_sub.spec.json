@@ -1,0 +1,64 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:sub",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "no_signed_overflow",
+    "args": [
+      {
+        "kind": "op",
+        "name": "sub",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "sub",
+    "arity": [
+      "Int",
+      "Int"
+    ],
+    "result": "Int",
+    "wp": "mathematical integer subtraction when no overflow holds"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Trap"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

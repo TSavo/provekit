@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "c11:if-idemp",
+    "formals": [
+      "p",
+      "a"
+    ],
+    "formal_sorts": [
+      "blake3-512:42861c5bfe321de3b9635e981bcf05318dfc872419761202b49b7746843924a9061945087b89b5bbac0b03ffbf8199fec7d49c77f95404e93eae138557f1d026",
+      "blake3-512:e2dec518b73f715c75196763f29e90649e88ca82762cceb17fd98837be3e8854c1631ddaade51c80260b155b5b2bc2b4eef10d65710a9bbecb4af2b7f7b0bd27"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "if",
+        "args": [
+          {
+            "kind": "var",
+            "name": "p"
+          },
+          {
+            "kind": "var",
+            "name": "a"
+          },
+          {
+            "kind": "var",
+            "name": "a"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "var",
+        "name": "a"
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:b5288a40863c28161f91a947cbe09c809798e66f4374fb9e7738c5c96fe639c3e8ee012875a5e924e10df156360481b1e14182e30ed9cb5949534f0567a71126",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "j+lDbrlqNhUof+G3SGV3ri4q8tr+1y8HK4xrp5jNodpA1A6Z6RwMBc2qcb7Sga+T+TOwyVKA+a9uGIVSa/csCQ=="
+  }
+}

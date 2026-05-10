@@ -1,0 +1,63 @@
+{
+  "kind": "language_signature",
+  "fn_name": "c:c11",
+  "sorts": [
+    "sort_stmt.spec.json",
+    "sort_expr.spec.json",
+    "sort_lvalue.spec.json",
+    "sort_int.spec.json",
+    "sort_ptr.spec.json",
+    "sort_bool.spec.json",
+    "sort_unit.spec.json",
+    "sort_fncontract.spec.json",
+    "sort_fieldname.spec.json",
+    "sort_listofstmt.spec.json",
+    "sort_listofexpr.spec.json"
+  ],
+  "operations": [
+    "op_skip.spec.json",
+    "op_seq.spec.json",
+    "op_if.spec.json",
+    "op_while.spec.json",
+    "op_for.spec.json",
+    "op_switch.spec.json",
+    "op_call.spec.json",
+    "op_return.spec.json",
+    "op_break.spec.json",
+    "op_continue.spec.json",
+    "op_deref.spec.json",
+    "op_member.spec.json",
+    "op_add.spec.json",
+    "op_sub.spec.json",
+    "op_mul.spec.json",
+    "op_eq.spec.json",
+    "op_lt.spec.json",
+    "op_le.spec.json",
+    "op_and.spec.json",
+    "op_or.spec.json",
+    "op_not.spec.json",
+    "op_assign.spec.json",
+    "op_neg.spec.json"
+  ],
+  "equations": [
+    "eq_seq_assoc.spec.json",
+    "eq_seq_skip_left.spec.json",
+    "eq_seq_skip_right.spec.json",
+    "eq_if_true.spec.json",
+    "eq_if_false.spec.json",
+    "eq_if_idemp.spec.json",
+    "eq_while_false.spec.json",
+    "eq_for_desugar.spec.json",
+    "eq_and_false.spec.json",
+    "eq_and_true.spec.json",
+    "eq_or_true.spec.json",
+    "eq_or_false.spec.json",
+    "eq_not_not.spec.json"
+  ],
+  "effect_signatures": [
+    "effsig_memread.spec.json",
+    "effsig_memwrite.spec.json",
+    "effsig_io.spec.json",
+    "effsig_trap.spec.json"
+  ]
+}

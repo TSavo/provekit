@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "c11:Stmt",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Stmt",
+    "description": "C11 statement terms, the carrier sort for statement-level algebra terms"
+  }
+}

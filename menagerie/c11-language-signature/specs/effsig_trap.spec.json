@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "c11:effect-signature:Trap",
+  "sorts": [
+    "sort_reason.spec.json",
+    "sort_bottom.spec.json"
+  ],
+  "operations": [
+    "eff_op_trap.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

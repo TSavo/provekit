@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:mul",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "no_signed_overflow",
+      "args": [
+        {
+          "kind": "op",
+          "name": "mul",
+          "args": [
+            {
+              "kind": "var",
+              "name": "lhs"
+            },
+            {
+              "kind": "var",
+              "name": "rhs"
+            }
+          ]
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "mul",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "mathematical integer multiplication when no overflow holds"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Trap"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "f8dB1QSrmnvbiJbBkmBwge8YOjkfY38wHBeYrMmmeyuu5lKsl+4uWj66k2mMIXT9lCz35l5DhZDXjdZZObxOAQ=="
+  }
+}

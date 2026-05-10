@@ -1,0 +1,41 @@
+{
+  "kind": "equation",
+  "fn_name": "c11:or-false",
+  "formals": [
+    "b"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "or",
+      "args": [
+        {
+          "kind": "const",
+          "value": false,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        },
+        {
+          "kind": "var",
+          "name": "b"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "b"
+    }
+  }
+}

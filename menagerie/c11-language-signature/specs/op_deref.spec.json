@@ -1,0 +1,72 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:deref",
+  "formals": [
+    "ptr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Ptr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "LValue",
+    "args": []
+  },
+  "pre": {
+    "kind": "connective",
+    "op": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "!=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "ptr"
+          },
+          {
+            "kind": "const",
+            "value": "NULL",
+            "sort": {
+              "kind": "ctor",
+              "name": "Ptr",
+              "args": []
+            }
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "valid",
+        "args": [
+          {
+            "kind": "var",
+            "name": "ptr"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "deref",
+    "arity": [
+      "Ptr"
+    ],
+    "result": "LValue",
+    "wp": "lvalue at ptr"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

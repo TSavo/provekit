@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:effect:input",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "input",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Value",
+      "wp": "read one external input value"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "IO"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:bd5f0c10ae81753308e8f1438f11318b701003dc5796eec60245786db8655adc3360f241846b27d2f83e09be2f716acb12656ec8d41491782716ca9737b65852",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "aYnvzSidH5Bs+zzvDvC1rVwqJr5SRkJl/6E/X+nkFGmb9VfkRwd1LnPYEgLLKd57cbGTaUE7V5x5hAETBi7SAw=="
+  }
+}
