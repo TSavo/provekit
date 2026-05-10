@@ -798,3 +798,140 @@ surface = "zig"
     assert_eq!(wp_implications, 3);
     assert_eq!(test_implications, 2);
 }
+
+#[test]
+fn lift_cpp_shows_production_composes_but_unit_tests_conflict() {
+    let root = repo_root();
+    let project = tempfile::tempdir().expect("create tempdir");
+    fs::write(
+        project.path().join("app.cpp"),
+        r#"
+#include <stdexcept>
+
+int checked(int x) {
+    if (x < 10) throw std::invalid_argument("too small");
+    return x;
+}
+
+int composed_ok() {
+    int y = 42;
+    return checked(y);
+}
+
+TEST(CheckedContracts, returns_42) {
+    int actual = checked(42);
+    EXPECT_EQ(actual, 42);
+}
+
+TEST(CheckedContracts, does_not_return_42) {
+    int actual = checked(42);
+    EXPECT_NE(actual, 42);
+}
+"#,
+    )
+    .expect("write cpp fixture");
+    fs::create_dir_all(project.path().join(".provekit")).expect("create config dir");
+    fs::write(
+        project.path().join(".provekit/config.toml"),
+        r#"[authoring.lift]
+surface = "cpp"
+"#,
+    )
+    .expect("write config");
+    let shim = project.path().join("cpp-lift.sh");
+    write_executable(
+        &shim,
+        &format!(
+            "#!/usr/bin/env sh\nset -eu\nbin=\"$PWD/cpp-lift-bin\"\nclang++ -std=c++17 -O0 -Wall -Wextra -I'{}' '{}' -o \"$bin\"\nexec \"$bin\" --workspace \"$PWD\" \"$@\"\n",
+            root.join("implementations/cpp/provekit-ir-symbolic/include").display(),
+            root.join("implementations/cpp/provekit-lift-cpp/main.cpp").display()
+        ),
+    );
+    let manifest_dir = project.path().join(".provekit/lift/cpp");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        "name = \"cpp-lift\"\ncommand = [\"./cpp-lift.sh\"]\nworking_dir = \".\"\n",
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(project.path())
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit lift cpp");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift cpp failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("lift JSON parses");
+    let ir = report["ir"].as_array().expect("ir array");
+    let implications = report["implications"]
+        .as_array()
+        .expect("implications array");
+
+    let production: Vec<_> = ir
+        .iter()
+        .filter(|decl| {
+            let name = decl["name"].as_str().unwrap_or_default();
+            name.starts_with("checked@app.cpp:")
+                && (name.ends_with("::callsite")
+                    || name.ends_with("::let:y")
+                    || name.ends_with("::entry"))
+        })
+        .collect();
+    assert_eq!(
+        production.len(),
+        3,
+        "expected production callsite, let, and entry WP edges: {report:#}"
+    );
+    let let_edge = production
+        .iter()
+        .copied()
+        .find(|decl| {
+            decl["name"]
+                .as_str()
+                .unwrap_or_default()
+                .ends_with("::let:y")
+        })
+        .expect("let edge");
+    assert_eq!(let_edge["pre"]["name"], "≥");
+    assert_eq!(let_edge["pre"]["args"][0]["value"], 42);
+    assert_eq!(let_edge["pre"]["args"][1]["value"], 10);
+
+    let test_assertions: Vec<_> = ir
+        .iter()
+        .filter(|decl| {
+            let name = decl["name"].as_str().unwrap_or_default();
+            name.starts_with("checked@app.cpp:") && name.ends_with("::assertion")
+        })
+        .collect();
+    assert_eq!(
+        test_assertions.len(),
+        2,
+        "expected two C++ test-derived assertion contracts: {report:#}"
+    );
+    let mut assertion_ops: Vec<_> = test_assertions
+        .iter()
+        .map(|decl| decl["inv"]["name"].as_str().unwrap_or_default())
+        .collect();
+    assertion_ops.sort_unstable();
+    assert_eq!(assertion_ops, vec!["=", "≠"]);
+
+    let wp_implications = implications
+        .iter()
+        .filter(|imp| imp["prover"] == "cpp-wp-walk")
+        .count();
+    let test_implications = implications
+        .iter()
+        .filter(|imp| imp["prover"] == "cpp-test-value-scope")
+        .count();
+    assert_eq!(wp_implications, 3);
+    assert_eq!(test_implications, 2);
+}

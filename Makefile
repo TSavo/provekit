@@ -168,6 +168,7 @@ build-rust:
 .PHONY: build-cpp
 build-cpp:
 	tools/build-cpp-self-contracts.sh --build-only
+	tools/build-cpp-lift.sh
 	tools/build-cpp-lsp.sh
 
 .PHONY: build-go
