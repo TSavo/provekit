@@ -38,6 +38,15 @@ languages, repositories, build systems, package ecosystems, generated code, and
 time. The claim falls out of the place where it was made, and the next domain
 has to trust it again from scratch.
 
+Every test you have ever written is already a contribution to such a substrate.
+Every type annotation, every assertion, every kernel-doc comment, every
+OpenAPI schema, every Coq proof, every static-analyzer rule, every property
+test — each one is a `k_i` that projects some lossy view of the same code into
+its domain's expressible facts. They had nowhere to settle but their own
+isolated checker. ProvekIt is the place where they conjoin. The substrate is
+their joint inference: strictly more constraining than any single `k_i`,
+content-addressed, federated across languages, monotonic under addition.
+
 ProvekIt makes those claims first-class. The input, transformation, formal
 truth object, evidence, and proof edge become content-addressed artifacts. They
 can be signed, compared, composed, replayed, rejected, and carried across domain
