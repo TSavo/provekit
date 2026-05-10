@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "1",
+  "kind": "function-contract",
+  "fnName": "foo",
+  "formals": [
+    "w0"
+  ],
+  "formalSorts": [
+    {
+      "kind": "primitive",
+      "name": "BitVector32"
+    }
+  ],
+  "returnSort": {
+    "kind": "primitive",
+    "name": "AArch64State"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "atomic",
+    "name": "=",
+    "args": [
+      {
+        "kind": "var",
+        "name": "w0_out"
+      },
+      {
+        "kind": "ctor",
+        "name": "ite",
+        "args": [
+          {
+            "kind": "ctor",
+            "name": "and",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "true",
+                "args": []
+              },
+              {
+                "kind": "ctor",
+                "name": "=",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "w0"
+                  },
+                  {
+                    "kind": "const",
+                    "value": 0,
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "BitVector32"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "const",
+            "value": -22,
+            "sort": {
+              "kind": "primitive",
+              "name": "BitVector32"
+            }
+          },
+          {
+            "kind": "var",
+            "name": "w0"
+          }
+        ]
+      }
+    ]
+  },
+  "bodyCid": null,
+  "effects": [],
+  "locus": {
+    "file": "/private/tmp/pk-foo-morphism/implementations/rust/provekit-lift-asm-aarch64/tests/fixtures/foo.s",
+    "line": 3,
+    "col": 1
+  },
+  "autoMintedMementos": []
+}
