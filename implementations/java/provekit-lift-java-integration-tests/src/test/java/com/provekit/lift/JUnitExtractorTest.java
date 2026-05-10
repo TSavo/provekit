@@ -26,14 +26,11 @@ public class JUnitExtractorTest {
             }
             """;
 
-        String json = liftOne(source).toJson();
+        ContractDecl decl = liftOne(source);
+        String json = decl.toJson();
 
-        assertEquals(
-            "{\"kind\":\"contract\",\"symbol\":\"parseFortyTwo::0\",\"invariant\":"
-                + atom("eq", ctor("parseInt", cStr("42")), cInt(42))
-                + "}",
-            json
-        );
+        assertTrue(decl.symbol.startsWith("parseInt@ParseTest.java:"), decl.symbol);
+        assertEquals(List.of(atom("eq", ctor("parseInt", cStr("42")), cInt(42))), decl.invariants);
         assertFalse(json.contains("parseInt\",\"args\":[{\"kind\":\"const\",\"value\":\"43\""),
             "A point assertion for parseInt(\"42\") must not mint a contract for parseInt(\"43\")");
         assertFalse(json.contains("\"symbol\":\"parseInt\""),
@@ -55,18 +52,10 @@ public class JUnitExtractorTest {
             }
             """;
 
-        String actual0 = var("actual$0");
-        String expectedInvariant = implies(
-            atom("eq", actual0, ctor("parseInt", cStr("42"))),
-            atom("eq", actual0, cInt(42))
-        );
+        ContractDecl decl = liftOne(source);
 
-        assertEquals(
-            "{\"kind\":\"contract\",\"symbol\":\"parseFortyTwo::0\",\"invariant\":"
-                + expectedInvariant
-                + "}",
-            liftOne(source).toJson()
-        );
+        assertTrue(decl.symbol.startsWith("parseInt@ParseTest.java:"), decl.symbol);
+        assertEquals(List.of(atom("eq", ctor("parseInt", cStr("42")), cInt(42))), decl.invariants);
     }
 
     @Test
@@ -86,21 +75,11 @@ public class JUnitExtractorTest {
             """;
 
         String actual0 = var("actual$0");
-        String actual1 = var("actual$1");
-        String expectedInvariant = implies(
-            and(
-                atom("eq", actual0, ctor("parseInt", cStr("42"))),
-                atom("eq", actual1, ctor("normalize", actual0))
-            ),
-            atom("eq", actual1, cInt(42))
-        );
+        String expectedInvariant = atom("eq", ctor("normalize", actual0), cInt(42));
+        ContractDecl decl = liftOne(source);
 
-        assertEquals(
-            "{\"kind\":\"contract\",\"symbol\":\"normalized::0\",\"invariant\":"
-                + expectedInvariant
-                + "}",
-            liftOne(source).toJson()
-        );
+        assertTrue(decl.symbol.startsWith("normalize@ParseTest.java:"), decl.symbol);
+        assertEquals(List.of(expectedInvariant), decl.invariants);
     }
 
     @Test
@@ -124,26 +103,18 @@ public class JUnitExtractorTest {
             """;
 
         String guard = atom("eq", var("radix"), cInt(10));
-        String actual0 = var("actual$0");
-        String actual1 = var("actual$1");
-        String thenScope = and(
-            guard,
-            atom("eq", actual0, ctor("parseInt", cStr("42")))
-        );
-        String elseScope = and(
-            not(guard),
-            atom("eq", actual1, ctor("parseHex", cStr("2a")))
-        );
-        String expectedInvariant = and(
-            implies(thenScope, atom("eq", actual0, cInt(42))),
-            implies(elseScope, atom("eq", actual1, cInt(42)))
+        List<ContractDecl> decls = lift(source);
+
+        ContractDecl parseInt = findByPrefix(decls, "parseInt@ParseTest.java:");
+        assertEquals(
+            List.of(implies(guard, atom("eq", ctor("parseInt", cStr("42")), cInt(42)))),
+            parseInt.invariants
         );
 
+        ContractDecl parseHex = findByPrefix(decls, "parseHex@ParseTest.java:");
         assertEquals(
-            "{\"kind\":\"contract\",\"symbol\":\"parsesBothRadices::0\",\"invariant\":"
-                + expectedInvariant
-                + "}",
-            liftOne(source).toJson()
+            List.of(implies(not(guard), atom("eq", ctor("parseHex", cStr("2a")), cInt(42)))),
+            parseHex.invariants
         );
     }
 
@@ -168,24 +139,18 @@ public class JUnitExtractorTest {
             """;
 
         String guard = atom("junit_branch_condition", cStr("radixes[0] == 10"));
-        String actual0 = var("actual$0");
-        String actual1 = var("actual$1");
-        String expectedInvariant = and(
-            implies(
-                and(guard, atom("eq", actual0, ctor("parseInt", cStr("42")))),
-                atom("eq", actual0, cInt(42))
-            ),
-            implies(
-                and(not(guard), atom("eq", actual1, ctor("parseHex", cStr("2a")))),
-                atom("eq", actual1, cInt(42))
-            )
+        List<ContractDecl> decls = lift(source);
+
+        ContractDecl parseInt = findByPrefix(decls, "parseInt@ParseTest.java:");
+        assertEquals(
+            List.of(implies(guard, atom("eq", ctor("parseInt", cStr("42")), cInt(42)))),
+            parseInt.invariants
         );
 
+        ContractDecl parseHex = findByPrefix(decls, "parseHex@ParseTest.java:");
         assertEquals(
-            "{\"kind\":\"contract\",\"symbol\":\"parsesBothRadices::0\",\"invariant\":"
-                + expectedInvariant
-                + "}",
-            liftOne(source).toJson()
+            List.of(implies(not(guard), atom("eq", ctor("parseHex", cStr("2a")), cInt(42)))),
+            parseHex.invariants
         );
     }
 
@@ -193,6 +158,13 @@ public class JUnitExtractorTest {
         List<ContractDecl> decls = lift(source);
         assertEquals(1, decls.size(), "Expected exactly one lifted assertion");
         return decls.get(0);
+    }
+
+    private ContractDecl findByPrefix(List<ContractDecl> decls, String prefix) {
+        return decls.stream()
+            .filter(d -> d.symbol.startsWith(prefix))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("missing symbol prefix " + prefix + ": " + decls));
     }
 
     private List<ContractDecl> lift(String source) {

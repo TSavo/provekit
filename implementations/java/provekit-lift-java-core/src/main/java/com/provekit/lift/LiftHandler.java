@@ -32,6 +32,7 @@ public class LiftHandler {
     public String parseSource(String path, String source) {
         List<ContractDecl> decls = new ArrayList<>();
         List<CallEdgeDecl> callEdges = new ArrayList<>();
+        List<ImplicationDecl> implications = new ArrayList<>();
 
         ParseResult<CompilationUnit> result = new JavaParser().parse(source);
         if (result.isSuccessful() && result.getResult().isPresent()) {
@@ -39,6 +40,9 @@ public class LiftHandler {
             for (Extractor ex : extractors) {
                 decls.addAll(ex.extract(cu, source));
             }
+            ProductionWalk.Result productionWalk = ProductionWalk.lift(cu, sourceFileName(path));
+            decls.addAll(productionWalk.declarations());
+            implications.addAll(productionWalk.implications());
             decls = mergeDeclsBySymbol(decls);
             Map<String, String> contractIndex = buildContractIndex(decls);
             callEdges.addAll(JniResolver.resolve(cu, path, contractIndex));
@@ -56,6 +60,11 @@ public class LiftHandler {
             if (i > 0) sb.append(",");
             sb.append(callEdges.get(i).toJson());
         }
+        sb.append("],\"implications\":[");
+        for (int i = 0; i < implications.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(implications.get(i).toJson());
+        }
         sb.append("],\"warnings\":[]}");
         return sb.toString();
     }
@@ -63,11 +72,12 @@ public class LiftHandler {
     public String lift(String workspace, String surface) {
         List<ContractDecl> decls = new ArrayList<>();
         List<CallEdgeDecl> callEdges = new ArrayList<>();
+        List<ImplicationDecl> implications = new ArrayList<>();
         Path root = Paths.get(workspace);
         try {
             Files.walk(root)
                 .filter(p -> p.toString().endsWith(".java"))
-                .forEach(p -> scanFile(p, decls, callEdges));
+                .forEach(p -> scanFile(p, decls, callEdges, implications));
         } catch (IOException e) {
             System.err.println("Walk error: " + e.getMessage());
         }
@@ -83,11 +93,20 @@ public class LiftHandler {
             if (i > 0) ir.append(",");
             ir.append(callEdges.get(i).toJson());
         }
+        ir.append("],\"implications\":[");
+        for (int i = 0; i < implications.size(); i++) {
+            if (i > 0) ir.append(",");
+            ir.append(implications.get(i).toJson());
+        }
         ir.append("],\"diagnostics\":[]}");
         return ir.toString();
     }
 
-    private void scanFile(Path path, List<ContractDecl> decls, List<CallEdgeDecl> callEdges) {
+    private void scanFile(
+            Path path,
+            List<ContractDecl> decls,
+            List<CallEdgeDecl> callEdges,
+            List<ImplicationDecl> implications) {
         try {
             String source = Files.readString(path);
             ParseResult<CompilationUnit> result = new JavaParser().parse(source);
@@ -97,6 +116,9 @@ public class LiftHandler {
             for (Extractor ex : extractors) {
                 fileDecls.addAll(ex.extract(cu, source));
             }
+            ProductionWalk.Result productionWalk = ProductionWalk.lift(cu, path.getFileName().toString());
+            fileDecls.addAll(productionWalk.declarations());
+            implications.addAll(productionWalk.implications());
             decls.addAll(mergeDeclsBySymbol(fileDecls));
 
             // Build contract index from accumulated decls so far (including this file).
@@ -111,6 +133,12 @@ public class LiftHandler {
         } catch (IOException e) {
             System.err.println("Parse error " + path + ": " + e.getMessage());
         }
+    }
+
+    private static String sourceFileName(String path) {
+        Path file = Paths.get(path);
+        Path name = file.getFileName();
+        return name == null ? path : name.toString();
     }
 
     private static List<ContractDecl> mergeDeclsBySymbol(List<ContractDecl> decls) {
