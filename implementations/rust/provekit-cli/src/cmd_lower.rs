@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit lower` dispatches a ProofIR obligation to a surface-specific
-// ORP lowerer. Witness mode is intentionally routed through the normal
-// .proof substrate: the lowerer emits native evidence, and the Rust CLI
-// mints that evidence into a witness .proof.
+// `provekit lower` dispatches ORP witness plans to surface-specific lowerers
+// and exposes direct IR-formula lowering for external solver dispatch.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -14,6 +12,7 @@ use std::time::Instant;
 
 use clap::{Parser, ValueEnum};
 use owo_colors::OwoColorize;
+use provekit_ir_compiler::IrCompiler;
 use serde_json::{json, Value as Json};
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
@@ -40,6 +39,14 @@ impl LowerMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum LowerTarget {
+    SmtLib,
+    Coq,
+    Tptp,
+    Vampire,
+}
+
 #[derive(Parser, Debug, Clone)]
 pub struct LowerArgs {
     /// Project root containing `.provekit/lower/<surface>/manifest.toml`.
@@ -53,7 +60,10 @@ pub struct LowerArgs {
     pub mode: LowerMode,
     /// JSON RealizerPlan or witness requirement.
     #[arg(long)]
-    pub plan: PathBuf,
+    pub plan: Option<PathBuf>,
+    /// Read an IR-JSON formula from stdin and emit this target on stdout.
+    #[arg(long, value_enum)]
+    pub to: Option<LowerTarget>,
     /// Output directory for the produced witness .proof.
     #[arg(long)]
     pub out: Option<PathBuf>,
@@ -99,6 +109,17 @@ struct PluginManifest {
 }
 
 pub fn run(args: LowerArgs) -> u8 {
+    if let Some(target) = args.to {
+        if args.plan.is_some() {
+            eprintln!(
+                "{}: --to reads an IR-JSON formula from stdin and cannot be combined with --plan",
+                "error".red().bold()
+            );
+            return EXIT_USER_ERROR;
+        }
+        return lower_formula_from_stdin(target);
+    }
+
     let project_root = args.project.unwrap_or_else(|| PathBuf::from("."));
     if !project_root.exists() {
         eprintln!(
@@ -108,8 +129,15 @@ pub fn run(args: LowerArgs) -> u8 {
         );
         return EXIT_USER_ERROR;
     }
-    let plan = match std::fs::read_to_string(&args.plan)
-        .map_err(|e| format!("read {}: {e}", args.plan.display()))
+    let Some(plan_path) = args.plan else {
+        eprintln!(
+            "{}: pass --plan for witness lowering or --to <smt-lib|coq|tptp|vampire> for formula lowering from stdin",
+            "error".red().bold()
+        );
+        return EXIT_USER_ERROR;
+    };
+    let plan = match std::fs::read_to_string(&plan_path)
+        .map_err(|e| format!("read {}: {e}", plan_path.display()))
         .and_then(|text| serde_json::from_str::<Json>(&text).map_err(|e| e.to_string()))
     {
         Ok(plan) => plan,
@@ -189,6 +217,47 @@ pub fn run(args: LowerArgs) -> u8 {
                 eprintln!("{}: {}", "error".red().bold(), error.message);
             }
             EXIT_VERIFY_FAIL
+        }
+    }
+}
+
+fn lower_formula_from_stdin(target: LowerTarget) -> u8 {
+    let mut raw = String::new();
+    if let Err(error) = std::io::stdin().read_to_string(&mut raw) {
+        eprintln!("{}: read formula from stdin: {error}", "error".red().bold());
+        return EXIT_USER_ERROR;
+    }
+    let formula: Json = match serde_json::from_str(&raw) {
+        Ok(formula) => formula,
+        Err(error) => {
+            eprintln!("{}: parse formula JSON: {error}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
+    let lowered = match target {
+        LowerTarget::SmtLib | LowerTarget::Tptp | LowerTarget::Vampire => {
+            provekit_ir_compiler_smt_lib::emit_asserted(&formula)
+        }
+        LowerTarget::Coq => {
+            let compiler = provekit_ir_compiler_coq::CoqCompiler::new();
+            compiler
+                .compile(&formula, provekit_ir_compiler_coq::DIALECT)
+                .map(|compiled| {
+                    let mut text = compiled.preamble;
+                    text.push_str(&compiled.body);
+                    text
+                })
+                .map_err(|error| error.to_string())
+        }
+    };
+    match lowered {
+        Ok(text) => {
+            print!("{text}");
+            EXIT_OK
+        }
+        Err(error) => {
+            eprintln!("{}: lower formula: {error}", "error".red().bold());
+            EXIT_USER_ERROR
         }
     }
 }

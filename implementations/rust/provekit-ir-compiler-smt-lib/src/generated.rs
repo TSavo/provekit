@@ -200,7 +200,7 @@ fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
 fn smt_atomic_name(name: &str) -> &str {
     match name {
         "eq" => "=",
-        "neq" => "distinct",
+        "ne" | "neq" => "distinct",
         "gt" => ">",
         "gte" => ">=",
         "lt" => "<",
@@ -469,6 +469,93 @@ pub fn collect_free_vars_term(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CtorSignature {
+    args: Vec<String>,
+    ret: String,
+}
+
+fn sort_name(sort: &Sort) -> String {
+    emit_sort(sort)
+}
+
+fn known_term_sort(term: &Term) -> Option<String> {
+    match term {
+        Term::Const { sort, .. } => Some(sort_name(sort)),
+        Term::Var { .. } => Some("Int".to_string()),
+        Term::Ctor { .. } => None,
+        Term::Lambda { .. } => None,
+        Term::Let { body, .. } => known_term_sort(body),
+    }
+}
+
+fn expected_atomic_arg_sort(name: &str, args: &[Term]) -> Option<String> {
+    let smt_name = smt_atomic_name(name);
+    if matches!(smt_name, "=" | "distinct" | "<" | "<=" | ">" | ">=") {
+        return args
+            .iter()
+            .find_map(known_term_sort)
+            .or_else(|| Some("Int".to_string()));
+    }
+    None
+}
+
+fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, CtorSignature>) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            let expected = expected_atomic_arg_sort(name, args);
+            for arg in args {
+                collect_ctor_decls_term(arg, expected.as_deref(), out);
+            }
+        }
+        Formula::And { operands } | Formula::Or { operands } | Formula::Implies { operands } => {
+            for operand in operands {
+                collect_ctor_decls_formula(operand, out);
+            }
+        }
+        Formula::Not { operands } => {
+            for operand in operands {
+                collect_ctor_decls_formula(operand, out);
+            }
+        }
+        Formula::Forall { body, .. }
+        | Formula::Exists { body, .. }
+        | Formula::Choice { body, .. } => {
+            collect_ctor_decls_formula(body, out);
+        }
+    }
+}
+
+fn collect_ctor_decls_term(
+    term: &Term,
+    expected_ret: Option<&str>,
+    out: &mut BTreeMap<String, CtorSignature>,
+) {
+    match term {
+        Term::Ctor { name, args } => {
+            let arg_sorts: Vec<String> = args
+                .iter()
+                .map(|arg| known_term_sort(arg).unwrap_or_else(|| "Int".to_string()))
+                .collect();
+            out.entry(name.clone()).or_insert_with(|| CtorSignature {
+                args: arg_sorts.clone(),
+                ret: expected_ret.unwrap_or("Int").to_string(),
+            });
+            for (arg, arg_sort) in args.iter().zip(arg_sorts.iter()) {
+                collect_ctor_decls_term(arg, Some(arg_sort), out);
+            }
+        }
+        Term::Lambda { body, .. } => collect_ctor_decls_term(body, expected_ret, out),
+        Term::Let { bindings, body } => {
+            for binding in bindings {
+                collect_ctor_decls_term(&binding.bound_term, None, out);
+            }
+            collect_ctor_decls_term(body, expected_ret, out);
+        }
+        Term::Var { .. } | Term::Const { .. } => {}
+    }
+}
+
 pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
@@ -518,6 +605,67 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         .into_iter()
         .map(|(name, sort)| FreeVar { name, sort });
     let free_vars_vec = free_vars_vec.collect();
+    CompiledFormula {
+        preamble,
+        body,
+        free_vars: free_vars_vec,
+        opacity_manifest,
+    }
+}
+
+pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
+    let mut free_vars = BTreeMap::new();
+    let bound = BTreeSet::new();
+    collect_free_vars_formula(formula, &mut free_vars, &bound);
+
+    let mut opacities: Vec<OpacityEntry> = Vec::new();
+    let body_formula = emit_formula_with_opacities(formula, &mut opacities);
+
+    opacities.sort_by(|a, b| {
+        a.position_cid
+            .cmp(&b.position_cid)
+            .then_with(|| a.reason_code.cmp(&b.reason_code))
+    });
+    opacities.dedup();
+
+    let opacity_manifest = OpacityManifest {
+        protocol_version: "ir-compiler-protocol/2".to_string(),
+        compiler: DIALECT.to_string(),
+        compiler_version: COMPILER_VERSION.to_string(),
+        opacities,
+    };
+
+    let mut ctor_decls = BTreeMap::new();
+    collect_ctor_decls_formula(formula, &mut ctor_decls);
+
+    let has_outlives = has_outlives_predicate(formula);
+    let mut preamble = String::new();
+    preamble.push_str("(set-logic ALL)\n");
+    if has_outlives {
+        preamble.push_str("(declare-sort Region 0)\n");
+        preamble.push_str("(declare-fun Outlives (Region Region) Bool)\n");
+        preamble.push_str("(assert (forall ((r Region)) (Outlives r r)))\n");
+        preamble.push_str("(assert (forall ((r1 Region) (r2 Region) (r3 Region)) (=> (and (Outlives r1 r2) (Outlives r2 r3)) (Outlives r1 r3))))\n");
+        preamble.push_str("(declare-fun static_region () Region)\n");
+        preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");
+    }
+    for (name, sort) in free_vars.iter() {
+        preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
+    }
+    for (name, signature) in ctor_decls.iter() {
+        preamble.push_str(&format!(
+            "(declare-fun {} ({}) {})\n",
+            name,
+            signature.args.join(" "),
+            signature.ret
+        ));
+    }
+
+    let body = format!("(assert {})\n(check-sat)\n", body_formula);
+    let free_vars_vec = free_vars
+        .into_iter()
+        .map(|(name, sort)| FreeVar { name, sort })
+        .collect();
     CompiledFormula {
         preamble,
         body,

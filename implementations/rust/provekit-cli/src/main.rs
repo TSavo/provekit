@@ -112,7 +112,7 @@ enum Cmd {
     AgentLift(cmd_lift::AgentLiftArgs),
     /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
     Mint(cmd_mint::MintArgs),
-    /// Dispatch the lower-plugin protocol and mint a witness .proof.
+    /// Lower witness plans, or IR-JSON formulas from stdin to solver dialects.
     Lower(cmd_lower::LowerArgs),
     /// Translate an English description to a verified ProvekIt contract via the configured agent.
     Must(cmd_must::MustArgs),
