@@ -1147,6 +1147,7 @@ version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
  "provekit-ir-types",
+ "provekit-proof-envelope",
  "serde",
  "serde_json",
  "thiserror",
