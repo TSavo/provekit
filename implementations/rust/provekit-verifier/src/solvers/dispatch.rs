@@ -33,6 +33,8 @@ pub enum FormulaTheory {
     Strings,
     Bitvectors,
     LinearArithmetic,
+    DependentType,
+    CategoricalStructure,
     Default,
 }
 
@@ -43,6 +45,8 @@ impl FormulaTheory {
             Self::Strings => "strings",
             Self::Bitvectors => "bitvectors",
             Self::LinearArithmetic => "linear-arithmetic",
+            Self::DependentType => "dependent-type",
+            Self::CategoricalStructure => "categorical-structure",
             Self::Default => "default",
         }
     }
@@ -64,6 +68,16 @@ const BV_OPS: &[&str] = &[
     "bvult", "bvule", "bvugt", "bvuge", "bvslt", "bvsle", "bvsgt", "bvsge",
 ];
 
+const CATEGORY_OPS: &[&str] = &[
+    "CategoryTheory.Category",
+    "CategoryTheory.Functor",
+    "CategoryTheory.NatTrans",
+    "CategoryTheory.Limits",
+    "Function.Bijective",
+    "LawvereTheory",
+    "FreeAlgebra",
+];
+
 pub fn classify(formula: &Json) -> FormulaTheory {
     let mut theory = FormulaTheory::Default;
     walk(formula, &mut theory);
@@ -78,6 +92,10 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
             if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
                 if name == "equational_theory" {
                     *theory = FormulaTheory::EquationalTheory;
+                    return;
+                }
+                if CATEGORY_OPS.iter().any(|op| name.contains(op)) {
+                    *theory = FormulaTheory::CategoricalStructure;
                     return;
                 }
                 if STRING_OPS.contains(&name) {
@@ -98,6 +116,14 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
             // Detect bitvector sorts: {"kind":"primitive","name":"BitVec"} or BV<n>.
             if let Some(sort) = map.get("sort") {
                 if let Some(srt_obj) = sort.as_object() {
+                    if srt_obj
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|kind| kind == "dependent" || kind == "function")
+                    {
+                        *theory = FormulaTheory::DependentType;
+                        return;
+                    }
                     if let Some(srt_name) = srt_obj.get("name").and_then(|v| v.as_str()) {
                         if srt_name == "String" {
                             *theory = FormulaTheory::Strings;
@@ -149,6 +175,8 @@ pub fn dispatch_for_formula<'a>(formula: &Json, dispatch: &'a DispatchConfig) ->
         FormulaTheory::Strings => dispatch.strings.as_deref(),
         FormulaTheory::Bitvectors => dispatch.bitvectors.as_deref(),
         FormulaTheory::LinearArithmetic => dispatch.linear_arithmetic.as_deref(),
+        FormulaTheory::DependentType => dispatch.dependent_type.as_deref(),
+        FormulaTheory::CategoricalStructure => dispatch.categorical_structure.as_deref(),
         FormulaTheory::Default => None,
     };
     by_theory.or(dispatch.default.as_deref())
@@ -207,6 +235,8 @@ mod tests {
             strings: Some("cvc5".into()),
             bitvectors: Some("bitwuzla".into()),
             linear_arithmetic: Some("z3".into()),
+            dependent_type: Some("lean".into()),
+            categorical_structure: Some("lean".into()),
             default: Some("z3".into()),
         };
         let f = json!({"kind":"atomic","name":"length","args":[]});
@@ -217,5 +247,45 @@ mod tests {
         assert_eq!(dispatch_for_formula(&f, &d), Some("z3"));
         let f = json!({"kind":"atomic","name":"unknown","args":[]});
         assert_eq!(dispatch_for_formula(&f, &d), Some("z3")); // via default
+    }
+
+    #[test]
+    fn dispatch_picks_lean_for_dependent_sort() {
+        let d = DispatchConfig {
+            equational_theory: None,
+            strings: None,
+            bitvectors: None,
+            linear_arithmetic: None,
+            dependent_type: Some("lean".into()),
+            categorical_structure: None,
+            default: Some("z3".into()),
+        };
+        let f = json!({
+            "kind": "forall",
+            "name": "xs",
+            "sort": {
+                "kind": "dependent",
+                "name": "Vec",
+                "indexVar": "n",
+                "indexSort": {"kind": "primitive", "name": "Int"}
+            },
+            "body": {"kind": "atomic", "name": "true", "args": []}
+        });
+        assert_eq!(dispatch_for_formula(&f, &d), Some("lean"));
+    }
+
+    #[test]
+    fn dispatch_picks_lean_for_category_theory_name() {
+        let d = DispatchConfig {
+            equational_theory: None,
+            strings: None,
+            bitvectors: None,
+            linear_arithmetic: None,
+            dependent_type: None,
+            categorical_structure: Some("lean".into()),
+            default: Some("z3".into()),
+        };
+        let f = json!({"kind":"atomic","name":"CategoryTheory.Functor.map_id","args":[]});
+        assert_eq!(dispatch_for_formula(&f, &d), Some("lean"));
     }
 }

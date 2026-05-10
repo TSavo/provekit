@@ -12,6 +12,7 @@
 # Closes:
 #   - #251 (cvc5 in default portfolio)
 #   - #252 Tier 1 (Vampire in default portfolio via SMT-LIB-v2.6)
+#   - Lean 4 plus mathlib as the dependent type and category theory seat
 #
 # Mode: first-wins
 # -----------------
@@ -20,7 +21,7 @@
 # Undecidable, the post-collection sort skips it, and the first
 # definitive verdict from an installed solver authors the result.
 # This keeps single-solver developer environments (z3 only) working
-# byte-for-byte, while CI (which installs all four) exercises the full
+# byte-for-byte, while CI (which installs all available solvers) exercises the full
 # portfolio. `coverage_required` (v2 §7) is intentionally unset; we do
 # not opt into the v2 ConsensusCoverage rule from this PR. That gate
 # can land later when the OpacityManifest types are wired through.
@@ -29,14 +30,15 @@
 # ----------------
 # `smt-lib-v2.6` routes to `SubprocessSolver` (generic SMT-LIB-v2.6
 # subprocess); `coq` routes to `CoqSubprocessSolver` (per
-# `registry::is_coq_compiler`). The v2 spec text uses `gallina` for
+# `registry::is_coq_compiler`); `lean` routes to `LeanSubprocessSolver`.
+# The v2 spec text uses `gallina` for
 # Coq's IR-compiler tag, but the existing
 # `provekit_ir_compiler_coq::DIALECT` constant is `"coq"`, so we match
 # the implementation rather than the spec example.
 
 [solvers]
 mode = "first-wins"
-portfolio = ["maude", "z3", "cvc5", "vampire", "coq"]
+portfolio = ["maude", "z3", "cvc5", "vampire", "coq", "lean"]
 
 [solvers.maude]
 binary = "maude"
@@ -87,3 +89,10 @@ binary = "coqc"
 ir_compiler = "coq"
 timeout_seconds = 60
 version = "8.x"
+
+[solvers.lean]
+binary = "lake"
+ir_compiler = "lean"
+timeout_seconds = 60
+version = "4.x"
+lake_project = "tools/portfolio/lean-mathlib"

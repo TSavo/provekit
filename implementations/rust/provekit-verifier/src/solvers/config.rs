@@ -72,6 +72,13 @@ pub struct SolverConfig {
     /// implication-memento `body.prover` strings. Defaults to `0`.
     #[serde(default = "default_version")]
     pub version: String,
+    /// Optional path to a Lake project that has Mathlib pinned and
+    /// cached. Used by the Lean adapter as its working directory.
+    #[serde(default)]
+    pub lake_project: Option<String>,
+    /// Optional elan toolchain passed as `+toolchain` to lake and lean.
+    #[serde(default)]
+    pub lean_toolchain: Option<String>,
 }
 
 fn default_ir_compiler() -> String {
@@ -113,6 +120,10 @@ pub struct DispatchConfig {
     pub bitvectors: Option<String>,
     #[serde(rename = "linear-arithmetic", default)]
     pub linear_arithmetic: Option<String>,
+    #[serde(rename = "dependent-type", default)]
+    pub dependent_type: Option<String>,
+    #[serde(rename = "categorical-structure", default)]
+    pub categorical_structure: Option<String>,
     #[serde(default)]
     pub default: Option<String>,
 }

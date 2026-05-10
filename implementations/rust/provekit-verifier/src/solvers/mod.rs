@@ -34,6 +34,7 @@ pub mod config;
 pub mod coq;
 pub mod dispatch;
 pub mod maude;
+pub mod lean;
 pub mod plan;
 pub mod registry;
 pub mod stub;
@@ -84,6 +85,7 @@ pub use config::{DispatchConfig, PortfolioMode, SolverConfig, SolverPlan, Solver
 pub use coq::CoqSubprocessSolver;
 pub use dispatch::dispatch_for_formula;
 pub use maude::MaudeSubprocessSolver;
+pub use lean::LeanSubprocessSolver;
 pub use plan::{run_plan, SolverInvocation};
 pub use stub::StubSolver;
 pub use subprocess::SubprocessSolver;

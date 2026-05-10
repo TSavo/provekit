@@ -457,6 +457,8 @@ mod tests {
             strings: Some("cvc5".into()),
             bitvectors: None,
             linear_arithmetic: Some("z3".into()),
+            dependent_type: None,
+            categorical_structure: None,
             default: Some("z3".into()),
         });
         let f = serde_json::json!({"kind":"atomic","name":"length","args":[]});
@@ -477,6 +479,8 @@ mod tests {
             strings: None,
             bitvectors: None,
             linear_arithmetic: None,
+            dependent_type: None,
+            categorical_structure: None,
             default: Some("z3".into()),
         });
         let f = serde_json::json!({"kind":"atomic","name":"unknown","args":[]});
