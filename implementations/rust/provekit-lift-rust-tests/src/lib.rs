@@ -3,9 +3,9 @@
 // provekit-lift-rust-tests
 //
 // Walks the syn AST of a Rust source file looking for `#[test]` and
-// `#[tokio::test]` functions. For each, scans the function body for
-// assertion-macro invocations and lifts EACH assertion to its own
-// content-addressed ContractDecl.
+// `#[tokio::test]` functions. For each assertion macro, identifies the
+// producer callsite for the asserted value and lifts one content-addressed
+// ContractDecl per callsite.
 //
 // THE FRAMING:
 //
@@ -57,24 +57,25 @@
 // JCS invariants operationally enforced but un-lifted. v0.5 admits the
 // idiomatic "compose a constructor, call a function, compare" shape.
 //
-// Naming convention: contract name = "<test_function_name>::<index>",
-// where index counts assertion-macro statements zero-indexed in source
-// order. The semantics: each assertion is independently a witness; if
-// the file later splits an assert into two, the new one mints a fresh
-// CID without invalidating the others.
+// Naming convention: contract name = "<callee>@<file>:<line>:<col>",
+// where the locus is the call expression that produced the asserted value.
+// Let-bound observations substitute the latest visible `let name = <call>`
+// binding into the lifted formula before emission. Assertions with no
+// identifiable producer callsite skip with a LiftWarning.
 //
 // Each lifted ContractDecl has:
-//   - name           = "<test_fn>::<i>"
+//   - name           = "<callee>@<file>:<line>:<col>"
 //   - inv            = the lifted atomic Formula (closed; no foralls)
 //   - pre/post       = None
 //   - out_binding    = "out" (unused; provided for ContractDecl shape parity)
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
     eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Term,
 };
+use syn::spanned::Spanned;
 
 pub mod layer2;
 pub use layer2::{lift_file_layer2, Layer2Output};
@@ -101,6 +102,35 @@ pub(crate) fn path_to_string_pub(p: &syn::Path) -> String {
 
 pub(crate) fn translate_term_pub(expr: &syn::Expr) -> Result<Rc<Term>, String> {
     translate_term(expr)
+}
+
+pub(crate) fn lift_assertion_macro_at_callsites_pub(
+    mac: &syn::Macro,
+    source_path: &str,
+    bindings: &BTreeMap<String, BoundCall>,
+) -> Result<Vec<LiftedCallsiteAssertion>, String> {
+    lift_assertion_macro_at_callsites(mac, source_path, bindings)
+}
+
+pub(crate) fn callsite_contract_name_pub(
+    callee: &str,
+    source_path: &str,
+    span: proc_macro2::Span,
+) -> String {
+    callsite_contract_name(callee, source_path, span)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BoundCall {
+    pub(crate) callee: String,
+    pub(crate) span: proc_macro2::Span,
+    pub(crate) term: Rc<Term>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LiftedCallsiteAssertion {
+    pub(crate) name: String,
+    pub(crate) formula: Rc<Formula>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,11 +220,10 @@ fn has_test_attr(attrs: &[syn::Attribute]) -> bool {
 
 fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
     let test_name = f.sig.ident.to_string();
-    // Walk every statement in the body. Each macro statement that is
-    // an assertion macro increments the assertion index, regardless
-    // of whether it lifts cleanly.
-    let mut idx: usize = 0;
+    let mut bindings: BTreeMap<String, BoundCall> = BTreeMap::new();
     for stmt in &f.block.stmts {
+        update_call_bindings_from_stmt(stmt, &mut bindings);
+
         let mac_opt = match stmt {
             syn::Stmt::Macro(sm) => Some(&sm.mac),
             syn::Stmt::Expr(syn::Expr::Macro(em), _) => Some(&em.mac),
@@ -205,27 +234,356 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
             continue;
         }
         out.seen += 1;
-        let memento_name = format!("{test_name}::{idx}");
-        idx += 1;
-        match lift_assertion_macro(mac) {
-            Ok(formula) => {
-                out.decls.push(ContractDecl {
-                    name: memento_name,
-                    pre: None,
-                    post: None,
-                    inv: Some(formula),
-                    out_binding: "out".into(),
-                    evidence: None,
-                });
-                out.lifted += 1;
+        match lift_assertion_macro_at_callsites(mac, source_path, &bindings) {
+            Ok(parts) => {
+                for part in parts {
+                    out.decls.push(ContractDecl {
+                        name: part.name,
+                        pre: None,
+                        post: None,
+                        inv: Some(part.formula),
+                        out_binding: "out".into(),
+                        evidence: None,
+                    });
+                    out.lifted += 1;
+                }
             }
             Err(reason) => {
                 out.warnings.push(LiftWarning {
                     source_path: source_path.into(),
-                    item_name: memento_name,
+                    item_name: test_name.clone(),
                     reason,
                 });
             }
+        }
+    }
+}
+
+fn update_call_bindings_from_stmt(stmt: &syn::Stmt, bindings: &mut BTreeMap<String, BoundCall>) {
+    let syn::Stmt::Local(local) = stmt else {
+        return;
+    };
+
+    let mut bound_names = Vec::new();
+    collect_pat_idents(&local.pat, &mut bound_names);
+    for name in &bound_names {
+        bindings.remove(name);
+    }
+
+    if bound_names.len() != 1 {
+        return;
+    }
+    let Some(init) = &local.init else {
+        return;
+    };
+    if let Some(call) = bound_call_from_expr(&init.expr) {
+        bindings.insert(bound_names.remove(0), call);
+    }
+}
+
+fn collect_pat_idents(pat: &syn::Pat, out: &mut Vec<String>) {
+    match pat {
+        syn::Pat::Ident(p) => out.push(p.ident.to_string()),
+        syn::Pat::Type(p) => collect_pat_idents(&p.pat, out),
+        syn::Pat::Reference(p) => collect_pat_idents(&p.pat, out),
+        syn::Pat::Paren(p) => collect_pat_idents(&p.pat, out),
+        syn::Pat::Tuple(p) => {
+            for elem in &p.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        syn::Pat::TupleStruct(p) => {
+            for elem in &p.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        syn::Pat::Struct(p) => {
+            for field in &p.fields {
+                collect_pat_idents(&field.pat, out);
+            }
+        }
+        syn::Pat::Slice(p) => {
+            for elem in &p.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn bound_call_from_expr(expr: &syn::Expr) -> Option<BoundCall> {
+    match expr {
+        syn::Expr::Call(c) => {
+            let syn::Expr::Path(p) = &*c.func else {
+                return None;
+            };
+            Some(BoundCall {
+                callee: path_final_segment(&p.path)?,
+                span: c.span(),
+                term: translate_term(expr).ok()?,
+            })
+        }
+        syn::Expr::MethodCall(mc) => Some(BoundCall {
+            callee: mc.method.to_string(),
+            span: mc.span(),
+            term: translate_term(expr).ok()?,
+        }),
+        syn::Expr::Paren(p) => bound_call_from_expr(&p.expr),
+        syn::Expr::Reference(r) => bound_call_from_expr(&r.expr),
+        syn::Expr::Cast(c) => bound_call_from_expr(&c.expr),
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
+struct AssertionCallsite {
+    callee: String,
+    span: proc_macro2::Span,
+}
+
+fn lift_assertion_macro_at_callsites(
+    mac: &syn::Macro,
+    source_path: &str,
+    bindings: &BTreeMap<String, BoundCall>,
+) -> Result<Vec<LiftedCallsiteAssertion>, String> {
+    let formula = lift_assertion_macro(mac)?;
+    let exprs = assertion_observed_exprs(mac)?;
+    let mut callsites = Vec::new();
+    let mut substitutions: BTreeMap<String, Rc<Term>> = BTreeMap::new();
+    for expr in &exprs {
+        collect_expr_callsites(expr, bindings, &mut callsites, &mut substitutions);
+    }
+    if callsites.is_empty() {
+        return Err("assertion has no identifiable callsite".into());
+    }
+
+    let formula = subst_vars_in_formula(&formula, &substitutions);
+    let mut seen_names = BTreeSet::new();
+    let mut out = Vec::new();
+    for callsite in callsites {
+        let name = callsite_contract_name(&callsite.callee, source_path, callsite.span);
+        if seen_names.insert(name.clone()) {
+            out.push(LiftedCallsiteAssertion {
+                name,
+                formula: formula.clone(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn assertion_observed_exprs(mac: &syn::Macro) -> Result<Vec<syn::Expr>, String> {
+    let path = path_to_string(&mac.path);
+    match path.as_str() {
+        "assert_eq" => {
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_eq: parse: {e}"))?;
+            Ok(vec![pair.a, pair.b])
+        }
+        "assert_ne" => {
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_ne: parse: {e}"))?;
+            Ok(vec![pair.a, pair.b])
+        }
+        "assert" => {
+            let one: OneExpr =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert: parse: {e}"))?;
+            Ok(vec![one.a])
+        }
+        "assert_matches" => {
+            let pair: ScrutineePattern = syn::parse2(mac.tokens.clone())
+                .map_err(|e| format!("assert_matches: parse: {e}"))?;
+            Ok(vec![pair.scrutinee])
+        }
+        other => Err(format!("not an assertion macro: {other}")),
+    }
+}
+
+fn collect_expr_callsites(
+    expr: &syn::Expr,
+    bindings: &BTreeMap<String, BoundCall>,
+    out: &mut Vec<AssertionCallsite>,
+    substitutions: &mut BTreeMap<String, Rc<Term>>,
+) {
+    match expr {
+        syn::Expr::Call(c) => {
+            if let syn::Expr::Path(p) = &*c.func {
+                if let Some(callee) = path_final_segment(&p.path) {
+                    out.push(AssertionCallsite {
+                        callee,
+                        span: c.span(),
+                    });
+                }
+            }
+        }
+        syn::Expr::MethodCall(mc) => out.push(AssertionCallsite {
+            callee: mc.method.to_string(),
+            span: mc.span(),
+        }),
+        syn::Expr::Path(p) => {
+            if let Some(id) = p.path.get_ident() {
+                if let Some(binding) = bindings.get(&id.to_string()) {
+                    out.push(AssertionCallsite {
+                        callee: binding.callee.clone(),
+                        span: binding.span,
+                    });
+                    substitutions.insert(id.to_string(), binding.term.clone());
+                }
+            }
+        }
+        syn::Expr::Binary(b) => {
+            collect_expr_callsites(&b.left, bindings, out, substitutions);
+            collect_expr_callsites(&b.right, bindings, out, substitutions);
+        }
+        syn::Expr::Paren(p) => collect_expr_callsites(&p.expr, bindings, out, substitutions),
+        syn::Expr::Reference(r) => collect_expr_callsites(&r.expr, bindings, out, substitutions),
+        syn::Expr::Cast(c) => collect_expr_callsites(&c.expr, bindings, out, substitutions),
+        syn::Expr::Tuple(t) => {
+            for elem in &t.elems {
+                collect_expr_callsites(elem, bindings, out, substitutions);
+            }
+        }
+        syn::Expr::Array(a) => {
+            for elem in &a.elems {
+                collect_expr_callsites(elem, bindings, out, substitutions);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn callsite_contract_name(callee: &str, source_path: &str, span: proc_macro2::Span) -> String {
+    let start = span.start();
+    format!("{callee}@{source_path}:{}:{}", start.line, start.column)
+}
+
+fn path_final_segment(path: &syn::Path) -> Option<String> {
+    path.segments.last().map(|seg| seg.ident.to_string())
+}
+
+fn subst_vars_in_formula(
+    f: &Rc<Formula>,
+    substitutions: &BTreeMap<String, Rc<Term>>,
+) -> Rc<Formula> {
+    if substitutions.is_empty() {
+        return f.clone();
+    }
+    match &**f {
+        Formula::Atomic { name, args } => {
+            let new_args: Vec<Rc<Term>> = args
+                .iter()
+                .map(|a| subst_vars_in_term(a, substitutions))
+                .collect();
+            Rc::new(Formula::Atomic {
+                name: name.clone(),
+                args: new_args,
+            })
+        }
+        Formula::Connective { kind, operands } => {
+            let new_ops: Vec<Rc<Formula>> = operands
+                .iter()
+                .map(|o| subst_vars_in_formula(o, substitutions))
+                .collect();
+            Rc::new(Formula::Connective {
+                kind: kind.clone(),
+                operands: new_ops,
+            })
+        }
+        Formula::Quantifier {
+            kind,
+            name,
+            sort,
+            body,
+        } => {
+            if substitutions.contains_key(name) {
+                f.clone()
+            } else {
+                Rc::new(Formula::Quantifier {
+                    kind: kind.clone(),
+                    name: name.clone(),
+                    sort: sort.clone(),
+                    body: subst_vars_in_formula(body, substitutions),
+                })
+            }
+        }
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
+            if substitutions.contains_key(var_name) {
+                f.clone()
+            } else {
+                Rc::new(Formula::Choice {
+                    var_name: var_name.clone(),
+                    sort: sort.clone(),
+                    body: subst_vars_in_formula(body, substitutions),
+                })
+            }
+        }
+    }
+}
+
+fn subst_vars_in_term(t: &Rc<Term>, substitutions: &BTreeMap<String, Rc<Term>>) -> Rc<Term> {
+    match &**t {
+        Term::Var { name } => substitutions
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| t.clone()),
+        Term::Const { .. } => t.clone(),
+        Term::Ctor { name, args } => {
+            let new_args: Vec<Rc<Term>> = args
+                .iter()
+                .map(|a| subst_vars_in_term(a, substitutions))
+                .collect();
+            Rc::new(Term::Ctor {
+                name: name.clone(),
+                args: new_args,
+            })
+        }
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
+            if substitutions.contains_key(param_name) {
+                t.clone()
+            } else {
+                Rc::new(Term::Lambda {
+                    param_name: param_name.clone(),
+                    param_sort: param_sort.clone(),
+                    body: subst_vars_in_term(body, substitutions),
+                })
+            }
+        }
+        Term::Let { bindings, body } => {
+            let mut new_bindings = Vec::new();
+            let mut shadowed = false;
+            for b in bindings {
+                if !shadowed {
+                    new_bindings.push(provekit_ir_symbolic::LetBinding {
+                        name: b.name.clone(),
+                        bound_term: subst_vars_in_term(&b.bound_term, substitutions),
+                    });
+                    if substitutions.contains_key(&b.name) {
+                        shadowed = true;
+                    }
+                } else {
+                    new_bindings.push(provekit_ir_symbolic::LetBinding {
+                        name: b.name.clone(),
+                        bound_term: b.bound_term.clone(),
+                    });
+                }
+            }
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_vars_in_term(body, substitutions)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -655,6 +1013,23 @@ mod tests {
         syn::parse_file(src).unwrap()
     }
 
+    fn assert_callsite_name(name: &str, callee: &str) {
+        let prefix = format!("{callee}@t.rs:");
+        assert!(
+            name.starts_with(&prefix),
+            "expected `{name}` to start with `{prefix}`"
+        );
+        let rest = &name[prefix.len()..];
+        let parts: Vec<_> = rest.split(':').collect();
+        assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
+        assert!(parts[0].parse::<usize>().unwrap() > 0);
+        parts[1].parse::<usize>().unwrap();
+        assert!(
+            !name.starts_with("parse_int_42::") && !name.starts_with("three_facts::"),
+            "old test-owned name leaked: {name}"
+        );
+    }
+
     #[test]
     fn lifts_simple_assert_eq() {
         let src = r#"
@@ -666,7 +1041,7 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
-        assert_eq!(out.decls[0].name, "parse_int_42::0");
+        assert_callsite_name(&out.decls[0].name, "parse_int");
         assert!(out.decls[0].inv.is_some());
     }
 
@@ -684,10 +1059,10 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 3, "warnings: {:?}", out.warnings);
         let names: Vec<_> = out.decls.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(
-            names,
-            vec!["three_facts::0", "three_facts::1", "three_facts::2"]
-        );
+        assert_eq!(names.len(), 3);
+        for name in names {
+            assert_callsite_name(name, "f");
+        }
     }
 
     #[test]
@@ -695,12 +1070,60 @@ mod tests {
         let src = r#"
             #[test]
             fn nonneg_one() {
-                assert!(some_value > 0);
+                assert!(some_value() > 0);
             }
         "#;
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "some_value");
+    }
+
+    #[test]
+    fn let_bound_call_attaches_to_bound_callsite() {
+        let src = r#"
+            #[test]
+            fn test_foo() {
+                let r = foo(5);
+                assert_eq!(r, 10);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "foo");
+        let inv = out.decls[0].inv.as_ref().expect("inv");
+        let lhs = match &**inv {
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
+            other => panic!("expected atomic =, got {other:?}"),
+        };
+        match &*lhs {
+            Term::Ctor { name, args } => {
+                assert_eq!(name, "foo");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("expected let binding to substitute to foo call, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn skips_literal_assertion_without_callsite() {
+        let src = r#"
+            #[test]
+            fn literal_fact() {
+                assert_eq!(1, 1);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.seen, 1);
+        assert_eq!(out.lifted, 0);
+        assert_eq!(out.warnings.len(), 1);
+        assert!(
+            out.warnings[0].reason.contains("callsite"),
+            "warning should explain no callsite: {:?}",
+            out.warnings[0]
+        );
     }
 
     #[test]
@@ -714,6 +1137,7 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "g");
     }
 
     #[test]
@@ -729,6 +1153,7 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "len");
         // Inspect the IR: the LHS should be Ctor("len", [str_const("foo")]).
         let inv = out.decls[0].inv.as_ref().expect("inv");
         let lhs = match &**inv {
@@ -835,7 +1260,7 @@ mod tests {
         "#;
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
-        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
     }
 
     #[test]
@@ -849,7 +1274,7 @@ mod tests {
         "#;
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
-        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
     }
 
     #[test]
