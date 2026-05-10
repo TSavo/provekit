@@ -1184,7 +1184,10 @@ fn split_operands(text: &str) -> Vec<String> {
 
 fn parse_branch_target(operand: &str) -> Option<u64> {
     let first = operand.split_whitespace().next()?;
-    let hex = first.strip_prefix("0x")?;
+    let hex = first.strip_prefix("0x").unwrap_or(first);
+    if hex.is_empty() || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return None;
+    }
     u64::from_str_radix(hex, 16).ok()
 }
 
@@ -1941,4 +1944,29 @@ fn reg_info(register: &str) -> Option<RegInfo> {
 
 fn canonical_register(register: &str) -> Option<&'static str> {
     reg_info(register).map(|info| info.canonical)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_branch_target_accepts_gnu_objdump_hex_without_prefix() {
+        assert_eq!(parse_branch_target("a <foo+0xa>"), Some(0xa));
+    }
+
+    #[test]
+    fn lift_function_accepts_gnu_objdump_output_for_foo() {
+        let streams = parse_objdump(
+            include_str!("../tests/fixtures/foo.gnu-objdump.txt"),
+            Path::new("tests/fixtures/foo.s"),
+        )
+        .expect("GNU objdump output parses");
+
+        assert_eq!(streams.len(), 1);
+        let contract = lift_function(&streams[0]).expect("GNU objdump output lifts");
+
+        assert_eq!(contract.fn_name, "foo");
+        assert!(contract.effects.effects.is_empty());
+    }
 }
