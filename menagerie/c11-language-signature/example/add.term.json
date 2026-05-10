@@ -1,0 +1,27 @@
+{
+    "kind": "c11-algebra-term",
+    "signature_cid": "blake3-512:c942ba70e4b701e139a46590116f5cdc16ab41db277e80e54c01f23e4a7cf6241d4431c60473409cb3f0b61ce27f593071c1c224291f04c61aa04b4773764945",
+    "source": "add.c",
+    "term_surface": "return(add(a, b))",
+    "term": {
+        "kind": "op",
+        "name": "return",
+        "args": [
+            {
+                "kind": "op",
+                "name": "add",
+                "args": [
+                    {
+                        "kind": "var",
+                        "name": "a"
+                    },
+                    {
+                        "kind": "var",
+                        "name": "b"
+                    }
+                ]
+            }
+        ]
+    },
+    "wp_value_note": "The branch-sensitive WP value is projected from this materialized C11 algebra term by provekit-c11-term-project."
+}
