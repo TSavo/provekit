@@ -20,21 +20,23 @@ typedef struct {
 } KStringSet;
 
 typedef struct {
-    char *name;
-    size_t next_index;
-} KCounter;
-
-typedef struct {
-    KCounter *items;
-    size_t len;
-    size_t cap;
-} KCounterSet;
-
-typedef struct {
     char **items;
+    size_t *starts;
     size_t len;
     size_t cap;
 } KArgList;
+
+typedef struct {
+    char *callee;
+    char *expr;
+    pk_c_locus locus;
+} KCallRef;
+
+typedef struct {
+    KCallRef *items;
+    size_t len;
+    size_t cap;
+} KCallRefList;
 
 typedef enum {
     KUNIT_OP_EQ,
@@ -194,51 +196,6 @@ static int k_string_set_add(KStringSet *set, const char *s) {
     return 0;
 }
 
-static void k_counter_set_free(KCounterSet *set) {
-    if (set == NULL) {
-        return;
-    }
-    for (size_t i = 0; i < set->len; i++) {
-        free(set->items[i].name);
-    }
-    free(set->items);
-    memset(set, 0, sizeof(*set));
-}
-
-static int k_counter_next(KCounterSet *set, const char *name, size_t *idx) {
-    KCounter *items;
-
-    if (set == NULL || name == NULL || idx == NULL) {
-        return -1;
-    }
-    for (size_t i = 0; i < set->len; i++) {
-        if (strcmp(set->items[i].name, name) == 0) {
-            *idx = set->items[i].next_index++;
-            return 0;
-        }
-    }
-    if (set->len >= set->cap) {
-        size_t cap = set->cap == 0 ? 8 : set->cap * 2;
-        if (cap < set->cap) {
-            return -1;
-        }
-        items = realloc(set->items, cap * sizeof(*set->items));
-        if (items == NULL) {
-            return -1;
-        }
-        set->items = items;
-        set->cap = cap;
-    }
-    set->items[set->len].name = k_copy(name);
-    if (set->items[set->len].name == NULL) {
-        return -1;
-    }
-    set->items[set->len].next_index = 1;
-    *idx = 0;
-    set->len++;
-    return 0;
-}
-
 static void k_arg_list_free(KArgList *args) {
     if (args == NULL) {
         return;
@@ -247,11 +204,13 @@ static void k_arg_list_free(KArgList *args) {
         free(args->items[i]);
     }
     free(args->items);
+    free(args->starts);
     memset(args, 0, sizeof(*args));
 }
 
-static int k_arg_list_push(KArgList *args, const char *start, size_t len) {
+static int k_arg_list_push(KArgList *args, const char *start, size_t len, size_t raw_start) {
     char **items;
+    size_t *starts;
     char *copy;
     size_t first = 0;
     size_t last = len;
@@ -278,14 +237,23 @@ static int k_arg_list_push(KArgList *args, const char *start, size_t len) {
             return -1;
         }
         args->items = items;
+        starts = realloc(args->starts, cap * sizeof(*args->starts));
+        if (starts == NULL) {
+            free(copy);
+            return -1;
+        }
+        args->starts = starts;
         args->cap = cap;
     }
-    args->items[args->len++] = copy;
+    args->items[args->len] = copy;
+    args->starts[args->len] = raw_start + first;
+    args->len++;
     return 0;
 }
 
 static int k_split_args(const char *text, KArgList *args) {
     const char *start = text == NULL ? "" : text;
+    const char *base = start;
     const char *p = start;
     int paren = 0;
     int bracket = 0;
@@ -319,7 +287,7 @@ static int k_split_args(const char *text, KArgList *args) {
         } else if (*p == '}' && brace > 0) {
             brace--;
         } else if (*p == ',' && paren == 0 && bracket == 0 && brace == 0) {
-            if (k_arg_list_push(args, start, (size_t)(p - start)) != 0) {
+            if (k_arg_list_push(args, start, (size_t)(p - start), (size_t)(start - base)) != 0) {
                 k_arg_list_free(args);
                 return -1;
             }
@@ -327,11 +295,107 @@ static int k_split_args(const char *text, KArgList *args) {
         }
     }
     if (start != p || args->len > 0) {
-        if (k_arg_list_push(args, start, (size_t)(p - start)) != 0) {
+        if (k_arg_list_push(args, start, (size_t)(p - start), (size_t)(start - base)) != 0) {
             k_arg_list_free(args);
             return -1;
         }
     }
+    return 0;
+}
+
+static int k_arg_list_replace(KArgList *args, size_t idx, const char *expr) {
+    char *copy;
+
+    if (args == NULL || idx >= args->len) {
+        return -1;
+    }
+    copy = k_copy(expr);
+    if (copy == NULL) {
+        return -1;
+    }
+    free(args->items[idx]);
+    args->items[idx] = copy;
+    return 0;
+}
+
+static void k_call_ref_free(KCallRef *ref) {
+    if (ref == NULL) {
+        return;
+    }
+    free(ref->callee);
+    free(ref->expr);
+    free(ref->locus.path);
+    memset(ref, 0, sizeof(*ref));
+}
+
+static int k_call_ref_set(
+    KCallRef *ref,
+    const char *callee,
+    const char *expr,
+    const pk_c_locus *locus,
+    const char *fallback_path
+) {
+    KCallRef next;
+
+    if (ref == NULL || callee == NULL || expr == NULL) {
+        return -1;
+    }
+    memset(&next, 0, sizeof(next));
+    next.callee = k_copy(callee);
+    next.expr = k_copy(expr);
+    next.locus.path = k_copy(locus != NULL && locus->path != NULL ? locus->path : fallback_path);
+    next.locus.line = locus == NULL ? 0 : locus->line;
+    next.locus.column = locus == NULL ? 0 : locus->column;
+    if (next.callee == NULL || next.expr == NULL || next.locus.path == NULL) {
+        k_call_ref_free(&next);
+        return -1;
+    }
+    k_call_ref_free(ref);
+    *ref = next;
+    return 0;
+}
+
+static void k_call_ref_list_free(KCallRefList *refs) {
+    if (refs == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < refs->len; i++) {
+        k_call_ref_free(&refs->items[i]);
+    }
+    free(refs->items);
+    memset(refs, 0, sizeof(*refs));
+}
+
+static int k_call_ref_list_push(
+    KCallRefList *refs,
+    const char *callee,
+    const char *expr,
+    const pk_c_locus *locus,
+    const char *fallback_path
+) {
+    KCallRef *items;
+    KCallRef ref;
+
+    if (refs == NULL || callee == NULL || expr == NULL) {
+        return -1;
+    }
+    if (refs->len >= refs->cap) {
+        size_t cap = refs->cap == 0 ? 4 : refs->cap * 2;
+        if (cap < refs->cap) {
+            return -1;
+        }
+        items = realloc(refs->items, cap * sizeof(*refs->items));
+        if (items == NULL) {
+            return -1;
+        }
+        refs->items = items;
+        refs->cap = cap;
+    }
+    memset(&ref, 0, sizeof(ref));
+    if (k_call_ref_set(&ref, callee, expr, locus, fallback_path) != 0) {
+        return -1;
+    }
+    refs->items[refs->len++] = ref;
     return 0;
 }
 
@@ -674,6 +738,285 @@ static void k_strip_outer_parens(char *s) {
         strcpy(s, trimmed);
         free(trimmed);
     }
+}
+
+static int k_parse_direct_call_expr(const char *expr, char **callee_out, char **expr_out) {
+    char *s = k_trim_copy(expr);
+    const char *open;
+    const char *end;
+    char *callee;
+    int depth = 1;
+    char quote = '\0';
+
+    if (callee_out != NULL) {
+        *callee_out = NULL;
+    }
+    if (expr_out != NULL) {
+        *expr_out = NULL;
+    }
+    if (s == NULL) {
+        return -1;
+    }
+    k_strip_outer_parens(s);
+    open = strchr(s, '(');
+    if (open == NULL || open == s || s[strlen(s) - 1] != ')') {
+        free(s);
+        return 0;
+    }
+    for (const char *p = s; p < open; p++) {
+        if (!k_is_ident_char(*p)) {
+            free(s);
+            return 0;
+        }
+    }
+    end = open + 1;
+    while (*end != '\0' && depth > 0) {
+        if (quote != '\0') {
+            if (*end == '\\' && end[1] != '\0') {
+                end++;
+            } else if (*end == quote) {
+                quote = '\0';
+            }
+        } else if (*end == '"' || *end == '\'') {
+            quote = *end;
+        } else if (*end == '(') {
+            depth++;
+        } else if (*end == ')') {
+            depth--;
+            if (depth == 0) {
+                break;
+            }
+        }
+        end++;
+    }
+    if (depth != 0 || end[1] != '\0') {
+        free(s);
+        return 0;
+    }
+    callee = k_copy_n(s, (size_t)(open - s));
+    if (callee == NULL) {
+        free(s);
+        return -1;
+    }
+    if (!k_is_identifier(callee)) {
+        free(callee);
+        free(s);
+        return 0;
+    }
+    if (callee_out != NULL) {
+        *callee_out = callee;
+    } else {
+        free(callee);
+    }
+    if (expr_out != NULL) {
+        *expr_out = s;
+    } else {
+        free(s);
+    }
+    return 1;
+}
+
+static void k_locus_from_offset(
+    const pk_c_locus *base,
+    const char *text,
+    size_t offset,
+    pk_c_locus *out
+) {
+    int line = base == NULL ? 0 : base->line;
+    int column = base == NULL ? 0 : base->column;
+
+    for (size_t i = 0; text != NULL && i < offset && text[i] != '\0'; i++) {
+        if (text[i] == '\n') {
+            line++;
+            column = 1;
+        } else {
+            column++;
+        }
+    }
+    out->path = base == NULL ? NULL : base->path;
+    out->line = line;
+    out->column = column;
+}
+
+static const char *k_basename(const char *path) {
+    const char *slash;
+
+    if (path == NULL) {
+        return "";
+    }
+    slash = strrchr(path, '/');
+    return slash == NULL ? path : slash + 1;
+}
+
+static int k_is_assignment_equals(const char *start, const char *at, const char *end) {
+    if (at < start || at >= end || *at != '=') {
+        return 0;
+    }
+    if ((at > start && (at[-1] == '=' || at[-1] == '!' || at[-1] == '<' || at[-1] == '>')) ||
+        (at + 1 < end && at[1] == '=')) {
+        return 0;
+    }
+    return 1;
+}
+
+static char *k_last_identifier_before(const char *start, const char *end) {
+    const char *id_end = end;
+    const char *id_start;
+
+    while (id_end > start && isspace((unsigned char)id_end[-1])) {
+        id_end--;
+    }
+    if (id_end == start || !k_is_ident_char(id_end[-1])) {
+        return NULL;
+    }
+    id_start = id_end - 1;
+    while (id_start > start && k_is_ident_char(id_start[-1])) {
+        id_start--;
+    }
+    if (!k_is_ident_start(*id_start)) {
+        return NULL;
+    }
+    return k_copy_n(id_start, (size_t)(id_end - id_start));
+}
+
+static const char *k_statement_start_before(const char *line, const char *at) {
+    const char *p = at;
+
+    while (p > line) {
+        if (p[-1] == ';' || p[-1] == '{' || p[-1] == '}') {
+            break;
+        }
+        p--;
+    }
+    return p;
+}
+
+static const char *k_statement_end_after(const char *at, const char *limit) {
+    const char *p = at;
+
+    while (p < limit && *p != ';') {
+        p++;
+    }
+    return p;
+}
+
+static const pk_c_function_fact *k_find_function_fact(
+    const pk_c_source_facts *facts,
+    const char *name
+) {
+    if (facts == NULL || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < facts->n_functions; i++) {
+        if (facts->functions[i].name != NULL && strcmp(facts->functions[i].name, name) == 0) {
+            return &facts->functions[i];
+        }
+    }
+    return NULL;
+}
+
+static int k_find_bound_call(
+    const char *source,
+    const pk_c_function_fact *fn,
+    const pk_c_macro_call_fact *macro,
+    const char *var,
+    KCallRef *out
+) {
+    char *code;
+    char *line;
+    int line_no = 1;
+    int rc = 0;
+
+    if (source == NULL || fn == NULL || macro == NULL || var == NULL || out == NULL) {
+        return 0;
+    }
+    code = k_code_view(source);
+    if (code == NULL) {
+        return -1;
+    }
+    for (line = code; line != NULL; line_no++) {
+        char *next = strchr(line, '\n');
+        const char *limit;
+
+        if (next != NULL) {
+            *next = '\0';
+        }
+        if (line_no < fn->locus.line) {
+            line = next == NULL ? NULL : next + 1;
+            continue;
+        }
+        if (line_no > macro->locus.line) {
+            break;
+        }
+        limit = line + strlen(line);
+        if (line_no == macro->locus.line) {
+            size_t before_macro = macro->locus.column <= 1 ? 0 : (size_t)(macro->locus.column - 1);
+            if (before_macro < (size_t)(limit - line)) {
+                limit = line + before_macro;
+            }
+        }
+        for (const char *p = line; p < limit; p++) {
+            const char *stmt_start;
+            const char *stmt_end;
+            const char *rhs_start;
+            char *lhs_var;
+            char *rhs;
+            char *callee = NULL;
+            char *expr = NULL;
+            int call_rc;
+
+            if (!k_is_assignment_equals(line, p, limit)) {
+                continue;
+            }
+            stmt_start = k_statement_start_before(line, p);
+            lhs_var = k_last_identifier_before(stmt_start, p);
+            if (lhs_var == NULL) {
+                continue;
+            }
+            if (strcmp(lhs_var, var) != 0) {
+                free(lhs_var);
+                continue;
+            }
+            stmt_end = k_statement_end_after(p + 1, limit);
+            rhs_start = p + 1;
+            rhs = k_copy_n(rhs_start, (size_t)(stmt_end - rhs_start));
+            free(lhs_var);
+            if (rhs == NULL) {
+                rc = -1;
+                goto cleanup;
+            }
+            call_rc = k_parse_direct_call_expr(rhs, &callee, &expr);
+            free(rhs);
+            if (call_rc < 0) {
+                rc = -1;
+                goto cleanup;
+            }
+            if (call_rc == 1) {
+                pk_c_locus locus;
+                const char *callee_at = strstr(rhs_start, callee);
+
+                locus.path = fn->locus.path;
+                locus.line = line_no;
+                locus.column = callee_at == NULL ? (int)(rhs_start - line) + 1 : (int)(callee_at - line) + 1;
+                if (k_call_ref_set(out, callee, expr, &locus, fn->locus.path) != 0) {
+                    free(callee);
+                    free(expr);
+                    rc = -1;
+                    goto cleanup;
+                }
+                free(callee);
+                free(expr);
+            }
+        }
+        if (line_no == macro->locus.line) {
+            break;
+        }
+        line = next == NULL ? NULL : next + 1;
+    }
+
+cleanup:
+    free(code);
+    return rc;
 }
 
 static int k_parse_int_literal(const char *s, long *out) {
@@ -1200,26 +1543,131 @@ static int k_build_formula(KBuf *formula, KunitOp op, const KArgList *args, char
     return -1;
 }
 
+static int k_collect_direct_call_arg(
+    const pk_c_macro_call_fact *call,
+    const KArgList *args,
+    size_t idx,
+    KCallRefList *refs,
+    const char *fallback_path
+) {
+    char *callee = NULL;
+    char *expr = NULL;
+    int call_rc;
+
+    call_rc = k_parse_direct_call_expr(args->items[idx], &callee, &expr);
+    if (call_rc <= 0) {
+        return call_rc;
+    }
+    {
+        pk_c_locus base;
+        pk_c_locus locus;
+        const char *callee_at = strstr(args->items[idx], callee);
+        size_t rel = callee_at == NULL ? 0 : (size_t)(callee_at - args->items[idx]);
+
+        base.path = call->locus.path;
+        base.line = call->locus.line;
+        base.column = call->locus.column + (int)strlen(call->name) + 1;
+        k_locus_from_offset(&base, call->argument_text, args->starts[idx] + rel, &locus);
+        if (k_call_ref_list_push(refs, callee, expr, &locus, fallback_path) != 0) {
+            free(callee);
+            free(expr);
+            return -1;
+        }
+    }
+    free(callee);
+    free(expr);
+    return 1;
+}
+
+static int k_collect_call_refs(
+    const char *source,
+    const char *path,
+    const pk_c_source_facts *facts,
+    const pk_c_macro_call_fact *call,
+    KArgList *args,
+    KCallRefList *refs
+) {
+    const pk_c_function_fact *fn = k_find_function_fact(facts, call->enclosing_function);
+
+    for (size_t i = 1; i < args->len; i++) {
+        char *arg;
+        int direct_rc;
+
+        direct_rc = k_collect_direct_call_arg(call, args, i, refs, path);
+        if (direct_rc < 0) {
+            return -1;
+        }
+        if (direct_rc == 1) {
+            continue;
+        }
+        arg = k_trim_copy(args->items[i]);
+        if (arg == NULL) {
+            return -1;
+        }
+        k_strip_outer_parens(arg);
+        if (k_is_identifier(arg)) {
+            KCallRef bound = {0};
+
+            if (k_find_bound_call(source, fn, call, arg, &bound) != 0) {
+                free(arg);
+                k_call_ref_free(&bound);
+                return -1;
+            }
+            if (bound.callee != NULL) {
+                if (k_call_ref_list_push(refs, bound.callee, bound.expr, &bound.locus, path) != 0 ||
+                    k_arg_list_replace(args, i, bound.expr) != 0) {
+                    free(arg);
+                    k_call_ref_free(&bound);
+                    return -1;
+                }
+            }
+            k_call_ref_free(&bound);
+        }
+        free(arg);
+    }
+    return 0;
+}
+
+static char *k_make_contract_name(
+    const char *callee,
+    const pk_c_locus *locus,
+    const char *fallback_path
+) {
+    const char *path = locus != NULL && locus->path != NULL ? locus->path : fallback_path;
+    const char *file = k_basename(path);
+    int line = locus == NULL ? 0 : locus->line;
+    int written = snprintf(NULL, 0, "%s@%s:%d", callee == NULL ? "" : callee, file, line);
+    char *name;
+
+    if (written < 0) {
+        return NULL;
+    }
+    name = malloc((size_t)written + 1);
+    if (name == NULL) {
+        return NULL;
+    }
+    (void)snprintf(name, (size_t)written + 1, "%s@%s:%d", callee == NULL ? "" : callee, file, line);
+    return name;
+}
+
 static int k_build_contract(
     KBuf *out,
-    const char *test_name,
-    size_t index,
+    const char *contract_name,
+    const char *fn_name,
     const char *post,
     const pk_c_locus *locus,
     const char *fallback_path
 ) {
     char index_buf[64];
 
-    (void)snprintf(index_buf, sizeof(index_buf), "%zu", index);
     if (kbuf_init(out) != 0) {
         return -1;
     }
-    if (kbuf_append(out, "{\"fn_name\":") != 0 ||
-        kbuf_append_char(out, '"') != 0 ||
-        kbuf_append(out, test_name) != 0 ||
-        kbuf_append(out, "::") != 0 ||
-        kbuf_append(out, index_buf) != 0 ||
-        kbuf_append(out, "\",\"kind\":\"function-contract\",") != 0 ||
+    if (kbuf_append(out, "{\"name\":") != 0 ||
+        kbuf_append_quoted(out, contract_name) != 0 ||
+        kbuf_append(out, ",\"fn_name\":") != 0 ||
+        kbuf_append_quoted(out, fn_name) != 0 ||
+        kbuf_append(out, ",\"kind\":\"function-contract\",") != 0 ||
         kbuf_append(out, "\"formals\":[],\"formal_sorts\":[],") != 0 ||
         kbuf_append(out, "\"return_sort\":{\"kind\":\"primitive\",\"name\":\"i32\"},") != 0 ||
         kbuf_append(out, "\"pre\":{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]},") != 0 ||
@@ -1266,10 +1714,10 @@ static int k_add_skip_opacity(
 static int k_lift_kunit_macros(
     pk_c_lift_result *result,
     const char *path,
+    const char *source,
     const pk_c_source_facts *facts,
     const KStringSet *tests
 ) {
-    KCounterSet counters = {0};
     int rc = 0;
 
     if (facts == NULL) {
@@ -1279,9 +1727,8 @@ static int k_lift_kunit_macros(
         const pk_c_macro_call_fact *call = &facts->macro_calls[i];
         KunitMacroInfo info;
         KArgList args;
+        KCallRefList refs = {0};
         KBuf formula;
-        KBuf contract;
-        size_t idx;
         char err[256];
 
         if (call->name == NULL || !k_macro_info(call->name, &info)) {
@@ -1289,10 +1736,6 @@ static int k_lift_kunit_macros(
         }
         if (!k_string_set_contains(tests, call->enclosing_function)) {
             continue;
-        }
-        if (k_counter_next(&counters, call->enclosing_function, &idx) != 0) {
-            rc = -1;
-            break;
         }
         if (k_split_args(call->argument_text, &args) != 0) {
             rc = -1;
@@ -1303,6 +1746,18 @@ static int k_lift_kunit_macros(
             k_arg_list_free(&args);
             continue;
         }
+        if (k_collect_call_refs(source, path, facts, call, &args, &refs) != 0) {
+            k_call_ref_list_free(&refs);
+            k_arg_list_free(&args);
+            rc = -1;
+            break;
+        }
+        if (refs.len == 0) {
+            (void)k_add_skip_opacity(result, call, "KUnit assertion did not identify a callsite");
+            k_call_ref_list_free(&refs);
+            k_arg_list_free(&args);
+            continue;
+        }
         err[0] = '\0';
         if (k_build_formula(&formula, info.op, &args, err, sizeof(err)) != 0) {
             (void)k_add_skip_opacity(
@@ -1310,28 +1765,49 @@ static int k_lift_kunit_macros(
                 call,
                 err[0] != '\0' ? err : "KUnit assertion expression could not be lifted");
             kbuf_free(&formula);
+            k_call_ref_list_free(&refs);
             k_arg_list_free(&args);
             continue;
         }
-        if (k_build_contract(&contract, call->enclosing_function, idx, formula.data,
-                &call->locus, path) != 0) {
-            kbuf_free(&formula);
-            k_arg_list_free(&args);
-            rc = -1;
-            break;
-        }
-        if (pk_c_lift_result_add_declaration(result, contract.data) != 0) {
+        for (size_t j = 0; j < refs.len; j++) {
+            KBuf contract = {0};
+            char *contract_name = k_make_contract_name(refs.items[j].callee, &refs.items[j].locus, path);
+
+            if (contract_name == NULL) {
+                kbuf_free(&formula);
+                k_call_ref_list_free(&refs);
+                k_arg_list_free(&args);
+                rc = -1;
+                break;
+            }
+            if (k_build_contract(&contract, contract_name, refs.items[j].callee, formula.data,
+                    &refs.items[j].locus, path) != 0) {
+                free(contract_name);
+                kbuf_free(&contract);
+                kbuf_free(&formula);
+                k_call_ref_list_free(&refs);
+                k_arg_list_free(&args);
+                rc = -1;
+                break;
+            }
+            free(contract_name);
+            if (pk_c_lift_result_add_declaration(result, contract.data) != 0) {
+                kbuf_free(&contract);
+                kbuf_free(&formula);
+                k_call_ref_list_free(&refs);
+                k_arg_list_free(&args);
+                rc = -1;
+                break;
+            }
             kbuf_free(&contract);
-            kbuf_free(&formula);
-            k_arg_list_free(&args);
-            rc = -1;
+        }
+        if (rc != 0) {
             break;
         }
-        kbuf_free(&contract);
         kbuf_free(&formula);
+        k_call_ref_list_free(&refs);
         k_arg_list_free(&args);
     }
-    k_counter_set_free(&counters);
     return rc;
 }
 
@@ -1376,7 +1852,7 @@ pk_c_lift_result *pk_c_kunit_lift_source_with_options(
     }
     if (k_collect_kunit_cases(source, &registered) != 0 ||
         k_collect_test_functions(source, scan_facts, &registered, &tests) != 0 ||
-        k_lift_kunit_macros(result, path, scan_facts, &tests) != 0) {
+        k_lift_kunit_macros(result, path, source, scan_facts, &tests) != 0) {
         if (scan_facts != core_facts) {
             pk_c_source_facts_free(scan_facts);
         }
