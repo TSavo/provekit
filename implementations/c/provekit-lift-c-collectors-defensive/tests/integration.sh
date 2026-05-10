@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN="$SCRIPT_DIR/../provekit-lift-c-collectors-defensive"
 FIXTURE="$SCRIPT_DIR/fixtures/trivial.c"
 DEFENSIVE_FIXTURE="$SCRIPT_DIR/fixtures/defensive.c"
+CHECKED_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo.c"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -22,12 +23,17 @@ if [ ! -f "$DEFENSIVE_FIXTURE" ]; then
     exit 1
 fi
 
+if [ ! -f "$CHECKED_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $CHECKED_FIXTURE" >&2
+    exit 1
+fi
+
 RESPONSES="$(
     {
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
         printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
         printf '"%s"' "$SCRIPT_DIR/fixtures"
-        printf ',"source_paths":["trivial.c","defensive.c"],"surface":"c-collectors-defensive"}}\n'
+        printf ',"source_paths":["trivial.c","defensive.c","checked_demo.c"],"surface":"c-collectors-defensive"}}\n'
         printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
     } | "$BIN" --rpc
 )"
@@ -239,6 +245,18 @@ checks = [
         atom("valid_gfp_flags", [var("gfp")]),
         "gfp_t gfp did not lift valid_gfp_flags(gfp)",
     ),
+    (
+        "checked",
+        "pre",
+        atom("\u2265", [var("x"), const_int(10)]),
+        "checked BUG_ON(x < 10) did not lift x >= 10",
+    ),
+    (
+        "checked",
+        "post",
+        atom("=", [var("result"), var("x")]),
+        "checked trailing return did not lift result = x",
+    ),
 ]
 
 for fn_name, field, expected, message in checks:
@@ -247,6 +265,12 @@ for fn_name, field, expected, message in checks:
         fail(f"{fn_name} function not found in declarations")
     if not contains_formula(decl.get(field), expected):
         fail(message)
+
+checked_decl = by_name.get("checked")
+if checked_decl is None:
+    fail("checked function not found in declarations")
+if contains_formula(checked_decl.get("post"), atom("=", [var("result"), const_int(-1)])):
+    fail("checked postcondition used BUG_ON macro return -1 instead of trailing return x")
 
 effect_checks = [
     ("acquire_lock", {"kind": "lock_acquire", "target": "lock"}),

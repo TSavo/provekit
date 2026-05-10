@@ -435,6 +435,95 @@ static int token_boundary_after(const char *p) {
     return !is_ident_char((unsigned char)*p);
 }
 
+static const char *skip_line_comment(const char *p, const char *end) {
+    p += 2;
+    while (p < end && *p != '\n') {
+        p++;
+    }
+    return p < end ? p + 1 : end;
+}
+
+static const char *skip_block_comment(const char *p, const char *end) {
+    p += 2;
+    while (p + 1 < end) {
+        if (p[0] == '*' && p[1] == '/') {
+            return p + 2;
+        }
+        p++;
+    }
+    return end;
+}
+
+static const char *skip_quoted_literal(const char *p, const char *end) {
+    char quote = *p++;
+
+    while (p < end) {
+        if (*p == '\\') {
+            p += p + 1 < end ? 2 : 1;
+            continue;
+        }
+        if (*p == quote) {
+            return p + 1;
+        }
+        p++;
+    }
+    return end;
+}
+
+static const char *line_start_for(const char *source, const char *p) {
+    while (p > source && p[-1] != '\n') {
+        p--;
+    }
+    return p;
+}
+
+static int line_is_preprocessor_directive(const char *source, const char *p) {
+    const char *line = line_start_for(source, p);
+
+    while (line < p && (*line == ' ' || *line == '\t' || *line == '\r')) {
+        line++;
+    }
+    return *line == '#';
+}
+
+static const char *skip_preprocessor_directive(const char *p, const char *end) {
+    const char *line = p;
+
+    while (p < end) {
+        if (*p == '\n') {
+            const char *q = p;
+
+            while (q > line && (q[-1] == ' ' || q[-1] == '\t' || q[-1] == '\r')) {
+                q--;
+            }
+            if (q > line && q[-1] == '\\') {
+                p++;
+                line = p;
+                continue;
+            }
+            return p + 1;
+        }
+        p++;
+    }
+    return end;
+}
+
+static const char *skip_non_code_at(const char *source, const char *p, const char *end) {
+    if (line_is_preprocessor_directive(source, p)) {
+        return skip_preprocessor_directive(p, end);
+    }
+    if (p + 1 < end && p[0] == '/' && p[1] == '/') {
+        return skip_line_comment(p, end);
+    }
+    if (p + 1 < end && p[0] == '/' && p[1] == '*') {
+        return skip_block_comment(p, end);
+    }
+    if (*p == '"' || *p == '\'') {
+        return skip_quoted_literal(p, end);
+    }
+    return p;
+}
+
 static void parser_skip_ws(PkParser *parser) {
     while (parser->p < parser->end && isspace((unsigned char)*parser->p)) {
         parser->p++;
@@ -952,6 +1041,12 @@ static const char *match_balanced(const char *open, const char *end, char lhs, c
     int depth = 0;
 
     for (const char *p = open; p < end && *p != '\0'; p++) {
+        const char *next = skip_non_code_at(open, p, end);
+
+        if (next != p) {
+            p = next - 1;
+            continue;
+        }
         if (*p == lhs) {
             depth++;
         } else if (*p == rhs) {
@@ -971,6 +1066,7 @@ int pk_c_walker_find_function_source(
 ) {
     size_t name_len;
     const char *p;
+    const char *end;
 
     if (source == NULL || fn_name == NULL || span == NULL) {
         return 0;
@@ -978,15 +1074,25 @@ int pk_c_walker_find_function_source(
     memset(span, 0, sizeof(*span));
     name_len = strlen(fn_name);
     p = source;
-    while ((p = strstr(p, fn_name)) != NULL) {
+    end = source + strlen(source);
+    while (p < end) {
         const char *after = p + name_len;
         const char *params_end;
         const char *body_open;
         const char *body_close;
         const char *line_start;
+        const char *next = skip_non_code_at(source, p, end);
 
+        if (next != p) {
+            p = next;
+            continue;
+        }
+        if (after > end || strncmp(p, fn_name, name_len) != 0) {
+            p++;
+            continue;
+        }
         if (!token_boundary_before(source, p) || !token_boundary_after(after)) {
-            p = after;
+            p++;
             continue;
         }
         while (isspace((unsigned char)*after)) {
@@ -996,19 +1102,25 @@ int pk_c_walker_find_function_source(
             p = after;
             continue;
         }
-        params_end = match_balanced(after, source + strlen(source), '(', ')');
+        params_end = match_balanced(after, end, '(', ')');
         if (params_end == NULL) {
             return 0;
         }
         body_open = params_end + 1;
-        while (*body_open != '\0' && *body_open != '{' && *body_open != ';') {
+        while (body_open < end && *body_open != '{' && *body_open != ';') {
+            const char *next = skip_non_code_at(source, body_open, end);
+
+            if (next != body_open) {
+                body_open = next;
+                continue;
+            }
             body_open++;
         }
-        if (*body_open != '{') {
+        if (body_open >= end || *body_open != '{') {
             p = params_end + 1;
             continue;
         }
-        body_close = match_balanced(body_open, source + strlen(source), '{', '}');
+        body_close = match_balanced(body_open, end, '{', '}');
         if (body_close == NULL) {
             return 0;
         }
@@ -1016,6 +1128,7 @@ int pk_c_walker_find_function_source(
         while (line_start > source && line_start[-1] != '\n') {
             line_start--;
         }
+        span->source_start = source;
         span->signature_start = line_start;
         span->params_start = after + 1;
         span->params_end = params_end;
@@ -1053,9 +1166,15 @@ static int add_macro_preconditions(
     const char *p = span->body_start;
 
     while (p < span->body_end) {
+        const char *next = skip_non_code_at(span->source_start, p, span->body_end);
+
+        if (next != p) {
+            p = next;
+            continue;
+        }
         if (p + 6 <= span->body_end &&
             strncmp(p, "BUG_ON", 6) == 0 &&
-            token_boundary_before(span->body_start, p) &&
+            token_boundary_before(span->source_start, p) &&
             token_boundary_after(p + 6)) {
             const char *arg_start;
             const char *arg_end;
@@ -1076,7 +1195,7 @@ static int add_macro_preconditions(
         }
         if (p + 6 <= span->body_end &&
             strncmp(p, "assert", 6) == 0 &&
-            token_boundary_before(span->body_start, p) &&
+            token_boundary_before(span->source_start, p) &&
             token_boundary_after(p + 6)) {
             const char *arg_start;
             const char *arg_end;
@@ -1100,10 +1219,16 @@ static int add_macro_preconditions(
     return 0;
 }
 
-static const char *statement_end(const char *start, const char *end) {
+static const char *statement_end(const char *source, const char *start, const char *end) {
     int depth = 0;
 
     for (const char *p = start; p < end; p++) {
+        const char *next = skip_non_code_at(source, p, end);
+
+        if (next != p) {
+            p = next - 1;
+            continue;
+        }
         if (*p == '(' || *p == '[' || *p == '{') {
             depth++;
         } else if (*p == ')' || *p == ']' || *p == '}') {
@@ -1250,10 +1375,18 @@ static int label_leads_to_return(const pk_c_walker_function_span *span, const ch
     size_t label_len = strlen(label);
     const char *p = span->body_start;
 
-    while ((p = strstr(p, label)) != NULL && p < span->body_end) {
+    while (p < span->body_end) {
         const char *after = p + label_len;
+        const char *next = skip_non_code_at(span->source_start, p, span->body_end);
 
-        if (token_boundary_before(span->body_start, p) && *after == ':') {
+        if (next != p) {
+            p = next;
+            continue;
+        }
+        if (after <= span->body_end &&
+            strncmp(p, label, label_len) == 0 &&
+            token_boundary_before(span->source_start, p) &&
+            *after == ':') {
             after++;
             while (after < span->body_end && isspace((unsigned char)*after)) {
                 after++;
@@ -1262,7 +1395,7 @@ static int label_leads_to_return(const pk_c_walker_function_span *span, const ch
                 strncmp(after, "return", strlen("return")) == 0 &&
                 token_boundary_after(after + strlen("return"));
         }
-        p = after;
+        p++;
     }
     return 0;
 }
@@ -1293,15 +1426,20 @@ static int add_if_preconditions(
     const char *p = span->body_start;
 
     while (p < span->body_end) {
+        const char *next = skip_non_code_at(span->source_start, p, span->body_end);
         const char *cond_start;
         const char *cond_end;
         const char *stmt_start;
         const char *stmt_finish;
         const char *open;
 
+        if (next != p) {
+            p = next;
+            continue;
+        }
         if ((size_t)(span->body_end - p) < strlen("if") ||
             strncmp(p, "if", strlen("if")) != 0 ||
-            !token_boundary_before(span->body_start, p) ||
+            !token_boundary_before(span->source_start, p) ||
             !token_boundary_after(p + strlen("if"))) {
             p++;
             continue;
@@ -1326,7 +1464,7 @@ static int add_if_preconditions(
             }
             stmt_finish = close + 1;
         } else {
-            stmt_finish = statement_end(stmt_start, span->body_end);
+            stmt_finish = statement_end(span->source_start, stmt_start, span->body_end);
         }
 
         if (is_negative_errno_return(stmt_start, stmt_finish)) {
@@ -1389,6 +1527,12 @@ static int add_trailing_return_post(
     int brace_depth = 0;
 
     while (p < span->body_end) {
+        const char *next = skip_non_code_at(span->source_start, p, span->body_end);
+
+        if (next != p) {
+            p = next;
+            continue;
+        }
         if (*p == '{') {
             brace_depth++;
             p++;
@@ -1404,10 +1548,10 @@ static int add_trailing_return_post(
         if (brace_depth == 0 &&
             (size_t)(span->body_end - p) >= strlen("return") &&
             strncmp(p, "return", strlen("return")) == 0 &&
-            token_boundary_before(span->body_start, p) &&
+            token_boundary_before(span->source_start, p) &&
             token_boundary_after(p + strlen("return"))) {
             last_return = p;
-            last_stmt_end = statement_end(p, span->body_end);
+            last_stmt_end = statement_end(span->source_start, p, span->body_end);
             p = last_stmt_end;
             continue;
         }
