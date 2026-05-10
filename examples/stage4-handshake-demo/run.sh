@@ -22,8 +22,8 @@
 #   bash examples/stage4-handshake-demo/run.sh
 #
 # Optional env:
-#   PROVEKIT_Z3 — path to the z3 binary (default: z3 on $PATH).
-#   STAGE4_KEEP — set to 1 to keep the per-run project_dirs.
+#   PROVEKIT_Z3: path to the z3 binary (default: z3 on $PATH).
+#   STAGE4_KEEP: set to 1 to keep the per-run project_dirs.
 
 set -euo pipefail
 

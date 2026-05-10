@@ -15,9 +15,9 @@
 // implementations/zig/.provekit/lift/zig-self-contracts/manifest.toml.
 //
 // Module imports:
-//   provekit-ir                — IR types + JCS + BLAKE3 helper
-//   provekit-proof-envelope-zig — buildProofEnvelope + sign helpers
-//   provekit-self-contracts    — native layered memento minting
+//   provekit-ir: IR types + JCS + BLAKE3 helper
+//   provekit-proof-envelope-zig: buildProofEnvelope + sign helpers
+//   provekit-self-contracts: native layered memento minting
 
 const std = @import("std");
 

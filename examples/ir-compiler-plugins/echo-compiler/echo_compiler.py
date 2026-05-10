@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """
-Echo IR compiler — reference ProvekIt IR compiler plugin.
+Echo IR compiler: reference ProvekIt IR compiler plugin.
 
 Demonstrates the JSON-RPC over stdio protocol defined in
 protocol/specs/2026-04-30-ir-compiler-protocol.md.

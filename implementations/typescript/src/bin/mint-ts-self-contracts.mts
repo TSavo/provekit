@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-ts-self-contracts — TypeScript peer-implementation orchestrator.
+// mint-ts-self-contracts: TypeScript peer-implementation orchestrator.
 //
 // 1. Walks every .invariant.ts file in implementations/typescript/src/
 //    (one per public-API source file).
@@ -15,7 +15,7 @@
 // The repo's other tsx-driven binaries (`bin/provekit.cjs`,
 // `bin/provekit-lift.cjs`) are currently broken on Node 25 because
 // @ipld/dag-cbor is ESM-only and tsx's CJS bridge can't resolve it.
-// Vitest's Vite loader handles ESM cleanly — that's the working
+// Vitest's Vite loader handles ESM cleanly: that's the working
 // invocation:
 //
 //   pnpm vitest run implementations/typescript/src/bin/mint-ts-self-contracts.test.ts
@@ -181,7 +181,7 @@ export function runMintSelfContracts(outDir: string): MintResult {
 
   const slabs = authorAllInvariants();
 
-  // Foundation key — identical to Rust's [0x42; 32] test seed. Same key
+  // Foundation key: identical to Rust's [0x42; 32] test seed. Same key
   // means same signature for the same canonical-encoded payload across
   // peer impls (where the hashed bytes themselves match across impls).
   const seed = Buffer.alloc(32, 0x42);

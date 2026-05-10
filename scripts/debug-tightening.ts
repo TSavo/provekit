@@ -37,7 +37,7 @@ const principles: Record<string, string> = {
   "addition-overflow": readFileSync(join(__dirname, "..", ".provekit", "principles", "addition-overflow.dsl"), "utf-8"),
   "subtraction-underflow": readFileSync(join(__dirname, "..", ".provekit", "principles", "subtraction-underflow.dsl"), "utf-8"),
   // multiplication-overflow parked at .provekit/principles/disabled/ pending
-  // value_comparison capability — labeler round-2 recommended drop.
+  // value_comparison capability: labeler round-2 recommended drop.
   "multiplication-overflow": readFileSync(join(__dirname, "..", ".provekit", "principles", "disabled", "multiplication-overflow.dsl"), "utf-8"),
 };
 

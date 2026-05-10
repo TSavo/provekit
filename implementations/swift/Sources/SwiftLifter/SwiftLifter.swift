@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// SwiftLifter — SwiftSyntax-based Swift source parser for the ProvekIt lift pipeline.
+// SwiftLifter: SwiftSyntax-based Swift source parser for the ProvekIt lift pipeline.
 //
 // v1: AST-based via SwiftSyntax (Apple's official swift-syntax library).
 //     Replaces the regex-v0 lifter that lived here previously (issue #211).
@@ -8,7 +8,7 @@
 // Walks the parsed Swift slab and extracts:
 //   - Function declarations (FunctionDeclSyntax: top-level + members of
 //     class/struct/enum/protocol/actor/extension nesting)
-//   - Initializer declarations (InitializerDeclSyntax) — emitted as `init`
+//   - Initializer declarations (InitializerDeclSyntax): emitted as `init`
 //   - Same-kit call sites: function calls whose callee identifier resolves
 //     to a function declared in the same parse unit
 //
@@ -137,7 +137,7 @@ public enum SwiftLifter {
         )
         callVisitor.walk(sourceFile)
 
-        // Deduplicate call edges by (targetSymbol, line, column) — mirrors v0
+        // Deduplicate call edges by (targetSymbol, line, column): mirrors v0
         // behavior so the wire shape is byte-identical for the same input.
         var seen = Set<String>()
         let uniqueEdges = callVisitor.callEdges.filter { edge in
@@ -219,7 +219,7 @@ private final class CallEdgeVisitor: SyntaxVisitor {
         // SourceLocationConverter gives us 1-based line and 1-based column;
         // the regex-v0 lifter emitted 1-based line and 0-based UTF-16 column
         // offset (NSString locations). Normalize to (1-based line, 0-based
-        // UTF-8 byte column) — i.e. column - 1 — to match the v0 wire shape
+        // UTF-8 byte column): i.e. column - 1: to match the v0 wire shape
         // for callers like the LSP that report locii to editors.
         let calleeToken = node.calledExpression
         let location = calleeToken.startLocation(converter: locationConverter)

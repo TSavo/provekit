@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-tag-calibration.ts — calibrate the v1 mechanical tagger
+ * scripts/harvest-tag-calibration.ts: calibrate the v1 mechanical tagger
  * against in-repo hard-bug fixtures with known-correct expressibility tags.
  *
  * Tagger v1 needs a calibration set before BugsJS results are trustworthy.
@@ -61,7 +61,7 @@ const EMPTY_CATCH_SOURCE = `export function loadConfig(path: string): string {
   try {
     return require("fs").readFileSync(path, "utf8");
   } catch (e) {
-    // empty catch — silently swallows exception
+    // empty catch: silently swallows exception
   }
   return "";
 }
@@ -84,7 +84,7 @@ const cases: CalibrationCase[] = [
       5, // try/catch lines 2-6
     ),
     rationale:
-      "the try/catch with empty handler is the bug — substrate has `throws` capability but no `try_catch_handler_empty` kind. Tagger should report missing-column or new-capability if it sees the shape.",
+      "the try/catch with empty handler is the bug: substrate has `throws` capability but no `try_catch_handler_empty` kind. Tagger should report missing-column or new-capability if it sees the shape.",
   },
   {
     name: "shell-injection",

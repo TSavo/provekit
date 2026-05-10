@@ -3,8 +3,8 @@
 // .invariant.ts for implementations/typescript/src/canonicalizer/hash.ts
 //
 // Public surface covered:
-//   * `blake3_512_hex(bytes) -> string` — full 128-char lowercase hex (no prefix).
-//   * `computeCid(bytes) -> string` — "blake3-512:" + 128-hex.
+//   * `blake3_512_hex(bytes) -> string`: full 128-char lowercase hex (no prefix).
+//   * `computeCid(bytes) -> string`: "blake3-512:" + 128-hex.
 //   * `HASH_ALGORITHM_TAG = "blake3-512"`, `HASH_PREFIX = "blake3-512:"`.
 //
 // Honest scope:

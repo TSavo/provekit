@@ -36,8 +36,8 @@ const CompilerName = "provekit-lift-go-validator"
 // CompilerVersion identifies the lift adapter's own version and
 // declares the runtime validator surface this adapter targets. The
 // validator runtime (go-playground/validator) is NOT a Go-module
-// dependency of this adapter — the adapter parses the tag string
-// directly — so the "targets:" suffix is documentary, surfacing the
+// dependency of this adapter: the adapter parses the tag string
+// directly: so the "targets:" suffix is documentary, surfacing the
 // upstream surface name in the manifest's provenance rather than
 // asserting a verifiable module pin. A future revision MAY add
 // `go-playground/validator/v10` as a real dep and switch this to its

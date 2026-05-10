@@ -9,7 +9,7 @@
 //   * Cbor.EncodeMapHead(output, n)
 //
 // Honest scope:
-//   RFC 8949 §4.2.1 deterministic encoding — shortest-form integer head,
+//   RFC 8949 §4.2.1 deterministic encoding: shortest-form integer head,
 //   definite-length items only, sorted map keys. The IR captures
 //   determinism + length floors; byte-faithful conformance is proven by
 //   Provekit.Tests.

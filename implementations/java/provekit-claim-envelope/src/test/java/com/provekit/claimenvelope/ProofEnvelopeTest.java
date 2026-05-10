@@ -182,7 +182,7 @@ class ProofEnvelopeTest {
     }
 
     // -------------------------------------------------------------------
-    // Cross-kit byte-equivalence — THE LOAD-BEARING TEST
+    // Cross-kit byte-equivalence: THE LOAD-BEARING TEST
     // -------------------------------------------------------------------
 
     @Test

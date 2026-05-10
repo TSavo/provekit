@@ -22,7 +22,7 @@ export function processRefund(orderId: string): void {
   const order = db.getOrder(orderId);
   console.log(`Processing refund for order ${orderId}`);
 
-  // Calculate refund from item prices — ignores coupon discount
+  // Calculate refund from item prices: ignores coupon discount
   let refundAmount = 0;
   for (const item of order.items) {
     refundAmount += item.unitPrice * item.quantity;

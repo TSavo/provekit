@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Provekit.SelfContracts — the C# peer self-contracts orchestrator.
+// Provekit.SelfContracts: the C# peer self-contracts orchestrator.
 //
 // Walks every *.invariant.cs file's Register() entrypoint, mints all
 // collected contracts as signed mementos, bundles into a `.proof` whose
@@ -34,7 +34,7 @@ namespace Provekit.SelfContracts;
 
 public static class Program
 {
-    // Foundation key — test seed [0x42; 32], same as Rust/C++/Go/TS peers.
+    // Foundation key: test seed [0x42; 32], same as Rust/C++/Go/TS peers.
     public static readonly byte[] FoundationSeed = Enumerable.Repeat((byte)0x42, 32).ToArray();
     public const string DeclaredAt = "2026-04-30T12:00:00.000Z";
     public const string ProducedBy = "csharp-kit@1.0";

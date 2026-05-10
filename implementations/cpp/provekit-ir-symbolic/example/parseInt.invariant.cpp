@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Example .invariant.cpp — authors a parseInt precondition using the
+// Example .invariant.cpp: authors a parseInt precondition using the
 // C++ kit's primitives. Compiles and runs to verify the collector +
 // marshal_declarations pipeline produces deterministic IR-JSON.
 //

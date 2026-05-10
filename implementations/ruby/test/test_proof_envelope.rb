@@ -8,7 +8,7 @@
 # locally with identical input reproduces the same bytes. So Ruby
 # matching this pin = Ruby matching Rust = Ruby matching Python.
 #
-# If a pin fails, the mismatch is a real divergence — surface it,
+# If a pin fails, the mismatch is a real divergence: surface it,
 # don't paper over it.
 
 require "minitest/autorun"

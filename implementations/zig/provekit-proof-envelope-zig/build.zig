@@ -4,7 +4,7 @@
 //
 // Side B (language-native) crypto substrate for the zig kit. Exposes:
 //   - BLAKE3-512 hashing (re-exported from std.crypto.hash.Blake3)
-//   - Deterministic CBOR encoder (RFC 8949 §4.2.1) — ~90 LOC, mirrors
+//   - Deterministic CBOR encoder (RFC 8949 §4.2.1): ~90 LOC, mirrors
 //     the rust kit's provekit-proof-envelope/src/cbor.rs
 //   - Ed25519 sign/verify (wraps std.crypto.sign.Ed25519)
 //   - .proof envelope builder, byte-identical to the rust kit's

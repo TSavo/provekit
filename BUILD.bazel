@@ -1,4 +1,4 @@
-# Root BUILD.bazel — the workspace boundary marker. No targets here
+# Root BUILD.bazel: the workspace boundary marker. No targets here
 # yet; per-package BUILD.bazel files declare targets.
 #
 # Layout:

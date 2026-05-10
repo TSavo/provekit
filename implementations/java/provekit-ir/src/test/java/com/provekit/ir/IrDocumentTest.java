@@ -61,7 +61,7 @@ public class IrDocumentTest {
     }
 
     /**
-     * Spec v1.1.0 — bridge_decl_v1_1 conformance fixture from conformance/fixtures.toml.
+     * Spec v1.1.0: bridge_decl_v1_1 conformance fixture from conformance/fixtures.toml.
      * The 9-field Bridge with optional notes must serialize to JCS-canonical
      * (alphabetical key order) bytes that match the canonical fixture exactly.
      */

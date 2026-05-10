@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Tests for Provekit::Lift::FfiResolver — Ruby Fiddle + ffi gem resolver.
+# Tests for Provekit::Lift::FfiResolver: Ruby Fiddle + ffi gem resolver.
 # spec #114 R3, extends #127 (Go cgo), #131 (Python ctypes), #132 (Java JNI).
 
 require "minitest/autorun"

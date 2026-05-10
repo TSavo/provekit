@@ -1,4 +1,4 @@
-# cpp/ — C/C++ principle partition
+# cpp/: C/C++ principle partition
 
 TBD: language-specific axioms for C and C++ go here.
 

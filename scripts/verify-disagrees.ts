@@ -119,10 +119,10 @@ for (const d of DISAGREES) {
     const principle = compiled.get(d.principle)!;
     const matches = principle(db);
     if (matches.length === 0) {
-      console.log(`SUPPRESSED  ${d.project}/Bug-${d.bugId} ${d.principle}  — ${d.reason}`);
+      console.log(`SUPPRESSED  ${d.project}/Bug-${d.bugId} ${d.principle}: ${d.reason}`);
       suppressed++;
     } else {
-      console.log(`STILL_FIRES ${d.project}/Bug-${d.bugId} ${d.principle}  matches=${matches.length}  — ${d.reason}`);
+      console.log(`STILL_FIRES ${d.project}/Bug-${d.bugId} ${d.principle}  matches=${matches.length}: ${d.reason}`);
       stillFires++;
     }
   } finally {

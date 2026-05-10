@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * provekit / proveit — protocol-first CLI.
+ * provekit / proveit: protocol-first CLI.
  *
  * Surface (everything else has been deleted as not-in-service-of-the-protocol):
- *   provekit verify           — bridge enforcement: walk .proof files,
+ *   provekit verify: bridge enforcement: walk .proof files,
  *                                discharge per-callsite IR obligations
  *                                via the configured solver
- *   provekit mint <subcmd>    — mint signed mementos (property /
+ *   provekit mint <subcmd>: mint signed mementos (property /
  *                                bridge / catalog / generic)
- *   provekit dump <file>.proof — inspect a .proof bundle
- *   provekit override --reason — record an intentional bypass for one commit
- *   provekit --version        — print version
+ *   provekit dump <file>.proof: inspect a .proof bundle
+ *   provekit override --reason: record an intentional bypass for one commit
+ *   provekit --version: print version
  *
  * Verb aliases (purely lexical):
  *   will / always / shall  → must
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
 }
 
 function printHelp(): void {
-  console.error(`provekit v${VERSION} — protocol-first verifier
+  console.error(`provekit v${VERSION}: protocol-first verifier
 
 Usage:
   provekit verify [--ci]              Discharge bridge call-site obligations
@@ -116,7 +116,7 @@ async function runVerify(args: string[]): Promise<void> {
   const projectRoot = resolveProjectRoot(args);
   const ci = args.includes("--ci");
 
-  console.log(`provekit v${VERSION} — verify (bridge enforcement, IR-substrate)`);
+  console.log(`provekit v${VERSION}: verify (bridge enforcement, IR-substrate)`);
   console.log(`Project: ${projectRoot}`);
   console.log();
 

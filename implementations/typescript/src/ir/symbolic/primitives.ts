@@ -1,5 +1,5 @@
 /**
- * Symbolic primitives — IR builders for kit-supplied built-in functions.
+ * Symbolic primitives: IR builders for kit-supplied built-in functions.
  *
  * The runtime-eval lifting model: instead of walking the user's TypeScript
  * AST via the tsc Compiler API, the user imports symbolic primitives that
@@ -68,7 +68,7 @@ export function inferSortHint(term: IrTerm): Sort | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Constants — `num`, `str`, `bool`
+// Constants: `num`, `str`, `bool`
 // ---------------------------------------------------------------------------
 
 /** Build an Int constant term. */
@@ -109,7 +109,7 @@ function ctor(name: string, args: IrTerm[], sortHint?: Sort): IrTerm {
   return term;
 }
 
-// Number parsing — bridged to V8's ECMA-262 implementation.
+// Number parsing: bridged to V8's ECMA-262 implementation.
 export const parseInt = primitiveBridge({
   irName: "parseInt",
   irArgSorts: [StringSort],
@@ -130,7 +130,7 @@ export const parseFloat = primitiveBridge({
   notes: "ECMA-262 parseFloat.",
 });
 
-// Number predicates — bridged.
+// Number predicates: bridged.
 export const isNaN = primitiveBridge({
   irName: "isNaN",
   irArgSorts: [Real],
@@ -158,7 +158,7 @@ export const isInteger = primitiveBridge({
   targetLayer: V8,
 });
 
-// Math.* polymorphic primitives — return sort mirrors operand sort.
+// Math.* polymorphic primitives: return sort mirrors operand sort.
 export function abs(n: IrTerm): IrTerm {
   return ctor("Math.abs", [n], inferSortHint(n) ?? Real);
 }
@@ -169,7 +169,7 @@ export function min(a: IrTerm, b: IrTerm): IrTerm {
   return ctor("Math.min", [a, b], inferSortHint(a) ?? Real);
 }
 
-// Math.* monomorphic primitives — bridged.
+// Math.* monomorphic primitives: bridged.
 export const floor = primitiveBridge({
   irName: "Math.floor",
   irArgSorts: [Real],
@@ -206,7 +206,7 @@ export const sign = primitiveBridge({
   targetLayer: V8,
 });
 
-// String.* primitives — bridged.
+// String.* primitives: bridged.
 export const stringLength = primitiveBridge({
   irName: "String.prototype.length",
   irArgSorts: [StringSort],
@@ -225,7 +225,7 @@ export const stringIncludes = primitiveBridge({
   targetLayer: V8,
 });
 
-// Array.* primitives — bridged. Element type carried by the array's sort.
+// Array.* primitives: bridged. Element type carried by the array's sort.
 export const arrayLength = primitiveBridge({
   irName: "Array.prototype.length",
   irArgSorts: ["Array"],
@@ -245,7 +245,7 @@ export const arrayIncludes = primitiveBridge({
 });
 
 // ---------------------------------------------------------------------------
-// Term-level arithmetic — return IrTerm
+// Term-level arithmetic: return IrTerm
 // ---------------------------------------------------------------------------
 
 export function add(a: IrTerm | number, b: IrTerm | number): IrTerm {
@@ -265,7 +265,7 @@ export function neg(a: IrTerm | number): IrTerm {
 }
 
 // ---------------------------------------------------------------------------
-// Atomic predicates — return IrFormula
+// Atomic predicates: return IrFormula
 // ---------------------------------------------------------------------------
 
 type Liftable = IrTerm | number | bigint | string | boolean | null;
@@ -339,7 +339,7 @@ export function bv(value: number | bigint, width: number): IrTerm {
   return { kind: "const", value: normalized, sort: { kind: "bitvec", width } };
 }
 
-// Binary BV term ctors — return BV<w> where w matches both operands.
+// Binary BV term ctors: return BV<w> where w matches both operands.
 
 export function bvadd(a: IrTerm, b: IrTerm): IrTerm {
   return ctor("bvadd", [a, b], requireSameWidth(a, b, "bvadd"));
@@ -408,7 +408,7 @@ export function extract(hi: number, lo: number, x: IrTerm): IrTerm {
   return ctor("extract", [hiTerm, loTerm, x], { kind: "bitvec", width: hi - lo + 1 });
 }
 
-// BV comparison predicates — return IrFormula.
+// BV comparison predicates: return IrFormula.
 
 function bvCmp(predicateName: string, a: IrTerm, b: IrTerm): IrFormula {
   requireSameWidth(a, b, predicateName);

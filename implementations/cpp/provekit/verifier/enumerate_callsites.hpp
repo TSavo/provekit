@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// EnumerateCallsitesStage — Stage 2. Walks every property memento in
+// EnumerateCallsitesStage: Stage 2. Walks every property memento in
 // the pool, finds Ctor terms whose name matches a bridge envelope's
 // sourceSymbol, emits one CallSite per match.
 

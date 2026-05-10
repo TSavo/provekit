@@ -47,7 +47,7 @@ public static class Quantifiers
     }
 
     /// <summary>
-    /// Build <c>εx:sort. body(x)</c> — definite description (unique existence).
+    /// Build <c>εx:sort. body(x)</c>: definite description (unique existence).
     /// </summary>
     public static Formula Choice(string varName, Sort sort, Func<Term, Formula> body)
     {

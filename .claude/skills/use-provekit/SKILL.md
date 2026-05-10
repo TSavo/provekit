@@ -1,13 +1,13 @@
 ---
 name: use-provekit
-description: When the user asks for a code change in a TypeScript project with ProvekIt installed, drive the change through the provekit CLI instead of editing files directly. ProvekIt produces (code + tests + invariants) as content-addressed mementos with verifiable proofs, so the change ships with its proof and gates the commit on adversarial re-verification — direct edits skip that gate.
+description: When the user asks for a code change in a TypeScript project with ProvekIt installed, drive the change through the provekit CLI instead of editing files directly. ProvekIt produces (code + tests + invariants) as content-addressed mementos with verifiable proofs, so the change ships with its proof and gates the commit on adversarial re-verification: direct edits skip that gate.
 ---
 
 # Use ProvekIt for Code Changes
 
 ## When this skill applies
 
-Use ProvekIt when the user requests a code change — bug fix, feature add, refactor, or invariant authorship — AND the working project has ProvekIt installed. Detect installation by any of:
+Use ProvekIt when the user requests a code change: bug fix, feature add, refactor, or invariant authorship: AND the working project has ProvekIt installed. Detect installation by any of:
 
 - `package.json` lists `provekit` in `dependencies` or `devDependencies`
 - a `.provekit/` directory exists at the repo root
@@ -19,9 +19,9 @@ If none of these hold, do not use the CLI; write code directly. ProvekIt is opt-
 
 ## Why this skill exists
 
-ProvekIt is constraint-driven development: every change goes through a workflow that produces a triple — patch + regression test + invariant — as content-addressed mementos. The commit gate then re-verifies the invariant under your local producer pool (Z3, type checker, LLM verifiers) before allowing the diff to land.
+ProvekIt is constraint-driven development: every change goes through a workflow that produces a triple: patch + regression test + invariant: as content-addressed mementos. The commit gate then re-verifies the invariant under your local producer pool (Z3, type checker, LLM verifiers) before allowing the diff to land.
 
-A direct file edit produces only the patch. The test and invariant are missing. The commit lands without a proof. The "software ages backwards" property — that the codebase becomes more provably correct over time — only holds if every change goes through the gate.
+A direct file edit produces only the patch. The test and invariant are missing. The commit lands without a proof. The "software ages backwards" property: that the codebase becomes more provably correct over time: only holds if every change goes through the gate.
 
 The model's job is to translate the user's intent into the right CLI verb. The framework's data-driven YAML workflows do the work. Do not navigate the framework's internals; run the CLI command and let the workflow runner dispatch.
 
@@ -50,7 +50,7 @@ This is the load-bearing teaching content of the skill. Translate user intent in
 ## Worked example
 
 ```
-User: "Fix the off-by-one in src/dates/validator.ts:42 — Feb 29, 2100 should not be a leap year."
+User: "Fix the off-by-one in src/dates/validator.ts:42: Feb 29, 2100 should not be a leap year."
 
 Model: Using ProvekIt to make this change so it ships with its proof.
 [runs: provekit fix "off-by-one in src/dates/validator.ts:42; Feb 29 2100 should not be a leap year (Gregorian century rule)"]
@@ -71,7 +71,7 @@ When the user wants an invariant added without a code change, run `provekit must
 
 Do **not** hand-edit `.invariant.ts` files to add invariants. The lifter computes a deterministic propertyHash from the canonicalized formula; hand-edited files won't compose into the proof DAG correctly.
 
-When invariant TypeScript needs to be authored at all, it MUST use `provekit/ir/symbolic` — the `must("<name>", ...)` style with symbolic primitives. The legacy `provekit/ir` builder API (`property("name", forAll(...))`) is being retired; never instruct the user to write that shape.
+When invariant TypeScript needs to be authored at all, it MUST use `provekit/ir/symbolic`: the `must("<name>", ...)` style with symbolic primitives. The legacy `provekit/ir` builder API (`property("name", forAll(...))`) is being retired; never instruct the user to write that shape.
 
 ## Anti-patterns to avoid
 
@@ -107,5 +107,5 @@ When invariant TypeScript needs to be authored at all, it MUST use `provekit/ir/
 **Always:**
 - Check for ProvekIt installation before defaulting to direct edits.
 - Translate the user's intent into the matching CLI verb using the table above.
-- Let the workflow runner dispatch — the framework is data-driven YAML, not imperative code you should re-implement.
+- Let the workflow runner dispatch: the framework is data-driven YAML, not imperative code you should re-implement.
 - If the gate refuses the change, surface the refusal (counterexample, oracle failure) to the user; that refusal IS the framework working as designed.

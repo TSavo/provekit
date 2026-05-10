@@ -18,7 +18,7 @@ import (
 //
 // Implements §3 rule 1 (filename CID matches content) + §3 rule 2
 // (member CIDs match envelope identities). Rule 3 (catalog signature
-// verify) is deferred — needs a public-key memento walker that v1
+// verify) is deferred: needs a public-key memento walker that v1
 // doesn't yet have.
 //
 // v1.1.0: every protocol-surface hash is BLAKE3-512 with the
@@ -81,7 +81,7 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 	// v1.1.0 prefers `blake3-512:<128 hex>.proof`. We also tolerate
 	// bare `<hex>.proof` (legacy path; the hash-tag check below catches
 	// any v0 mementos inside it). Any OTHER self-identifying tag is
-	// rejected loud — mirrors implementations/cpp/provekit/verifier/
+	// rejected loud: mirrors implementations/cpp/provekit/verifier/
 	// load_all_proofs.cpp.
 	filename := filepath.Base(proofPath)
 	if m := proofFilenameV11RE.FindStringSubmatch(filename); m != nil {
@@ -96,7 +96,7 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 			m[1])
 	} else if !proofFilenameLegacyRE.MatchString(filename) {
 		// Filename doesn't match any known shape; ignore (don't
-		// surface as an error — non-.proof file got into the
+		// surface as an error: non-.proof file got into the
 		// enumerator? shouldn't happen but be lenient).
 	}
 

@@ -2,8 +2,7 @@
  * Tests for IR structural invariants (src/ir/invariants.ts).
  *
  * These tests verify that the invariant properties compile and
- * evaluate correctly at runtime. They do NOT mint mementos —
- * minting is tested separately in cli.mint.new-ir.test.ts.
+ * evaluate correctly at runtime. They do NOT mint mementos: * minting is tested separately in cli.mint.new-ir.test.ts.
  */
 
 import { describe, it, expect } from "vitest";

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// InstantiateStage — Stage 4. Substitutes the outermost universally
+// InstantiateStage: Stage 4. Substitutes the outermost universally
 // quantified variable with the bridge call's argument term, producing
 // a closed obligation IR formula.
 

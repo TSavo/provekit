@@ -230,7 +230,7 @@ func TestOpacityManifest_MarshalJCS_RoundTrips(t *testing.T) {
 //
 //   {"args":[{"kind":"var","name":"V"}],"kind":"atomic","name":"kit:email"}
 //
-// The BLAKE3-512 of the JCS-canonical bytes — the positionCid — MUST
+// The BLAKE3-512 of the JCS-canonical bytes: the positionCid: MUST
 // be identical across languages. This test pins the hash; the C#
 // peer test in OpacityManifestTests.cs asserts the same constant.
 // Drift in either canonicalizer's output bytes (key order, escape

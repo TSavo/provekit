@@ -4,29 +4,28 @@
 // that the Zig substrate produces byte-identical output to the Rust + Go
 // reference kits when given the same inputs.
 //
-// Anchor 1 — Foundation v0 pubkey (signing.zig):
+// Anchor 1: Foundation v0 pubkey (signing.zig):
 //   `ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=`
 //   Pinned in every .provekit/self-contracts-attestations/*.json file
 //   (the `signer` field). Rust derives this via ed25519-dalek; Zig via
 //   std.crypto.sign.Ed25519. Both must agree.
 //
-// Anchor 2 — Empty contractSetCid (claim_envelope.zig):
+// Anchor 2: Empty contractSetCid (claim_envelope.zig):
 //   `blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229`
 //   Pinned in .provekit/self-contracts-attestations/zig.json (and several
 //   other empty-set kits). It is BLAKE3-512(JCS([]).bytes); JCS-of-empty-
 //   array is exactly the two bytes "[]". A Zig kit that disagrees here
 //   has either a JCS bug or a BLAKE3 bug.
 //
-// Anchor 3 — Full self-contracts attestation message round-trip:
+// Anchor 3: Full self-contracts attestation message round-trip:
 //   Rebuild the exact JCS message body that produced
 //   .provekit/self-contracts-attestations/zig.json, sign it under the
 //   foundation v0 seed, and verify the signature equals the one stored
 //   in that file. Demonstrates JCS + Ed25519 byte-equivalence end-to-end
 //   against the live attestation infrastructure.
 //
-// Anchor 4 — Cross-kit JCS+BLAKE3 of IR Decls is already pinned in the
-//   sibling provekit-ir package (`cross_kit_bridges.zig` —
-//   `PINNED_COUNTERPART_CIDS`, `PINNED_BRIDGES_ARRAY_CID`). Running
+// Anchor 4: Cross-kit JCS+BLAKE3 of IR Decls is already pinned in the
+//   sibling provekit-ir package (`cross_kit_bridges.zig`: //   `PINNED_COUNTERPART_CIDS`, `PINNED_BRIDGES_ARRAY_CID`). Running
 //   `zig build test` in that package proves byte-equivalence against the
 //   rust/python/go/ts kits' pinned tables.
 
@@ -87,7 +86,7 @@ test "anchor 2 corollary: JCS([]) is the literal two bytes \"[]\"" {
 //     "declaredAt": "2026-05-03T18:00:00Z",
 //     "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="
 //   }
-// (signature field NOT included in the signed body — the rust signer
+// (signature field NOT included in the signed body: the rust signer
 // excludes it; see tools/foundation-keygen/src/lib.rs::build_self_contracts_message).
 // This test rebuilds that JCS bytes natively in Zig, signs it, and asserts
 // the signature equals the one committed in zig.json. Cross-kit byte
@@ -142,7 +141,7 @@ test "anchor 3 corollary: signature verifies against the foundation pubkey" {
 // ---- Cross-kit attestation: Rust kit signature byte-matches too -----------
 
 test "rust attestation signature byte-matches rust.json" {
-    // Same shape, different `lang` and `cid` and `contractSetCid` — proves
+    // Same shape, different `lang` and `cid` and `contractSetCid`: proves
     // the JCS encoder + Ed25519 signer agree across non-empty-bundle kits.
     const alloc = std.testing.allocator;
     var ob = ObjectBuilder.init(alloc);

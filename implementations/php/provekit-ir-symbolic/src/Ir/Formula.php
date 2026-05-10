@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt IR — Formula types. */
+/** ProvekIt IR: Formula types. */
 
 namespace ProvekIt\Ir;
 

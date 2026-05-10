@@ -1,5 +1,5 @@
 /**
- * Contract and bridge collectors — symbolic primitives that capture IR
+ * Contract and bridge collectors: symbolic primitives that capture IR
  * declarations into a thread-local collection.
  *
  * The user's invariant file imports `contract` / `must` / `bridge` from
@@ -66,7 +66,7 @@ export interface BridgeDeclaration {
 export type Declaration = ContractDeclaration | BridgeDeclaration;
 
 // ---------------------------------------------------------------------------
-// Active collector — module-scoped, set by the lifter before importing
+// Active collector: module-scoped, set by the lifter before importing
 // the user's invariant file.
 // ---------------------------------------------------------------------------
 
@@ -113,7 +113,7 @@ export function _resetCollector(): void {
 }
 
 // ---------------------------------------------------------------------------
-// describe() / it() — nested-context property declaration sugar.
+// describe() / it(): nested-context property declaration sugar.
 // ---------------------------------------------------------------------------
 
 let describePath: string[] = [];
@@ -134,7 +134,7 @@ export function describe(name: string, body: () => void): void {
 }
 
 // ---------------------------------------------------------------------------
-// contract() — primary primitive for declaring named contracts.
+// contract(): primary primitive for declaring named contracts.
 // ---------------------------------------------------------------------------
 
 /**
@@ -213,7 +213,7 @@ describe.skip = function (name: string, _body: () => void): void {
 };
 
 // ---------------------------------------------------------------------------
-// out() — references the function's return value within a `post` formula.
+// out(): references the function's return value within a `post` formula.
 //
 // Compiles to a VarTerm whose `name` matches the enclosing contract's
 // outBinding (default "out"). Outside a contract() call, out() defaults
@@ -226,7 +226,7 @@ export function out(): VarTerm {
 }
 
 // ---------------------------------------------------------------------------
-// bridge() — declares that a host-language symbol bridges to a deeper-layer
+// bridge(): declares that a host-language symbol bridges to a deeper-layer
 // published contract by CID.
 // ---------------------------------------------------------------------------
 
@@ -245,8 +245,8 @@ export interface BridgeSpec {
 /**
  * Declare a bridge from a host-language symbol to a deeper-layer contract.
  *
- * @param name — the bridge's identifier
- * @param spec — the bridge specification (source, target, optional notes)
+ * @param name: the bridge's identifier
+ * @param spec: the bridge specification (source, target, optional notes)
  */
 export function bridge(name: string, spec: BridgeSpec): void {
   if (activeCollector === null) {
@@ -272,7 +272,7 @@ export function bridge(name: string, spec: BridgeSpec): void {
 }
 
 // ---------------------------------------------------------------------------
-// Quantifier wrappers — exported here so the symbolic module is the
+// Quantifier wrappers: exported here so the symbolic module is the
 // single import point. (These delegate to the existing IR library's
 // builders.)
 // ---------------------------------------------------------------------------

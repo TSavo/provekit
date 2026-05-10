@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * End-to-end harvest-time diff write — exercises the full path from a
+ * End-to-end harvest-time diff write: exercises the full path from a
  * synthetic HarvestCandidate through computeFileDiff to pre_post_diff
  * rows in a scratch DB. Then queries back the row counts to verify the
  * DSL-relation lookup pattern works (find by post coordinates).
@@ -122,4 +122,4 @@ console.log(`  ✓ idempotent: ${second.rowsInserted} rows`);
 
 rmSync(scratchDir, { recursive: true, force: true });
 console.log();
-console.log(`PASS — pre_post_diff harvest write end-to-end`);
+console.log(`PASS: pre_post_diff harvest write end-to-end`);

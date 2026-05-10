@@ -2,8 +2,7 @@
 // Match: throw statement that is NOT inside a catch handler.
 // throws.is_inside_handler == false is CLOSE to the JSON's intent but not identical.
 // The extractor sets is_inside_handler=true only for throws inside a CatchClause (re-throws).
-// Throws inside a try block (not the catch) still have is_inside_handler=false —
-// so this DSL over-matches: it flags throws that ARE in a try block even though
+// Throws inside a try block (not the catch) still have is_inside_handler=false: // so this DSL over-matches: it flags throws that ARE in a try block even though
 // they would be caught by that block's handler.
 //
 // FIXME(extractor gap): The throws extractor should set is_inside_try=true for throws

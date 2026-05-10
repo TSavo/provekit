@@ -1,9 +1,8 @@
-# `provekit-verify` — GitHub Action
+# `provekit-verify`: GitHub Action
 
 Run the ProvekIt standing-invariant gate as a GitHub Actions step. This is
 Channel 1 of the ProvekIt distribution surface (see
-[`docs/specs/2026-04-27-constraint-driven-development.md`](../../../docs/specs/2026-04-27-constraint-driven-development.md)
-— "Distribution: two channels"): every developer adds it to their CI.
+[`docs/specs/2026-04-27-constraint-driven-development.md`](../../../docs/specs/2026-04-27-constraint-driven-development.md): "Distribution: two channels"): every developer adds it to their CI.
 
 ## Quick start
 
@@ -34,7 +33,7 @@ error) always fails.
 | Name                | Default | Description |
 | ------------------- | ------- | ----------- |
 | `working-directory` | `.`     | Directory to `cd` into before running `provekit verify`. |
-| `fail-on-decay`     | `true`  | When `false`, exit code 2 (decay) is treated as success — useful while the constraint corpus is still settling. |
+| `fail-on-decay`     | `true`  | When `false`, exit code 2 (decay) is treated as success: useful while the constraint corpus is still settling. |
 | `verbose`           | `false` | Pass `--verbose` to `provekit`. |
 | `provekit-version`  | `latest` | npm version spec passed to `npx -y "provekit@<version>"`. Pin a known-good version in production. |
 
@@ -64,6 +63,6 @@ error) always fails.
 
 This action lives inside the ProvekIt repo so consumers can reference it as
 `provekit/provekit/.github/actions/provekit-verify@main`. ProvekIt itself
-does not consume this action against its own codebase — see
+does not consume this action against its own codebase: see
 [`.github/workflows/provekit-example.yml`](../../workflows/provekit-example.yml)
 for a copy-paste-ready template that downstream repositories can use.

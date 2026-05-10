@@ -112,7 +112,7 @@ func LiftValidateTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
 		return requiredConstraint(v, sort)
 	}
 
-	// gte=N, lte=N, gt=N, lt=N, eq=N, ne=N — direct numeric comparisons
+	// gte=N, lte=N, gt=N, lt=N, eq=N, ne=N: direct numeric comparisons
 	for _, op := range []string{"gte=", "lte=", "gt=", "lt=", "eq=", "ne="} {
 		if !strings.HasPrefix(tag, op) {
 			continue
@@ -139,7 +139,7 @@ func LiftValidateTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
 		}
 	}
 
-	// min=N, max=N — context-sensitive: numeric bounds or string length
+	// min=N, max=N: context-sensitive: numeric bounds or string length
 	if strings.HasPrefix(tag, "min=") {
 		numStr := tag[4:]
 		n, err := strconv.ParseInt(numStr, 10, 64)
@@ -163,7 +163,7 @@ func LiftValidateTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
 		return ir.Lte(ir.StringLength(v), ir.Num(n))
 	}
 
-	// len=N — exact string length
+	// len=N: exact string length
 	if strings.HasPrefix(tag, "len=") {
 		numStr := tag[4:]
 		n, err := strconv.ParseInt(numStr, 10, 64)

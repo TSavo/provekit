@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * scripts/harvest-tag-expressibility.ts — run the v1 mechanical tagger across
+ * scripts/harvest-tag-expressibility.ts: run the v1 mechanical tagger across
  * BugsJS candidates, persist results to .provekit/harvest/harvest.db, and dump
  * audit lines to stdout for the manual-sample-30 review gate.
  *

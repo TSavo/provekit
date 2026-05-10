@@ -1,5 +1,5 @@
 /**
- * Scope helpers — builders for BindingScope values used in property declarations.
+ * Scope helpers: builders for BindingScope values used in property declarations.
  */
 
 import type { BindingScope, IrFormula } from "./formulas.js";

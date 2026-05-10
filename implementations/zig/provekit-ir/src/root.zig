@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// provekit-ir — Zig kit for ProvekIt protocol v1.1.0
+// provekit-ir: Zig kit for ProvekIt protocol v1.1.0
 //
 // JCS canonical JSON: all object keys emitted in strict alphabetical order.
 // String escaping matches RFC 8785 (zig std.json default with escape_unicode=false).

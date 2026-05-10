@@ -355,7 +355,7 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-246..Bug-246-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix is a comment-padding logic rewrite using `getCommentsInNode` + `isLocatedBefore`. No subtraction whose LHS could underflow (the `commentGroup.length - 1` style is incidental); subtraction-underflow misfires. variable-staleness also doesn't fit — there's no fall-through with a default. Should be expressible-now-pending-principle.
+**Note:** Fix is a comment-padding logic rewrite using `getCommentsInNode` + `isLocatedBefore`. No subtraction whose LHS could underflow (the `commentGroup.length - 1` style is incidental); subtraction-underflow misfires. variable-staleness also doesn't fit: there's no fall-through with a default. Should be expressible-now-pending-principle.
 
 ---
 
@@ -373,7 +373,7 @@ Diff: `cd /Users/tsavo/bugsjs/hexo && git diff Bug-12..Bug-12-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix wraps `(data.slug || data.title).toString()` — the or-chain itself is unchanged; the post added a `.toString()` call, NOT a new clause. or-chain-extended-by-fix's semantic ("missing a clause") doesn't apply. The relation `was_replaced_by_addition` over-fires on any enclosing added node. Should be expressible-now-pending-principle.
+**Note:** Fix wraps `(data.slug || data.title).toString()`: the or-chain itself is unchanged; the post added a `.toString()` call, NOT a new clause. or-chain-extended-by-fix's semantic ("missing a clause") doesn't apply. The relation `was_replaced_by_addition` over-fires on any enclosing added node. Should be expressible-now-pending-principle.
 
 ---
 
@@ -391,7 +391,7 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-80..Bug-80-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix is pure regex content tightening `/\{\{\s*(.+?)\s*\}\}/g` → `/\{\{\s*([^{}]+?)\s*\}\}/g`. No if-block, no assignment, no fall-through — variable-staleness has no business firing here. Should be unknown.
+**Note:** Fix is pure regex content tightening `/\{\{\s*(.+?)\s*\}\}/g` → `/\{\{\s*([^{}]+?)\s*\}\}/g`. No if-block, no assignment, no fall-through: variable-staleness has no business firing here. Should be unknown.
 
 ---
 
@@ -409,7 +409,7 @@ Diff: `cd /Users/tsavo/bugsjs/express && git diff Bug-23..Bug-23-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix replaces `if (typeof fn !== 'function') { offset = 1; path = fn; }` with a deeper check that walks arrays. The actual bug is "single-element array of fn passed to app.use mis-treated as path" — this is a missing-case in narrowing, not a fall-through staleness. variable-staleness mechanically matches on `offset/path` but doesn't capture the bug's intent. Should be expressible-now-pending-principle.
+**Note:** Fix replaces `if (typeof fn !== 'function') { offset = 1; path = fn; }` with a deeper check that walks arrays. The actual bug is "single-element array of fn passed to app.use mis-treated as path": this is a missing-case in narrowing, not a fall-through staleness. variable-staleness mechanically matches on `offset/path` but doesn't capture the bug's intent. Should be expressible-now-pending-principle.
 
 ---
 
@@ -445,7 +445,7 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-11..Bug-11-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix wraps `node.range[0] - (beforeCount || 0)` in `Math.max(..., 0)` — a clamp to prevent negative slice index (underflow). No if-block-with-assignment fall-through; variable-staleness is wrong. The right-shape principle would be subtraction-underflow, but the LHS isn't filtered through dirty-set in a way that catches it. Should be expressible-now-pending-principle.
+**Note:** Fix wraps `node.range[0] - (beforeCount || 0)` in `Math.max(..., 0)`: a clamp to prevent negative slice index (underflow). No if-block-with-assignment fall-through; variable-staleness is wrong. The right-shape principle would be subtraction-underflow, but the LHS isn't filtered through dirty-set in a way that catches it. Should be expressible-now-pending-principle.
 
 ---
 
@@ -463,7 +463,7 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-184..Bug-184-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix is `expected = false` → `expected = leadingComments.length > 0`. No or-chain extension at all — the matched falsy_default node must be elsewhere in the file's surrounding code. Principle's claim "OR-chain was extended in fix" doesn't match this bug. Should be expressible-now-pending-principle.
+**Note:** Fix is `expected = false` → `expected = leadingComments.length > 0`. No or-chain extension at all: the matched falsy_default node must be elsewhere in the file's surrounding code. Principle's claim "OR-chain was extended in fix" doesn't match this bug. Should be expressible-now-pending-principle.
 
 ---
 
@@ -481,7 +481,7 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-323..Bug-323-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix removes `&& node.type === "FunctionDeclaration"` from else-if — broadens parameter-unused check to all parameter types, not just FunctionDeclaration. This is missing-case widening, not fall-through staleness. variable-staleness's claim doesn't fit. Should be expressible-now-pending-principle.
+**Note:** Fix removes `&& node.type === "FunctionDeclaration"` from else-if: broadens parameter-unused check to all parameter types, not just FunctionDeclaration. This is missing-case widening, not fall-through staleness. variable-staleness's claim doesn't fit. Should be expressible-now-pending-principle.
 
 ---
 
@@ -517,7 +517,7 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-301..Bug-301-fix`
 - [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:** Fix discriminates `typeof options[parent.type] === "number"` vs string `"first"`. The multiplication is small indentSize-scale arithmetic — not overflow-prone — multiplication-overflow misfires (no overflow risk). variable-staleness mechanically matches `nodeIndent += ...` writes inside if, but the bug is missing string-option handling, not fall-through. Both principles wrong. Should be expressible-now-pending-principle.
+**Note:** Fix discriminates `typeof options[parent.type] === "number"` vs string `"first"`. The multiplication is small indentSize-scale arithmetic: not overflow-prone: multiplication-overflow misfires (no overflow risk). variable-staleness mechanically matches `nodeIndent += ...` writes inside if, but the bug is missing string-option handling, not fall-through. Both principles wrong. Should be expressible-now-pending-principle.
 
 ---
 

@@ -1,4 +1,4 @@
-"""ProvekIt — protocol-first polyglot monorepo.
+"""ProvekIt: protocol-first polyglot monorepo.
 
 The protocol (CDDL/ABNF/Datalog grammars + conformance test vectors)
 is the durable artifact under protocol/. Reference implementations

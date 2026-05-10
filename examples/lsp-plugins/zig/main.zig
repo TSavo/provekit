@@ -1,4 +1,4 @@
-// ProvekIt LSP Language Plugin — Zig
+// ProvekIt LSP Language Plugin: Zig
 //
 // A standalone binary that speaks provekit-lsp-plugin/1 over stdio.
 // Parses Zig source files and extracts provekit annotations.
@@ -153,7 +153,7 @@ pub fn main() !void {
         const maybe_line = try stdin.readUntilDelimiterOrEof(&buf, '\n');
         const line = maybe_line orelse break;
 
-        // Parse JSON — very minimal
+        // Parse JSON: very minimal
         const has_init = std.mem.indexOf(u8, line, "\"initialize\"") != null;
         const has_parse = std.mem.indexOf(u8, line, "\"parse\"") != null;
         const has_shutdown = std.mem.indexOf(u8, line, "\"shutdown\"") != null;
@@ -170,7 +170,7 @@ pub fn main() !void {
         if (has_init) {
             try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lsp-zig\",\"version\":\"0.1.0\",\"capabilities\":[]}}}}\n", .{id});
         } else if (has_parse) {
-            // Extract text field — naive
+            // Extract text field: naive
             var text: []const u8 = "";
             if (std.mem.indexOf(u8, line, "\"text\":")) |tp| {
                 const after = line[tp + 8 ..];

@@ -37,7 +37,7 @@
  *   So: if args[0] is const and args[1] is not → flip + invert predicate.
  *
  * This pass operates on atomic formulas' predicate+args pairs directly.
- * It does NOT recurse into the formula tree — the caller handles recursion.
+ * It does NOT recurse into the formula tree: the caller handles recursion.
  */
 
 import type { DeBruijnTerm } from "./deBruijn.js";
@@ -100,7 +100,7 @@ const FLIP_PREDICATE: Record<string, string> = {
 };
 
 // -----------------------------------------------------------------------
-// Term canonicalization (without de Bruijn — that's pass 1)
+// Term canonicalization (without de Bruijn: that's pass 1)
 // -----------------------------------------------------------------------
 
 export function canonicalizeTerm(term: DeBruijnTerm): CanonicalTerm {

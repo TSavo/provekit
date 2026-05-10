@@ -64,7 +64,7 @@ const PROVEKIT_DTS_PATH = path.join(VIRTUAL_DIR, "provekit-ir.d.ts");
  * recognized. The caller chooses what to do with multi-property output;
  * the formulate stage, for v1, picks the first.
  *
- * @param surfaceText TS-IR-language source — typically the LLM output.
+ * @param surfaceText TS-IR-language source: typically the LLM output.
  * @param virtualFilePath Where the surface text appears in the synthetic
  *   program. Must end in `.invariant.ts` to satisfy the lifter's anchoring
  *   rule. Defaults to `<VIRTUAL_DIR>/synthesized.invariant.ts`.

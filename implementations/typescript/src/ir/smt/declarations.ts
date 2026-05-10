@@ -10,7 +10,7 @@
  * predicates are not declared. Atomic predicates that aren't built-in
  * are declared as `(declare-fun pred (Sort1 ...) Bool)`.
  *
- * The translator does NOT invent semantics — it only declares symbols.
+ * The translator does NOT invent semantics: it only declares symbols.
  * Axioms about those symbols are the kit's responsibility.
  */
 
@@ -23,7 +23,7 @@ import { collectUserSorts, emitSort } from "./sorts.js";
  * `member` and `subset`: SMT-LIB has no portable base names for them
  * (Z3 spells them `set.member` / `set.subset`; CVC5 differs again), so
  * we treat them as uninterpreted predicates whose semantics come from
- * the kit's axioms — consistent with the translator's "don't invent
+ * the kit's axioms: consistent with the translator's "don't invent
  * semantics" discipline.
  */
 const BUILT_IN_PREDICATES = new Set([
@@ -35,7 +35,7 @@ const BUILT_IN_PREDICATES = new Set([
   "≥",
   "true",
   "false",
-  // SMT-LIB BV theory comparison predicates — declared by the theory, not
+  // SMT-LIB BV theory comparison predicates: declared by the theory, not
   // by us. Treat them as built-ins so collectDeclarations skips emitting
   // a (declare-fun ...) for them.
   "bvult",
@@ -99,8 +99,7 @@ interface CollectorState {
 
 /**
  * Collect declarations from a list of formulas. Duplicate ctors with
- * the same signature are deduplicated; mismatched signatures throw —
- * the IR shouldn't reuse a ctor name with two arities.
+ * the same signature are deduplicated; mismatched signatures throw: * the IR shouldn't reuse a ctor name with two arities.
  */
 export function collectDeclarations(formulas: IrFormula[]): Declarations {
   const state: CollectorState = {

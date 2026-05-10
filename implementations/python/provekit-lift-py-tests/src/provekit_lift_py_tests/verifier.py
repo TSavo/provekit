@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit.verifier — embedded verifier for Python.
+# provekit.verifier: embedded verifier for Python.
 #
 # Since the canonical verifier is the Rust CLI, the Python embedded
 # verifier delegates to it via subprocess. This keeps the Python kit

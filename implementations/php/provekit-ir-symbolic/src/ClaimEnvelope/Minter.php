@@ -1,5 +1,5 @@
 <?php
-/** ProvekIt — Claim envelope minter. */
+/** ProvekIt: Claim envelope minter. */
 
 namespace ProvekIt\ClaimEnvelope;
 
@@ -162,7 +162,7 @@ class Minter
         if (empty($target['cid']) || !is_string($target['cid'])) {
             throw new \InvalidArgumentException("mintBridgeV14: target.cid must be a non-empty string");
         }
-        // Emit only the canonical two fields — strip any extra keys.
+        // Emit only the canonical two fields: strip any extra keys.
         $normalizedTarget = ['cid' => $target['cid'], 'kind' => $targetKind];
 
         // Build header (7 canonical fields per §1.R3)

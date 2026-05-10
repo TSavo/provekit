@@ -4,7 +4,7 @@
  * buggy file, record the diff against its fix, set the active diff
  * context, run the `or-chain-extended-by-fix` principle, assert it
  * fires on the inner OR. Then clear the active context and assert it
- * stops firing — the dormant-without-context contract.
+ * stops firing: the dormant-without-context contract.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { dirname, join } from "path";
@@ -78,7 +78,7 @@ const program = parseDSL(dslSource);
 const compiled = compileProgram(program.nodes);
 const principle = compiled.get("or-chain-extended-by-fix");
 if (!principle) {
-  console.error("FAIL — principle not compiled");
+  console.error("FAIL: principle not compiled");
   process.exit(1);
 }
 
@@ -94,16 +94,16 @@ for (const m of matches) {
   console.log(`  match: ${JSON.stringify(m)}`);
 }
 if (matches.length === 0) {
-  console.log("FAIL — expected at least one match on the buggy 2-clause OR");
+  console.log("FAIL: expected at least one match on the buggy 2-clause OR");
   process.exit(1);
 }
 
-// 4. Clear active context — relation must now report false → no matches.
+// 4. Clear active context: relation must now report false → no matches.
 clearActiveDiffContext(db);
 const noMatches = principle(db);
 console.log(`Cleared context: matches = ${noMatches.length}`);
 if (noMatches.length !== 0) {
-  console.log("FAIL — relation should be dormant without active context");
+  console.log("FAIL: relation should be dormant without active context");
   process.exit(1);
 }
 
@@ -133,10 +133,10 @@ function checkNegativeCase(name: string, buggy: string, fixed: string): boolean 
   const m = principle(ndb);
   rmSync(ns, { recursive: true, force: true });
   if (m.length !== 0) {
-    console.log(`FAIL — ${name}: principle should not fire (got ${m.length})`);
+    console.log(`FAIL: ${name}: principle should not fire (got ${m.length})`);
     return false;
   }
-  console.log(`PASS — ${name}: no spurious match (${m.length})`);
+  console.log(`PASS: ${name}: no spurious match (${m.length})`);
   return true;
 }
 
@@ -165,7 +165,7 @@ allPass = checkNegativeCase(
 rmSync(scratch, { recursive: true, force: true });
 console.log();
 if (!allPass) {
-  console.log("FAIL — negative cases regressed");
+  console.log("FAIL: negative cases regressed");
   process.exit(1);
 }
-console.log(`PASS — or-chain-extended-by-fix: positive + dormant + 2 negative cases`);
+console.log(`PASS: or-chain-extended-by-fix: positive + dormant + 2 negative cases`);

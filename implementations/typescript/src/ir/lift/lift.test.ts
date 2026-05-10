@@ -37,7 +37,7 @@ import {
 } from "./diagnostics.js";
 
 // ---------------------------------------------------------------------------
-// Helpers — build a tsc.Program from in-memory file contents.
+// Helpers: build a tsc.Program from in-memory file contents.
 // ---------------------------------------------------------------------------
 
 const FIXTURE_DIR = path.join(__dirname, "__fixtures__");
@@ -215,7 +215,7 @@ describe("sort resolution", () => {
 // Per-AST-node lift rules (spec §9)
 // ---------------------------------------------------------------------------
 
-describe("lift rules — formula position", () => {
+describe("lift rules: formula position", () => {
   function lift(srcExpr: string): { formula: import("../formulas.js").IrFormula | undefined; result: ReturnType<typeof liftProject> } {
     const filePath = path.join(FIXTURE_DIR, "exprprobe.invariant.ts");
     const src = `
@@ -352,7 +352,7 @@ describe("lift rules — formula position", () => {
 // Term-position rules (arithmetic ctors, literals)
 // ---------------------------------------------------------------------------
 
-describe("lift rules — term position", () => {
+describe("lift rules: term position", () => {
   function liftCmp(srcExpr: string) {
     const filePath = path.join(FIXTURE_DIR, "termprobe.invariant.ts");
     const src = `
@@ -493,10 +493,10 @@ describe("rejection cases", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration test — the parseInt fixture
+// Integration test: the parseInt fixture
 // ---------------------------------------------------------------------------
 
-describe("integration — parseInt fixture", () => {
+describe("integration: parseInt fixture", () => {
   it("lifts every property without unliftable diagnostics", () => {
     const filePath = fixtureFile("parseInt.invariant.ts");
     const src = fs.readFileSync(filePath, "utf8");
@@ -547,10 +547,10 @@ describe("integration — parseInt fixture", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration test — the Math fixture
+// Integration test: the Math fixture
 // ---------------------------------------------------------------------------
 
-describe("integration — Math fixture", () => {
+describe("integration: Math fixture", () => {
   it("lifts every property cleanly", () => {
     const filePath = fixtureFile("Math.invariant.ts");
     const src = fs.readFileSync(filePath, "utf8");
@@ -576,7 +576,7 @@ describe("integration — Math fixture", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Direct API — liftFormulaExpression / liftTermExpression
+// Direct API: liftFormulaExpression / liftTermExpression
 // ---------------------------------------------------------------------------
 
 describe("direct expression API", () => {
@@ -638,7 +638,7 @@ describe("direct expression API", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Diagnostics module — direct API
+// Diagnostics module: direct API
 // ---------------------------------------------------------------------------
 
 describe("diagnostics module", () => {
@@ -692,7 +692,7 @@ describe("diagnostics module", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Registry helpers — emptyRegistry / extendRegistry
+// Registry helpers: emptyRegistry / extendRegistry
 // ---------------------------------------------------------------------------
 
 describe("registry helpers", () => {
@@ -792,7 +792,7 @@ describe("anchoring utility predicates", () => {
 });
 
 // ---------------------------------------------------------------------------
-// liftFile — direct API
+// liftFile: direct API
 // ---------------------------------------------------------------------------
 
 describe("liftFile", () => {
@@ -816,10 +816,10 @@ describe("liftFile", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Visitor — assert() top-level lifting
+// Visitor: assert() top-level lifting
 // ---------------------------------------------------------------------------
 
-describe("visitor — assert call lifting", () => {
+describe("visitor: assert call lifting", () => {
   it("lifts a top-level assert(...) into a synthetic-named property", () => {
     const filePath = path.join(FIXTURE_DIR, "assertlevel.invariant.ts");
     const src = `

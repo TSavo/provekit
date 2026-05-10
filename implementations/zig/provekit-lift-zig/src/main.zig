@@ -93,7 +93,7 @@ fn handleParse(
     id: []const u8,
     writer: *Io.Writer,
 ) !void {
-    // Extract "source" field value — naive string extraction.
+    // Extract "source" field value: naive string extraction.
     const source_raw = extractJsonStringField(line, "source") orelse "";
     const source = try unescapeJsonString(alloc, source_raw);
     defer alloc.free(source);
