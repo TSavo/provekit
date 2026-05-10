@@ -47,6 +47,9 @@ isolated checker. ProvekIt is the place where they conjoin. The substrate is
 their joint inference: strictly more constraining than any single `k_i`,
 content-addressed, federated across languages, monotonic under addition.
 
+That is the thing software has never had: **a place where claims about behavior
+settle once and apply everywhere.**
+
 ProvekIt makes those claims first-class. The input, transformation, formal
 truth object, evidence, and proof edge become content-addressed artifacts. They
 can be signed, compared, composed, replayed, rejected, and carried across domain
