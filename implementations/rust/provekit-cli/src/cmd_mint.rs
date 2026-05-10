@@ -402,18 +402,20 @@ fn mint_from_ir_document(
 
     for decl in ir {
         let kind = decl.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-        if kind != "contract" {
+        if kind != "contract" && kind != "function-contract" {
             continue;
         }
 
         let name = decl
             .get("name")
             .or_else(|| decl.get("symbol"))
+            .or_else(|| decl.get("fn_name"))
             .and_then(|v| v.as_str())
             .unwrap_or("unnamed")
             .to_string();
         let out_binding = decl
             .get("outBinding")
+            .or_else(|| decl.get("out_binding"))
             .and_then(|v| v.as_str())
             .unwrap_or("out")
             .to_string();
