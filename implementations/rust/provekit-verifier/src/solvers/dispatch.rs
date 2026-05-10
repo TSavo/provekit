@@ -29,6 +29,7 @@ use crate::solvers::DispatchConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormulaTheory {
+    EquationalTheory,
     Strings,
     Bitvectors,
     LinearArithmetic,
@@ -38,6 +39,7 @@ pub enum FormulaTheory {
 impl FormulaTheory {
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::EquationalTheory => "equational-theory",
             Self::Strings => "strings",
             Self::Bitvectors => "bitvectors",
             Self::LinearArithmetic => "linear-arithmetic",
@@ -74,6 +76,10 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
     match v {
         Json::Object(map) => {
             if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
+                if name == "equational_theory" {
+                    *theory = FormulaTheory::EquationalTheory;
+                    return;
+                }
                 if STRING_OPS.contains(&name) {
                     *theory = FormulaTheory::Strings;
                     return;
@@ -109,7 +115,10 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
                 }
             }
             for (_, child) in map {
-                if *theory == FormulaTheory::Strings {
+                if matches!(
+                    *theory,
+                    FormulaTheory::EquationalTheory | FormulaTheory::Strings
+                ) {
                     return;
                 }
                 walk(child, theory);
@@ -117,7 +126,10 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
         }
         Json::Array(arr) => {
             for child in arr {
-                if *theory == FormulaTheory::Strings {
+                if matches!(
+                    *theory,
+                    FormulaTheory::EquationalTheory | FormulaTheory::Strings
+                ) {
                     return;
                 }
                 walk(child, theory);
@@ -133,6 +145,7 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
 pub fn dispatch_for_formula<'a>(formula: &Json, dispatch: &'a DispatchConfig) -> Option<&'a str> {
     let t = classify(formula);
     let by_theory = match t {
+        FormulaTheory::EquationalTheory => dispatch.equational_theory.as_deref(),
         FormulaTheory::Strings => dispatch.strings.as_deref(),
         FormulaTheory::Bitvectors => dispatch.bitvectors.as_deref(),
         FormulaTheory::LinearArithmetic => dispatch.linear_arithmetic.as_deref(),
@@ -190,6 +203,7 @@ mod tests {
     #[test]
     fn dispatch_picks_solver() {
         let d = DispatchConfig {
+            equational_theory: Some("maude".into()),
             strings: Some("cvc5".into()),
             bitvectors: Some("bitwuzla".into()),
             linear_arithmetic: Some("z3".into()),

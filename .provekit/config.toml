@@ -36,7 +36,17 @@
 
 [solvers]
 mode = "first-wins"
-portfolio = ["z3", "cvc5", "vampire", "coq"]
+portfolio = ["maude", "z3", "cvc5", "vampire", "coq"]
+
+[solvers.maude]
+binary = "maude"
+ir_compiler = "maude"
+timeout_seconds = 30
+version = "3.x"
+ceta_gate = true
+ceta_binary = "ceta"
+termination_prover = "aprove"
+confluence_checker = "csi"
 
 [solvers.z3]
 binary = "z3"

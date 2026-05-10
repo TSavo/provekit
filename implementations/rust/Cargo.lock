@@ -1681,6 +1681,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-maude"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-ir-compiler-smt-lib"
 version = "0.1.0"
 dependencies = [
@@ -1996,6 +2006,7 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-compiler",
  "provekit-ir-compiler-coq",
+ "provekit-ir-compiler-maude",
  "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
