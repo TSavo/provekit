@@ -1141,9 +1141,9 @@ static void send_error(const char *id, int code, const char *message) {
 
 static void handle_initialize(const char *id) {
     send_response(id,
-        "{\"capabilities\":{\"authoring_surfaces\":[\"c-walker\"],"
+        "{\"capabilities\":{\"authoring_surfaces\":[\"c-collectors-defensive\"],"
         "\"emits_signed_mementos\":false,\"ir_version\":\"v1.1.0\"},"
-        "\"name\":\"c-walker\",\"protocol_version\":\"provekit-lift/1\","
+        "\"name\":\"c-collectors-defensive\",\"protocol_version\":\"provekit-lift/1\","
         "\"version\":\"0.1.0\"}");
 }
 
@@ -1227,7 +1227,7 @@ static void handle_lift(const char *id, const char *line) {
         send_error(id, -32602, "surface must be a string");
         return;
     }
-    if (strcmp(surface, "c-walker") != 0) {
+    if (strcmp(surface, "c-collectors-defensive") != 0) {
         free(surface);
         free(workspace);
         send_error(id, -32602, "unsupported surface");

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Minimal fixture for provekit-lift-c-walker smoke test. */
+/* Minimal fixture for provekit-lift-c-collectors-defensive smoke test. */
 
 int add(int a, int b) {
     return a + b;
