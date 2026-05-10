@@ -291,7 +291,7 @@ impl EffectSet {
     }
     fn to_value(&self) -> Arc<Value> {
         let mut sorted = self.effects.clone();
-        sorted.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
+        sorted.sort_by_key(|a| a.sort_key());
         let items: Vec<Arc<Value>> = sorted.iter().map(|e| e.to_value()).collect();
         Value::array(items)
     }
@@ -440,6 +440,7 @@ pub fn build_memento_value(c: &FunctionContractMemento) -> Arc<Value> {
 /// Construct the canonical Value tree for a function-contract memento.
 /// Public so walk's AST-side builders can compute their own CIDs without
 /// having to round-trip through a memento struct first.
+#[allow(clippy::too_many_arguments)]
 pub fn build_value(
     fn_name: &str,
     formals: &[String],
@@ -453,7 +454,7 @@ pub fn build_value(
     auto_minted_mementos: &[AliasingMemento],
 ) -> Arc<Value> {
     let formals_arr: Vec<Arc<Value>> = formals.iter().map(|n| Value::string(n.clone())).collect();
-    let formal_sorts_arr: Vec<Arc<Value>> = formal_sorts.iter().map(|s| sort_to_value(s)).collect();
+    let formal_sorts_arr: Vec<Arc<Value>> = formal_sorts.iter().map(sort_to_value).collect();
     let body_cid_val: Arc<Value> = match body_cid {
         Some(c) => Value::string(c.to_string()),
         None => Value::null(),
@@ -720,10 +721,7 @@ pub fn compose_function_contracts(
         },
     );
 
-    let inner_value = match find_result_equation(&inner_post_renamed, &inner_result_name) {
-        Some(t) => t,
-        None => return None,
-    };
+    let inner_value = find_result_equation(&inner_post_renamed, &inner_result_name)?;
 
     let outer_formal = &outer.formals[formal_idx];
     let outer_pre_substituted =
