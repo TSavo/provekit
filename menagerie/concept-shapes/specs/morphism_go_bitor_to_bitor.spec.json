@@ -1,0 +1,47 @@
+{
+  "kind": "algorithm",
+  "fn_name": "morphism:go:bitor:to:concept:bitor",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:4317999a29609b170167eec635036e0f973654bd62f7c132293b8868a74521de9a905023865c86734fe39d407923797cd75215a7dcaf49bad4343b212f7cf44b",
+    "target_shape_cid": "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {
+      "go:bitor": "bitor"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction",
+      "source": "blake3-512:4317999a29609b170167eec635036e0f973654bd62f7c132293b8868a74521de9a905023865c86734fe39d407923797cd75215a7dcaf49bad4343b212f7cf44b",
+      "target": "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:4317999a29609b170167eec635036e0f973654bd62f7c132293b8868a74521de9a905023865c86734fe39d407923797cd75215a7dcaf49bad4343b212f7cf44b",
+    "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654"
+  ]
+}

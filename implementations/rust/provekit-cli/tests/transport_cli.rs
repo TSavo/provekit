@@ -126,7 +126,8 @@ fn transport_sum_to_c_to_python_and_go_refuses_loudly_when_c_projector_is_built(
         );
         assert!(
             stderr.contains("transport-time:no-target-morphisms")
-                || stderr.contains("transport-time:no-morphism-for-op"),
+                || stderr.contains("transport-time:no-morphism-for-op")
+                || stderr.contains("transport-time:no-target-morphism-for-op"),
             "expected a transport-time refusal for {target} but got:\n{stderr}"
         );
     }
@@ -207,7 +208,8 @@ fn migrate_alias_refuses_foo_c_to_python_when_c_projector_is_built() {
     );
     assert!(
         stderr.contains("transport-time:no-target-morphisms")
-            || stderr.contains("transport-time:no-morphism-for-op"),
+            || stderr.contains("transport-time:no-morphism-for-op")
+            || stderr.contains("transport-time:no-target-morphism-for-op"),
         "expected a transport-time refusal for python but got:\n{stderr}"
     );
 }
