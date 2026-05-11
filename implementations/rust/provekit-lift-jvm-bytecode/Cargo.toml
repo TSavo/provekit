@@ -1,0 +1,20 @@
+[package]
+name = "provekit-lift-jvm-bytecode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt JSON-RPC lift adapter for JVM bytecode Jasmin text."
+
+[[bin]]
+name = "provekit-lift-jvm-bytecode"
+path = "src/main.rs"
+
+[dependencies]
+provekit-ir-types = { path = "../provekit-ir-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+provekit-ir-compiler-jvm-bytecode = { path = "../provekit-ir-compiler-jvm-bytecode" }

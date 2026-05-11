@@ -9,6 +9,8 @@ bytecode.
 The emitted artifact is deterministic Jasmin text. Jasmin is used as the stable
 surface for JVM bytecode in this crate. A future backend can replace it with a
 direct `.class` writer without changing the algebra mapping.
+`provekit-lift-jvm-bytecode` consumes this same Jasmin surface for the current
+realizer-to-lifter smoke.
 
 The JVM is a stack machine, so the realization homomorphism encodes the usual
 push-operands-then-op convention: lower each operand left to right, then emit
@@ -76,7 +78,7 @@ The round-trip story follows the protocol and papers 13 and 14:
 
 1. Lift any source language into a ProofIR term and contract projection.
 2. Compile the term to JVM bytecode through this realizer.
-3. Lift the emitted JVM bytecode back to ProofIR with a JVM lifter.
+3. Lift the emitted JVM bytecode back to ProofIR with `provekit-lift-jvm-bytecode`.
 4. Compare the projected contracts through accepted receipts.
 
 When the source lifter and this compile realizer are discharged
