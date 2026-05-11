@@ -11,9 +11,9 @@ const char *pk_c11_signature_cid(void) {
 
 const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind kind) {
     switch (kind) {
-    case CXCursor_UnexposedDecl: {
+    case 1: /* CXCursor_UnexposedDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnexposedDecl,
+            (enum CXCursorKind)1, /* CXCursor_UnexposedDecl */
             "CXCursor_UnexposedDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -24,9 +24,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_StructDecl: {
+    case 2: /* CXCursor_StructDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_StructDecl,
+            (enum CXCursorKind)2, /* CXCursor_StructDecl */
             "CXCursor_StructDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -37,9 +37,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UnionDecl: {
+    case 3: /* CXCursor_UnionDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnionDecl,
+            (enum CXCursorKind)3, /* CXCursor_UnionDecl */
             "CXCursor_UnionDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -50,9 +50,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ClassDecl: {
+    case 4: /* CXCursor_ClassDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ClassDecl,
+            (enum CXCursorKind)4, /* CXCursor_ClassDecl */
             "CXCursor_ClassDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -63,9 +63,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_EnumDecl: {
+    case 5: /* CXCursor_EnumDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_EnumDecl,
+            (enum CXCursorKind)5, /* CXCursor_EnumDecl */
             "CXCursor_EnumDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -76,9 +76,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FieldDecl: {
+    case 6: /* CXCursor_FieldDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FieldDecl,
+            (enum CXCursorKind)6, /* CXCursor_FieldDecl */
             "CXCursor_FieldDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -89,9 +89,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_EnumConstantDecl: {
+    case 7: /* CXCursor_EnumConstantDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_EnumConstantDecl,
+            (enum CXCursorKind)7, /* CXCursor_EnumConstantDecl */
             "CXCursor_EnumConstantDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -102,9 +102,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FunctionDecl: {
+    case 8: /* CXCursor_FunctionDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FunctionDecl,
+            (enum CXCursorKind)8, /* CXCursor_FunctionDecl */
             "CXCursor_FunctionDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -115,9 +115,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_VarDecl: {
+    case 9: /* CXCursor_VarDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_VarDecl,
+            (enum CXCursorKind)9, /* CXCursor_VarDecl */
             "CXCursor_VarDecl",
             "c11:decl",
             "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99",
@@ -128,9 +128,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ParmDecl: {
+    case 10: /* CXCursor_ParmDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ParmDecl,
+            (enum CXCursorKind)10, /* CXCursor_ParmDecl */
             "CXCursor_ParmDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -141,9 +141,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCInterfaceDecl: {
+    case 11: /* CXCursor_ObjCInterfaceDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCInterfaceDecl,
+            (enum CXCursorKind)11, /* CXCursor_ObjCInterfaceDecl */
             "CXCursor_ObjCInterfaceDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -154,9 +154,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCCategoryDecl: {
+    case 12: /* CXCursor_ObjCCategoryDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCCategoryDecl,
+            (enum CXCursorKind)12, /* CXCursor_ObjCCategoryDecl */
             "CXCursor_ObjCCategoryDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -167,9 +167,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCProtocolDecl: {
+    case 13: /* CXCursor_ObjCProtocolDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCProtocolDecl,
+            (enum CXCursorKind)13, /* CXCursor_ObjCProtocolDecl */
             "CXCursor_ObjCProtocolDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -180,9 +180,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCPropertyDecl: {
+    case 14: /* CXCursor_ObjCPropertyDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCPropertyDecl,
+            (enum CXCursorKind)14, /* CXCursor_ObjCPropertyDecl */
             "CXCursor_ObjCPropertyDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -193,9 +193,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCIvarDecl: {
+    case 15: /* CXCursor_ObjCIvarDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCIvarDecl,
+            (enum CXCursorKind)15, /* CXCursor_ObjCIvarDecl */
             "CXCursor_ObjCIvarDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -206,9 +206,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCInstanceMethodDecl: {
+    case 16: /* CXCursor_ObjCInstanceMethodDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCInstanceMethodDecl,
+            (enum CXCursorKind)16, /* CXCursor_ObjCInstanceMethodDecl */
             "CXCursor_ObjCInstanceMethodDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -219,9 +219,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCClassMethodDecl: {
+    case 17: /* CXCursor_ObjCClassMethodDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCClassMethodDecl,
+            (enum CXCursorKind)17, /* CXCursor_ObjCClassMethodDecl */
             "CXCursor_ObjCClassMethodDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -232,9 +232,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCImplementationDecl: {
+    case 18: /* CXCursor_ObjCImplementationDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCImplementationDecl,
+            (enum CXCursorKind)18, /* CXCursor_ObjCImplementationDecl */
             "CXCursor_ObjCImplementationDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -245,9 +245,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCCategoryImplDecl: {
+    case 19: /* CXCursor_ObjCCategoryImplDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCCategoryImplDecl,
+            (enum CXCursorKind)19, /* CXCursor_ObjCCategoryImplDecl */
             "CXCursor_ObjCCategoryImplDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -258,9 +258,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TypedefDecl: {
+    case 20: /* CXCursor_TypedefDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TypedefDecl,
+            (enum CXCursorKind)20, /* CXCursor_TypedefDecl */
             "CXCursor_TypedefDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -271,9 +271,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXMethod: {
+    case 21: /* CXCursor_CXXMethod */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXMethod,
+            (enum CXCursorKind)21, /* CXCursor_CXXMethod */
             "CXCursor_CXXMethod",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -284,9 +284,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_Namespace: {
+    case 22: /* CXCursor_Namespace */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_Namespace,
+            (enum CXCursorKind)22, /* CXCursor_Namespace */
             "CXCursor_Namespace",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -297,9 +297,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_LinkageSpec: {
+    case 23: /* CXCursor_LinkageSpec */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_LinkageSpec,
+            (enum CXCursorKind)23, /* CXCursor_LinkageSpec */
             "CXCursor_LinkageSpec",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -310,9 +310,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_Constructor: {
+    case 24: /* CXCursor_Constructor */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_Constructor,
+            (enum CXCursorKind)24, /* CXCursor_Constructor */
             "CXCursor_Constructor",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -323,9 +323,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_Destructor: {
+    case 25: /* CXCursor_Destructor */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_Destructor,
+            (enum CXCursorKind)25, /* CXCursor_Destructor */
             "CXCursor_Destructor",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -336,9 +336,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ConversionFunction: {
+    case 26: /* CXCursor_ConversionFunction */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ConversionFunction,
+            (enum CXCursorKind)26, /* CXCursor_ConversionFunction */
             "CXCursor_ConversionFunction",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -349,9 +349,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TemplateTypeParameter: {
+    case 27: /* CXCursor_TemplateTypeParameter */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TemplateTypeParameter,
+            (enum CXCursorKind)27, /* CXCursor_TemplateTypeParameter */
             "CXCursor_TemplateTypeParameter",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -362,9 +362,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NonTypeTemplateParameter: {
+    case 28: /* CXCursor_NonTypeTemplateParameter */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NonTypeTemplateParameter,
+            (enum CXCursorKind)28, /* CXCursor_NonTypeTemplateParameter */
             "CXCursor_NonTypeTemplateParameter",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -375,9 +375,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TemplateTemplateParameter: {
+    case 29: /* CXCursor_TemplateTemplateParameter */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TemplateTemplateParameter,
+            (enum CXCursorKind)29, /* CXCursor_TemplateTemplateParameter */
             "CXCursor_TemplateTemplateParameter",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -388,9 +388,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FunctionTemplate: {
+    case 30: /* CXCursor_FunctionTemplate */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FunctionTemplate,
+            (enum CXCursorKind)30, /* CXCursor_FunctionTemplate */
             "CXCursor_FunctionTemplate",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -401,9 +401,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ClassTemplate: {
+    case 31: /* CXCursor_ClassTemplate */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ClassTemplate,
+            (enum CXCursorKind)31, /* CXCursor_ClassTemplate */
             "CXCursor_ClassTemplate",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -414,9 +414,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ClassTemplatePartialSpecialization: {
+    case 32: /* CXCursor_ClassTemplatePartialSpecialization */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ClassTemplatePartialSpecialization,
+            (enum CXCursorKind)32, /* CXCursor_ClassTemplatePartialSpecialization */
             "CXCursor_ClassTemplatePartialSpecialization",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -427,9 +427,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NamespaceAlias: {
+    case 33: /* CXCursor_NamespaceAlias */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NamespaceAlias,
+            (enum CXCursorKind)33, /* CXCursor_NamespaceAlias */
             "CXCursor_NamespaceAlias",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -440,9 +440,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UsingDirective: {
+    case 34: /* CXCursor_UsingDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UsingDirective,
+            (enum CXCursorKind)34, /* CXCursor_UsingDirective */
             "CXCursor_UsingDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -453,9 +453,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UsingDeclaration: {
+    case 35: /* CXCursor_UsingDeclaration */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UsingDeclaration,
+            (enum CXCursorKind)35, /* CXCursor_UsingDeclaration */
             "CXCursor_UsingDeclaration",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -466,9 +466,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TypeAliasDecl: {
+    case 36: /* CXCursor_TypeAliasDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TypeAliasDecl,
+            (enum CXCursorKind)36, /* CXCursor_TypeAliasDecl */
             "CXCursor_TypeAliasDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -479,9 +479,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCSynthesizeDecl: {
+    case 37: /* CXCursor_ObjCSynthesizeDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCSynthesizeDecl,
+            (enum CXCursorKind)37, /* CXCursor_ObjCSynthesizeDecl */
             "CXCursor_ObjCSynthesizeDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -492,9 +492,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCDynamicDecl: {
+    case 38: /* CXCursor_ObjCDynamicDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCDynamicDecl,
+            (enum CXCursorKind)38, /* CXCursor_ObjCDynamicDecl */
             "CXCursor_ObjCDynamicDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -505,9 +505,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXAccessSpecifier: {
+    case 39: /* CXCursor_CXXAccessSpecifier */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXAccessSpecifier,
+            (enum CXCursorKind)39, /* CXCursor_CXXAccessSpecifier */
             "CXCursor_CXXAccessSpecifier",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -518,9 +518,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCSuperClassRef: {
+    case 40: /* CXCursor_ObjCSuperClassRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCSuperClassRef,
+            (enum CXCursorKind)40, /* CXCursor_ObjCSuperClassRef */
             "CXCursor_ObjCSuperClassRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -531,9 +531,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCProtocolRef: {
+    case 41: /* CXCursor_ObjCProtocolRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCProtocolRef,
+            (enum CXCursorKind)41, /* CXCursor_ObjCProtocolRef */
             "CXCursor_ObjCProtocolRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -544,9 +544,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCClassRef: {
+    case 42: /* CXCursor_ObjCClassRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCClassRef,
+            (enum CXCursorKind)42, /* CXCursor_ObjCClassRef */
             "CXCursor_ObjCClassRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -557,9 +557,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TypeRef: {
+    case 43: /* CXCursor_TypeRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TypeRef,
+            (enum CXCursorKind)43, /* CXCursor_TypeRef */
             "CXCursor_TypeRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -570,9 +570,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXBaseSpecifier: {
+    case 44: /* CXCursor_CXXBaseSpecifier */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXBaseSpecifier,
+            (enum CXCursorKind)44, /* CXCursor_CXXBaseSpecifier */
             "CXCursor_CXXBaseSpecifier",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -583,9 +583,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TemplateRef: {
+    case 45: /* CXCursor_TemplateRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TemplateRef,
+            (enum CXCursorKind)45, /* CXCursor_TemplateRef */
             "CXCursor_TemplateRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -596,9 +596,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NamespaceRef: {
+    case 46: /* CXCursor_NamespaceRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NamespaceRef,
+            (enum CXCursorKind)46, /* CXCursor_NamespaceRef */
             "CXCursor_NamespaceRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -609,9 +609,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_MemberRef: {
+    case 47: /* CXCursor_MemberRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_MemberRef,
+            (enum CXCursorKind)47, /* CXCursor_MemberRef */
             "CXCursor_MemberRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -622,9 +622,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_LabelRef: {
+    case 48: /* CXCursor_LabelRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_LabelRef,
+            (enum CXCursorKind)48, /* CXCursor_LabelRef */
             "CXCursor_LabelRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -635,9 +635,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OverloadedDeclRef: {
+    case 49: /* CXCursor_OverloadedDeclRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OverloadedDeclRef,
+            (enum CXCursorKind)49, /* CXCursor_OverloadedDeclRef */
             "CXCursor_OverloadedDeclRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -648,9 +648,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_VariableRef: {
+    case 50: /* CXCursor_VariableRef */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_VariableRef,
+            (enum CXCursorKind)50, /* CXCursor_VariableRef */
             "CXCursor_VariableRef",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -661,9 +661,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_InvalidFile: {
+    case 70: /* CXCursor_InvalidFile */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_InvalidFile,
+            (enum CXCursorKind)70, /* CXCursor_InvalidFile */
             "CXCursor_InvalidFile",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -674,9 +674,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NoDeclFound: {
+    case 71: /* CXCursor_NoDeclFound */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NoDeclFound,
+            (enum CXCursorKind)71, /* CXCursor_NoDeclFound */
             "CXCursor_NoDeclFound",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -687,9 +687,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NotImplemented: {
+    case 72: /* CXCursor_NotImplemented */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NotImplemented,
+            (enum CXCursorKind)72, /* CXCursor_NotImplemented */
             "CXCursor_NotImplemented",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -700,9 +700,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_InvalidCode: {
+    case 73: /* CXCursor_InvalidCode */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_InvalidCode,
+            (enum CXCursorKind)73, /* CXCursor_InvalidCode */
             "CXCursor_InvalidCode",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -713,9 +713,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UnexposedExpr: {
+    case 100: /* CXCursor_UnexposedExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnexposedExpr,
+            (enum CXCursorKind)100, /* CXCursor_UnexposedExpr */
             "CXCursor_UnexposedExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -726,9 +726,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_DeclRefExpr: {
+    case 101: /* CXCursor_DeclRefExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_DeclRefExpr,
+            (enum CXCursorKind)101, /* CXCursor_DeclRefExpr */
             "CXCursor_DeclRefExpr",
             "var",
             NULL,
@@ -739,9 +739,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_MemberRefExpr: {
+    case 102: /* CXCursor_MemberRefExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_MemberRefExpr,
+            (enum CXCursorKind)102, /* CXCursor_MemberRefExpr */
             "CXCursor_MemberRefExpr",
             "c11:member",
             "blake3-512:9f52681b25fa589ad6fc38d26981756d4c44330f687c79b04b7f39f049816d625a57551b303aee1567c6451b153bb9dc0f383671545a934087f195b2d5033a5e",
@@ -752,9 +752,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CallExpr: {
+    case 103: /* CXCursor_CallExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CallExpr,
+            (enum CXCursorKind)103, /* CXCursor_CallExpr */
             "CXCursor_CallExpr",
             "c11:call",
             "blake3-512:60d53cea89198925ed2b932d076bc348f980854458567d233399444bd462018a591ea42d05a6b4a240c3d9a96fe3f6a748f2428fae0c5dde2d47c34ee1f4daee",
@@ -765,9 +765,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCMessageExpr: {
+    case 104: /* CXCursor_ObjCMessageExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCMessageExpr,
+            (enum CXCursorKind)104, /* CXCursor_ObjCMessageExpr */
             "CXCursor_ObjCMessageExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -778,9 +778,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_BlockExpr: {
+    case 105: /* CXCursor_BlockExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_BlockExpr,
+            (enum CXCursorKind)105, /* CXCursor_BlockExpr */
             "CXCursor_BlockExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -791,9 +791,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_IntegerLiteral: {
+    case 106: /* CXCursor_IntegerLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_IntegerLiteral,
+            (enum CXCursorKind)106, /* CXCursor_IntegerLiteral */
             "CXCursor_IntegerLiteral",
             "const",
             NULL,
@@ -804,9 +804,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FloatingLiteral: {
+    case 107: /* CXCursor_FloatingLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FloatingLiteral,
+            (enum CXCursorKind)107, /* CXCursor_FloatingLiteral */
             "CXCursor_FloatingLiteral",
             "c11:float-literal",
             "blake3-512:c624627cb15481230ad1e475d7330dc3c4261e5ac757e1f5d54ccdaccc3cb25e01cbb8696bffdc67e721f4f5679e8e09ae54b21dddcddaf37247ddb334250ce4",
@@ -817,9 +817,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ImaginaryLiteral: {
+    case 108: /* CXCursor_ImaginaryLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ImaginaryLiteral,
+            (enum CXCursorKind)108, /* CXCursor_ImaginaryLiteral */
             "CXCursor_ImaginaryLiteral",
             "c11:imaginary-literal",
             "blake3-512:f49dec04735ac1c96e75e9a2044c189f2ac742f319e10237e9b3f1247d89ffab046f07072556e4dd3f075ba4eac4a672510428a850469429dbd0f2b3e045b107",
@@ -830,9 +830,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_StringLiteral: {
+    case 109: /* CXCursor_StringLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_StringLiteral,
+            (enum CXCursorKind)109, /* CXCursor_StringLiteral */
             "CXCursor_StringLiteral",
             "c11:string-literal",
             "blake3-512:c046b297480acfc4666a840ea8bdc75d10611a029f782e4f45b84590e184fdc0ee0b0e4bdb744c05d4fb8100ce99dea1f6f940be8ec25801548f677d8043f34e",
@@ -843,9 +843,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CharacterLiteral: {
+    case 110: /* CXCursor_CharacterLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CharacterLiteral,
+            (enum CXCursorKind)110, /* CXCursor_CharacterLiteral */
             "CXCursor_CharacterLiteral",
             "c11:char-literal",
             "blake3-512:73bc286f5ab6565014093e2b6249a1fca830ef62b04eb61246e806e7a57af59ede99005b88227ccd90f7d515d07ff39134c948c06362d0170a2dea4c612fe419",
@@ -856,9 +856,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ParenExpr: {
+    case 111: /* CXCursor_ParenExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ParenExpr,
+            (enum CXCursorKind)111, /* CXCursor_ParenExpr */
             "CXCursor_ParenExpr",
             "passthrough",
             NULL,
@@ -869,9 +869,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UnaryOperator: {
+    case 112: /* CXCursor_UnaryOperator */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnaryOperator,
+            (enum CXCursorKind)112, /* CXCursor_UnaryOperator */
             "CXCursor_UnaryOperator",
             "operator-dispatch",
             NULL,
@@ -882,9 +882,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ArraySubscriptExpr: {
+    case 113: /* CXCursor_ArraySubscriptExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ArraySubscriptExpr,
+            (enum CXCursorKind)113, /* CXCursor_ArraySubscriptExpr */
             "CXCursor_ArraySubscriptExpr",
             "c11:array-subscript",
             "blake3-512:7f024dbda459084cfb33c2563c1c5de4757e4abb9721a2ebf4073a33eacaf85b148a3c415f52d9ce6b5a94ae37ec6e609a7217eca124f738abfe9d701b059092",
@@ -895,9 +895,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_BinaryOperator: {
+    case 114: /* CXCursor_BinaryOperator */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_BinaryOperator,
+            (enum CXCursorKind)114, /* CXCursor_BinaryOperator */
             "CXCursor_BinaryOperator",
             "operator-dispatch",
             NULL,
@@ -908,9 +908,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CompoundAssignOperator: {
+    case 115: /* CXCursor_CompoundAssignOperator */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CompoundAssignOperator,
+            (enum CXCursorKind)115, /* CXCursor_CompoundAssignOperator */
             "CXCursor_CompoundAssignOperator",
             "operator-dispatch",
             NULL,
@@ -921,9 +921,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ConditionalOperator: {
+    case 116: /* CXCursor_ConditionalOperator */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ConditionalOperator,
+            (enum CXCursorKind)116, /* CXCursor_ConditionalOperator */
             "CXCursor_ConditionalOperator",
             "c11:conditional",
             "blake3-512:641b32b866cbbc19796036614ca4e4600ca00cf6ecfd0c461da59e37aa3d798e5c20794fe85a9907379a29143a5ed314172425b28f8cd3b89e44d5184759d566",
@@ -934,9 +934,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CStyleCastExpr: {
+    case 117: /* CXCursor_CStyleCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CStyleCastExpr,
+            (enum CXCursorKind)117, /* CXCursor_CStyleCastExpr */
             "CXCursor_CStyleCastExpr",
             "c11:cast",
             "blake3-512:96e075c18c0be03322ec199e1b2501c98d355210f5920ab8c6e867771ed9ce28245481426728181f0f1504c56c94fcfebfbeb0b59e7e7fd37dc1375f2f55a98a",
@@ -947,9 +947,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CompoundLiteralExpr: {
+    case 118: /* CXCursor_CompoundLiteralExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CompoundLiteralExpr,
+            (enum CXCursorKind)118, /* CXCursor_CompoundLiteralExpr */
             "CXCursor_CompoundLiteralExpr",
             "c11:compound-literal",
             "blake3-512:312a5249609aab8bcc22dc2d1371206ff9b5480aa6bd572200c13c2ad4952e304a220b634d047fa62fd1f2d65bf1923f1927e88a687f3ce8031470d32fb9a35d",
@@ -960,9 +960,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_InitListExpr: {
+    case 119: /* CXCursor_InitListExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_InitListExpr,
+            (enum CXCursorKind)119, /* CXCursor_InitListExpr */
             "CXCursor_InitListExpr",
             "c11:init-list",
             "blake3-512:6133aad08ba77ca07cc767e6b8c79933366c8e6035e27031ebe6e47300c09a43242e4ede6b2aa91546669a14b21fef06443678fbcbcddea46d63c55360661527",
@@ -973,9 +973,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_AddrLabelExpr: {
+    case 120: /* CXCursor_AddrLabelExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_AddrLabelExpr,
+            (enum CXCursorKind)120, /* CXCursor_AddrLabelExpr */
             "CXCursor_AddrLabelExpr",
             "c11:addr-label",
             "blake3-512:c8a0a1404292e5dd6b50e7dd5cc096f96e5d97c7c0e8172eb86bf35d981d35b8ad06486d7f682e58e44db377eda89d2870d5c064b4580e87e13d682bec3cd0fa",
@@ -986,9 +986,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_StmtExpr: {
+    case 121: /* CXCursor_StmtExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_StmtExpr,
+            (enum CXCursorKind)121, /* CXCursor_StmtExpr */
             "CXCursor_StmtExpr",
             "c11:stmt-expr",
             "blake3-512:886f39c45ff932473099380820bd08a69ce197cc87ac94158e57b69ea41ee7da3955f916ff9321529406eda24d4e3fb15b972e433dc4be1783df5425bbc362a2",
@@ -999,9 +999,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_GenericSelectionExpr: {
+    case 122: /* CXCursor_GenericSelectionExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_GenericSelectionExpr,
+            (enum CXCursorKind)122, /* CXCursor_GenericSelectionExpr */
             "CXCursor_GenericSelectionExpr",
             "c11:generic-selection",
             "blake3-512:88a06ccdbef31969de90f5cb4c58317aaf9b897f121861168a9654501300bbf7881435f379e8e66317f76a3f2bf4d76c15e04945b0f6d3ce7908c97ca92ad3c5",
@@ -1012,9 +1012,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_GNUNullExpr: {
+    case 123: /* CXCursor_GNUNullExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_GNUNullExpr,
+            (enum CXCursorKind)123, /* CXCursor_GNUNullExpr */
             "CXCursor_GNUNullExpr",
             "c11:null",
             "blake3-512:ca8576ee4e65552a2f82d55a82909100151c1bbb12d5c00d08119a68d1fb6ff730aad94f140fc9b2312a29c0b9dc2c51d01ef13d9e7c392c8ff7708805b19c3b",
@@ -1025,9 +1025,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXStaticCastExpr: {
+    case 124: /* CXCursor_CXXStaticCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXStaticCastExpr,
+            (enum CXCursorKind)124, /* CXCursor_CXXStaticCastExpr */
             "CXCursor_CXXStaticCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1038,9 +1038,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXDynamicCastExpr: {
+    case 125: /* CXCursor_CXXDynamicCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXDynamicCastExpr,
+            (enum CXCursorKind)125, /* CXCursor_CXXDynamicCastExpr */
             "CXCursor_CXXDynamicCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1051,9 +1051,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXReinterpretCastExpr: {
+    case 126: /* CXCursor_CXXReinterpretCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXReinterpretCastExpr,
+            (enum CXCursorKind)126, /* CXCursor_CXXReinterpretCastExpr */
             "CXCursor_CXXReinterpretCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1064,9 +1064,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXConstCastExpr: {
+    case 127: /* CXCursor_CXXConstCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXConstCastExpr,
+            (enum CXCursorKind)127, /* CXCursor_CXXConstCastExpr */
             "CXCursor_CXXConstCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1077,9 +1077,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXFunctionalCastExpr: {
+    case 128: /* CXCursor_CXXFunctionalCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXFunctionalCastExpr,
+            (enum CXCursorKind)128, /* CXCursor_CXXFunctionalCastExpr */
             "CXCursor_CXXFunctionalCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1090,9 +1090,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXTypeidExpr: {
+    case 129: /* CXCursor_CXXTypeidExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXTypeidExpr,
+            (enum CXCursorKind)129, /* CXCursor_CXXTypeidExpr */
             "CXCursor_CXXTypeidExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1103,9 +1103,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXBoolLiteralExpr: {
+    case 130: /* CXCursor_CXXBoolLiteralExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXBoolLiteralExpr,
+            (enum CXCursorKind)130, /* CXCursor_CXXBoolLiteralExpr */
             "CXCursor_CXXBoolLiteralExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1116,9 +1116,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXNullPtrLiteralExpr: {
+    case 131: /* CXCursor_CXXNullPtrLiteralExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXNullPtrLiteralExpr,
+            (enum CXCursorKind)131, /* CXCursor_CXXNullPtrLiteralExpr */
             "CXCursor_CXXNullPtrLiteralExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1129,9 +1129,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXThisExpr: {
+    case 132: /* CXCursor_CXXThisExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXThisExpr,
+            (enum CXCursorKind)132, /* CXCursor_CXXThisExpr */
             "CXCursor_CXXThisExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1142,9 +1142,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXThrowExpr: {
+    case 133: /* CXCursor_CXXThrowExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXThrowExpr,
+            (enum CXCursorKind)133, /* CXCursor_CXXThrowExpr */
             "CXCursor_CXXThrowExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1155,9 +1155,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXNewExpr: {
+    case 134: /* CXCursor_CXXNewExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXNewExpr,
+            (enum CXCursorKind)134, /* CXCursor_CXXNewExpr */
             "CXCursor_CXXNewExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1168,9 +1168,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXDeleteExpr: {
+    case 135: /* CXCursor_CXXDeleteExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXDeleteExpr,
+            (enum CXCursorKind)135, /* CXCursor_CXXDeleteExpr */
             "CXCursor_CXXDeleteExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1181,9 +1181,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UnaryExpr: {
+    case 136: /* CXCursor_UnaryExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnaryExpr,
+            (enum CXCursorKind)136, /* CXCursor_UnaryExpr */
             "CXCursor_UnaryExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1194,9 +1194,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCStringLiteral: {
+    case 137: /* CXCursor_ObjCStringLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCStringLiteral,
+            (enum CXCursorKind)137, /* CXCursor_ObjCStringLiteral */
             "CXCursor_ObjCStringLiteral",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1207,9 +1207,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCEncodeExpr: {
+    case 138: /* CXCursor_ObjCEncodeExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCEncodeExpr,
+            (enum CXCursorKind)138, /* CXCursor_ObjCEncodeExpr */
             "CXCursor_ObjCEncodeExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1220,9 +1220,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCSelectorExpr: {
+    case 139: /* CXCursor_ObjCSelectorExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCSelectorExpr,
+            (enum CXCursorKind)139, /* CXCursor_ObjCSelectorExpr */
             "CXCursor_ObjCSelectorExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1233,9 +1233,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCProtocolExpr: {
+    case 140: /* CXCursor_ObjCProtocolExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCProtocolExpr,
+            (enum CXCursorKind)140, /* CXCursor_ObjCProtocolExpr */
             "CXCursor_ObjCProtocolExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1246,9 +1246,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCBridgedCastExpr: {
+    case 141: /* CXCursor_ObjCBridgedCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCBridgedCastExpr,
+            (enum CXCursorKind)141, /* CXCursor_ObjCBridgedCastExpr */
             "CXCursor_ObjCBridgedCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1259,9 +1259,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_PackExpansionExpr: {
+    case 142: /* CXCursor_PackExpansionExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_PackExpansionExpr,
+            (enum CXCursorKind)142, /* CXCursor_PackExpansionExpr */
             "CXCursor_PackExpansionExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1272,9 +1272,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_SizeOfPackExpr: {
+    case 143: /* CXCursor_SizeOfPackExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_SizeOfPackExpr,
+            (enum CXCursorKind)143, /* CXCursor_SizeOfPackExpr */
             "CXCursor_SizeOfPackExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1285,9 +1285,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_LambdaExpr: {
+    case 144: /* CXCursor_LambdaExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_LambdaExpr,
+            (enum CXCursorKind)144, /* CXCursor_LambdaExpr */
             "CXCursor_LambdaExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1298,9 +1298,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCBoolLiteralExpr: {
+    case 145: /* CXCursor_ObjCBoolLiteralExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCBoolLiteralExpr,
+            (enum CXCursorKind)145, /* CXCursor_ObjCBoolLiteralExpr */
             "CXCursor_ObjCBoolLiteralExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1311,9 +1311,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCSelfExpr: {
+    case 146: /* CXCursor_ObjCSelfExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCSelfExpr,
+            (enum CXCursorKind)146, /* CXCursor_ObjCSelfExpr */
             "CXCursor_ObjCSelfExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1324,9 +1324,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ArraySectionExpr: {
+    case 147: /* CXCursor_ArraySectionExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ArraySectionExpr,
+            (enum CXCursorKind)147, /* CXCursor_ArraySectionExpr */
             "CXCursor_ArraySectionExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1337,9 +1337,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAvailabilityCheckExpr: {
+    case 148: /* CXCursor_ObjCAvailabilityCheckExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAvailabilityCheckExpr,
+            (enum CXCursorKind)148, /* CXCursor_ObjCAvailabilityCheckExpr */
             "CXCursor_ObjCAvailabilityCheckExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1350,9 +1350,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FixedPointLiteral: {
+    case 149: /* CXCursor_FixedPointLiteral */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FixedPointLiteral,
+            (enum CXCursorKind)149, /* CXCursor_FixedPointLiteral */
             "CXCursor_FixedPointLiteral",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1363,9 +1363,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPArrayShapingExpr: {
+    case 150: /* CXCursor_OMPArrayShapingExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPArrayShapingExpr,
+            (enum CXCursorKind)150, /* CXCursor_OMPArrayShapingExpr */
             "CXCursor_OMPArrayShapingExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1376,9 +1376,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPIteratorExpr: {
+    case 151: /* CXCursor_OMPIteratorExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPIteratorExpr,
+            (enum CXCursorKind)151, /* CXCursor_OMPIteratorExpr */
             "CXCursor_OMPIteratorExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1389,9 +1389,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXAddrspaceCastExpr: {
+    case 152: /* CXCursor_CXXAddrspaceCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXAddrspaceCastExpr,
+            (enum CXCursorKind)152, /* CXCursor_CXXAddrspaceCastExpr */
             "CXCursor_CXXAddrspaceCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1402,9 +1402,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ConceptSpecializationExpr: {
+    case 153: /* CXCursor_ConceptSpecializationExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ConceptSpecializationExpr,
+            (enum CXCursorKind)153, /* CXCursor_ConceptSpecializationExpr */
             "CXCursor_ConceptSpecializationExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1415,9 +1415,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_RequiresExpr: {
+    case 154: /* CXCursor_RequiresExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_RequiresExpr,
+            (enum CXCursorKind)154, /* CXCursor_RequiresExpr */
             "CXCursor_RequiresExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1428,9 +1428,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXParenListInitExpr: {
+    case 155: /* CXCursor_CXXParenListInitExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXParenListInitExpr,
+            (enum CXCursorKind)155, /* CXCursor_CXXParenListInitExpr */
             "CXCursor_CXXParenListInitExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1441,9 +1441,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_PackIndexingExpr: {
+    case 156: /* CXCursor_PackIndexingExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_PackIndexingExpr,
+            (enum CXCursorKind)156, /* CXCursor_PackIndexingExpr */
             "CXCursor_PackIndexingExpr",
             "c11:unexposed-expr",
             "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
@@ -1454,9 +1454,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UnexposedStmt: {
+    case 200: /* CXCursor_UnexposedStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnexposedStmt,
+            (enum CXCursorKind)200, /* CXCursor_UnexposedStmt */
             "CXCursor_UnexposedStmt",
             "c11:unexposed-stmt",
             "blake3-512:8556d80b81d477ba120a22f5ccc19d4e86fd315225014d13f7ab9e1bb5073605d797dafed8737ff6defce7a476a3e6200b496437fb63f47f6f2fe718ad6905f1",
@@ -1467,9 +1467,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_LabelStmt: {
+    case 201: /* CXCursor_LabelStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_LabelStmt,
+            (enum CXCursorKind)201, /* CXCursor_LabelStmt */
             "CXCursor_LabelStmt",
             "c11:label",
             "blake3-512:267398f175a32e44f33f3fcec4a81689c80affe8d88831e59ff17286fea38d2b7c8b32aeb18ebd98b133f8298959152ebb85f5f5830bad9c03f36320c89b8062",
@@ -1480,9 +1480,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CompoundStmt: {
+    case 202: /* CXCursor_CompoundStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CompoundStmt,
+            (enum CXCursorKind)202, /* CXCursor_CompoundStmt */
             "CXCursor_CompoundStmt",
             "c11:seq",
             "blake3-512:f8390f57e0f4408252211849b4e62639c9779a19bcdfc207eb80e2f3225e2f3a1262434a0e56b0de765b35ad377ffee3b91e69750996104505dc9ed7c1398915",
@@ -1493,9 +1493,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CaseStmt: {
+    case 203: /* CXCursor_CaseStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CaseStmt,
+            (enum CXCursorKind)203, /* CXCursor_CaseStmt */
             "CXCursor_CaseStmt",
             "c11:case",
             "blake3-512:76e0dcf8c0f591cfa0eaac0addf37c3785230a8c134531c96250eba9de3c133abca61f044c58cbb7e11b24744928491a1e95642b7a4b5b541d79505e3e16a986",
@@ -1506,9 +1506,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_DefaultStmt: {
+    case 204: /* CXCursor_DefaultStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_DefaultStmt,
+            (enum CXCursorKind)204, /* CXCursor_DefaultStmt */
             "CXCursor_DefaultStmt",
             "c11:default",
             "blake3-512:319e2bbd1cf2cf85dcd08ecde664972a83befc990375d47ae622a24a927cb79e4da7934d45cfb40402a0fcd9a4f48ca262c87fe68fedff5153c451d8b156adc4",
@@ -1519,9 +1519,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_IfStmt: {
+    case 205: /* CXCursor_IfStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_IfStmt,
+            (enum CXCursorKind)205, /* CXCursor_IfStmt */
             "CXCursor_IfStmt",
             "c11:if",
             "blake3-512:402feb91b68096553e0c7f000cdb47c50a2d16094571a426639d6be487b934b9f1664bd4b8aa5f8cc2acf5d47f44cee31882c6dc8799e71aa29381fd91309b65",
@@ -1532,9 +1532,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_SwitchStmt: {
+    case 206: /* CXCursor_SwitchStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_SwitchStmt,
+            (enum CXCursorKind)206, /* CXCursor_SwitchStmt */
             "CXCursor_SwitchStmt",
             "c11:switch",
             "blake3-512:600483b325098b9f47363fb1257b5a99ef4d1117dad06c05e09fa0626ad59747539c9ec2f17e6da859c1f8931a6a9d0b5e60a198dd6b69742d6f01f99897dd6c",
@@ -1545,9 +1545,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_WhileStmt: {
+    case 207: /* CXCursor_WhileStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_WhileStmt,
+            (enum CXCursorKind)207, /* CXCursor_WhileStmt */
             "CXCursor_WhileStmt",
             "c11:while",
             "blake3-512:d2ad96e177a16cd03ad4c924c9e789b90382bb163cc4cdf19cd6c4e16a656c55ab9dbb654d4257b521cc61be6a7e980505214668bf70e57a7dd1c969767c0aff",
@@ -1558,9 +1558,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_DoStmt: {
+    case 208: /* CXCursor_DoStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_DoStmt,
+            (enum CXCursorKind)208, /* CXCursor_DoStmt */
             "CXCursor_DoStmt",
             "c11:do",
             "blake3-512:eb17887f16d6264f8dcefd302bc94320b54978412407128c88ebba4c125e5eb1e6ba16b8aa57f4919ad1fbfab2595fd363e7be77ef8d82b23061bc9d1a02ff21",
@@ -1571,9 +1571,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ForStmt: {
+    case 209: /* CXCursor_ForStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ForStmt,
+            (enum CXCursorKind)209, /* CXCursor_ForStmt */
             "CXCursor_ForStmt",
             "c11:for",
             "blake3-512:1befb2ce1afd30e48439a6e3e0cda8cbc1a965c0c55a4d0b1dde409ea2aa12d8e970f0a5b05c53d71ecb36a443730392adb2c70fba5045945b4c267dddb6a2d3",
@@ -1584,9 +1584,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_GotoStmt: {
+    case 210: /* CXCursor_GotoStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_GotoStmt,
+            (enum CXCursorKind)210, /* CXCursor_GotoStmt */
             "CXCursor_GotoStmt",
             "c11:goto",
             "blake3-512:64c8cf86af35a25e1a388e710b53e007bfe2fca0615229cefd55d2ddf782f0819ff00c10d18e66e734ff43c0399b4dc35f4f28f76ee4d839f078b5f281999d63",
@@ -1597,9 +1597,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_IndirectGotoStmt: {
+    case 211: /* CXCursor_IndirectGotoStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_IndirectGotoStmt,
+            (enum CXCursorKind)211, /* CXCursor_IndirectGotoStmt */
             "CXCursor_IndirectGotoStmt",
             "c11:goto",
             "blake3-512:64c8cf86af35a25e1a388e710b53e007bfe2fca0615229cefd55d2ddf782f0819ff00c10d18e66e734ff43c0399b4dc35f4f28f76ee4d839f078b5f281999d63",
@@ -1610,9 +1610,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ContinueStmt: {
+    case 212: /* CXCursor_ContinueStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ContinueStmt,
+            (enum CXCursorKind)212, /* CXCursor_ContinueStmt */
             "CXCursor_ContinueStmt",
             "c11:continue",
             "blake3-512:26b6cba9563e7f756d7e65d81eee266613ff63c0b30144445fec7d4db117a323afc1ccdea8e4268f7a46e88986aa5b9b1d73300d9f69ae32df8390ec076b7e46",
@@ -1623,9 +1623,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_BreakStmt: {
+    case 213: /* CXCursor_BreakStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_BreakStmt,
+            (enum CXCursorKind)213, /* CXCursor_BreakStmt */
             "CXCursor_BreakStmt",
             "c11:break",
             "blake3-512:3a43532860e5dbd125a89564b51af5a754dbabefbd5cdfb1b01e2c4ff2cab1752d188e59cb9b57d9a2049bc871923808e2115caf70e018d3f9cdeffcfa7cd778",
@@ -1636,9 +1636,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ReturnStmt: {
+    case 214: /* CXCursor_ReturnStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ReturnStmt,
+            (enum CXCursorKind)214, /* CXCursor_ReturnStmt */
             "CXCursor_ReturnStmt",
             "c11:return",
             "blake3-512:5f1b6815fc786463b21234a14b2216a5156ebd5e385eadb1c749c0fa62e28e09f38adc37de9da36502200a4ee8e364e08b23f8767267e04dfb700c3061bb0428",
@@ -1649,9 +1649,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_GCCAsmStmt: {
+    case 215: /* CXCursor_GCCAsmStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_GCCAsmStmt,
+            (enum CXCursorKind)215, /* CXCursor_GCCAsmStmt */
             "CXCursor_GCCAsmStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1662,9 +1662,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAtTryStmt: {
+    case 216: /* CXCursor_ObjCAtTryStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAtTryStmt,
+            (enum CXCursorKind)216, /* CXCursor_ObjCAtTryStmt */
             "CXCursor_ObjCAtTryStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1675,9 +1675,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAtCatchStmt: {
+    case 217: /* CXCursor_ObjCAtCatchStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAtCatchStmt,
+            (enum CXCursorKind)217, /* CXCursor_ObjCAtCatchStmt */
             "CXCursor_ObjCAtCatchStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1688,9 +1688,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAtFinallyStmt: {
+    case 218: /* CXCursor_ObjCAtFinallyStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAtFinallyStmt,
+            (enum CXCursorKind)218, /* CXCursor_ObjCAtFinallyStmt */
             "CXCursor_ObjCAtFinallyStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1701,9 +1701,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAtThrowStmt: {
+    case 219: /* CXCursor_ObjCAtThrowStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAtThrowStmt,
+            (enum CXCursorKind)219, /* CXCursor_ObjCAtThrowStmt */
             "CXCursor_ObjCAtThrowStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1714,9 +1714,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAtSynchronizedStmt: {
+    case 220: /* CXCursor_ObjCAtSynchronizedStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAtSynchronizedStmt,
+            (enum CXCursorKind)220, /* CXCursor_ObjCAtSynchronizedStmt */
             "CXCursor_ObjCAtSynchronizedStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1727,9 +1727,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCAutoreleasePoolStmt: {
+    case 221: /* CXCursor_ObjCAutoreleasePoolStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCAutoreleasePoolStmt,
+            (enum CXCursorKind)221, /* CXCursor_ObjCAutoreleasePoolStmt */
             "CXCursor_ObjCAutoreleasePoolStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1740,9 +1740,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCForCollectionStmt: {
+    case 222: /* CXCursor_ObjCForCollectionStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCForCollectionStmt,
+            (enum CXCursorKind)222, /* CXCursor_ObjCForCollectionStmt */
             "CXCursor_ObjCForCollectionStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1753,9 +1753,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXCatchStmt: {
+    case 223: /* CXCursor_CXXCatchStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXCatchStmt,
+            (enum CXCursorKind)223, /* CXCursor_CXXCatchStmt */
             "CXCursor_CXXCatchStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1766,9 +1766,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXTryStmt: {
+    case 224: /* CXCursor_CXXTryStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXTryStmt,
+            (enum CXCursorKind)224, /* CXCursor_CXXTryStmt */
             "CXCursor_CXXTryStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1779,9 +1779,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXForRangeStmt: {
+    case 225: /* CXCursor_CXXForRangeStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXForRangeStmt,
+            (enum CXCursorKind)225, /* CXCursor_CXXForRangeStmt */
             "CXCursor_CXXForRangeStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1792,9 +1792,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_SEHTryStmt: {
+    case 226: /* CXCursor_SEHTryStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_SEHTryStmt,
+            (enum CXCursorKind)226, /* CXCursor_SEHTryStmt */
             "CXCursor_SEHTryStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1805,9 +1805,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_SEHExceptStmt: {
+    case 227: /* CXCursor_SEHExceptStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_SEHExceptStmt,
+            (enum CXCursorKind)227, /* CXCursor_SEHExceptStmt */
             "CXCursor_SEHExceptStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1818,9 +1818,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_SEHFinallyStmt: {
+    case 228: /* CXCursor_SEHFinallyStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_SEHFinallyStmt,
+            (enum CXCursorKind)228, /* CXCursor_SEHFinallyStmt */
             "CXCursor_SEHFinallyStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1831,9 +1831,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_MSAsmStmt: {
+    case 229: /* CXCursor_MSAsmStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_MSAsmStmt,
+            (enum CXCursorKind)229, /* CXCursor_MSAsmStmt */
             "CXCursor_MSAsmStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1844,9 +1844,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NullStmt: {
+    case 230: /* CXCursor_NullStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NullStmt,
+            (enum CXCursorKind)230, /* CXCursor_NullStmt */
             "CXCursor_NullStmt",
             "c11:skip",
             "blake3-512:f6d5647365eb408ec445a22218b0587f23c37a6a635fac4f398a48469fb7a190c7751bac9640b918b0f27f08038ad7dc38837cbd718115bb99644cc5a7fbb93a",
@@ -1857,9 +1857,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_DeclStmt: {
+    case 231: /* CXCursor_DeclStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_DeclStmt,
+            (enum CXCursorKind)231, /* CXCursor_DeclStmt */
             "CXCursor_DeclStmt",
             "c11:decl",
             "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99",
@@ -1870,9 +1870,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelDirective: {
+    case 232: /* CXCursor_OMPParallelDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelDirective,
+            (enum CXCursorKind)232, /* CXCursor_OMPParallelDirective */
             "CXCursor_OMPParallelDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1883,9 +1883,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPSimdDirective: {
+    case 233: /* CXCursor_OMPSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPSimdDirective,
+            (enum CXCursorKind)233, /* CXCursor_OMPSimdDirective */
             "CXCursor_OMPSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1896,9 +1896,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPForDirective: {
+    case 234: /* CXCursor_OMPForDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPForDirective,
+            (enum CXCursorKind)234, /* CXCursor_OMPForDirective */
             "CXCursor_OMPForDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1909,9 +1909,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPSectionsDirective: {
+    case 235: /* CXCursor_OMPSectionsDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPSectionsDirective,
+            (enum CXCursorKind)235, /* CXCursor_OMPSectionsDirective */
             "CXCursor_OMPSectionsDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1922,9 +1922,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPSectionDirective: {
+    case 236: /* CXCursor_OMPSectionDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPSectionDirective,
+            (enum CXCursorKind)236, /* CXCursor_OMPSectionDirective */
             "CXCursor_OMPSectionDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1935,9 +1935,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPSingleDirective: {
+    case 237: /* CXCursor_OMPSingleDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPSingleDirective,
+            (enum CXCursorKind)237, /* CXCursor_OMPSingleDirective */
             "CXCursor_OMPSingleDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1948,9 +1948,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelForDirective: {
+    case 238: /* CXCursor_OMPParallelForDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelForDirective,
+            (enum CXCursorKind)238, /* CXCursor_OMPParallelForDirective */
             "CXCursor_OMPParallelForDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1961,9 +1961,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelSectionsDirective: {
+    case 239: /* CXCursor_OMPParallelSectionsDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelSectionsDirective,
+            (enum CXCursorKind)239, /* CXCursor_OMPParallelSectionsDirective */
             "CXCursor_OMPParallelSectionsDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1974,9 +1974,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTaskDirective: {
+    case 240: /* CXCursor_OMPTaskDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTaskDirective,
+            (enum CXCursorKind)240, /* CXCursor_OMPTaskDirective */
             "CXCursor_OMPTaskDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -1987,9 +1987,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMasterDirective: {
+    case 241: /* CXCursor_OMPMasterDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMasterDirective,
+            (enum CXCursorKind)241, /* CXCursor_OMPMasterDirective */
             "CXCursor_OMPMasterDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2000,9 +2000,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPCriticalDirective: {
+    case 242: /* CXCursor_OMPCriticalDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPCriticalDirective,
+            (enum CXCursorKind)242, /* CXCursor_OMPCriticalDirective */
             "CXCursor_OMPCriticalDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2013,9 +2013,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTaskyieldDirective: {
+    case 243: /* CXCursor_OMPTaskyieldDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTaskyieldDirective,
+            (enum CXCursorKind)243, /* CXCursor_OMPTaskyieldDirective */
             "CXCursor_OMPTaskyieldDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2026,9 +2026,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPBarrierDirective: {
+    case 244: /* CXCursor_OMPBarrierDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPBarrierDirective,
+            (enum CXCursorKind)244, /* CXCursor_OMPBarrierDirective */
             "CXCursor_OMPBarrierDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2039,9 +2039,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTaskwaitDirective: {
+    case 245: /* CXCursor_OMPTaskwaitDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTaskwaitDirective,
+            (enum CXCursorKind)245, /* CXCursor_OMPTaskwaitDirective */
             "CXCursor_OMPTaskwaitDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2052,9 +2052,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPFlushDirective: {
+    case 246: /* CXCursor_OMPFlushDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPFlushDirective,
+            (enum CXCursorKind)246, /* CXCursor_OMPFlushDirective */
             "CXCursor_OMPFlushDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2065,9 +2065,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_SEHLeaveStmt: {
+    case 247: /* CXCursor_SEHLeaveStmt */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_SEHLeaveStmt,
+            (enum CXCursorKind)247, /* CXCursor_SEHLeaveStmt */
             "CXCursor_SEHLeaveStmt",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2078,9 +2078,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPOrderedDirective: {
+    case 248: /* CXCursor_OMPOrderedDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPOrderedDirective,
+            (enum CXCursorKind)248, /* CXCursor_OMPOrderedDirective */
             "CXCursor_OMPOrderedDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2091,9 +2091,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPAtomicDirective: {
+    case 249: /* CXCursor_OMPAtomicDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPAtomicDirective,
+            (enum CXCursorKind)249, /* CXCursor_OMPAtomicDirective */
             "CXCursor_OMPAtomicDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2104,9 +2104,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPForSimdDirective: {
+    case 250: /* CXCursor_OMPForSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPForSimdDirective,
+            (enum CXCursorKind)250, /* CXCursor_OMPForSimdDirective */
             "CXCursor_OMPForSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2117,9 +2117,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelForSimdDirective: {
+    case 251: /* CXCursor_OMPParallelForSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelForSimdDirective,
+            (enum CXCursorKind)251, /* CXCursor_OMPParallelForSimdDirective */
             "CXCursor_OMPParallelForSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2130,9 +2130,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetDirective: {
+    case 252: /* CXCursor_OMPTargetDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetDirective,
+            (enum CXCursorKind)252, /* CXCursor_OMPTargetDirective */
             "CXCursor_OMPTargetDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2143,9 +2143,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTeamsDirective: {
+    case 253: /* CXCursor_OMPTeamsDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTeamsDirective,
+            (enum CXCursorKind)253, /* CXCursor_OMPTeamsDirective */
             "CXCursor_OMPTeamsDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2156,9 +2156,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTaskgroupDirective: {
+    case 254: /* CXCursor_OMPTaskgroupDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTaskgroupDirective,
+            (enum CXCursorKind)254, /* CXCursor_OMPTaskgroupDirective */
             "CXCursor_OMPTaskgroupDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2169,9 +2169,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPCancellationPointDirective: {
+    case 255: /* CXCursor_OMPCancellationPointDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPCancellationPointDirective,
+            (enum CXCursorKind)255, /* CXCursor_OMPCancellationPointDirective */
             "CXCursor_OMPCancellationPointDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2182,9 +2182,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPCancelDirective: {
+    case 256: /* CXCursor_OMPCancelDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPCancelDirective,
+            (enum CXCursorKind)256, /* CXCursor_OMPCancelDirective */
             "CXCursor_OMPCancelDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2195,9 +2195,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetDataDirective: {
+    case 257: /* CXCursor_OMPTargetDataDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetDataDirective,
+            (enum CXCursorKind)257, /* CXCursor_OMPTargetDataDirective */
             "CXCursor_OMPTargetDataDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2208,9 +2208,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTaskLoopDirective: {
+    case 258: /* CXCursor_OMPTaskLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTaskLoopDirective,
+            (enum CXCursorKind)258, /* CXCursor_OMPTaskLoopDirective */
             "CXCursor_OMPTaskLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2221,9 +2221,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTaskLoopSimdDirective: {
+    case 259: /* CXCursor_OMPTaskLoopSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTaskLoopSimdDirective,
+            (enum CXCursorKind)259, /* CXCursor_OMPTaskLoopSimdDirective */
             "CXCursor_OMPTaskLoopSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2234,9 +2234,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPDistributeDirective: {
+    case 260: /* CXCursor_OMPDistributeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPDistributeDirective,
+            (enum CXCursorKind)260, /* CXCursor_OMPDistributeDirective */
             "CXCursor_OMPDistributeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2247,9 +2247,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetEnterDataDirective: {
+    case 261: /* CXCursor_OMPTargetEnterDataDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetEnterDataDirective,
+            (enum CXCursorKind)261, /* CXCursor_OMPTargetEnterDataDirective */
             "CXCursor_OMPTargetEnterDataDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2260,9 +2260,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetExitDataDirective: {
+    case 262: /* CXCursor_OMPTargetExitDataDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetExitDataDirective,
+            (enum CXCursorKind)262, /* CXCursor_OMPTargetExitDataDirective */
             "CXCursor_OMPTargetExitDataDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2273,9 +2273,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetParallelDirective: {
+    case 263: /* CXCursor_OMPTargetParallelDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetParallelDirective,
+            (enum CXCursorKind)263, /* CXCursor_OMPTargetParallelDirective */
             "CXCursor_OMPTargetParallelDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2286,9 +2286,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetParallelForDirective: {
+    case 264: /* CXCursor_OMPTargetParallelForDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetParallelForDirective,
+            (enum CXCursorKind)264, /* CXCursor_OMPTargetParallelForDirective */
             "CXCursor_OMPTargetParallelForDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2299,9 +2299,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetUpdateDirective: {
+    case 265: /* CXCursor_OMPTargetUpdateDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetUpdateDirective,
+            (enum CXCursorKind)265, /* CXCursor_OMPTargetUpdateDirective */
             "CXCursor_OMPTargetUpdateDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2312,9 +2312,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPDistributeParallelForDirective: {
+    case 266: /* CXCursor_OMPDistributeParallelForDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPDistributeParallelForDirective,
+            (enum CXCursorKind)266, /* CXCursor_OMPDistributeParallelForDirective */
             "CXCursor_OMPDistributeParallelForDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2325,9 +2325,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPDistributeParallelForSimdDirective: {
+    case 267: /* CXCursor_OMPDistributeParallelForSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPDistributeParallelForSimdDirective,
+            (enum CXCursorKind)267, /* CXCursor_OMPDistributeParallelForSimdDirective */
             "CXCursor_OMPDistributeParallelForSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2338,9 +2338,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPDistributeSimdDirective: {
+    case 268: /* CXCursor_OMPDistributeSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPDistributeSimdDirective,
+            (enum CXCursorKind)268, /* CXCursor_OMPDistributeSimdDirective */
             "CXCursor_OMPDistributeSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2351,9 +2351,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetParallelForSimdDirective: {
+    case 269: /* CXCursor_OMPTargetParallelForSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetParallelForSimdDirective,
+            (enum CXCursorKind)269, /* CXCursor_OMPTargetParallelForSimdDirective */
             "CXCursor_OMPTargetParallelForSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2364,9 +2364,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetSimdDirective: {
+    case 270: /* CXCursor_OMPTargetSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetSimdDirective,
+            (enum CXCursorKind)270, /* CXCursor_OMPTargetSimdDirective */
             "CXCursor_OMPTargetSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2377,9 +2377,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTeamsDistributeDirective: {
+    case 271: /* CXCursor_OMPTeamsDistributeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTeamsDistributeDirective,
+            (enum CXCursorKind)271, /* CXCursor_OMPTeamsDistributeDirective */
             "CXCursor_OMPTeamsDistributeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2390,9 +2390,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTeamsDistributeSimdDirective: {
+    case 272: /* CXCursor_OMPTeamsDistributeSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTeamsDistributeSimdDirective,
+            (enum CXCursorKind)272, /* CXCursor_OMPTeamsDistributeSimdDirective */
             "CXCursor_OMPTeamsDistributeSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2403,9 +2403,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTeamsDistributeParallelForSimdDirective: {
+    case 273: /* CXCursor_OMPTeamsDistributeParallelForSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTeamsDistributeParallelForSimdDirective,
+            (enum CXCursorKind)273, /* CXCursor_OMPTeamsDistributeParallelForSimdDirective */
             "CXCursor_OMPTeamsDistributeParallelForSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2416,9 +2416,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTeamsDistributeParallelForDirective: {
+    case 274: /* CXCursor_OMPTeamsDistributeParallelForDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTeamsDistributeParallelForDirective,
+            (enum CXCursorKind)274, /* CXCursor_OMPTeamsDistributeParallelForDirective */
             "CXCursor_OMPTeamsDistributeParallelForDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2429,9 +2429,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetTeamsDirective: {
+    case 275: /* CXCursor_OMPTargetTeamsDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetTeamsDirective,
+            (enum CXCursorKind)275, /* CXCursor_OMPTargetTeamsDirective */
             "CXCursor_OMPTargetTeamsDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2442,9 +2442,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetTeamsDistributeDirective: {
+    case 276: /* CXCursor_OMPTargetTeamsDistributeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetTeamsDistributeDirective,
+            (enum CXCursorKind)276, /* CXCursor_OMPTargetTeamsDistributeDirective */
             "CXCursor_OMPTargetTeamsDistributeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2455,9 +2455,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetTeamsDistributeParallelForDirective: {
+    case 277: /* CXCursor_OMPTargetTeamsDistributeParallelForDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetTeamsDistributeParallelForDirective,
+            (enum CXCursorKind)277, /* CXCursor_OMPTargetTeamsDistributeParallelForDirective */
             "CXCursor_OMPTargetTeamsDistributeParallelForDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2468,9 +2468,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective: {
+    case 278: /* CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective,
+            (enum CXCursorKind)278, /* CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective */
             "CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2481,9 +2481,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetTeamsDistributeSimdDirective: {
+    case 279: /* CXCursor_OMPTargetTeamsDistributeSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetTeamsDistributeSimdDirective,
+            (enum CXCursorKind)279, /* CXCursor_OMPTargetTeamsDistributeSimdDirective */
             "CXCursor_OMPTargetTeamsDistributeSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2494,9 +2494,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_BuiltinBitCastExpr: {
+    case 280: /* CXCursor_BuiltinBitCastExpr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_BuiltinBitCastExpr,
+            (enum CXCursorKind)280, /* CXCursor_BuiltinBitCastExpr */
             "CXCursor_BuiltinBitCastExpr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2507,9 +2507,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMasterTaskLoopDirective: {
+    case 281: /* CXCursor_OMPMasterTaskLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMasterTaskLoopDirective,
+            (enum CXCursorKind)281, /* CXCursor_OMPMasterTaskLoopDirective */
             "CXCursor_OMPMasterTaskLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2520,9 +2520,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelMasterTaskLoopDirective: {
+    case 282: /* CXCursor_OMPParallelMasterTaskLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelMasterTaskLoopDirective,
+            (enum CXCursorKind)282, /* CXCursor_OMPParallelMasterTaskLoopDirective */
             "CXCursor_OMPParallelMasterTaskLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2533,9 +2533,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMasterTaskLoopSimdDirective: {
+    case 283: /* CXCursor_OMPMasterTaskLoopSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMasterTaskLoopSimdDirective,
+            (enum CXCursorKind)283, /* CXCursor_OMPMasterTaskLoopSimdDirective */
             "CXCursor_OMPMasterTaskLoopSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2546,9 +2546,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelMasterTaskLoopSimdDirective: {
+    case 284: /* CXCursor_OMPParallelMasterTaskLoopSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelMasterTaskLoopSimdDirective,
+            (enum CXCursorKind)284, /* CXCursor_OMPParallelMasterTaskLoopSimdDirective */
             "CXCursor_OMPParallelMasterTaskLoopSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2559,9 +2559,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelMasterDirective: {
+    case 285: /* CXCursor_OMPParallelMasterDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelMasterDirective,
+            (enum CXCursorKind)285, /* CXCursor_OMPParallelMasterDirective */
             "CXCursor_OMPParallelMasterDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2572,9 +2572,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPDepobjDirective: {
+    case 286: /* CXCursor_OMPDepobjDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPDepobjDirective,
+            (enum CXCursorKind)286, /* CXCursor_OMPDepobjDirective */
             "CXCursor_OMPDepobjDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2585,9 +2585,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPScanDirective: {
+    case 287: /* CXCursor_OMPScanDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPScanDirective,
+            (enum CXCursorKind)287, /* CXCursor_OMPScanDirective */
             "CXCursor_OMPScanDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2598,9 +2598,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTileDirective: {
+    case 288: /* CXCursor_OMPTileDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTileDirective,
+            (enum CXCursorKind)288, /* CXCursor_OMPTileDirective */
             "CXCursor_OMPTileDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2611,9 +2611,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPCanonicalLoop: {
+    case 289: /* CXCursor_OMPCanonicalLoop */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPCanonicalLoop,
+            (enum CXCursorKind)289, /* CXCursor_OMPCanonicalLoop */
             "CXCursor_OMPCanonicalLoop",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2624,9 +2624,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPInteropDirective: {
+    case 290: /* CXCursor_OMPInteropDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPInteropDirective,
+            (enum CXCursorKind)290, /* CXCursor_OMPInteropDirective */
             "CXCursor_OMPInteropDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2637,9 +2637,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPDispatchDirective: {
+    case 291: /* CXCursor_OMPDispatchDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPDispatchDirective,
+            (enum CXCursorKind)291, /* CXCursor_OMPDispatchDirective */
             "CXCursor_OMPDispatchDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2650,9 +2650,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMaskedDirective: {
+    case 292: /* CXCursor_OMPMaskedDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMaskedDirective,
+            (enum CXCursorKind)292, /* CXCursor_OMPMaskedDirective */
             "CXCursor_OMPMaskedDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2663,9 +2663,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPUnrollDirective: {
+    case 293: /* CXCursor_OMPUnrollDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPUnrollDirective,
+            (enum CXCursorKind)293, /* CXCursor_OMPUnrollDirective */
             "CXCursor_OMPUnrollDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2676,9 +2676,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMetaDirective: {
+    case 294: /* CXCursor_OMPMetaDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMetaDirective,
+            (enum CXCursorKind)294, /* CXCursor_OMPMetaDirective */
             "CXCursor_OMPMetaDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2689,9 +2689,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPGenericLoopDirective: {
+    case 295: /* CXCursor_OMPGenericLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPGenericLoopDirective,
+            (enum CXCursorKind)295, /* CXCursor_OMPGenericLoopDirective */
             "CXCursor_OMPGenericLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2702,9 +2702,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTeamsGenericLoopDirective: {
+    case 296: /* CXCursor_OMPTeamsGenericLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTeamsGenericLoopDirective,
+            (enum CXCursorKind)296, /* CXCursor_OMPTeamsGenericLoopDirective */
             "CXCursor_OMPTeamsGenericLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2715,9 +2715,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetTeamsGenericLoopDirective: {
+    case 297: /* CXCursor_OMPTargetTeamsGenericLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetTeamsGenericLoopDirective,
+            (enum CXCursorKind)297, /* CXCursor_OMPTargetTeamsGenericLoopDirective */
             "CXCursor_OMPTargetTeamsGenericLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2728,9 +2728,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelGenericLoopDirective: {
+    case 298: /* CXCursor_OMPParallelGenericLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelGenericLoopDirective,
+            (enum CXCursorKind)298, /* CXCursor_OMPParallelGenericLoopDirective */
             "CXCursor_OMPParallelGenericLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2741,9 +2741,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPTargetParallelGenericLoopDirective: {
+    case 299: /* CXCursor_OMPTargetParallelGenericLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPTargetParallelGenericLoopDirective,
+            (enum CXCursorKind)299, /* CXCursor_OMPTargetParallelGenericLoopDirective */
             "CXCursor_OMPTargetParallelGenericLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2754,9 +2754,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelMaskedDirective: {
+    case 300: /* CXCursor_OMPParallelMaskedDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelMaskedDirective,
+            (enum CXCursorKind)300, /* CXCursor_OMPParallelMaskedDirective */
             "CXCursor_OMPParallelMaskedDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2767,9 +2767,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMaskedTaskLoopDirective: {
+    case 301: /* CXCursor_OMPMaskedTaskLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMaskedTaskLoopDirective,
+            (enum CXCursorKind)301, /* CXCursor_OMPMaskedTaskLoopDirective */
             "CXCursor_OMPMaskedTaskLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2780,9 +2780,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPMaskedTaskLoopSimdDirective: {
+    case 302: /* CXCursor_OMPMaskedTaskLoopSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPMaskedTaskLoopSimdDirective,
+            (enum CXCursorKind)302, /* CXCursor_OMPMaskedTaskLoopSimdDirective */
             "CXCursor_OMPMaskedTaskLoopSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2793,9 +2793,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelMaskedTaskLoopDirective: {
+    case 303: /* CXCursor_OMPParallelMaskedTaskLoopDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelMaskedTaskLoopDirective,
+            (enum CXCursorKind)303, /* CXCursor_OMPParallelMaskedTaskLoopDirective */
             "CXCursor_OMPParallelMaskedTaskLoopDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2806,9 +2806,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPParallelMaskedTaskLoopSimdDirective: {
+    case 304: /* CXCursor_OMPParallelMaskedTaskLoopSimdDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPParallelMaskedTaskLoopSimdDirective,
+            (enum CXCursorKind)304, /* CXCursor_OMPParallelMaskedTaskLoopSimdDirective */
             "CXCursor_OMPParallelMaskedTaskLoopSimdDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2819,9 +2819,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPErrorDirective: {
+    case 305: /* CXCursor_OMPErrorDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPErrorDirective,
+            (enum CXCursorKind)305, /* CXCursor_OMPErrorDirective */
             "CXCursor_OMPErrorDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2832,9 +2832,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPScopeDirective: {
+    case 306: /* CXCursor_OMPScopeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPScopeDirective,
+            (enum CXCursorKind)306, /* CXCursor_OMPScopeDirective */
             "CXCursor_OMPScopeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2845,9 +2845,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPReverseDirective: {
+    case 307: /* CXCursor_OMPReverseDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPReverseDirective,
+            (enum CXCursorKind)307, /* CXCursor_OMPReverseDirective */
             "CXCursor_OMPReverseDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2858,9 +2858,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPInterchangeDirective: {
+    case 308: /* CXCursor_OMPInterchangeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPInterchangeDirective,
+            (enum CXCursorKind)308, /* CXCursor_OMPInterchangeDirective */
             "CXCursor_OMPInterchangeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2871,9 +2871,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPAssumeDirective: {
+    case 309: /* CXCursor_OMPAssumeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPAssumeDirective,
+            (enum CXCursorKind)309, /* CXCursor_OMPAssumeDirective */
             "CXCursor_OMPAssumeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2884,9 +2884,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPStripeDirective: {
+    case 310: /* CXCursor_OMPStripeDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPStripeDirective,
+            (enum CXCursorKind)310, /* CXCursor_OMPStripeDirective */
             "CXCursor_OMPStripeDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2897,9 +2897,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OMPFuseDirective: {
+    case 311: /* CXCursor_OMPFuseDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OMPFuseDirective,
+            (enum CXCursorKind)311, /* CXCursor_OMPFuseDirective */
             "CXCursor_OMPFuseDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2910,9 +2910,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCComputeConstruct: {
+    case 320: /* CXCursor_OpenACCComputeConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCComputeConstruct,
+            (enum CXCursorKind)320, /* CXCursor_OpenACCComputeConstruct */
             "CXCursor_OpenACCComputeConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2923,9 +2923,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCLoopConstruct: {
+    case 321: /* CXCursor_OpenACCLoopConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCLoopConstruct,
+            (enum CXCursorKind)321, /* CXCursor_OpenACCLoopConstruct */
             "CXCursor_OpenACCLoopConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2936,9 +2936,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCCombinedConstruct: {
+    case 322: /* CXCursor_OpenACCCombinedConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCCombinedConstruct,
+            (enum CXCursorKind)322, /* CXCursor_OpenACCCombinedConstruct */
             "CXCursor_OpenACCCombinedConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2949,9 +2949,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCDataConstruct: {
+    case 323: /* CXCursor_OpenACCDataConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCDataConstruct,
+            (enum CXCursorKind)323, /* CXCursor_OpenACCDataConstruct */
             "CXCursor_OpenACCDataConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2962,9 +2962,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCEnterDataConstruct: {
+    case 324: /* CXCursor_OpenACCEnterDataConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCEnterDataConstruct,
+            (enum CXCursorKind)324, /* CXCursor_OpenACCEnterDataConstruct */
             "CXCursor_OpenACCEnterDataConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2975,9 +2975,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCExitDataConstruct: {
+    case 325: /* CXCursor_OpenACCExitDataConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCExitDataConstruct,
+            (enum CXCursorKind)325, /* CXCursor_OpenACCExitDataConstruct */
             "CXCursor_OpenACCExitDataConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -2988,9 +2988,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCHostDataConstruct: {
+    case 326: /* CXCursor_OpenACCHostDataConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCHostDataConstruct,
+            (enum CXCursorKind)326, /* CXCursor_OpenACCHostDataConstruct */
             "CXCursor_OpenACCHostDataConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3001,9 +3001,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCWaitConstruct: {
+    case 327: /* CXCursor_OpenACCWaitConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCWaitConstruct,
+            (enum CXCursorKind)327, /* CXCursor_OpenACCWaitConstruct */
             "CXCursor_OpenACCWaitConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3014,9 +3014,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCInitConstruct: {
+    case 328: /* CXCursor_OpenACCInitConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCInitConstruct,
+            (enum CXCursorKind)328, /* CXCursor_OpenACCInitConstruct */
             "CXCursor_OpenACCInitConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3027,9 +3027,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCShutdownConstruct: {
+    case 329: /* CXCursor_OpenACCShutdownConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCShutdownConstruct,
+            (enum CXCursorKind)329, /* CXCursor_OpenACCShutdownConstruct */
             "CXCursor_OpenACCShutdownConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3040,9 +3040,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCSetConstruct: {
+    case 330: /* CXCursor_OpenACCSetConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCSetConstruct,
+            (enum CXCursorKind)330, /* CXCursor_OpenACCSetConstruct */
             "CXCursor_OpenACCSetConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3053,9 +3053,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCUpdateConstruct: {
+    case 331: /* CXCursor_OpenACCUpdateConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCUpdateConstruct,
+            (enum CXCursorKind)331, /* CXCursor_OpenACCUpdateConstruct */
             "CXCursor_OpenACCUpdateConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3066,9 +3066,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCAtomicConstruct: {
+    case 332: /* CXCursor_OpenACCAtomicConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCAtomicConstruct,
+            (enum CXCursorKind)332, /* CXCursor_OpenACCAtomicConstruct */
             "CXCursor_OpenACCAtomicConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3079,9 +3079,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OpenACCCacheConstruct: {
+    case 333: /* CXCursor_OpenACCCacheConstruct */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OpenACCCacheConstruct,
+            (enum CXCursorKind)333, /* CXCursor_OpenACCCacheConstruct */
             "CXCursor_OpenACCCacheConstruct",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3092,9 +3092,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TranslationUnit: {
+    case 350: /* CXCursor_TranslationUnit */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TranslationUnit,
+            (enum CXCursorKind)350, /* CXCursor_TranslationUnit */
             "CXCursor_TranslationUnit",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3105,9 +3105,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_UnexposedAttr: {
+    case 400: /* CXCursor_UnexposedAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_UnexposedAttr,
+            (enum CXCursorKind)400, /* CXCursor_UnexposedAttr */
             "CXCursor_UnexposedAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3118,9 +3118,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_IBActionAttr: {
+    case 401: /* CXCursor_IBActionAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_IBActionAttr,
+            (enum CXCursorKind)401, /* CXCursor_IBActionAttr */
             "CXCursor_IBActionAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3131,9 +3131,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_IBOutletAttr: {
+    case 402: /* CXCursor_IBOutletAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_IBOutletAttr,
+            (enum CXCursorKind)402, /* CXCursor_IBOutletAttr */
             "CXCursor_IBOutletAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3144,9 +3144,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_IBOutletCollectionAttr: {
+    case 403: /* CXCursor_IBOutletCollectionAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_IBOutletCollectionAttr,
+            (enum CXCursorKind)403, /* CXCursor_IBOutletCollectionAttr */
             "CXCursor_IBOutletCollectionAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3157,9 +3157,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXFinalAttr: {
+    case 404: /* CXCursor_CXXFinalAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXFinalAttr,
+            (enum CXCursorKind)404, /* CXCursor_CXXFinalAttr */
             "CXCursor_CXXFinalAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3170,9 +3170,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CXXOverrideAttr: {
+    case 405: /* CXCursor_CXXOverrideAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CXXOverrideAttr,
+            (enum CXCursorKind)405, /* CXCursor_CXXOverrideAttr */
             "CXCursor_CXXOverrideAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3183,9 +3183,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_AnnotateAttr: {
+    case 406: /* CXCursor_AnnotateAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_AnnotateAttr,
+            (enum CXCursorKind)406, /* CXCursor_AnnotateAttr */
             "CXCursor_AnnotateAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3196,9 +3196,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_AsmLabelAttr: {
+    case 407: /* CXCursor_AsmLabelAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_AsmLabelAttr,
+            (enum CXCursorKind)407, /* CXCursor_AsmLabelAttr */
             "CXCursor_AsmLabelAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3209,9 +3209,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_PackedAttr: {
+    case 408: /* CXCursor_PackedAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_PackedAttr,
+            (enum CXCursorKind)408, /* CXCursor_PackedAttr */
             "CXCursor_PackedAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3222,9 +3222,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_PureAttr: {
+    case 409: /* CXCursor_PureAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_PureAttr,
+            (enum CXCursorKind)409, /* CXCursor_PureAttr */
             "CXCursor_PureAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3235,9 +3235,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ConstAttr: {
+    case 410: /* CXCursor_ConstAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ConstAttr,
+            (enum CXCursorKind)410, /* CXCursor_ConstAttr */
             "CXCursor_ConstAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3248,9 +3248,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NoDuplicateAttr: {
+    case 411: /* CXCursor_NoDuplicateAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NoDuplicateAttr,
+            (enum CXCursorKind)411, /* CXCursor_NoDuplicateAttr */
             "CXCursor_NoDuplicateAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3261,9 +3261,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CUDAConstantAttr: {
+    case 412: /* CXCursor_CUDAConstantAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CUDAConstantAttr,
+            (enum CXCursorKind)412, /* CXCursor_CUDAConstantAttr */
             "CXCursor_CUDAConstantAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3274,9 +3274,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CUDADeviceAttr: {
+    case 413: /* CXCursor_CUDADeviceAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CUDADeviceAttr,
+            (enum CXCursorKind)413, /* CXCursor_CUDADeviceAttr */
             "CXCursor_CUDADeviceAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3287,9 +3287,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CUDAGlobalAttr: {
+    case 414: /* CXCursor_CUDAGlobalAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CUDAGlobalAttr,
+            (enum CXCursorKind)414, /* CXCursor_CUDAGlobalAttr */
             "CXCursor_CUDAGlobalAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3300,9 +3300,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CUDAHostAttr: {
+    case 415: /* CXCursor_CUDAHostAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CUDAHostAttr,
+            (enum CXCursorKind)415, /* CXCursor_CUDAHostAttr */
             "CXCursor_CUDAHostAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3313,9 +3313,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_CUDASharedAttr: {
+    case 416: /* CXCursor_CUDASharedAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_CUDASharedAttr,
+            (enum CXCursorKind)416, /* CXCursor_CUDASharedAttr */
             "CXCursor_CUDASharedAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3326,9 +3326,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_VisibilityAttr: {
+    case 417: /* CXCursor_VisibilityAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_VisibilityAttr,
+            (enum CXCursorKind)417, /* CXCursor_VisibilityAttr */
             "CXCursor_VisibilityAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3339,9 +3339,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_DLLExport: {
+    case 418: /* CXCursor_DLLExport */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_DLLExport,
+            (enum CXCursorKind)418, /* CXCursor_DLLExport */
             "CXCursor_DLLExport",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3352,9 +3352,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_DLLImport: {
+    case 419: /* CXCursor_DLLImport */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_DLLImport,
+            (enum CXCursorKind)419, /* CXCursor_DLLImport */
             "CXCursor_DLLImport",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3365,9 +3365,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NSReturnsRetained: {
+    case 420: /* CXCursor_NSReturnsRetained */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NSReturnsRetained,
+            (enum CXCursorKind)420, /* CXCursor_NSReturnsRetained */
             "CXCursor_NSReturnsRetained",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3378,9 +3378,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NSReturnsNotRetained: {
+    case 421: /* CXCursor_NSReturnsNotRetained */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NSReturnsNotRetained,
+            (enum CXCursorKind)421, /* CXCursor_NSReturnsNotRetained */
             "CXCursor_NSReturnsNotRetained",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3391,9 +3391,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NSReturnsAutoreleased: {
+    case 422: /* CXCursor_NSReturnsAutoreleased */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NSReturnsAutoreleased,
+            (enum CXCursorKind)422, /* CXCursor_NSReturnsAutoreleased */
             "CXCursor_NSReturnsAutoreleased",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3404,9 +3404,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NSConsumesSelf: {
+    case 423: /* CXCursor_NSConsumesSelf */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NSConsumesSelf,
+            (enum CXCursorKind)423, /* CXCursor_NSConsumesSelf */
             "CXCursor_NSConsumesSelf",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3417,9 +3417,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_NSConsumed: {
+    case 424: /* CXCursor_NSConsumed */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_NSConsumed,
+            (enum CXCursorKind)424, /* CXCursor_NSConsumed */
             "CXCursor_NSConsumed",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3430,9 +3430,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCException: {
+    case 425: /* CXCursor_ObjCException */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCException,
+            (enum CXCursorKind)425, /* CXCursor_ObjCException */
             "CXCursor_ObjCException",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3443,9 +3443,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCNSObject: {
+    case 426: /* CXCursor_ObjCNSObject */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCNSObject,
+            (enum CXCursorKind)426, /* CXCursor_ObjCNSObject */
             "CXCursor_ObjCNSObject",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3456,9 +3456,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCIndependentClass: {
+    case 427: /* CXCursor_ObjCIndependentClass */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCIndependentClass,
+            (enum CXCursorKind)427, /* CXCursor_ObjCIndependentClass */
             "CXCursor_ObjCIndependentClass",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3469,9 +3469,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCPreciseLifetime: {
+    case 428: /* CXCursor_ObjCPreciseLifetime */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCPreciseLifetime,
+            (enum CXCursorKind)428, /* CXCursor_ObjCPreciseLifetime */
             "CXCursor_ObjCPreciseLifetime",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3482,9 +3482,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCReturnsInnerPointer: {
+    case 429: /* CXCursor_ObjCReturnsInnerPointer */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCReturnsInnerPointer,
+            (enum CXCursorKind)429, /* CXCursor_ObjCReturnsInnerPointer */
             "CXCursor_ObjCReturnsInnerPointer",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3495,9 +3495,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCRequiresSuper: {
+    case 430: /* CXCursor_ObjCRequiresSuper */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCRequiresSuper,
+            (enum CXCursorKind)430, /* CXCursor_ObjCRequiresSuper */
             "CXCursor_ObjCRequiresSuper",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3508,9 +3508,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCRootClass: {
+    case 431: /* CXCursor_ObjCRootClass */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCRootClass,
+            (enum CXCursorKind)431, /* CXCursor_ObjCRootClass */
             "CXCursor_ObjCRootClass",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3521,9 +3521,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCSubclassingRestricted: {
+    case 432: /* CXCursor_ObjCSubclassingRestricted */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCSubclassingRestricted,
+            (enum CXCursorKind)432, /* CXCursor_ObjCSubclassingRestricted */
             "CXCursor_ObjCSubclassingRestricted",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3534,9 +3534,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCExplicitProtocolImpl: {
+    case 433: /* CXCursor_ObjCExplicitProtocolImpl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCExplicitProtocolImpl,
+            (enum CXCursorKind)433, /* CXCursor_ObjCExplicitProtocolImpl */
             "CXCursor_ObjCExplicitProtocolImpl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3547,9 +3547,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCDesignatedInitializer: {
+    case 434: /* CXCursor_ObjCDesignatedInitializer */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCDesignatedInitializer,
+            (enum CXCursorKind)434, /* CXCursor_ObjCDesignatedInitializer */
             "CXCursor_ObjCDesignatedInitializer",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3560,9 +3560,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCRuntimeVisible: {
+    case 435: /* CXCursor_ObjCRuntimeVisible */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCRuntimeVisible,
+            (enum CXCursorKind)435, /* CXCursor_ObjCRuntimeVisible */
             "CXCursor_ObjCRuntimeVisible",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3573,9 +3573,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ObjCBoxable: {
+    case 436: /* CXCursor_ObjCBoxable */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ObjCBoxable,
+            (enum CXCursorKind)436, /* CXCursor_ObjCBoxable */
             "CXCursor_ObjCBoxable",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3586,9 +3586,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FlagEnum: {
+    case 437: /* CXCursor_FlagEnum */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FlagEnum,
+            (enum CXCursorKind)437, /* CXCursor_FlagEnum */
             "CXCursor_FlagEnum",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3599,9 +3599,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ConvergentAttr: {
+    case 438: /* CXCursor_ConvergentAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ConvergentAttr,
+            (enum CXCursorKind)438, /* CXCursor_ConvergentAttr */
             "CXCursor_ConvergentAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3612,9 +3612,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_WarnUnusedAttr: {
+    case 439: /* CXCursor_WarnUnusedAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_WarnUnusedAttr,
+            (enum CXCursorKind)439, /* CXCursor_WarnUnusedAttr */
             "CXCursor_WarnUnusedAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3625,9 +3625,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_WarnUnusedResultAttr: {
+    case 440: /* CXCursor_WarnUnusedResultAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_WarnUnusedResultAttr,
+            (enum CXCursorKind)440, /* CXCursor_WarnUnusedResultAttr */
             "CXCursor_WarnUnusedResultAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3638,9 +3638,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_AlignedAttr: {
+    case 441: /* CXCursor_AlignedAttr */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_AlignedAttr,
+            (enum CXCursorKind)441, /* CXCursor_AlignedAttr */
             "CXCursor_AlignedAttr",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3651,9 +3651,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_PreprocessingDirective: {
+    case 500: /* CXCursor_PreprocessingDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_PreprocessingDirective,
+            (enum CXCursorKind)500, /* CXCursor_PreprocessingDirective */
             "CXCursor_PreprocessingDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3664,9 +3664,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_MacroDefinition: {
+    case 501: /* CXCursor_MacroDefinition */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_MacroDefinition,
+            (enum CXCursorKind)501, /* CXCursor_MacroDefinition */
             "CXCursor_MacroDefinition",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3677,9 +3677,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_MacroExpansion: {
+    case 502: /* CXCursor_MacroExpansion */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_MacroExpansion,
+            (enum CXCursorKind)502, /* CXCursor_MacroExpansion */
             "CXCursor_MacroExpansion",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3690,9 +3690,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_InclusionDirective: {
+    case 503: /* CXCursor_InclusionDirective */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_InclusionDirective,
+            (enum CXCursorKind)503, /* CXCursor_InclusionDirective */
             "CXCursor_InclusionDirective",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3703,9 +3703,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ModuleImportDecl: {
+    case 600: /* CXCursor_ModuleImportDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ModuleImportDecl,
+            (enum CXCursorKind)600, /* CXCursor_ModuleImportDecl */
             "CXCursor_ModuleImportDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3716,9 +3716,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_TypeAliasTemplateDecl: {
+    case 601: /* CXCursor_TypeAliasTemplateDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_TypeAliasTemplateDecl,
+            (enum CXCursorKind)601, /* CXCursor_TypeAliasTemplateDecl */
             "CXCursor_TypeAliasTemplateDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3729,9 +3729,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_StaticAssert: {
+    case 602: /* CXCursor_StaticAssert */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_StaticAssert,
+            (enum CXCursorKind)602, /* CXCursor_StaticAssert */
             "CXCursor_StaticAssert",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3742,9 +3742,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_FriendDecl: {
+    case 603: /* CXCursor_FriendDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_FriendDecl,
+            (enum CXCursorKind)603, /* CXCursor_FriendDecl */
             "CXCursor_FriendDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3755,9 +3755,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_ConceptDecl: {
+    case 604: /* CXCursor_ConceptDecl */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_ConceptDecl,
+            (enum CXCursorKind)604, /* CXCursor_ConceptDecl */
             "CXCursor_ConceptDecl",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
@@ -3768,9 +3768,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         };
         return &info;
     }
-    case CXCursor_OverloadCandidate: {
+    case 700: /* CXCursor_OverloadCandidate */ {
         static const pk_c11_cursor_dispatch info = {
-            CXCursor_OverloadCandidate,
+            (enum CXCursorKind)700, /* CXCursor_OverloadCandidate */
             "CXCursor_OverloadCandidate",
             "c11:opaque",
             "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
