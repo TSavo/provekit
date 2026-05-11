@@ -948,8 +948,12 @@ fn value_cid(value: &Json) -> Result<String, String> {
 fn should_skip_path(path: &Path) -> bool {
     let ignored_names = [
         ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
         ".zig-cache",
         ".build",
+        "__pycache__",
         "bazel-bin",
         "bazel-out",
         "bazel-testlogs",
@@ -961,16 +965,25 @@ fn should_skip_path(path: &Path) -> bool {
         "target",
         "zig-out",
     ];
+    let ignored_suffixes = [".egg-info", ".dist-info"];
     if path
         .components()
         .filter_map(|c| c.as_os_str().to_str())
-        .any(|part| ignored_names.contains(&part))
+        .any(|part| {
+            ignored_names.contains(&part)
+                || ignored_suffixes.iter().any(|suffix| part.ends_with(suffix))
+        })
     {
         return true;
     }
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext, "o" | "a" | "so" | "dylib" | "dll" | "exe" | "class"))
+        .is_some_and(|ext| {
+            matches!(
+                ext,
+                "o" | "a" | "so" | "dylib" | "dll" | "exe" | "class" | "pyc" | "pyo"
+            )
+        })
 }
 
 fn normalize_rel(path: &Path) -> String {
