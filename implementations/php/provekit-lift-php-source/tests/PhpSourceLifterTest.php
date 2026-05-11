@@ -228,6 +228,46 @@ function test_php_language_signature_catalog_has_required_shapes(): void
     assert_same('unevaluated', $coalesce['post']['arity_shape']['slots'][1]['evaluation'], 'nullcoalesce RHS unevaluated');
 }
 
+function test_compile_nested_assign_expression_roundtrip(): void
+{
+    // $a = $b = 1: the inner $b = 1 is php:assign in expression position (value of outer assign).
+    // The compiler must handle php:assign in exprNode(), not only in stmtNode().
+    $source = <<<'PHP'
+<?php
+function f() {
+    $a = $b = 1;
+    return $a + $b;
+}
+PHP;
+
+    $lifter = new PhpSourceLifter();
+    $first = $lifter->liftSource($source, 'src/nested_assign.php');
+    assert_same([], $first['refusals'], 'nested assign should lift without refusals');
+    $contract = contract($first['ir'], 'f');
+    $body = rhs($contract);
+
+    // The IR must contain php:assign in expression position (nested).
+    $names = ctor_names($body);
+    assert_true(in_array('php:assign', $names, true), 'body IR contains php:assign');
+
+    // Compile back to PHP source; this must not throw.
+    $compiled = (new PhpSourceCompiler())->compileBodyTerm($body, 'f', $contract['formals']);
+
+    // Re-lift the compiled source; IR must be byte-identical (round-trip).
+    $second = $lifter->liftSource($compiled, 'src/nested_assign.php');
+    assert_same([], $second['refusals'], 'compiled nested-assign body should relift');
+    $reliftedBody = rhs(contract($second['ir'], 'f'));
+    assert_same(Jcs::encode($body), Jcs::encode($reliftedBody), 'nested-assign IR round-trip canonical bytes');
+
+    // The compiled output must represent the nested assignment as an assign-expression.
+    // PhpParser emits it as "$a = $b = 1" (chained); the fallback emits "($b = 1)".
+    // Either way the compiled source must contain the nested variable assignment.
+    assert_true(
+        str_contains($compiled, '$b = 1') || str_contains($compiled, '($b = 1)'),
+        'compiled PHP contains nested assignment expression; got: ' . $compiled
+    );
+}
+
 $tests = array_filter(
     get_defined_functions()['user'],
     static fn(string $name): bool => str_starts_with($name, 'test_')
