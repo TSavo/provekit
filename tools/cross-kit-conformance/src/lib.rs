@@ -1845,7 +1845,7 @@ fn java_emit_cid(name: &str) -> Result<String> {
     let code = format!(
         r#"
 import com.provekit.ir.*;
-import com.provekit.claimenvelope.Blake3;
+import com.provekit.ir.Blake3;
 import java.nio.charset.StandardCharsets;
 
 public class PkJavaConformance {{
@@ -2062,7 +2062,10 @@ fn linux_native_checks() -> Vec<NativeCheck> {
                 "test".into(),
                 "-q".into(),
                 "-f".into(),
-                "implementations/java/provekit-claim-envelope/pom.xml".into(),
+                "implementations/java/pom.xml".into(),
+                "-pl".into(),
+                "provekit-claim-envelope".into(),
+                "-am".into(),
                 "-Dtest=BridgeV14RoundtripTest".into(),
             ],
             cwd: root.clone(),
@@ -2555,6 +2558,50 @@ mod tests {
         assert!(
             ci.contains("tools/cross-kit-conformance/Cargo.toml"),
             "CI must call the Rust conformance harness"
+        );
+    }
+
+    #[test]
+    fn java_conformance_source_uses_ir_canonicalizer() {
+        let source = include_str!("lib.rs");
+        let old_blake3_import = ["import com.provekit.claim", "envelope.Blake3;"].concat();
+        let old_jcs_import = ["import com.provekit.claim", "envelope.Jcs;"].concat();
+        let ir_blake3_import = ["import com.provekit.", "ir.Blake3;"].concat();
+
+        assert!(
+            !source.contains(&old_blake3_import),
+            "generated Java conformance source must not import the deleted claim-envelope Blake3"
+        );
+        assert!(
+            !source.contains(&old_jcs_import),
+            "generated Java conformance source must not import the deleted claim-envelope Jcs"
+        );
+        assert!(
+            source.contains(&ir_blake3_import),
+            "generated Java conformance source must import Blake3 from provekit-ir"
+        );
+    }
+
+    #[test]
+    fn java_native_bridge_check_builds_ir_from_reactor() {
+        let native = linux_native_checks()
+            .into_iter()
+            .find(|check| check.kit == "java")
+            .expect("java native check");
+
+        assert_eq!(
+            native.cmd,
+            vec![
+                "mvn",
+                "test",
+                "-q",
+                "-f",
+                "implementations/java/pom.xml",
+                "-pl",
+                "provekit-claim-envelope",
+                "-am",
+                "-Dtest=BridgeV14RoundtripTest",
+            ]
         );
     }
 
