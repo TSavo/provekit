@@ -126,6 +126,23 @@ impl DesugarRule {
             ));
         }
 
+        // A `pre` side-condition gates the rewrite; the rewriter does not yet
+        // evaluate side-conditions, so a non-trivially-true `pre` must be
+        // refused rather than silently ignored (which would fire the rule
+        // unconditionally). Refuse, don't ignore.
+        if let Some(pre) = object.get("pre") {
+            if !is_trivially_true(pre) {
+                return Err(Refusal::new(
+                    RefusalKind::InvalidDesugaringEquation,
+                    format!(
+                        "{fn_name} has a non-trivial `pre` side-condition; \
+                         conditional desugaring equations are not yet supported"
+                    ),
+                    vec![fn_name],
+                ));
+            }
+        }
+
         let post = object
             .get("post")
             .and_then(JsonValue::as_object)
@@ -839,6 +856,22 @@ fn string_field<'a>(
     field: &str,
 ) -> Option<&'a str> {
     object.get(field).and_then(JsonValue::as_str)
+}
+
+/// `true` iff `value` is the trivially-true atomic predicate
+/// `{"kind":"atomic","name":"true","args":[]}` (the only `pre` form the
+/// rewriter can honour without side-condition evaluation).
+fn is_trivially_true(value: &JsonValue) -> bool {
+    value
+        .as_object()
+        .map(|o| {
+            string_field(o, "kind") == Some("atomic")
+                && string_field(o, "name") == Some("true")
+                && o.get("args")
+                    .and_then(JsonValue::as_array)
+                    .map_or(true, |a| a.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 fn names_alias(left: &str, right: &str) -> bool {

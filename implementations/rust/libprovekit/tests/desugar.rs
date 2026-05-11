@@ -188,6 +188,56 @@ fn desugar_refuses_non_confluent_duplicate_left_hand_side() {
 }
 
 #[test]
+fn parse_refuses_non_trivial_pre_side_condition() {
+    // A `pre` other than the trivially-true atomic predicate gates the rewrite;
+    // the rewriter does not evaluate side-conditions, so such a memento must be
+    // refused -- not silently treated as if the guard always held.
+    let err = DesugarRule::from_json_value(json!({
+        "kind": "equation",
+        "fn_name": "test:guarded-desugar",
+        "formals": ["x"],
+        "formal_sorts": ["sort_any.spec.json"],
+        "role": "desugaring",
+        "direction": "left-to-right",
+        "pre": {"kind": "atomic", "name": "is-null", "args": [{"kind": "var", "name": "x"}]},
+        "post": {
+            "kind": "equation",
+            "lhs": {"kind": "op", "name": "test:surface", "args": [{"kind": "var", "name": "x"}]},
+            "rhs": {"kind": "op", "name": "test:core", "args": [{"kind": "var", "name": "x"}]}
+        },
+        "obligations": {
+            "wp_preservation": {"kind": "wp-preservation", "status": "discharged", "method": "n/a"}
+        }
+    }))
+    .expect_err("non-trivial pre is refused");
+    assert_eq!(err.kind(), RefusalKind::InvalidDesugaringEquation.as_str());
+    assert!(err.to_string().contains("pre"));
+}
+
+#[test]
+fn parse_accepts_trivially_true_pre() {
+    let r = DesugarRule::from_json_value(json!({
+        "kind": "equation",
+        "fn_name": "test:plain-desugar",
+        "formals": ["x"],
+        "formal_sorts": ["sort_any.spec.json"],
+        "role": "desugaring",
+        "direction": "left-to-right",
+        "pre": {"kind": "atomic", "name": "true", "args": []},
+        "post": {
+            "kind": "equation",
+            "lhs": {"kind": "op", "name": "test:surface", "args": [{"kind": "var", "name": "x"}]},
+            "rhs": {"kind": "op", "name": "test:core", "args": [{"kind": "var", "name": "x"}]}
+        },
+        "obligations": {
+            "wp_preservation": {"kind": "wp-preservation", "status": "discharged", "method": "n/a"}
+        }
+    }))
+    .expect("trivially-true pre parses");
+    assert_eq!(r.fn_name, "test:plain-desugar");
+}
+
+#[test]
 fn csharp_for_surface_program_collapses_to_core_normal_form() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
