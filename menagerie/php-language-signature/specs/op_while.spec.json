@@ -1,0 +1,56 @@
+{
+    "kind": "algorithm",
+    "fn_name": "php:while",
+    "version": "0.1.0-draft",
+    "formals": [
+        "cond",
+        "body"
+    ],
+    "formal_sorts": [
+        {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+        },
+        {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+        }
+    ],
+    "return_sort": {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+    },
+    "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+    },
+    "post": {
+        "kind": "operation-contract",
+        "operator": "while",
+        "arity": [
+            "Value",
+            "Stmt"
+        ],
+        "result": "Stmt",
+        "wp": "while loop",
+        "arity_shape": {
+            "kind": "named",
+            "slots": [
+                {
+                    "name": "cond"
+                },
+                {
+                    "name": "body"
+                }
+            ]
+        }
+    },
+    "effects": {
+        "effects": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+}

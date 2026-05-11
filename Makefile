@@ -20,7 +20,7 @@
 # Per-language targets:
 #   make build-rust: cargo build --release for workspace + tools
 #   make build-cpp: vendored-blake3 clang++ build of the C++ orchestrator
-#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby
+#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby / test-php
 #
 # Determinism:
 #   make ci is the local Linux-profile contract. If it's green, the non-Swift
@@ -103,7 +103,7 @@ help:
 	@echo "  make build-swift    swift build -c release"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-ruby  test-java  test-c  test-swift"
+	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-ruby  test-php  test-java  test-c  test-swift"
 	@echo ""
 	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
 	@echo "  make prove-all      all 12 Linux kits (swift excluded: macOS-only)"
@@ -652,6 +652,10 @@ test-python:
 .PHONY: test-ruby
 test-ruby: build-ruby ruby-language-signature
 	cd implementations/ruby && $(RUBY) -S bundle exec rake test
+
+.PHONY: test-php
+test-php:
+	cd implementations/php && composer install && composer test
 
 .PHONY: test-java
 test-java: build-java

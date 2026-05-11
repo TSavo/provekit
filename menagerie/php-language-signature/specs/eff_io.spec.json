@@ -1,0 +1,37 @@
+{
+    "kind": "algorithm",
+    "fn_name": "php:effect:io",
+    "version": "0.1.0-draft",
+    "formals": [],
+    "formal_sorts": [],
+    "return_sort": {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+    },
+    "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+    },
+    "post": {
+        "kind": "operation-contract",
+        "operator": "io-effect",
+        "arity": [],
+        "result": "Unit",
+        "wp": "record IO or network interaction",
+        "arity_shape": {
+            "kind": "positional",
+            "arity": 0
+        }
+    },
+    "effects": {
+        "effects": [
+            {
+                "kind": "effect-signature",
+                "name": "Io"
+            }
+        ]
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+}

@@ -1,0 +1,7 @@
+{
+    "kind": "effect-signature",
+    "fn_name": "php:effect-signature:opaque_loop",
+    "version": "0.1.0-draft",
+    "name": "Loop",
+    "locus": "menagerie/php-language-signature/README.md#effects"
+}

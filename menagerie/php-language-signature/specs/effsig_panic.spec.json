@@ -1,0 +1,7 @@
+{
+    "kind": "effect-signature",
+    "fn_name": "php:effect-signature:panic",
+    "version": "0.1.0-draft",
+    "name": "Panic",
+    "locus": "menagerie/php-language-signature/README.md#effects"
+}

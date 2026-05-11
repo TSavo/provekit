@@ -1,0 +1,57 @@
+{
+    "kind": "algorithm",
+    "fn_name": "php:staticprop",
+    "version": "0.1.0-draft",
+    "formals": [
+        "class",
+        "property"
+    ],
+    "formal_sorts": [
+        {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+        },
+        {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+        }
+    ],
+    "return_sort": {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+    },
+    "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+    },
+    "post": {
+        "kind": "operation-contract",
+        "operator": "staticprop",
+        "arity": [
+            "String",
+            "String"
+        ],
+        "result": "Value",
+        "wp": "static property fetch",
+        "arity_shape": {
+            "kind": "named",
+            "slots": [
+                {
+                    "name": "class"
+                },
+                {
+                    "name": "property",
+                    "slot_sort": "identifier"
+                }
+            ]
+        }
+    },
+    "effects": {
+        "effects": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+}
