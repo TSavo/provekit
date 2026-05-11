@@ -1,0 +1,8 @@
+{
+  "kind": "effect",
+  "name": "opaque_loop",
+  "fields": [
+    "loopCid"
+  ],
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

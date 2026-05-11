@@ -1,0 +1,45 @@
+{
+  "kind": "algorithm",
+  "fn_name": "cpp:neg",
+  "formals": [
+    "operand"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "-",
+    "arity": [
+      "Int"
+    ],
+    "result": "Int",
+    "wp": "C++ unary negation",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "effect",
+  "name": "unresolved_call",
+  "fields": [
+    "name"
+  ],
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

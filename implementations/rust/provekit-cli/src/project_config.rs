@@ -225,6 +225,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "csharp-source",
     "cpp-26-contracts",
     "cpp-boost-contract",
+    "cpp-source",
     "clr-bytecode",
     "swift-source",
     "zig-source",

@@ -171,6 +171,7 @@ build-rust:
 build-cpp:
 	tools/build-cpp-self-contracts.sh --build-only
 	tools/build-cpp-lift.sh
+	tools/build-cpp-source-lift.sh
 	tools/build-cpp-lsp.sh
 
 .PHONY: build-go
@@ -615,8 +616,12 @@ test-go:
 	cd implementations/go/provekit-lift-go-tests && go test ./...
 	cd implementations/go/provekit-lift-go && go test ./...
 
+.PHONY: test-cpp-source-lift
+test-cpp-source-lift:
+	tools/test-cpp-source-lift.sh
+
 .PHONY: test-cpp
-test-cpp: build-cpp
+test-cpp: build-cpp test-cpp-source-lift
 	@echo "test-cpp: LSP lifecycle integration test"
 	sh implementations/cpp/provekit-lsp-cpp/test_lsp.sh implementations/cpp/target/provekit-lsp-cpp
 	@echo "test-cpp: mint round-trip also covered by mint-cpp"
