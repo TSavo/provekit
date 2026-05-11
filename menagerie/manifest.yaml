@@ -29,10 +29,6 @@ destinations:
       witnessCid). Aspirational: no grammar-conformance execution against the
       prose specs, no implementation conformance witness, no separate
       compatibility-invariant or bridge-checker witnesses yet.
-  - id: go-language-signature
-    path: go-language-signature
-    runnable: planned
-    claim: draft Go source operation algebra for provekit-lift-go
   - id: change-station
     path: change-station
     runnable: planned

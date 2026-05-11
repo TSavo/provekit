@@ -1,6 +1,7 @@
 package liftgo
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -93,6 +94,39 @@ func TestRoundTripCompileLiftIsByteIdentical(t *testing.T) {
 	}
 }
 
+func TestRoundTripCompileBareBodyTermIsByteIdentical(t *testing.T) {
+	first, err := LiftSource("example.com/sample", "f.go", []byte(addSource))
+	if err != nil {
+		t.Fatalf("first lift: %v", err)
+	}
+	contracts := first.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, want 1", len(contracts))
+	}
+	originalBody := resultBodyTerm(t, contracts[0].Post)
+
+	compiled, err := Compile(CompileInput{IR: []any{originalBody}})
+	if err != nil {
+		t.Fatalf("compile bare body: %v", err)
+	}
+
+	second, err := LiftSource("example.com/sample", "compiled.go", []byte(compiled.Source))
+	if err != nil {
+		t.Fatalf("second lift: %v\nsource:\n%s", err, compiled.Source)
+	}
+	secondContracts := second.FunctionContracts()
+	if len(secondContracts) != 1 {
+		t.Fatalf("second contracts = %d, refusals=%+v, source:\n%s", len(secondContracts), second.Refusals, compiled.Source)
+	}
+	roundTrippedBody := resultBodyTerm(t, secondContracts[0].Post)
+
+	firstBytes := canonicalTermBytes(t, originalBody)
+	secondBytes := canonicalTermBytes(t, roundTrippedBody)
+	if !bytes.Equal(firstBytes, secondBytes) {
+		t.Fatalf("round-trip body diverged:\nfirst:  %s\nsecond: %s\nsource:\n%s", firstBytes, secondBytes, compiled.Source)
+	}
+}
+
 func TestRefusesUnsupportedGoStatementWithoutUnknownOp(t *testing.T) {
 	src := `package sample
 
@@ -120,6 +154,37 @@ func F(ch chan int) {
 	}
 	if strings.Contains(string(all), "go:unknown") || strings.Contains(string(all), "go:binop") {
 		t.Fatalf("IR leaked catch-all op: %s", all)
+	}
+}
+
+func TestRefusesMethodsWithUnresolvedReceiverType(t *testing.T) {
+	src := `package sample
+
+func (r []int) M() int {
+	return 1
+}
+
+func (r map[string]int) M() int {
+	return 2
+}
+`
+	result, err := LiftSource("example.com/sample", "bad_recv.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	if contracts := result.FunctionContracts(); len(contracts) != 0 {
+		t.Fatalf("contracts = %+v, want none", contracts)
+	}
+	if len(result.Refusals) != 2 {
+		t.Fatalf("refusals = %+v, want two", result.Refusals)
+	}
+	for _, refusal := range result.Refusals {
+		if refusal.Kind != "unresolved-receiver-type" {
+			t.Fatalf("refusal kind = %q, want unresolved-receiver-type: %+v", refusal.Kind, result.Refusals)
+		}
+		if refusal.Function == "" || refusal.Line == 0 {
+			t.Fatalf("bad refusal shape: %+v", refusal)
+		}
 	}
 }
 
@@ -165,4 +230,30 @@ func TestInitializeReportsDraftVersionAndCapabilities(t *testing.T) {
 	if len(result.Capabilities.AuthoringSurfaces) != 1 || result.Capabilities.AuthoringSurfaces[0] != "go-source" {
 		t.Fatalf("authoring surfaces = %+v", result.Capabilities.AuthoringSurfaces)
 	}
+}
+
+func resultBodyTerm(t *testing.T, post any) any {
+	t.Helper()
+	generic, err := toGeneric(post)
+	if err != nil {
+		t.Fatalf("post to generic: %v", err)
+	}
+	m, ok := generic.(map[string]any)
+	if !ok || m["kind"] != "atomic" || m["name"] != "=" {
+		t.Fatalf("post = %#v, want result equality", generic)
+	}
+	args, ok := m["args"].([]any)
+	if !ok || len(args) != 2 {
+		t.Fatalf("post args = %#v, want two", m["args"])
+	}
+	return args[1]
+}
+
+func canonicalTermBytes(t *testing.T, term any) []byte {
+	t.Helper()
+	_, bytes, err := canonicalCID(term)
+	if err != nil {
+		t.Fatalf("canonical term: %v", err)
+	}
+	return bytes
 }

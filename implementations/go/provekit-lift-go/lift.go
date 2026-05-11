@@ -131,6 +131,13 @@ func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *typ
 	if obj, ok := info.Defs[fn.Name].(*types.Func); ok {
 		fnName = obj.FullName()
 	}
+	if fn.Recv != nil && !receiverTypeResolved(info, fn) {
+		pos := fset.Position(fn.Name.Pos())
+		return FunctionContract{}, nil, []Refusal{{
+			Kind: "unresolved-receiver-type", Function: unresolvedReceiverFunctionName(sourcePath, pos, fn), Line: pos.Line,
+			Reason: "receiver type could not be resolved to a named type",
+		}}
+	}
 	refuse := func(kind string, pos token.Pos, reason string) []Refusal {
 		return []Refusal{{Kind: kind, Function: fnName, Line: fset.Position(pos).Line, Reason: reason}}
 	}
@@ -968,6 +975,27 @@ func objectCell(obj types.Object) string {
 		return obj.Name()
 	}
 	return obj.Pkg().Path() + "." + obj.Name()
+}
+
+func receiverTypeResolved(info *types.Info, fn *ast.FuncDecl) bool {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return true
+	}
+	receiver := fn.Recv.List[0].Type
+	t := typeOfExpr(info, receiver)
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	return ok && named.Obj() != nil
+}
+
+func unresolvedReceiverFunctionName(sourcePath string, pos token.Position, fn *ast.FuncDecl) string {
+	name := fn.Name.Name
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return name
+	}
+	return fmt.Sprintf("%s:%d:%d:%s", sourcePath, pos.Line, pos.Column, name)
 }
 
 func fallbackFuncName(packagePath string, fn *ast.FuncDecl) string {

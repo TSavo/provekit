@@ -16,7 +16,16 @@ func Compile(input CompileInput) (CompileOutput, error) {
 	if src, ok := sourceFromSourceUnit(input.IR); ok {
 		return CompileOutput{Source: src}, nil
 	}
-	return compileContracts(input.IR)
+	compiled, err := compileContracts(input.IR)
+	if err == nil {
+		return compiled, nil
+	}
+	if len(input.IR) == 1 {
+		if compiled, bodyErr := CompileBody(input.IR[0]); bodyErr == nil {
+			return compiled, nil
+		}
+	}
+	return CompileOutput{}, err
 }
 
 func sourceFromSourceUnit(items []any) (string, bool) {
@@ -123,6 +132,72 @@ func resultExprFromPost(post any) (string, bool) {
 	return goExprFromIRTerm(args[1])
 }
 
+func CompileBody(term any) (CompileOutput, error) {
+	generic, err := toGeneric(term)
+	if err != nil {
+		return CompileOutput{}, err
+	}
+	exprTerm, ok := returnExprTerm(generic)
+	if !ok {
+		return CompileOutput{}, errors.New("compile: body term does not contain a compilable expression")
+	}
+	expr, ok := goExprFromIRTerm(exprTerm)
+	if !ok {
+		return CompileOutput{}, errors.New("compile: body expression is not supported")
+	}
+	vars := varsInTerm(exprTerm)
+	ret := goTypeFromBodyTerm(exprTerm)
+	var b strings.Builder
+	b.WriteString("package main\n\n")
+	b.WriteString("func F(")
+	for i, name := range vars {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(name)
+		b.WriteString(" int")
+	}
+	b.WriteString(") ")
+	b.WriteString(ret)
+	b.WriteString(" {\n")
+	b.WriteString("\treturn ")
+	b.WriteString(expr)
+	b.WriteByte('\n')
+	b.WriteString("}\n")
+	formatted, err := format.Source([]byte(b.String()))
+	if err != nil {
+		return CompileOutput{Source: b.String()}, nil
+	}
+	return CompileOutput{Source: string(formatted)}, nil
+}
+
+func returnExprTerm(term any) (any, bool) {
+	if _, ok := goExprFromIRTerm(term); ok {
+		return term, true
+	}
+	m, ok := term.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	if m["kind"] != "op" {
+		return nil, false
+	}
+	args := anySliceField(m, "args")
+	switch m["name"] {
+	case "go:return":
+		if len(args) == 1 {
+			return args[0], true
+		}
+	case "go:seq":
+		for i := len(args) - 1; i >= 0; i-- {
+			if expr, ok := returnExprTerm(args[i]); ok {
+				return expr, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func goExprFromIRTerm(term any) (string, bool) {
 	m, ok := term.(map[string]any)
 	if !ok {
@@ -131,9 +206,11 @@ func goExprFromIRTerm(term any) (string, bool) {
 	switch m["kind"] {
 	case "var":
 		return stringField(m, "name"), true
-	case "const":
+	case "identifier":
+		return stringField(m, "name"), true
+	case "const", "literal":
 		return literalSource(m["value"]), true
-	case "ctor":
+	case "ctor", "op":
 		name := stringField(m, "name")
 		args := anySliceField(m, "args")
 		compiled := make([]string, len(args))
@@ -192,7 +269,7 @@ func goExprFromIRTerm(term any) (string, bool) {
 		case "go:addr":
 			return unarySource(compiled, "&")
 		case "go:index":
-			if len(compiled) == 2 {
+			if len(args) == 2 {
 				return compiled[0] + "[" + compiled[1] + "]", true
 			}
 		case "go:member":
@@ -201,7 +278,7 @@ func goExprFromIRTerm(term any) (string, bool) {
 				if !ok {
 					return "", false
 				}
-				if field, ok := stringFromConst(args[1]); ok {
+				if field, ok := stringFromNameTerm(args[1]); ok {
 					return base + "." + field, true
 				}
 			}
@@ -224,17 +301,75 @@ func unarySource(args []string, op string) (string, bool) {
 	return op + args[0], true
 }
 
-func stringFromConst(term any) (string, bool) {
+func stringFromNameTerm(term any) (string, bool) {
 	m, ok := term.(map[string]any)
 	if !ok {
 		return "", false
 	}
-	if m["kind"] == "const" {
+	switch m["kind"] {
+	case "const", "literal":
 		if s, ok := m["value"].(string); ok {
 			return s, true
 		}
+	case "identifier":
+		return stringField(m, "name"), true
 	}
 	return "", false
+}
+
+func varsInTerm(term any) []string {
+	seen := map[string]bool{}
+	var out []string
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if x["kind"] == "var" {
+				name := stringField(x, "name")
+				if name != "" && name != "nil" && name != "result" && !seen[name] {
+					seen[name] = true
+					out = append(out, name)
+				}
+			}
+			for _, child := range anySliceField(x, "args") {
+				walk(child)
+			}
+		case []any:
+			for _, child := range x {
+				walk(child)
+			}
+		}
+	}
+	walk(term)
+	return out
+}
+
+func goTypeFromBodyTerm(term any) string {
+	m, ok := term.(map[string]any)
+	if !ok {
+		return "int"
+	}
+	switch m["kind"] {
+	case "const", "literal":
+		switch v := m["value"].(type) {
+		case bool:
+			return "bool"
+		case string:
+			return "string"
+		case float64:
+			return "float64"
+		case json.Number:
+			if strings.ContainsAny(v.String(), ".eE") {
+				return "float64"
+			}
+		}
+	case "ctor", "op":
+		switch stringField(m, "name") {
+		case "go:eq", "go:ne", "go:lt", "go:le", "go:gt", "go:ge", "go:and", "go:or", "go:not":
+			return "bool"
+		}
+	}
+	return "int"
 }
 
 func literalSource(v any) string {
