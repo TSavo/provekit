@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+  "name": "php:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:1a3a53e8c2f5dec4ab04489ae31dbb4f81ff5cf6201a93291b0902024f6f20deb67eb5ef2f1afb450eb7d8f5527a63d8112bcc97a13193aa67b6595891f6eb31",
+      "name": "php:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:997254a719cd4b5f74518f12af97714a6e27eb85c17cb8c82c894476097765ca4b3f8a355d9addfc60d4d98960b02fce8bb89dcdf20775069508f6aaa799dce3",
+          "name": "php:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:c4c39e666e367ddc436688789215070aa61dd274ad6492d64d584b30f0052bb182526b92c47a52bfa69e5959ff2441ff6512591b37b43f9421265520beaa05e8",
+          "name": "php:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:1edff991c3531afe98250ca7bd114dbff96f88ede0723b6bc41eaec7a96e7559305c374a8f3e434a4cd6417f3c7f5b67c64b4444d081b4df0fc773d064d9cc5c",
+          "name": "php:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:c4c39e666e367ddc436688789215070aa61dd274ad6492d64d584b30f0052bb182526b92c47a52bfa69e5959ff2441ff6512591b37b43f9421265520beaa05e8",
+      "name": "php:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

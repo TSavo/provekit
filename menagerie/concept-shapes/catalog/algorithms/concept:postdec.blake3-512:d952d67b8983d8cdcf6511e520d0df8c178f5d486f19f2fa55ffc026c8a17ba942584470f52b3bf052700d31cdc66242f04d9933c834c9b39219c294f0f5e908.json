@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:postdec",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "LValue",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "postdec",
+      "arity": [
+        "LValue"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target"
+          }
+        ]
+      },
+      "result": "Expr",
+      "wp": "postfix decrement expression yielding the previous value"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "MwkWOLn+2fxtPJmA7bYVs5tm1R1vyMafpDfVwEQQcLkX4fSsZ6tFPn7+a2X/DUVJ9xW4ge3yzoJjvkYsmH2PCw=="
+  }
+}

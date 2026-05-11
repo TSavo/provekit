@@ -1,0 +1,82 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:foreach",
+    "formals": [
+      "var_name",
+      "collection",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "foreach",
+      "arity": [
+        "String",
+        "Expr",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "foreach element in collection: wp(body with var_name bound to element, invariant)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "var_name",
+            "slot_sort": "identifier"
+          },
+          {
+            "name": "collection"
+          },
+          {
+            "name": "body",
+            "evaluation": "unevaluated"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "union(body.effects, collection.effects, {Loop})"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:b8d16aed427a60ab454c8b4afb0ad4589c9a17ed5bbe184b2c2b025aab465d321c963199a017e8286f69eb07395769f9de2322e46c715cab3c25795274dfadb4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "0cTZ7mHE7eXAG23MMlhKHssV9B19iD7wwOp7y8IYHWBy0GYkA2p9f86626U4Rb8WJ6+14f8nLZR9xALRYltRBA=="
+  }
+}

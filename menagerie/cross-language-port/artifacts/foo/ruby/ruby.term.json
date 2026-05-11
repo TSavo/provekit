@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:41f17b869840c3b1430254a1cc88feec172fd5d5abc1d4f25f4a23faa1142e4d0fa9d6e95659ea022d08a060ff2d892a7945e41c404dbba4a0023f5c5dbbc061",
+  "name": "ruby:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:312271d461261494f3b73fc28d892f80869406daf97ebb1b8e4171ec648d6a372e81cd4ed803cccb8be0a3af7a01c65e814a602c6bf9fc19ad4617aed5b3bd68",
+      "name": "ruby:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:59895f811d6c2492a9fc9819317136328f8bd42be2afb4e95004dbd3ae7780630b7fabf3530855f67e492224b12beb28327da4c6b85d44c5dd99cea03b211556",
+          "name": "ruby:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:905a4396c92e59635b43da2f86aaea8d4cb665bd544c4210b08af5c8f82004fc1051f6c01801921e1c2be0f2b7dd1ffbe754705ced2d7576450eafa545b49ce6",
+          "name": "ruby:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:11bbd8ade1d619c2f89d210cbae4c49bd772441c996693dabb40d71eacc5bfcebc33e3038fb7ec137bee021ef8949fb77a5662331c1b398bc90a46cf301806f2",
+          "name": "ruby:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:905a4396c92e59635b43da2f86aaea8d4cb665bd544c4210b08af5c8f82004fc1051f6c01801921e1c2be0f2b7dd1ffbe754705ced2d7576450eafa545b49ce6",
+      "name": "ruby:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

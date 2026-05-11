@@ -1,0 +1,155 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:16ba2d75022b90561e625e0ff3d69699ec6a741ebcafd023e1de441590372e7d11832a52996df0ae0509305be4da6c797dfeacf3728bbf0246c3555216e8c206",
+  "name": "go:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:16ba2d75022b90561e625e0ff3d69699ec6a741ebcafd023e1de441590372e7d11832a52996df0ae0509305be4da6c797dfeacf3728bbf0246c3555216e8c206",
+      "name": "go:seq",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:16ba2d75022b90561e625e0ff3d69699ec6a741ebcafd023e1de441590372e7d11832a52996df0ae0509305be4da6c797dfeacf3728bbf0246c3555216e8c206",
+          "name": "go:seq",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:6f4758e5895f30fd3e0ff322e00f451d2224e1b617302688802dd845a4950042114ffa07d3969d538c86c74f1efb704289be018cf2249ee8a6b26bd275a1a8b2",
+              "name": "go:decl",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "s"
+                },
+                {
+                  "kind": "const",
+                  "value": 0,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:6f4758e5895f30fd3e0ff322e00f451d2224e1b617302688802dd845a4950042114ffa07d3969d538c86c74f1efb704289be018cf2249ee8a6b26bd275a1a8b2",
+              "name": "go:decl",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "i"
+                },
+                {
+                  "kind": "const",
+                  "value": 0,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:86d31c6878ee2f5f4045f47bf86caac7ea519974aafc5f664695cad373caba85c148d7b4af156bad7105e78a955ddd58b628f211820a12041607291a445c8b7d",
+          "name": "go:while",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:588837988897ebb94f728539db92212fd0bff3f386e9d79168fd43967d7c7d7bcc8b463e234f12350bf28118927b79ccbb1e45dbc8f9db7ee8fcc800dc722a28",
+              "name": "go:lt",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "i"
+                },
+                {
+                  "kind": "var",
+                  "name": "n"
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:16ba2d75022b90561e625e0ff3d69699ec6a741ebcafd023e1de441590372e7d11832a52996df0ae0509305be4da6c797dfeacf3728bbf0246c3555216e8c206",
+              "name": "go:seq",
+              "args": [
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:75076dc920e2e544c7c1bef39e74d01a81ce52fdaae485f86da9407bb52bdd06a4d206d25b1c17788c91b53e56ce472ad4f6603a05b0a45cba2cc15f50ac56b9",
+                  "name": "go:assign",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "s"
+                    },
+                    {
+                      "kind": "op",
+                      "opCid": "blake3-512:b34bf330df37297a95e1d55362a577bcfda3605be0080e8cb5539bf5b3df5372fc964b7bc72a777e86c182421ea37894c5fc6b936e85d701de3cc8702e54230b",
+                      "name": "go:add",
+                      "args": [
+                        {
+                          "kind": "var",
+                          "name": "s"
+                        },
+                        {
+                          "kind": "var",
+                          "name": "i"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:75076dc920e2e544c7c1bef39e74d01a81ce52fdaae485f86da9407bb52bdd06a4d206d25b1c17788c91b53e56ce472ad4f6603a05b0a45cba2cc15f50ac56b9",
+                  "name": "go:assign",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "i"
+                    },
+                    {
+                      "kind": "op",
+                      "opCid": "blake3-512:b34bf330df37297a95e1d55362a577bcfda3605be0080e8cb5539bf5b3df5372fc964b7bc72a777e86c182421ea37894c5fc6b936e85d701de3cc8702e54230b",
+                      "name": "go:add",
+                      "args": [
+                        {
+                          "kind": "var",
+                          "name": "i"
+                        },
+                        {
+                          "kind": "const",
+                          "value": 1,
+                          "sort": {
+                            "kind": "primitive",
+                            "name": "Int"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:4d019799bcccb46522531e36e25ece1ae5b439e6d9af5d4d4e60398be7a84c2accc387a1247575e9d211132d6ce237fd7cf27bb86a87f9d83c264990fbe427be",
+      "name": "go:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "s"
+        }
+      ]
+    }
+  ]
+}

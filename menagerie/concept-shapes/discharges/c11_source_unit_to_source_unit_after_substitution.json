@@ -1,0 +1,57 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:source-unit",
+  "formals": [
+    "bytes",
+    "operational_term"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "source-unit",
+    "arity": [
+      "Expr",
+      "Stmt"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "bytes",
+          "evaluation": "unevaluated",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "operational_term"
+        }
+      ]
+    },
+    "result": "Stmt",
+    "wp": "lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+    "notes": "The bytes slot is a binary literal; project_effects descends to operational_term."
+  },
+  "effects": {
+    "effects": []
+  }
+}

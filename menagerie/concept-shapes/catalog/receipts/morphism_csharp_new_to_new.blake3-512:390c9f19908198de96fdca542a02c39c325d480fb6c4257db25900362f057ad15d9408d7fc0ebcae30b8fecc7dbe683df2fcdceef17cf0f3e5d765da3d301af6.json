@@ -1,0 +1,19 @@
+{
+  "cid": "blake3-512:390c9f19908198de96fdca542a02c39c325d480fb6c4257db25900362f057ad15d9408d7fc0ebcae30b8fecc7dbe683df2fcdceef17cf0f3e5d765da3d301af6",
+  "memento": {
+    "schema_version": "1",
+    "kind": "MorphismDischargeReceipt",
+    "morphism_cid": "blake3-512:77104c0a48c782d0451def8444b519fe287a7922ddea37c035f04b7939d3070194e7d7a18bd704c88aa5d19a6d44f3d5bf0c537b672aa5a037714e223d243f38",
+    "source_contract_cid": "blake3-512:d3de2ec027e600cb7e0f77f2781e1fcf52a2cf46ac0793a74c0f02a0989d1d48c85e39add75b25e5bdd7bc01b8365ac03db3619c961475f30d6a29fdbc189349",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {},
+    "literal_map": {},
+    "after_substitution_cid": "blake3-512:37eca90a0c83eaceaa3ffcf8fe7b00ce539a75692f973cd76931ac10443d24053470830c63844551399a2953d3294744b59d083738d5d30e7591071edef384a2",
+    "shape_cid": "blake3-512:37eca90a0c83eaceaa3ffcf8fe7b00ce539a75692f973cd76931ac10443d24053470830c63844551399a2953d3294744b59d083738d5d30e7591071edef384a2",
+    "discharged": true,
+    "method": "canonicalizer-alpha-equivalence-plus-representation-map",
+    "signature": null
+  },
+  "signature": null
+}

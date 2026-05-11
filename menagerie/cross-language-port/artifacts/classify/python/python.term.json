@@ -1,0 +1,134 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:c1a4582488e9fed2f8e6cbc0a9e04758529afd76b44f840fc7a6dcff2a78a7f572b558c0f6545f493bf1321cd70917d8bdf49dd47811d1edb6855943cb8c827a",
+  "name": "python:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:c1a4582488e9fed2f8e6cbc0a9e04758529afd76b44f840fc7a6dcff2a78a7f572b558c0f6545f493bf1321cd70917d8bdf49dd47811d1edb6855943cb8c827a",
+      "name": "python:seq",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:140cc8d31ce7fb4a32ee81856dc15959bb0e2c99646466e721901ff986cdd814f5cc2fb9af3c2cdb8084231e081f7635a3c79ac0811790eee876d2c625dffbe1",
+          "name": "python:decl",
+          "args": [
+            {
+              "kind": "var",
+              "name": "y"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:71f2f2a10c01d46b083fe7db9b969d21cd7803b4241d1ca5b0b3389d7c75aec74bd7e79e513c8708a548651495328649df73f6ad4cd4437c14b039bc392e631c",
+          "name": "python:if",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:3763dd6a56d4189c1167cded391837c697451eafc99512d186996e6f3c5144cc91a71b7aec8d840fb966e3cbe0a894750cd8834c078db11c377e7609cc0f9d98",
+              "name": "python:and",
+              "args": [
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:4f2768154c5588017dc7af64ac2baff7bcb6b5a625875b9792302304f5f10b54de9c48e482d8c0f61a07180c5bdd8194692bb3c6d03e8e27c09df2bf9ae79533",
+                  "name": "python:gt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 0,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:325448eb0227e1382ee431962d74c1ea60bf09afe1e8ab2b630b24251572a3724b31666abefbe01b38915f0e9a04d1eda8b5ee69d3a632cfa5a206dfdb4c6470",
+                  "name": "python:lt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 10,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:fa749fdd7cf21c203b33046b14e34854464928b1abce942a8d30d7b3c5393f7eb76f1382c8d0505ae352c4270ff4a274fca318b7d8bd07ace93fbbed1b25f0f5",
+              "name": "python:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 1,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:fa749fdd7cf21c203b33046b14e34854464928b1abce942a8d30d7b3c5393f7eb76f1382c8d0505ae352c4270ff4a274fca318b7d8bd07ace93fbbed1b25f0f5",
+              "name": "python:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 2,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:3f27f0b841cd71287569ee1ee37f45b3af91c43a60124c4d0376e31b7992545d237e5be023e342ec13b2b4bf3b903835e58d915f539681e7e82c6ac6054c6abb",
+      "name": "python:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "y"
+        }
+      ]
+    }
+  ]
+}

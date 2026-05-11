@@ -129,3 +129,79 @@ fn transport_refuses_unknown_operation() {
         }
     );
 }
+
+#[test]
+fn loop_and_assignment_core_ops_transport_structurally() {
+    let c_seq = cid('1');
+    let c_decl = cid('2');
+    let c_while = cid('3');
+    let c_lt = cid('4');
+    let c_assign = cid('5');
+    let c_add = cid('6');
+    let c_return = cid('7');
+    let k_seq = cid('a');
+    let k_decl = cid('b');
+    let k_while = cid('c');
+    let k_lt = cid('d');
+    let k_assign = cid('e');
+    let k_add = cid('f');
+    let k_return = cid('8');
+
+    let transport = TermTransport::new(vec![
+        OperationTransport::new("c11:seq", c_seq.clone(), "concept:seq", k_seq.clone()),
+        OperationTransport::new("c11:decl", c_decl.clone(), "concept:decl", k_decl.clone()),
+        OperationTransport::new(
+            "c11:while",
+            c_while.clone(),
+            "concept:while",
+            k_while.clone(),
+        ),
+        OperationTransport::new("c11:lt", c_lt.clone(), "concept:lt", k_lt.clone()),
+        OperationTransport::new(
+            "c11:assign",
+            c_assign.clone(),
+            "concept:assign",
+            k_assign.clone(),
+        ),
+        OperationTransport::new("c11:add", c_add.clone(), "concept:add", k_add.clone()),
+        OperationTransport::new(
+            "c11:return",
+            c_return.clone(),
+            "concept:return",
+            k_return.clone(),
+        ),
+    ]);
+
+    let source = op(
+        "c11:seq",
+        c_seq.clone(),
+        vec![
+            op("c11:decl", c_decl, vec![var("s"), int(0)]),
+            op(
+                "c11:seq",
+                c_seq.clone(),
+                vec![
+                    op(
+                        "c11:while",
+                        c_while,
+                        vec![
+                            op("c11:lt", c_lt, vec![var("s"), var("n")]),
+                            op(
+                                "c11:assign",
+                                c_assign,
+                                vec![var("s"), op("c11:add", c_add, vec![var("s"), int(1)])],
+                            ),
+                        ],
+                    ),
+                    op("c11:return", c_return, vec![var("s")]),
+                ],
+            ),
+        ],
+    );
+
+    let transported = transport_term(&transport, &source).unwrap();
+    assert!(matches!(transported, Term::Op { ref name, .. } if name == "concept:seq"));
+    assert!(format!("{transported:?}").contains("concept:while"));
+    assert!(format!("{transported:?}").contains("concept:assign"));
+    assert!(format!("{transported:?}").contains("concept:add"));
+}

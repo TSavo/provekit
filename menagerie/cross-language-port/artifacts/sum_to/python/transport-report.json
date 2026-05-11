@@ -1,0 +1,9 @@
+{
+  "function": "sum_to",
+  "note": "Precise extension request: the concept hub catalog has no discharged morphism covering the refused operation for this target language; see transport-gaps.md for the structural reason.",
+  "refusal": "refusal: transport-time:no-target-morphisms no discharged `concept:* -> python:*` inverse morphisms found",
+  "source_file": "/private/tmp/pk-transport-all/menagerie/cross-language-port/sum_to.c",
+  "source_language": "c11",
+  "status": "refusal",
+  "target_language": "python"
+}

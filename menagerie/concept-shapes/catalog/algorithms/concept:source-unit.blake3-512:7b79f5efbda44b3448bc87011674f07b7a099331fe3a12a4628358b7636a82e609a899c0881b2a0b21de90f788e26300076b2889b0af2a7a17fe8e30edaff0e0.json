@@ -1,0 +1,68 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:source-unit",
+    "formals": [
+      "bytes",
+      "operational_term"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "source-unit",
+      "arity": [
+        "Expr",
+        "Stmt"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "bytes",
+            "evaluation": "unevaluated",
+            "slot_sort": "literal"
+          },
+          {
+            "name": "operational_term"
+          }
+        ]
+      },
+      "result": "Stmt",
+      "wp": "lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+      "notes": "The bytes slot is a binary literal; project_effects descends to operational_term."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:7b79f5efbda44b3448bc87011674f07b7a099331fe3a12a4628358b7636a82e609a899c0881b2a0b21de90f788e26300076b2889b0af2a7a17fe8e30edaff0e0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "g0rRpbnG4TI3MJbeUI+4Td03SUd+/WRhOtJOXmUnhnCPVjDFH0KTgE90Sf62nTMnT330KqzqC79wmZW0IPTvBQ=="
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:sub",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "no_signed_overflow",
+      "args": [
+        {
+          "kind": "op",
+          "name": "sub",
+          "args": [
+            {
+              "kind": "var",
+              "name": "lhs"
+            },
+            {
+              "kind": "var",
+              "name": "rhs"
+            }
+          ]
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "sub",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "mathematical integer subtraction when no overflow holds",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Trap"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:00562be7c74b19d92f3a9129c9a682f37e7077ff628d39796c370bccf3faaf82f2daf5dc8230c656fca08ee17b3e5c85b6819b5c051f7f7262b6271c1cb445a0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "Hp29dVyLA1A1PIugswbCJIyaG8AmcnYjUj9ySHo9xiDd4upwynYU/4vL44aFnjbBkaTlYp4QE7qr2Wq2IE5/Bg=="
+  }
+}

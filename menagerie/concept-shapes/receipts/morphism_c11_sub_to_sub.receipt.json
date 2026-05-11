@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "kind": "MorphismDischargeReceipt",
+  "morphism_cid": "blake3-512:f76b31607e92762040fad948cda6bd7f1dca5ae328c57834da363866828b3ca5bc281d7e04609e32c1c9ff87b2ef4ed9644d515a1242a3d2ae7e79b3b03a5762",
+  "source_contract_cid": "blake3-512:f2fcd629a2ac4c3fe555f626d8fbbb2ed86d6ae799649e9510e0839ce57490bde6e5a8722ef38a9d2e6b8880e801e1e8c9c8e73e6a50679a6ea5c8c202e7fb1e",
+  "renaming_map": {},
+  "representation_map": {},
+  "operator_map": {},
+  "literal_map": {},
+  "after_substitution_cid": "blake3-512:00562be7c74b19d92f3a9129c9a682f37e7077ff628d39796c370bccf3faaf82f2daf5dc8230c656fca08ee17b3e5c85b6819b5c051f7f7262b6271c1cb445a0",
+  "shape_cid": "blake3-512:00562be7c74b19d92f3a9129c9a682f37e7077ff628d39796c370bccf3faaf82f2daf5dc8230c656fca08ee17b3e5c85b6819b5c051f7f7262b6271c1cb445a0",
+  "discharged": true,
+  "method": "canonicalizer-alpha-equivalence-plus-representation-map",
+  "signature": null
+}

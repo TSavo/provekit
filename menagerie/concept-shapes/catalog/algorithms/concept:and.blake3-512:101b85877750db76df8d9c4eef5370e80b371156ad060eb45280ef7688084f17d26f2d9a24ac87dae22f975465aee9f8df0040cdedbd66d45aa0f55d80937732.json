@@ -1,0 +1,71 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:and",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "and",
+      "arity": [
+        "Bool",
+        "Bool"
+      ],
+      "result": "Bool",
+      "wp": "short-circuit conjunction",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "left"
+          },
+          {
+            "name": "right",
+            "evaluation": "unevaluated"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "rhs evaluated only when lhs is true"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:101b85877750db76df8d9c4eef5370e80b371156ad060eb45280ef7688084f17d26f2d9a24ac87dae22f975465aee9f8df0040cdedbd66d45aa0f55d80937732",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "7qZHKXkycfi9aYkCQ1Gv+2Zkl2aDFqTW3wKMPF73bZwtvoUobr213QZA5138BMhcQqSSQXHDb2NkpI7guHQvDQ=="
+  }
+}

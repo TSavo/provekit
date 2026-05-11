@@ -181,3 +181,61 @@ The script builds the Rust CLI and canonicalizer helper, writes concrete source 
 - `protocol/specs/2026-05-10-realizer-protocol-v2.md` (ORP v0.2)
 
 T Savo
+
+## Common Imperative Program Transport Hub
+
+The `concept:*` operation nodes below are the common-imperative core used by program transport.
+They are operation-contract shape mementos, not language-prefixed operations. Per-language morphisms are minted from real lifter-emitted ops by `scripts/mint_language_morphisms.py`; ops that do not discharge are recorded in `transport-gaps.md`.
+
+| Concept op | Shape CID | Minted morphisms |
+| --- | --- | --- |
+| `concept:add` | `blake3-512:b627910466edb3fbbf12a79bf4e84d6d437c72444f45d9d2f53663a7ab35dd693bc6d68216d750ea71fd7dc58a33806b2a27270a7fa611417f673f1d68ff504f` | morphism_c11_add_to_add |
+| `concept:sub` | `blake3-512:00562be7c74b19d92f3a9129c9a682f37e7077ff628d39796c370bccf3faaf82f2daf5dc8230c656fca08ee17b3e5c85b6819b5c051f7f7262b6271c1cb445a0` | morphism_c11_sub_to_sub |
+| `concept:mul` | `blake3-512:81407ba9814685f775b1c78abdd0665c2f357f67c42317a3d18fa12cedb554523962e297fc372c914e35fdceabd8ff50170345cde4e021699775f8e987f99f46` | morphism_c11_mul_to_mul |
+| `concept:div` | `blake3-512:ddf03f20d356b1ce16fea85bb2245b54c4b8b42992c682bd8010a64a8a330489fede0837d2851958189acf60e2f2e390079026cc9dd14fb69cbb3d51288b2f97` | morphism_c11_div_to_div |
+| `concept:mod` | `blake3-512:219ce5302021fe8b53de4601bb6868bde79e95c72499b8a9824c2ca9389e4bc567ae1dd812812859b95b577bfa1c1d90ed32e546aa6f2b1e3db89568eb3fb826` | morphism_c11_mod_to_mod |
+| `concept:neg` | `blake3-512:54d9e08dd94ab3cede2e27f830304a47db45d1f276c87606fb28412c124be1deb67fd6d6e59fd17698dddbed1b869e39cea341410d936521219bed5b9e3349a5` | morphism_c11_neg_to_neg |
+| `concept:bitand` | `blake3-512:a83de04ab992aad5eb9e1a1bb2b6706576e42d243464ad6d5aeb3a06283c6498d2325cdb3beeecae9fe1e82b684abc4c118092f6a9129281aeca5246433f4a6a` | morphism_c11_bit_and_to_bitand |
+| `concept:bitor` | `blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654` | morphism_c11_bit_or_to_bitor |
+| `concept:bitxor` | `blake3-512:5f899196e7889f14cbe25ea373dd776a161f9c9f00502ca94782b5253ae2cd3d4af1785cf7364e62b4204157f38088be0671691a1b5ab84e2de348f9fca14506` | morphism_c11_bit_xor_to_bitxor |
+| `concept:bitnot` | `blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431` | morphism_c11_bit_not_to_bitnot |
+| `concept:shl` | `blake3-512:ed2691051b756bc312794c40509e202c6001ea0ab4351f742241899e01ef9383c2bed8cc4c98cc338625e241eb5f1b5c4b56ba3b9c5b374afbaa2f373188fc63` | morphism_c11_shl_to_shl |
+| `concept:shr` | `blake3-512:ffc35f88ace5c41e03c75da23896793edb28ab1018f0d11b8c37b36513cd5333bea6a1492ede4ffe0b4f06f1a7d49b32c94d232752dadcdb46adf480f66708dd` | morphism_c11_shr_to_shr |
+| `concept:ushr` | `blake3-512:b98989319c4ef80c8a33de67eeaf2ad1144618d6bac07a679c26b3c5b4abc3925b14d291dcac3545fc1760996c6b25654c73335bd14234c47868171c43d463ee` | morphism_typescript_ushr_to_ushr |
+| `concept:eq` | `blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4` | morphism_c11_eq_to_eq, morphism_rust_eq_to_eq |
+| `concept:ne` | `blake3-512:da623dff73315cf3d1b3d07bcdc3ddea0822edccb02a4fb60510396500f9a8ad9089437c833a9ad61be2a21660ac9b0e19fc32a11e09285307beb061468a0f57` | morphism_c11_ne_to_ne |
+| `concept:lt` | `blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd` | morphism_c11_lt_to_lt |
+| `concept:le` | `blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1` | morphism_c11_le_to_le |
+| `concept:gt` | `blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6` | morphism_c11_gt_to_gt |
+| `concept:ge` | `blake3-512:f74a5228d58c870eb8277c723124af1a0bb6d9b30df92fa7ccb0ebb0fe63eddb7157ddcfa4ff8029a073eeb5c9e5ec3fe28beae69f88a298ae84b4990d3e152a` | morphism_c11_ge_to_ge |
+| `concept:and` | `blake3-512:101b85877750db76df8d9c4eef5370e80b371156ad060eb45280ef7688084f17d26f2d9a24ac87dae22f975465aee9f8df0040cdedbd66d45aa0f55d80937732` | none |
+| `concept:or` | `blake3-512:414b45d5efc984cf4aa0e6c98b46173c3f5e2d461f9fb26c1a5efe4c9cf3f673456207d64dec53db1c314a7269429e47c978abf4a5486ef5df14cf3c5e218876` | none |
+| `concept:not` | `blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58` | morphism_c11_not_to_not |
+| `concept:assign` | `blake3-512:d8038b29f817e9a66abb389164f5a48727832319a149057cb636ba0a9de00082cc15f33e4b628e428882778a6b3ffb8abd499a756c1030858fd51bcf86ddbcb0` | morphism_c11_assign_to_assign |
+| `concept:decl` | `blake3-512:f5c15ff59b41d18ee3f211de13ff667f5fc4654fa24322431d36bd3a2676df3ca975f190b530d46792dec3963d1ab9a9a71b07f845649b904744e7a55c355a1b` | morphism_c11_decl_to_decl |
+| `concept:seq` | `blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412` | morphism_c11_seq_to_seq, morphism_csharp_seq_to_seq, morphism_zig_seq_to_seq, morphism_java_seq_to_seq, morphism_rust_seq_to_seq |
+| `concept:skip` | `blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c` | morphism_c11_skip_to_skip, morphism_zig_skip_to_skip, morphism_rust_skip_to_skip |
+| `concept:conditional` | `blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd` | morphism_c11_if_to_conditional, morphism_csharp_if_to_conditional, morphism_rust_if_to_conditional |
+| `concept:ite` | `blake3-512:0139b15896ea6e43580842618410fd26b049a6e860833561529aea62244e25b347cf6a8d5efff0282de2ffd0122c414b523f9ab429769c9ccdaca57d91e88ff2` | none |
+| `concept:while` | `blake3-512:a796fd76abb3c2c2b2fecfac3f43d11705bd12fc14b910aa18a21d8000db42fe3c05a0dc5695caf429a01981c3b978fd4705007aeefcd3fcd59d6a33deedc2f0` | morphism_c11_while_to_while |
+| `concept:do` | `blake3-512:cc5bc589ca672e13a4b66e8fb95562658d4458225d3840b0474159f90293b5dc52d2bac4dd59c157fef582a81f8ffd0f755e8b0049ec9254e1d605c9f49fbfcb` | morphism_c11_do_to_do |
+| `concept:for` | `blake3-512:8ba3e3557b1e22e6e59258d7bf6feca8d9b3aecb2dcf74bd921687c3ec349f3fbd039374296aaaa74c0856cbf3e77e4c3c266f09a5e568ebf3f9abe8d802793c` | morphism_c11_for_to_for |
+| `concept:foreach` | `blake3-512:b8d16aed427a60ab454c8b4afb0ad4589c9a17ed5bbe184b2c2b025aab465d321c963199a017e8286f69eb07395769f9de2322e46c715cab3c25795274dfadb4` | none |
+| `concept:break` | `blake3-512:164710e6ee1796eb549ec671c3d93d2c12cb0f7808130d0ce46fc4703966137f8714991fb26ac1a3cc25507c27b1f72cb1b0b4656d3acb405bc2e5492bcb074c` | morphism_c11_break_to_break |
+| `concept:continue` | `blake3-512:4b41f27011cef4acee446318ecf87ad78c8d3665da8053453075ff321993543e1f6e010cc925dd99126fbd6fd60d1a504ed05df14d4f74f0572926f914fd774d` | morphism_c11_continue_to_continue |
+| `concept:return` | `blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607` | morphism_c11_return_to_return, morphism_rust_return_to_return |
+| `concept:call` | `blake3-512:3bfbe5833d3d5f349a7648d47bde5a25e4ecc10587a04b8f169ec5eb03a3afcdf51e5578f4e74b9492a327a97de39afedc50fdd265d8ea8922472b753473745b` | morphism_c11_call_to_call |
+| `concept:index` | `blake3-512:a303c53a2c08a88a0d4c4fa908e1373f1d60d9201c9a7a1bdd4368289226c27eb0ebc8088858f341a012bbc60c33e9dd3b1d18a689b415c9acf9d4baf971768a` | morphism_c11_array_subscript_to_index |
+| `concept:member` | `blake3-512:2d3b8518c51a93e8c42747b508b766134e14aeaa88327411b2bfb63da481aba27019d2f2613e85054c75d13e5b2f40efad4b9265b1148f1fcb13f4220b02fe2d` | morphism_c11_member_to_member |
+| `concept:deref` | `blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe` | morphism_c11_deref_to_deref |
+| `concept:addr` | `blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411` | morphism_c11_addr_of_to_addr |
+| `concept:new` | `blake3-512:37eca90a0c83eaceaa3ffcf8fe7b00ce539a75692f973cd76931ac10443d24053470830c63844551399a2953d3294744b59d083738d5d30e7591071edef384a2` | morphism_csharp_new_to_new |
+| `concept:cast` | `blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c` | morphism_c11_cast_to_cast |
+| `concept:throw` | `blake3-512:3b2e97c33a9acd45997202e5484248e7729617c31a0cd1172087c5ccc0cc38f52a9bfbbc7574d1f199269c2bbaaee6ef3b6e9189225b65648b4d5a6f84bffde9` | morphism_php_throw_to_throw |
+| `concept:postinc` | `blake3-512:179aed79acabd66b4faa9184bb68c429f94767b01e0ae4f618cf6052beb2aa44167bc594380ff5c9184b03837fa8fe6ccbc25ce36a2b933cf88df1278def9ef3` | morphism_c11_post_inc_to_postinc |
+| `concept:postdec` | `blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908` | morphism_c11_post_dec_to_postdec |
+| `concept:preinc` | `blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8` | morphism_c11_pre_inc_to_preinc |
+| `concept:predec` | `blake3-512:7cfe3dd7f70149ec4e3625a92c3912e03fe3464ba648d052788b5eee54c552ee46a8bb4c34afcd32d6aae04cc9f2024a76ed271705da7a4ee573e04fc09f7852` | morphism_c11_pre_dec_to_predec |
+| `concept:source-unit` | `blake3-512:7b79f5efbda44b3448bc87011674f07b7a099331fe3a12a4628358b7636a82e609a899c0881b2a0b21de90f788e26300076b2889b0af2a7a17fe8e30edaff0e0` | morphism_c11_source_unit_to_source_unit |
+
+T Savo
