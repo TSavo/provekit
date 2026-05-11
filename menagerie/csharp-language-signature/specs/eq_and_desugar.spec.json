@@ -1,0 +1,67 @@
+{
+  "kind": "equation",
+  "fn_name": "csharp:and-desugar",
+  "formals": [
+    "left",
+    "right"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json",
+    "sort_bool.spec.json"
+  ],
+  "role": "desugaring",
+  "direction": "left-to-right",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "csharp:and",
+      "args": [
+        {
+          "kind": "var",
+          "name": "left"
+        },
+        {
+          "kind": "var",
+          "name": "right"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "csharp:ite-bool",
+      "args": [
+        {
+          "kind": "var",
+          "name": "left"
+        },
+        {
+          "kind": "var",
+          "name": "right"
+        },
+        {
+          "kind": "const",
+          "value": false,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "obligations": {
+    "wp_preservation": {
+      "kind": "wp-preservation",
+      "status": "discharged",
+      "method": "short-circuit boolean conjunction wp identity"
+    }
+  }
+}

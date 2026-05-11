@@ -1,0 +1,90 @@
+{
+  "kind": "equation",
+  "fn_name": "csharp:for-desugar",
+  "formals": [
+    "init",
+    "cond",
+    "step",
+    "body"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json",
+    "sort_bool.spec.json",
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "role": "desugaring",
+  "direction": "left-to-right",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "csharp:for",
+      "args": [
+        {
+          "kind": "var",
+          "name": "init"
+        },
+        {
+          "kind": "var",
+          "name": "cond"
+        },
+        {
+          "kind": "var",
+          "name": "step"
+        },
+        {
+          "kind": "var",
+          "name": "body"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "csharp:seq",
+      "args": [
+        {
+          "kind": "var",
+          "name": "init"
+        },
+        {
+          "kind": "op",
+          "name": "csharp:while",
+          "args": [
+            {
+              "kind": "var",
+              "name": "cond"
+            },
+            {
+              "kind": "op",
+              "name": "csharp:seq",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "body"
+                },
+                {
+                  "kind": "var",
+                  "name": "step"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "obligations": {
+    "wp_preservation": {
+      "kind": "wp-preservation",
+      "status": "discharged",
+      "method": "definition-unfolding:csharp:for operation-contract wp"
+    }
+  }
+}

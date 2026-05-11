@@ -52,12 +52,17 @@
     "op_predec.spec.json",
     "op_postinc.spec.json",
     "op_postdec.spec.json",
-    "op_source-unit.spec.json"
+    "op_source-unit.spec.json",
+    "op_ite-bool.spec.json"
   ],
   "equations": [
     "eq_seq_skip_left.spec.json",
     "eq_seq_skip_right.spec.json",
-    "eq_seq_assoc.spec.json"
+    "eq_seq_assoc.spec.json",
+    "eq_for_desugar.spec.json",
+    "eq_source_unit_desugar.spec.json",
+    "eq_and_desugar.spec.json",
+    "eq_or_desugar.spec.json"
   ],
   "effects": [
     "eff_call.spec.json",

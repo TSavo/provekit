@@ -44,9 +44,15 @@
     "op_bitxor.spec.json",
     "op_neg.spec.json",
     "op_pos.spec.json",
-    "op_bitnot.spec.json"
+    "op_bitnot.spec.json",
+    "op_ite-bool.spec.json"
   ],
-  "equations": [],
+  "equations": [
+    "eq_source_unit_desugar.spec.json",
+    "eq_and_desugar.spec.json",
+    "eq_or_desugar.spec.json",
+    "eq_not_desugar.spec.json"
+  ],
   "effects": [
     "eff_read.spec.json",
     "eff_write.spec.json",
