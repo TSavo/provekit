@@ -15,10 +15,6 @@ typedef struct {
 } CursorList;
 
 typedef struct {
-    pk_c_walk_formula *pre;
-} PreCtx;
-
-typedef struct {
     char *name;
 } NameCtx;
 
@@ -235,58 +231,9 @@ pk_c_walk_formula *pk_c_walk_lift_if_exit_pre(CXCursor if_cursor) {
     return pk_c_walk_formula_negate_take(condition);
 }
 
-static int add_pre(PreCtx *ctx, pk_c_walk_formula *part) {
-    if (part == NULL) {
-        return 0;
-    }
-    if (ctx->pre == NULL) {
-        ctx->pre = part;
-    } else {
-        ctx->pre = pk_c_walk_formula_and_take(ctx->pre, part);
-    }
-    return ctx->pre == NULL ? -1 : 0;
-}
-
-static enum CXChildVisitResult pre_visitor(CXCursor cursor, CXCursor parent, CXClientData data) {
-    PreCtx *ctx = (PreCtx *)data;
-    enum CXCursorKind kind = clang_getCursorKind(cursor);
-
-    (void)parent;
-    if (kind == CXCursor_IfStmt) {
-        if (add_pre(ctx, pk_c_walk_lift_if_exit_pre(cursor)) != 0) {
-            return CXChildVisit_Break;
-        }
-    } else if (kind == CXCursor_CallExpr) {
-        char *callee = pk_c_walk_call_callee(cursor);
-
-        if (callee != NULL && strcmp(callee, "assert") == 0 && clang_Cursor_getNumArguments(cursor) == 1) {
-            CXCursor arg = clang_Cursor_getArgument(cursor, 0);
-
-            if (add_pre(ctx, pk_c_walk_lift_condition(arg)) != 0) {
-                free(callee);
-                return CXChildVisit_Break;
-            }
-        } else if (callee != NULL && strcmp(callee, "BUG_ON") == 0 && clang_Cursor_getNumArguments(cursor) == 1) {
-            CXCursor arg = clang_Cursor_getArgument(cursor, 0);
-
-            if (add_pre(ctx, pk_c_walk_formula_negate_take(pk_c_walk_lift_condition(arg))) != 0) {
-                free(callee);
-                return CXChildVisit_Break;
-            }
-        }
-        free(callee);
-    }
-    return CXChildVisit_Recurse;
-}
-
 pk_c_walk_formula *pk_c_walk_lift_function_pre(CXCursor function_cursor) {
-    PreCtx ctx = {0};
-
-    (void)clang_visitChildren(function_cursor, pre_visitor, &ctx);
-    if (ctx.pre == NULL) {
-        return pk_c_walk_formula_true();
-    }
-    return ctx.pre;
+    (void)function_cursor;
+    return pk_c_walk_formula_true();
 }
 
 char **pk_c_walk_lift_formals(CXCursor function_cursor, size_t *len_out) {
