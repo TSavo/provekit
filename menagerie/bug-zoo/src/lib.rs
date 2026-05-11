@@ -1723,8 +1723,26 @@ fn provekit_cli_report(repo_root: &Path) -> Value {
     report
 }
 
+/// Strip `locus` keys recursively from a JSON value so that machine-specific
+/// absolute file paths recorded in `locus.file` do not affect the CID.
+/// This makes golden ProofIR files portable across machines (CI vs authoring host).
+fn strip_locus(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(strip_locus).collect()),
+        Value::Object(map) => {
+            let filtered: serde_json::Map<String, Value> = map
+                .iter()
+                .filter(|(k, _)| k.as_str() != "locus")
+                .map(|(k, v)| (k.clone(), strip_locus(v)))
+                .collect();
+            Value::Object(filtered)
+        }
+        other => other.clone(),
+    }
+}
+
 fn proof_ir_cid(value: &Value) -> Result<String, String> {
-    canonical_json_cid(value)
+    canonical_json_cid(&strip_locus(value))
 }
 
 fn canonical_json_cid(value: &Value) -> Result<String, String> {

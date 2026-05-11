@@ -28,11 +28,6 @@
       "target"
     ],
     "kind": "function-contract",
-    "locus": {
-      "col": 5,
-      "file": "/Users/tsavo/provekit-worktrees/pk-bz-ownership/menagerie/bug-zoo/species/BZ-OWNERSHIP-001-borrowed-pages-as-scratch/c/exhibit/c-assertions/harness/src/borrow_contract.c",
-      "line": 32
-    },
     "post": {
       "args": [],
       "kind": "atomic",
@@ -53,7 +48,7 @@
             }
           ],
           "kind": "atomic",
-          "name": "\u2260"
+          "name": "≠"
         },
         {
           "args": [
@@ -71,7 +66,7 @@
             }
           ],
           "kind": "atomic",
-          "name": "\u2260"
+          "name": "≠"
         },
         {
           "args": [
@@ -85,7 +80,7 @@
             }
           ],
           "kind": "atomic",
-          "name": "\u2264"
+          "name": "≤"
         }
       ]
     },
