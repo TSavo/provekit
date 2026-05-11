@@ -161,14 +161,15 @@ fn compose_function_contract_claims(
     let mut premises = vec![inner_claim.cid(), outer_claim.cid()];
     premises.sort();
     premises.dedup();
+    let mut artifacts = inner_claim.artifacts.clone();
+    artifacts.extend(outer_claim.artifacts.iter().cloned());
+    artifacts.sort();
+    artifacts.dedup();
 
     Ok(DomainClaim {
         domain: DomainKind::FunctionContract,
-        term: outer_claim
-            .term
-            .clone()
-            .or_else(|| inner_claim.term.clone()),
         contract,
+        artifacts,
         from,
         premises,
         to,

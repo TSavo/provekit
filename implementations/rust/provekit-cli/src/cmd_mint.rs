@@ -49,11 +49,17 @@ use clap::{Parser, Subcommand};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
+use libprovekit::core::{
+    address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
+    HashMapInputCatalog, Input, InputCatalog, Kit, KitError, Path as CorePath, PathAlgebra, Term,
+    Verdict,
+};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid, mint_authority, mint_contract, mint_implication,
     Authoring, MintAuthorityArgs, MintContractArgs, MintImplicationArgs,
 };
+use provekit_ir_types::Sort;
 use provekit_mint_amp as algebraic_mint;
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
@@ -130,7 +136,8 @@ pub(crate) fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
         })
 }
 
-/// Result of a successful lift dispatch.
+/// Result of a successful mint transform.
+#[derive(Debug, Clone)]
 struct DispatchResult {
     filename_cid: String,
     contract_set_cid: String,
@@ -139,44 +146,225 @@ struct DispatchResult {
     lift_result: Value,
 }
 
+#[derive(Debug, Clone, Default)]
+struct MintKit {
+    inputs: HashMapInputCatalog,
+}
+
+#[derive(Debug, Clone)]
+struct MintSession {
+    claim: DomainClaim,
+    result: DispatchResult,
+}
+
+#[derive(Debug, Clone)]
+struct MintPathInput {
+    input: Input,
+    inputs: HashMapInputCatalog,
+}
+
+impl MintKit {
+    fn new(inputs: HashMapInputCatalog) -> Self {
+        Self { inputs }
+    }
+
+    fn path<'a>(&self, input: &'a Input) -> Result<&'a CorePath, KitError> {
+        let Input::Path(path) = input else {
+            return Err(KitError::UnsupportedInput {
+                dialect: self.dialect(),
+                message: "mint expects Input::Path containing the composed mint algebra"
+                    .to_string(),
+            });
+        };
+        Ok(path.as_ref())
+    }
+
+    fn transform_session(&self, input: &Input) -> Result<MintSession, KitError> {
+        let path = self.path(input)?;
+        let ordered_steps = path
+            .ordered_steps()
+            .map_err(|error| KitError::Transformation(error.to_string()))?;
+        let mint_step = path
+            .terminal_steps()
+            .into_iter()
+            .find(|step| step.name == "mint" || step.kit == "provekit-mint")
+            .ok_or_else(|| {
+                KitError::Transformation("mint path missing terminal `mint` step".to_string())
+            })?;
+        let lift_step = ordered_steps
+            .iter()
+            .copied()
+            .find(|step| {
+                mint_step.depends_on.iter().any(|name| name == &step.name)
+                    && step.kit.starts_with("lift-plugin:")
+            })
+            .ok_or_else(|| {
+                KitError::Transformation(
+                    "mint path terminal step must depend on a lift-plugin step".to_string(),
+                )
+            })?;
+
+        let lift_request = self.path_step_spec(lift_step, "mint path lift step")?;
+        let mint_request = self.path_step_spec(mint_step, "mint path mint step")?;
+        let project_root = PathBuf::from(
+            required_str(&lift_request, "workspace_root", "mint path lift step")
+                .map_err(KitError::Transformation)?,
+        );
+        let surface = required_str(&lift_request, "surface", "mint path lift step")
+            .map_err(KitError::Transformation)?;
+        let out_dir = PathBuf::from(
+            required_str(&mint_request, "outDir", "mint path mint step")
+                .map_err(KitError::Transformation)?,
+        );
+        let quiet = mint_request
+            .get("options")
+            .and_then(|options| options.get("quiet"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        let session = match lift_plugin::dispatch_lift(
+            &project_root,
+            surface,
+            LiftPluginOptions::default(),
+            quiet,
+        ) {
+            Ok(session) => session,
+            Err(LiftPluginError::MissingBinary { binary }) => {
+                if !quiet {
+                    println!(
+                        "{}: lifter binary `{}` not found: producing empty-set attestation",
+                        "warn".yellow().bold(),
+                        binary
+                    );
+                }
+                let empty_cid = compute_contract_set_cid(vec![]);
+                let result = DispatchResult {
+                    filename_cid: String::new(),
+                    contract_set_cid: empty_cid,
+                    bytes_written: 0,
+                    proof_file: None,
+                    lift_result: json!({
+                        "kind": "empty-set",
+                        "reason": "lifter binary not found",
+                        "binary": binary,
+                    }),
+                };
+                let claim = mint_result_claim(input, None, &result)?;
+                return Ok(MintSession { claim, result });
+            }
+            Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
+        };
+
+        let lift_response = session.response().clone();
+        let lift_claim = session.claim;
+        let result = mint_lift_response(&project_root, &out_dir, quiet, lift_response)
+            .map_err(KitError::Transformation)?;
+        let claim = mint_result_claim(input, Some(&lift_claim), &result)?;
+        Ok(MintSession { claim, result })
+    }
+
+    fn path_step_spec(&self, step: &PathAlgebra, context: &str) -> Result<Value, KitError> {
+        let cid = step
+            .inputs
+            .first()
+            .ok_or_else(|| KitError::UnsupportedInput {
+                dialect: Dialect::Other(step.kit.clone()),
+                message: format!("{context} must carry at least one input CID"),
+            })?;
+        match self.inputs.get_input(cid) {
+            Some(Input::Spec(value)) => Ok(value.clone()),
+            Some(_) => Err(KitError::UnsupportedInput {
+                dialect: Dialect::Other(step.kit.clone()),
+                message: format!("{context} input `{cid}` must resolve to Input::Spec"),
+            }),
+            None => Err(KitError::UnsupportedInput {
+                dialect: Dialect::Other(step.kit.clone()),
+                message: format!("{context} input `{cid}` is not materialized"),
+            }),
+        }
+    }
+}
+
+impl Kit for MintKit {
+    fn dialect(&self) -> Dialect {
+        Dialect::Other("provekit-mint".to_string())
+    }
+
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+        self.transform_session(input).map(|session| session.claim)
+    }
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        Ok(claim)
+    }
+
+    fn parse(&self, input: &Input) -> Result<Term, KitError> {
+        let session = self.transform_session(input)?;
+        Ok(Term::Const {
+            value: dispatch_result_to_value(&session.result),
+            sort: Sort::Primitive {
+                name: "MintResult".to_string(),
+            },
+        })
+    }
+
+    fn serialize(&self, term: &Term) -> Result<Input, KitError> {
+        Ok(Input::Term(term.clone()))
+    }
+}
+
 fn dispatch(
     project_root: &Path,
     surface: &str,
     out_dir: &Path,
     quiet: bool,
 ) -> Result<DispatchResult, String> {
-    let session = match lift_plugin::dispatch_lift(
+    let mint_input = mint_input(project_root, surface, out_dir, quiet);
+    let session = MintKit::new(mint_input.inputs)
+        .transform_session(&mint_input.input)
+        .map_err(|error| error.to_string())?;
+    Ok(session.result)
+}
+
+fn mint_input(project_root: &Path, surface: &str, out_dir: &Path, quiet: bool) -> MintPathInput {
+    let lift_input = Input::Spec(lift_plugin::build_lift_params(
         project_root,
         surface,
         LiftPluginOptions::default(),
-        quiet,
-    ) {
-        Ok(session) => session,
-        Err(LiftPluginError::MissingBinary { binary }) => {
-            if !quiet {
-                println!(
-                    "{}: lifter binary `{}` not found: producing empty-set attestation",
-                    "warn".yellow().bold(),
-                    binary
-                );
-            }
-            let empty_cid = compute_contract_set_cid(vec![]);
-            return Ok(DispatchResult {
-                filename_cid: String::new(),
-                contract_set_cid: empty_cid,
-                bytes_written: 0,
-                proof_file: None,
-                lift_result: json!({
-                    "kind": "empty-set",
-                    "reason": "lifter binary not found",
-                    "binary": binary,
-                }),
-            });
+    ));
+    let lift_input_cid = address(&lift_input);
+    let mint_input = Input::Spec(json!({
+        "projectRoot": project_root.display().to_string(),
+        "surface": surface,
+        "outDir": out_dir.display().to_string(),
+        "options": {
+            "quiet": quiet
         }
-        Err(LiftPluginError::Failed(error)) => return Err(error),
-    };
+    }));
+    let mint_input_cid = address(&mint_input);
+    let mut inputs = HashMapInputCatalog::default();
+    inputs.put(lift_input_cid.clone(), lift_input);
+    inputs.put(mint_input_cid.clone(), mint_input);
 
-    mint_lift_response(project_root, out_dir, quiet, session.response)
+    MintPathInput {
+        input: Input::Path(Box::new(CorePath {
+            algebra: vec![
+                PathAlgebra {
+                    name: "lift".to_string(),
+                    kit: format!("lift-plugin:{surface}"),
+                    inputs: vec![lift_input_cid],
+                    depends_on: vec![],
+                },
+                PathAlgebra {
+                    name: "mint".to_string(),
+                    kit: "provekit-mint".to_string(),
+                    inputs: vec![mint_input_cid],
+                    depends_on: vec!["lift".to_string()],
+                },
+            ],
+        })),
+        inputs,
+    }
 }
 
 fn mint_lift_response(
@@ -300,6 +488,56 @@ fn redact_lift_result(mut lift_resp: Value) -> Value {
     }
     lift_resp
 }
+
+fn mint_result_claim(
+    input: &Input,
+    lift_claim: Option<&DomainClaim>,
+    result: &DispatchResult,
+) -> Result<DomainClaim, KitError> {
+    let value = dispatch_result_to_value(result);
+    let term = Term::Const {
+        value,
+        sort: Sort::Primitive {
+            name: "MintResult".to_string(),
+        },
+    };
+    let contract = FunctionContractDomain
+        .project(&term, &Boundary::default())
+        .map_err(|error| KitError::Transformation(error.to_string()))?;
+    let to = if result.filename_cid.is_empty() {
+        address(&term)
+    } else {
+        Cid::parse(result.filename_cid.clone()).unwrap_or_else(|_| address(&term))
+    };
+    let result_cid = address(&term);
+    let premises = lift_claim
+        .map(|claim| vec![claim.cid()])
+        .unwrap_or_default();
+
+    Ok(DomainClaim {
+        domain: DomainKind::Other("provekit-mint".to_string()),
+        contract,
+        artifacts: vec![result_cid],
+        from: vec![address(input)],
+        premises,
+        to,
+        witness: None,
+        verdict: Verdict::Unresolved,
+        attestation: None,
+    })
+}
+
+fn dispatch_result_to_value(result: &DispatchResult) -> Value {
+    json!({
+        "kind": "mint-result",
+        "filenameCid": result.filename_cid,
+        "contractSetCid": result.contract_set_cid,
+        "bytesWritten": result.bytes_written,
+        "proofFile": result.proof_file.as_ref().map(|path| path.display().to_string()),
+        "lift": result.lift_result,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // ir-document → proof-envelope minting
 // ---------------------------------------------------------------------------
@@ -1206,6 +1444,62 @@ mod tests {
             "workspace_root should be present for lifters that resolve source through the project root"
         );
         assert_eq!(params["options"]["layer"].as_str(), Some("all"));
+    }
+
+    #[test]
+    fn mint_input_is_a_composed_path() {
+        let input = mint_input(
+            std::path::Path::new("."),
+            "rust-self-contracts",
+            std::path::Path::new("out"),
+            true,
+        );
+        let Input::Path(path) = input.input else {
+            panic!("mint command input must be a composed path");
+        };
+
+        let lift = path.step("lift").expect("lift algebra step");
+        let mint = path.step("mint").expect("mint algebra step");
+        assert_eq!(lift.kit, "lift-plugin:rust-self-contracts");
+        assert_eq!(mint.kit, "provekit-mint");
+        assert_eq!(lift.inputs.len(), 1);
+        assert_eq!(mint.inputs.len(), 1);
+        assert_eq!(mint.depends_on, vec!["lift".to_string()]);
+        assert!(path.cid().as_str().starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn mint_transform_rejects_invalid_path_algebra() {
+        let input = Input::Path(Box::new(CorePath {
+            algebra: vec![
+                PathAlgebra {
+                    name: "lift".to_string(),
+                    kit: "lift-plugin:rust".to_string(),
+                    inputs: vec![address(&Input::Spec(json!({
+                        "surface": "rust",
+                        "workspace_root": "."
+                    })))],
+                    depends_on: vec![],
+                },
+                PathAlgebra {
+                    name: "mint".to_string(),
+                    kit: "provekit-mint".to_string(),
+                    inputs: vec![address(&Input::Spec(json!({
+                        "outDir": "out"
+                    })))],
+                    depends_on: vec!["lift".to_string(), "missing".to_string()],
+                },
+            ],
+        }));
+
+        let error = MintKit::default()
+            .transform(&input)
+            .expect_err("invalid path algebra should be rejected before transport")
+            .to_string();
+        assert!(
+            error.contains("missing step `missing`"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]

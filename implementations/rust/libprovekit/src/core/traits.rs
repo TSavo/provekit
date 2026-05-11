@@ -30,7 +30,7 @@ pub trait Catalog {
     fn get(&self, cid: &Cid) -> Option<Vec<u8>>;
 }
 
-/// In-memory content-addressed catalog used by unit tests and small examples.
+/// In-memory content-addressed byte catalog used by unit tests and small examples.
 ///
 /// Real catalogs may be backed by files, databases, or remote object stores;
 /// the trait boundary is intentionally just `Cid -> bytes`.
@@ -59,19 +59,62 @@ impl Catalog for HashMapCatalog {
     }
 }
 
-/// One dialect kit: the on-ramp and off-ramp for a source language or target.
+/// Typed resolver for materialized transform inputs addressed from [`PathAlgebra`](super::types::PathAlgebra).
 ///
-/// `parse` is primitive 3, turning dialect input into faithful terms over
-/// operation CIDs. `serialize` is primitive 4, turning faithful terms back into
-/// dialect input; in ORP terminology this is the `compile` mode.
+/// The reusable primitive shape carries input CIDs; concrete execution layers
+/// decide how to materialize those CIDs into kit inputs.
+pub trait InputCatalog {
+    /// Return the input stored at `cid`, or `None` when the material is absent.
+    fn get_input(&self, cid: &Cid) -> Option<Input>;
+}
+
+/// In-memory typed input catalog for command adapters and tests.
+#[derive(Debug, Clone, Default)]
+pub struct HashMapInputCatalog {
+    entries: HashMap<Cid, Input>,
+}
+
+impl HashMapInputCatalog {
+    /// Store an already-addressed input under its CID.
+    pub fn put(&mut self, cid: Cid, input: Input) {
+        self.entries.insert(cid, input);
+    }
+
+    /// Address and store an input, returning the input CID used by paths.
+    pub fn insert(&mut self, input: Input) -> Cid {
+        let cid = super::primitives::address(&input);
+        self.put(cid.clone(), input);
+        cid
+    }
+}
+
+impl InputCatalog for HashMapInputCatalog {
+    fn get_input(&self, cid: &Cid) -> Option<Input> {
+        self.entries.get(cid).cloned()
+    }
+}
+
+/// One transformation kit: the on-ramp and off-ramp for a source language or target.
+///
+/// `transform` is the primary primitive: `Kit(Input) -> DomainClaim`.
+/// `prove` discharges an already-transformed claim in the kit's configured
+/// proving context. `parse` and `serialize` are retained as term-level escape
+/// hatches for realization and legacy callers.
 pub trait Kit {
     /// The dialect this kit accepts and emits.
     fn dialect(&self) -> Dialect;
 
-    /// Primitive 3: parse dialect input into a faithful [`Term`].
+    /// Primitive: transform input into a domain claim.
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError>;
+
+    /// Primitive: attempt to prove or otherwise discharge a domain claim.
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError>;
+
+    /// Deprecated term-level escape hatch.
+    #[deprecated(note = "kits transform Input into DomainClaim; consume `transform` instead")]
     fn parse(&self, input: &Input) -> Result<Term, KitError>;
 
-    /// Primitive 4: serialize a faithful [`Term`] back to dialect input.
+    /// Serialize a faithful [`Term`] back to dialect input.
     fn serialize(&self, term: &Term) -> Result<Input, KitError>;
 }
 
@@ -129,6 +172,9 @@ pub enum KitError {
     /// The input belongs to another dialect or has no faithful term.
     #[error("kit {dialect:?}: unsupported input: {message}")]
     UnsupportedInput { dialect: Dialect, message: String },
+    /// Transforming input into a domain claim failed.
+    #[error("kit transform failed: {0}")]
+    Transformation(String),
     /// Serialization failed inside a stub or concrete kit.
     #[error("kit serialization failed: {0}")]
     Serialization(String),
@@ -166,4 +212,7 @@ pub enum CoreError {
     /// Linking requires at least one claim.
     #[error("link requires at least one claim")]
     EmptyLink,
+    /// Linking needs ordinary composition or a shared contract CID.
+    #[error("link requires composable claims or a shared contract cid")]
+    NoSharedContractLink,
 }

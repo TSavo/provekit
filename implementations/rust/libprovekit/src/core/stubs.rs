@@ -2,6 +2,7 @@
 
 use provekit_ir_types::IrFormula;
 
+use super::primitives::address;
 use super::traits::{DischargeMode, Domain, DomainError, Kit, KitError, Portfolio, SolverVerdict};
 use super::types::{
     any_sort, formula_true, memento_from_parts, Boundary, Contract, Dialect, DomainClaim,
@@ -126,6 +127,14 @@ impl Kit for CKit {
         self.dialect.clone()
     }
 
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+        transform_stub_input(&self.dialect, input)
+    }
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        prove_stub_claim(claim)
+    }
+
     fn parse(&self, input: &Input) -> Result<Term, KitError> {
         parse_stub_input(&self.dialect, input)
     }
@@ -157,6 +166,14 @@ impl Kit for RustKit {
         self.dialect.clone()
     }
 
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+        transform_stub_input(&self.dialect, input)
+    }
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        prove_stub_claim(claim)
+    }
+
     fn parse(&self, input: &Input) -> Result<Term, KitError> {
         parse_stub_input(&self.dialect, input)
     }
@@ -166,38 +183,58 @@ impl Kit for RustKit {
     }
 }
 
+fn transform_stub_input(expected: &Dialect, input: &Input) -> Result<DomainClaim, KitError> {
+    let term = parse_stub_input(expected, input)?;
+    let domain = FunctionContractDomain;
+    let contract = domain
+        .project(&term, &Boundary::default())
+        .map_err(|error| KitError::Transformation(error.to_string()))?;
+    let to = address(&contract);
+
+    Ok(DomainClaim {
+        domain: domain.name(),
+        contract,
+        artifacts: vec![address(&term)],
+        from: vec![address(input)],
+        premises: vec![],
+        to,
+        witness: None,
+        verdict: Verdict::Unresolved,
+        attestation: None,
+    })
+}
+
+fn prove_stub_claim(claim: DomainClaim) -> Result<DomainClaim, KitError> {
+    let portfolio = NoopPortfolio;
+    FunctionContractDomain
+        .discharge(
+            claim,
+            DischargeMode::Search {
+                portfolio: &portfolio,
+            },
+        )
+        .map_err(|error| KitError::Transformation(error.to_string()))
+}
+
 fn parse_stub_input(expected: &Dialect, input: &Input) -> Result<Term, KitError> {
     match input {
         Input::Term(term) => Ok(term.clone()),
-        Input::Claim(claim) => claim
-            .term
-            .clone()
-            .ok_or_else(|| KitError::UnsupportedInput {
-                dialect: expected.clone(),
-                message: "claim has no faithful term".to_string(),
-            }),
-        Input::Truth(truth) => {
-            truth
-                .claim()
-                .term
-                .clone()
-                .ok_or_else(|| KitError::UnsupportedInput {
-                    dialect: expected.clone(),
-                    message: "truth has no faithful term".to_string(),
-                })
-        }
-        Input::Refutation(refutation) => {
-            refutation
-                .claim()
-                .term
-                .clone()
-                .ok_or_else(|| KitError::UnsupportedInput {
-                    dialect: expected.clone(),
-                    message: "refutation has no faithful term".to_string(),
-                })
-        }
+        Input::Claim(claim) => Ok(artifact_reference_term("claim", &claim.artifacts)),
+        Input::Truth(truth) => Ok(artifact_reference_term("truth", &truth.claim().artifacts)),
+        Input::Refutation(refutation) => Ok(artifact_reference_term(
+            "refutation",
+            &refutation.claim().artifacts,
+        )),
         Input::Spec(value) => Ok(Term::Const {
             value: value.clone(),
+            sort: any_sort(),
+        }),
+        Input::Path(path) => Ok(Term::Const {
+            value: serde_json::json!({
+                "kind": "path",
+                "pathCid": path.cid().as_str(),
+                "steps": path.algebra.len(),
+            }),
             sort: any_sort(),
         }),
         Input::Source { dialect, bytes } => {
@@ -218,6 +255,16 @@ fn parse_stub_input(expected: &Dialect, input: &Input) -> Result<Term, KitError>
                 sort: any_sort(),
             })
         }
+    }
+}
+
+fn artifact_reference_term(kind: &str, artifacts: &[super::types::Cid]) -> Term {
+    Term::Const {
+        value: serde_json::json!({
+            "kind": kind,
+            "artifacts": artifacts.iter().map(|cid| cid.as_str()).collect::<Vec<_>>(),
+        }),
+        sort: any_sort(),
     }
 }
 

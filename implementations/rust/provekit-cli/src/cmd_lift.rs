@@ -74,17 +74,16 @@ pub fn run(args: LiftArgs) -> u8 {
         args.out.quiet,
     ) {
         Ok(session) => {
+            let response = session.response();
             if args.identify_only
-                && session
-                    .response
+                && response
                     .get("kind")
                     .and_then(|value| value.as_str())
                     .is_none_or(|kind| {
                         kind != "identity-document" && kind != "package-inspection-document"
                     })
             {
-                let kind = session
-                    .response
+                let kind = response
                     .get("kind")
                     .and_then(|value| value.as_str())
                     .unwrap_or("unknown");
@@ -97,11 +96,10 @@ pub fn run(args: LiftArgs) -> u8 {
             if args.out.json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&session.response)
-                        .expect("serialize lift response")
+                    serde_json::to_string_pretty(response).expect("serialize lift response")
                 );
             } else if !args.out.quiet {
-                print_lift_summary(&surface, &session.response);
+                print_lift_summary(&surface, response);
             }
             EXIT_OK
         }

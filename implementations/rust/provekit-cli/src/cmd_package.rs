@@ -72,8 +72,8 @@ fn run_inspect(args: PackageInspectArgs) -> u8 {
         args.out.quiet,
     ) {
         Ok(session) => {
-            let kind = session
-                .response
+            let response = session.response();
+            let kind = response
                 .get("kind")
                 .and_then(|value| value.as_str())
                 .unwrap_or("unknown");
@@ -87,11 +87,10 @@ fn run_inspect(args: PackageInspectArgs) -> u8 {
             if args.out.json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&session.response)
-                        .expect("serialize package inspection")
+                    serde_json::to_string_pretty(response).expect("serialize package inspection")
                 );
             } else if !args.out.quiet {
-                print_package_summary(&session.response);
+                print_package_summary(response);
             }
             EXIT_OK
         }
