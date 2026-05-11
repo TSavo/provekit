@@ -1,0 +1,46 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:addr",
+  "formals": [
+    "target"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Term",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "go:addr",
+    "arity": [
+      "Term"
+    ],
+    "result": "Term",
+    "wp": "address-of expression",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target",
+          "slot_sort": "Term"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#operations"
+}

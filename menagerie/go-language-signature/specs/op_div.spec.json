@@ -1,0 +1,57 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:div",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Term",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "go:div",
+    "arity": [
+      "Term",
+      "Term"
+    ],
+    "result": "Term",
+    "wp": "division",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs",
+          "slot_sort": "Term"
+        },
+        {
+          "name": "rhs",
+          "slot_sort": "Term"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#operations"
+}

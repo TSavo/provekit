@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "go:Unit",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Unit",
+    "description": "unit sort for empty operational terms"
+  }
+}

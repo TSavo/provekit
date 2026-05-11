@@ -14,5 +14,6 @@ require (
 
 replace (
 	github.com/tsavo/provekit/go/provekit-ir-symbolic => ./provekit-ir-symbolic
+	github.com/tsavo/provekit/go/provekit-lift-go => ./provekit-lift-go
 	github.com/tsavo/provekit/go/provekit-lift-go-tests => ./provekit-lift-go-tests
 )

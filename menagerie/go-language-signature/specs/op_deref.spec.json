@@ -1,0 +1,46 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:deref",
+  "formals": [
+    "ptr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Term",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "go:deref",
+    "arity": [
+      "Term"
+    ],
+    "result": "Term",
+    "wp": "pointer dereference",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "ptr",
+          "slot_sort": "Term"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#operations"
+}

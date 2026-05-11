@@ -1,0 +1,57 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:member",
+  "formals": [
+    "base",
+    "field"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Identifier",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Term",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "go:member",
+    "arity": [
+      "Term",
+      "Identifier"
+    ],
+    "result": "Term",
+    "wp": "selector expression x.f",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base",
+          "slot_sort": "Term"
+        },
+        {
+          "name": "field",
+          "slot_sort": "Identifier"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#operations"
+}
