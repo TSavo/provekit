@@ -41,11 +41,13 @@ typedef struct {
 } ParseRequestOptions;
 
 typedef struct {
+    Buf declarations;
     Buf ir;
     Buf call_edges;
     Buf diagnostics;
     Buf opacity_report;
     Buf refusals;
+    size_t declaration_count;
     size_t ir_count;
     size_t call_edge_count;
     size_t diagnostic_count;
@@ -942,6 +944,7 @@ static char *read_file(const char *path) {
 
 static void acc_init(LiftAccumulator *acc) {
     memset(acc, 0, sizeof(*acc));
+    buf_init(&acc->declarations);
     buf_init(&acc->ir);
     buf_init(&acc->call_edges);
     buf_init(&acc->diagnostics);
@@ -950,6 +953,7 @@ static void acc_init(LiftAccumulator *acc) {
 }
 
 static void acc_free(LiftAccumulator *acc) {
+    buf_free(&acc->declarations);
     buf_free(&acc->ir);
     buf_free(&acc->call_edges);
     buf_free(&acc->diagnostics);
@@ -957,21 +961,52 @@ static void acc_free(LiftAccumulator *acc) {
     buf_free(&acc->refusals);
 }
 
+static int acc_append_json_item(Buf *buf, size_t *count, const char *json) {
+    if (*count > 0 && buf_append_char(buf, ',') != 0) {
+        return -1;
+    }
+    if (buf_append(buf, json) != 0) {
+        return -1;
+    }
+    (*count)++;
+    return 0;
+}
+
 static int acc_append_json_array(Buf *buf, size_t *count, const pk_c_json_array *items) {
     for (size_t i = 0; i < items->len; i++) {
-        if (*count > 0 && buf_append_char(buf, ',') != 0) {
+        if (acc_append_json_item(buf, count, items->items[i]) != 0) {
             return -1;
         }
-        if (buf_append(buf, items->items[i]) != 0) {
+    }
+    return 0;
+}
+
+static int is_wp_walk_chain_declaration(const char *json) {
+    return json != NULL &&
+        strstr(json, "\"kind\":\"function-contract\"") != NULL &&
+        strstr(json, "\"kind\":\"wp-walk-chain\"") != NULL;
+}
+
+static int acc_append_declarations(LiftAccumulator *acc, const pk_c_json_array *items) {
+    for (size_t i = 0; i < items->len; i++) {
+        const char *json = items->items[i];
+
+        if (acc_append_json_item(&acc->ir, &acc->ir_count, json) != 0) {
             return -1;
         }
-        (*count)++;
+        /* `ir` is the canonical lift-plugin document. Keep wp-walk-chain
+         * mementos out of the legacy declarations mirror so callers that
+         * ingest both surfaces do not mint the same callsite twice. */
+        if (!is_wp_walk_chain_declaration(json) &&
+            acc_append_json_item(&acc->declarations, &acc->declaration_count, json) != 0) {
+            return -1;
+        }
     }
     return 0;
 }
 
 static int acc_append_result(LiftAccumulator *acc, pk_c_lift_result *result) {
-    return acc_append_json_array(&acc->ir, &acc->ir_count, &result->declarations) == 0 &&
+    return acc_append_declarations(acc, &result->declarations) == 0 &&
         acc_append_json_array(&acc->call_edges, &acc->call_edge_count, &result->call_edges) == 0 &&
         acc_append_json_array(&acc->diagnostics, &acc->diagnostic_count, &result->diagnostics) == 0 &&
         acc_append_json_array(&acc->opacity_report, &acc->opacity_count, &result->opacity_report) == 0 &&
@@ -1289,7 +1324,7 @@ static void handle_lift(const char *id, const char *line) {
     }
 
     acc_init(&acc);
-    if (!acc.ir.data || !acc.call_edges.data || !acc.diagnostics.data ||
+    if (!acc.declarations.data || !acc.ir.data || !acc.call_edges.data || !acc.diagnostics.data ||
         !acc.opacity_report.data || !acc.refusals.data) {
         acc_free(&acc);
         parse_request_options_free(&parse_config);
@@ -1342,7 +1377,7 @@ static void handle_lift(const char *id, const char *line) {
     buf_init(&result);
     if (!result.data ||
         buf_append(&result, "{\"declarations\":[") != 0 ||
-        buf_append(&result, acc.ir.data ? acc.ir.data : "") != 0 ||
+        buf_append(&result, acc.declarations.data ? acc.declarations.data : "") != 0 ||
         buf_append(&result, "],\"callEdges\":[") != 0 ||
         buf_append(&result, acc.call_edges.data ? acc.call_edges.data : "") != 0 ||
         buf_append(&result, "],\"diagnostics\":[") != 0 ||
