@@ -1,0 +1,60 @@
+{
+  "kind": "algorithm",
+  "fn_name": "cpp:assign",
+  "formals": [
+    "target",
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "assign",
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "result": "Stmt",
+    "wp": "post[value / target] (target updated to value)",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        },
+        {
+          "name": "value"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemWrite"
+      }
+    ]
+  },
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

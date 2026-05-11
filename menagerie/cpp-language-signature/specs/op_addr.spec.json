@@ -1,0 +1,45 @@
+{
+  "kind": "algorithm",
+  "fn_name": "cpp:addr",
+  "formals": [
+    "operand"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Ref",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "&",
+    "arity": [
+      "Int"
+    ],
+    "result": "Ref",
+    "wp": "C++ address-of",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/cpp-language-signature/README.md"
+}
