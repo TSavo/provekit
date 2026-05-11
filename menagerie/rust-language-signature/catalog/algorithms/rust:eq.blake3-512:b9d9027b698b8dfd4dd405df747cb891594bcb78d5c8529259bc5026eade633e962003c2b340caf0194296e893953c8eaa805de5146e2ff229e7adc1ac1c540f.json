@@ -33,7 +33,18 @@
         "Int"
       ],
       "result": "Bool",
-      "wp": "integer equality comparison"
+      "wp": "integer equality comparison",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": []
@@ -46,10 +57,10 @@
     },
     "locus": "menagerie/rust-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:be9df5f876ca2be2646c4e53aeb03e7aa98d8ce496c4c86236face49d69e4d40c3ea01474af88fe8f839ed7c278158f428d3cdea89b6033a9130356fe323bc77",
+  "cid": "blake3-512:b9d9027b698b8dfd4dd405df747cb891594bcb78d5c8529259bc5026eade633e962003c2b340caf0194296e893953c8eaa805de5146e2ff229e7adc1ac1c540f",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "rFXDEDQPcwKdtbfPnFbd8LADYeXy9I8m43ptZIj7ewNRx10h6PtmjUgJcxSRR0+tc9p4km4bS9RYOkR7s0JyBA=="
+    "sig_b64": "zvWwEfxP3i5GTGSXQKyIV3GsurxblCxLCFRqzaEC5ozlCwPHt7696dEdBbHa1hqsnlXi/d8msQBYaLeKuH1aDg=="
   }
 }

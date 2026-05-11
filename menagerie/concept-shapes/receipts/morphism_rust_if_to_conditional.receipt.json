@@ -1,0 +1,20 @@
+{
+  "schema_version": "1",
+  "kind": "MorphismDischargeReceipt",
+  "morphism_cid": "blake3-512:46a4a7d9f81bea1d20026ed1096fbcc653e35d60363c642e68212a38896aca8ebb975be9b252786e5eb5e58e4f6809a17d3105738c779d1fd8300f3f0b7210e0",
+  "source_contract_cid": "blake3-512:62b88c3ee489b75f1bd75e96cab3be2954ad89f8f88e1543e569fe00a5ddf49bfef0491982aa33882549700eecc67a82d334e96268a9b06cfdf880c7d6d2fede",
+  "renaming_map": {
+    "cond": "cond",
+    "then_branch": "then_branch",
+    "else_branch": "else_branch"
+  },
+  "representation_map": {},
+  "operator_map": {
+    "if": "conditional"
+  },
+  "literal_map": {},
+  "after_substitution_cid": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd",
+  "shape_cid": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd",
+  "discharged": true,
+  "method": "canonicalizer-alpha-equivalence-plus-representation-map"
+}

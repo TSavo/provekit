@@ -42,7 +42,21 @@
       "Stmt"
     ],
     "result": "Stmt",
-    "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)"
+    "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_branch"
+        },
+        {
+          "name": "else_branch"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

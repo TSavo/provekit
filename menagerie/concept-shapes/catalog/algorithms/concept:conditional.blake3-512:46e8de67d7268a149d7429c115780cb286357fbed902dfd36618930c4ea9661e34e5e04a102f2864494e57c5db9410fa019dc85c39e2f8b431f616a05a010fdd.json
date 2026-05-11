@@ -3,7 +3,7 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "rust:if",
+    "fn_name": "concept:conditional",
     "formals": [
       "cond",
       "then_branch",
@@ -33,14 +33,28 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "if",
+      "operator": "conditional",
       "arity": [
         "Bool",
         "Stmt",
         "Stmt"
       ],
       "result": "Stmt",
-      "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)"
+      "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "cond"
+          },
+          {
+            "name": "then_branch"
+          },
+          {
+            "name": "else_branch"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -55,13 +69,12 @@
       "kind": "ctor",
       "name": "Stmt",
       "args": []
-    },
-    "locus": "menagerie/rust-language-signature/README.md#operations"
+    }
   },
-  "cid": "blake3-512:2f24807bdf75f3157146c289a66d5decd6d2acf0e7622598db06c1167474cf7ffe1b5acfe127c0469fac6ec5de272427418ecdb22faaf1876ee6b65484c3ccb3",
+  "cid": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "G/4qiq4YjlwBrtXj3bLCGU/WYd0pEu4HX0oroA9FCoN4bg8qSCn+7B/ZztKF2myBJ0XLBmzJwniyQL9oxc2fAQ=="
+    "sig_b64": "NQl0zkmaBgjcxHdDDrrbPq91Gy+K4AriI47adZD59HZSO4voYH8Bk8wkdQTVHxF177qHE97hndVNHehzuN2VCg=="
   }
 }

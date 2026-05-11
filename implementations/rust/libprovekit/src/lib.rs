@@ -6,6 +6,7 @@ pub mod compose;
 pub mod core;
 pub mod desugar;
 pub mod ffi;
+pub mod transport;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProvekitError {

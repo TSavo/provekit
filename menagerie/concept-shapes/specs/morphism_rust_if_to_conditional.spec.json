@@ -1,0 +1,51 @@
+{
+  "kind": "algorithm",
+  "fn_name": "morphism:rust:if:to:concept:conditional",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:62b88c3ee489b75f1bd75e96cab3be2954ad89f8f88e1543e569fe00a5ddf49bfef0491982aa33882549700eecc67a82d334e96268a9b06cfdf880c7d6d2fede",
+    "target_shape_cid": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd",
+    "renaming_map": {
+      "cond": "cond",
+      "then_branch": "then_branch",
+      "else_branch": "else_branch"
+    },
+    "representation_map": {},
+    "operator_map": {
+      "if": "conditional"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "source": "blake3-512:62b88c3ee489b75f1bd75e96cab3be2954ad89f8f88e1543e569fe00a5ddf49bfef0491982aa33882549700eecc67a82d334e96268a9b06cfdf880c7d6d2fede",
+      "target": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:62b88c3ee489b75f1bd75e96cab3be2954ad89f8f88e1543e569fe00a5ddf49bfef0491982aa33882549700eecc67a82d334e96268a9b06cfdf880c7d6d2fede",
+    "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd"
+  ]
+}
