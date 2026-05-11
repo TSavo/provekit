@@ -171,6 +171,36 @@
         "effects": []
       },
       {
+        "name": "lt",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "gt",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
         "name": "eq",
         "arity_shape": {
           "kind": "named",
@@ -186,7 +216,64 @@
         "effects": []
       },
       {
+        "name": "and",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "or",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "xor",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
         "name": "iszero",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "not",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -284,7 +371,8 @@
         },
         "effects": [
           "memory_read"
-        ]
+        ],
+        "status": "declared-refused-by-initial-lifter"
       },
       {
         "name": "sstore",

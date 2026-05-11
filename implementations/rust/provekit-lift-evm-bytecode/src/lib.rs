@@ -90,8 +90,8 @@ struct SymbolicState {
 
 enum Step {
     Continue,
-    Stop(Option<IrTerm>),
-    Return(IrTerm),
+    Stop(IrTerm),
+    EmptyStackAtStop,
 }
 
 pub fn run_cli() {
@@ -106,7 +106,11 @@ pub fn run_cli() {
 }
 
 pub fn parse_evm_text(path: &str, source: &str) -> Result<EvmUnit, LiftError> {
-    if looks_like_hex_bytecode(source) {
+    if is_hex_source_path(path) {
+        parse_hex_text(path, source)
+    } else if is_assembly_source_path(path) {
+        parse_assembly_text(path, source)
+    } else if looks_like_hex_bytecode(source) {
         parse_hex_text(path, source)
     } else {
         parse_assembly_text(path, source)
@@ -286,10 +290,29 @@ fn error_response(id: Json, code: i64, message: String) -> Json {
 
 fn looks_like_hex_bytecode(source: &str) -> bool {
     let compact = compact_source_bytes(source);
-    let Some(hex) = compact.strip_prefix("0x").or(Some(compact.as_str())) else {
+    let Some(hex) = compact.strip_prefix("0x") else {
         return false;
     };
     !hex.is_empty() && hex.len() % 2 == 0 && hex.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn is_hex_source_path(path: &str) -> bool {
+    source_extension(path)
+        .map(|extension| matches!(extension.as_str(), "evmhex" | "hex"))
+        .unwrap_or(false)
+}
+
+fn is_assembly_source_path(path: &str) -> bool {
+    source_extension(path)
+        .map(|extension| matches!(extension.as_str(), "evmasm" | "asm"))
+        .unwrap_or(false)
+}
+
+fn source_extension(path: &str) -> Option<String> {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
 }
 
 fn compact_source_bytes(source: &str) -> String {
@@ -331,13 +354,15 @@ fn parse_hex_text(path: &str, source: &str) -> Result<EvmUnit, LiftError> {
 
 fn parse_assembly_text(path: &str, source: &str) -> Result<EvmUnit, LiftError> {
     let mut instructions = Vec::new();
+    let mut pc = 0;
     for (line_idx, raw) in source.lines().enumerate() {
         let line_no = line_idx + 1;
         let trimmed = strip_comment(raw).trim();
         if trimmed.is_empty() {
             continue;
         }
-        let instruction = parse_assembly_instruction(path, line_no, trimmed, instructions.len())?;
+        let instruction = parse_assembly_instruction(path, line_no, trimmed, pc)?;
+        pc += encoded_instruction_len(&instruction);
         instructions.push(instruction);
     }
     Ok(EvmUnit {
@@ -448,6 +473,13 @@ fn parse_assembly_instruction(
         immediate,
         text: text.to_string(),
     })
+}
+
+fn encoded_instruction_len(instruction: &Instruction) -> usize {
+    match instruction.opcode {
+        Opcode::Push(width) => 1 + usize::from(width),
+        _ => 1,
+    }
 }
 
 fn opcode_from_byte(code: u8) -> (Opcode, String) {
@@ -667,12 +699,17 @@ fn lift_instructions(function: &str, unit: &EvmUnit) -> Result<Json, Refusal> {
         match apply_instruction(&mut state, instruction) {
             Ok(Step::Continue) => {}
             Ok(Step::Stop(value)) => {
-                terminal = value;
-                break;
-            }
-            Ok(Step::Return(value)) => {
                 terminal = Some(value);
                 break;
+            }
+            Ok(Step::EmptyStackAtStop) => {
+                return Err(Refusal {
+                    kind: "empty-stack-at-stop".to_string(),
+                    function: Some(function.to_string()),
+                    line: Some(instruction.line),
+                    instruction: Some(instruction.text.clone()),
+                    reason: "STOP terminated execution but no stack value was available to bind as return_value".to_string(),
+                });
             }
             Err(reason) => {
                 return Err(Refusal {
@@ -726,7 +763,12 @@ fn lift_instructions(function: &str, unit: &EvmUnit) -> Result<Json, Refusal> {
 
 fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Result<Step, String> {
     match &instruction.opcode {
-        Opcode::Stop => Ok(Step::Stop(state.stack.last().cloned())),
+        Opcode::Stop => Ok(state
+            .stack
+            .last()
+            .cloned()
+            .map(Step::Stop)
+            .unwrap_or(Step::EmptyStackAtStop)),
         Opcode::Push(_) => {
             let immediate = instruction
                 .immediate
@@ -772,11 +814,10 @@ fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Re
             Ok(Step::Continue)
         }
         Opcode::JumpDest => Ok(Step::Continue),
-        Opcode::Return => {
-            let offset = state.pop()?;
-            let size = state.pop()?;
-            Ok(Step::Return(ctor("evm:return", vec![offset, size])))
-        }
+        Opcode::Return => Err(
+            "RETURN reads EVM memory and yields a byte slice; memory return data is not modeled in this lifter slice"
+                .to_string(),
+        ),
         Opcode::Unsupported { reason, .. } => Err(reason.clone()),
     }
 }

@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use provekit_lift_evm_bytecode::{
@@ -11,10 +12,39 @@ fn parser_decodes_hex_push_add_stop() {
     let unit = parse_evm_text("add.hex", "0x600160020100").expect("hex EVM parses");
 
     assert_eq!(unit.instructions.len(), 4);
+    assert_eq!(unit.instructions[0].pc, 0);
+    assert_eq!(unit.instructions[1].pc, 2);
+    assert_eq!(unit.instructions[2].pc, 4);
+    assert_eq!(unit.instructions[3].pc, 5);
     assert_eq!(unit.instructions[0].opcode, Opcode::Push(1));
     assert_eq!(unit.instructions[0].immediate.as_deref(), Some("0x01"));
     assert_eq!(unit.instructions[2].opcode, Opcode::Add);
     assert_eq!(unit.instructions[3].opcode, Opcode::Stop);
+}
+
+#[test]
+fn parser_uses_byte_offsets_for_assembly_pc() {
+    let unit = parse_evm_text("pc.evmasm", "PUSH1 0x01\nPUSH2 0x0203\nADD\nSTOP\n")
+        .expect("assembly EVM parses");
+
+    let pcs: Vec<usize> = unit
+        .instructions
+        .iter()
+        .map(|instruction| instruction.pc)
+        .collect();
+    assert_eq!(pcs, vec![0, 2, 5, 6]);
+}
+
+#[test]
+fn assembly_extension_prevents_hex_misclassification() {
+    let unit = parse_evm_text("all_hex_letters.evmasm", "DEAD\n")
+        .expect("assembly-looking source parses as assembly");
+
+    assert_eq!(unit.instructions.len(), 1);
+    match &unit.instructions[0].opcode {
+        Opcode::Unsupported { mnemonic, .. } => assert_eq!(mnemonic, "DEAD"),
+        other => panic!("expected assembly mnemonic refusal, got {other:?}"),
+    }
 }
 
 #[test]
@@ -38,6 +68,60 @@ fn lifts_stack_arithmetic_fixture_to_contract() {
     assert!(post.contains("evm:add"));
     assert!(post.contains("0x01"));
     assert!(post.contains("0x02"));
+}
+
+#[test]
+fn refuses_empty_stack_stop_without_unterminated_lie() {
+    let result = lift_source_text("empty_stop.evm", "STOP\n").expect("STOP parses");
+
+    assert!(result.declarations.is_empty());
+    assert_eq!(result.refusals.len(), 1);
+    let refusal = &result.refusals[0];
+    assert_eq!(refusal.kind, "empty-stack-at-stop");
+    assert_eq!(refusal.instruction.as_deref(), Some("STOP"));
+    assert!(refusal.reason.contains("STOP"));
+}
+
+#[test]
+fn refuses_return_until_memory_return_data_is_modeled() {
+    let result = lift_source_text("return.evm", "PUSH1 0x00\nPUSH1 0x20\nRETURN\n")
+        .expect("RETURN program parses");
+
+    assert!(result.declarations.is_empty());
+    assert_eq!(result.refusals.len(), 1);
+    let refusal = &result.refusals[0];
+    assert_eq!(refusal.kind, "unsupported-opcode");
+    assert_eq!(refusal.instruction.as_deref(), Some("RETURN"));
+    assert!(refusal.reason.contains("memory"));
+    assert!(refusal.reason.contains("byte slice"));
+}
+
+#[test]
+fn signature_declares_all_emitted_stack_ops() {
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../../menagerie/evm-bytecode-language-signature/specs/evm_bytecode_signature.spec.json",
+    );
+    let spec: Json = serde_json::from_str(
+        &std::fs::read_to_string(&spec_path)
+            .unwrap_or_else(|err| panic!("read {}: {err}", spec_path.display())),
+    )
+    .expect("EVM signature spec parses");
+    let operations = spec["post"]["primitiveOperations"]
+        .as_array()
+        .expect("primitiveOperations is an array");
+    let names = operations
+        .iter()
+        .filter_map(|operation| operation["name"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for emitted in [
+        "add", "mul", "sub", "div", "mod", "lt", "gt", "eq", "and", "or", "xor", "iszero", "not",
+    ] {
+        assert!(
+            names.contains(emitted),
+            "signature must declare emitted op {emitted}"
+        );
+    }
 }
 
 #[test]
