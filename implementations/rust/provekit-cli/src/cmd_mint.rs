@@ -51,8 +51,8 @@ use serde_json::{json, Value};
 
 use libprovekit::core::{
     address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
-    HashMapInputCatalog, Input, InputCatalog, Kit, KitError, Path as CorePath, PathAlgebra, Term,
-    Verdict,
+    HashMapInputCatalog, Input, InputCatalog, Kit, KitError, Path as CorePath, PathAlgebra,
+    PathDocument, Term, Verdict,
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
@@ -155,6 +155,8 @@ struct MintKit {
 struct MintSession {
     claim: DomainClaim,
     result: DispatchResult,
+    surface: String,
+    out_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -211,7 +213,8 @@ impl MintKit {
                 .map_err(KitError::Transformation)?,
         );
         let surface = required_str(&lift_request, "surface", "mint path lift step")
-            .map_err(KitError::Transformation)?;
+            .map_err(KitError::Transformation)?
+            .to_string();
         let out_dir = PathBuf::from(
             required_str(&mint_request, "outDir", "mint path mint step")
                 .map_err(KitError::Transformation)?,
@@ -224,7 +227,7 @@ impl MintKit {
 
         let session = match lift_plugin::dispatch_lift(
             &project_root,
-            surface,
+            &surface,
             LiftPluginOptions::default(),
             quiet,
         ) {
@@ -250,7 +253,12 @@ impl MintKit {
                     }),
                 };
                 let claim = mint_result_claim(input, None, &result)?;
-                return Ok(MintSession { claim, result });
+                return Ok(MintSession {
+                    claim,
+                    result,
+                    surface,
+                    out_dir,
+                });
             }
             Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
         };
@@ -260,7 +268,12 @@ impl MintKit {
         let result = mint_lift_response(&project_root, &out_dir, quiet, lift_response)
             .map_err(KitError::Transformation)?;
         let claim = mint_result_claim(input, Some(&lift_claim), &result)?;
-        Ok(MintSession { claim, result })
+        Ok(MintSession {
+            claim,
+            result,
+            surface,
+            out_dir,
+        })
     }
 
     fn path_step_spec(&self, step: &PathAlgebra, context: &str) -> Result<Value, KitError> {
@@ -318,12 +331,37 @@ fn dispatch(
     surface: &str,
     out_dir: &Path,
     quiet: bool,
-) -> Result<DispatchResult, String> {
+) -> Result<MintSession, String> {
     let mint_input = mint_input(project_root, surface, out_dir, quiet);
-    let session = MintKit::new(mint_input.inputs)
+    MintKit::new(mint_input.inputs)
         .transform_session(&mint_input.input)
-        .map_err(|error| error.to_string())?;
-    Ok(session.result)
+        .map_err(|error| error.to_string())
+}
+
+fn dispatch_path(project_root: &Path, path_file: &Path) -> Result<MintSession, String> {
+    let path = path_under(project_root, path_file);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|error| format!("read mint path document {}: {error}", path.display()))?;
+    let document: PathDocument = serde_json::from_str(&text)
+        .map_err(|error| format!("parse mint path document {}: {error}", path.display()))?;
+    let mut inputs = HashMapInputCatalog::default();
+    for (cid, input) in document
+        .materialized_inputs()
+        .map_err(|error| format!("invalid mint path document {}: {error}", path.display()))?
+    {
+        inputs.put(cid, input);
+    }
+    MintKit::new(inputs)
+        .transform_session(&Input::Path(Box::new(document.path)))
+        .map_err(|error| error.to_string())
+}
+
+fn path_under(project_root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_root.join(path)
+    }
 }
 
 fn mint_input(project_root: &Path, surface: &str, out_dir: &Path, quiet: bool) -> MintPathInput {
@@ -1141,33 +1179,47 @@ pub fn run(args: MintArgs) -> u8 {
         return EXIT_USER_ERROR;
     }
 
-    // Resolve surface: --surface > --kit derived > project config > user config.
-    let surface = if let Some(s) = args.surface {
-        s
-    } else if let Some(s) = derived_surface {
-        s
+    let project_cfg = read_project_config(&project_root);
+    let user_cfg = read_user_config();
+    let configured_path = if args.kit.is_none() && args.surface.is_none() && args.out.is_none() {
+        project_cfg
+            .path_for("mint")
+            .or_else(|| user_cfg.path_for("mint"))
     } else {
-        let project_cfg = read_project_config(&project_root);
-        let user_cfg = read_user_config();
-        match project_cfg
-            .surface_for("lift")
-            .or_else(|| user_cfg.surface_for("lift"))
-        {
-            Some(s) => s,
-            None => {
-                eprintln!(
-                    "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml, or pass --surface/--kit.",
-                    "error".red().bold()
-                );
-                return EXIT_USER_ERROR;
-            }
-        }
+        None
     };
 
-    let out_dir = args.out.unwrap_or_else(|| project_root.clone());
+    let session = if let Some(path_file) = configured_path {
+        dispatch_path(&project_root, Path::new(&path_file))
+    } else {
+        // Resolve surface: --surface > --kit derived > project config > user config.
+        let surface = if let Some(s) = args.surface.clone() {
+            s
+        } else if let Some(s) = derived_surface {
+            s
+        } else {
+            match project_cfg
+                .surface_for("lift")
+                .or_else(|| user_cfg.surface_for("lift"))
+            {
+                Some(s) => s,
+                None => {
+                    eprintln!(
+                        "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml, or pass --surface/--kit.",
+                        "error".red().bold()
+                    );
+                    return EXIT_USER_ERROR;
+                }
+            }
+        };
 
-    match dispatch(&project_root, &surface, &out_dir, args.flags.quiet) {
-        Ok(result) => {
+        let out_dir = args.out.clone().unwrap_or_else(|| project_root.clone());
+        dispatch(&project_root, &surface, &out_dir, args.flags.quiet)
+    };
+
+    match session {
+        Ok(session) => {
+            let result = session.result;
             let contract_set_cid = if result.contract_set_cid.is_empty() {
                 compute_contract_set_cid(vec![])
             } else {
@@ -1180,7 +1232,7 @@ pub fn run(args: MintArgs) -> u8 {
                     serde_json::to_string_pretty(&json!({
                         "ok": true,
                         "project": &project_root,
-                        "surface": &surface,
+                        "surface": &session.surface,
                         "filenameCid": &result.filename_cid,
                         "contractSetCid": &contract_set_cid,
                         "bytesWritten": result.bytes_written,
@@ -1197,12 +1249,17 @@ pub fn run(args: MintArgs) -> u8 {
                 println!("  contractSetCid:     {contract_set_cid}");
                 if result.bytes_written > 0 {
                     println!("  proof bytes:        {}", result.bytes_written);
-                    println!(
-                        "  .proof file:        {}",
-                        out_dir
-                            .join(format!("{}.proof", result.filename_cid))
-                            .display()
-                    );
+                    if let Some(proof_file) = &result.proof_file {
+                        println!("  .proof file:        {}", proof_file.display());
+                    } else {
+                        println!(
+                            "  .proof file:        {}",
+                            session
+                                .out_dir
+                                .join(format!("{}.proof", result.filename_cid))
+                                .display()
+                        );
+                    }
                 } else {
                     println!("  (no .proof written: lifter binary not found)");
                 }
@@ -1218,7 +1275,7 @@ pub fn run(args: MintArgs) -> u8 {
             // Write attestation unless suppressed.
             if !args.no_attest {
                 // Determine lang_key: use --kit derived value, else infer from surface.
-                let lang = lang_key.as_deref().unwrap_or(&surface);
+                let lang = lang_key.as_deref().unwrap_or(&session.surface);
                 if let Err(e) = write_attestation(
                     &project_root,
                     lang,
