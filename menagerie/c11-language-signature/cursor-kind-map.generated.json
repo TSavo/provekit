@@ -1,7 +1,7 @@
 {
   "generated_by": "tools/generate-c11-from-cursorkind.py",
   "source": "tools/c11gen/cxcursorkind-snapshot.h",
-  "signature_cid": "blake3-512:fdfb3b7d6b5f034be120b2bb566931c0cfc7de4375cde62c37116475deaeba849549a277b3c36e2d42b9080845103604c18f0986f64f326d2cdcb73d60ceb558",
+  "signature_cid": "blake3-512:34e0cd60770468dc5d6c5825bb393251debbfd0eaef11c1dec642fb1f7a04d05fa3a14db5cf4a54e5e74eaadc6cdd7c785baf437adfa84dbdce011b74b157b21",
   "cursor_kind_count": 292,
   "rows": [
     {
@@ -737,14 +737,66 @@
       "op_name": "operator-dispatch",
       "op_cid": null,
       "arity": 1,
-      "child_shape": "operand; token text selects neg/not/deref or fallback unary-operator",
+      "child_shape": "operand; token text and prefix/postfix position select a concrete unary op or fallback unary-operator",
       "classification": "operator-dispatch",
       "notes": "Operator spelling selects one of the listed op CIDs.",
       "operator_dispatch": {
-        "neg": "blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961",
-        "not": "blake3-512:13f0e635b60fe52d0c853adfb13c38431e0e0da1787236759736ffe420948a2cee01ebf0d275cdbe6d9cf8edc3aefb88556b1257d0e3dcd962c1f971372a2830",
-        "deref": "blake3-512:9eb190c5974e70675bd969eb2b7ab1245ac9b3ce4c2272cfdc64f539813a893aaaf586a55b1600c33e80ffb4b79726bbe57f8aee186044656e8b92887a2850a7",
-        "unary-operator": "blake3-512:9a852e24983a9b2730da4273fd45859a566c4574b7dcd1083a20f08ce7ec6a8f8145d1053c6e1b0eb654a327e72caee6b071940c265c602a4e6c36e948f7ff62"
+        "tokens": [
+          {
+            "token": "-",
+            "op_name": "c11:neg",
+            "op_cid": "blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961"
+          },
+          {
+            "token": "!",
+            "op_name": "c11:not",
+            "op_cid": "blake3-512:13f0e635b60fe52d0c853adfb13c38431e0e0da1787236759736ffe420948a2cee01ebf0d275cdbe6d9cf8edc3aefb88556b1257d0e3dcd962c1f971372a2830"
+          },
+          {
+            "token": "*",
+            "op_name": "c11:deref",
+            "op_cid": "blake3-512:9eb190c5974e70675bd969eb2b7ab1245ac9b3ce4c2272cfdc64f539813a893aaaf586a55b1600c33e80ffb4b79726bbe57f8aee186044656e8b92887a2850a7"
+          },
+          {
+            "token": "~",
+            "op_name": "c11:bit_not",
+            "op_cid": "blake3-512:cc5f0fa79ecb1658a22a776ec5a7a3afa34de99076500f454ab0ba46f57f16d693be77096492fc12bbbb023749da38b0ef8a76110d5a81ded346aa5780f52ebe"
+          },
+          {
+            "token": "&",
+            "op_name": "c11:addr_of",
+            "op_cid": "blake3-512:297ac1752207a4416bf6a6637f1945c3a0df7f6970159677e2ccb8f51edeece3ad78b516caf5cf53cd7bc1be45822d9ee015663fba79e413e458e332510e80e1"
+          },
+          {
+            "token": "prefix ++",
+            "op_name": "c11:pre_inc",
+            "op_cid": "blake3-512:6bb7eafa9f3595e2257fc5e34f538be37b4e74c7618db07900356562933dae58e55e89de6585f7a7a30435535da41db78da31df3e3bfe2811c46c3f1d59354b4"
+          },
+          {
+            "token": "postfix ++",
+            "op_name": "c11:post_inc",
+            "op_cid": "blake3-512:19530750696c8862b05468546aa0bf2b6620126504f148c96201c2c76d614292b171dfd02bbf4c69aef42a29b3e43c0a167f19c758dd80ce1e7ac774cfbf6d32"
+          },
+          {
+            "token": "prefix --",
+            "op_name": "c11:pre_dec",
+            "op_cid": "blake3-512:4008719681f58933c4ead6773196b18dada3ca51e2ec71ba9e19bf6562d7a024b3c02d82752d828c58f16bdd892e6bba4dccd7346d1877725fbda96e221f33c7"
+          },
+          {
+            "token": "postfix --",
+            "op_name": "c11:post_dec",
+            "op_cid": "blake3-512:61b51e3e8b0445e45125217800875ac9a6859a90714b778a6fdbbaf692538899a192f0885b59fbf4f3b2c5751515f1622c4945feef18bbf5ca3757f4d2b5906c"
+          },
+          {
+            "token": "+",
+            "op_name": "c11:plus",
+            "op_cid": "blake3-512:6a0dbd7ca8be895b72ea1be71e06dc2b9a9d8528242b9231d0aaa487a897be27731b40dec44dada8678f5c780e2d85f52a08df60db486d44b3dc4b4827068c8b"
+          }
+        ],
+        "fallback": {
+          "op_name": "c11:unary-operator",
+          "op_cid": "blake3-512:9a852e24983a9b2730da4273fd45859a566c4574b7dcd1083a20f08ce7ec6a8f8145d1053c6e1b0eb654a327e72caee6b071940c265c602a4e6c36e948f7ff62"
+        }
       }
     },
     {
@@ -765,20 +817,116 @@
       "op_name": "operator-dispatch",
       "op_cid": null,
       "arity": 2,
-      "child_shape": "lhs, rhs; token text selects add/sub/mul/eq/lt/le/and/or/assign or fallback binary-operator",
+      "child_shape": "lhs, rhs; token text selects a concrete binary op or fallback binary-operator",
       "classification": "operator-dispatch",
       "notes": "Operator spelling selects one of the listed op CIDs.",
       "operator_dispatch": {
-        "add": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805",
-        "sub": "blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8",
-        "mul": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e",
-        "eq": "blake3-512:be234846ff5993e9492eedb48c537f9750a5992e882e90b640728b52ad91b3d94c9b67e9f6b3f140711feb149e273a089eed6fb8eb337ab2dea6b2b11b0cfa7b",
-        "lt": "blake3-512:ec6098a797df50b97060e9392f55fbd0df7c437e70e3c72b32922d72a785701a900891cc88eb0d24e8ad21ec130ce7bdc21aa89a1b1623996012effe80461420",
-        "le": "blake3-512:c79c47a0c0dacd987390f54895c4c07afe3eb4f2271214fb486902333d141fe5cd3530493762af13ba0393de75ce7a8422e73bb4e41eb43cfd8f9b921afc30b4",
-        "and": "blake3-512:52e14c5d4279dd96569cc053530fee38e3188a939e9567931e397653e98ae0c1bdaa2e5aacc1792af44fa7c9fc11c92ef6eae19d6ea183fa82e4a6072eab8812",
-        "or": "blake3-512:7d14955205e010a7cd9a7844406e54f8cb1ce81afad75279e0c5e9a7192cb1b82821a4aae6c1449ec588aa29eb0ed19ddf577599363146b492e9f48d72fdcf35",
-        "assign": "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556",
-        "binary-operator": "blake3-512:38bb352ecd5a3a553d26a625e2b33c5d2d88b72af5911bfb6a218df61a8f3f8cab91f08608a161ac192449548fdecbf47adf5bccd2d064b1eaf98b2b54a8fa93"
+        "tokens": [
+          {
+            "token": "==",
+            "op_name": "c11:eq",
+            "op_cid": "blake3-512:be234846ff5993e9492eedb48c537f9750a5992e882e90b640728b52ad91b3d94c9b67e9f6b3f140711feb149e273a089eed6fb8eb337ab2dea6b2b11b0cfa7b"
+          },
+          {
+            "token": "!=",
+            "op_name": "c11:ne",
+            "op_cid": "blake3-512:35ac3f3e5e698eb6c2bfe351dbbc0da7ba720276b844c165226cdd522a1e2564a163d941545e946dde3b298fb2b1a3becfcf7d2c03a3cfd8e1ea5f12ad1dada9"
+          },
+          {
+            "token": "&&",
+            "op_name": "c11:and",
+            "op_cid": "blake3-512:52e14c5d4279dd96569cc053530fee38e3188a939e9567931e397653e98ae0c1bdaa2e5aacc1792af44fa7c9fc11c92ef6eae19d6ea183fa82e4a6072eab8812"
+          },
+          {
+            "token": "||",
+            "op_name": "c11:or",
+            "op_cid": "blake3-512:7d14955205e010a7cd9a7844406e54f8cb1ce81afad75279e0c5e9a7192cb1b82821a4aae6c1449ec588aa29eb0ed19ddf577599363146b492e9f48d72fdcf35"
+          },
+          {
+            "token": "<=",
+            "op_name": "c11:le",
+            "op_cid": "blake3-512:c79c47a0c0dacd987390f54895c4c07afe3eb4f2271214fb486902333d141fe5cd3530493762af13ba0393de75ce7a8422e73bb4e41eb43cfd8f9b921afc30b4"
+          },
+          {
+            "token": ">=",
+            "op_name": "c11:ge",
+            "op_cid": "blake3-512:eb6df424266fff3a9e6c275f0f2107c8b0bee0f32d42e2429ef91ff8c900f99c2943db700143ea841f14bae70cc51388b29fbfd76207dc26a990522326d47060"
+          },
+          {
+            "token": "<<",
+            "op_name": "c11:shl",
+            "op_cid": "blake3-512:3645c4a8260cf81344a80f882d166be7f1077cc52e6928f8a22caed0e1709faeed07c0d8aaf5423124e9b9362443af5481d9a67fb9e46582fb5510bec8105806"
+          },
+          {
+            "token": ">>",
+            "op_name": "c11:shr",
+            "op_cid": "blake3-512:df471fc97d7e6480ff43e35c22f8a8ebffceb532d09d5895b3486bfb1ba77efb6f292e87ab68d5da25facbcb013304ca95ac323438656b40d62b72bb12308963"
+          },
+          {
+            "token": "<",
+            "op_name": "c11:lt",
+            "op_cid": "blake3-512:ec6098a797df50b97060e9392f55fbd0df7c437e70e3c72b32922d72a785701a900891cc88eb0d24e8ad21ec130ce7bdc21aa89a1b1623996012effe80461420"
+          },
+          {
+            "token": ">",
+            "op_name": "c11:gt",
+            "op_cid": "blake3-512:533d7c1cb1f130ffce0681c52d34d11277cb0dd108128fffa8e3a1b87fc0f8fadb81fa0bc7d5c2435795f5ffa35484b6492c3770e3eb107d43944a4169302922"
+          },
+          {
+            "token": "=",
+            "op_name": "c11:assign",
+            "op_cid": "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556"
+          },
+          {
+            "token": "+",
+            "op_name": "c11:add",
+            "op_cid": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805"
+          },
+          {
+            "token": "-",
+            "op_name": "c11:sub",
+            "op_cid": "blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8"
+          },
+          {
+            "token": "*",
+            "op_name": "c11:mul",
+            "op_cid": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e"
+          },
+          {
+            "token": "/",
+            "op_name": "c11:div",
+            "op_cid": "blake3-512:61535696ae1adf2117d1bed76608309ae1756f07c5593e785155520277c9a7ee2ab26050bfa600d27fad86068b9cceff73bcbafb80abcf6346f8b4618998999e"
+          },
+          {
+            "token": "%",
+            "op_name": "c11:mod",
+            "op_cid": "blake3-512:f8f2053b8077f5d809ba26ffe064d5c860425e6cd534be7f9b709aeaf6b1a38e4875d5afb0c91a0112fa55e4122d0ab4555c060f4878d0b250148063bae064cd"
+          },
+          {
+            "token": "&",
+            "op_name": "c11:bit_and",
+            "op_cid": "blake3-512:27cd28a24ddb477cdeb2cf26093ba19211bb7f00c4e5132227dd034c7bcc611183477f8d7595ac5d1190c14ab30a4d84744e59d19fc6f32b1f05bc93eec1ed13"
+          },
+          {
+            "token": "|",
+            "op_name": "c11:bit_or",
+            "op_cid": "blake3-512:91df079fd90f39b1a8ae79100f5669c2783a3fbfdb4f9020df5a7b41346ba84fc0de3945afedbbcb238f40ac1f7af00120368f075df9227acb9268e9ea8a5f69"
+          },
+          {
+            "token": "^",
+            "op_name": "c11:bit_xor",
+            "op_cid": "blake3-512:10d9c19644d05f0594cf217a99fed307e3fd8fa023da2e62c03d23e9fd24af794f7e2684a38b09f88a33ec0a6e107e3181d9abb1bff135089797bf4933dbbeac"
+          },
+          {
+            "token": ",",
+            "op_name": "c11:comma",
+            "op_cid": "blake3-512:35d31555d187eb21001dd65c2c1360945b92765204b402a492e40ab7c2bec6e3fbb3e8ed17f77137bf12966199321ed774ed05b5e5d13f7610bc64622e087515"
+          }
+        ],
+        "fallback": {
+          "op_name": "c11:binary-operator",
+          "op_cid": "blake3-512:38bb352ecd5a3a553d26a625e2b33c5d2d88b72af5911bfb6a218df61a8f3f8cab91f08608a161ac192449548fdecbf47adf5bccd2d064b1eaf98b2b54a8fa93"
+        }
       }
     },
     {
@@ -788,15 +936,66 @@
       "op_name": "operator-dispatch",
       "op_cid": null,
       "arity": 2,
-      "child_shape": "lhs, rhs; token text desugars to assign(lhs, op(lhs, rhs))",
+      "child_shape": "lhs, rhs; token text desugars to assign(lhs, op(lhs, rhs)) or fallback binary-operator",
       "classification": "operator-dispatch",
       "notes": "Operator spelling selects one of the listed op CIDs.",
       "operator_dispatch": {
-        "assign": "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556",
-        "add": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805",
-        "sub": "blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8",
-        "mul": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e",
-        "binary-operator": "blake3-512:38bb352ecd5a3a553d26a625e2b33c5d2d88b72af5911bfb6a218df61a8f3f8cab91f08608a161ac192449548fdecbf47adf5bccd2d064b1eaf98b2b54a8fa93"
+        "tokens": [
+          {
+            "token": "+=",
+            "op_name": "c11:add",
+            "op_cid": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805"
+          },
+          {
+            "token": "-=",
+            "op_name": "c11:sub",
+            "op_cid": "blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8"
+          },
+          {
+            "token": "*=",
+            "op_name": "c11:mul",
+            "op_cid": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e"
+          },
+          {
+            "token": "/=",
+            "op_name": "c11:div",
+            "op_cid": "blake3-512:61535696ae1adf2117d1bed76608309ae1756f07c5593e785155520277c9a7ee2ab26050bfa600d27fad86068b9cceff73bcbafb80abcf6346f8b4618998999e"
+          },
+          {
+            "token": "%=",
+            "op_name": "c11:mod",
+            "op_cid": "blake3-512:f8f2053b8077f5d809ba26ffe064d5c860425e6cd534be7f9b709aeaf6b1a38e4875d5afb0c91a0112fa55e4122d0ab4555c060f4878d0b250148063bae064cd"
+          },
+          {
+            "token": "<<=",
+            "op_name": "c11:shl",
+            "op_cid": "blake3-512:3645c4a8260cf81344a80f882d166be7f1077cc52e6928f8a22caed0e1709faeed07c0d8aaf5423124e9b9362443af5481d9a67fb9e46582fb5510bec8105806"
+          },
+          {
+            "token": ">>=",
+            "op_name": "c11:shr",
+            "op_cid": "blake3-512:df471fc97d7e6480ff43e35c22f8a8ebffceb532d09d5895b3486bfb1ba77efb6f292e87ab68d5da25facbcb013304ca95ac323438656b40d62b72bb12308963"
+          },
+          {
+            "token": "&=",
+            "op_name": "c11:bit_and",
+            "op_cid": "blake3-512:27cd28a24ddb477cdeb2cf26093ba19211bb7f00c4e5132227dd034c7bcc611183477f8d7595ac5d1190c14ab30a4d84744e59d19fc6f32b1f05bc93eec1ed13"
+          },
+          {
+            "token": "|=",
+            "op_name": "c11:bit_or",
+            "op_cid": "blake3-512:91df079fd90f39b1a8ae79100f5669c2783a3fbfdb4f9020df5a7b41346ba84fc0de3945afedbbcb238f40ac1f7af00120368f075df9227acb9268e9ea8a5f69"
+          },
+          {
+            "token": "^=",
+            "op_name": "c11:bit_xor",
+            "op_cid": "blake3-512:10d9c19644d05f0594cf217a99fed307e3fd8fa023da2e62c03d23e9fd24af794f7e2684a38b09f88a33ec0a6e107e3181d9abb1bff135089797bf4933dbbeac"
+          }
+        ],
+        "fallback": {
+          "op_name": "c11:binary-operator",
+          "op_cid": "blake3-512:38bb352ecd5a3a553d26a625e2b33c5d2d88b72af5911bfb6a218df61a8f3f8cab91f08608a161ac192449548fdecbf47adf5bccd2d064b1eaf98b2b54a8fa93"
+        }
       }
     },
     {

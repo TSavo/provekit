@@ -4,7 +4,7 @@ C is emitted as a content-addressed algebra over contracts. Here is the algebra.
 
 The minted C11 `LanguageSignatureMemento` is:
 
-`blake3-512:fdfb3b7d6b5f034be120b2bb566931c0cfc7de4375cde62c37116475deaeba849549a277b3c36e2d42b9080845103604c18f0986f64f326d2cdcb73d60ceb558`
+`blake3-512:34e0cd60770468dc5d6c5825bb393251debbfd0eaef11c1dec642fb1f7a04d05fa3a14db5cf4a54e5e74eaadc6cdd7c785baf437adfa84dbdce011b74b157b21`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted C function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 
@@ -73,6 +73,24 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `generic-selection` | `Expr x ListOfExpr` | `Expr` | C11 generic selection expression |
 | `stmt-expr` | `Stmt` | `Expr` | GNU statement expression payload |
 | `addr-label` | `Expr` | `Expr` | GNU address-of-label expression |
+| `div` | `Int x Int` | `Int` | integer division expression |
+| `mod` | `Int x Int` | `Int` | integer remainder expression |
+| `shl` | `Int x Int` | `Int` | integer left shift expression |
+| `shr` | `Int x Int` | `Int` | integer right shift expression |
+| `bit_and` | `Int x Int` | `Int` | integer bitwise and expression |
+| `bit_or` | `Int x Int` | `Int` | integer bitwise or expression |
+| `bit_xor` | `Int x Int` | `Int` | integer bitwise xor expression |
+| `gt` | `Int x Int` | `Bool` | integer greater-than comparison |
+| `ge` | `Int x Int` | `Bool` | integer greater-than-or-equal comparison |
+| `ne` | `Int x Int` | `Bool` | integer not-equal comparison |
+| `comma` | `Expr x Expr` | `Expr` | comma expression evaluates lhs then yields rhs |
+| `bit_not` | `Int` | `Int` | integer bitwise complement expression |
+| `addr_of` | `LValue` | `Ptr` | address-of expression yielding a pointer to target |
+| `pre_inc` | `LValue` | `Expr` | prefix increment expression yielding the updated value |
+| `post_inc` | `LValue` | `Expr` | postfix increment expression yielding the previous value |
+| `pre_dec` | `LValue` | `Expr` | prefix decrement expression yielding the updated value |
+| `post_dec` | `LValue` | `Expr` | postfix decrement expression yielding the previous value |
+| `plus` | `Int` | `Int` | unary plus expression preserving value |
 | `unexposed-stmt` | `ListOfStmt` | `Stmt` | libclang unexposed statement with lifted child sequence |
 | `unexposed-expr` | `ListOfExpr` | `Expr` | libclang unexposed expression with lifted child sequence |
 | `binary-operator` | `Expr x Expr` | `Expr` | fallback binary operator when no core C11 operator is selected |
