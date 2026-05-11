@@ -1,0 +1,12 @@
+{
+  "kind": "equation",
+  "fn_name": "csharp:seq-skip-right",
+  "formals": ["s"],
+  "formal_sorts": ["sort_stmt.spec.json"],
+  "pre": {"kind": "atomic", "name": "true", "args": []},
+  "post": {
+    "kind": "equation",
+    "lhs": {"kind": "op", "name": "csharp:seq", "args": [{"kind": "var", "name": "s"}, {"kind": "op", "name": "csharp:skip", "args": [{"kind": "const", "value": 0}]}]},
+    "rhs": {"kind": "var", "name": "s"}
+  }
+}
