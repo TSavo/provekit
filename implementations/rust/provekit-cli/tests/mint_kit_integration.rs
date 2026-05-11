@@ -202,6 +202,87 @@ fn run_mint(root: &Path, kit: &str) -> (bool, String, String) {
     )
 }
 
+fn write_clr_smoke_project(root: &Path) -> PathBuf {
+    let project_dir = root
+        .join("implementations")
+        .join("csharp")
+        .join("clr-bytecode-smoke");
+    std::fs::create_dir_all(&project_dir).expect("create CLR smoke project");
+    std::fs::write(
+        project_dir.join("ClrBytecodeSmoke.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+"#,
+    )
+    .expect("write CLR smoke csproj");
+    std::fs::write(
+        project_dir.join("Smoke.cs"),
+        r#"namespace Provekit.ClrBytecodeSmoke;
+
+public static class Smoke
+{
+    public static int AddOne(int value) => value + 1;
+}
+"#,
+    )
+    .expect("write CLR smoke source");
+    project_dir
+}
+
+fn dotnet_is_available() -> bool {
+    match Command::new("dotnet").arg("--version").output() {
+        Ok(output) if output.status.success() => true,
+        Ok(output) => {
+            eprintln!(
+                "clr-bytecode kit: dotnet --version exited non-zero; skipping\n  stdout: {}\n  stderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            false
+        }
+        Err(err) => {
+            eprintln!("clr-bytecode kit: dotnet is not available on PATH; skipping ({err})");
+            false
+        }
+    }
+}
+
+fn dotnet_build_command() -> Command {
+    let mut command = Command::new("dotnet");
+    command
+        .arg("build")
+        .arg("-p:NuGetAudit=false")
+        .arg("-m:1")
+        .arg("-nr:false")
+        .arg("-p:UseSharedCompilation=false");
+    command
+}
+
+fn build_clr_lifter() {
+    let project = canonical_repo_root()
+        .join("implementations")
+        .join("csharp")
+        .join("Provekit.Lift.CLR")
+        .join("Provekit.Lift.CLR.csproj");
+    let build = dotnet_build_command()
+        .arg(&project)
+        .arg("-c")
+        .arg("Release")
+        .output()
+        .expect("spawn dotnet build for CLR lifter");
+    assert!(
+        build.status.success(),
+        "dotnet build failed for CLR lifter\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+}
+
 /// Read the attestation JSON from `<root>/.provekit/self-contracts-attestations/<lang>.json`.
 fn read_attestation(root: &Path, lang: &str) -> serde_json::Value {
     let path = root
@@ -280,7 +361,18 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// When zig is not on PATH the pinned-CID test skips cleanly (see
 /// `zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical`).
 const KITS_WITH_LIFTERS: &[&str] = &[
-    "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c", "ruby", "zig",
+    "rust",
+    "go",
+    "cpp",
+    "ts",
+    "csharp",
+    "clr-bytecode",
+    "swift",
+    "java",
+    "python",
+    "c",
+    "ruby",
+    "zig",
 ];
 
 /// Kits without a lifter binary yet: produce the empty-set CID because the
@@ -434,6 +526,52 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
         eprintln!("kit={kit} cid={cid}");
         eprintln!("kit={kit} contractSetCid={cset}");
     }
+}
+
+#[test]
+#[serial(mint_kit_files)]
+fn clr_bytecode_kit_round_trips_dotnet_built_assembly_through_cli_mint() {
+    if !dotnet_is_available() {
+        return;
+    }
+
+    build_clr_lifter();
+
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
+    let project_dir = write_clr_smoke_project(root);
+
+    let build = dotnet_build_command()
+        .arg(&project_dir)
+        .arg("-c")
+        .arg("Release")
+        .current_dir(root)
+        .output()
+        .expect("spawn dotnet build for CLR smoke project");
+    assert!(
+        build.status.success(),
+        "dotnet build failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let (ok, stdout, stderr) = run_mint(root, "clr-bytecode");
+    assert!(
+        ok,
+        "clr-bytecode mint failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "clr-bytecode stdout must contain contractSetCid\nstdout:\n{stdout}"
+    );
+
+    let attest = read_attestation(root, "clr-bytecode");
+    assert_attestation_structure(&attest, "clr-bytecode");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "clr-bytecode must lift the dotnet-built assembly into real contracts"
+    );
 }
 
 // ---------------------------------------------------------------------------

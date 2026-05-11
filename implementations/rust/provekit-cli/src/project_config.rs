@@ -218,6 +218,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "jvm-bytecode",
     "cpp-26-contracts",
     "cpp-boost-contract",
+    "clr-bytecode",
 ];
 
 /// Agent menu shown by `provekit init`.
@@ -311,6 +312,7 @@ mod tests {
     fn known_lists_include_anchor_entries() {
         assert!(KNOWN_SURFACES.contains(&"default"));
         assert!(KNOWN_SURFACES.contains(&"ts-zod"));
+        assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
         assert!(KNOWN_AGENTS.contains(&"stub"));
         assert!(KNOWN_AGENTS.contains(&"claude-code"));
     }
