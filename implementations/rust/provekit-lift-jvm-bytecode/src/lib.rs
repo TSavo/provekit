@@ -18,6 +18,10 @@ pub enum LiftError {
     },
     #[error("parse {path}: {message}")]
     Parse { path: String, message: String },
+    #[error(
+        "jvm-bytecode lift: path must be relative to workspace_root, got absolute path {path}"
+    )]
+    AbsolutePath { path: String },
 }
 
 #[derive(Debug, Clone)]
@@ -176,7 +180,7 @@ pub fn lift_paths(workspace_root: &Path, source_paths: &[String]) -> Result<Lift
     };
 
     for source_path in source_paths {
-        let path = resolve_path(workspace_root, source_path);
+        let path = resolve_path(workspace_root, source_path)?;
         for path in expand_source_path(&path)? {
             let display_path = path.to_string_lossy().to_string();
             let source = std::fs::read_to_string(&path).map_err(|source| LiftError::Read {
@@ -581,6 +585,13 @@ struct LiftedMethod {
 }
 
 fn lift_method(unit: &JasminUnit, method: &Method) -> LiftedMethod {
+    if let Some(refusal) = static_read_after_write_refusal(method) {
+        return LiftedMethod {
+            contract: None,
+            refusals: vec![refusal],
+        };
+    }
+
     let exploration = explore_method(method);
     let mut refusals = exploration.refusals;
 
@@ -630,6 +641,45 @@ fn lift_method(unit: &JasminUnit, method: &Method) -> LiftedMethod {
     LiftedMethod {
         contract: Some(contract),
         refusals,
+    }
+}
+
+fn static_read_after_write_refusal(method: &Method) -> Option<Refusal> {
+    let mut written_static_fields = BTreeSet::new();
+    for instruction in &method.instructions {
+        match instruction.opcode.as_str() {
+            "putstatic" => {
+                if let Some(field) = single_operand(instruction) {
+                    written_static_fields.insert(field.to_string());
+                }
+            }
+            "getstatic" => {
+                let Some(field) = single_operand(instruction) else {
+                    continue;
+                };
+                if written_static_fields.contains(field) {
+                    return Some(Refusal {
+                        kind: "unsupported-static-read-after-write".to_string(),
+                        function: Some(method.name.clone()),
+                        line: Some(instruction.line),
+                        instruction: Some(instruction.text.clone()),
+                        reason: format!(
+                            "jvm-bytecode lift refuses methods that read a static field after writing it: stale-read modeling not yet supported (static:{field})"
+                        ),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn single_operand(instruction: &Instruction) -> Option<&str> {
+    if instruction.operands.len() == 1 {
+        Some(instruction.operands[0].as_str())
+    } else {
+        None
     }
 }
 
@@ -1312,12 +1362,14 @@ fn parse_error(path: &str, line: usize, message: impl Into<String>) -> LiftError
     }
 }
 
-fn resolve_path(workspace_root: &Path, source_path: &str) -> PathBuf {
+fn resolve_path(workspace_root: &Path, source_path: &str) -> Result<PathBuf, LiftError> {
     let path = PathBuf::from(source_path);
     if path.is_absolute() {
-        path
+        Err(LiftError::AbsolutePath {
+            path: source_path.to_string(),
+        })
     } else {
-        workspace_root.join(path)
+        Ok(workspace_root.join(path))
     }
 }
 
@@ -1421,12 +1473,14 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let result = lift_paths(root, &["tests/fixtures".to_string()]).expect("directory lifts");
 
-        assert_eq!(result.declarations.len(), 2);
+        assert_eq!(result.declarations.len(), 3);
         let fn_names = result
             .declarations
             .iter()
             .map(|contract| contract["fnName"].as_str().expect("fnName is a string"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(fn_names, BTreeSet::from(["add", "foo"]));
+        assert_eq!(fn_names, BTreeSet::from(["add", "foo", "read"]));
+        assert_eq!(result.refusals.len(), 1);
+        assert_eq!(result.refusals[0].function.as_deref(), Some("stale"));
     }
 }

@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::process::{Command, Stdio};
+
 use provekit_ir_compiler_jvm_bytecode::compile_jasmin;
 use provekit_lift_jvm_bytecode::{lift_source_text, lift_success_response_json, parse_jasmin_text};
 use serde_json::Value as Json;
@@ -61,6 +64,47 @@ fn lifts_instance_method_with_this_in_local_zero() {
 }
 
 #[test]
+fn lifts_read_only_static_field_method() {
+    let source = include_str!("fixtures/static_read_only.j");
+    let result = lift_source_text("StaticReadOnly.j", source).expect("JVM bytecode lifts");
+
+    assert_eq!(result.declarations.len(), 1);
+    assert!(
+        result.refusals.is_empty(),
+        "unexpected refusals: {:?}",
+        result.refusals
+    );
+
+    let contract = &result.declarations[0];
+    assert_eq!(contract["fnName"], "read");
+    assert_eq!(
+        contract["effects"],
+        serde_json::json!([{"kind":"reads","target":"StaticReadOnly/value I"}])
+    );
+    let post = serde_json::to_string(&contract["post"]).unwrap();
+    assert!(post.contains("static:StaticReadOnly/value I"));
+}
+
+#[test]
+fn refuses_static_field_read_after_write() {
+    let source = include_str!("fixtures/static_read_after_write.j");
+    let result = lift_source_text("StaticReadAfterWrite.j", source).expect("JVM bytecode lifts");
+
+    assert!(
+        result.declarations.is_empty(),
+        "stale static read method must not emit declarations: {:?}",
+        result.declarations
+    );
+    assert_eq!(result.refusals.len(), 1);
+    let refusal = &result.refusals[0];
+    assert_eq!(refusal.function.as_deref(), Some("stale"));
+    assert_eq!(
+        refusal.reason,
+        "jvm-bytecode lift refuses methods that read a static field after writing it: stale-read modeling not yet supported (static:StaticReadAfterWrite/value I)"
+    );
+}
+
+#[test]
 fn c11_to_jvm_realizer_output_relifts_as_jvm_contract() {
     let input: Json = serde_json::from_str(include_str!(
         "../../provekit-ir-compiler-jvm-bytecode/tests/fixtures/foo.term.json"
@@ -97,6 +141,53 @@ fn rpc_response_wraps_relifted_contracts() {
     assert_eq!(response["result"]["kind"], "ir-document");
     assert_eq!(response["result"]["ir"][0]["fnName"], "foo");
     assert!(response["result"].get("declarations").is_none());
+}
+
+#[test]
+fn rpc_lift_rejects_absolute_source_paths() {
+    let absolute_fixture_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/foo.j");
+    assert!(
+        absolute_fixture_path.is_absolute(),
+        "test fixture path should be absolute"
+    );
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "lift",
+        "params": {
+            "surface": "jvm-bytecode",
+            "workspace_root": env!("CARGO_MANIFEST_DIR"),
+            "source_paths": [absolute_fixture_path]
+        }
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_provekit-lift-jvm-bytecode"))
+        .arg("--rpc")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn JVM bytecode lifter RPC server");
+    {
+        let stdin = child.stdin.as_mut().expect("RPC stdin is piped");
+        writeln!(stdin, "{request}").expect("write RPC request");
+    }
+
+    let output = child.wait_with_output().expect("wait for RPC server");
+    assert!(
+        output.status.success(),
+        "RPC process should exit cleanly on stdin EOF: {:?}",
+        output.status
+    );
+    let stdout = String::from_utf8(output.stdout).expect("RPC stdout is UTF-8");
+    let response: Json = serde_json::from_str(stdout.trim()).expect("RPC response parses as JSON");
+    let message = response["error"]["message"]
+        .as_str()
+        .expect("absolute source path response has an error message");
+    assert!(
+        message.contains("jvm-bytecode lift: path must be relative to workspace_root"),
+        "unexpected RPC error message: {message}"
+    );
 }
 
 fn has_undeclared_local_reference(contract: &Json) -> bool {
