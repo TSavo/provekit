@@ -372,6 +372,51 @@ PY
     fi
 }
 
+check_ms_asm_lifts_actual_tokens() {
+    name="ms_asm"
+    src="$SCRIPT_DIR/fixtures/$name.c"
+    actual_term="$TMP_DIR/$name.term.json"
+
+    "$BIN" "$src" --function "$name" --term > "$actual_term"
+
+    python3 - "$actual_term" <<'PY'
+import json
+import sys
+
+term = json.load(open(sys.argv[1]))
+
+def find_asm_link(node):
+    if isinstance(node, dict):
+        if node.get("kind") == "op" and node.get("name") == "asm-link-edge":
+            return node
+        for value in node.values():
+            found = find_asm_link(value)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = find_asm_link(item)
+            if found is not None:
+                return found
+    return None
+
+edge = find_asm_link(term)
+if edge is None:
+    raise SystemExit("FAIL: MS asm did not lift to c11:asm-link-edge")
+args = edge.get("args", [])
+if len(args) != 11:
+    raise SystemExit(f"FAIL: MS asm-link-edge arity {len(args)} != 11")
+if args[5].get("name") != "ms-inline-asm":
+    raise SystemExit(f"FAIL: MS asm dialect was not preserved: {args[5]}")
+template = args[6].get("value")
+if template != "mov eax, ebx":
+    raise SystemExit(f"FAIL: MS asm template was not lifted from source tokens: {template!r}")
+source = args[7].get("value")
+if not source or "mov eax, ebx" not in source or "\n    nop\n" in source:
+    raise SystemExit(f"FAIL: MS asm assembly_source corrupted the instruction stream: {source!r}")
+PY
+}
+
 check_example foo
 check_example add
 check_example g
@@ -382,6 +427,7 @@ check_example lit
 check_example control
 check_example gnu
 check_example asm_link
+check_ms_asm_lifts_actual_tokens
 check_asm_orp_roundtrip
 
 operator_src="$TMP_DIR/operator_ops.c"

@@ -7,6 +7,7 @@
 #ifdef PK_C_ENABLE_CLANG_AST
 
 #include <clang-c/Index.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -271,6 +272,51 @@ static char *read_file(const char *path) {
     data[size] = '\0';
     fclose(fp);
     return data;
+}
+
+static char *cursor_extent_source_text(CXCursor cursor) {
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation start = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+    CXFile start_file = NULL;
+    CXFile end_file = NULL;
+    CXString filename;
+    const char *path;
+    char *source = NULL;
+    char *copy = NULL;
+    unsigned start_offset = 0;
+    unsigned end_offset = 0;
+    size_t source_len;
+    size_t extent_len;
+
+    clang_getExpansionLocation(start, &start_file, NULL, NULL, &start_offset);
+    clang_getExpansionLocation(end, &end_file, NULL, NULL, &end_offset);
+    if (start_file == NULL || end_file == NULL || clang_File_isEqual(start_file, end_file) == 0 ||
+        end_offset < start_offset) {
+        return NULL;
+    }
+
+    filename = clang_getFileName(start_file);
+    path = clang_getCString(filename);
+    if (path == NULL || path[0] == '\0') {
+        clang_disposeString(filename);
+        return NULL;
+    }
+    source = read_file(path);
+    clang_disposeString(filename);
+    if (source == NULL) return NULL;
+
+    source_len = strlen(source);
+    if ((size_t)end_offset > source_len || (size_t)start_offset > source_len) goto done;
+    extent_len = (size_t)(end_offset - start_offset);
+    copy = malloc(extent_len + 1);
+    if (copy == NULL) goto done;
+    memcpy(copy, source + start_offset, extent_len);
+    copy[extent_len] = '\0';
+
+done:
+    free(source);
+    return copy;
 }
 
 static char *cx_string_copy(CXString string) {
@@ -737,7 +783,7 @@ static char *extract_asm_template(const char *source) {
     Buf out = {0};
     char *copy = NULL;
 
-    if (p == NULL) return pk_c_walk_copy("nop");
+    if (p == NULL) return NULL;
     p++;
     while (*p != '\0') {
         if (*p == '"') break;
@@ -771,6 +817,65 @@ static char *extract_asm_template(const char *source) {
 done:
     buf_free(&out);
     return copy;
+}
+
+static const char *skip_ascii_space(const char *p) {
+    while (p != NULL && isspace((unsigned char)*p)) p++;
+    return p;
+}
+
+static int is_ident_char(char c) {
+    return isalnum((unsigned char)c) || c == '_';
+}
+
+static int consume_keyword(const char **p, const char *keyword) {
+    size_t len;
+
+    if (p == NULL || *p == NULL || keyword == NULL) return 0;
+    len = strlen(keyword);
+    if (strncmp(*p, keyword, len) != 0 || is_ident_char((*p)[len])) return 0;
+    *p += len;
+    return 1;
+}
+
+static char *copy_trimmed_range(const char *start, size_t len) {
+    char *copy;
+
+    while (len > 0 && isspace((unsigned char)*start)) {
+        start++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)start[len - 1])) len--;
+    copy = malloc(len + 1);
+    if (copy == NULL) return NULL;
+    memcpy(copy, start, len);
+    copy[len] = '\0';
+    return copy;
+}
+
+static char *extract_ms_asm_template(const char *source) {
+    const char *p = skip_ascii_space(source);
+    size_t len;
+
+    if (p == NULL) return NULL;
+    if (!consume_keyword(&p, "__asm__") && !consume_keyword(&p, "__asm") && !consume_keyword(&p, "asm")) {
+        return NULL;
+    }
+    p = skip_ascii_space(p);
+    len = strlen(p);
+    while (len > 0 && isspace((unsigned char)p[len - 1])) len--;
+    if (len > 0 && p[len - 1] == ';') len--;
+    while (len > 0 && isspace((unsigned char)p[len - 1])) len--;
+    if (len >= 2 && p[0] == '{' && p[len - 1] == '}') {
+        p++;
+        len -= 2;
+    }
+    while (len > 0 && isspace((unsigned char)*p)) {
+        p++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)p[len - 1])) len--;
+    return len == 0 ? NULL : copy_trimmed_range(p, len);
 }
 
 static char *inline_asm_symbol_from_cid(const char *cid) {
@@ -816,7 +921,8 @@ done:
 }
 
 static C11Term *lift_asm_stmt(CXCursor cursor) {
-    char *cursor_source = pk_c_walk_cursor_source(cursor);
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+    char *cursor_source = cursor_extent_source_text(cursor);
     char *template_text = NULL;
     char *template_cid = NULL;
     char *symbol = NULL;
@@ -826,7 +932,14 @@ static C11Term *lift_asm_stmt(CXCursor cursor) {
     C11Term **args = NULL;
     C11Term *out = NULL;
 
+    if (cursor_source == NULL) cursor_source = pk_c_walk_cursor_source(cursor);
     template_text = extract_asm_template(cursor_source);
+    if (template_text == NULL && kind == CXCursor_MSAsmStmt) {
+        template_text = extract_ms_asm_template(cursor_source);
+    }
+    if (template_text == NULL && kind != CXCursor_MSAsmStmt) {
+        template_text = pk_c_walk_copy("nop");
+    }
     if (template_text == NULL) goto done;
     template_cid = cid_for_bytes(template_text, strlen(template_text));
     symbol = inline_asm_symbol_from_cid(template_cid);
@@ -843,7 +956,7 @@ static C11Term *lift_asm_stmt(CXCursor cursor) {
     args[2] = term_var("x86-64:sysv");
     args[3] = term_var("provekit-lift-asm-x86-64");
     args[4] = term_var(symbol);
-    args[5] = term_var("gnu-inline-asm");
+    args[5] = term_var(kind == CXCursor_MSAsmStmt ? "ms-inline-asm" : "gnu-inline-asm");
     args[6] = term_literal(template_text);
     args[7] = term_literal(assembly_source);
     args[8] = term_op0_take("set");
@@ -1281,7 +1394,7 @@ static enum CXChildVisitResult find_function_visitor(CXCursor cursor, CXCursor p
 }
 
 static CXTranslationUnit parse_unit(const char *path, const char *source, CXIndex *index_out) {
-    static const char *const args[] = {"-x", "c", "-std=c11"};
+    static const char *const args[] = {"-x", "c", "-std=c11", "-fasm-blocks", "-fms-extensions"};
     struct CXUnsavedFile unsaved;
     CXTranslationUnit unit = NULL;
 
@@ -2039,12 +2152,48 @@ static const char *literal_arg_or(const C11Term *term, size_t index, const char 
     return fallback;
 }
 
+static const char *text_arg_or(const C11Term *term, size_t index, const char *fallback) {
+    if (term->n_args > index &&
+        (term->args[index]->kind == C11_TERM_VAR || term->args[index]->kind == C11_TERM_LITERAL)) {
+        return term->args[index]->name == NULL ? fallback : term->args[index]->name;
+    }
+    return fallback;
+}
+
 static const char *type_arg_or(const C11Term *term, size_t index, const char *fallback) {
     if (term->n_args > index &&
         (term->args[index]->kind == C11_TERM_VAR || term->args[index]->kind == C11_TERM_LITERAL)) {
         return term->args[index]->name == NULL ? fallback : term->args[index]->name;
     }
     return fallback;
+}
+
+static int serialize_ms_asm_stmt(Buf *out, const char *template_text, int indent) {
+    const char *body = template_text == NULL || template_text[0] == '\0' ? "nop" : template_text;
+    const char *line = body;
+
+    if (strchr(body, '\n') == NULL) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "__asm ") == 0 &&
+            buf_append(out, body) == 0 &&
+            buf_append_char(out, '\n') == 0 ? 0 : -1;
+    }
+
+    if (buf_append_indent(out, indent) != 0 || buf_append(out, "__asm {\n") != 0) return -1;
+    while (*line != '\0') {
+        const char *end = strchr(line, '\n');
+        size_t len = end == NULL ? strlen(line) : (size_t)(end - line);
+
+        if (len > 0 &&
+            (buf_append_indent(out, indent + 1) != 0 ||
+                buf_append_n(out, line, len) != 0 ||
+                buf_append_char(out, '\n') != 0)) {
+            return -1;
+        }
+        if (end == NULL) break;
+        line = end + 1;
+    }
+    return buf_append_indent(out, indent) == 0 && buf_append(out, "}\n") == 0 ? 0 : -1;
 }
 
 static const char *compound_assign_symbol(const char *name) {
@@ -2318,6 +2467,9 @@ static int serialize_stmt(Buf *out, const C11Term *term, int indent) {
             buf_append(out, ";\n") == 0 ? 0 : -1;
     }
     if (strcmp(term->name, "asm-link-edge") == 0 && term->n_args >= 7) {
+        if (strcmp(text_arg_or(term, 5, "gnu-inline-asm"), "ms-inline-asm") == 0) {
+            return serialize_ms_asm_stmt(out, literal_arg_or(term, 6, "nop"), indent);
+        }
         return buf_append_indent(out, indent) == 0 &&
             buf_append(out, "__asm__ volatile(") == 0 &&
             buf_append_c_string_literal(out, literal_arg_or(term, 6, "nop")) == 0 &&
