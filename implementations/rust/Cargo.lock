@@ -1849,6 +1849,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-evm-bytecode"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
 name = "provekit-lift-flux"
 version = "0.1.0"
 dependencies = [

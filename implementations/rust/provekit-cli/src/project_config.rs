@@ -223,6 +223,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "cpp-boost-contract",
     "clr-bytecode",
     "zig-source",
+    "evm-bytecode",
 ];
 
 /// Agent menu shown by `provekit init`.
@@ -318,6 +319,7 @@ mod tests {
         assert!(KNOWN_SURFACES.contains(&"ts-zod"));
         assert!(KNOWN_SURFACES.contains(&"typescript-source"));
         assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
+        assert!(KNOWN_SURFACES.contains(&"evm-bytecode"));
         assert!(KNOWN_AGENTS.contains(&"stub"));
         assert!(KNOWN_AGENTS.contains(&"claude-code"));
     }

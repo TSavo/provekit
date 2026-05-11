@@ -1,0 +1,427 @@
+{
+  "schemaVersion": "0.1.0-draft",
+  "kind": "LanguageSignatureMementoDraft",
+  "fnName": "evm-bytecode:straight-line-core:2026-05-11",
+  "formals": [],
+  "returnSort": "LanguageSignature",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "surface": "evm-bytecode",
+    "dialects": [
+      "evm-hex",
+      "evm-assembly"
+    ],
+    "sorts": [
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "EvmWord",
+        "denotation": "unsigned 256-bit EVM stack word"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "EvmStack",
+        "denotation": "ordered EVM operand stack"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "EvmProgramCounter",
+        "denotation": "byte offset into deployed EVM code"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "EvmMemory",
+        "denotation": "byte-addressed transient EVM memory"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "EvmStorage",
+        "denotation": "contract-address-scoped persistent key-value storage"
+      }
+    ],
+    "operations": [
+      "op_add.spec.json",
+      "op_mul.spec.json",
+      "op_sub.spec.json",
+      "op_div.spec.json",
+      "op_mod.spec.json",
+      "op_lt.spec.json",
+      "op_gt.spec.json",
+      "op_eq.spec.json",
+      "op_and.spec.json",
+      "op_or.spec.json",
+      "op_xor.spec.json",
+      "op_iszero.spec.json",
+      "op_not.spec.json"
+    ],
+    "arityShapePolicy": "Instruction streams are positional because byte offsets carry program order. Stack operators use Named slots so operand-stack pop order is represented directly; ADD is Named, not Set, because the EVM stack transition consumes operands in a fixed order even when a mathematical operator is commutative. PUSH immediates are Literal slots.",
+    "primitiveOperations": [
+      {
+        "name": "source-unit",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "bytes",
+              "slot_sort": "literal",
+              "evaluation": "unevaluated"
+            },
+            {
+              "name": "operational_term"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "program",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "code",
+              "shape": {
+                "kind": "positional",
+                "arity": "*"
+              }
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "push",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "width",
+              "slot_sort": "literal"
+            },
+            {
+              "name": "value",
+              "slot_sort": "literal"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:add",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "notes": "Named slots preserve operand-stack pop order. Reordering ADD children changes the transition path even though arithmetic addition is commutative.",
+        "effects": []
+      },
+      {
+        "name": "evm:mul",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:sub",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:div",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:mod",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:lt",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:gt",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:eq",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:and",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:or",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:xor",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:iszero",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "evm:not",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "pop",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "dup",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "depth",
+              "slot_sort": "literal"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "swap",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "depth",
+              "slot_sort": "literal"
+            },
+            {
+              "name": "top"
+            },
+            {
+              "name": "other"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "jumpdest",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "pc",
+              "slot_sort": "literal"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "stop",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "stack_top"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "return",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "offset"
+            },
+            {
+              "name": "size"
+            }
+          ]
+        },
+        "effects": [
+          "memory_read"
+        ],
+        "status": "declared-refused-by-initial-lifter"
+      },
+      {
+        "name": "sstore",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "key"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": [
+          "storage_write"
+        ],
+        "status": "declared-refused-by-initial-lifter"
+      },
+      {
+        "name": "jump",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target"
+            }
+          ]
+        },
+        "effects": [
+          "control_flow"
+        ],
+        "status": "declared-refused-by-initial-lifter"
+      }
+    ]
+  }
+}

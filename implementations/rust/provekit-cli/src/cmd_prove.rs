@@ -1152,7 +1152,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_kit_all_12_kits() {
+    fn resolve_kit_all_13_ci_kits() {
         let kits = [
             "rust",
             "go",
@@ -1160,6 +1160,7 @@ mod tests {
             "ts",
             "csharp",
             "clr-bytecode",
+            "evm-bytecode",
             "swift",
             "java",
             "python",
