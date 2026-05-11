@@ -1,0 +1,64 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ts:call",
+  "version": "0.1.0-draft",
+  "formals": [
+    "callee",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Args",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "call",
+    "arity": [
+      "Expr",
+      "Args"
+    ],
+    "result": "Expr",
+    "wp": "call callee with ordered arguments",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "callee"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Call"
+      }
+    ]
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#operations"
+}

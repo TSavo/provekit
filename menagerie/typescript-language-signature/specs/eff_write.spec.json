@@ -1,0 +1,51 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ts:effect:write",
+  "version": "0.1.0-draft",
+  "formals": [
+    "target"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "write-effect",
+    "arity": [
+      "String"
+    ],
+    "result": "Unit",
+    "wp": "record a write to target state cell",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Write"
+      }
+    ]
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#effects"
+}
