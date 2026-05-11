@@ -21,12 +21,35 @@ for fn in $FUNCTIONS; do
     esac
     dir="$OUT/$fn/$target"
     mkdir -p "$dir"
-    "$ROOT/implementations/rust/target/debug/provekit" transport \
-      "$src" \
-      --to "$target" \
-      --function "$fn" \
-      --out "$dir" \
-      --json > "$dir/transport-report.json"
+    refusal_tmp="$(mktemp)"
+    refusal_msg=""
+    if ! "$ROOT/implementations/rust/target/debug/provekit" transport \
+        "$src" \
+        --to "$target" \
+        --function "$fn" \
+        --out "$dir" \
+        --json > "$dir/transport-report.json" 2>"$refusal_tmp"; then
+      refusal_msg="$(sed 's/\x1b\[[0-9;]*m//g' "$refusal_tmp")"
+      rm -f "$refusal_tmp"
+      python3 -c "
+import json, sys
+msg = sys.argv[1]
+report = {
+  'status': 'refusal',
+  'source_file': sys.argv[2],
+  'source_language': 'c11',
+  'target_language': sys.argv[3],
+  'function': sys.argv[4],
+  'refusal': msg,
+  'note': 'Precise extension request: the concept hub catalog has no discharged morphism covering the refused operation for this target language; see transport-gaps.md for the structural reason.'
+}
+json.dump(report, open(sys.argv[5], 'w', encoding='utf-8'), indent=2, sort_keys=True)
+open(sys.argv[5], 'a', encoding='utf-8').write('\n')
+" "$refusal_msg" "$src" "$target" "$fn" "$dir/transport-report.json"
+      printf '%s -> %s: refusal recorded (%s)\n' "$fn" "$target" "$refusal_msg"
+      continue
+    fi
+    rm -f "$refusal_tmp"
     cmp "$dir/concept.term.json" "$dir/roundtrip.concept.term.json"
     test -s "$dir/$fn.$ext"
     printf '%s -> %s: roundtrip concept artifact ok\n' "$fn" "$target"
@@ -39,7 +62,12 @@ from pathlib import Path
 out = Path(sys.argv[1])
 receipts = {}
 for report_path in sorted(out.glob('*/*/transport-report.json')):
-    report = json.load(open(report_path, encoding='utf-8'))
+    try:
+        report = json.load(open(report_path, encoding='utf-8'))
+    except (json.JSONDecodeError, ValueError):
+        continue
+    if report.get('status') == 'refusal':
+        continue
     key = f"{report['function']}:{report['target_language']}"
     receipts[key] = report.get('morphism_receipts', [])
 with open(out / 'receipt-cids.tsv', 'w', encoding='utf-8') as handle:

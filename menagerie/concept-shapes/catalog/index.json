@@ -667,6 +667,12 @@
       "name": "concept:div",
       "path": "algorithms/concept:div.blake3-512:ddf03f20d356b1ce16fea85bb2245b54c4b8b42992c682bd8010a64a8a330489fede0837d2851958189acf60e2f2e390079026cc9dd14fb69cbb3d51288b2f97.json"
     },
+    "blake3-512:e0a732a14d9709dd74703b221141cd4e57358668ff4864d76323bc9e69a893c4f7bf6add688f6fc56aaefe5fee91253c16b2fd6b7554115122e4befb232978ba": {
+      "cid": "blake3-512:e0a732a14d9709dd74703b221141cd4e57358668ff4864d76323bc9e69a893c4f7bf6add688f6fc56aaefe5fee91253c16b2fd6b7554115122e4befb232978ba",
+      "kind": "algorithm",
+      "name": "morphism:java:seq:to:concept:seq",
+      "path": "algorithms/morphism:java:seq:to:concept:seq.blake3-512:e0a732a14d9709dd74703b221141cd4e57358668ff4864d76323bc9e69a893c4f7bf6add688f6fc56aaefe5fee91253c16b2fd6b7554115122e4befb232978ba.json"
+    },
     "blake3-512:e68b25f00ae93af1d21c2e81d5eeee2101b9b552cb1e10da8da8764a2a4987f8ff825ca2a4d7cbad0ad2fb2b5f084e663efdc6541c2fbe84babcb3b863ed8765": {
       "cid": "blake3-512:e68b25f00ae93af1d21c2e81d5eeee2101b9b552cb1e10da8da8764a2a4987f8ff825ca2a4d7cbad0ad2fb2b5f084e663efdc6541c2fbe84babcb3b863ed8765",
       "kind": "algorithm",

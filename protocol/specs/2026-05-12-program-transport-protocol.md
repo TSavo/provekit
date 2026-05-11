@@ -126,6 +126,8 @@ A program transport implementation MUST NOT infer operation equivalence from nam
 4. The equality covers `post.wp`, `post.arity_shape`, formal sorts, return sort, precondition, and effects in full.
 5. The `MorphismDischargeReceipt` records `discharged: true` and method `canonicalizer-alpha-equivalence-plus-representation-map`.
 
+The 12 idiom-shape morphisms retained from PR #604 (`menagerie/concept-shapes/specs/morphism_*_to_shape.spec.json`, whose sources are `menagerie/concept-shapes/sources/*.contract.json`) predate this protocol and use synthetic source contracts as a tracked pre-protocol exception, to be migrated to real lifter-emitted sources in a follow-up.
+
 A failed discharge is a gap, not a warning. The generator MUST record the gap with the structural mismatch reason and actual vs. expected values, and MUST NOT mint the morphism.
 
 ## §5: Round-trip closure
