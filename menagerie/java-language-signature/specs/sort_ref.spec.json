@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "java:Ref",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Ref",
+    "description": "Java object or array reference value."
+  }
+}

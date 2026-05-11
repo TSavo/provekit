@@ -11,7 +11,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
-import com.provekit.claimenvelope.Blake3;
+import com.provekit.ir.Blake3;
 import com.provekit.lift.ContractDecl;
 import com.provekit.lift.Extractor;
 import com.provekit.lift.provekitnative.ProvekitNativeExtractor;

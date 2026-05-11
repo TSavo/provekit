@@ -254,6 +254,10 @@ fn csharp_discover_cli_finds_null_boundary_with_language_lifter() {
         .arg("--nologo")
         .arg("--verbosity")
         .arg("quiet")
+        .arg("-p:UseSharedCompilation=false")
+        .arg("-p:BuildInParallel=false")
+        .arg("-m:1")
+        .arg("-nodeReuse:false")
         .current_dir(&root)
         .output()
         .expect("build csharp discover cli");

@@ -11,7 +11,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.provekit.claimenvelope.Jcs.Value;
+import com.provekit.ir.Jcs;
+import com.provekit.ir.Jcs.Value;
 
 /**
  * Unit tests mirroring implementations/rust/provekit-canonicalizer/src/jcs.rs.

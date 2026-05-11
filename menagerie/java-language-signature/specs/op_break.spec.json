@@ -1,0 +1,45 @@
+{
+  "kind": "algorithm",
+  "fn_name": "java:break",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "break",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Stmt",
+    "wp": "break current loop/switch",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/java-language-signature/README.md"
+}

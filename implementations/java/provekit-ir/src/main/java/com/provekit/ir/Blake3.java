@@ -7,7 +7,7 @@
 // Mirrors implementations/csharp/Provekit.Canonicalizer/Hash.cs and
 // implementations/rust/provekit-canonicalizer/src/hash.rs 1:1.
 
-package com.provekit.claimenvelope;
+package com.provekit.ir;
 
 import org.bouncycastle.crypto.digests.Blake3Digest;
 

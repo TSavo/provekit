@@ -2,7 +2,7 @@ package com.provekit.realize;
 
 import java.nio.charset.StandardCharsets;
 
-import com.provekit.claimenvelope.Blake3;
+import com.provekit.ir.Blake3;
 
 public record RealizerPlan(
     String kind,

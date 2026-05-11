@@ -19,7 +19,8 @@ import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.provekit.claimenvelope.Jcs.Value;
+import com.provekit.ir.Jcs;
+import com.provekit.ir.Jcs.Value;
 
 class CicpConformanceTest {
     private static final Path CICP_DIR = findCicpDir();

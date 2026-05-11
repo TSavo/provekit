@@ -94,7 +94,7 @@ public final class JavaKitInvariants {
 
         return new AuthoredSlab(
             "blake3",
-            "implementations/java/provekit-claim-envelope/src/main/java/com/provekit/claimenvelope/Blake3.java",
+            "implementations/java/provekit-ir/src/main/java/com/provekit/ir/Blake3.java",
             c.drain());
     }
 
@@ -245,7 +245,7 @@ public final class JavaKitInvariants {
 
         return new AuthoredSlab(
             "jcs",
-            "implementations/java/provekit-claim-envelope/src/main/java/com/provekit/claimenvelope/Jcs.java",
+            "implementations/java/provekit-ir/src/main/java/com/provekit/ir/Jcs.java",
             c.drain());
     }
 

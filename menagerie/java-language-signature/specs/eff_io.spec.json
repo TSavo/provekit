@@ -1,0 +1,50 @@
+{
+  "kind": "algorithm",
+  "fn_name": "java:effect:io",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "io-effect",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Unit",
+    "wp": "canonical io effect",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "IO"
+      }
+    ]
+  },
+  "locus": "menagerie/java-language-signature/README.md"
+}

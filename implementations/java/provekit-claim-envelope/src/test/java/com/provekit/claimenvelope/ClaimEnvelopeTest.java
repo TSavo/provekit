@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import com.provekit.claimenvelope.ClaimEnvelope.Authoring;
 import com.provekit.claimenvelope.ClaimEnvelope.MintContractArgs;
 import com.provekit.claimenvelope.ClaimEnvelope.MintedEnvelope;
-import com.provekit.claimenvelope.Jcs.Value;
+import com.provekit.ir.Jcs.Value;
 
 /**
  * Mirrors implementations/rust/provekit-claim-envelope/src/lib.rs unit tests.

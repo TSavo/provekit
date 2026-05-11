@@ -1,0 +1,51 @@
+{
+  "kind": "algorithm",
+  "fn_name": "java:effect:opaque_loop",
+  "formals": [
+    "loopCid"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "opaque-loop-effect",
+    "arity": [
+      "String"
+    ],
+    "result": "Unit",
+    "wp": "canonical opaque_loop effect loopCid",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "loopCid",
+          "slot_sort": "literal"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "OpaqueLoop"
+      }
+    ]
+  },
+  "locus": "menagerie/java-language-signature/README.md"
+}
