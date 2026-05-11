@@ -2,8 +2,8 @@
   "kind": "algorithm",
   "fn_name": "c11:generic-selection",
   "formals": [
-    "control",
-    "associations"
+    "controlling",
+    "branches"
   ],
   "formal_sorts": [
     {
@@ -34,6 +34,21 @@
       "Expr",
       "ListOfExpr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "controlling",
+          "evaluation": "unevaluated"
+        },
+        {
+          "name": "branches",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "C11 generic selection expression"
   },

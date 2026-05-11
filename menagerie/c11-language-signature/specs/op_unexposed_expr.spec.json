@@ -27,6 +27,14 @@
     "arity": [
       "ListOfExpr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "children"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "libclang unexposed expression with lifted child sequence"
   },

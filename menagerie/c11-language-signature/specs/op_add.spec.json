@@ -50,7 +50,18 @@
       "Int"
     ],
     "result": "Int",
-    "wp": "mathematical integer addition when no overflow holds"
+    "wp": "mathematical integer addition when no overflow holds",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

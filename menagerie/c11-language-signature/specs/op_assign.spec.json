@@ -35,7 +35,18 @@
       "Expr"
     ],
     "result": "Stmt",
-    "wp": "store value into target and update state"
+    "wp": "store value into target and update state",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

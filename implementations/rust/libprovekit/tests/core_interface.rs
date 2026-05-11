@@ -7,10 +7,10 @@ use libprovekit::compose::{
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, link, prove, transform, verify, CKit, Cid, DomainClaim, DomainKind,
-    FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
-    LiftPluginKit, Path, PathAlgebra, PathDocument, PathError, Refutation, Term, Truth, Verdict,
-    Witness,
+    address, compose, link, prove, transform, verify, ArityShape, AritySlot, CKit, Cid,
+    DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
+    InputCatalog, Kit, LanguageSignature, LiftPluginKit, Path, PathAlgebra, PathDocument,
+    PathError, Refutation, SlotSort, Term, Truth, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{IrFormula, IrTerm, Sort};
@@ -126,6 +126,132 @@ fn canonical_addresses_are_deterministic_for_core_shapes() {
     assert_eq!(address(&contract), address(&contract));
     assert_eq!(claim.cid(), claim.cid());
     assert!(claim.cid().as_str().starts_with("blake3-512:"));
+}
+
+#[test]
+fn language_signature_shape_drives_term_identity() {
+    let signature_cid = address(&"c11-signature");
+    let bop_add_cid = address(&"c11:bop_add");
+    let bop_logand_cid = address(&"c11:bop_logand");
+    let seq_cid = address(&"c11:seq");
+    let sizeof_cid = address(&"c11:sizeof_expr");
+    let sizeof_type_cid = address(&"c11:sizeof_type");
+
+    let signature = LanguageSignature::new(signature_cid.clone())
+        .with_operation("bop_add", bop_add_cid.clone(), ArityShape::set())
+        .with_operation(
+            "bop_logand",
+            bop_logand_cid.clone(),
+            ArityShape::named(["left", "right"]),
+        )
+        .with_operation("seq", seq_cid.clone(), ArityShape::positional(2))
+        .with_operation(
+            "sizeof_expr",
+            sizeof_cid.clone(),
+            ArityShape::named_slots([AritySlot::unevaluated("operand")]),
+        )
+        .with_operation(
+            "sizeof_type",
+            sizeof_type_cid.clone(),
+            ArityShape::named_slots([
+                AritySlot::unevaluated("operand").with_slot_sort(SlotSort::Type)
+            ]),
+        );
+
+    let a = Term::Var {
+        name: "a".to_string(),
+    };
+    let b = Term::Var {
+        name: "b".to_string(),
+    };
+
+    let add_ab = Term::Op {
+        op_cid: bop_add_cid.clone(),
+        name: "bop_add".to_string(),
+        args: vec![a.clone(), b.clone()],
+    };
+    let add_ba = Term::Op {
+        op_cid: bop_add_cid,
+        name: "bop_add".to_string(),
+        args: vec![b.clone(), a.clone()],
+    };
+    assert_eq!(
+        signature.term_cid(&add_ab).expect("shape-aware add cid"),
+        signature.term_cid(&add_ba).expect("shape-aware add cid"),
+        "Set-shaped C11 binary ops sort children by child CID"
+    );
+
+    let and_ab = Term::Op {
+        op_cid: bop_logand_cid.clone(),
+        name: "bop_logand".to_string(),
+        args: vec![a.clone(), b.clone()],
+    };
+    let and_ba = Term::Op {
+        op_cid: bop_logand_cid,
+        name: "bop_logand".to_string(),
+        args: vec![b.clone(), a.clone()],
+    };
+    assert_ne!(
+        signature.term_cid(&and_ab).expect("shape-aware and cid"),
+        signature.term_cid(&and_ba).expect("shape-aware and cid"),
+        "Named short-circuit slots carry left/right identity"
+    );
+
+    let seq_ab = Term::Op {
+        op_cid: seq_cid.clone(),
+        name: "seq".to_string(),
+        args: vec![a.clone(), b.clone()],
+    };
+    let seq_ba = Term::Op {
+        op_cid: seq_cid,
+        name: "seq".to_string(),
+        args: vec![b.clone(), a.clone()],
+    };
+    assert_ne!(
+        signature.term_cid(&seq_ab).expect("shape-aware seq cid"),
+        signature.term_cid(&seq_ba).expect("shape-aware seq cid"),
+        "Positional sequence order remains index-bearing"
+    );
+
+    let sizeof_a = Term::Op {
+        op_cid: sizeof_cid.clone(),
+        name: "sizeof_expr".to_string(),
+        args: vec![a.clone()],
+    };
+    let evaluated_sizeof_signature = LanguageSignature::new(signature_cid.clone()).with_operation(
+        "sizeof_expr",
+        sizeof_cid,
+        ArityShape::named(["operand"]),
+    );
+    assert_ne!(
+        signature
+            .term_cid(&sizeof_a)
+            .expect("unevaluated slot participates in the term cid"),
+        evaluated_sizeof_signature
+            .term_cid(&sizeof_a)
+            .expect("evaluated slot participates in the term cid"),
+        "slot evaluation is catalog data, not an operational side channel"
+    );
+
+    let sizeof_type_a = Term::Op {
+        op_cid: sizeof_type_cid.clone(),
+        name: "sizeof_type".to_string(),
+        args: vec![a.clone()],
+    };
+    let term_typed_sizeof_signature = LanguageSignature::new(signature_cid).with_operation(
+        "sizeof_type",
+        sizeof_type_cid,
+        ArityShape::named_slots([AritySlot::unevaluated("operand")]),
+    );
+    assert_ne!(
+        signature
+            .term_cid(&sizeof_type_a)
+            .expect("slot sort participates in the term cid"),
+        term_typed_sizeof_signature
+            .term_cid(&sizeof_type_a)
+            .expect("default term slot participates in the term cid"),
+        "slot sort is catalog data, not inferred from the handler"
+    );
 }
 
 #[test]

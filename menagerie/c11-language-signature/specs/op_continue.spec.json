@@ -28,7 +28,15 @@
       "Unit"
     ],
     "result": "Stmt",
-    "wp": "jump to next loop iteration"
+    "wp": "jump to next loop iteration",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

@@ -27,6 +27,15 @@
     "arity": [
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "control transfer to label target",
     "notes": "Projection is intentionally conservative."

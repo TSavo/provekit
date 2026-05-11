@@ -16,3 +16,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+
+[dev-dependencies]
+tempfile = "3"

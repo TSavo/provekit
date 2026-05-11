@@ -14,6 +14,7 @@ typedef struct {
     const char *op_name;
     const char *op_cid;
     int arity;
+    const char *arity_shape_json;
     const char *child_shape;
     const char *classification;
     const char *notes;

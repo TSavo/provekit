@@ -58,7 +58,15 @@
       "Ptr"
     ],
     "result": "LValue",
-    "wp": "lvalue at ptr"
+    "wp": "lvalue at ptr",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "ptr"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

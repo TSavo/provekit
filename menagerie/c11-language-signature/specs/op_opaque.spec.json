@@ -27,6 +27,14 @@
     "arity": [
       "Unit"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "stable placeholder for non-lifted or intentionally opaque cursor kinds",
     "notes": "Serializer stubs this operation unless a literal source payload is supplied."

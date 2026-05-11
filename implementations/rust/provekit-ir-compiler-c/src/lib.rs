@@ -138,6 +138,7 @@ impl Emitter {
     }
 
     fn emit_stmt(&mut self, term: &Json, indent: usize) -> Result<(), CompileError> {
+        let term = operational_term(term)?;
         match term_kind(term)? {
             "unit" => {
                 self.line(indent, ";");
@@ -237,6 +238,7 @@ impl Emitter {
 }
 
 fn emit_expr(term: &Json) -> Result<String, CompileError> {
+    let term = operational_term(term)?;
     match term_kind(term)? {
         "var" => c_identifier(var_name(term)?).map(str::to_string),
         "const" => const_literal(term),
@@ -244,25 +246,50 @@ fn emit_expr(term: &Json) -> Result<String, CompileError> {
             let name = op_name(term)?;
             let args = op_args(term)?;
             match name {
-                "eq" => emit_binary(args, "=="),
-                "lt" => emit_binary(args, "<"),
-                "le" => emit_binary(args, "<="),
-                "add" => emit_binary(args, "+"),
-                "sub" => emit_binary(args, "-"),
-                "mul" => emit_binary(args, "*"),
-                "and" => emit_binary(args, "&&"),
-                "or" => emit_binary(args, "||"),
-                "neg" => {
+                "eq" | "bop_eq" => emit_binary(args, "=="),
+                "bop_ne" => emit_binary(args, "!="),
+                "lt" | "bop_lt" => emit_binary(args, "<"),
+                "le" | "bop_le" => emit_binary(args, "<="),
+                "bop_gt" => emit_binary(args, ">"),
+                "bop_ge" => emit_binary(args, ">="),
+                "add" | "bop_add" => emit_binary(args, "+"),
+                "sub" | "bop_sub" => emit_binary(args, "-"),
+                "mul" | "bop_mul" => emit_binary(args, "*"),
+                "bop_div" => emit_binary(args, "/"),
+                "bop_mod" => emit_binary(args, "%"),
+                "bop_shl" => emit_binary(args, "<<"),
+                "bop_shr" => emit_binary(args, ">>"),
+                "bop_bitand" => emit_binary(args, "&"),
+                "bop_bitor" => emit_binary(args, "|"),
+                "bop_bitxor" => emit_binary(args, "^"),
+                "and" | "bop_logand" => emit_binary(args, "&&"),
+                "or" | "bop_logor" => emit_binary(args, "||"),
+                "bop_comma" => emit_binary(args, ","),
+                "neg" | "uop_neg" => {
                     expect_arity(name, args, 1)?;
                     Ok(format!("(-{})", operand(&emit_expr(&args[0])?)))
                 }
-                "not" => {
+                "not" | "uop_lognot" => {
                     expect_arity(name, args, 1)?;
                     Ok(format!("(!{})", operand(&emit_expr(&args[0])?)))
                 }
-                "deref" => {
+                "uop_bitnot" => {
+                    expect_arity(name, args, 1)?;
+                    Ok(format!("(~{})", operand(&emit_expr(&args[0])?)))
+                }
+                "uop_plus" => {
+                    expect_arity(name, args, 1)?;
+                    Ok(format!("(+{})", operand(&emit_expr(&args[0])?)))
+                }
+                "deref" | "uop_deref" => {
                     expect_arity(name, args, 1)?;
                     Ok(format!("(*{})", operand(&emit_expr(&args[0])?)))
+                }
+                "cast" => {
+                    expect_arity(name, args, 2)?;
+                    let target_type = emit_type(&args[0])?;
+                    let value = emit_expr(&args[1])?;
+                    Ok(format!("(({target_type}){})", operand(&value)))
                 }
                 "assign" => {
                     expect_arity(name, args, 2)?;
@@ -314,9 +341,10 @@ fn emit_condition(term: &Json) -> Result<String, CompileError> {
 }
 
 fn emit_lvalue(term: &Json) -> Result<String, CompileError> {
+    let term = operational_term(term)?;
     match term_kind(term)? {
         "var" => c_identifier(var_name(term)?).map(str::to_string),
-        "op" if op_name(term)? == "deref" => {
+        "op" if matches!(op_name(term)?, "deref" | "uop_deref") => {
             let args = op_args(term)?;
             expect_arity("deref", args, 1)?;
             Ok(format!("*({})", emit_expr(&args[0])?))
@@ -341,12 +369,21 @@ fn emit_call(term: &Json) -> Result<String, CompileError> {
 }
 
 fn collect_vars(term: &Json, vars: &mut VarSets) -> Result<(), CompileError> {
+    let term = operational_term(term)?;
     match term_kind(term)? {
         "var" => push_unique(&mut vars.params, c_identifier(var_name(term)?)?),
         "const" | "unit" => {}
         "op" => {
             let name = op_name(term)?;
             let args = op_args(term)?;
+            if is_boundary_op(name) {
+                return Ok(());
+            }
+            if name == "cast" {
+                expect_arity(name, args, 2)?;
+                collect_vars(&args[1], vars)?;
+                return Ok(());
+            }
             if name == "call" {
                 for arg in call_arguments(args)? {
                     collect_vars(arg, vars)?;
@@ -378,17 +415,23 @@ fn collect_vars(term: &Json, vars: &mut VarSets) -> Result<(), CompileError> {
 }
 
 fn term_payload(input: &Json) -> Result<&Json, CompileError> {
-    match input.get("kind").and_then(Json::as_str) {
+    let term = match input.get("kind").and_then(Json::as_str) {
         Some("c11-algebra-term") => input
             .get("term")
             .ok_or_else(|| malformed("c11 algebra term envelope missing term")),
         _ => Ok(input),
-    }
+    }?;
+    operational_term(term)
 }
 
 fn function_name(input: &Json) -> String {
-    for key in ["function", "function_name", "fn_name", "name"] {
+    for key in ["function", "function_name", "fn_name"] {
         if let Some(name) = input.get(key).and_then(Json::as_str) {
+            return sanitize_symbol(name);
+        }
+    }
+    if !is_term_node(input) {
+        if let Some(name) = input.get("name").and_then(Json::as_str) {
             return sanitize_symbol(name);
         }
     }
@@ -398,6 +441,13 @@ fn function_name(input: &Json) -> String {
         }
     }
     "proofir_term".to_string()
+}
+
+fn is_term_node(input: &Json) -> bool {
+    matches!(
+        input.get("kind").and_then(Json::as_str),
+        Some("op" | "var" | "const" | "unit" | "ctor" | "literal" | "bytes")
+    )
 }
 
 fn sanitize_symbol(raw: &str) -> String {
@@ -481,6 +531,7 @@ fn const_literal(term: &Json) -> Result<String, CompileError> {
 }
 
 fn is_statement_term(term: &Json) -> bool {
+    let term = operational_term(term).unwrap_or(term);
     term.get("kind")
         .and_then(Json::as_str)
         .is_some_and(|kind| match kind {
@@ -515,17 +566,43 @@ fn is_expr_op(name: &str) -> bool {
             | "add"
             | "sub"
             | "mul"
+            | "bop_eq"
+            | "bop_ne"
+            | "bop_lt"
+            | "bop_le"
+            | "bop_gt"
+            | "bop_ge"
+            | "bop_add"
+            | "bop_sub"
+            | "bop_mul"
+            | "bop_div"
+            | "bop_mod"
+            | "bop_shl"
+            | "bop_shr"
+            | "bop_bitand"
+            | "bop_bitor"
+            | "bop_bitxor"
+            | "bop_logand"
+            | "bop_logor"
+            | "bop_comma"
+            | "uop_neg"
+            | "uop_lognot"
+            | "uop_deref"
+            | "uop_bitnot"
+            | "uop_plus"
             | "neg"
             | "and"
             | "or"
             | "not"
             | "deref"
+            | "cast"
             | "call"
             | "if"
     )
 }
 
 fn stmt_always_returns(term: &Json) -> bool {
+    let term = operational_term(term).unwrap_or(term);
     match term.get("kind").and_then(Json::as_str) {
         Some("op") => match term.get("name").and_then(Json::as_str) {
             Some("return") => true,
@@ -609,6 +686,50 @@ fn c_identifier(raw: &str) -> Result<&str, CompileError> {
         return Err(malformed(format!("unsupported C identifier: {raw}")));
     }
     Ok(raw)
+}
+
+fn emit_type(term: &Json) -> Result<String, CompileError> {
+    match term_kind(term)? {
+        "var" => c_type_spelling(var_name(term)?).map(str::to_string),
+        "const" | "literal" => term
+            .get("value")
+            .and_then(Json::as_str)
+            .ok_or_else(|| malformed("type literal must be a string"))
+            .and_then(|spelling| c_type_spelling(spelling).map(str::to_string)),
+        other => Err(malformed(format!(
+            "unsupported cast target type kind: {other}"
+        ))),
+    }
+}
+
+fn c_type_spelling(raw: &str) -> Result<&str, CompileError> {
+    if raw.is_empty() {
+        return Err(malformed("empty type spelling"));
+    }
+    if raw.chars().all(|ch| {
+        ch.is_ascii_alphanumeric()
+            || ch.is_ascii_whitespace()
+            || matches!(ch, '_' | '*' | '[' | ']')
+    }) {
+        Ok(raw)
+    } else {
+        Err(malformed(format!("unsupported C type spelling: {raw}")))
+    }
+}
+
+fn is_boundary_op(name: &str) -> bool {
+    matches!(name, "asm-link-edge")
+}
+
+fn operational_term(term: &Json) -> Result<&Json, CompileError> {
+    if term.get("kind").and_then(Json::as_str) == Some("op")
+        && term.get("name").and_then(Json::as_str) == Some("source-unit")
+    {
+        let args = op_args(term)?;
+        expect_arity("source-unit", args, 2)?;
+        return Ok(&args[1]);
+    }
+    Ok(term)
 }
 
 fn push_unique(vec: &mut Vec<String>, name: &str) {

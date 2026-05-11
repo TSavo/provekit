@@ -27,6 +27,14 @@
     "arity": [
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "compound literal expression payload"
   },

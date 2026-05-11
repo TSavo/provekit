@@ -100,8 +100,61 @@ EFFECT_OPS = [
 ]
 
 
+def positional(arity: int) -> dict:
+    return {"kind": "positional", "arity": arity}
+
+
+def slot(
+    name: str,
+    evaluation: str = "evaluated",
+    shape: dict | None = None,
+    slot_sort: str = "term",
+) -> dict:
+    value = {"name": name}
+    if evaluation != "evaluated":
+        value["evaluation"] = evaluation
+    if slot_sort != "term":
+        value["slot_sort"] = slot_sort
+    if shape is not None:
+        value["shape"] = shape
+    return value
+
+
+def unevaluated(name: str, shape: dict | None = None, slot_sort: str = "term") -> dict:
+    return slot(name, "unevaluated", shape, slot_sort)
+
+
+def named(*slots: str) -> dict:
+    return {"kind": "named", "slots": [slot(name) for name in slots]}
+
+
+def named_slots(*slots: dict) -> dict:
+    return {"kind": "named", "slots": list(slots)}
+
+
+def set_shape(member_sort: str = "term") -> dict:
+    value = {"kind": "set"}
+    if member_sort != "term":
+        value["member_sort"] = member_sort
+    return value
+
+
 MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
     [
+        (
+            "source-unit",
+            {
+                "formals": ["bytes", "operational_term"],
+                "formal_sorts": ["Expr", "Stmt"],
+                "return_sort": "Stmt",
+                "wp": "lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+                "arity_shape": named_slots(
+                    unevaluated("bytes", slot_sort="literal"),
+                    slot("operational_term"),
+                ),
+                "notes": "The bytes slot is a binary literal; project_effects descends to operational_term.",
+            },
+        ),
         (
             "opaque",
             {
@@ -119,6 +172,10 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
                 "formal_sorts": ["Expr", "Expr"],
                 "return_sort": "Stmt",
                 "wp": "bind local name to initializer before continuing",
+                "arity_shape": named_slots(
+                    slot("name", slot_sort="identifier"),
+                    slot("initializer"),
+                ),
             },
         ),
         (
@@ -146,6 +203,7 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
                 "formal_sorts": ["Expr", "Stmt"],
                 "return_sort": "Stmt",
                 "wp": "statement label with body",
+                "arity_shape": named_slots(slot("name", slot_sort="identifier"), slot("body")),
             },
         ),
         (
@@ -156,6 +214,7 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
                 "return_sort": "Stmt",
                 "wp": "control transfer to label target",
                 "notes": "Projection is intentionally conservative.",
+                "arity_shape": named_slots(slot("target", slot_sort="identifier")),
             },
         ),
         (
@@ -170,10 +229,11 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
         (
             "cast",
             {
-                "formals": ["value"],
-                "formal_sorts": ["Expr"],
+                "formals": ["target_type", "value"],
+                "formal_sorts": ["Expr", "Expr"],
                 "return_sort": "Expr",
-                "wp": "C cast expression preserving lifted child value",
+                "wp": "C cast expression preserving explicit target type and lifted child value",
+                "arity_shape": named_slots(slot("target_type", slot_sort="type"), slot("value")),
             },
         ),
         (
@@ -262,12 +322,112 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
             },
         ),
         (
+            "sizeof_expr",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Int",
+                "wp": "C sizeof expression; operand is structurally present but unevaluated except for VLA semantics",
+                "arity_shape": named_slots(unevaluated("operand")),
+            },
+        ),
+        (
+            "sizeof_type",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Int",
+                "wp": "C sizeof type form; type operand is unevaluated",
+                "arity_shape": named_slots(unevaluated("operand", slot_sort="type")),
+            },
+        ),
+        (
+            "alignof_expr",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Int",
+                "wp": "C alignment query over expression type; operand is unevaluated",
+                "arity_shape": named_slots(unevaluated("operand")),
+            },
+        ),
+        (
+            "alignof_type",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Int",
+                "wp": "C alignment query over type operand",
+                "arity_shape": named_slots(unevaluated("operand", slot_sort="type")),
+            },
+        ),
+        (
+            "typeof_expr",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Expr",
+                "wp": "GNU typeof expression form; operand is type-read and unevaluated",
+                "arity_shape": named_slots(unevaluated("operand")),
+            },
+        ),
+        (
+            "typeof_type",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Expr",
+                "wp": "GNU typeof type form",
+                "arity_shape": named_slots(unevaluated("operand", slot_sort="type")),
+            },
+        ),
+        (
+            "offsetof",
+            {
+                "formals": ["type", "designator"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Int",
+                "wp": "C offsetof query; type and designator are unevaluated structural operands",
+                "arity_shape": named_slots(
+                    unevaluated("type", slot_sort="type"),
+                    unevaluated("designator", slot_sort="identifier"),
+                ),
+            },
+        ),
+        (
+            "builtin_types_compatible_p",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "GNU __builtin_types_compatible_p over unevaluated type operands",
+                "arity_shape": named_slots(
+                    unevaluated("lhs", slot_sort="type"),
+                    unevaluated("rhs", slot_sort="type"),
+                ),
+            },
+        ),
+        (
+            "builtin_choose_expr",
+            {
+                "formals": ["controlling", "then_expr", "else_expr"],
+                "formal_sorts": ["Bool", "Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "GNU __builtin_choose_expr; controlling expression is evaluated at compile time and the selected branch is reachable",
+                "arity_shape": named("controlling", "then_expr", "else_expr"),
+            },
+        ),
+        (
             "generic-selection",
             {
-                "formals": ["control", "associations"],
+                "formals": ["controlling", "branches"],
                 "formal_sorts": ["Expr", "ListOfExpr"],
                 "return_sort": "Expr",
                 "wp": "C11 generic selection expression",
+                "arity_shape": named_slots(
+                    unevaluated("controlling"),
+                    slot("branches", shape=set_shape()),
+                ),
             },
         ),
         (
@@ -286,6 +446,56 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
                 "formal_sorts": ["Expr"],
                 "return_sort": "Expr",
                 "wp": "GNU address-of-label expression",
+                "arity_shape": named_slots(slot("label", slot_sort="identifier")),
+            },
+        ),
+        (
+            "asm-link-edge",
+            {
+                "formals": [
+                    "path_cid",
+                    "assembly_cid",
+                    "target_surface",
+                    "target_lifter",
+                    "target_symbol",
+                    "dialect",
+                    "template",
+                    "assembly_source",
+                    "outputs",
+                    "inputs",
+                    "clobbers",
+                ],
+                "formal_sorts": [
+                    "Expr",
+                    "Expr",
+                    "Expr",
+                    "Expr",
+                    "Expr",
+                    "Expr",
+                    "Expr",
+                    "Expr",
+                    "ListOfExpr",
+                    "ListOfExpr",
+                    "ListOfExpr",
+                ],
+                "return_sort": "Stmt",
+                "wp": "inline assembly link edge; the C term names an assembly input and the linker composes it with the x86-64 lifter result",
+                "linkage": "link-edge",
+                "target_surface": "x86-64:sysv",
+                "target_lifter": "provekit-lift-asm-x86-64",
+                "arity_shape": named_slots(
+                    slot("path_cid", slot_sort="identifier"),
+                    slot("assembly_cid", slot_sort="identifier"),
+                    slot("target_surface", slot_sort="identifier"),
+                    slot("target_lifter", slot_sort="identifier"),
+                    slot("target_symbol", slot_sort="identifier"),
+                    slot("dialect", slot_sort="identifier"),
+                    slot("template", slot_sort="literal"),
+                    slot("assembly_source", slot_sort="literal"),
+                    slot("outputs", shape=set_shape()),
+                    slot("inputs", shape=set_shape()),
+                    slot("clobbers", shape=set_shape("identifier")),
+                ),
             },
         ),
         (
@@ -491,6 +701,324 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
     ]
 )
 
+OPERATOR_OPS: OrderedDict[str, dict] = OrderedDict(
+    [
+        (
+            "bop_add",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary + expression; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_sub",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary - expression with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_mul",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary * expression; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_div",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary / expression with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_mod",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary % expression with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_shl",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary << expression with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_shr",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary >> expression with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_bitand",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary & expression; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_bitor",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary | expression; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_bitxor",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C binary ^ expression; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_eq",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "C binary == comparison; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_ne",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "C binary != comparison; operand evaluation order is not sequenced",
+                "arity_shape": set_shape(),
+            },
+        ),
+        (
+            "bop_lt",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "C binary < comparison with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_le",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "C binary <= comparison with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_gt",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "C binary > comparison with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_ge",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Bool",
+                "wp": "C binary >= comparison with ordered operand roles",
+                "arity_shape": named("lhs", "rhs"),
+            },
+        ),
+        (
+            "bop_logand",
+            {
+                "formals": ["left", "right"],
+                "formal_sorts": ["Bool", "Bool"],
+                "return_sort": "Bool",
+                "wp": "C && short-circuit expression; left is evaluated before right",
+                "arity_shape": named("left", "right"),
+            },
+        ),
+        (
+            "bop_logor",
+            {
+                "formals": ["left", "right"],
+                "formal_sorts": ["Bool", "Bool"],
+                "return_sort": "Bool",
+                "wp": "C || short-circuit expression; left is evaluated before right",
+                "arity_shape": named("left", "right"),
+            },
+        ),
+        (
+            "bop_comma",
+            {
+                "formals": ["first", "second"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "C comma expression sequence-points first before second",
+                "arity_shape": named("first", "second"),
+            },
+        ),
+        (
+            "uop_neg",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Expr",
+                "wp": "C unary - expression",
+                "arity_shape": named("operand"),
+            },
+        ),
+        (
+            "uop_lognot",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Bool",
+                "wp": "C unary ! expression",
+                "arity_shape": named("operand"),
+            },
+        ),
+        (
+            "uop_deref",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "LValue",
+                "wp": "C unary * dereference expression",
+                "arity_shape": named("operand"),
+            },
+        ),
+        (
+            "uop_bitnot",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Expr",
+                "wp": "C unary ~ expression",
+                "arity_shape": named("operand"),
+            },
+        ),
+        (
+            "uop_addr_of",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Ptr",
+                "wp": "C unary & address-of expression",
+                "arity_shape": named("operand"),
+            },
+        ),
+        (
+            "uop_pre_inc",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "C prefix increment sequence-pointed update",
+                "arity_shape": named("target"),
+            },
+        ),
+        (
+            "uop_post_inc",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "C postfix increment sequence-pointed update",
+                "arity_shape": named("target"),
+            },
+        ),
+        (
+            "uop_pre_dec",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "C prefix decrement sequence-pointed update",
+                "arity_shape": named("target"),
+            },
+        ),
+        (
+            "uop_post_dec",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "C postfix decrement sequence-pointed update",
+                "arity_shape": named("target"),
+            },
+        ),
+        (
+            "uop_plus",
+            {
+                "formals": ["operand"],
+                "formal_sorts": ["Expr"],
+                "return_sort": "Expr",
+                "wp": "C unary + expression",
+                "arity_shape": named("operand"),
+            },
+        ),
+    ]
+)
+
+COMPOUND_ASSIGN_OPS = [
+    ("add", "+", "bop_add"),
+    ("sub", "-", "bop_sub"),
+    ("mul", "*", "bop_mul"),
+    ("div", "/", "bop_div"),
+    ("mod", "%", "bop_mod"),
+    ("shl", "<<", "bop_shl"),
+    ("shr", ">>", "bop_shr"),
+    ("bitand", "&", "bop_bitand"),
+    ("bitor", "|", "bop_bitor"),
+    ("bitxor", "^", "bop_bitxor"),
+]
+
+for suffix, symbol, combiner in COMPOUND_ASSIGN_OPS:
+    OPERATOR_OPS[f"compound_assign_{suffix}"] = {
+        "formals": ["lvalue", "rvalue"],
+        "formal_sorts": ["LValue", "Expr"],
+        "return_sort": "Expr",
+        "wp": f"C compound assignment {symbol}= expression; the lvalue is evaluated once and the implied combiner is {combiner}",
+        "arity_shape": named("lvalue", "rvalue"),
+        "notes": f"This op is not assign(lvalue, {combiner}(lvalue, rvalue)); C evaluates the lvalue once.",
+    }
+
 SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
     [
         ("skip", ";"),
@@ -534,6 +1062,37 @@ SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
         ("pre_dec", "(--<value>)"),
         ("post_dec", "(<value>--)"),
         ("plus", "(+<value>)"),
+        ("bop_add", "(<lhs> + <rhs>)"),
+        ("bop_sub", "(<lhs> - <rhs>)"),
+        ("bop_mul", "(<lhs> * <rhs>)"),
+        ("bop_div", "(<lhs> / <rhs>)"),
+        ("bop_mod", "(<lhs> % <rhs>)"),
+        ("bop_shl", "(<lhs> << <rhs>)"),
+        ("bop_shr", "(<lhs> >> <rhs>)"),
+        ("bop_bitand", "(<lhs> & <rhs>)"),
+        ("bop_bitor", "(<lhs> | <rhs>)"),
+        ("bop_bitxor", "(<lhs> ^ <rhs>)"),
+        ("bop_eq", "(<lhs> == <rhs>)"),
+        ("bop_ne", "(<lhs> != <rhs>)"),
+        ("bop_lt", "(<lhs> < <rhs>)"),
+        ("bop_le", "(<lhs> <= <rhs>)"),
+        ("bop_gt", "(<lhs> > <rhs>)"),
+        ("bop_ge", "(<lhs> >= <rhs>)"),
+        ("bop_logand", "(<left> && <right>)"),
+        ("bop_logor", "(<left> || <right>)"),
+        ("bop_comma", "(<first>, <second>)"),
+        ("uop_neg", "(-<operand>)"),
+        ("uop_lognot", "(!<operand>)"),
+        ("uop_deref", "(*<operand>)"),
+        ("uop_bitnot", "(~<operand>)"),
+        ("uop_addr_of", "(&<operand>)"),
+        ("uop_pre_inc", "(++<target>)"),
+        ("uop_post_inc", "(<target>++)"),
+        ("uop_pre_dec", "(--<target>)"),
+        ("uop_post_dec", "(<target>--)"),
+        ("uop_plus", "(+<operand>)"),
+        ("source-unit", "<source_bytes_hex>"),
+        ("asm-link-edge", "__asm__ volatile(<template> : <outputs...> : <inputs...> : <clobbers...>)"),
         ("opaque", "/* opaque */"),
         ("decl", "int <name> = <initializer>;"),
         ("case", "case <value>: <body>"),
@@ -541,7 +1100,7 @@ SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
         ("label", "<name>: <body>"),
         ("goto", "goto <target>;"),
         ("do", "do { <body> } while (<cond>);"),
-        ("cast", "((int)<value>)"),
+        ("cast", "((<target_type>)<value>)"),
         ("array-subscript", "<base>[<index>]"),
         ("conditional", "(<cond> ? <then_expr> : <else_expr>)"),
         ("compound-literal", "((int){<value>})"),
@@ -551,6 +1110,15 @@ SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
         ("float-literal", "1.5"),
         ("imaginary-literal", "1.0i"),
         ("null", "0"),
+        ("sizeof_expr", "sizeof(<operand>)"),
+        ("sizeof_type", "sizeof(<type>)"),
+        ("alignof_expr", "_Alignof(<operand>)"),
+        ("alignof_type", "_Alignof(<type>)"),
+        ("typeof_expr", "typeof(<operand>)"),
+        ("typeof_type", "typeof(<type>)"),
+        ("offsetof", "offsetof(<type>, <designator>)"),
+        ("builtin_types_compatible_p", "__builtin_types_compatible_p(<lhs>, <rhs>)"),
+        ("builtin_choose_expr", "__builtin_choose_expr(<controlling>, <then_expr>, <else_expr>)"),
         ("generic-selection", "_Generic(<control>, <associations...>)"),
         ("stmt-expr", "({ <body> })"),
         ("addr-label", "&&<label>"),
@@ -560,6 +1128,9 @@ SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
         ("unary-operator", "(~<value>)"),
     ]
 )
+
+for suffix, symbol, _combiner in COMPOUND_ASSIGN_OPS:
+    SERIALIZER_TEMPLATES[f"compound_assign_{suffix}"] = f"(<lvalue> {symbol}= <rvalue>)"
 
 
 CORE_CURSOR_MAP = {
@@ -583,56 +1154,56 @@ LEAF_CURSOR_MAP = {
 
 BINARY_OPERATOR_TOKENS: OrderedDict[str, str] = OrderedDict(
     [
-        ("==", "eq"),
-        ("!=", "ne"),
-        ("&&", "and"),
-        ("||", "or"),
-        ("<=", "le"),
-        (">=", "ge"),
-        ("<<", "shl"),
-        (">>", "shr"),
-        ("<", "lt"),
-        (">", "gt"),
+        ("==", "bop_eq"),
+        ("!=", "bop_ne"),
+        ("&&", "bop_logand"),
+        ("||", "bop_logor"),
+        ("<=", "bop_le"),
+        (">=", "bop_ge"),
+        ("<<", "bop_shl"),
+        (">>", "bop_shr"),
+        ("<", "bop_lt"),
+        (">", "bop_gt"),
         ("=", "assign"),
-        ("+", "add"),
-        ("-", "sub"),
-        ("*", "mul"),
-        ("/", "div"),
-        ("%", "mod"),
-        ("&", "bit_and"),
-        ("|", "bit_or"),
-        ("^", "bit_xor"),
-        (",", "comma"),
+        ("+", "bop_add"),
+        ("-", "bop_sub"),
+        ("*", "bop_mul"),
+        ("/", "bop_div"),
+        ("%", "bop_mod"),
+        ("&", "bop_bitand"),
+        ("|", "bop_bitor"),
+        ("^", "bop_bitxor"),
+        (",", "bop_comma"),
     ]
 )
 
 COMPOUND_ASSIGN_OPERATOR_TOKENS: OrderedDict[str, str] = OrderedDict(
     [
-        ("+=", "add"),
-        ("-=", "sub"),
-        ("*=", "mul"),
-        ("/=", "div"),
-        ("%=", "mod"),
-        ("<<=", "shl"),
-        (">>=", "shr"),
-        ("&=", "bit_and"),
-        ("|=", "bit_or"),
-        ("^=", "bit_xor"),
+        ("+=", "compound_assign_add"),
+        ("-=", "compound_assign_sub"),
+        ("*=", "compound_assign_mul"),
+        ("/=", "compound_assign_div"),
+        ("%=", "compound_assign_mod"),
+        ("<<=", "compound_assign_shl"),
+        (">>=", "compound_assign_shr"),
+        ("&=", "compound_assign_bitand"),
+        ("|=", "compound_assign_bitor"),
+        ("^=", "compound_assign_bitxor"),
     ]
 )
 
 UNARY_OPERATOR_TOKENS: OrderedDict[str, str] = OrderedDict(
     [
-        ("-", "neg"),
-        ("!", "not"),
-        ("*", "deref"),
-        ("~", "bit_not"),
-        ("&", "addr_of"),
-        ("prefix ++", "pre_inc"),
-        ("postfix ++", "post_inc"),
-        ("prefix --", "pre_dec"),
-        ("postfix --", "post_dec"),
-        ("+", "plus"),
+        ("-", "uop_neg"),
+        ("!", "uop_lognot"),
+        ("*", "uop_deref"),
+        ("~", "uop_bitnot"),
+        ("&", "uop_addr_of"),
+        ("prefix ++", "uop_pre_inc"),
+        ("postfix ++", "uop_post_inc"),
+        ("prefix --", "uop_pre_dec"),
+        ("postfix --", "uop_post_dec"),
+        ("+", "uop_plus"),
     ]
 )
 
@@ -647,7 +1218,7 @@ DISPATCH_CURSOR_MAP = {
     "CXCursor_CompoundAssignOperator": {
         "op_name": "operator-dispatch",
         "arity": 2,
-        "child_shape": "lhs, rhs; token text desugars to assign(lhs, op(lhs, rhs)) or fallback binary-operator",
+        "child_shape": "lvalue, rvalue; token text selects a concrete compound assignment op",
         "token_ops": COMPOUND_ASSIGN_OPERATOR_TOKENS,
         "fallback": "binary-operator",
     },
@@ -668,8 +1239,23 @@ MINTED_CURSOR_MAP = {
     "CXCursor_LabelStmt": ("label", 2, "label name, body"),
     "CXCursor_GotoStmt": ("goto", 1, "label target"),
     "CXCursor_IndirectGotoStmt": ("goto", 1, "computed label target"),
+    "CXCursor_GCCAsmStmt": (
+        "asm-link-edge",
+        11,
+        "path CID, assembly CID, target surface, target lifter, target symbol, dialect, template, assembly source, outputs, inputs, clobbers",
+    ),
+    "CXCursor_AsmStmt": (
+        "asm-link-edge",
+        11,
+        "path CID, assembly CID, target surface, target lifter, target symbol, dialect, template, assembly source, outputs, inputs, clobbers",
+    ),
+    "CXCursor_MSAsmStmt": (
+        "asm-link-edge",
+        11,
+        "path CID, assembly CID, target surface, target lifter, target symbol, dialect, template, assembly source, outputs, inputs, clobbers",
+    ),
     "CXCursor_DoStmt": ("do", 2, "body, condition"),
-    "CXCursor_CStyleCastExpr": ("cast", 1, "cast child expression"),
+    "CXCursor_CStyleCastExpr": ("cast", 2, "target type, cast child expression"),
     "CXCursor_ArraySubscriptExpr": ("array-subscript", 2, "base, index"),
     "CXCursor_ConditionalOperator": ("conditional", 3, "condition, then expression, else expression"),
     "CXCursor_CompoundLiteralExpr": ("compound-literal", 1, "initializer payload"),
@@ -747,6 +1333,56 @@ OPAQUE_EXACT = {
     "CXCursor_MacroExpansion",
     "CXCursor_InclusionDirective",
 }
+
+
+CORE_ARITY_SHAPES = {
+    "skip": named("unit"),
+    "seq": positional(2),
+    "if": named("cond", "then_branch", "else_branch"),
+    "while": named("cond", "body"),
+    "for": named("init", "cond", "step", "body"),
+    "switch": named("scrutinee", "arms"),
+    "call": named_slots(slot("callee"), slot("args", shape=set_shape())),
+    "return": named("value"),
+    "break": named("unit"),
+    "continue": named("unit"),
+    "deref": named("ptr"),
+    "member": named_slots(slot("base"), slot("field", slot_sort="identifier")),
+    "add": named("lhs", "rhs"),
+    "sub": named("lhs", "rhs"),
+    "mul": named("lhs", "rhs"),
+    "eq": named("lhs", "rhs"),
+    "lt": named("lhs", "rhs"),
+    "le": named("lhs", "rhs"),
+    "and": named("left", "right"),
+    "or": named("left", "right"),
+    "not": named("value"),
+    "assign": named("lvalue", "rvalue"),
+    "neg": named("value"),
+}
+
+
+def arity_shape_for_operation(name: str) -> dict:
+    if name in CORE_ARITY_SHAPES:
+        return CORE_ARITY_SHAPES[name]
+    if name in OPERATOR_OPS:
+        return OPERATOR_OPS[name]["arity_shape"]
+    if name in MINTED_OPS:
+        cfg = MINTED_OPS[name]
+        return cfg.get("arity_shape", named(*cfg["formals"]))
+    if name.startswith("effect:"):
+        return named("effect_input")
+    return named("children")
+
+
+def all_operation_specs() -> list[str]:
+    return CORE_OPS + [
+        spec_filename_for_op(name) for name in list(MINTED_OPS) + list(OPERATOR_OPS)
+    ]
+
+
+def all_operation_names() -> list[str]:
+    return [op_name_for_spec(spec) for spec in CORE_OPS] + list(MINTED_OPS) + list(OPERATOR_OPS)
 
 
 def find_cursor_snapshot(explicit: str | None) -> Path:
@@ -857,14 +1493,30 @@ def true_formula() -> dict:
     return {"kind": "atomic", "name": "true", "args": []}
 
 
-def operation_post(name: str, arity: list[str], result: str, wp: str, notes: str | None = None) -> dict:
+def operation_post(
+    name: str,
+    arity: list[str],
+    result: str,
+    wp: str,
+    arity_shape: dict,
+    notes: str | None = None,
+) -> dict:
     post = {
         "kind": "operation-contract",
         "operator": name,
         "arity": arity,
+        "arity_shape": arity_shape,
         "result": result,
         "wp": wp,
     }
+    if "bridge_target" in (OPERATOR_OPS.get(name) or MINTED_OPS.get(name) or {}):
+        post["bridge_target"] = (OPERATOR_OPS.get(name) or MINTED_OPS.get(name))["bridge_target"]
+    if "linkage" in (OPERATOR_OPS.get(name) or MINTED_OPS.get(name) or {}):
+        post["linkage"] = (OPERATOR_OPS.get(name) or MINTED_OPS.get(name))["linkage"]
+    if "target_surface" in (OPERATOR_OPS.get(name) or MINTED_OPS.get(name) or {}):
+        post["target_surface"] = (OPERATOR_OPS.get(name) or MINTED_OPS.get(name))["target_surface"]
+    if "target_lifter" in (OPERATOR_OPS.get(name) or MINTED_OPS.get(name) or {}):
+        post["target_lifter"] = (OPERATOR_OPS.get(name) or MINTED_OPS.get(name))["target_lifter"]
     if notes:
         post["notes"] = notes
     return post
@@ -883,6 +1535,7 @@ def algorithm_spec(name: str, cfg: dict) -> dict:
             cfg["formal_sorts"],
             cfg["return_sort"],
             cfg["wp"],
+            cfg.get("arity_shape", arity_shape_for_operation(name)),
             cfg.get("notes"),
         ),
         "effects": {"effects": []},
@@ -896,14 +1549,25 @@ def spec_filename_for_op(name: str) -> str:
 
 def generated_op_specs() -> dict[Path, str]:
     out: dict[Path, str] = {}
-    for name, cfg in MINTED_OPS.items():
+    for name, cfg in list(MINTED_OPS.items()) + list(OPERATOR_OPS.items()):
         path = SPECS / spec_filename_for_op(name)
         out[path] = json.dumps(algorithm_spec(name, cfg), indent=2, sort_keys=False) + "\n"
     return out
 
 
+def generated_core_op_specs() -> dict[Path, str]:
+    out: dict[Path, str] = {}
+    for spec in CORE_OPS:
+        path = SPECS / spec
+        value = json.loads(path.read_text(encoding="utf-8"))
+        name = value["fn_name"].removeprefix("c11:")
+        value.setdefault("post", {})["arity_shape"] = arity_shape_for_operation(name)
+        out[path] = json.dumps(value, indent=2, sort_keys=False) + "\n"
+    return out
+
+
 def op_spec_files() -> list[str]:
-    return CORE_OPS + [spec_filename_for_op(name) for name in MINTED_OPS] + EFFECT_OPS
+    return CORE_OPS + [spec_filename_for_op(name) for name in list(MINTED_OPS) + list(OPERATOR_OPS)] + EFFECT_OPS
 
 
 def language_signature_spec() -> str:
@@ -911,7 +1575,8 @@ def language_signature_spec() -> str:
         "kind": "language_signature",
         "fn_name": "c:c11",
         "sorts": SORTS[:11],
-        "operations": CORE_OPS + [spec_filename_for_op(name) for name in MINTED_OPS],
+        "operations": all_operation_specs(),
+        "arity_shapes": {f"c11:{name}": arity_shape_for_operation(name) for name in all_operation_names()},
         "equations": EQUATIONS,
         "effect_signatures": EFFECT_SIGS,
     }
@@ -972,6 +1637,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
         "op_name": "c11:opaque",
         "op_cid": op_cids.get("opaque"),
         "arity": 1,
+        "arity_shape": arity_shape_for_operation("opaque"),
         "child_shape": "unit",
         "classification": "opaque",
         "notes": "Non-lifted cursor kind maps stably to c11:opaque.",
@@ -985,6 +1651,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                 "op_name": f"c11:{op}",
                 "op_cid": op_cids.get(op),
                 "arity": arity,
+                "arity_shape": arity_shape_for_operation(op),
                 "child_shape": shape,
                 "classification": "existing-core",
                 "notes": "Reuses an existing hand-curated C11 core op.",
@@ -997,6 +1664,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                 "op_name": op,
                 "op_cid": None,
                 "arity": arity,
+                "arity_shape": None,
                 "child_shape": shape,
                 "classification": "term-leaf",
                 "notes": "Leaf term constructor, not a minted operation.",
@@ -1010,12 +1678,14 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                     "token": token,
                     "op_name": f"c11:{op}",
                     "op_cid": op_cids.get(op),
+                    "arity_shape": arity_shape_for_operation(op),
                 }
                 for token, op in cfg["token_ops"].items()
             ],
             "fallback": {
                 "op_name": f"c11:{cfg['fallback']}",
                 "op_cid": op_cids.get(cfg["fallback"]),
+                "arity_shape": arity_shape_for_operation(cfg["fallback"]),
             },
         }
         row.update(
@@ -1023,6 +1693,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                 "op_name": cfg["op_name"],
                 "op_cid": None,
                 "arity": cfg["arity"],
+                "arity_shape": None,
                 "child_shape": cfg["child_shape"],
                 "classification": "operator-dispatch",
                 "notes": "Operator spelling selects one of the listed op CIDs.",
@@ -1036,6 +1707,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                 "op_name": f"c11:{op}",
                 "op_cid": op_cids.get(op),
                 "arity": arity,
+                "arity_shape": arity_shape_for_operation(op),
                 "child_shape": shape,
                 "classification": "newly-minted",
                 "notes": "Generated minimal stable op for this libclang cursor kind.",
@@ -1047,6 +1719,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                 "op_name": "passthrough",
                 "op_cid": None,
                 "arity": 1,
+                "arity_shape": None,
                 "child_shape": TRANSPARENT_CURSOR_KINDS[name],
                 "classification": "passthrough",
                 "notes": "Parser unwraps this cursor kind and emits its child term.",
@@ -1059,6 +1732,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                     "op_name": "c11:unexposed-expr",
                     "op_cid": op_cids.get("unexposed-expr"),
                     "arity": 1,
+                    "arity_shape": arity_shape_for_operation("unexposed-expr"),
                     "child_shape": "folded child expressions",
                     "classification": "newly-minted",
                     "notes": "Generated fallback expression op for a C-family expression cursor.",
@@ -1070,6 +1744,7 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
                     "op_name": "c11:unexposed-stmt",
                     "op_cid": op_cids.get("unexposed-stmt"),
                     "arity": 1,
+                    "arity_shape": arity_shape_for_operation("unexposed-stmt"),
                     "child_shape": "folded child statements",
                     "classification": "newly-minted",
                     "notes": "Generated fallback statement op for a C-family statement cursor.",
@@ -1120,6 +1795,7 @@ typedef struct {{
     const char *op_name;
     const char *op_cid;
     int arity;
+    const char *arity_shape_json;
     const char *child_shape;
     const char *classification;
     const char *notes;
@@ -1169,6 +1845,7 @@ def generated_c_source(mapping: dict, op_cids: dict[str, str]) -> str:
                 f"            {c_string(row.get('op_name'))},",
                 f"            {c_string(row.get('op_cid'))},",
                 f"            {int(row.get('arity') or 0)},",
+                f"            {c_string(json.dumps(row.get('arity_shape'), sort_keys=True) if row.get('arity_shape') is not None else None)},",
                 f"            {c_string(row.get('child_shape'))},",
                 f"            {c_string(row.get('classification'))},",
                 f"            {c_string(row.get('notes'))}",
@@ -1186,12 +1863,7 @@ def generated_c_source(mapping: dict, op_cids: dict[str, str]) -> str:
             "static const pk_c11_op_dispatch PK_C11_OPS[] = {",
         ]
     )
-    all_ops = OrderedDict()
-    for spec in CORE_OPS:
-        name = op_name_for_spec(spec)
-        all_ops[name] = op_cids.get(name)
-    for name in MINTED_OPS:
-        all_ops[name] = op_cids.get(name)
+    all_ops = OrderedDict((name, op_cids.get(name)) for name in all_operation_names())
     missing_templates = sorted(set(all_ops) - set(SERIALIZER_TEMPLATES))
     extra_templates = sorted(set(SERIALIZER_TEMPLATES) - set(all_ops))
     if missing_templates or extra_templates:
@@ -1241,14 +1913,18 @@ def generated_readme(signature_cid: str | None) -> str:
         "| Operation | Arity | Result | Contract meaning |",
         "| --- | --- | --- | --- |",
     ]
-    for spec in CORE_OPS + [spec_filename_for_op(name) for name in MINTED_OPS]:
+    for spec in all_operation_specs():
         spec_path = SPECS / spec
         if spec_path.exists():
             value = json.loads(spec_path.read_text(encoding="utf-8"))
         elif spec.startswith("op_") and spec.endswith(".spec.json"):
-            matches = [name for name in MINTED_OPS if spec_filename_for_op(name) == spec]
+            matches = [
+                name
+                for name in list(MINTED_OPS) + list(OPERATOR_OPS)
+                if spec_filename_for_op(name) == spec
+            ]
             op_name = matches[0] if matches else spec.removeprefix("op_").removesuffix(".spec.json").replace("_", "-")
-            value = algorithm_spec(op_name, MINTED_OPS[op_name])
+            value = algorithm_spec(op_name, (MINTED_OPS.get(op_name) or OPERATOR_OPS[op_name]))
         else:
             continue
         name = value["fn_name"].removeprefix("c11:")
@@ -1269,6 +1945,7 @@ def generated_files(index_h: Path) -> dict[Path, str]:
     enum_entries = parse_cursor_enum(index_h)
     mapping = build_mapping(enum_entries, op_cids, signature_cid, index_h)
     files: dict[Path, str] = {}
+    files.update(generated_core_op_specs())
     files.update(generated_op_specs())
     files[SPECS / "language_signature_c11.spec.json"] = language_signature_spec()
     files[SIG / "mint.sh"] = mint_sh()

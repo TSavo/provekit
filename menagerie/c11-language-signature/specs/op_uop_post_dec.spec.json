@@ -1,0 +1,45 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:uop_post_dec",
+  "formals": [
+    "target"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "LValue",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "uop_post_dec",
+    "arity": [
+      "LValue"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "result": "Expr",
+    "wp": "C postfix decrement sequence-pointed update"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

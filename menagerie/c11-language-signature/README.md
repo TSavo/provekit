@@ -4,7 +4,7 @@ C is emitted as a content-addressed algebra over contracts. Here is the algebra.
 
 The minted C11 `LanguageSignatureMemento` is:
 
-`blake3-512:34e0cd60770468dc5d6c5825bb393251debbfd0eaef11c1dec642fb1f7a04d05fa3a14db5cf4a54e5e74eaadc6cdd7c785baf437adfa84dbdce011b74b157b21`
+`blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted C function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 
@@ -53,6 +53,7 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `not` | `Bool` | `Bool` | boolean negation |
 | `assign` | `LValue x Expr` | `Stmt` | store value into target and update state |
 | `neg` | `Int` | `Int` | integer arithmetic negation when no overflow holds |
+| `source-unit` | `Expr x Stmt` | `Stmt` | lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term |
 | `opaque` | `Unit` | `Stmt` | stable placeholder for non-lifted or intentionally opaque cursor kinds |
 | `decl` | `Expr x Expr` | `Stmt` | bind local name to initializer before continuing |
 | `case` | `Expr x Stmt` | `Stmt` | switch case arm body guarded by value |
@@ -60,7 +61,7 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `label` | `Expr x Stmt` | `Stmt` | statement label with body |
 | `goto` | `Expr` | `Stmt` | control transfer to label target |
 | `do` | `Stmt x Bool` | `Stmt` | do body once, then loop while cond |
-| `cast` | `Expr` | `Expr` | C cast expression preserving lifted child value |
+| `cast` | `Expr x Expr` | `Expr` | C cast expression preserving explicit target type and lifted child value |
 | `array-subscript` | `Expr x Expr` | `LValue` | array element lvalue projection |
 | `conditional` | `Bool x Expr x Expr` | `Expr` | ternary expression selected by cond |
 | `compound-literal` | `Expr` | `Expr` | compound literal expression payload |
@@ -70,9 +71,19 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `float-literal` | `Unit` | `Expr` | floating literal token payload elided at this layer |
 | `imaginary-literal` | `Unit` | `Expr` | imaginary literal token payload elided at this layer |
 | `null` | `Unit` | `Expr` | null pointer constant expression |
+| `sizeof_expr` | `Expr` | `Int` | C sizeof expression; operand is structurally present but unevaluated except for VLA semantics |
+| `sizeof_type` | `Expr` | `Int` | C sizeof type form; type operand is unevaluated |
+| `alignof_expr` | `Expr` | `Int` | C alignment query over expression type; operand is unevaluated |
+| `alignof_type` | `Expr` | `Int` | C alignment query over type operand |
+| `typeof_expr` | `Expr` | `Expr` | GNU typeof expression form; operand is type-read and unevaluated |
+| `typeof_type` | `Expr` | `Expr` | GNU typeof type form |
+| `offsetof` | `Expr x Expr` | `Int` | C offsetof query; type and designator are unevaluated structural operands |
+| `builtin_types_compatible_p` | `Expr x Expr` | `Bool` | GNU __builtin_types_compatible_p over unevaluated type operands |
+| `builtin_choose_expr` | `Bool x Expr x Expr` | `Expr` | GNU __builtin_choose_expr; controlling expression is evaluated at compile time and the selected branch is reachable |
 | `generic-selection` | `Expr x ListOfExpr` | `Expr` | C11 generic selection expression |
 | `stmt-expr` | `Stmt` | `Expr` | GNU statement expression payload |
 | `addr-label` | `Expr` | `Expr` | GNU address-of-label expression |
+| `asm-link-edge` | `Expr x Expr x Expr x Expr x Expr x Expr x Expr x Expr x ListOfExpr x ListOfExpr x ListOfExpr` | `Stmt` | inline assembly link edge; the C term names an assembly input and the linker composes it with the x86-64 lifter result |
 | `div` | `Int x Int` | `Int` | integer division expression |
 | `mod` | `Int x Int` | `Int` | integer remainder expression |
 | `shl` | `Int x Int` | `Int` | integer left shift expression |
@@ -95,6 +106,45 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `unexposed-expr` | `ListOfExpr` | `Expr` | libclang unexposed expression with lifted child sequence |
 | `binary-operator` | `Expr x Expr` | `Expr` | fallback binary operator when no core C11 operator is selected |
 | `unary-operator` | `Expr` | `Expr` | fallback unary operator when no core C11 operator is selected |
+| `bop_add` | `Expr x Expr` | `Expr` | C binary + expression; operand evaluation order is not sequenced |
+| `bop_sub` | `Expr x Expr` | `Expr` | C binary - expression with ordered operand roles |
+| `bop_mul` | `Expr x Expr` | `Expr` | C binary * expression; operand evaluation order is not sequenced |
+| `bop_div` | `Expr x Expr` | `Expr` | C binary / expression with ordered operand roles |
+| `bop_mod` | `Expr x Expr` | `Expr` | C binary % expression with ordered operand roles |
+| `bop_shl` | `Expr x Expr` | `Expr` | C binary << expression with ordered operand roles |
+| `bop_shr` | `Expr x Expr` | `Expr` | C binary >> expression with ordered operand roles |
+| `bop_bitand` | `Expr x Expr` | `Expr` | C binary & expression; operand evaluation order is not sequenced |
+| `bop_bitor` | `Expr x Expr` | `Expr` | C binary | expression; operand evaluation order is not sequenced |
+| `bop_bitxor` | `Expr x Expr` | `Expr` | C binary ^ expression; operand evaluation order is not sequenced |
+| `bop_eq` | `Expr x Expr` | `Bool` | C binary == comparison; operand evaluation order is not sequenced |
+| `bop_ne` | `Expr x Expr` | `Bool` | C binary != comparison; operand evaluation order is not sequenced |
+| `bop_lt` | `Expr x Expr` | `Bool` | C binary < comparison with ordered operand roles |
+| `bop_le` | `Expr x Expr` | `Bool` | C binary <= comparison with ordered operand roles |
+| `bop_gt` | `Expr x Expr` | `Bool` | C binary > comparison with ordered operand roles |
+| `bop_ge` | `Expr x Expr` | `Bool` | C binary >= comparison with ordered operand roles |
+| `bop_logand` | `Bool x Bool` | `Bool` | C && short-circuit expression; left is evaluated before right |
+| `bop_logor` | `Bool x Bool` | `Bool` | C || short-circuit expression; left is evaluated before right |
+| `bop_comma` | `Expr x Expr` | `Expr` | C comma expression sequence-points first before second |
+| `uop_neg` | `Expr` | `Expr` | C unary - expression |
+| `uop_lognot` | `Expr` | `Bool` | C unary ! expression |
+| `uop_deref` | `Expr` | `LValue` | C unary * dereference expression |
+| `uop_bitnot` | `Expr` | `Expr` | C unary ~ expression |
+| `uop_addr_of` | `LValue` | `Ptr` | C unary & address-of expression |
+| `uop_pre_inc` | `LValue` | `Expr` | C prefix increment sequence-pointed update |
+| `uop_post_inc` | `LValue` | `Expr` | C postfix increment sequence-pointed update |
+| `uop_pre_dec` | `LValue` | `Expr` | C prefix decrement sequence-pointed update |
+| `uop_post_dec` | `LValue` | `Expr` | C postfix decrement sequence-pointed update |
+| `uop_plus` | `Expr` | `Expr` | C unary + expression |
+| `compound_assign_add` | `LValue x Expr` | `Expr` | C compound assignment += expression; the lvalue is evaluated once and the implied combiner is bop_add |
+| `compound_assign_sub` | `LValue x Expr` | `Expr` | C compound assignment -= expression; the lvalue is evaluated once and the implied combiner is bop_sub |
+| `compound_assign_mul` | `LValue x Expr` | `Expr` | C compound assignment *= expression; the lvalue is evaluated once and the implied combiner is bop_mul |
+| `compound_assign_div` | `LValue x Expr` | `Expr` | C compound assignment /= expression; the lvalue is evaluated once and the implied combiner is bop_div |
+| `compound_assign_mod` | `LValue x Expr` | `Expr` | C compound assignment %= expression; the lvalue is evaluated once and the implied combiner is bop_mod |
+| `compound_assign_shl` | `LValue x Expr` | `Expr` | C compound assignment <<= expression; the lvalue is evaluated once and the implied combiner is bop_shl |
+| `compound_assign_shr` | `LValue x Expr` | `Expr` | C compound assignment >>= expression; the lvalue is evaluated once and the implied combiner is bop_shr |
+| `compound_assign_bitand` | `LValue x Expr` | `Expr` | C compound assignment &= expression; the lvalue is evaluated once and the implied combiner is bop_bitand |
+| `compound_assign_bitor` | `LValue x Expr` | `Expr` | C compound assignment |= expression; the lvalue is evaluated once and the implied combiner is bop_bitor |
+| `compound_assign_bitxor` | `LValue x Expr` | `Expr` | C compound assignment ^= expression; the lvalue is evaluated once and the implied combiner is bop_bitxor |
 
 ## Generated Cursor Kind Operations
 

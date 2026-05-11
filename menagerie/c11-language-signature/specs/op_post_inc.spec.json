@@ -27,6 +27,14 @@
     "arity": [
       "LValue"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "postfix increment expression yielding the previous value"
   },

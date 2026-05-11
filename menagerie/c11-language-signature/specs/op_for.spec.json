@@ -49,7 +49,24 @@
       "Stmt"
     ],
     "result": "Stmt",
-    "wp": "seq(init, while(cond, seq(body, step)))"
+    "wp": "seq(init, while(cond, seq(body, step)))",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "init"
+        },
+        {
+          "name": "cond"
+        },
+        {
+          "name": "step"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

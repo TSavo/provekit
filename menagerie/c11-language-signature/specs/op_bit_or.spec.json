@@ -34,6 +34,17 @@
       "Int",
       "Int"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
     "result": "Int",
     "wp": "integer bitwise or expression"
   },
