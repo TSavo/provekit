@@ -11,6 +11,7 @@ TWO_ARMED_FIXTURE="$SCRIPT_DIR/fixtures/two_armed_if.c"
 CALL_STATEMENT_FIXTURE="$SCRIPT_DIR/fixtures/call_statement.c"
 HANDLED_GUARD_FIXTURE="$SCRIPT_DIR/fixtures/handled_guard.c"
 ACTUALS_FIXTURE="$SCRIPT_DIR/fixtures/callsite_actuals.c"
+ACTUALS_PATHS_FIXTURE="$SCRIPT_DIR/fixtures/callsite_actuals_paths.c"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -49,6 +50,11 @@ fi
 
 if [ ! -f "$ACTUALS_FIXTURE" ]; then
     echo "FAIL: fixture not found: $ACTUALS_FIXTURE" >&2
+    exit 1
+fi
+
+if [ ! -f "$ACTUALS_PATHS_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $ACTUALS_PATHS_FIXTURE" >&2
     exit 1
 fi
 
@@ -531,4 +537,83 @@ if mixed_args[1].get("text") != "cond?y:z" or mixed_args[1].get("term") is not N
     raise SystemExit(f"FAIL: mixed callsite should preserve unliftable second arg with term null: {mixed_args}")
 
 print("callsite-actuals", ",".join(f"{a['position']}:{a['kind']}:{a['text']}" for a in args))
+PY
+
+ACTUALS_PATHS_RESPONSES="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+        printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["callsite_actuals_paths.c"],"surface":"c-walk","parse_backend":"clang_ast"}}\n'
+        printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
+    } | "$BIN" --rpc
+)"
+
+ACTUALS_PATHS_RESPONSES_JSON="$ACTUALS_PATHS_RESPONSES" python3 - <<'PY'
+import json
+import os
+
+responses = [json.loads(line) for line in os.environ["ACTUALS_PATHS_RESPONSES_JSON"].splitlines() if line.strip()]
+lift = next((r for r in responses if r.get("id") == 2), None)
+if lift is None:
+    raise SystemExit("FAIL: callsite_actuals_paths lift response missing")
+
+chains = [
+    d for d in lift["result"]["declarations"]
+    if d.get("kind") == "function-contract"
+    and d.get("evidence", {}).get("kind") == "wp-walk-chain"
+    and d.get("evidence", {}).get("callee") == "path_sink"
+]
+if not chains:
+    raise SystemExit("FAIL: callsite_actuals_paths emitted no path_sink chains")
+
+expected_by_caller = {
+    "path_plain": {("x", "x+1")},
+    "path_decl_initializer": {("x", "x+2")},
+    "path_assignment_rhs": {("x", "x+3")},
+    "path_conditional_arm": {("x", "x+4"), ("x+5", "x+6")},
+}
+seen_by_caller = {caller: set() for caller in expected_by_caller}
+total_callsites = 0
+callsites_with_args = 0
+
+for chain in chains:
+    caller = chain.get("evidence", {}).get("caller")
+    if caller not in expected_by_caller:
+        continue
+    arrivals = chain.get("evidence", {}).get("arrivals", [])
+    callsites = [arrival for arrival in arrivals if arrival.get("kind") == "Callsite"]
+    if len(callsites) != 1:
+        raise SystemExit(f"FAIL: {caller} chain should carry one Callsite arrival, got {callsites}")
+
+    total_callsites += 1
+    callsite = callsites[0]
+    if "args" in callsite:
+        callsites_with_args += 1
+    else:
+        raise SystemExit(f"FAIL: {caller} Callsite arrival missing args field: {callsite}")
+    if not isinstance(callsite["args"], list):
+        raise SystemExit(f"FAIL: {caller} Callsite args must be an array: {callsite['args']!r}")
+    if len(callsite["args"]) != 2:
+        raise SystemExit(f"FAIL: {caller} expected two actuals, got {callsite['args']}")
+
+    positions = [arg.get("position") for arg in callsite["args"]]
+    if positions != [0, 1]:
+        raise SystemExit(f"FAIL: {caller} actual positions should be [0, 1], got {positions}")
+    texts = tuple(arg.get("text") for arg in callsite["args"])
+    seen_by_caller[caller].add(texts)
+
+    kinds = [arrival.get("kind") for arrival in arrivals]
+    if caller == "path_assignment_rhs" and "LetBinding" not in kinds:
+        raise SystemExit(f"FAIL: assignment RHS chain should include LetBinding arrival, got {kinds}")
+    if caller == "path_conditional_arm" and "ConditionalArm" not in kinds:
+        raise SystemExit(f"FAIL: conditional-arm chain should include ConditionalArm arrival, got {kinds}")
+
+for caller, expected in expected_by_caller.items():
+    if seen_by_caller[caller] != expected:
+        raise SystemExit(f"FAIL: {caller} actual texts mismatch: expected {expected}, got {seen_by_caller[caller]}")
+
+if total_callsites == 0:
+    raise SystemExit("FAIL: callsite_actuals_paths found zero Callsite arrivals")
+print(f"callsite-actuals-paths {callsites_with_args}/{total_callsites}")
 PY

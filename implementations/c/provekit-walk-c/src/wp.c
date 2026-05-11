@@ -1061,6 +1061,9 @@ int pk_c_walk_chain_add_arrival(
     int column,
     const pk_c_walk_formula *wp
 ) {
+    if (kind != NULL && strcmp(kind, "Callsite") == 0) {
+        return chain_add_arrival_with_actuals(chain, kind, name, stmt_index, line, column, "[]", wp);
+    }
     return chain_add_arrival_with_actuals(chain, kind, name, stmt_index, line, column, NULL, wp);
 }
 
