@@ -421,7 +421,7 @@ def try_structural_subsumption(after_spec, concept_spec):
     return None
 
 
-def morphism_spec(source_name, source_cid, concept_fn, shape_cid, renaming, operator_map):
+def morphism_spec(source_name, source_cid, concept_fn, shape_cid, renaming, operator_map, discharge_method="canonicalizer-alpha-equivalence-plus-representation-map"):
     return {
         "kind": "algorithm",
         "fn_name": f"morphism:{source_name}:to:{concept_fn}",
@@ -438,7 +438,7 @@ def morphism_spec(source_name, source_cid, concept_fn, shape_cid, renaming, oper
             "operator_map": operator_map,
             "literal_map": {},
             "homomorphism_obligation": {
-                "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+                "kind": discharge_method,
                 "source": source_cid,
                 "target": shape_cid,
             },
@@ -576,7 +576,7 @@ def main():
                     wp_abstracted = False
                 after_name = f"{sanitize(language['id'])}_{sanitize(source_name.split(':', 1)[-1])}_to_{sanitize(op_def['slug'])}_after_substitution.json"
                 write_json(DISCHARGE_DIR / after_name, after_spec)
-                m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map)
+                m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map, discharge_method)
                 write_json(SPEC_DIR / f"{stem}.spec.json", m_spec)
                 morphism_cid, morphism_path = discharge.mint("algorithm", f"{stem}.spec.json")
                 rows.append({"kind": "morphism", "name": stem, "cid": morphism_cid, "path": morphism_path})

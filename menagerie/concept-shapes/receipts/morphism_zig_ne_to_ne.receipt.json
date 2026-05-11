@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "kind": "MorphismDischargeReceipt",
-  "morphism_cid": "blake3-512:cb7c4eedd8d64beba0bf70aa2b97f7cf007901b7682d19f754565b675fb0c17e108cf44aa9d8bde052aa1afec1e8ec58c22eb195b7ba7f3df8beca865c3e8956",
+  "morphism_cid": "blake3-512:037ad22ed0dc741a11284ac220feb4e63ea3122645b7d7e149b66fb2c212bec2b280296cfa6acf4b1fb953bdf68184206780014d77395b0c79ad58ddb476b9f0",
   "source_contract_cid": "blake3-512:9b0b781a9e1c6e1b768b1ba8e1abbc5045d5d1e234220e7be9d243950c3f4c3439f0537a0f63fda7630ce6cdcc9fddaf41e76ba7a2c0eb0dc10d26edb8a7e7f8",
   "renaming_map": {},
   "representation_map": {},

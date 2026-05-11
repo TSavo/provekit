@@ -32,7 +32,7 @@
     },
     "literal_map": {},
     "homomorphism_obligation": {
-      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "kind": "structural-wp-abstraction",
       "source": "blake3-512:6828bf00481d43ae8d1283782290948198b2ea65f755018d4c7d6c7a3bdb8dad2fa0a6c008dbde9a81755b301447698f8f457a86696ae47f634c7b8355cd8742",
       "target": "blake3-512:a83de04ab992aad5eb9e1a1bb2b6706576e42d243464ad6d5aeb3a06283c6498d2325cdb3beeecae9fe1e82b684abc4c118092f6a9129281aeca5246433f4a6a"
     }
