@@ -646,6 +646,7 @@ test-java: build-java
 
 .PHONY: test-swift
 test-swift: build-swift
+	cd implementations/swift && swift test
 	cd implementations/swift && swift run conformance
 	cd implementations/swift && swift run test-swift-lsp
 	cd implementations/swift && swift run test-swift-crypto

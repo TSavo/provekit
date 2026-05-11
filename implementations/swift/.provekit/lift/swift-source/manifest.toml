@@ -1,0 +1,10 @@
+name = "swift-source"
+version = "0.1.0-draft"
+protocol_version = "provekit-lift/1"
+command = [".build/release/provekit-lift-swift-source", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["swift-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

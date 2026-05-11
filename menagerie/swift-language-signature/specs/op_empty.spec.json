@@ -1,0 +1,31 @@
+{
+  "kind": "algorithm",
+  "fn_name": "swift:empty",
+  "formals": [],
+  "formal_sorts": [],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "empty",
+    "arity": [],
+    "result": "Stmt",
+    "wp": "empty Swift statement sequence",
+    "arity_shape": {
+      "kind": "positional",
+      "arity": 0
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/swift-language-signature/README.md"
+}
