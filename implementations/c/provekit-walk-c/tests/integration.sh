@@ -83,7 +83,7 @@ lift = next((r for r in responses if r.get("id") == 2), None)
 if lift is None:
     raise SystemExit("FAIL: lift response missing")
 
-decls = lift["result"]["declarations"]
+decls = lift["result"].get("ir", lift["result"].get("declarations", []))
 chains = [
     d for d in decls
     if d.get("kind") == "function-contract"
@@ -135,7 +135,7 @@ lift = next((r for r in responses if r.get("id") == 2), None)
 if lift is None:
     raise SystemExit("FAIL: checked_demo lift response missing")
 
-decls = lift["result"]["declarations"]
+decls = lift["result"].get("ir", lift["result"].get("declarations", []))
 chains = [
     d for d in decls
     if d.get("kind") == "function-contract"
@@ -199,7 +199,7 @@ lift = next((r for r in responses if r.get("id") == 2), None)
 if lift is None:
     raise SystemExit(f"FAIL: {label} lift response missing")
 
-decls = lift["result"]["declarations"]
+decls = lift["result"].get("ir", lift["result"].get("declarations", []))
 chains = [
     d for d in decls
     if d.get("kind") == "function-contract"
@@ -247,7 +247,7 @@ lift = next((r for r in responses if r.get("id") == 2), None)
 if lift is None:
     raise SystemExit("FAIL: two_armed_if lift response missing")
 
-decls = lift["result"]["declarations"]
+decls = lift["result"].get("ir", lift["result"].get("declarations", []))
 chains = [
     d for d in decls
     if d.get("kind") == "function-contract"
@@ -321,7 +321,7 @@ if lift is None:
     raise SystemExit("FAIL: call_statement lift response missing")
 
 chains = [
-    d for d in lift["result"]["declarations"]
+    d for d in lift["result"].get("ir", lift["result"].get("declarations", []))
     if d.get("kind") == "function-contract"
     and d.get("evidence", {}).get("kind") == "wp-walk-chain"
     and d.get("evidence", {}).get("caller") == "call_statement"
@@ -367,7 +367,7 @@ if lift is None:
     raise SystemExit("FAIL: handled_guard lift response missing")
 
 chains = [
-    d for d in lift["result"]["declarations"]
+    d for d in lift["result"].get("ir", lift["result"].get("declarations", []))
     if d.get("kind") == "function-contract"
     and d.get("evidence", {}).get("kind") == "wp-walk-chain"
     and d.get("evidence", {}).get("caller") == "call_guarded"
@@ -415,6 +415,7 @@ ACTUALS_RESPONSES_AGAIN="$(
 ACTUALS_RESPONSES_JSON="$ACTUALS_RESPONSES" ACTUALS_RESPONSES_AGAIN_JSON="$ACTUALS_RESPONSES_AGAIN" python3 - <<'PY'
 import json
 import os
+from collections import Counter
 
 def callsite_arrival(blob, caller="actuals_caller", callee="actuals_callee"):
     responses = [json.loads(line) for line in blob.splitlines() if line.strip()]
@@ -423,7 +424,7 @@ def callsite_arrival(blob, caller="actuals_caller", callee="actuals_callee"):
         raise SystemExit("FAIL: callsite_actuals lift response missing")
 
     chains = [
-        d for d in lift["result"]["declarations"]
+        d for d in lift["result"].get("ir", lift["result"].get("declarations", []))
         if d.get("kind") == "function-contract"
         and d.get("evidence", {}).get("kind") == "wp-walk-chain"
         and d.get("evidence", {}).get("caller") == caller
@@ -529,6 +530,52 @@ if mixed_args[0].get("text") != "x" or not isinstance(mixed_args[0].get("term"),
     raise SystemExit(f"FAIL: mixed callsite should preserve liftable first arg term: {mixed_args}")
 if mixed_args[1].get("text") != "cond?y:z" or mixed_args[1].get("term") is not None:
     raise SystemExit(f"FAIL: mixed callsite should preserve unliftable second arg with term null: {mixed_args}")
+
+def all_wp_walk_chains(blob):
+    responses = [json.loads(line) for line in blob.splitlines() if line.strip()]
+    lift = next((r for r in responses if r.get("id") == 2), None)
+    if lift is None:
+        raise SystemExit("FAIL: callsite_actuals lift response missing")
+    result = lift["result"]
+    emitted = []
+    for field in ("declarations", "ir"):
+        values = result.get(field, [])
+        if isinstance(values, list):
+            emitted.extend(values)
+    return [
+        d for d in emitted
+        if d.get("kind") == "function-contract"
+        and d.get("evidence", {}).get("kind") == "wp-walk-chain"
+    ]
+
+chains = all_wp_walk_chains(os.environ["ACTUALS_RESPONSES_JSON"])
+callsite_keys = []
+for chain in chains:
+    evidence = chain.get("evidence", {})
+    callsites = [a for a in evidence.get("arrivals", []) if a.get("kind") == "Callsite"]
+    if len(callsites) != 1:
+        raise SystemExit(f"FAIL: wp-walk-chain should have exactly one Callsite arrival: {chain}")
+    callsite = callsites[0]
+    if "args" not in callsite:
+        raise SystemExit(f"FAIL: surviving Callsite arrival missing args field: {callsite}")
+    if not isinstance(callsite["args"], list):
+        raise SystemExit(f"FAIL: surviving Callsite args must be an array: {callsite['args']!r}")
+    callsite_keys.append((
+        evidence.get("caller"),
+        evidence.get("callee"),
+        callsite.get("line"),
+        callsite.get("column"),
+    ))
+
+counts = Counter(callsite_keys)
+expected_callsites = 5
+if len(counts) != expected_callsites:
+    raise SystemExit(f"FAIL: expected {expected_callsites} distinct callsites, got {len(counts)}: {counts}")
+if len(chains) != len(counts):
+    raise SystemExit(
+        "FAIL: expected exactly one wp-walk-chain per callsite, "
+        f"got {len(chains)} chains for {len(counts)} callsites: {counts}"
+    )
 
 print("callsite-actuals", ",".join(f"{a['position']}:{a['kind']}:{a['text']}" for a in args))
 PY
