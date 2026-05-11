@@ -234,6 +234,27 @@ public static class Smoke
     project_dir
 }
 
+fn build_clr_lifter() {
+    let project = canonical_repo_root()
+        .join("implementations")
+        .join("csharp")
+        .join("Provekit.Lift.CLR")
+        .join("Provekit.Lift.CLR.csproj");
+    let build = Command::new("dotnet")
+        .arg("build")
+        .arg(&project)
+        .arg("-c")
+        .arg("Release")
+        .output()
+        .expect("spawn dotnet build for CLR lifter");
+    assert!(
+        build.status.success(),
+        "dotnet build failed for CLR lifter\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+}
+
 /// Read the attestation JSON from `<root>/.provekit/self-contracts-attestations/<lang>.json`.
 fn read_attestation(root: &Path, lang: &str) -> serde_json::Value {
     let path = root
@@ -482,6 +503,8 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
 #[test]
 #[serial(mint_kit_files)]
 fn clr_bytecode_kit_round_trips_dotnet_built_assembly_through_cli_mint() {
+    build_clr_lifter();
+
     let scratch = ScratchRepo::new();
     let root = scratch.root();
     let project_dir = write_clr_smoke_project(root);

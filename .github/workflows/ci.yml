@@ -476,6 +476,7 @@ jobs:
           - cpp
           - ts
           - csharp
+          - clr-bytecode
           - java
           - python
           - ruby
@@ -529,7 +530,7 @@ jobs:
             implementations/go/provekit-lift-go-tests/go.sum
 
       - name: Set up .NET 10 (preview)
-        if: matrix.kit == 'csharp'
+        if: matrix.kit == 'csharp' || matrix.kit == 'clr-bytecode'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'

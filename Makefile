@@ -106,8 +106,8 @@ help:
 	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c  test-swift"
 	@echo ""
 	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
-	@echo "  make prove-all      all 10 kits (swift excluded: macOS-only)"
-	@echo "  make prove-rust  prove-go  prove-cpp  prove-ts  prove-csharp"
+	@echo "  make prove-all      all 11 kits (swift excluded: macOS-only)"
+	@echo "  make prove-rust  prove-go  prove-cpp  prove-ts  prove-csharp  prove-clr-bytecode"
 	@echo "  make prove-java  prove-python  prove-ruby  prove-zig  prove-c"
 	@echo "  make prove-swift    macOS-only"
 	@echo ""
@@ -454,6 +454,11 @@ prove-csharp: build-rust build-csharp
 	@echo ">> proving csharp lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=csharp
 
+.PHONY: prove-clr-bytecode
+prove-clr-bytecode: build-rust build-csharp
+	@echo ">> proving clr-bytecode lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=clr-bytecode
+
 # macOS-only: requires Swift toolchain.
 .PHONY: prove-swift
 prove-swift: build-rust build-swift
@@ -486,10 +491,10 @@ prove-c: build-rust build-c build-c-self-contracts
 	$(PROVEKIT) prove --kit=c
 
 # prove-all: run C1-C8 gate for the Linux/CI subset (swift excluded: macOS-only).
-# Kits without a wired lifter exit 2 (user error); all 10 targets are listed
+# Kits without a wired lifter exit 2 (user error); all 11 targets are listed
 # so CI reports which need follow-up. prove-swift runs separately on macos-latest.
 .PHONY: prove-all
-prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-java prove-python prove-ruby prove-zig prove-c
+prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-clr-bytecode prove-java prove-python prove-ruby prove-zig prove-c
 	@echo ""
 	@echo "==== prove-all: complete ===="
 

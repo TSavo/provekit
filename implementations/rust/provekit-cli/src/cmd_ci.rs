@@ -756,7 +756,7 @@ impl KitCiProfile {
             "cpp" => "make prove-cpp",
             "ts" => "make prove-ts",
             "csharp" => "make prove-csharp",
-            "clr-bytecode" => "make prove-csharp",
+            "clr-bytecode" => "make prove-clr-bytecode",
             "swift" => "make prove-swift",
             "java" => "make prove-java",
             "python" => "make prove-python",
