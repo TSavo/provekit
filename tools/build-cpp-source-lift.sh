@@ -79,23 +79,43 @@ for candidate in "$LLVM_LIB"/libclang.so "$LLVM_LIB"/libclang.so.* "$LLVM_LIB"/l
 done
 [ "$LIBCLANG_FOUND" = "1" ] || skip_or_fail "libclang library not found under $LLVM_LIB"
 
-BLAKE3_INC="${BLAKE3_INC:-/usr/local/opt/blake3/include}"
-BLAKE3_LIB="${BLAKE3_LIB:-/usr/local/opt/blake3/lib}"
+B3_DIR="$WORKSPACE/tools/blake3-vendored"
+# BLAKE3: vendored portable C only. Disabling all SIMD paths makes the
+# dispatcher select the portable code unconditionally; no asm files needed,
+# builds clean on x86_64, arm64, anywhere clang runs.
+B3_FLAGS="-DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_USE_NEON=0"
+CC="${CC:-clang}"
 CXX="${CXX:-$LLVM_BIN_DIR/clang++}"
 
 mkdir -p "$(dirname "$OUT_BIN")"
+
+# Compile vendored BLAKE3 .c sources to objects first; clang++ refuses to
+# compile C with -std=c++17. Place objects in a tempdir; cleaned on exit.
+B3_OBJ_DIR="$(mktemp -d -t b3-obj.XXXXXX)"
+cleanup() {
+    rm -rf "$B3_OBJ_DIR"
+}
+trap cleanup EXIT INT TERM
+
+for src in blake3.c blake3_dispatch.c blake3_portable.c; do
+    "$CC" -O2 -Wall $B3_FLAGS -c "$B3_DIR/$src" \
+        -o "$B3_OBJ_DIR/${src%.c}.o"
+done
 
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror \
     -I"$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/include" \
     -I"$WORKSPACE/implementations/cpp/provekit-ir-symbolic/include" \
     -I"$WORKSPACE/implementations/cpp" \
     -I"$LLVM_INC" \
-    -I"$BLAKE3_INC" \
+    -I"$B3_DIR" \
+    "$B3_OBJ_DIR/blake3.o" \
+    "$B3_OBJ_DIR/blake3_dispatch.o" \
+    "$B3_OBJ_DIR/blake3_portable.o" \
     "$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/src/cpp_source_lifter.cpp" \
     "$WORKSPACE/implementations/cpp/provekit-lift-cpp-source/src/main.cpp" \
     "$WORKSPACE/implementations/cpp/provekit/canonicalizer/jcs.cpp" \
     "$WORKSPACE/implementations/cpp/provekit/canonicalizer/hash.cpp" \
-    -L"$LLVM_LIB" -L"$BLAKE3_LIB" -Wl,-rpath,"$LLVM_LIB" -Wl,-rpath,"$BLAKE3_LIB" -lclang -lblake3 \
+    -L"$LLVM_LIB" -Wl,-rpath,"$LLVM_LIB" -lclang \
     -o "$OUT_BIN"
 
 echo "built: $OUT_BIN"
