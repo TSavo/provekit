@@ -33,3 +33,8 @@ destinations:
     path: change-station
     runnable: planned
     claim: commits as p -> q proof-carrying transitions
+  - id: python-language-signature
+    path: python-language-signature
+    runnable: true
+    claim: Python source operation algebra with explicit arity shapes
+    command: python3 menagerie/python-language-signature/generate_assets.py --check

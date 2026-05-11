@@ -1,0 +1,41 @@
+{
+  "kind": "algorithm",
+  "fn_name": "python:continue",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "continue",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Stmt",
+    "wp": "continue nearest loop",
+    "arity_shape": {
+      "kind": "positional",
+      "arity": 1
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/python-language-signature/README.md"
+}

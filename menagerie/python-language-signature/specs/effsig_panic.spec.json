@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "python:effect-signature:Panic",
+  "sorts": [
+    "sort_value.spec.json",
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_panic.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}
