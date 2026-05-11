@@ -30,6 +30,7 @@ public static class ClrAssemblyLifter
         }
 
         var metadata = peReader.GetMetadataReader();
+        var assemblyName = AssemblyIdentifier(assemblyPath, metadata);
         var contracts = new List<ContractDecl>();
 
         foreach (var typeHandle in metadata.TypeDefinitions)
@@ -61,7 +62,7 @@ public static class ClrAssemblyLifter
                 var signature = Convert.ToHexString(metadata.GetBlobBytes(method.Signature)).ToLowerInvariant();
                 var post = BuildMethodPost(assemblyPath, typeName, methodName, signature, body.MaxStack, instructions);
                 contracts.Add(new ContractDecl(
-                    $"clr:{typeName}::{methodName}#{signature}",
+                    $"clr:{assemblyName}!{typeName}::{methodName}#{signature}",
                     Pre: null,
                     Post: post,
                     Inv: null,
@@ -123,6 +124,14 @@ public static class ClrAssemblyLifter
             yield return path;
             yield break;
         }
+        if (File.Exists(path) && IsProjectPath(path))
+        {
+            foreach (var file in EnumerateProjectOutputAssemblies(path, requireBuiltOutput: true))
+            {
+                yield return file;
+            }
+            yield break;
+        }
         if (!Directory.Exists(path))
         {
             yield break;
@@ -149,30 +158,56 @@ public static class ClrAssemblyLifter
 
     private static IEnumerable<string> EnumerateProjectPrimaryAssemblies(string root)
     {
-        foreach (var project in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+        foreach (var project in Directory.EnumerateFiles(root, "*.*proj", SearchOption.AllDirectories)
+                     .Where(IsProjectPath)
                      .Where(project => !PathHasSegment(project, "bin") && !PathHasSegment(project, "obj"))
                      .OrderBy(p => p, StringComparer.Ordinal))
         {
-            var projectDir = Path.GetDirectoryName(project);
-            if (projectDir is null)
+            foreach (var output in EnumerateProjectOutputAssemblies(project, requireBuiltOutput: false))
             {
-                continue;
+                yield return output;
             }
+        }
+    }
 
-            var assemblyName = ProjectAssemblyName(project);
-            var candidates = Directory.EnumerateFiles(projectDir, $"{assemblyName}.*", SearchOption.AllDirectories)
+    private static IEnumerable<string> EnumerateProjectOutputAssemblies(
+        string project,
+        bool requireBuiltOutput)
+    {
+        var projectDir = Path.GetDirectoryName(project);
+        if (projectDir is null)
+        {
+            if (requireBuiltOutput)
+            {
+                throw new InvalidOperationException($"no built output found for project {project}; build it first");
+            }
+            yield break;
+        }
+
+        var assemblyName = ProjectAssemblyName(project);
+        var binDir = Path.Combine(projectDir, "bin");
+        var candidates = Directory.Exists(binDir)
+            ? Directory.EnumerateFiles(binDir, $"{assemblyName}.*", SearchOption.AllDirectories)
                 .Where(IsAssemblyPath)
-                .Where(file => PathHasSegment(file, "bin"))
                 .Where(file => !PathHasSegment(file, "ref") && !PathHasSegment(file, "refint"))
                 .OrderBy(p => p, StringComparer.Ordinal)
-                .ToArray();
+                .ToArray()
+            : Array.Empty<string>();
 
-            foreach (var candidateGroup in candidates
-                         .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-                         .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        if (candidates.Length == 0)
+        {
+            if (requireBuiltOutput)
             {
-                yield return SelectProjectOutputAssembly(project, candidateGroup.Key!, candidateGroup);
+                throw new InvalidOperationException($"no built output found for project {project}; build it first");
             }
+            yield break;
+        }
+
+        foreach (var candidateGroup in candidates
+                     .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            yield return SelectProjectOutputAssembly(project, candidateGroup.Key!, candidateGroup);
         }
     }
 
@@ -255,6 +290,28 @@ public static class ClrAssemblyLifter
         var ext = Path.GetExtension(path);
         return ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)
                || ext.Equals(".exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsProjectPath(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Equals(".csproj", StringComparison.OrdinalIgnoreCase)
+               || ext.Equals(".fsproj", StringComparison.OrdinalIgnoreCase)
+               || ext.Equals(".vbproj", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string AssemblyIdentifier(string assemblyPath, MetadataReader metadata)
+    {
+        if (metadata.IsAssembly)
+        {
+            var assemblyName = metadata.GetString(metadata.GetAssemblyDefinition().Name);
+            if (!string.IsNullOrWhiteSpace(assemblyName))
+            {
+                return assemblyName;
+            }
+        }
+
+        return Path.GetFileNameWithoutExtension(assemblyPath);
     }
 
     private static string TypeName(MetadataReader metadata, TypeDefinition type)

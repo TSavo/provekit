@@ -234,14 +234,42 @@ public static class Smoke
     project_dir
 }
 
+fn dotnet_is_available() -> bool {
+    match Command::new("dotnet").arg("--version").output() {
+        Ok(output) if output.status.success() => true,
+        Ok(output) => {
+            eprintln!(
+                "clr-bytecode kit: dotnet --version exited non-zero; skipping\n  stdout: {}\n  stderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            false
+        }
+        Err(err) => {
+            eprintln!("clr-bytecode kit: dotnet is not available on PATH; skipping ({err})");
+            false
+        }
+    }
+}
+
+fn dotnet_build_command() -> Command {
+    let mut command = Command::new("dotnet");
+    command
+        .arg("build")
+        .arg("-p:NuGetAudit=false")
+        .arg("-m:1")
+        .arg("-nr:false")
+        .arg("-p:UseSharedCompilation=false");
+    command
+}
+
 fn build_clr_lifter() {
     let project = canonical_repo_root()
         .join("implementations")
         .join("csharp")
         .join("Provekit.Lift.CLR")
         .join("Provekit.Lift.CLR.csproj");
-    let build = Command::new("dotnet")
-        .arg("build")
+    let build = dotnet_build_command()
         .arg(&project)
         .arg("-c")
         .arg("Release")
@@ -503,14 +531,17 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
 #[test]
 #[serial(mint_kit_files)]
 fn clr_bytecode_kit_round_trips_dotnet_built_assembly_through_cli_mint() {
+    if !dotnet_is_available() {
+        return;
+    }
+
     build_clr_lifter();
 
     let scratch = ScratchRepo::new();
     let root = scratch.root();
     let project_dir = write_clr_smoke_project(root);
 
-    let build = Command::new("dotnet")
-        .arg("build")
+    let build = dotnet_build_command()
         .arg(&project_dir)
         .arg("-c")
         .arg("Release")
