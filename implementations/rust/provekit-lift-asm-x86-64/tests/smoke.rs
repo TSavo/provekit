@@ -101,7 +101,9 @@ fn x86_lifter_accepts_c11_inline_asm_link_edge_source() {
             .contracts
             .iter()
             .any(|contract| contract.fn_name.starts_with("provekit_inline_asm_")),
-        "expected x86 lifter contract for C-emitted inline asm source"
+        "expected x86 lifter contract for C-emitted inline asm source; diagnostics={:?}; refusals={:?}",
+        lifted.diagnostics,
+        lifted.refusals
     );
 }
 

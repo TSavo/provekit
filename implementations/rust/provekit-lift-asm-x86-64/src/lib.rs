@@ -1054,6 +1054,15 @@ fn disassemble_path(path: &Path) -> Result<Vec<FunctionStream>, LiftError> {
     let ext = path.extension().and_then(OsStr::to_str).unwrap_or_default();
     let disassembly_input = match ext {
         "s" | "S" => {
+            let source = std::fs::read(path).map_err(|err| LiftError::Tool {
+                program: "read".to_string(),
+                message: err.to_string(),
+            })?;
+            let source = String::from_utf8_lossy(&source);
+            let streams = parse_assembly_source(&source, path)?;
+            if !streams.is_empty() {
+                return Ok(streams);
+            }
             object_path = assemble_source_to_elf(path)?;
             object_path.as_path()
         }
@@ -1085,6 +1094,69 @@ fn disassemble_path(path: &Path) -> Result<Vec<FunctionStream>, LiftError> {
 
     let text = String::from_utf8_lossy(&output.stdout);
     parse_objdump(&text, path)
+}
+
+fn parse_assembly_source(text: &str, source_path: &Path) -> Result<Vec<FunctionStream>, LiftError> {
+    let mut streams = Vec::new();
+    let mut current: Option<FunctionStream> = None;
+    let mut next_address = 0u64;
+
+    for line in text.lines() {
+        let trimmed = line
+            .split_once('#')
+            .map_or(line, |(before, _)| before)
+            .trim();
+        if trimmed.is_empty() || trimmed.starts_with('.') {
+            continue;
+        }
+
+        if let Some(label) = trimmed.strip_suffix(':') {
+            let label = label.trim();
+            if label.is_empty() || label.starts_with('.') {
+                continue;
+            }
+            if let Some(stream) = current.take() {
+                if !stream.instructions.is_empty() {
+                    streams.push(stream);
+                }
+            }
+            current = Some(FunctionStream {
+                name: label.to_string(),
+                source_path: source_path.to_path_buf(),
+                instructions: Vec::new(),
+            });
+            next_address = 0;
+            continue;
+        }
+
+        let Some(stream) = &mut current else {
+            continue;
+        };
+        let (mnemonic, operand_text) = split_mnemonic(trimmed);
+        if mnemonic.is_empty() {
+            continue;
+        }
+        let operands = split_operands(operand_text);
+        let target = operands
+            .first()
+            .and_then(|operand| parse_branch_target(operand));
+        stream.instructions.push(Instruction {
+            address: next_address,
+            mnemonic: normalize_mnemonic(mnemonic),
+            operands,
+            text: trimmed.to_string(),
+            target,
+        });
+        next_address += 1;
+    }
+
+    if let Some(stream) = current {
+        if !stream.instructions.is_empty() {
+            streams.push(stream);
+        }
+    }
+
+    Ok(streams)
 }
 
 fn assemble_source_to_elf(path: &Path) -> Result<PathBuf, LiftError> {
