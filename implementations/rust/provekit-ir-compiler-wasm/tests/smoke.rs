@@ -71,6 +71,47 @@ fn lowers_arithmetic_and_comparison_ops() {
 }
 
 #[test]
+fn lowers_c11_logical_ops_as_short_circuit_truthy_ops() {
+    let input = json!({
+        "kind": "c11-algebra-term",
+        "source": "logical.c",
+        "term": {
+            "kind": "op",
+            "name": "return",
+            "args": [{
+                "kind": "op",
+                "name": "bop_logand",
+                "args": [
+                    {"kind": "const", "value": 2, "sort": {"kind": "ctor", "name": "Int", "args": []}},
+                    {
+                        "kind": "op",
+                        "name": "bop_logor",
+                        "args": [
+                            {"kind": "const", "value": 0, "sort": {"kind": "ctor", "name": "Int", "args": []}},
+                            {"kind": "const", "value": 4, "sort": {"kind": "ctor", "name": "Int", "args": []}}
+                        ]
+                    }
+                ]
+            }]
+        }
+    });
+
+    let wat = compile_wat(&input).expect("compile concrete logical op term");
+
+    assert!(wat.contains("if (result i32)"));
+    assert!(wat.contains("i32.const 1"));
+    assert!(wat.contains("i32.eqz\n      i32.eqz"));
+    assert!(
+        !wat.contains("i32.and"),
+        "C logical && must not lower to eager bitwise and"
+    );
+    assert!(
+        !wat.contains("i32.or"),
+        "C logical || must not lower to eager bitwise or"
+    );
+}
+
+#[test]
 fn lowers_memory_ops_with_exported_memory() {
     let input = json!({
         "kind": "c11-algebra-term",
