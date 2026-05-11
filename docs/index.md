@@ -88,6 +88,7 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 | What is a proofchain? | [explanation/proofchain.md](explanation/proofchain.md) |
 | Why lift, do not author? | [explanation/lift-not-author.md](explanation/lift-not-author.md) |
 | Why is provability monotonic? | [explanation/monotonic-provability.md](explanation/monotonic-provability.md) |
+| How do we know two `if`s in different languages are the same construct? | [explanation/cross-language-equivalence.md](explanation/cross-language-equivalence.md) |
 | What is out of scope? | [explanation/boundaries.md](explanation/boundaries.md) |
 | What is the product surface? | [explanation/product.md](explanation/product.md) |
 | What is the short pitch? | [explanation/pitch.md](explanation/pitch.md) |
