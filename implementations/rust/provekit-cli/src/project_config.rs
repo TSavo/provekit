@@ -217,6 +217,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "python-source",
     "ruby-source",
     "php-source",
+    "java-source",
     "java-bean-validation",
     "java-jml",
     "jvm-bytecode",

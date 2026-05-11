@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "java:Int",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Int",
+    "description": "Java integral primitive value, represented as the ProvekIt Int sort in this draft slice."
+  }
+}

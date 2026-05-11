@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "java:Bool",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Bool",
+    "description": "Java boolean truth values."
+  }
+}

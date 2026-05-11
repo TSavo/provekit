@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "java:Unit",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Unit",
+    "description": "Unit sort for effect markers and empty statements."
+  }
+}

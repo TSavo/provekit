@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "java:String",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "String",
+    "description": "Java String / source bytes literal sort."
+  }
+}

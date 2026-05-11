@@ -1,0 +1,7 @@
+{
+  "kind": "equation",
+  "fn_name": "java:eq:seq-skip-right",
+  "lhs": "java:seq(s,java:skip(unit))",
+  "rhs": "s",
+  "locus": "menagerie/java-language-signature/README.md"
+}

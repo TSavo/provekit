@@ -1,0 +1,7 @@
+{
+  "kind": "equation",
+  "fn_name": "java:eq:seq-assoc",
+  "lhs": "java:seq(java:seq(a,b),c)",
+  "rhs": "java:seq(a,java:seq(b,c))",
+  "locus": "menagerie/java-language-signature/README.md"
+}
