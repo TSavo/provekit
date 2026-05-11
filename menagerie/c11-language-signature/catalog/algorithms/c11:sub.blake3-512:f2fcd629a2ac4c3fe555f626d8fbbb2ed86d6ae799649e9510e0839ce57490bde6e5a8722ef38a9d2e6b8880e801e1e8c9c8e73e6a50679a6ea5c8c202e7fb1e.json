@@ -3,7 +3,7 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:mul",
+    "fn_name": "c11:sub",
     "formals": [
       "lhs",
       "rhs"
@@ -26,7 +26,7 @@
       "args": [
         {
           "kind": "op",
-          "name": "mul",
+          "name": "sub",
           "args": [
             {
               "kind": "var",
@@ -42,13 +42,24 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "mul",
+      "operator": "sub",
       "arity": [
         "Int",
         "Int"
       ],
       "result": "Int",
-      "wp": "mathematical integer multiplication when no overflow holds"
+      "wp": "mathematical integer subtraction when no overflow holds",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -66,10 +77,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e",
+  "cid": "blake3-512:f2fcd629a2ac4c3fe555f626d8fbbb2ed86d6ae799649e9510e0839ce57490bde6e5a8722ef38a9d2e6b8880e801e1e8c9c8e73e6a50679a6ea5c8c202e7fb1e",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "f8dB1QSrmnvbiJbBkmBwge8YOjkfY38wHBeYrMmmeyuu5lKsl+4uWj66k2mMIXT9lCz35l5DhZDXjdZZObxOAQ=="
+    "sig_b64": "Qz0Hpe9DZCDL5NFREePvW6giQ6wYBj+MafwPAai15T1mgdNFPOc5enkvS0eQ8sOaZZYA/qbtKxAWhBCclX+uCA=="
   }
 }

@@ -3,17 +3,11 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:add",
+    "fn_name": "c11:neg",
     "formals": [
-      "lhs",
-      "rhs"
+      "value"
     ],
     "formal_sorts": [
-      {
-        "kind": "ctor",
-        "name": "Int",
-        "args": []
-      },
       {
         "kind": "ctor",
         "name": "Int",
@@ -26,15 +20,11 @@
       "args": [
         {
           "kind": "op",
-          "name": "add",
+          "name": "neg",
           "args": [
             {
               "kind": "var",
-              "name": "lhs"
-            },
-            {
-              "kind": "var",
-              "name": "rhs"
+              "name": "value"
             }
           ]
         }
@@ -42,13 +32,20 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "add",
+      "operator": "neg",
       "arity": [
-        "Int",
         "Int"
       ],
       "result": "Int",
-      "wp": "mathematical integer addition when no overflow holds"
+      "wp": "integer arithmetic negation when no overflow holds",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -66,10 +63,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805",
+  "cid": "blake3-512:3d2a3a00ff900c93cb4453efb8d2bf38424a6b531c2fdd72bd9736fa870c603b0462387438df623bc396140bc9cc0c4f572dcfc9327ede274304d3c5542b5259",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "S7bwPmBvPhwHmYixec8BhTF+XzbeUJfw7SsTxztLLlHaizWrAQKqHzQcPwrt/jrl6MOueSKBTGnSd+3pO8SEBg=="
+    "sig_b64": "7wSzoApubCVigAvgIc39ABXSflN4TqlMvk7CQmLkgJqZDLmYCk/uf4yk2hFXiyckui5TTxNjZxL8UHfFnZQdCQ=="
   }
 }

@@ -215,10 +215,11 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
         (
             "cast",
             {
-                "formals": ["value"],
-                "formal_sorts": ["Expr"],
+                "formals": ["target_type", "value"],
+                "formal_sorts": ["Expr", "Expr"],
                 "return_sort": "Expr",
-                "wp": "C cast expression preserving lifted child value",
+                "wp": "C cast expression preserving explicit target type and lifted child value",
+                "arity_shape": named_slots(slot("target_type", slot_sort="type"), slot("value")),
             },
         ),
         (
@@ -1084,7 +1085,7 @@ SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
         ("label", "<name>: <body>"),
         ("goto", "goto <target>;"),
         ("do", "do { <body> } while (<cond>);"),
-        ("cast", "((int)<value>)"),
+        ("cast", "((<target_type>)<value>)"),
         ("array-subscript", "<base>[<index>]"),
         ("conditional", "(<cond> ? <then_expr> : <else_expr>)"),
         ("compound-literal", "((int){<value>})"),
@@ -1239,7 +1240,7 @@ MINTED_CURSOR_MAP = {
         "path CID, assembly CID, target surface, target lifter, target symbol, dialect, template, assembly source, outputs, inputs, clobbers",
     ),
     "CXCursor_DoStmt": ("do", 2, "body, condition"),
-    "CXCursor_CStyleCastExpr": ("cast", 1, "cast child expression"),
+    "CXCursor_CStyleCastExpr": ("cast", 2, "target type, cast child expression"),
     "CXCursor_ArraySubscriptExpr": ("array-subscript", 2, "base, index"),
     "CXCursor_ConditionalOperator": ("conditional", 3, "condition, then expression, else expression"),
     "CXCursor_CompoundLiteralExpr": ("compound-literal", 1, "initializer payload"),
@@ -1536,6 +1537,17 @@ def generated_op_specs() -> dict[Path, str]:
     for name, cfg in list(MINTED_OPS.items()) + list(OPERATOR_OPS.items()):
         path = SPECS / spec_filename_for_op(name)
         out[path] = json.dumps(algorithm_spec(name, cfg), indent=2, sort_keys=False) + "\n"
+    return out
+
+
+def generated_core_op_specs() -> dict[Path, str]:
+    out: dict[Path, str] = {}
+    for spec in CORE_OPS:
+        path = SPECS / spec
+        value = json.loads(path.read_text(encoding="utf-8"))
+        name = value["fn_name"].removeprefix("c11:")
+        value.setdefault("post", {})["arity_shape"] = arity_shape_for_operation(name)
+        out[path] = json.dumps(value, indent=2, sort_keys=False) + "\n"
     return out
 
 
@@ -1918,6 +1930,7 @@ def generated_files(index_h: Path) -> dict[Path, str]:
     enum_entries = parse_cursor_enum(index_h)
     mapping = build_mapping(enum_entries, op_cids, signature_cid, index_h)
     files: dict[Path, str] = {}
+    files.update(generated_core_op_specs())
     files.update(generated_op_specs())
     files[SPECS / "language_signature_c11.spec.json"] = language_signature_spec()
     files[SIG / "mint.sh"] = mint_sh()

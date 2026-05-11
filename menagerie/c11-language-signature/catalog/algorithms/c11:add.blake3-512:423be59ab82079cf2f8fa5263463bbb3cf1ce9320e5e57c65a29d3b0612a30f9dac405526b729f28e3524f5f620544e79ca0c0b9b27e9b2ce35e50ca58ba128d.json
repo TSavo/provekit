@@ -3,11 +3,17 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:neg",
+    "fn_name": "c11:add",
     "formals": [
-      "value"
+      "lhs",
+      "rhs"
     ],
     "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
       {
         "kind": "ctor",
         "name": "Int",
@@ -20,11 +26,15 @@
       "args": [
         {
           "kind": "op",
-          "name": "neg",
+          "name": "add",
           "args": [
             {
               "kind": "var",
-              "name": "value"
+              "name": "lhs"
+            },
+            {
+              "kind": "var",
+              "name": "rhs"
             }
           ]
         }
@@ -32,12 +42,24 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "neg",
+      "operator": "add",
       "arity": [
+        "Int",
         "Int"
       ],
       "result": "Int",
-      "wp": "integer arithmetic negation when no overflow holds"
+      "wp": "mathematical integer addition when no overflow holds",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -55,10 +77,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961",
+  "cid": "blake3-512:423be59ab82079cf2f8fa5263463bbb3cf1ce9320e5e57c65a29d3b0612a30f9dac405526b729f28e3524f5f620544e79ca0c0b9b27e9b2ce35e50ca58ba128d",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "AuOE1KyH5Tk9yL/NizqNRSxWdv5ssp2+JDI1NI/lp0EMqygTAw5uWHBV0OW3lKEpQLmr8C2RJ27L5IzIn02XBQ=="
+    "sig_b64": "Mw1iBMoM5r54ISJVLgCw/sfYe/jmVYFidr/imboVAQ0H4mRpgyzLhx+5aGthWjy0IsSGtIgy2givtRCoxhj6Ag=="
   }
 }

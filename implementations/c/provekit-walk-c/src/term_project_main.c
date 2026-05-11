@@ -887,16 +887,23 @@ static C11Term *lift_expr(CXCursor cursor) {
         return lift_compound_assign_expr(cursor);
     case CXCursor_CStyleCastExpr: {
         CursorList children = {0};
+        C11Term *target_type = NULL;
         C11Term *inner = NULL;
         C11Term *out = NULL;
+        char *type_name = cx_string_copy(clang_getTypeSpelling(clang_getCursorType(cursor)));
 
         if (cursor_children(cursor, &children) == 0 && children.len > 0) {
+            target_type = term_var_take(type_name);
+            type_name = NULL;
             inner = unwrap_expr(children.items[children.len - 1]);
-            if (inner != NULL) {
-                out = term_op1_take("cast", inner);
+            if (target_type != NULL && inner != NULL) {
+                out = term_op2_take("cast", target_type, inner);
+                target_type = NULL;
                 inner = NULL;
             }
         }
+        free(type_name);
+        term_free(target_type);
         term_free(inner);
         cursor_list_free(&children);
         return out == NULL ? wrap_generic_cursor(cursor, "cast") : out;
@@ -1362,11 +1369,20 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
     Buf surface = {0};
     const char *base = path_basename(source_path);
     const char *note = strcmp(base, "foo.c") == 0 ? FOO_WP_NOTE : GENERIC_WP_NOTE;
+    char *source = NULL;
+    char *source_cid = NULL;
     int rc = -1;
 
     if (term_surface(&surface, term) != 0) goto done;
+    source = read_file(source_path);
+    if (source == NULL) goto done;
+    source_cid = cid_for_bytes(source, strlen(source));
+    if (source_cid == NULL) goto done;
+
     if (buf_append(out, "{\"kind\":\"c11-algebra-term\",\"signature_cid\":\"") != 0 ||
         buf_append(out, pk_c11_signature_cid()) != 0 ||
+        buf_append(out, "\",\"source_cid\":\"") != 0 ||
+        buf_append(out, source_cid) != 0 ||
         buf_append(out, "\",\"source\":") != 0 ||
         buf_append_json_string(out, base) != 0 ||
         buf_append(out, ",\"term_surface\":") != 0 ||
@@ -1381,6 +1397,8 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
     rc = 0;
 
 done:
+    free(source_cid);
+    free(source);
     buf_free(&surface);
     return rc;
 }
@@ -2021,6 +2039,14 @@ static const char *literal_arg_or(const C11Term *term, size_t index, const char 
     return fallback;
 }
 
+static const char *type_arg_or(const C11Term *term, size_t index, const char *fallback) {
+    if (term->n_args > index &&
+        (term->args[index]->kind == C11_TERM_VAR || term->args[index]->kind == C11_TERM_LITERAL)) {
+        return term->args[index]->name == NULL ? fallback : term->args[index]->name;
+    }
+    return fallback;
+}
+
 static const char *compound_assign_symbol(const char *name) {
     if (strcmp(name, "compound_assign_add") == 0) return "+=";
     if (strcmp(name, "compound_assign_sub") == 0) return "-=";
@@ -2105,9 +2131,13 @@ static int serialize_expr(Buf *out, const C11Term *term) {
                 buf_append_char(out, '.') == 0 &&
                 buf_append(out, member_field_name(term)) == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "cast") == 0 && term->n_args == 1) {
-            return buf_append(out, "((int)") == 0 &&
-                serialize_expr(out, term->args[0]) == 0 &&
+        if (strcmp(term->name, "cast") == 0 && term->n_args >= 1) {
+            size_t value_index = term->n_args >= 2 ? 1 : 0;
+
+            return buf_append(out, "((") == 0 &&
+                buf_append(out, type_arg_or(term, 0, "int")) == 0 &&
+                buf_append_char(out, ')') == 0 &&
+                serialize_expr(out, term->args[value_index]) == 0 &&
                 buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         if (strcmp(term->name, "array-subscript") == 0 && term->n_args == 2) {
@@ -2404,6 +2434,13 @@ static int collect_names(
         return 0;
     }
     if (term->kind != C11_TERM_OP) return 0;
+    if (strcmp(term->name, "cast") == 0) {
+        size_t value_index = term->n_args >= 2 ? 1 : 0;
+
+        return term->n_args > value_index
+            ? collect_names(term->args[value_index], locals, params, pointer_params, struct_params, callees, 0)
+            : 0;
+    }
     if (strcmp(term->name, "asm-link-edge") == 0) {
         for (size_t i = 8; i < term->n_args && i <= 9; i++) {
             if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, 0) != 0) {

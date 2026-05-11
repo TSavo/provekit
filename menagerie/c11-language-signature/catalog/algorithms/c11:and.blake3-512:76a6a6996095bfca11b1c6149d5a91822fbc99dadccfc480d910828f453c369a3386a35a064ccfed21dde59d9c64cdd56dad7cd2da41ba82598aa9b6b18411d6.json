@@ -3,7 +3,7 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:lt",
+    "fn_name": "c11:and",
     "formals": [
       "lhs",
       "rhs"
@@ -11,12 +11,12 @@
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "Int",
+        "name": "Bool",
         "args": []
       },
       {
         "kind": "ctor",
-        "name": "Int",
+        "name": "Bool",
         "args": []
       }
     ],
@@ -27,16 +27,32 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "lt",
+      "operator": "and",
       "arity": [
-        "Int",
-        "Int"
+        "Bool",
+        "Bool"
       ],
       "result": "Bool",
-      "wp": "integer less-than comparison"
+      "wp": "short-circuit conjunction",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "left"
+          },
+          {
+            "name": "right"
+          }
+        ]
+      }
     },
     "effects": {
-      "effects": []
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "rhs evaluated only when lhs is true"
+        }
+      ]
     },
     "auto_minted_mementos": [],
     "return_sort": {
@@ -46,10 +62,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:ec6098a797df50b97060e9392f55fbd0df7c437e70e3c72b32922d72a785701a900891cc88eb0d24e8ad21ec130ce7bdc21aa89a1b1623996012effe80461420",
+  "cid": "blake3-512:76a6a6996095bfca11b1c6149d5a91822fbc99dadccfc480d910828f453c369a3386a35a064ccfed21dde59d9c64cdd56dad7cd2da41ba82598aa9b6b18411d6",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "2PGtOQAHT7E/mgu/2uWOkV96//iwq0FKoEFJvG65+CzhAib1b33r1KJqQgfMByMarIwr3bXbCHv0xWHkRHnNAw=="
+    "sig_b64": "9k6U0yGHyd35VSefl59kdDxQlqd4Iio3Xk01NU/KbwCROs8t/sU8l8CEF362ZwYn8F8fNEDXk48fBjL070u8AA=="
   }
 }

@@ -3,20 +3,20 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:call",
+    "fn_name": "c11:while",
     "formals": [
-      "callee",
-      "args"
+      "cond",
+      "body"
     ],
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "FnContract",
+        "name": "Bool",
         "args": []
       },
       {
         "kind": "ctor",
-        "name": "ListOfExpr",
+        "name": "Stmt",
         "args": []
       }
     ],
@@ -27,19 +27,31 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "call",
+      "operator": "while",
       "arity": [
-        "FnContract",
-        "ListOf<Expr>"
+        "Bool",
+        "Stmt"
       ],
       "result": "Stmt",
-      "wp": "callee pre under bound args implies callee post under caller state"
+      "wp": "loop invariant holds and cond is false at exit",
+      "notes": "Requires a loop invariant memento for nontrivial discharge",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "cond"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
         {
           "kind": "effect-polymorphic",
-          "rule": "callee.effects"
+          "rule": "body.effects plus loop invariant obligations"
         }
       ]
     },
@@ -51,10 +63,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:60d53cea89198925ed2b932d076bc348f980854458567d233399444bd462018a591ea42d05a6b4a240c3d9a96fe3f6a748f2428fae0c5dde2d47c34ee1f4daee",
+  "cid": "blake3-512:f2cc21f1fe8b6836f87b0ddab3b27737e6ca7392040e4c9d6e4afadad66d74cfb745863c9478f9b90369eaa7a3a56456617b9688eefefc471809cffb74f435fc",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "jsgSmkZZ620NFIs/+jD5arhWrz8ZO2rAm2itLGN76XOEet5OQvWDeUgbljJCyUvui7XU8W21Pl4zL9YbuNcgAQ=="
+    "sig_b64": "2QHHSOQ0tJZ6hPAmLdOsimLqfLvn9oRB1YYWdDeOcwWk18xDdU8zFlcUIkwWQM4UWC84hd46UBw9bNG2NMXLDg=="
   }
 }

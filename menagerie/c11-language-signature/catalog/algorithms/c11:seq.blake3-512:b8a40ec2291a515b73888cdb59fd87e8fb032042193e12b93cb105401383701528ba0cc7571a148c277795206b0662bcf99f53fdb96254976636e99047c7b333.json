@@ -3,14 +3,20 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:break",
+    "fn_name": "c11:seq",
     "formals": [
-      "unit"
+      "first",
+      "second"
     ],
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "Unit",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
         "args": []
       }
     ],
@@ -21,18 +27,23 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "break",
+      "operator": "seq",
       "arity": [
-        "Unit"
+        "Stmt",
+        "Stmt"
       ],
       "result": "Stmt",
-      "wp": "exit nearest enclosing switch or loop"
+      "wp": "wp(first, wp(second, post))",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 2
+      }
     },
     "effects": {
       "effects": [
         {
           "kind": "effect-polymorphic",
-          "rule": "control-transfer"
+          "rule": "union(first.effects, second.effects)"
         }
       ]
     },
@@ -44,10 +55,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:3a43532860e5dbd125a89564b51af5a754dbabefbd5cdfb1b01e2c4ff2cab1752d188e59cb9b57d9a2049bc871923808e2115caf70e018d3f9cdeffcfa7cd778",
+  "cid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "uI4Jqf7fY5482SLxUtI0DdaFtuQnHVwDmd4t7d9YR6fUO4pYP2gS8xlkrc7HFaC9keK1X0xe3tgPoSfLsMp1Cw=="
+    "sig_b64": "QHMtKhXv230Ukd8QscVjwEz0uQPHNkWBCeaVQZ442E1Y+RbecMGyZBHv/GLOM1f8lRpryVK680qqsDOD3qz8AQ=="
   }
 }

@@ -3,15 +3,27 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:while",
+    "fn_name": "c11:for",
     "formals": [
+      "init",
       "cond",
+      "step",
       "body"
     ],
     "formal_sorts": [
       {
         "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
         "name": "Bool",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
         "args": []
       },
       {
@@ -27,20 +39,38 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "while",
+      "operator": "for",
       "arity": [
+        "Stmt",
         "Bool",
+        "Stmt",
         "Stmt"
       ],
       "result": "Stmt",
-      "wp": "loop invariant holds and cond is false at exit",
-      "notes": "Requires a loop invariant memento for nontrivial discharge"
+      "wp": "seq(init, while(cond, seq(body, step)))",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "init"
+          },
+          {
+            "name": "cond"
+          },
+          {
+            "name": "step"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
         {
           "kind": "effect-polymorphic",
-          "rule": "body.effects plus loop invariant obligations"
+          "rule": "union(init.effects, body.effects, step.effects)"
         }
       ]
     },
@@ -52,10 +82,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:d2ad96e177a16cd03ad4c924c9e789b90382bb163cc4cdf19cd6c4e16a656c55ab9dbb654d4257b521cc61be6a7e980505214668bf70e57a7dd1c969767c0aff",
+  "cid": "blake3-512:ef9fff35478be5c8ccf81dbed86e9197f12f3a9e759483cec288123bc0435a20be1319b12ab5ccde389abf28469e166abb74ebb42bc886b6a462de416931f36d",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "qC6ZucZBMcZDbMuqOyojJ/E1KM8fiVtHi9vkL8FM/IeYUA7o4wDO7sOtzgjc5NrsIqLgSOWv7wjaL0vjXzdABQ=="
+    "sig_b64": "y8bqp9hOerHpiMEKvtgCX5+hPUmIVEqaQhGpxTOrwkGYw6CQm8bS5AyBpVBWDK4x21iDLlQNH8E0HhXJQiRvCw=="
   }
 }

@@ -3,7 +3,7 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:le",
+    "fn_name": "c11:eq",
     "formals": [
       "lhs",
       "rhs"
@@ -27,13 +27,24 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "le",
+      "operator": "eq",
       "arity": [
         "Int",
         "Int"
       ],
       "result": "Bool",
-      "wp": "integer less-than-or-equal comparison"
+      "wp": "integer equality comparison",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": []
@@ -46,10 +57,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:c79c47a0c0dacd987390f54895c4c07afe3eb4f2271214fb486902333d141fe5cd3530493762af13ba0393de75ce7a8422e73bb4e41eb43cfd8f9b921afc30b4",
+  "cid": "blake3-512:786af5f3033d4bcb976140d677166038e48a0905318e9d8ab7445d14f4986f22f38ce1d9924ac538fa020901b782c6e6fa4f3abe4016fa384947af727f0e415d",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "zWdYVJNSb8yRiakz4bBy+5V1pTp5R52B49zkImxP9J/CSRvBscTbUNbfNF8mCp8Q8S30yk8dwaVIoE8Xqo1uCw=="
+    "sig_b64": "YQqvOEc2bsnusfmpYdBiX4FQt/pYa1V5lep+XnwPTFM124Gxpdm05HkpejdHHVmdeEEzbZt1YMvSbIApAkwbAA=="
   }
 }

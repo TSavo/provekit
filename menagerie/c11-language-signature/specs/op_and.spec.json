@@ -35,7 +35,18 @@
       "Bool"
     ],
     "result": "Bool",
-    "wp": "short-circuit conjunction"
+    "wp": "short-circuit conjunction",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

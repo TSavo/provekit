@@ -28,7 +28,15 @@
       "Unit"
     ],
     "result": "Stmt",
-    "wp": "exit nearest enclosing switch or loop"
+    "wp": "exit nearest enclosing switch or loop",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

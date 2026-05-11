@@ -35,7 +35,11 @@
       "Stmt"
     ],
     "result": "Stmt",
-    "wp": "wp(first, wp(second, post))"
+    "wp": "wp(first, wp(second, post))",
+    "arity_shape": {
+      "kind": "positional",
+      "arity": 2
+    }
   },
   "effects": {
     "effects": [

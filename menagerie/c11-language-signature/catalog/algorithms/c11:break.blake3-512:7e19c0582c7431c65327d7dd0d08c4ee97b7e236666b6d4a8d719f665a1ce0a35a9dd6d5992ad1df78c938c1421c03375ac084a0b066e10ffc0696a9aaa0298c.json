@@ -3,7 +3,7 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:continue",
+    "fn_name": "c11:break",
     "formals": [
       "unit"
     ],
@@ -21,12 +21,20 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "continue",
+      "operator": "break",
       "arity": [
         "Unit"
       ],
       "result": "Stmt",
-      "wp": "jump to next loop iteration"
+      "wp": "exit nearest enclosing switch or loop",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -44,10 +52,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:26b6cba9563e7f756d7e65d81eee266613ff63c0b30144445fec7d4db117a323afc1ccdea8e4268f7a46e88986aa5b9b1d73300d9f69ae32df8390ec076b7e46",
+  "cid": "blake3-512:7e19c0582c7431c65327d7dd0d08c4ee97b7e236666b6d4a8d719f665a1ce0a35a9dd6d5992ad1df78c938c1421c03375ac084a0b066e10ffc0696a9aaa0298c",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "PiiQXQf5TfZ7IldoTRJnReJ4tnvVWi8dJQCXHyeVJAP1Uk+hQWMsYQDoJdVa6MQNePCvMFel6I8knUs7bITTCQ=="
+    "sig_b64": "8VZZkkCYVqvTPF4R9y9YiXskmUKWAXTp1f64RxuVt3MVU31XCSOTc0N/cIzoNbk7UscnDkqCgUvEi4lFow2sCw=="
   }
 }

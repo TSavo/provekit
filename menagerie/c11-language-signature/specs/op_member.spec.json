@@ -35,7 +35,19 @@
       "FieldName"
     ],
     "result": "LValue",
-    "wp": "field lvalue projection"
+    "wp": "field lvalue projection",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "field",
+          "slot_sort": "identifier"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": []

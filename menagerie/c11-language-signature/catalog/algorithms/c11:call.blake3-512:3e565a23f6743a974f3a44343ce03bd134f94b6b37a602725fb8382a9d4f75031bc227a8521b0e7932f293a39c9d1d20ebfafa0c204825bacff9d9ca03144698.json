@@ -3,32 +3,20 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:for",
+    "fn_name": "c11:call",
     "formals": [
-      "init",
-      "cond",
-      "step",
-      "body"
+      "callee",
+      "args"
     ],
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "Stmt",
+        "name": "FnContract",
         "args": []
       },
       {
         "kind": "ctor",
-        "name": "Bool",
-        "args": []
-      },
-      {
-        "kind": "ctor",
-        "name": "Stmt",
-        "args": []
-      },
-      {
-        "kind": "ctor",
-        "name": "Stmt",
+        "name": "ListOfExpr",
         "args": []
       }
     ],
@@ -39,21 +27,33 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "for",
+      "operator": "call",
       "arity": [
-        "Stmt",
-        "Bool",
-        "Stmt",
-        "Stmt"
+        "FnContract",
+        "ListOf<Expr>"
       ],
       "result": "Stmt",
-      "wp": "seq(init, while(cond, seq(body, step)))"
+      "wp": "callee pre under bound args implies callee post under caller state",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "callee"
+          },
+          {
+            "name": "args",
+            "shape": {
+              "kind": "set"
+            }
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
         {
           "kind": "effect-polymorphic",
-          "rule": "union(init.effects, body.effects, step.effects)"
+          "rule": "callee.effects"
         }
       ]
     },
@@ -65,10 +65,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:1befb2ce1afd30e48439a6e3e0cda8cbc1a965c0c55a4d0b1dde409ea2aa12d8e970f0a5b05c53d71ecb36a443730392adb2c70fba5045945b4c267dddb6a2d3",
+  "cid": "blake3-512:3e565a23f6743a974f3a44343ce03bd134f94b6b37a602725fb8382a9d4f75031bc227a8521b0e7932f293a39c9d1d20ebfafa0c204825bacff9d9ca03144698",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "v1PP4EQWT7PMJ1vHPORbAppy6Way1hhzhFWWTDB/5qES5lEudeYnSMQEVMxaKze+A3z2lRLhuPDSTq+UQp0wDg=="
+    "sig_b64": "+NV7MbeoVDkhfxPfqAVehVL57zehqQzeg3yYaQiZphyGbwngaMHpNAe2qCJcSMkFilp0FgR2O86TGAqhb2WZBw=="
   }
 }

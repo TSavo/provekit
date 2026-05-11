@@ -2,9 +2,15 @@
   "kind": "algorithm",
   "fn_name": "c11:cast",
   "formals": [
+    "target_type",
     "value"
   ],
   "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
     {
       "kind": "ctor",
       "name": "Expr",
@@ -25,18 +31,23 @@
     "kind": "operation-contract",
     "operator": "cast",
     "arity": [
+      "Expr",
       "Expr"
     ],
     "arity_shape": {
       "kind": "named",
       "slots": [
         {
+          "name": "target_type",
+          "slot_sort": "type"
+        },
+        {
           "name": "value"
         }
       ]
     },
     "result": "Expr",
-    "wp": "C cast expression preserving lifted child value"
+    "wp": "C cast expression preserving explicit target type and lifted child value"
   },
   "effects": {
     "effects": []

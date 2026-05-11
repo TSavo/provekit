@@ -40,7 +40,21 @@
         "Stmt"
       ],
       "result": "Stmt",
-      "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)"
+      "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "cond"
+          },
+          {
+            "name": "then_branch"
+          },
+          {
+            "name": "else_branch"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -58,10 +72,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:402feb91b68096553e0c7f000cdb47c50a2d16094571a426639d6be487b934b9f1664bd4b8aa5f8cc2acf5d47f44cee31882c6dc8799e71aa29381fd91309b65",
+  "cid": "blake3-512:29004b6aa5186996e03e7a7d0615aeefb1d147b1b2ce29aa476052c294578271c0f4b09d32c19cf5f458ced8cf0839c0f229d0bd7b131bd5c5fbbf44d8e25f35",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "JJyvBDoRf2MSB6RuU64+aad3V+aiCJ4gKRRjKvJRWwYBCQskN7BFtiUkMCdbthvnY2gTfx2+K9hL6KQid9MADg=="
+    "sig_b64": "nl8uU3eJrR6g3HGKHdTm/eaMPTeDNWmtJnPiiFtmuUn+OCoZrc7Tc+A744YGIHdyAn2JlGsEQf/dsHg5LtvADw=="
   }
 }

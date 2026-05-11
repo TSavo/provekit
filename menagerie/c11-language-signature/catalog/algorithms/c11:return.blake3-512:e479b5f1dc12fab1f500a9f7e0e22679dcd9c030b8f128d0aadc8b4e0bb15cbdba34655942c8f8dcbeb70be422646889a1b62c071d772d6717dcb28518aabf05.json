@@ -26,7 +26,15 @@
         "Expr"
       ],
       "result": "Stmt",
-      "wp": "bind function out value and exit current body"
+      "wp": "bind function out value and exit current body",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -44,10 +52,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:5f1b6815fc786463b21234a14b2216a5156ebd5e385eadb1c749c0fa62e28e09f38adc37de9da36502200a4ee8e364e08b23f8767267e04dfb700c3061bb0428",
+  "cid": "blake3-512:e479b5f1dc12fab1f500a9f7e0e22679dcd9c030b8f128d0aadc8b4e0bb15cbdba34655942c8f8dcbeb70be422646889a1b62c071d772d6717dcb28518aabf05",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "BlxRf5oKa0yt6SMwqnOpJCZNcJl4tJiDXj92JbsekxOmiLaZLPJQLkMm7lAELN0WR/DRhLCYWCxEVlPbgqNzBA=="
+    "sig_b64": "UJMYYFGCp4hGWb+1Vxt1ZhKNQYjmuzWAkqX4BJYM1dloTwzVDzP/FAx8/38u0kbzV2pnzpcC81txdmHoZMM6Ag=="
   }
 }

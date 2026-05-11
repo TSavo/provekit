@@ -4,7 +4,7 @@ C is emitted as a content-addressed algebra over contracts. Here is the algebra.
 
 The minted C11 `LanguageSignatureMemento` is:
 
-`blake3-512:a27e0770973e891baf139fea6e121ea14a474618738438fbb90edcc98dcd25b686e4fb0e1958e31736a00f07baaff2ef9c1d1db45cac45f0b0dfd5c0a7ddb86f`
+`blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted C function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 
@@ -60,7 +60,7 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `label` | `Expr x Stmt` | `Stmt` | statement label with body |
 | `goto` | `Expr` | `Stmt` | control transfer to label target |
 | `do` | `Stmt x Bool` | `Stmt` | do body once, then loop while cond |
-| `cast` | `Expr` | `Expr` | C cast expression preserving lifted child value |
+| `cast` | `Expr x Expr` | `Expr` | C cast expression preserving explicit target type and lifted child value |
 | `array-subscript` | `Expr x Expr` | `LValue` | array element lvalue projection |
 | `conditional` | `Bool x Expr x Expr` | `Expr` | ternary expression selected by cond |
 | `compound-literal` | `Expr` | `Expr` | compound literal expression payload |

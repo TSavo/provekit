@@ -92,140 +92,140 @@
   {
     "kind": "algorithm",
     "spec": "op_skip.spec.json",
-    "cid": "blake3-512:f6d5647365eb408ec445a22218b0587f23c37a6a635fac4f398a48469fb7a190c7751bac9640b918b0f27f08038ad7dc38837cbd718115bb99644cc5a7fbb93a",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:skip.blake3-512:f6d5647365eb408ec445a22218b0587f23c37a6a635fac4f398a48469fb7a190c7751bac9640b918b0f27f08038ad7dc38837cbd718115bb99644cc5a7fbb93a.json"
+    "cid": "blake3-512:27e6a7cdb6abe2524c913852a5cb224f7ba132b08cd03de355516c90addb8ec49f047464cef79a7f0eb4a831850a9cb4f94efca5bed88b8dc0f582a205d8a876",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:skip.blake3-512:27e6a7cdb6abe2524c913852a5cb224f7ba132b08cd03de355516c90addb8ec49f047464cef79a7f0eb4a831850a9cb4f94efca5bed88b8dc0f582a205d8a876.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_seq.spec.json",
-    "cid": "blake3-512:f8390f57e0f4408252211849b4e62639c9779a19bcdfc207eb80e2f3225e2f3a1262434a0e56b0de765b35ad377ffee3b91e69750996104505dc9ed7c1398915",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:seq.blake3-512:f8390f57e0f4408252211849b4e62639c9779a19bcdfc207eb80e2f3225e2f3a1262434a0e56b0de765b35ad377ffee3b91e69750996104505dc9ed7c1398915.json"
+    "cid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:seq.blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_if.spec.json",
-    "cid": "blake3-512:402feb91b68096553e0c7f000cdb47c50a2d16094571a426639d6be487b934b9f1664bd4b8aa5f8cc2acf5d47f44cee31882c6dc8799e71aa29381fd91309b65",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:if.blake3-512:402feb91b68096553e0c7f000cdb47c50a2d16094571a426639d6be487b934b9f1664bd4b8aa5f8cc2acf5d47f44cee31882c6dc8799e71aa29381fd91309b65.json"
+    "cid": "blake3-512:29004b6aa5186996e03e7a7d0615aeefb1d147b1b2ce29aa476052c294578271c0f4b09d32c19cf5f458ced8cf0839c0f229d0bd7b131bd5c5fbbf44d8e25f35",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:if.blake3-512:29004b6aa5186996e03e7a7d0615aeefb1d147b1b2ce29aa476052c294578271c0f4b09d32c19cf5f458ced8cf0839c0f229d0bd7b131bd5c5fbbf44d8e25f35.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_while.spec.json",
-    "cid": "blake3-512:d2ad96e177a16cd03ad4c924c9e789b90382bb163cc4cdf19cd6c4e16a656c55ab9dbb654d4257b521cc61be6a7e980505214668bf70e57a7dd1c969767c0aff",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:while.blake3-512:d2ad96e177a16cd03ad4c924c9e789b90382bb163cc4cdf19cd6c4e16a656c55ab9dbb654d4257b521cc61be6a7e980505214668bf70e57a7dd1c969767c0aff.json"
+    "cid": "blake3-512:f2cc21f1fe8b6836f87b0ddab3b27737e6ca7392040e4c9d6e4afadad66d74cfb745863c9478f9b90369eaa7a3a56456617b9688eefefc471809cffb74f435fc",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:while.blake3-512:f2cc21f1fe8b6836f87b0ddab3b27737e6ca7392040e4c9d6e4afadad66d74cfb745863c9478f9b90369eaa7a3a56456617b9688eefefc471809cffb74f435fc.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_for.spec.json",
-    "cid": "blake3-512:1befb2ce1afd30e48439a6e3e0cda8cbc1a965c0c55a4d0b1dde409ea2aa12d8e970f0a5b05c53d71ecb36a443730392adb2c70fba5045945b4c267dddb6a2d3",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:for.blake3-512:1befb2ce1afd30e48439a6e3e0cda8cbc1a965c0c55a4d0b1dde409ea2aa12d8e970f0a5b05c53d71ecb36a443730392adb2c70fba5045945b4c267dddb6a2d3.json"
+    "cid": "blake3-512:ef9fff35478be5c8ccf81dbed86e9197f12f3a9e759483cec288123bc0435a20be1319b12ab5ccde389abf28469e166abb74ebb42bc886b6a462de416931f36d",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:for.blake3-512:ef9fff35478be5c8ccf81dbed86e9197f12f3a9e759483cec288123bc0435a20be1319b12ab5ccde389abf28469e166abb74ebb42bc886b6a462de416931f36d.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_switch.spec.json",
-    "cid": "blake3-512:600483b325098b9f47363fb1257b5a99ef4d1117dad06c05e09fa0626ad59747539c9ec2f17e6da859c1f8931a6a9d0b5e60a198dd6b69742d6f01f99897dd6c",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:switch.blake3-512:600483b325098b9f47363fb1257b5a99ef4d1117dad06c05e09fa0626ad59747539c9ec2f17e6da859c1f8931a6a9d0b5e60a198dd6b69742d6f01f99897dd6c.json"
+    "cid": "blake3-512:b0bfd53ebf3991ca52ba1789d025b6fe72879f0aecc86a2b9f3c90c9c182217c30a958ead204fb0860392fd2d6d022811adeda80683aedf7bcb786d5ea127392",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:switch.blake3-512:b0bfd53ebf3991ca52ba1789d025b6fe72879f0aecc86a2b9f3c90c9c182217c30a958ead204fb0860392fd2d6d022811adeda80683aedf7bcb786d5ea127392.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_call.spec.json",
-    "cid": "blake3-512:60d53cea89198925ed2b932d076bc348f980854458567d233399444bd462018a591ea42d05a6b4a240c3d9a96fe3f6a748f2428fae0c5dde2d47c34ee1f4daee",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:call.blake3-512:60d53cea89198925ed2b932d076bc348f980854458567d233399444bd462018a591ea42d05a6b4a240c3d9a96fe3f6a748f2428fae0c5dde2d47c34ee1f4daee.json"
+    "cid": "blake3-512:3e565a23f6743a974f3a44343ce03bd134f94b6b37a602725fb8382a9d4f75031bc227a8521b0e7932f293a39c9d1d20ebfafa0c204825bacff9d9ca03144698",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:call.blake3-512:3e565a23f6743a974f3a44343ce03bd134f94b6b37a602725fb8382a9d4f75031bc227a8521b0e7932f293a39c9d1d20ebfafa0c204825bacff9d9ca03144698.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_return.spec.json",
-    "cid": "blake3-512:5f1b6815fc786463b21234a14b2216a5156ebd5e385eadb1c749c0fa62e28e09f38adc37de9da36502200a4ee8e364e08b23f8767267e04dfb700c3061bb0428",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:return.blake3-512:5f1b6815fc786463b21234a14b2216a5156ebd5e385eadb1c749c0fa62e28e09f38adc37de9da36502200a4ee8e364e08b23f8767267e04dfb700c3061bb0428.json"
+    "cid": "blake3-512:e479b5f1dc12fab1f500a9f7e0e22679dcd9c030b8f128d0aadc8b4e0bb15cbdba34655942c8f8dcbeb70be422646889a1b62c071d772d6717dcb28518aabf05",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:return.blake3-512:e479b5f1dc12fab1f500a9f7e0e22679dcd9c030b8f128d0aadc8b4e0bb15cbdba34655942c8f8dcbeb70be422646889a1b62c071d772d6717dcb28518aabf05.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_break.spec.json",
-    "cid": "blake3-512:3a43532860e5dbd125a89564b51af5a754dbabefbd5cdfb1b01e2c4ff2cab1752d188e59cb9b57d9a2049bc871923808e2115caf70e018d3f9cdeffcfa7cd778",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:break.blake3-512:3a43532860e5dbd125a89564b51af5a754dbabefbd5cdfb1b01e2c4ff2cab1752d188e59cb9b57d9a2049bc871923808e2115caf70e018d3f9cdeffcfa7cd778.json"
+    "cid": "blake3-512:7e19c0582c7431c65327d7dd0d08c4ee97b7e236666b6d4a8d719f665a1ce0a35a9dd6d5992ad1df78c938c1421c03375ac084a0b066e10ffc0696a9aaa0298c",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:break.blake3-512:7e19c0582c7431c65327d7dd0d08c4ee97b7e236666b6d4a8d719f665a1ce0a35a9dd6d5992ad1df78c938c1421c03375ac084a0b066e10ffc0696a9aaa0298c.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_continue.spec.json",
-    "cid": "blake3-512:26b6cba9563e7f756d7e65d81eee266613ff63c0b30144445fec7d4db117a323afc1ccdea8e4268f7a46e88986aa5b9b1d73300d9f69ae32df8390ec076b7e46",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:continue.blake3-512:26b6cba9563e7f756d7e65d81eee266613ff63c0b30144445fec7d4db117a323afc1ccdea8e4268f7a46e88986aa5b9b1d73300d9f69ae32df8390ec076b7e46.json"
+    "cid": "blake3-512:1cb0de2e14e227a6d3f7820c88258c5cd74e895442362d48730696d4e4fcb5aa1bd7f345b9ece35222aff70cd369eb4a03c5cc3f08be5d1ae541916c20b4d2bf",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:continue.blake3-512:1cb0de2e14e227a6d3f7820c88258c5cd74e895442362d48730696d4e4fcb5aa1bd7f345b9ece35222aff70cd369eb4a03c5cc3f08be5d1ae541916c20b4d2bf.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_deref.spec.json",
-    "cid": "blake3-512:9eb190c5974e70675bd969eb2b7ab1245ac9b3ce4c2272cfdc64f539813a893aaaf586a55b1600c33e80ffb4b79726bbe57f8aee186044656e8b92887a2850a7",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:deref.blake3-512:9eb190c5974e70675bd969eb2b7ab1245ac9b3ce4c2272cfdc64f539813a893aaaf586a55b1600c33e80ffb4b79726bbe57f8aee186044656e8b92887a2850a7.json"
+    "cid": "blake3-512:7b6e952833cbbaeddb1156ecb6b4bef2085bb3479f513e3889b6d51b4ee41170453de541070c45d6f9be98003d60f0e034a1a4c31cc644a28416e2ee9875950e",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:deref.blake3-512:7b6e952833cbbaeddb1156ecb6b4bef2085bb3479f513e3889b6d51b4ee41170453de541070c45d6f9be98003d60f0e034a1a4c31cc644a28416e2ee9875950e.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_member.spec.json",
-    "cid": "blake3-512:9f52681b25fa589ad6fc38d26981756d4c44330f687c79b04b7f39f049816d625a57551b303aee1567c6451b153bb9dc0f383671545a934087f195b2d5033a5e",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:member.blake3-512:9f52681b25fa589ad6fc38d26981756d4c44330f687c79b04b7f39f049816d625a57551b303aee1567c6451b153bb9dc0f383671545a934087f195b2d5033a5e.json"
+    "cid": "blake3-512:e2ab0454af0d1c9de17876bbce552a5571cb777f9b902608bd555db704e1731ac091fdcfa8b82a16aca92291ad2f64da0b96d2d8825404638db4ed102c184d03",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:member.blake3-512:e2ab0454af0d1c9de17876bbce552a5571cb777f9b902608bd555db704e1731ac091fdcfa8b82a16aca92291ad2f64da0b96d2d8825404638db4ed102c184d03.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_add.spec.json",
-    "cid": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:add.blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805.json"
+    "cid": "blake3-512:423be59ab82079cf2f8fa5263463bbb3cf1ce9320e5e57c65a29d3b0612a30f9dac405526b729f28e3524f5f620544e79ca0c0b9b27e9b2ce35e50ca58ba128d",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:add.blake3-512:423be59ab82079cf2f8fa5263463bbb3cf1ce9320e5e57c65a29d3b0612a30f9dac405526b729f28e3524f5f620544e79ca0c0b9b27e9b2ce35e50ca58ba128d.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_sub.spec.json",
-    "cid": "blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:sub.blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8.json"
+    "cid": "blake3-512:f2fcd629a2ac4c3fe555f626d8fbbb2ed86d6ae799649e9510e0839ce57490bde6e5a8722ef38a9d2e6b8880e801e1e8c9c8e73e6a50679a6ea5c8c202e7fb1e",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:sub.blake3-512:f2fcd629a2ac4c3fe555f626d8fbbb2ed86d6ae799649e9510e0839ce57490bde6e5a8722ef38a9d2e6b8880e801e1e8c9c8e73e6a50679a6ea5c8c202e7fb1e.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_mul.spec.json",
-    "cid": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:mul.blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e.json"
+    "cid": "blake3-512:122b58438c5d84136f9f923965f248f1f8157ef434215b4d8f458fa690b04e42f1cc39cd7b7498d5c282923c0ce57cb128c94b85216036df37f6a9e6cb782dd9",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:mul.blake3-512:122b58438c5d84136f9f923965f248f1f8157ef434215b4d8f458fa690b04e42f1cc39cd7b7498d5c282923c0ce57cb128c94b85216036df37f6a9e6cb782dd9.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_eq.spec.json",
-    "cid": "blake3-512:be234846ff5993e9492eedb48c537f9750a5992e882e90b640728b52ad91b3d94c9b67e9f6b3f140711feb149e273a089eed6fb8eb337ab2dea6b2b11b0cfa7b",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:eq.blake3-512:be234846ff5993e9492eedb48c537f9750a5992e882e90b640728b52ad91b3d94c9b67e9f6b3f140711feb149e273a089eed6fb8eb337ab2dea6b2b11b0cfa7b.json"
+    "cid": "blake3-512:786af5f3033d4bcb976140d677166038e48a0905318e9d8ab7445d14f4986f22f38ce1d9924ac538fa020901b782c6e6fa4f3abe4016fa384947af727f0e415d",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:eq.blake3-512:786af5f3033d4bcb976140d677166038e48a0905318e9d8ab7445d14f4986f22f38ce1d9924ac538fa020901b782c6e6fa4f3abe4016fa384947af727f0e415d.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_lt.spec.json",
-    "cid": "blake3-512:ec6098a797df50b97060e9392f55fbd0df7c437e70e3c72b32922d72a785701a900891cc88eb0d24e8ad21ec130ce7bdc21aa89a1b1623996012effe80461420",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:lt.blake3-512:ec6098a797df50b97060e9392f55fbd0df7c437e70e3c72b32922d72a785701a900891cc88eb0d24e8ad21ec130ce7bdc21aa89a1b1623996012effe80461420.json"
+    "cid": "blake3-512:aa2766dbdd90afedf636628099033576a1406263e72b0c7e0ec350d5a274055bd596ceceb3664fedbad3b46d651b33567b1ee3244b2551646ad36cf67d1a13b7",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:lt.blake3-512:aa2766dbdd90afedf636628099033576a1406263e72b0c7e0ec350d5a274055bd596ceceb3664fedbad3b46d651b33567b1ee3244b2551646ad36cf67d1a13b7.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_le.spec.json",
-    "cid": "blake3-512:c79c47a0c0dacd987390f54895c4c07afe3eb4f2271214fb486902333d141fe5cd3530493762af13ba0393de75ce7a8422e73bb4e41eb43cfd8f9b921afc30b4",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:le.blake3-512:c79c47a0c0dacd987390f54895c4c07afe3eb4f2271214fb486902333d141fe5cd3530493762af13ba0393de75ce7a8422e73bb4e41eb43cfd8f9b921afc30b4.json"
+    "cid": "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:le.blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_and.spec.json",
-    "cid": "blake3-512:52e14c5d4279dd96569cc053530fee38e3188a939e9567931e397653e98ae0c1bdaa2e5aacc1792af44fa7c9fc11c92ef6eae19d6ea183fa82e4a6072eab8812",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:and.blake3-512:52e14c5d4279dd96569cc053530fee38e3188a939e9567931e397653e98ae0c1bdaa2e5aacc1792af44fa7c9fc11c92ef6eae19d6ea183fa82e4a6072eab8812.json"
+    "cid": "blake3-512:76a6a6996095bfca11b1c6149d5a91822fbc99dadccfc480d910828f453c369a3386a35a064ccfed21dde59d9c64cdd56dad7cd2da41ba82598aa9b6b18411d6",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:and.blake3-512:76a6a6996095bfca11b1c6149d5a91822fbc99dadccfc480d910828f453c369a3386a35a064ccfed21dde59d9c64cdd56dad7cd2da41ba82598aa9b6b18411d6.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_or.spec.json",
-    "cid": "blake3-512:7d14955205e010a7cd9a7844406e54f8cb1ce81afad75279e0c5e9a7192cb1b82821a4aae6c1449ec588aa29eb0ed19ddf577599363146b492e9f48d72fdcf35",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:or.blake3-512:7d14955205e010a7cd9a7844406e54f8cb1ce81afad75279e0c5e9a7192cb1b82821a4aae6c1449ec588aa29eb0ed19ddf577599363146b492e9f48d72fdcf35.json"
+    "cid": "blake3-512:d3ef30b79cd79479dc8404c0657d7bd8e64f36b8ae986b422d3c6fe0012c58ef80c2922a31b6237e8b08653e9df58eb39b1f28dd1ffd1dc6e0874d9c0c44c644",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:or.blake3-512:d3ef30b79cd79479dc8404c0657d7bd8e64f36b8ae986b422d3c6fe0012c58ef80c2922a31b6237e8b08653e9df58eb39b1f28dd1ffd1dc6e0874d9c0c44c644.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_not.spec.json",
-    "cid": "blake3-512:13f0e635b60fe52d0c853adfb13c38431e0e0da1787236759736ffe420948a2cee01ebf0d275cdbe6d9cf8edc3aefb88556b1257d0e3dcd962c1f971372a2830",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:not.blake3-512:13f0e635b60fe52d0c853adfb13c38431e0e0da1787236759736ffe420948a2cee01ebf0d275cdbe6d9cf8edc3aefb88556b1257d0e3dcd962c1f971372a2830.json"
+    "cid": "blake3-512:ae19b703305c08d3983a741a8e7484f7a96af62919dbdb17282aa89a0aef22c6b248537c783c912f0cbfef1d813bf19f58a02e67c861dea32120c0c3fd7fb5a5",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:not.blake3-512:ae19b703305c08d3983a741a8e7484f7a96af62919dbdb17282aa89a0aef22c6b248537c783c912f0cbfef1d813bf19f58a02e67c861dea32120c0c3fd7fb5a5.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_assign.spec.json",
-    "cid": "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:assign.blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556.json"
+    "cid": "blake3-512:b1da209232583dfd8d69b1f169700f996d7bdf712841c9d74e0136df0527ac2f3eb0c28f98a1b58505877b7a732d9a2376a8502a594ced342b1e10d3673409e0",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:assign.blake3-512:b1da209232583dfd8d69b1f169700f996d7bdf712841c9d74e0136df0527ac2f3eb0c28f98a1b58505877b7a732d9a2376a8502a594ced342b1e10d3673409e0.json"
   },
   {
     "kind": "algorithm",
     "spec": "op_neg.spec.json",
-    "cid": "blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:neg.blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961.json"
+    "cid": "blake3-512:3d2a3a00ff900c93cb4453efb8d2bf38424a6b531c2fdd72bd9736fa870c603b0462387438df623bc396140bc9cc0c4f572dcfc9327ede274304d3c5542b5259",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:neg.blake3-512:3d2a3a00ff900c93cb4453efb8d2bf38424a6b531c2fdd72bd9736fa870c603b0462387438df623bc396140bc9cc0c4f572dcfc9327ede274304d3c5542b5259.json"
   },
   {
     "kind": "algorithm",
@@ -272,8 +272,8 @@
   {
     "kind": "algorithm",
     "spec": "op_cast.spec.json",
-    "cid": "blake3-512:f611c8adf97a3ab5a3877523b8e6e5099bb5974a5077cb18240e7cbb4f56ae16e4c1121062e6778ad03cee9b35e2969809cf9a73249b398a77438bf18cc1a00d",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:cast.blake3-512:f611c8adf97a3ab5a3877523b8e6e5099bb5974a5077cb18240e7cbb4f56ae16e4c1121062e6778ad03cee9b35e2969809cf9a73249b398a77438bf18cc1a00d.json"
+    "cid": "blake3-512:676f9178553b989b978b29eb4dcfd47621f4e5208a54310c3df385c62abcc635ebafc029ae3cbc4ae9c38c2d7177ea892868c10f815ad11caaa0ab4e121b6458",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:cast.blake3-512:676f9178553b989b978b29eb4dcfd47621f4e5208a54310c3df385c62abcc635ebafc029ae3cbc4ae9c38c2d7177ea892868c10f815ad11caaa0ab4e121b6458.json"
   },
   {
     "kind": "algorithm",
@@ -914,7 +914,7 @@
   {
     "kind": "language-signature",
     "spec": "language_signature_c11.spec.json",
-    "cid": "blake3-512:a27e0770973e891baf139fea6e121ea14a474618738438fbb90edcc98dcd25b686e4fb0e1958e31736a00f07baaff2ef9c1d1db45cac45f0b0dfd5c0a7ddb86f",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/signatures/c:c11.blake3-512:a27e0770973e891baf139fea6e121ea14a474618738438fbb90edcc98dcd25b686e4fb0e1958e31736a00f07baaff2ef9c1d1db45cac45f0b0dfd5c0a7ddb86f.json"
+    "cid": "blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/signatures/c:c11.blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615.json"
   }
 ]

@@ -3,20 +3,20 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "c11:seq",
+    "fn_name": "c11:assign",
     "formals": [
-      "first",
-      "second"
+      "target",
+      "value"
     ],
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "Stmt",
+        "name": "LValue",
         "args": []
       },
       {
         "kind": "ctor",
-        "name": "Stmt",
+        "name": "Expr",
         "args": []
       }
     ],
@@ -27,19 +27,30 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "seq",
+      "operator": "assign",
       "arity": [
-        "Stmt",
-        "Stmt"
+        "LValue",
+        "Expr"
       ],
       "result": "Stmt",
-      "wp": "wp(first, wp(second, post))"
+      "wp": "store value into target and update state",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lvalue"
+          },
+          {
+            "name": "rvalue"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
         {
-          "kind": "effect-polymorphic",
-          "rule": "union(first.effects, second.effects)"
+          "kind": "effect-signature",
+          "name": "MemWrite"
         }
       ]
     },
@@ -51,10 +62,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:f8390f57e0f4408252211849b4e62639c9779a19bcdfc207eb80e2f3225e2f3a1262434a0e56b0de765b35ad377ffee3b91e69750996104505dc9ed7c1398915",
+  "cid": "blake3-512:b1da209232583dfd8d69b1f169700f996d7bdf712841c9d74e0136df0527ac2f3eb0c28f98a1b58505877b7a732d9a2376a8502a594ced342b1e10d3673409e0",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "AHP5oXkq4v/fFN6Bm+PqVqMoZczFDZnxVmMMDbLQgbaAgo+9N1OLFfDgTT3Il8VdxHVe1R+21zucfhFkq7uDBA=="
+    "sig_b64": "9ekfhKdEIj3M/e6rbQgecdeYo3PPsYuzpwzq2kHbk3csco27ip9Oi7GRHqmS7TsVArCmfLqXdVuenDgP1DiMAQ=="
   }
 }

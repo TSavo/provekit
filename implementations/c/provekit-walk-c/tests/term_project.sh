@@ -36,6 +36,35 @@ base = Path(sys.argv[1])
 signature = json.load(open(base / "specs" / "language_signature_c11.spec.json", encoding="utf-8"))
 if "arity_shapes" not in signature:
     raise SystemExit("FAIL: C11 language signature must declare arity_shapes")
+arity_shapes = signature["arity_shapes"]
+if not isinstance(arity_shapes, dict):
+    raise SystemExit("FAIL: C11 language signature arity_shapes must be an object")
+
+operation_names = []
+for spec_name in signature["operations"]:
+    spec = json.load(open(base / "specs" / spec_name, encoding="utf-8"))
+    operation_names.append(spec["fn_name"])
+missing_shapes = sorted(set(operation_names) - set(arity_shapes))
+extra_shapes = sorted(set(arity_shapes) - set(operation_names))
+if missing_shapes or extra_shapes:
+    raise SystemExit(
+        "FAIL: C11 language signature arity_shapes must exactly cover operations: "
+        + json.dumps({"missing": missing_shapes, "extra": extra_shapes}, sort_keys=True)
+    )
+for op_name in operation_names:
+    shape = arity_shapes[op_name]
+    if not isinstance(shape, dict) or shape.get("kind") not in {"named", "positional", "set"}:
+        raise SystemExit(f"FAIL: {op_name} has invalid arity_shape {shape}")
+    spec_path = "op_" + op_name.removeprefix("c11:").replace("-", "_") + ".spec.json"
+    spec = json.load(open(base / "specs" / spec_path, encoding="utf-8"))
+    spec_shape = spec.get("post", {}).get("arity_shape")
+    if spec_shape is None:
+        raise SystemExit(f"FAIL: {op_name} spec is missing post.arity_shape")
+    if spec_shape != shape:
+        raise SystemExit(
+            f"FAIL: {op_name} spec arity_shape differs from signature arity_shapes entry: "
+            + json.dumps({"spec": spec_shape, "signature": shape}, sort_keys=True)
+        )
 
 mapping = json.load(open(base / "cursor-kind-map.generated.json", encoding="utf-8"))
 rows = {row["cursor_kind"]: row for row in mapping["rows"]}
@@ -191,9 +220,13 @@ check_asm_orp_roundtrip() {
     name="asm_link"
     src="$EXAMPLE_DIR/$name.c"
     initial_term="$TMP_DIR/$name.initial.term.json"
+    initial_term_cid_input="$TMP_DIR/$name.initial.term-cid-input.json"
+    initial_identity_input="$TMP_DIR/$name.initial.identity-cid-input.json"
     target_symbol="$TMP_DIR/$name.target-symbol.txt"
     serial_c="$TMP_DIR/$name.roundtrip.c"
     roundtrip_term="$TMP_DIR/$name.roundtrip.term.json"
+    roundtrip_term_cid_input="$TMP_DIR/$name.roundtrip.term-cid-input.json"
+    roundtrip_identity_input="$TMP_DIR/$name.roundtrip.identity-cid-input.json"
 
     "$BIN" "$src" --function "$name" --term > "$initial_term"
 
@@ -264,18 +297,79 @@ PY
     "$BIN" --serialize "$initial_term" --function "$name" > "$serial_c"
     "$BIN" "$serial_c" --function "$name" --term > "$roundtrip_term"
 
-    python3 - "$initial_term" "$roundtrip_term" <<'PY'
+    python3 - "$initial_term" "$roundtrip_term" "$initial_term_cid_input" "$roundtrip_term_cid_input" <<'PY'
 import json
 import sys
 
 before = json.load(open(sys.argv[1]))
 after = json.load(open(sys.argv[2]))
-if before["term"] != after["term"]:
+if before["source_cid"] != after["source_cid"]:
     raise SystemExit(
-        "FAIL: c-with-asm ORP roundtrip changed the C asm link term\n"
+        "FAIL: c-with-asm ORP roundtrip changed the raw C source CID\n"
+        + json.dumps({"before": before["source_cid"], "after": after["source_cid"]}, sort_keys=True)
+    )
+if before["signature_cid"] != after["signature_cid"] or before["term"] != after["term"]:
+    raise SystemExit(
+        "FAIL: c-with-asm ORP roundtrip changed the C asm link term CID inputs\n"
         + json.dumps({"before": before, "after": after}, sort_keys=True)
     )
+before_input = {"signature_cid": before["signature_cid"], "term": before["term"]}
+after_input = {"signature_cid": after["signature_cid"], "term": after["term"]}
+open(sys.argv[3], "w", encoding="utf-8").write(json.dumps(before_input, sort_keys=True, separators=(",", ":")))
+open(sys.argv[4], "w", encoding="utf-8").write(json.dumps(after_input, sort_keys=True, separators=(",", ":")))
 PY
+
+    initial_term_cid="$(
+        cd "$ROOT/implementations/rust"
+        cargo run -q -p provekit-canonicalizer --bin compute_fixture_cid -- "$initial_term_cid_input"
+    )"
+    roundtrip_term_cid="$(
+        cd "$ROOT/implementations/rust"
+        cargo run -q -p provekit-canonicalizer --bin compute_fixture_cid -- "$roundtrip_term_cid_input"
+    )"
+    if [ "$initial_term_cid" != "$roundtrip_term_cid" ]; then
+        echo "FAIL: c-with-asm ORP roundtrip changed term CID: $initial_term_cid != $roundtrip_term_cid" >&2
+        exit 1
+    fi
+
+    python3 - "$initial_term" "$roundtrip_term" "$initial_identity_input" "$roundtrip_identity_input" "$initial_term_cid" "$roundtrip_term_cid" <<'PY'
+import json
+import sys
+
+before = json.load(open(sys.argv[1]))
+after = json.load(open(sys.argv[2]))
+before_input = {
+    "source_cid": before["source_cid"],
+    "signature_cid": before["signature_cid"],
+    "term_cid": sys.argv[5],
+}
+after_input = {
+    "source_cid": after["source_cid"],
+    "signature_cid": after["signature_cid"],
+    "term_cid": sys.argv[6],
+}
+open(sys.argv[3], "w", encoding="utf-8").write(json.dumps(before_input, sort_keys=True, separators=(",", ":")))
+open(sys.argv[4], "w", encoding="utf-8").write(json.dumps(after_input, sort_keys=True, separators=(",", ":")))
+PY
+
+    if ! cmp -s "$initial_identity_input" "$roundtrip_identity_input"; then
+        echo "FAIL: c-with-asm ORP roundtrip changed canonical identity bytes" >&2
+        diff -u "$initial_identity_input" "$roundtrip_identity_input" >&2 || true
+        exit 1
+    fi
+
+    initial_cid="$(
+        cd "$ROOT/implementations/rust"
+        cargo run -q -p provekit-canonicalizer --bin compute_fixture_cid -- "$initial_identity_input"
+    )"
+    roundtrip_cid="$(
+        cd "$ROOT/implementations/rust"
+        cargo run -q -p provekit-canonicalizer --bin compute_fixture_cid -- "$roundtrip_identity_input"
+    )"
+    if [ "$initial_cid" != "$roundtrip_cid" ]; then
+        echo "FAIL: c-with-asm ORP roundtrip changed identity CID: $initial_cid != $roundtrip_cid" >&2
+        exit 1
+    fi
 }
 
 check_example foo

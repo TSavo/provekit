@@ -444,6 +444,10 @@
       "kind": "named",
       "slots": [
         {
+          "name": "target_type",
+          "slot_sort": "type"
+        },
+        {
           "name": "value"
         }
       ]

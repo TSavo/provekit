@@ -56,7 +56,15 @@
         "Ptr"
       ],
       "result": "LValue",
-      "wp": "lvalue at ptr"
+      "wp": "lvalue at ptr",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "ptr"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": [
@@ -74,10 +82,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:9eb190c5974e70675bd969eb2b7ab1245ac9b3ce4c2272cfdc64f539813a893aaaf586a55b1600c33e80ffb4b79726bbe57f8aee186044656e8b92887a2850a7",
+  "cid": "blake3-512:7b6e952833cbbaeddb1156ecb6b4bef2085bb3479f513e3889b6d51b4ee41170453de541070c45d6f9be98003d60f0e034a1a4c31cc644a28416e2ee9875950e",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "S4QuU0d865NyRO6zmOkEvg8G2QiLUF5p3XKKd2bAgdqUVoqlEeRMyDyA6TeuNs2K6Xemm8+s6wiFx/nczSSSDA=="
+    "sig_b64": "61e3h2FvlXahrQh2UqeCNyAuxg0If/lgedx08nkpXVZ+75M6Njr11J01OTfXETXceb7cmEoIzf4csVdqh4taDg=="
   }
 }

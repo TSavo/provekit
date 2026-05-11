@@ -33,7 +33,19 @@
         "FieldName"
       ],
       "result": "LValue",
-      "wp": "field lvalue projection"
+      "wp": "field lvalue projection",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "base"
+          },
+          {
+            "name": "field",
+            "slot_sort": "identifier"
+          }
+        ]
+      }
     },
     "effects": {
       "effects": []
@@ -46,10 +58,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:9f52681b25fa589ad6fc38d26981756d4c44330f687c79b04b7f39f049816d625a57551b303aee1567c6451b153bb9dc0f383671545a934087f195b2d5033a5e",
+  "cid": "blake3-512:e2ab0454af0d1c9de17876bbce552a5571cb777f9b902608bd555db704e1731ac091fdcfa8b82a16aca92291ad2f64da0b96d2d8825404638db4ed102c184d03",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "vQiF5UKmbjWwoziJ1myovmN4id5btQAqkf+GvOThZzUi0ShphN6qguZtBtEjXecSgnEqGNH29Tlh1Udj6ADlBw=="
+    "sig_b64": "CreCGTtNp186YsIXk7aziyXgn3J6eWkWN0h2mKqVR+bb9nPLhQ/ZiyLCOjUOrN6RzJ3u4wSPJDmwcTAhVuPpDg=="
   }
 }

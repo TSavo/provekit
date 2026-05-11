@@ -35,7 +35,18 @@
       "ListOf<Stmt>"
     ],
     "result": "Stmt",
-    "wp": "case-dispatched WP join over arms"
+    "wp": "case-dispatched WP join over arms",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "scrutinee"
+        },
+        {
+          "name": "arms"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

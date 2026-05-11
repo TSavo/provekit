@@ -39,7 +39,15 @@
       "Int"
     ],
     "result": "Int",
-    "wp": "integer arithmetic negation when no overflow holds"
+    "wp": "integer arithmetic negation when no overflow holds",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [
