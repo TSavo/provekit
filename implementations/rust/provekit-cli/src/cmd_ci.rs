@@ -570,6 +570,7 @@ const CICP_ACCEPT_KITS: &[&str] = &[
     "ts",
     "csharp",
     "clr-bytecode",
+    "evm-bytecode",
     "java",
     "python",
     "ruby",
@@ -757,6 +758,7 @@ impl KitCiProfile {
             "ts" => "make prove-ts",
             "csharp" => "make prove-csharp",
             "clr-bytecode" => "make prove-clr-bytecode",
+            "evm-bytecode" => "make prove-evm-bytecode",
             "swift" => "make prove-swift",
             "java" => "make prove-java",
             "python" => "make prove-python",
@@ -780,7 +782,7 @@ impl KitCiProfile {
 
 fn known_lockfiles(kit: &str, project_rel: &str) -> Vec<String> {
     let mut paths = match kit {
-        "rust" => vec![
+        "rust" | "evm-bytecode" => vec![
             format!("{project_rel}/Cargo.toml"),
             format!("{project_rel}/Cargo.lock"),
         ],
@@ -827,7 +829,7 @@ fn known_lockfiles(kit: &str, project_rel: &str) -> Vec<String> {
 
 fn toolchain_markers(kit: &str) -> Vec<String> {
     match kit {
-        "rust" => vec!["rustc", "cargo"],
+        "rust" | "evm-bytecode" => vec!["rustc", "cargo"],
         "go" => vec!["go"],
         "cpp" => vec!["clang++", "bazel", "cmake"],
         "ts" => vec!["node", "pnpm", "typescript", "vitest"],
