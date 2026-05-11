@@ -221,6 +221,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "java-jml",
     "jvm-bytecode",
     "csharp",
+    "csharp-source",
     "cpp-26-contracts",
     "cpp-boost-contract",
     "clr-bytecode",

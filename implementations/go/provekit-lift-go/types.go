@@ -206,7 +206,7 @@ func effectSortKey(e Effect) string {
 	case "panics":
 		return "4:panics"
 	case "unresolved_call":
-		return "5:unresolved_call:" + e.Name
+		return "5:unresolved:" + e.Name
 	case "opaque_loop":
 		return "6:opaque_loop:" + e.LoopCid
 	default:

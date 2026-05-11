@@ -15,6 +15,7 @@ public enum SwiftSourceLifter {
         collector.walk(sourceFile)
 
         var result = SwiftSourceLiftResult()
+        result.refusals.append(contentsOf: collector.collectorRefusals)
         var acceptedBodyTerms: [JcsCanonical] = []
         var contracts: [JcsCanonical] = []
 
@@ -143,6 +144,7 @@ private final class SwiftDefinitionCollector: SyntaxVisitor {
     private var converter: SourceLocationConverter?
 
     var functions: [SwiftFunctionInfo] = []
+    var collectorRefusals: [JcsCanonical] = []
     var globalVars: Set<String> = []
     var staticVars: Set<String> = []
 
@@ -220,10 +222,26 @@ private final class SwiftDefinitionCollector: SyntaxVisitor {
     }
 
     override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
-        guard let info = try? functionInfo(for: node) else {
-            return .skipChildren
+        do {
+            let info = try functionInfo(for: node)
+            functions.append(info)
+        } catch let unsupported as UnsupportedSwiftSyntax {
+            let bestEffortName = node.name.text
+            collectorRefusals.append(SwiftSourceIR.refusal(
+                kind: unsupported.kind,
+                function: bestEffortName,
+                line: unsupported.line,
+                reason: unsupported.reason
+            ))
+        } catch {
+            let line: Int? = converter.map { node.startLocation(converter: $0).line }
+            collectorRefusals.append(SwiftSourceIR.refusal(
+                kind: "unparseable-function-signature",
+                function: node.name.text,
+                line: line,
+                reason: String(describing: error)
+            ))
         }
-        functions.append(info)
         return .skipChildren
     }
 
@@ -399,7 +417,7 @@ private final class SwiftFunctionEmitter {
             }
             if let throwStmt = stmt.as(ThrowStmtSyntax.self) {
                 effects.add(.panics)
-                let expr = try throwStmt.expression.map(expression) ?? SwiftSourceIR.unitConst()
+                let expr = try expression(throwStmt.expression)
                 return SwiftSourceIR.ctor("swift:throw", [expr])
             }
             throw unsupported(stmt, reason: "unhandled statement kind: \(type(of: stmt))")

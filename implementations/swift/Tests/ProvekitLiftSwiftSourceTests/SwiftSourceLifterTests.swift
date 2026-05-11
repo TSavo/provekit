@@ -74,6 +74,45 @@ final class SwiftSourceLifterTests: XCTestCase {
         XCTAssertFalse(try canonicalString(result.refusals).contains("swift:skip"))
     }
 
+    func testRefusesUnparseableFunctionSignatureNotSilentlyDropped() throws {
+        // Functions whose signatures fail validateSignature must produce a
+        // Refusal, not be silently omitted from the output.
+        let source = """
+        func good(_ x: Int) -> Int {
+            return x + 1
+        }
+
+        func generic<T>(_ x: T) -> T {
+            return x
+        }
+
+        func asyncFunc(_ x: Int) async -> Int {
+            return x
+        }
+        """
+
+        let result = SwiftSourceLifter.liftSource(source, path: "Sig.swift")
+
+        // The good function produces a contract; the two unsupported ones produce refusals.
+        let contractNames = result.ir.compactMap { SwiftSourceIR.fnName(of: $0) }
+        XCTAssertTrue(contractNames.contains { $0.contains(".good(_:)(Int)->Int") },
+                      "good function must be lifted: \(contractNames)")
+
+        // Each unsupported function must yield a refusal, not be invisible.
+        XCTAssertGreaterThanOrEqual(result.refusals.count, 2,
+            "generic and async functions must produce refusals, got \(result.refusals.count)")
+
+        // Refusals must carry the function name (best-effort) and a reason.
+        for refusal in result.refusals {
+            let obj = try JSONObject(refusal)
+            XCTAssertNotNil(obj["kind"],   "refusal must have a kind")
+            XCTAssertNotNil(obj["reason"], "refusal must have a reason")
+        }
+
+        XCTAssertFalse(try canonicalString(result.refusals).contains("swift:unknown"))
+        XCTAssertFalse(try canonicalString(result.refusals).contains("swift:skip"))
+    }
+
     func testEffectsAreSortedAndLoopCidIsBlake3512() throws {
         let source = """
         func total(_ limit: Int) -> Int {
