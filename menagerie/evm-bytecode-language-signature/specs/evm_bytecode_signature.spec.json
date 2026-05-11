@@ -110,7 +110,7 @@
         "effects": []
       },
       {
-        "name": "add",
+        "name": "evm:add",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -126,7 +126,7 @@
         "effects": []
       },
       {
-        "name": "mul",
+        "name": "evm:mul",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -141,7 +141,7 @@
         "effects": []
       },
       {
-        "name": "sub",
+        "name": "evm:sub",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -156,7 +156,7 @@
         "effects": []
       },
       {
-        "name": "div",
+        "name": "evm:div",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -171,7 +171,7 @@
         "effects": []
       },
       {
-        "name": "mod",
+        "name": "evm:mod",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -186,7 +186,7 @@
         "effects": []
       },
       {
-        "name": "lt",
+        "name": "evm:lt",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -201,7 +201,7 @@
         "effects": []
       },
       {
-        "name": "gt",
+        "name": "evm:gt",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -216,7 +216,7 @@
         "effects": []
       },
       {
-        "name": "eq",
+        "name": "evm:eq",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -231,7 +231,7 @@
         "effects": []
       },
       {
-        "name": "and",
+        "name": "evm:and",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -246,7 +246,7 @@
         "effects": []
       },
       {
-        "name": "or",
+        "name": "evm:or",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -261,7 +261,7 @@
         "effects": []
       },
       {
-        "name": "xor",
+        "name": "evm:xor",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -276,7 +276,7 @@
         "effects": []
       },
       {
-        "name": "iszero",
+        "name": "evm:iszero",
         "arity_shape": {
           "kind": "named",
           "slots": [
@@ -288,7 +288,7 @@
         "effects": []
       },
       {
-        "name": "not",
+        "name": "evm:not",
         "arity_shape": {
           "kind": "named",
           "slots": [

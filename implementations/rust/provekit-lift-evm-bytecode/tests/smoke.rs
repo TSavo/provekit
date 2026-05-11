@@ -129,6 +129,39 @@ fn refuses_return_until_memory_return_data_is_modeled() {
 }
 
 #[test]
+fn refuses_stack_underflow_separately_from_unsupported_opcode() {
+    let result = lift_source_text("underflow.evm", "PUSH1 0x01\nADD\nSTOP\n")
+        .expect("underflow program parses");
+
+    assert!(result.declarations.is_empty());
+    assert_eq!(result.refusals.len(), 1);
+    let refusal = &result.refusals[0];
+    assert_eq!(refusal.kind, "stack-underflow");
+    assert_eq!(refusal.instruction.as_deref(), Some("ADD"));
+    assert_eq!(refusal.reason, "operand stack underflow");
+}
+
+#[test]
+fn binary_ops_preserve_evm_operand_pop_order() {
+    let result = lift_source_text("sub.evm", "PUSH1 0x01\nPUSH1 0x02\nSUB\nSTOP\n")
+        .expect("SUB program lifts");
+
+    assert!(result.refusals.is_empty());
+    assert_eq!(result.declarations.len(), 1);
+    let post = serde_json::to_string(&result.declarations[0]["post"]).unwrap();
+    let op = post.find("evm:sub").expect("SUB term is present");
+    let first = post[op..].find("0x02").expect("first-popped value appears") + op;
+    let second = post[op..]
+        .find("0x01")
+        .expect("second-popped value appears")
+        + op;
+    assert!(
+        first < second,
+        "SUB operands must be encoded in EVM pop order: {post}"
+    );
+}
+
+#[test]
 fn signature_declares_all_emitted_stack_ops_with_arity_shapes() {
     let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "../../../menagerie/evm-bytecode-language-signature/specs/evm_bytecode_signature.spec.json",
@@ -150,9 +183,10 @@ fn signature_declares_all_emitted_stack_ops_with_arity_shapes() {
         "add", "mul", "sub", "div", "mod", "lt", "gt", "eq", "and", "or", "xor", "iszero", "not",
     ];
     for emitted in emitted_ops {
+        let emitted_name = format!("evm:{emitted}");
         assert!(
-            names.contains(emitted),
-            "signature must declare emitted op {emitted}"
+            names.contains(emitted_name.as_str()),
+            "signature must declare emitted op {emitted_name}"
         );
     }
 

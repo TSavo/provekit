@@ -95,6 +95,11 @@ enum Step {
     UnsupportedReturnShape,
 }
 
+enum InstructionError {
+    StackUnderflow(String),
+    UnsupportedOpcode(String),
+}
+
 pub fn run_cli() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--rpc") {
@@ -722,9 +727,13 @@ fn lift_instructions(function: &str, unit: &EvmUnit) -> Result<Json, Refusal> {
                     reason: "RETURN yields a memory slice; a bytes-return sort + memory-read effect are not yet modeled in this lifter slice".to_string(),
                 });
             }
-            Err(reason) => {
+            Err(error) => {
+                let (kind, reason) = match error {
+                    InstructionError::StackUnderflow(reason) => ("stack-underflow", reason),
+                    InstructionError::UnsupportedOpcode(reason) => ("unsupported-opcode", reason),
+                };
                 return Err(Refusal {
-                    kind: "unsupported-opcode".to_string(),
+                    kind: kind.to_string(),
                     function: Some(function.to_string()),
                     line: Some(instruction.line),
                     instruction: Some(instruction.text.clone()),
@@ -772,7 +781,10 @@ fn lift_instructions(function: &str, unit: &EvmUnit) -> Result<Json, Refusal> {
     }))
 }
 
-fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Result<Step, String> {
+fn apply_instruction(
+    state: &mut SymbolicState,
+    instruction: &Instruction,
+) -> Result<Step, InstructionError> {
     match &instruction.opcode {
         Opcode::Stop => Ok(state
             .stack
@@ -808,7 +820,9 @@ fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Re
         Opcode::Dup(depth) => {
             let depth = usize::from(*depth);
             if state.stack.len() < depth {
-                return Err(format!("DUP{depth} requires {depth} stack values"));
+                return Err(InstructionError::StackUnderflow(format!(
+                    "DUP{depth} requires {depth} stack values"
+                )));
             }
             let value = state.stack[state.stack.len() - depth].clone();
             state.stack.push(value);
@@ -817,7 +831,10 @@ fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Re
         Opcode::Swap(depth) => {
             let depth = usize::from(*depth);
             if state.stack.len() <= depth {
-                return Err(format!("SWAP{depth} requires {} stack values", depth + 1));
+                return Err(InstructionError::StackUnderflow(format!(
+                    "SWAP{depth} requires {} stack values",
+                    depth + 1
+                )));
             }
             let top = state.stack.len() - 1;
             let other = top - depth;
@@ -826,28 +843,32 @@ fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Re
         }
         Opcode::JumpDest => Ok(Step::Continue),
         Opcode::Return => Ok(Step::UnsupportedReturnShape),
-        Opcode::Unsupported { reason, .. } => Err(reason.clone()),
+        Opcode::Unsupported { reason, .. } => {
+            Err(InstructionError::UnsupportedOpcode(reason.clone()))
+        }
     }
 }
 
 impl SymbolicState {
-    fn pop(&mut self) -> Result<IrTerm, String> {
+    fn pop(&mut self) -> Result<IrTerm, InstructionError> {
         self.stack
             .pop()
-            .ok_or_else(|| "operand stack underflow".to_string())
+            .ok_or_else(|| InstructionError::StackUnderflow("operand stack underflow".to_string()))
     }
 }
 
-fn unary_word_op(state: &mut SymbolicState, name: &str) -> Result<Step, String> {
+fn unary_word_op(state: &mut SymbolicState, name: &str) -> Result<Step, InstructionError> {
     let value = state.pop()?;
     state.stack.push(ctor(name, vec![value]));
     Ok(Step::Continue)
 }
 
-fn binary_word_op(state: &mut SymbolicState, name: &str) -> Result<Step, String> {
-    let rhs = state.pop()?;
-    let lhs = state.pop()?;
-    state.stack.push(ctor(name, vec![lhs, rhs]));
+fn binary_word_op(state: &mut SymbolicState, name: &str) -> Result<Step, InstructionError> {
+    let first_popped = state.pop()?;
+    let second_popped = state.pop()?;
+    state
+        .stack
+        .push(ctor(name, vec![first_popped, second_popped]));
     Ok(Step::Continue)
 }
 

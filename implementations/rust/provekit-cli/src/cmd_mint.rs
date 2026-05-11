@@ -1110,7 +1110,7 @@ pub struct MintArgs {
     pub project: Option<PathBuf>,
     /// Kit shortcut: maps `<kit>` to `implementations/<kit>`.
     /// Equivalent to `--project implementations/<kit>`.
-    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c.
+    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
     /// Override the authoring surface (otherwise read from config or derived from --kit).
