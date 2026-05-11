@@ -84,16 +84,9 @@ fn lifts_stack_arithmetic_fixture_to_contract() {
 
 #[test]
 fn lifts_equivalent_assembly_and_hex_to_identical_contracts() {
-    let assembly = lift_source_text(
-        "tests/fixtures/trivial.evmasm",
-        include_str!("fixtures/trivial.evmasm"),
-    )
-    .expect("assembly EVM lifts");
-    let hex = lift_source_text(
-        "tests/fixtures/trivial.evmhex",
-        include_str!("fixtures/trivial.evmhex"),
-    )
-    .expect("hex EVM lifts");
+    let assembly =
+        lift_source_text("trivial.evmasm", "PUSH1 0x2a\nSTOP\n").expect("assembly EVM lifts");
+    let hex = lift_source_text("trivial.evmhex", "0x602a00\n").expect("hex EVM lifts");
 
     assert!(assembly.refusals.is_empty());
     assert!(hex.refusals.is_empty());
