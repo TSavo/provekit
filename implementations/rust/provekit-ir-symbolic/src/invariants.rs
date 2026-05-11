@@ -130,14 +130,14 @@ pub fn invariants() {
         "let_non_empty_bindings",
         ContractArgs {
             post: Some(forall(Int(), |x| {
-                let _let_expr = let_term(
+                let let_expr = let_term(
                     vec![provekit_ir_symbolic::LetBinding {
                         name: "x".into(),
                         bound_term: num(1),
                     }],
-                    x.clone(),
+                    x,
                 );
-                atomic_("roundTrips", vec![x])
+                atomic_("roundTrips", vec![let_expr])
             })),
             ..Default::default()
         },
