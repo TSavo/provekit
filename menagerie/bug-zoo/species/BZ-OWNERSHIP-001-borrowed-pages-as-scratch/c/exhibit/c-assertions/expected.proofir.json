@@ -1,0 +1,100 @@
+[
+  {
+    "auto_minted_mementos": [],
+    "body_cid": null,
+    "fn_name": "process_borrowed_buf",
+    "formal_sorts": [
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      }
+    ],
+    "formals": [
+      "buf",
+      "buf_len",
+      "used",
+      "target"
+    ],
+    "kind": "function-contract",
+    "locus": {
+      "col": 5,
+      "file": "/Users/tsavo/provekit-worktrees/pk-bz-ownership/menagerie/bug-zoo/species/BZ-OWNERSHIP-001-borrowed-pages-as-scratch/c/exhibit/c-assertions/harness/src/borrow_contract.c",
+      "line": 32
+    },
+    "post": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "pre": {
+      "kind": "and",
+      "operands": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "buf"
+            },
+            {
+              "kind": "var",
+              "name": "NULL"
+            }
+          ],
+          "kind": "atomic",
+          "name": "\u2260"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "buf_len"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              },
+              "value": 0
+            }
+          ],
+          "kind": "atomic",
+          "name": "\u2260"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "used"
+            },
+            {
+              "kind": "var",
+              "name": "buf_len"
+            }
+          ],
+          "kind": "atomic",
+          "name": "\u2264"
+        }
+      ]
+    },
+    "effects": {
+      "effects": []
+    },
+    "return_sort": {
+      "kind": "primitive",
+      "name": "i32"
+    }
+  }
+]
