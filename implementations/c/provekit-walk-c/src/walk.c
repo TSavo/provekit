@@ -2,6 +2,7 @@
 
 #include "walk_c.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,17 @@ typedef struct {
     size_t len;
     size_t cap;
 } CursorVec;
+
+typedef struct {
+    CXCursor cursor;
+    unsigned count;
+} SingleChildCtx;
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} JsonBuf;
 
 typedef struct {
     FunctionList *functions;
@@ -123,13 +135,170 @@ static int cursor_is_main_file(CXCursor cursor) {
     return clang_Location_isFromMainFile(clang_getCursorLocation(cursor)) != 0;
 }
 
-static char *cursor_name(CXCursor cursor) {
-    CXString spelling = clang_getCursorSpelling(cursor);
-    const char *cstr = clang_getCString(spelling);
+static char *cx_string_copy(CXString string) {
+    const char *cstr = clang_getCString(string);
     char *copy = pk_c_walk_copy(cstr == NULL ? "" : cstr);
 
-    clang_disposeString(spelling);
+    clang_disposeString(string);
     return copy;
+}
+
+static char *cursor_name(CXCursor cursor) {
+    return cx_string_copy(clang_getCursorSpelling(cursor));
+}
+
+static int json_buf_init(JsonBuf *buf) {
+    buf->len = 0;
+    buf->cap = 256;
+    buf->data = malloc(buf->cap);
+    if (buf->data == NULL) {
+        buf->cap = 0;
+        return -1;
+    }
+    buf->data[0] = '\0';
+    return 0;
+}
+
+static void json_buf_free(JsonBuf *buf) {
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
+    buf->cap = 0;
+}
+
+static char *json_buf_take(JsonBuf *buf) {
+    char *data = buf->data;
+
+    buf->data = NULL;
+    buf->len = 0;
+    buf->cap = 0;
+    return data;
+}
+
+static int json_buf_grow(JsonBuf *buf, size_t need) {
+    size_t next = buf->cap ? buf->cap : 256;
+    size_t required;
+    char *data;
+
+    if (buf->len > SIZE_MAX - 1 || need > SIZE_MAX - buf->len - 1) {
+        return -1;
+    }
+    required = buf->len + need + 1;
+    while (next < required) {
+        if (next > SIZE_MAX / 2) {
+            next = required;
+            break;
+        }
+        next *= 2;
+    }
+    if (next < required) {
+        return -1;
+    }
+    data = realloc(buf->data, next);
+    if (data == NULL) {
+        return -1;
+    }
+    buf->data = data;
+    buf->cap = next;
+    return 0;
+}
+
+static int json_buf_append_n(JsonBuf *buf, const char *text, size_t len);
+
+static int json_buf_append_int(JsonBuf *buf, int value) {
+    char text[32];
+    int len = snprintf(text, sizeof(text), "%d", value);
+
+    if (len < 0 || (size_t)len >= sizeof(text)) {
+        return -1;
+    }
+    return json_buf_append_n(buf, text, (size_t)len);
+}
+
+static int json_buf_append_n(JsonBuf *buf, const char *text, size_t len) {
+    if (json_buf_grow(buf, len) != 0) {
+        return -1;
+    }
+    memcpy(buf->data + buf->len, text, len);
+    buf->len += len;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+static int json_buf_append(JsonBuf *buf, const char *text) {
+    return json_buf_append_n(buf, text, strlen(text));
+}
+
+static int json_buf_append_char(JsonBuf *buf, char ch) {
+    return json_buf_append_n(buf, &ch, 1);
+}
+
+static int json_buf_append_quoted(JsonBuf *buf, const char *text) {
+    char *escaped = pk_c_lift_json_escape(text == NULL ? "" : text);
+    int rc;
+
+    if (escaped == NULL) {
+        return -1;
+    }
+    rc = json_buf_append_char(buf, '"') == 0 &&
+        json_buf_append(buf, escaped) == 0 &&
+        json_buf_append_char(buf, '"') == 0 ? 0 : -1;
+    free(escaped);
+    return rc;
+}
+
+static int json_buf_append_callsite_arg(
+    JsonBuf *buf,
+    int position,
+    const char *text,
+    const char *kind,
+    const char *type,
+    const char *term_json
+) {
+    return json_buf_append(buf, "{\"position\":") == 0 &&
+        json_buf_append_int(buf, position) == 0 &&
+        json_buf_append(buf, ",\"text\":") == 0 &&
+        json_buf_append_quoted(buf, text) == 0 &&
+        json_buf_append(buf, ",\"kind\":") == 0 &&
+        json_buf_append_quoted(buf, kind) == 0 &&
+        json_buf_append(buf, ",\"type\":") == 0 &&
+        json_buf_append_quoted(buf, type) == 0 &&
+        json_buf_append(buf, ",\"term\":") == 0 &&
+        json_buf_append(buf, term_json == NULL ? "null" : term_json) == 0 &&
+        json_buf_append_char(buf, '}') == 0 ? 0 : -1;
+}
+
+static int json_buf_append_callsite_arg_fallback(JsonBuf *buf, int position) {
+    return json_buf_append(buf, "{\"position\":") == 0 &&
+        json_buf_append_int(buf, position) == 0 &&
+        json_buf_append(buf, ",\"text\":\"\",\"kind\":\"\",\"type\":\"\",\"term\":null}") == 0 ? 0 : -1;
+}
+
+static enum CXChildVisitResult single_child_visitor(CXCursor cursor, CXCursor parent, CXClientData data) {
+    SingleChildCtx *ctx = (SingleChildCtx *)data;
+
+    (void)parent;
+    if (ctx->count == 0) {
+        ctx->cursor = cursor;
+    }
+    ctx->count++;
+    return ctx->count > 1 ? CXChildVisit_Break : CXChildVisit_Continue;
+}
+
+static CXCursor unwrap_actual_cursor(CXCursor cursor) {
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+
+    while (kind == CXCursor_UnexposedExpr || kind == CXCursor_ParenExpr) {
+        SingleChildCtx ctx = {clang_getNullCursor(), 0};
+
+        (void)clang_visitChildren(cursor, single_child_visitor, &ctx);
+        if (ctx.count != 1 || clang_Cursor_isNull(ctx.cursor)) {
+            break;
+        }
+        cursor = ctx.cursor;
+        kind = clang_getCursorKind(cursor);
+    }
+    return cursor;
 }
 
 static enum CXChildVisitResult function_visitor(CXCursor cursor, CXCursor parent, CXClientData data) {
@@ -320,11 +489,92 @@ static int substitute_actuals(
     return 0;
 }
 
+static char *extract_callsite_actuals(CXCursor call_cursor) {
+    JsonBuf buf;
+    int n_args = clang_Cursor_getNumArguments(call_cursor);
+    char *out = NULL;
+
+    if (n_args < 0) {
+        n_args = 0;
+    }
+    if (json_buf_init(&buf) != 0) {
+        return NULL;
+    }
+    if (json_buf_append_char(&buf, '[') != 0) {
+        goto done;
+    }
+    for (int i = 0; i < n_args; i++) {
+        CXCursor arg = unwrap_actual_cursor(clang_Cursor_getArgument(call_cursor, (unsigned)i));
+        JsonBuf arg_buf;
+        int arg_serialized = 0;
+        int arg_buf_live = 0;
+        char *text = pk_c_walk_cursor_source(arg);
+        char *kind = cx_string_copy(clang_getCursorKindSpelling(clang_getCursorKind(arg)));
+        char *type = cx_string_copy(clang_getTypeSpelling(clang_getCursorType(arg)));
+        pk_c_walk_term *term = pk_c_walk_lift_term_full(arg);
+        char *term_json = term == NULL ? NULL : pk_c_walk_term_json(term);
+
+        if (json_buf_init(&arg_buf) == 0) {
+            arg_buf_live = 1;
+            if (json_buf_append_callsite_arg(&arg_buf, i, text, kind, type, term_json) == 0) {
+                arg_serialized = 1;
+            } else {
+                json_buf_free(&arg_buf);
+                arg_buf_live = 0;
+                if (json_buf_init(&arg_buf) == 0) {
+                    arg_buf_live = 1;
+                    arg_serialized = json_buf_append_callsite_arg_fallback(&arg_buf, i) == 0;
+                }
+            }
+        }
+        if (i > 0 && json_buf_append_char(&buf, ',') != 0) {
+            if (arg_buf_live) {
+                json_buf_free(&arg_buf);
+            }
+            free(text);
+            free(kind);
+            free(type);
+            pk_c_walk_term_free(term);
+            free(term_json);
+            goto done;
+        }
+        if ((arg_serialized
+                ? json_buf_append_n(&buf, arg_buf.data, arg_buf.len)
+                : json_buf_append_callsite_arg_fallback(&buf, i)) != 0) {
+            if (arg_buf_live) {
+                json_buf_free(&arg_buf);
+            }
+            free(text);
+            free(kind);
+            free(type);
+            pk_c_walk_term_free(term);
+            free(term_json);
+            goto done;
+        }
+        if (arg_buf_live) {
+            json_buf_free(&arg_buf);
+        }
+        free(text);
+        free(kind);
+        free(type);
+        pk_c_walk_term_free(term);
+        free(term_json);
+    }
+    if (json_buf_append_char(&buf, ']') == 0) {
+        out = json_buf_take(&buf);
+    }
+
+done:
+    json_buf_free(&buf);
+    return out;
+}
+
 static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
     char *callee_name = pk_c_walk_call_callee(call_cursor);
     const WalkFunction *callee;
     pk_c_walk_formula *wp;
     pk_c_walk_chain chain;
+    char *actuals_json;
     int line = 0;
     int column = 0;
     int rc;
@@ -361,6 +611,12 @@ static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
             return -1;
         }
     }
+    actuals_json = extract_callsite_actuals(call_cursor);
+    if (actuals_json == NULL) {
+        pk_c_walk_formula_free(wp);
+        free(callee_name);
+        return -1;
+    }
     pk_c_walk_chain_init(&chain);
     chain.caller_name = pk_c_walk_copy(ctx->caller->name);
     chain.callee_name = pk_c_walk_copy(callee_name);
@@ -370,15 +626,24 @@ static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
     chain.column = column;
     if (chain.caller_name == NULL || chain.callee_name == NULL || chain.path == NULL ||
         clone_formals_into_chain(&chain, ctx->caller) != 0 ||
-        pk_c_walk_chain_add_arrival(&chain, "Callsite", callee_name, ctx->stmt_index, line, column, wp) != 0) {
+        pk_c_walk_chain_add_callsite_arrival(
+            &chain,
+            callee_name,
+            ctx->stmt_index,
+            line,
+            column,
+            actuals_json,
+            wp) != 0) {
         pk_c_walk_chain_free(&chain);
         pk_c_walk_formula_free(wp);
+        free(actuals_json);
         free(callee_name);
         return -1;
     }
     if (pk_c_walk_apply_call_context(ctx->stmts[ctx->stmt_index], call_cursor, &wp, &chain, ctx->stmt_index) != 0) {
         pk_c_walk_chain_free(&chain);
         pk_c_walk_formula_free(wp);
+        free(actuals_json);
         free(callee_name);
         return -1;
     }
@@ -390,6 +655,7 @@ static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
             apply_guard_stmt(prev, &wp) != 0) {
             pk_c_walk_chain_free(&chain);
             pk_c_walk_formula_free(wp);
+            free(actuals_json);
             free(callee_name);
             return -1;
         }
@@ -405,11 +671,13 @@ static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
         pk_c_walk_emit_chain_contract(ctx->result, &chain) != 0) {
         pk_c_walk_chain_free(&chain);
         pk_c_walk_formula_free(wp);
+        free(actuals_json);
         free(callee_name);
         return -1;
     }
     pk_c_walk_chain_free(&chain);
     pk_c_walk_formula_free(wp);
+    free(actuals_json);
     free(callee_name);
     return 0;
 }

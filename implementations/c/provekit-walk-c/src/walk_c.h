@@ -48,6 +48,7 @@ typedef struct {
     char *kind;
     char *name;
     char *branch;
+    char *actuals_json;
     size_t stmt_index;
     size_t join_stmt_index;
     int line;
@@ -93,7 +94,9 @@ pk_c_walk_formula *pk_c_walk_substitute_formula(
     const pk_c_walk_term *replacement);
 int pk_c_walk_formula_is_true(const pk_c_walk_formula *formula);
 char *pk_c_walk_formula_json(const pk_c_walk_formula *formula);
+char *pk_c_walk_term_json(const pk_c_walk_term *term);
 pk_c_walk_term *pk_c_walk_term_from_text(const char *start, size_t len);
+pk_c_walk_term *pk_c_walk_term_from_text_full(const char *start, size_t len);
 pk_c_walk_formula *pk_c_walk_formula_from_text(const char *start, size_t len);
 
 void pk_c_walk_chain_init(pk_c_walk_chain *chain);
@@ -105,6 +108,14 @@ int pk_c_walk_chain_add_arrival(
     size_t stmt_index,
     int line,
     int column,
+    const pk_c_walk_formula *wp);
+int pk_c_walk_chain_add_callsite_arrival(
+    pk_c_walk_chain *chain,
+    const char *name,
+    size_t stmt_index,
+    int line,
+    int column,
+    const char *actuals_json,
     const pk_c_walk_formula *wp);
 int pk_c_walk_chain_add_conditional_arm_arrival(
     pk_c_walk_chain *chain,
@@ -120,6 +131,7 @@ int pk_c_walk_chain_add_conditional_arm_arrival(
 char *pk_c_walk_cursor_source(CXCursor cursor);
 char *pk_c_walk_call_callee(CXCursor cursor);
 pk_c_walk_term *pk_c_walk_lift_term(CXCursor cursor);
+pk_c_walk_term *pk_c_walk_lift_term_full(CXCursor cursor);
 pk_c_walk_formula *pk_c_walk_lift_condition(CXCursor cursor);
 pk_c_walk_formula *pk_c_walk_lift_function_pre(CXCursor function_cursor);
 pk_c_walk_formula *pk_c_walk_lift_if_exit_pre(CXCursor if_cursor);
