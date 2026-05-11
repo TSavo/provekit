@@ -23,6 +23,8 @@ import java.util.TreeMap;
 
 import org.junit.jupiter.api.Test;
 
+import com.provekit.ir.Blake3;
+
 class ProofEnvelopeTest {
 
     /**

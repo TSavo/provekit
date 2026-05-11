@@ -20,6 +20,12 @@
     </description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-ir</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!--
             BouncyCastle provides BLAKE3 (Blake3Digest) since 1.77 and a
             mature Ed25519 implementation. One jar covers both primitives.

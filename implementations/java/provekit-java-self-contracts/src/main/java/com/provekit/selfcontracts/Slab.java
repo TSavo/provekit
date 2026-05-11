@@ -20,9 +20,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.Function;
 
-import com.provekit.claimenvelope.Jcs.Value;
 import com.provekit.ir.Declaration;
 import com.provekit.ir.Formula;
+import com.provekit.ir.Jcs.Value;
 import com.provekit.ir.Sort;
 import com.provekit.ir.Term;
 

@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test;
 import com.provekit.claimenvelope.ClaimEnvelope.BridgeTargetV14;
 import com.provekit.claimenvelope.ClaimEnvelope.MintBridgeV14Args;
 import com.provekit.claimenvelope.ClaimEnvelope.MintedEnvelope;
+import com.provekit.ir.Blake3;
 
 class BridgeV14RoundtripTest {
 

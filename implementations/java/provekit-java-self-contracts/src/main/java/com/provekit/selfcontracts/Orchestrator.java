@@ -23,10 +23,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.provekit.claimenvelope.Blake3;
 import com.provekit.claimenvelope.ClaimEnvelope;
 import com.provekit.claimenvelope.Ed25519;
 import com.provekit.claimenvelope.ProofEnvelope;
+import com.provekit.ir.Blake3;
 import com.provekit.selfcontracts.Slab.AuthoredSlab;
 import com.provekit.selfcontracts.Slab.ContractDecl;
 

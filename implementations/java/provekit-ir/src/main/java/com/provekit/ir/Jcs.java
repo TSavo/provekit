@@ -1,13 +1,118 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// JCS-JSON encoder (RFC 8785 / "JSON Canonicalization Scheme") plus
+// BLAKE3-512 CIDs for Java IR and envelope tooling.
+//
+// Rules (RFC 8785 + protocol/specs/2026-04-30-canonicalization-grammar.md
+// pass 7):
+//   - Object keys sorted by Unicode code-point order.
+//   - Numbers: integers serialized as plain decimal digits (the Java kit
+//     only produces integer JSON numbers for canonical substrate values).
+//   - Strings: UTF-8 verbatim; escape double-quote and backslash and
+//     U+0000..U+001F as backslash-u-00XX (lowercase hex).
+//   - true / false / null verbatim.
+//   - No whitespace anywhere.
+//
+// Mirrors implementations/rust/provekit-canonicalizer/src/jcs.rs and
+// implementations/csharp/Provekit.Canonicalizer/Jcs.cs 1:1.
+
 package com.provekit.ir;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 
-/** Canonical JSON value tree plus BLAKE3-512 CIDs for ProvekIt Java tools. */
+/** Canonical JSON value trees plus BLAKE3-512 CIDs for ProvekIt Java tools. */
 public final class Jcs {
     private Jcs() {}
+
+    /**
+     * A simple algebraic value tree mirroring the rust/csharp peers'
+     * {@code Value}. Objects preserve insertion order at construction
+     * time, but the JCS encoder always emits keys in code-point order.
+     */
+    public static abstract sealed class Value
+            permits Value.Null, Value.Bool, Value.Integer,
+                    Value.Str, Value.Arr, Value.Obj {
+
+        public static final Value NULL = new Null();
+
+        public static Value bool(boolean b) {
+            return b ? Bool.TRUE : Bool.FALSE;
+        }
+
+        public static Value integer(long n) {
+            return new Integer(n);
+        }
+
+        public static Value string(String s) {
+            return new Str(Objects.requireNonNull(s, "string value"));
+        }
+
+        public static Value array(List<Value> items) {
+            return new Arr(List.copyOf(items));
+        }
+
+        public static Value array(Value... items) {
+            return new Arr(List.of(items));
+        }
+
+        /** Build an object from an even-length list of (key, value, key, value, ...) pairs. */
+        public static Value object(Object... kvs) {
+            if ((kvs.length & 1) != 0) {
+                throw new IllegalArgumentException("object: requires an even number of arguments");
+            }
+            LinkedHashMap<String, Value> entries = new LinkedHashMap<>();
+            for (int i = 0; i < kvs.length; i += 2) {
+                if (!(kvs[i] instanceof String key)) {
+                    throw new IllegalArgumentException("object: keys must be String");
+                }
+                if (!(kvs[i + 1] instanceof Value v)) {
+                    throw new IllegalArgumentException("object: values must be Value");
+                }
+                entries.put(key, v);
+            }
+            return new Obj(entries);
+        }
+
+        public static Value object(LinkedHashMap<String, Value> entries) {
+            return new Obj(new LinkedHashMap<>(entries));
+        }
+
+        public static final class Null extends Value {
+            private Null() {}
+        }
+
+        public static final class Bool extends Value {
+            public static final Bool TRUE = new Bool(true);
+            public static final Bool FALSE = new Bool(false);
+            public final boolean value;
+            private Bool(boolean v) { this.value = v; }
+        }
+
+        public static final class Integer extends Value {
+            public final long value;
+            private Integer(long v) { this.value = v; }
+        }
+
+        public static final class Str extends Value {
+            public final String value;
+            private Str(String v) { this.value = v; }
+        }
+
+        public static final class Arr extends Value {
+            public final List<Value> items;
+            private Arr(List<Value> items) { this.items = items; }
+        }
+
+        public static final class Obj extends Value {
+            public final LinkedHashMap<String, Value> entries;
+            private Obj(LinkedHashMap<String, Value> entries) { this.entries = entries; }
+        }
+    }
 
     public sealed interface Json permits Null, Bool, Num, Str, Arr, Obj {}
 
@@ -125,18 +230,41 @@ public final class Jcs {
         return new Obj(fields);
     }
 
+    /** Encode {@code v} to a JCS-canonical UTF-8 string. */
+    public static String encode(Value v) {
+        StringBuilder sb = new StringBuilder();
+        encodeValue(v, sb);
+        return sb.toString();
+    }
+
+    /** Encode {@code v} to JCS-canonical UTF-8 bytes. */
+    public static byte[] encodeUtf8(Value v) {
+        return encode(v).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Encode {@code value} to a JCS-canonical UTF-8 string. */
     public static String encode(Json value) {
-        StringBuilder out = new StringBuilder();
-        encodeValue(value, out);
-        return out.toString();
+        return encode(toValue(value));
     }
 
+    /** Encode {@code value} to JCS-canonical UTF-8 bytes. */
+    public static byte[] encodeUtf8(Json value) {
+        return encode(value).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** Convenience: BLAKE3-512 of JCS({@code v}). */
+    public static String blake3Cid(Value v) {
+        return Blake3.blake3_512(encodeUtf8(v));
+    }
+
+    /** Compatibility alias for callers that hash IR {@link Json} values. */
     public static String cid(Json value) {
-        return blake3_512(encode(value).getBytes(StandardCharsets.UTF_8));
+        return Blake3.blake3_512(encodeUtf8(value));
     }
 
+    /** Compatibility alias for raw BLAKE3-512 CIDs. */
     public static String blake3_512(byte[] input) {
-        return "blake3-512:" + Blake3.hashHex(input, 64);
+        return Blake3.blake3_512(input);
     }
 
     public static Json parse(String json) {
@@ -147,43 +275,80 @@ public final class Jcs {
         return value;
     }
 
-    private static void encodeValue(Json value, StringBuilder out) {
-        if (value instanceof Null) {
+    private static void encodeValue(Value v, StringBuilder out) {
+        if (v instanceof Value.Null) {
             out.append("null");
-        } else if (value instanceof Bool b) {
-            out.append(b.value() ? "true" : "false");
-        } else if (value instanceof Num n) {
-            out.append(n.value());
-        } else if (value instanceof Str s) {
-            encodeString(s.value(), out);
-        } else if (value instanceof Arr a) {
+        } else if (v instanceof Value.Bool b) {
+            out.append(b.value ? "true" : "false");
+        } else if (v instanceof Value.Integer i) {
+            out.append(java.lang.Long.toString(i.value));
+        } else if (v instanceof Value.Str s) {
+            encodeString(s.value, out);
+        } else if (v instanceof Value.Arr a) {
             out.append('[');
-            for (int i = 0; i < a.values().size(); i++) {
-                if (i > 0) out.append(',');
-                encodeValue(a.values().get(i), out);
+            boolean first = true;
+            for (Value item : a.items) {
+                if (!first) out.append(',');
+                first = false;
+                encodeValue(item, out);
             }
             out.append(']');
-        } else if (value instanceof Obj o) {
-            List<Field> sorted = new ArrayList<>(o.fields());
-            sorted.sort(Comparator.comparing(Field::key));
+        } else if (v instanceof Value.Obj o) {
+            List<String> keys = new ArrayList<>(o.entries.keySet());
+            Collections.sort(keys, Jcs::compareCodePoints);
             out.append('{');
-            for (int i = 0; i < sorted.size(); i++) {
-                if (i > 0) out.append(',');
-                Field field = sorted.get(i);
-                encodeString(field.key(), out);
+            boolean first = true;
+            for (String k : keys) {
+                if (!first) out.append(',');
+                first = false;
+                encodeString(k, out);
                 out.append(':');
-                encodeValue(field.value(), out);
+                encodeValue(o.entries.get(k), out);
             }
             out.append('}');
         } else {
-            throw new IllegalArgumentException("unknown JSON value");
+            throw new IllegalStateException("Unknown Value variant: " + v.getClass());
         }
     }
 
-    private static void encodeString(String value, StringBuilder out) {
+    private static Value toValue(Json value) {
+        if (value instanceof Null) {
+            return Value.NULL;
+        } else if (value instanceof Bool b) {
+            return Value.bool(b.value());
+        } else if (value instanceof Num n) {
+            return Value.integer(n.value());
+        } else if (value instanceof Str s) {
+            return Value.string(s.value());
+        } else if (value instanceof Arr a) {
+            return Value.array(a.values().stream().map(Jcs::toValue).toList());
+        } else if (value instanceof Obj o) {
+            LinkedHashMap<String, Value> entries = new LinkedHashMap<>();
+            for (Field field : o.fields()) {
+                entries.put(field.key(), toValue(field.value()));
+            }
+            return Value.object(entries);
+        }
+        throw new IllegalArgumentException("unknown JSON value");
+    }
+
+    private static int compareCodePoints(String a, String b) {
+        int i = 0, j = 0;
+        while (i < a.length() && j < b.length()) {
+            int ca = a.codePointAt(i);
+            int cb = b.codePointAt(j);
+            if (ca != cb) return java.lang.Integer.compare(ca, cb);
+            i += Character.charCount(ca);
+            j += Character.charCount(cb);
+        }
+        return java.lang.Integer.compare(a.length() - i, b.length() - j);
+    }
+
+    private static void encodeString(String s, StringBuilder out) {
         out.append('"');
-        for (int i = 0; i < value.length();) {
-            int cp = value.codePointAt(i);
+        int i = 0;
+        while (i < s.length()) {
+            int cp = s.codePointAt(i);
             i += Character.charCount(cp);
             if (cp == '"') {
                 out.append("\\\"");
@@ -191,14 +356,18 @@ public final class Jcs {
                 out.append("\\\\");
             } else if (cp < 0x20) {
                 out.append("\\u00");
-                out.append(Character.forDigit((cp >> 4) & 0xf, 16));
-                out.append(Character.forDigit(cp & 0xf, 16));
+                out.append(HEX[(cp >>> 4) & 0xF]);
+                out.append(HEX[cp & 0xF]);
             } else {
                 out.appendCodePoint(cp);
             }
         }
         out.append('"');
     }
+
+    private static final char[] HEX = {
+        '0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'
+    };
 
     private static final class Parser {
         private final String input;
@@ -319,7 +488,7 @@ public final class Jcs {
                         case 't' -> out.append('\t');
                         case 'u' -> {
                             if (pos + 4 > input.length()) throw error("short unicode escape");
-                            int cp = Integer.parseInt(input.substring(pos, pos + 4), 16);
+                            int cp = java.lang.Integer.parseInt(input.substring(pos, pos + 4), 16);
                             out.append((char) cp);
                             pos += 4;
                         }
@@ -343,179 +512,6 @@ public final class Jcs {
 
         IllegalArgumentException error(String message) {
             return new IllegalArgumentException(message + " at byte " + pos);
-        }
-    }
-
-    private static final class Blake3 {
-        private static final int BLOCK_LEN = 64;
-        private static final int CHUNK_LEN = 1024;
-        private static final int CHUNK_START = 1;
-        private static final int CHUNK_END = 2;
-        private static final int PARENT = 4;
-        private static final int ROOT = 8;
-        private static final int[] IV = {
-            0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
-            0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19
-        };
-        private static final int[] MSG_PERMUTATION = {2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8};
-
-        static String hashHex(byte[] input, int outLen) {
-            byte[] hash = hash(input, outLen);
-            StringBuilder out = new StringBuilder(hash.length * 2);
-            for (byte b : hash) out.append(String.format("%02x", b & 0xff));
-            return out.toString();
-        }
-
-        private static byte[] hash(byte[] input, int outLen) {
-            List<Output> level = new ArrayList<>();
-            if (input.length == 0) {
-                level.add(chunkOutput(input, 0, 0, 0));
-            } else {
-                int chunks = (input.length + CHUNK_LEN - 1) / CHUNK_LEN;
-                for (int i = 0; i < chunks; i++) {
-                    int offset = i * CHUNK_LEN;
-                    int len = Math.min(CHUNK_LEN, input.length - offset);
-                    level.add(chunkOutput(input, offset, len, i));
-                }
-            }
-            while (level.size() > 1) {
-                List<Output> next = new ArrayList<>();
-                for (int i = 0; i < level.size(); i += 2) {
-                    if (i + 1 == level.size()) {
-                        next.add(level.get(i));
-                    } else {
-                        next.add(parentOutput(level.get(i).chainingValue(), level.get(i + 1).chainingValue()));
-                    }
-                }
-                level = next;
-            }
-            return level.get(0).rootBytes(outLen);
-        }
-
-        private static Output chunkOutput(byte[] input, int offset, int len, long chunkCounter) {
-            int[] cv = IV.clone();
-            int blockOffset = 0;
-            int blocksCompressed = 0;
-            while (len - blockOffset > BLOCK_LEN) {
-                int[] words = wordsFromBlock(input, offset + blockOffset, BLOCK_LEN);
-                int flags = blocksCompressed == 0 ? CHUNK_START : 0;
-                cv = first8(compress(cv, words, BLOCK_LEN, chunkCounter, flags));
-                blocksCompressed++;
-                blockOffset += BLOCK_LEN;
-            }
-            int remaining = len - blockOffset;
-            int flags = CHUNK_END | (blocksCompressed == 0 ? CHUNK_START : 0);
-            int[] words = wordsFromBlock(input, offset + blockOffset, remaining);
-            return new Output(cv, words, remaining, chunkCounter, flags);
-        }
-
-        private static Output parentOutput(int[] left, int[] right) {
-            int[] blockWords = new int[16];
-            System.arraycopy(left, 0, blockWords, 0, 8);
-            System.arraycopy(right, 0, blockWords, 8, 8);
-            return new Output(IV.clone(), blockWords, BLOCK_LEN, 0, PARENT);
-        }
-
-        private record Output(int[] inputCv, int[] blockWords, int blockLen, long counter, int flags) {
-            int[] chainingValue() {
-                return first8(compress(inputCv, blockWords, blockLen, counter, flags));
-            }
-
-            byte[] rootBytes(int outLen) {
-                byte[] out = new byte[outLen];
-                int written = 0;
-                long outputCounter = 0;
-                while (written < outLen) {
-                    int[] words = compress(inputCv, blockWords, blockLen, outputCounter, flags | ROOT);
-                    byte[] block = wordsToBytes(words);
-                    int take = Math.min(block.length, outLen - written);
-                    System.arraycopy(block, 0, out, written, take);
-                    written += take;
-                    outputCounter++;
-                }
-                return out;
-            }
-        }
-
-        private static int[] compress(int[] cv, int[] blockWords, int blockLen, long counter, int flags) {
-            int[] state = new int[16];
-            System.arraycopy(cv, 0, state, 0, 8);
-            System.arraycopy(IV, 0, state, 8, 4);
-            state[12] = (int) counter;
-            state[13] = (int) (counter >>> 32);
-            state[14] = blockLen;
-            state[15] = flags;
-            int[] m = blockWords.clone();
-            for (int round = 0; round < 7; round++) {
-                round(state, m);
-                if (round != 6) m = permute(m);
-            }
-            for (int i = 0; i < 8; i++) {
-                state[i] ^= state[i + 8];
-                state[i + 8] ^= cv[i];
-            }
-            return state;
-        }
-
-        private static void round(int[] s, int[] m) {
-            g(s, 0, 4, 8, 12, m[0], m[1]);
-            g(s, 1, 5, 9, 13, m[2], m[3]);
-            g(s, 2, 6, 10, 14, m[4], m[5]);
-            g(s, 3, 7, 11, 15, m[6], m[7]);
-            g(s, 0, 5, 10, 15, m[8], m[9]);
-            g(s, 1, 6, 11, 12, m[10], m[11]);
-            g(s, 2, 7, 8, 13, m[12], m[13]);
-            g(s, 3, 4, 9, 14, m[14], m[15]);
-        }
-
-        private static void g(int[] s, int a, int b, int c, int d, int mx, int my) {
-            s[a] = s[a] + s[b] + mx;
-            s[d] = Integer.rotateRight(s[d] ^ s[a], 16);
-            s[c] = s[c] + s[d];
-            s[b] = Integer.rotateRight(s[b] ^ s[c], 12);
-            s[a] = s[a] + s[b] + my;
-            s[d] = Integer.rotateRight(s[d] ^ s[a], 8);
-            s[c] = s[c] + s[d];
-            s[b] = Integer.rotateRight(s[b] ^ s[c], 7);
-        }
-
-        private static int[] permute(int[] m) {
-            int[] out = new int[16];
-            for (int i = 0; i < 16; i++) out[i] = m[MSG_PERMUTATION[i]];
-            return out;
-        }
-
-        private static int[] wordsFromBlock(byte[] input, int offset, int len) {
-            byte[] block = new byte[BLOCK_LEN];
-            if (len > 0) System.arraycopy(input, offset, block, 0, len);
-            int[] words = new int[16];
-            for (int i = 0; i < 16; i++) {
-                int j = i * 4;
-                words[i] = (block[j] & 0xff)
-                    | ((block[j + 1] & 0xff) << 8)
-                    | ((block[j + 2] & 0xff) << 16)
-                    | ((block[j + 3] & 0xff) << 24);
-            }
-            return words;
-        }
-
-        private static int[] first8(int[] words) {
-            int[] out = new int[8];
-            System.arraycopy(words, 0, out, 0, 8);
-            return out;
-        }
-
-        private static byte[] wordsToBytes(int[] words) {
-            byte[] out = new byte[words.length * 4];
-            for (int i = 0; i < words.length; i++) {
-                int w = words[i];
-                int j = i * 4;
-                out[j] = (byte) w;
-                out[j + 1] = (byte) (w >>> 8);
-                out[j + 2] = (byte) (w >>> 16);
-                out[j + 3] = (byte) (w >>> 24);
-            }
-            return out;
         }
     }
 }

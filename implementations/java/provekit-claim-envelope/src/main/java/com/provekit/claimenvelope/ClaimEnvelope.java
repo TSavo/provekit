@@ -34,7 +34,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 
-import com.provekit.claimenvelope.Jcs.Value;
+import com.provekit.ir.Blake3;
+import com.provekit.ir.Jcs;
+import com.provekit.ir.Jcs.Value;
 
 public final class ClaimEnvelope {
 
