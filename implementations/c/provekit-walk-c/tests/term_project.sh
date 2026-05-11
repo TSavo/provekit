@@ -417,6 +417,87 @@ if not source or "mov eax, ebx" not in source or "\n    nop\n" in source:
 PY
 }
 
+check_source_unit_encodes_raw_source() {
+    name="source_unit"
+    src="$TMP_DIR/$name.c"
+    actual_term="$TMP_DIR/$name.term.json"
+    source_term="$TMP_DIR/$name.source-term.json"
+    reemitted="$TMP_DIR/$name.reemitted.c"
+
+    cat > "$src" <<'C'
+/* leading proof note */
+int source_unit(int x) {
+    // branch proof note
+    if (x) {
+        return x; /* tail proof note */
+    }
+
+    return 0;
+}
+C
+
+    "$BIN" "$src" --function "$name" --term > "$actual_term"
+
+    python3 - "$actual_term" "$src" "$source_term" <<'PY'
+import json
+import sys
+
+doc = json.load(open(sys.argv[1]))
+raw = open(sys.argv[2], "rb").read()
+source_term = doc.get("source_term")
+if source_term is None:
+    raise SystemExit("FAIL: term memento is missing source_term")
+if source_term.get("kind") != "op" or source_term.get("name") != "source-unit":
+    raise SystemExit(f"FAIL: source_term is not c11:source-unit: {source_term}")
+args = source_term.get("args", [])
+if len(args) != 2:
+    raise SystemExit(f"FAIL: source-unit arity {len(args)} != 2")
+if args[0].get("kind") != "bytes" or args[0].get("encoding") != "hex":
+    raise SystemExit(f"FAIL: source-unit bytes slot is not a binary hex literal: {args[0]}")
+try:
+    decoded = bytes.fromhex(args[0].get("value", ""))
+except ValueError as exc:
+    raise SystemExit(f"FAIL: source-unit bytes literal is not hex: {exc}") from exc
+if decoded != raw:
+    raise SystemExit("FAIL: source-unit bytes do not decode to the exact source input")
+if args[1] != doc.get("term"):
+    raise SystemExit("FAIL: source-unit operational_term is not the emitted operational term")
+source_term_for_parser = dict(source_term)
+source_term_for_parser["args"] = [
+    {"value": args[0]["value"], "encoding": "hex", "kind": "bytes"},
+    args[1],
+]
+open(sys.argv[3], "w", encoding="utf-8").write(json.dumps(source_term_for_parser, separators=(",", ":")))
+PY
+
+    "$BIN" --check-source-unit "$source_term" --function "$name" > "$TMP_DIR/$name.lift-witness.txt"
+    if ! grep -q '^source-unit-ok$' "$TMP_DIR/$name.lift-witness.txt"; then
+        echo "FAIL: source-unit lift witness did not verify" >&2
+        cat "$TMP_DIR/$name.lift-witness.txt" >&2
+        exit 1
+    fi
+
+    python3 - "$source_term" "$TMP_DIR/$name.liar-source-term.json" <<'PY'
+import json
+import sys
+
+source_term = json.load(open(sys.argv[1]))
+source_term["args"][1] = {"kind": "op", "name": "skip", "args": [{"kind": "unit"}]}
+open(sys.argv[2], "w", encoding="utf-8").write(json.dumps(source_term, sort_keys=True, separators=(",", ":")))
+PY
+    if "$BIN" --check-source-unit "$TMP_DIR/$name.liar-source-term.json" --function "$name" > "$TMP_DIR/$name.liar.txt" 2>&1; then
+        echo "FAIL: source-unit lift witness accepted a lying operational term" >&2
+        exit 1
+    fi
+
+    "$BIN" --serialize "$source_term" --function "$name" > "$reemitted"
+    if ! cmp -s "$src" "$reemitted"; then
+        echo "FAIL: source-unit serialization did not recover the exact source bytes" >&2
+        diff -u "$src" "$reemitted" >&2 || true
+        exit 1
+    fi
+}
+
 check_example foo
 check_example add
 check_example g
@@ -428,6 +509,7 @@ check_example control
 check_example gnu
 check_example asm_link
 check_ms_asm_lifts_actual_tokens
+check_source_unit_encodes_raw_source
 check_asm_orp_roundtrip
 
 operator_src="$TMP_DIR/operator_ops.c"

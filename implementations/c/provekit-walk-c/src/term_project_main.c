@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define FOO_WP_NOTE "The branch-sensitive WP value is recorded in foo.expected-wp-contract.json. The current c-collectors-defensive lifter emits the same branch-sensitive contract in foo.contract.json."
 #define GENERIC_WP_NOTE "The branch-sensitive WP value is projected from this materialized C11 algebra term by provekit-c11-term-project."
@@ -22,7 +23,8 @@ typedef enum {
     C11_TERM_VAR = 1,
     C11_TERM_CONST_INT = 2,
     C11_TERM_UNIT = 3,
-    C11_TERM_LITERAL = 4
+    C11_TERM_LITERAL = 4,
+    C11_TERM_BYTES = 5
 } C11TermKind;
 
 typedef struct C11Term C11Term;
@@ -244,7 +246,7 @@ static const char *path_basename(const char *path) {
     return slash == NULL ? path : slash + 1;
 }
 
-static char *read_file(const char *path) {
+static char *read_file_bytes(const char *path, size_t *len_out) {
     FILE *fp = fopen(path, "rb");
     long size;
     char *data;
@@ -271,7 +273,56 @@ static char *read_file(const char *path) {
     }
     data[size] = '\0';
     fclose(fp);
+    if (len_out != NULL) *len_out = (size_t)size;
     return data;
+}
+
+static char *read_file(const char *path) {
+    return read_file_bytes(path, NULL);
+}
+
+static char *hex_for_bytes(const char *data, size_t len) {
+    char *hex = malloc(len * 2 + 1);
+
+    if (hex == NULL) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        static const char digits[] = "0123456789abcdef";
+        unsigned char byte = (unsigned char)data[i];
+
+        hex[i * 2] = digits[byte >> 4];
+        hex[i * 2 + 1] = digits[byte & 0x0f];
+    }
+    hex[len * 2] = '\0';
+    return hex;
+}
+
+static int hex_value(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static char *bytes_for_hex(const char *hex, size_t *len_out) {
+    size_t hex_len = hex == NULL ? 0 : strlen(hex);
+    size_t len = hex_len / 2;
+    char *bytes;
+
+    if ((hex_len % 2) != 0) return NULL;
+    bytes = malloc(len == 0 ? 1 : len);
+    if (bytes == NULL) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        int hi = hex_value(hex[i * 2]);
+        int lo = hex_value(hex[i * 2 + 1]);
+
+        if (hi < 0 || lo < 0) {
+            free(bytes);
+            return NULL;
+        }
+        bytes[i] = (char)((hi << 4) | lo);
+    }
+    if (len_out != NULL) *len_out = len;
+    return bytes;
 }
 
 static char *cursor_extent_source_text(CXCursor cursor) {
@@ -400,6 +451,21 @@ static C11Term *term_literal(const char *value) {
     return term_literal_take(pk_c_walk_copy(value));
 }
 
+static C11Term *term_bytes_take(char *hex) {
+    C11Term *term = term_new(C11_TERM_BYTES);
+
+    if (term == NULL) {
+        free(hex);
+        return NULL;
+    }
+    term->name = hex;
+    return term;
+}
+
+static C11Term *term_bytes(const char *data, size_t len) {
+    return term_bytes_take(hex_for_bytes(data, len));
+}
+
 static C11Term *term_const_int(long value) {
     C11Term *term = term_new(C11_TERM_CONST_INT);
 
@@ -506,6 +572,8 @@ static C11Term *term_clone(const C11Term *term) {
         return term_var(term->name);
     case C11_TERM_LITERAL:
         return term_literal(term->name);
+    case C11_TERM_BYTES:
+        return term_bytes_take(pk_c_walk_copy(term->name));
     case C11_TERM_CONST_INT:
         return term_const_int(term->value);
     case C11_TERM_UNIT:
@@ -1393,7 +1461,7 @@ static enum CXChildVisitResult find_function_visitor(CXCursor cursor, CXCursor p
     return CXChildVisit_Recurse;
 }
 
-static CXTranslationUnit parse_unit(const char *path, const char *source, CXIndex *index_out) {
+static CXTranslationUnit parse_unit(const char *path, const char *source, size_t source_len, CXIndex *index_out) {
     static const char *const args[] = {"-x", "c", "-std=c11", "-fasm-blocks", "-fms-extensions"};
     struct CXUnsavedFile unsaved;
     CXTranslationUnit unit = NULL;
@@ -1402,7 +1470,7 @@ static CXTranslationUnit parse_unit(const char *path, const char *source, CXInde
     if (*index_out == NULL) return NULL;
     unsaved.Filename = path;
     unsaved.Contents = source;
-    unsaved.Length = (unsigned long)strlen(source);
+    unsaved.Length = (unsigned long)source_len;
     if (clang_parseTranslationUnit2(
             *index_out,
             path,
@@ -1428,6 +1496,10 @@ static int term_json(Buf *b, const C11Term *term) {
             buf_append_char(b, '}') == 0 ? 0 : -1;
     case C11_TERM_LITERAL:
         return buf_append(b, "{\"kind\":\"literal\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append_char(b, '}') == 0 ? 0 : -1;
+    case C11_TERM_BYTES:
+        return buf_append(b, "{\"kind\":\"bytes\",\"encoding\":\"hex\",\"value\":") == 0 &&
             buf_append_json_string(b, term->name) == 0 &&
             buf_append_char(b, '}') == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
@@ -1460,6 +1532,10 @@ static int term_surface(Buf *b, const C11Term *term) {
         return buf_append(b, term->name);
     case C11_TERM_LITERAL:
         return buf_append_json_string(b, term->name);
+    case C11_TERM_BYTES:
+        return buf_append(b, "bytes(") == 0 &&
+            buf_append(b, term->name == NULL ? "" : term->name) == 0 &&
+            buf_append_char(b, ')') == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
         return buf_append_long(b, term->value);
     case C11_TERM_UNIT:
@@ -1484,13 +1560,17 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
     const char *note = strcmp(base, "foo.c") == 0 ? FOO_WP_NOTE : GENERIC_WP_NOTE;
     char *source = NULL;
     char *source_cid = NULL;
+    size_t source_len = 0;
+    C11Term *source_term = NULL;
     int rc = -1;
 
     if (term_surface(&surface, term) != 0) goto done;
-    source = read_file(source_path);
+    source = read_file_bytes(source_path, &source_len);
     if (source == NULL) goto done;
-    source_cid = cid_for_bytes(source, strlen(source));
+    source_cid = cid_for_bytes(source, source_len);
     if (source_cid == NULL) goto done;
+    source_term = term_op2_take("source-unit", term_bytes(source, source_len), term_clone(term));
+    if (source_term == NULL) goto done;
 
     if (buf_append(out, "{\"kind\":\"c11-algebra-term\",\"signature_cid\":\"") != 0 ||
         buf_append(out, pk_c11_signature_cid()) != 0 ||
@@ -1502,6 +1582,8 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
         buf_append_json_string(out, surface.data) != 0 ||
         buf_append(out, ",\"term\":") != 0 ||
         term_json(out, term) != 0 ||
+        buf_append(out, ",\"source_term\":") != 0 ||
+        term_json(out, source_term) != 0 ||
         buf_append(out, ",\"wp_value_note\":") != 0 ||
         buf_append_json_string(out, note) != 0 ||
         buf_append(out, "}\n") != 0) {
@@ -1510,6 +1592,7 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
     rc = 0;
 
 done:
+    term_free(source_term);
     free(source_cid);
     free(source);
     buf_free(&surface);
@@ -1525,6 +1608,9 @@ static C11Term *project_value(const C11Term *term, const C11Term *continuation) 
 
     if (term == NULL) return NULL;
     if (term->kind != C11_TERM_OP) return continuation == NULL ? term_clone(term) : term_clone(continuation);
+    if (strcmp(term->name, "source-unit") == 0 && term->n_args == 2) {
+        return project_value(term->args[1], continuation);
+    }
     if (strcmp(term->name, "return") == 0 && term->n_args == 1) return term_clone(term->args[0]);
     if (strcmp(term->name, "skip") == 0) return continuation == NULL ? NULL : term_clone(continuation);
     if ((strcmp(term->name, "decl") == 0 || strcmp(term->name, "assign") == 0 ||
@@ -1588,6 +1674,10 @@ static int contract_term_json(Buf *b, const C11Term *term) {
         return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
             buf_append_json_string(b, term->name) == 0 &&
             buf_append(b, ",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}") == 0 ? 0 : -1;
+    case C11_TERM_BYTES:
+        return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append(b, ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Bytes\"}}") == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
         return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
             buf_append_long(b, term->value) == 0 &&
@@ -2024,6 +2114,10 @@ static int parse_term_object(const char **p, C11Term **out) {
         if (literal_value == NULL) goto done;
         *out = term_literal_take(literal_value);
         literal_value = NULL;
+    } else if (strcmp(kind, "bytes") == 0) {
+        if (literal_value == NULL) goto done;
+        *out = term_bytes_take(literal_value);
+        literal_value = NULL;
     } else if (strcmp(kind, "const") == 0) {
         if (!have_value) goto done;
         *out = term_const_int(value);
@@ -2248,6 +2342,8 @@ static int serialize_expr(Buf *out, const C11Term *term) {
         return buf_append(out, term->name);
     case C11_TERM_LITERAL:
         return buf_append_c_string_literal(out, term->name);
+    case C11_TERM_BYTES:
+        return buf_append(out, "0");
     case C11_TERM_CONST_INT:
         return buf_append_long(out, term->value);
     case C11_TERM_UNIT:
@@ -2674,6 +2770,22 @@ static int serialize_translation_unit(Buf *out, const C11Term *term, const char 
     NameList callees = {0};
     int rc = -1;
 
+    if (term != NULL &&
+        term->kind == C11_TERM_OP &&
+        strcmp(term->name, "source-unit") == 0 &&
+        term->n_args == 2 &&
+        term->args[0] != NULL &&
+        term->args[0]->kind == C11_TERM_BYTES) {
+        char *bytes = NULL;
+        size_t len = 0;
+
+        bytes = bytes_for_hex(term->args[0]->name, &len);
+        if (bytes == NULL) return -1;
+        rc = buf_append_n(out, bytes, len);
+        free(bytes);
+        return rc;
+    }
+
     if (collect_names(term, &locals, &params, &pointer_params, &struct_params, &callees, 0) != 0) goto done;
     if (struct_params.len > 0 &&
         buf_append(out, "struct item {\n    int field;\n    int value;\n};\n\n") != 0) {
@@ -2714,18 +2826,19 @@ done:
     return rc;
 }
 
-static int build_term_from_source(const char *path, const char *function_name, C11Term **term_out, CXCursor *function_out, CXIndex *index_out, CXTranslationUnit *unit_out) {
-    char *source = NULL;
+static int build_term_from_source_buffer(
+    const char *path,
+    const char *source,
+    size_t source_len,
+    const char *function_name,
+    C11Term **term_out,
+    CXCursor *function_out,
+    CXIndex *index_out,
+    CXTranslationUnit *unit_out) {
     FindFunctionCtx find_ctx = {0};
     CXCursor body;
 
-    source = read_file(path);
-    if (source == NULL) {
-        fprintf(stderr, "failed to read %s\n", path);
-        return -1;
-    }
-    *unit_out = parse_unit(path, source, index_out);
-    free(source);
+    *unit_out = parse_unit(path, source, source_len, index_out);
     if (*unit_out == NULL) {
         fprintf(stderr, "libclang parse failed for %s\n", path);
         return -1;
@@ -2747,9 +2860,112 @@ static int build_term_from_source(const char *path, const char *function_name, C
     return 0;
 }
 
+static int build_term_from_source(const char *path, const char *function_name, C11Term **term_out, CXCursor *function_out, CXIndex *index_out, CXTranslationUnit *unit_out) {
+    char *source = NULL;
+    size_t source_len = 0;
+    int rc;
+
+    source = read_file_bytes(path, &source_len);
+    if (source == NULL) {
+        fprintf(stderr, "failed to read %s\n", path);
+        return -1;
+    }
+    rc = build_term_from_source_buffer(path, source, source_len, function_name, term_out, function_out, index_out, unit_out);
+    free(source);
+    return rc;
+}
+
+static int term_equal(const C11Term *a, const C11Term *b) {
+    if (a == NULL || b == NULL) return a == b;
+    if (a->kind != b->kind) return 0;
+    switch (a->kind) {
+    case C11_TERM_VAR:
+    case C11_TERM_LITERAL:
+    case C11_TERM_BYTES:
+        return strcmp(a->name == NULL ? "" : a->name, b->name == NULL ? "" : b->name) == 0;
+    case C11_TERM_CONST_INT:
+        return a->value == b->value;
+    case C11_TERM_UNIT:
+        return 1;
+    case C11_TERM_OP:
+        if (strcmp(a->name == NULL ? "" : a->name, b->name == NULL ? "" : b->name) != 0 ||
+            a->n_args != b->n_args) {
+            return 0;
+        }
+        for (size_t i = 0; i < a->n_args; i++) {
+            if (!term_equal(a->args[i], b->args[i])) return 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int write_all_fd(int fd, const char *data, size_t len) {
+    size_t offset = 0;
+
+    while (offset < len) {
+        ssize_t written = write(fd, data + offset, len - offset);
+
+        if (written <= 0) return -1;
+        offset += (size_t)written;
+    }
+    return 0;
+}
+
+static int check_source_unit_lift_witness(const C11Term *source_unit, const char *function_name, Buf *out) {
+    char template[] = "/tmp/provekit-source-unit.XXXXXX";
+    char *bytes = NULL;
+    size_t len = 0;
+    int fd = -1;
+    C11Term *lifted = NULL;
+    CXIndex index = NULL;
+    CXTranslationUnit unit = NULL;
+    int rc = -1;
+
+    if (source_unit == NULL ||
+        source_unit->kind != C11_TERM_OP ||
+        strcmp(source_unit->name, "source-unit") != 0 ||
+        source_unit->n_args != 2 ||
+        source_unit->args[0] == NULL ||
+        source_unit->args[0]->kind != C11_TERM_BYTES ||
+        source_unit->args[1] == NULL) {
+        fprintf(stderr, "source-unit lift witness expected c11:source-unit(bytes, operational_term)\n");
+        return -1;
+    }
+    bytes = bytes_for_hex(source_unit->args[0]->name, &len);
+    if (bytes == NULL) {
+        fprintf(stderr, "source-unit bytes slot is not valid hex\n");
+        return -1;
+    }
+    fd = mkstemp(template);
+    if (fd < 0) goto done;
+    if (write_all_fd(fd, bytes, len) != 0 || close(fd) != 0) {
+        fd = -1;
+        goto done;
+    }
+    fd = -1;
+    if (build_term_from_source(template, function_name, &lifted, NULL, &index, &unit) != 0) goto done;
+    if (!term_equal(lifted, source_unit->args[1])) {
+        fprintf(stderr, "source-unit lift witness mismatch\n");
+        goto done;
+    }
+    if (buf_append(out, "source-unit-ok\n") != 0) goto done;
+    rc = 0;
+
+done:
+    if (fd >= 0) close(fd);
+    unlink(template);
+    if (unit != NULL) clang_disposeTranslationUnit(unit);
+    if (index != NULL) clang_disposeIndex(index);
+    term_free(lifted);
+    free(bytes);
+    return rc;
+}
+
 static int usage(const char *argv0) {
     fprintf(stderr, "usage: %s SOURCE.c --function NAME (--term|--contract)\n", argv0);
     fprintf(stderr, "       %s --serialize TERM.json --function NAME\n", argv0);
+    fprintf(stderr, "       %s --check-source-unit TERM.json --function NAME\n", argv0);
     return 2;
 }
 
@@ -2757,6 +2973,7 @@ int main(int argc, char **argv) {
     const char *path = NULL;
     const char *function_name = NULL;
     const char *serialize_path = NULL;
+    const char *check_source_unit_path = NULL;
     int want_term = 0;
     int want_contract = 0;
     CXIndex index = NULL;
@@ -2770,10 +2987,13 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "--serialize") == 0) {
         if (argc < 5) return usage(argv[0]);
         serialize_path = argv[2];
+    } else if (strcmp(argv[1], "--check-source-unit") == 0) {
+        if (argc < 5) return usage(argv[0]);
+        check_source_unit_path = argv[2];
     } else {
         path = argv[1];
     }
-    for (int i = serialize_path == NULL ? 2 : 3; i < argc; i++) {
+    for (int i = serialize_path == NULL && check_source_unit_path == NULL ? 2 : 3; i < argc; i++) {
         if (strcmp(argv[i], "--function") == 0 && i + 1 < argc) {
             function_name = argv[++i];
         } else if (strcmp(argv[i], "--term") == 0) {
@@ -2785,21 +3005,26 @@ int main(int argc, char **argv) {
         }
     }
     if (function_name == NULL) return usage(argv[0]);
-    if (serialize_path != NULL) {
-        char *json = read_file(serialize_path);
+    if (serialize_path != NULL || check_source_unit_path != NULL) {
+        const char *json_path = serialize_path != NULL ? serialize_path : check_source_unit_path;
+        char *json = read_file(json_path);
 
         if (json == NULL) {
-            fprintf(stderr, "failed to read %s\n", serialize_path);
+            fprintf(stderr, "failed to read %s\n", json_path);
             goto done;
         }
         if (!parse_term_document(json, &term)) {
             free(json);
-            fprintf(stderr, "failed to parse term JSON %s\n", serialize_path);
+            fprintf(stderr, "failed to parse term JSON %s\n", json_path);
             goto done;
         }
         free(json);
-        if (serialize_translation_unit(&out, term, function_name) != 0) goto done;
-        fputs(out.data == NULL ? "" : out.data, stdout);
+        if (serialize_path != NULL) {
+            if (serialize_translation_unit(&out, term, function_name) != 0) goto done;
+        } else if (check_source_unit_lift_witness(term, function_name, &out) != 0) {
+            goto done;
+        }
+        if (out.data != NULL && out.len > 0) fwrite(out.data, 1, out.len, stdout);
         rc = 0;
         goto done;
     }
@@ -2810,7 +3035,7 @@ int main(int argc, char **argv) {
     } else if (emit_projected_contract(&out, function_cursor, term) != 0) {
         goto done;
     }
-    fputs(out.data == NULL ? "" : out.data, stdout);
+    if (out.data != NULL && out.len > 0) fwrite(out.data, 1, out.len, stdout);
     rc = 0;
 
 done:

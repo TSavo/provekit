@@ -142,6 +142,20 @@ def set_shape(member_sort: str = "term") -> dict:
 MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
     [
         (
+            "source-unit",
+            {
+                "formals": ["bytes", "operational_term"],
+                "formal_sorts": ["Expr", "Stmt"],
+                "return_sort": "Stmt",
+                "wp": "lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+                "arity_shape": named_slots(
+                    unevaluated("bytes", slot_sort="literal"),
+                    slot("operational_term"),
+                ),
+                "notes": "The bytes slot is a binary literal; project_effects descends to operational_term.",
+            },
+        ),
+        (
             "opaque",
             {
                 "formals": ["unit"],
@@ -1077,6 +1091,7 @@ SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
         ("uop_pre_dec", "(--<target>)"),
         ("uop_post_dec", "(<target>--)"),
         ("uop_plus", "(+<operand>)"),
+        ("source-unit", "<source_bytes_hex>"),
         ("asm-link-edge", "__asm__ volatile(<template> : <outputs...> : <inputs...> : <clobbers...>)"),
         ("opaque", "/* opaque */"),
         ("decl", "int <name> = <initializer>;"),

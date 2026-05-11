@@ -1,7 +1,7 @@
 {
   "generated_by": "tools/generate-c11-from-cursorkind.py",
   "source": "tools/c11gen/cxcursorkind-snapshot.h",
-  "signature_cid": "blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615",
+  "signature_cid": "blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69",
   "serializers": [
     {
       "op_name": "c11:skip",
@@ -352,6 +352,11 @@
       "op_name": "c11:uop_plus",
       "op_cid": "blake3-512:be5755de9e8b32b9e523f4666f62b809f6b2e1a29cfd9e296aadd3f057ea0b50264fbaa7e9e947aae5774739fa4d98b5d62125f6694abb1e63e61cde9a3682cc",
       "render_template": "(+<operand>)"
+    },
+    {
+      "op_name": "c11:source-unit",
+      "op_cid": "blake3-512:7826723d55b4e7951dd38bbf6c4b3cb3697f7656d13ff81e535d50ccc18f7e59d9ebce5fa24cf8969d0a87434101f12c2bdbe821a9dbb0166f4a1364dc22fa81",
+      "render_template": "<source_bytes_hex>"
     },
     {
       "op_name": "c11:asm-link-edge",

@@ -229,6 +229,12 @@
   },
   {
     "kind": "algorithm",
+    "spec": "op_source_unit.spec.json",
+    "cid": "blake3-512:7826723d55b4e7951dd38bbf6c4b3cb3697f7656d13ff81e535d50ccc18f7e59d9ebce5fa24cf8969d0a87434101f12c2bdbe821a9dbb0166f4a1364dc22fa81",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:source-unit.blake3-512:7826723d55b4e7951dd38bbf6c4b3cb3697f7656d13ff81e535d50ccc18f7e59d9ebce5fa24cf8969d0a87434101f12c2bdbe821a9dbb0166f4a1364dc22fa81.json"
+  },
+  {
+    "kind": "algorithm",
     "spec": "op_opaque.spec.json",
     "cid": "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
     "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/algorithms/c11:opaque.blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499.json"
@@ -914,7 +920,7 @@
   {
     "kind": "language-signature",
     "spec": "language_signature_c11.spec.json",
-    "cid": "blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615",
-    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/signatures/c:c11.blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615.json"
+    "cid": "blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69",
+    "path": "/Users/tsavo/provekit-main/menagerie/c11-language-signature/dev/../catalog/signatures/c:c11.blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69.json"
   }
 ]

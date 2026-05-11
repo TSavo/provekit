@@ -4,7 +4,7 @@ C is emitted as a content-addressed algebra over contracts. Here is the algebra.
 
 The minted C11 `LanguageSignatureMemento` is:
 
-`blake3-512:c6d7bd7bd3109e7afa0fc15578e939383f2ecfb53ff301317bf50e21bcdbaead8ed7adcbd4b3b3c99dc886517137672c397d4b19cd2bc905e97a77ada574c615`
+`blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted C function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 
@@ -53,6 +53,7 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `not` | `Bool` | `Bool` | boolean negation |
 | `assign` | `LValue x Expr` | `Stmt` | store value into target and update state |
 | `neg` | `Int` | `Int` | integer arithmetic negation when no overflow holds |
+| `source-unit` | `Expr x Stmt` | `Stmt` | lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term |
 | `opaque` | `Unit` | `Stmt` | stable placeholder for non-lifted or intentionally opaque cursor kinds |
 | `decl` | `Expr x Expr` | `Stmt` | bind local name to initializer before continuing |
 | `case` | `Expr x Stmt` | `Stmt` | switch case arm body guarded by value |

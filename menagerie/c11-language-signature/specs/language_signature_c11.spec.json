@@ -38,6 +38,7 @@
     "op_not.spec.json",
     "op_assign.spec.json",
     "op_neg.spec.json",
+    "op_source_unit.spec.json",
     "op_opaque.spec.json",
     "op_decl.spec.json",
     "op_case.spec.json",
@@ -366,6 +367,19 @@
       "slots": [
         {
           "name": "value"
+        }
+      ]
+    },
+    "c11:source-unit": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "bytes",
+          "evaluation": "unevaluated",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "operational_term"
         }
       ]
     },
