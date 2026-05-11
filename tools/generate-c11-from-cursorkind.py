@@ -1162,9 +1162,9 @@ def generated_c_source(mapping: dict, op_cids: dict[str, str]) -> str:
     for row in rows:
         lines.extend(
             [
-                f"    case {row['cursor_kind']}: {{",
+                f"    case {row['value']}: /* {row['cursor_kind']} */ {{",
                 "        static const pk_c11_cursor_dispatch info = {",
-                f"            {row['cursor_kind']},",
+                f"            (enum CXCursorKind){row['value']}, /* {row['cursor_kind']} */",
                 f"            {c_string(row['cursor_kind'])},",
                 f"            {c_string(row.get('op_name'))},",
                 f"            {c_string(row.get('op_cid'))},",
