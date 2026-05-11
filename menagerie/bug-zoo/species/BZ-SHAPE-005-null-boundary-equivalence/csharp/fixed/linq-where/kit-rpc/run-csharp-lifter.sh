@@ -5,5 +5,5 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPECIMEN_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 REPO_ROOT="$(cd "$SPECIMEN_ROOT/../../../../.." && pwd)"
 PROJECT="$REPO_ROOT/implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj"
-dotnet build "$PROJECT" --nologo --verbosity quiet >/dev/null
+dotnet build "$PROJECT" --nologo --verbosity quiet -p:UseSharedCompilation=false -p:BuildInParallel=false -m:1 -nodeReuse:false >/dev/null
 exec dotnet run --project "$PROJECT" --no-build --no-restore -- lifter csharp-linq
