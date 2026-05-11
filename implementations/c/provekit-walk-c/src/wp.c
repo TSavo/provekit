@@ -562,6 +562,20 @@ static int term_json_into(WpBuf *b, const pk_c_walk_term *term) {
     return buf_append(b, "]}");
 }
 
+char *pk_c_walk_term_json(const pk_c_walk_term *term) {
+    WpBuf b;
+    char *out = NULL;
+
+    if (buf_init(&b) != 0) {
+        return NULL;
+    }
+    if (term_json_into(&b, term) == 0) {
+        out = buf_take(&b);
+    }
+    buf_free(&b);
+    return out;
+}
+
 static int formula_json_into(WpBuf *b, const pk_c_walk_formula *formula) {
     const char *kind;
 
@@ -951,6 +965,7 @@ void pk_c_walk_chain_free(pk_c_walk_chain *chain) {
         free(chain->arrivals[i].kind);
         free(chain->arrivals[i].name);
         free(chain->arrivals[i].branch);
+        free(chain->arrivals[i].actuals_json);
         pk_c_walk_formula_free(chain->arrivals[i].cond);
         pk_c_walk_formula_free(chain->arrivals[i].wp);
     }
@@ -982,18 +997,20 @@ static void arrival_clear(pk_c_walk_arrival *arrival) {
     free(arrival->kind);
     free(arrival->name);
     free(arrival->branch);
+    free(arrival->actuals_json);
     pk_c_walk_formula_free(arrival->cond);
     pk_c_walk_formula_free(arrival->wp);
     memset(arrival, 0, sizeof(*arrival));
 }
 
-int pk_c_walk_chain_add_arrival(
+static int chain_add_arrival_with_actuals(
     pk_c_walk_chain *chain,
     const char *kind,
     const char *name,
     size_t stmt_index,
     int line,
     int column,
+    const char *actuals_json,
     const pk_c_walk_formula *wp
 ) {
     pk_c_walk_arrival *arrival = chain_append_slot(chain);
@@ -1006,13 +1023,50 @@ int pk_c_walk_chain_add_arrival(
     arrival->stmt_index = stmt_index;
     arrival->line = line;
     arrival->column = column;
+    if (actuals_json != NULL) {
+        arrival->actuals_json = pk_c_walk_copy(actuals_json);
+    }
     arrival->wp = pk_c_walk_formula_clone(wp);
-    if (arrival->kind == NULL || arrival->name == NULL || arrival->wp == NULL) {
+    if (arrival->kind == NULL || arrival->name == NULL ||
+        (actuals_json != NULL && arrival->actuals_json == NULL) ||
+        arrival->wp == NULL) {
         arrival_clear(arrival);
         return -1;
     }
     chain->n_arrivals++;
     return 0;
+}
+
+int pk_c_walk_chain_add_arrival(
+    pk_c_walk_chain *chain,
+    const char *kind,
+    const char *name,
+    size_t stmt_index,
+    int line,
+    int column,
+    const pk_c_walk_formula *wp
+) {
+    return chain_add_arrival_with_actuals(chain, kind, name, stmt_index, line, column, NULL, wp);
+}
+
+int pk_c_walk_chain_add_callsite_arrival(
+    pk_c_walk_chain *chain,
+    const char *name,
+    size_t stmt_index,
+    int line,
+    int column,
+    const char *actuals_json,
+    const pk_c_walk_formula *wp
+) {
+    return chain_add_arrival_with_actuals(
+        chain,
+        "Callsite",
+        name,
+        stmt_index,
+        line,
+        column,
+        actuals_json == NULL ? "[]" : actuals_json,
+        wp);
 }
 
 int pk_c_walk_chain_add_conditional_arm_arrival(

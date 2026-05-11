@@ -155,6 +155,12 @@ static int append_arrival(ContractBuf *b, const pk_c_walk_arrival *arrival) {
             return -1;
         }
     }
+    if (strcmp(arrival->kind, "Callsite") == 0) {
+        if (buf_append(b, ",\"args\":") != 0 ||
+            buf_append(b, arrival->actuals_json == NULL ? "[]" : arrival->actuals_json) != 0) {
+            return -1;
+        }
+    }
     if (buf_append(b, ",\"wp\":") != 0 ||
         append_formula(b, arrival->wp) != 0 ||
         buf_append_char(b, '}') != 0) {
