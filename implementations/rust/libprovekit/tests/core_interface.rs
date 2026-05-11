@@ -9,10 +9,12 @@ use libprovekit::compose::{
 use libprovekit::core::{
     address, compose, link, prove, transform, verify, CKit, Cid, DomainClaim, DomainKind,
     FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
-    LiftPluginKit, Path, PathAlgebra, PathError, Refutation, Term, Truth, Verdict, Witness,
+    LiftPluginKit, Path, PathAlgebra, PathDocument, PathError, Refutation, Term, Truth, Verdict,
+    Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{IrFormula, IrTerm, Sort};
+use serde_json::json;
 
 fn any_sort() -> Sort {
     Sort::Primitive {
@@ -268,6 +270,101 @@ fn path_is_cidable_language_neutral_algebra() {
     assert_eq!(
         path.step("mint").expect("mint step").depends_on,
         vec!["lift".to_string()]
+    );
+}
+
+#[test]
+fn path_document_round_trips_with_cid_checked_materialized_inputs() {
+    let lift_input = Input::Spec(json!({
+        "surface": "rust-self-contracts",
+        "workspace_root": ".",
+        "config_path": ".provekit/config.toml",
+        "source_paths": ["."],
+        "options": {"layer": "all"}
+    }));
+    let mint_input = Input::Spec(json!({
+        "outDir": "target/provekit-path-doc",
+        "options": {"quiet": true}
+    }));
+    let lift_input_cid = address(&lift_input);
+    let mint_input_cid = address(&mint_input);
+    let path = Path {
+        algebra: vec![
+            PathAlgebra {
+                name: "lift".to_string(),
+                kit: "lift-plugin:rust-self-contracts".to_string(),
+                inputs: vec![lift_input_cid.clone()],
+                depends_on: vec![],
+            },
+            PathAlgebra {
+                name: "mint".to_string(),
+                kit: "provekit-mint".to_string(),
+                inputs: vec![mint_input_cid.clone()],
+                depends_on: vec!["lift".to_string()],
+            },
+        ],
+    };
+
+    let document = PathDocument::from_path_and_inputs(
+        path.clone(),
+        vec![lift_input.clone(), mint_input.clone()],
+    )
+    .expect("path document accepts matching inputs");
+    let encoded = serde_json::to_string_pretty(&document).expect("path document serializes");
+    let decoded: PathDocument = serde_json::from_str(&encoded).expect("path document parses");
+    let inputs = decoded
+        .materialized_inputs()
+        .expect("path document materializes checked inputs");
+
+    assert_eq!(decoded.path.cid(), path.cid());
+    assert_eq!(inputs.len(), 2);
+    assert!(inputs.iter().any(|(cid, input)| {
+        cid == &lift_input_cid
+            && matches!(input, Input::Spec(value) if value["surface"] == "rust-self-contracts")
+    }));
+    assert!(inputs.iter().any(|(cid, input)| {
+        cid == &mint_input_cid
+            && matches!(input, Input::Spec(value) if value["outDir"] == "target/provekit-path-doc")
+    }));
+    assert!(
+        !encoded.contains("\"term\""),
+        "path documents should not embed language terms: {encoded}"
+    );
+}
+
+#[test]
+fn path_document_rejects_materialized_input_cid_mismatch() {
+    let declared = Input::Spec(json!({"surface": "declared"}));
+    let actual = Input::Spec(json!({"surface": "changed"}));
+    let declared_cid = address(&declared);
+    let document = PathDocument {
+        kind: "provekit-path/v1".to_string(),
+        path: Path {
+            algebra: vec![PathAlgebra {
+                name: "lift".to_string(),
+                kit: "lift-plugin:declared".to_string(),
+                inputs: vec![declared_cid],
+                depends_on: vec![],
+            }],
+        },
+        inputs: vec![libprovekit::core::PathInputBinding {
+            cid: address(&declared),
+            input: libprovekit::core::PathInputMaterial::Spec {
+                value: match actual {
+                    Input::Spec(value) => value,
+                    _ => unreachable!(),
+                },
+            },
+        }],
+    };
+
+    let error = document
+        .materialized_inputs()
+        .expect_err("changed materialized input must not satisfy declared cid")
+        .to_string();
+    assert!(
+        error.contains("materialized as"),
+        "unexpected path document error: {error}"
     );
 }
 

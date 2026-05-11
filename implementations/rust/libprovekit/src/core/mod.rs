@@ -36,7 +36,7 @@ pub use traits::{
 };
 pub use types::{
     Attestation, Boundary, Cid, CidError, Contract, Dialect, DomainClaim, DomainKind, Formula,
-    Input, Path, PathAlgebra, PathError, Refutation, Term, Truth, Verdict, VerdictCoercionError,
-    Witness,
+    Input, Path, PathAlgebra, PathDocument, PathDocumentError, PathError, PathInputBinding,
+    PathInputMaterial, Refutation, Term, Truth, Verdict, VerdictCoercionError, Witness,
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
