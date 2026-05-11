@@ -147,6 +147,7 @@ final class PhpSourceCompiler
             'php:index' => new \PhpParser\Node\Expr\ArrayDimFetch($this->exprNode($args[0]), $this->isUnit($args[1]) ? null : $this->exprNode($args[1])),
             'php:propfetch' => new \PhpParser\Node\Expr\PropertyFetch($this->exprNode($args[0]), $this->constString($args[1])),
             'php:call' => new \PhpParser\Node\Expr\FuncCall(new \PhpParser\Node\Name($this->constString($args[0])), array_map(fn(array $arg): object => new \PhpParser\Node\Arg($this->exprNode($arg)), array_slice($args, 1))),
+            'php:assign' => new \PhpParser\Node\Expr\Assign($this->targetNode($args[0]), $this->exprNode($args[1])),
             default => throw new \InvalidArgumentException('unsupported php operation in expression position: ' . $name),
         };
     }
@@ -233,6 +234,7 @@ final class PhpSourceCompiler
             'php:call' => $this->constString($args[0]) . '(' . implode(', ', array_map(fn(array $arg): string => $this->exprString($arg), array_slice($args, 1))) . ')',
             'php:not' => '!' . $this->exprString($args[0]),
             'php:neg' => '-' . $this->exprString($args[0]),
+            'php:assign' => '(' . $this->exprString($args[0]) . ' = ' . $this->exprString($args[1]) . ')',
             default => throw new \InvalidArgumentException('unsupported php operation in fallback compiler: ' . $name),
         };
     }
