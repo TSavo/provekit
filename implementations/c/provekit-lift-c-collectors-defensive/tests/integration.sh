@@ -208,18 +208,6 @@ def contains_formula(formula, expected):
 
 checks = [
     (
-        "bug_on_nonnegative",
-        "pre",
-        atom("\u2265", [var("x"), const_int(0)]),
-        "BUG_ON(x < 0) did not lift x >= 0",
-    ),
-    (
-        "errno_guard",
-        "pre",
-        atom("\u2260", [var("ptr"), var("NULL")]),
-        "if (!ptr) return -ENOMEM did not lift ptr != NULL",
-    ),
-    (
         "user_buffer",
         "pre",
         atom("is_user_ptr", [var("buf")]),
@@ -236,24 +224,6 @@ checks = [
         "post",
         atom("=", [var("result"), ctor("+", [var("x"), const_int(1)])]),
         "trailing return x + 1 did not lift result = x + 1",
-    ),
-    (
-        "ret_guard",
-        "pre",
-        atom("\u2265", [var("ret"), const_int(0)]),
-        "if (ret < 0) return ret did not lift ret >= 0",
-    ),
-    (
-        "goto_error",
-        "pre",
-        atom("\u2260", [var("x"), const_int(0)]),
-        "if (x == 0) goto error did not lift x != 0",
-    ),
-    (
-        "assert_positive",
-        "pre",
-        atom(">", [var("x"), const_int(0)]),
-        "assert(x > 0) did not lift x > 0",
     ),
     (
         "rcu_pointer",
@@ -275,12 +245,6 @@ checks = [
     ),
     (
         "checked",
-        "pre",
-        atom("\u2265", [var("x"), const_int(10)]),
-        "checked BUG_ON(x < 10) did not lift x >= 10",
-    ),
-    (
-        "checked",
         "post",
         atom("=", [var("result"), var("x")]),
         "checked trailing return did not lift result = x",
@@ -293,6 +257,30 @@ for fn_name, field, expected, message in checks:
         fail(f"{fn_name} function not found in declarations")
     if not contains_formula(decl.get(field), expected):
         fail(message)
+
+def is_true_formula(formula):
+    return formula == atom("true", [])
+
+for fn_name in [
+    "bug_on_nonnegative",
+    "errno_guard",
+    "ret_guard",
+    "goto_error",
+    "assert_positive",
+    "checked",
+    "handled_null_store",
+    "sg_nents_for_len",
+    "sg_miter_next",
+    "crypto_skcipher_encrypt",
+    "crypto_skcipher_decrypt",
+    "skb_to_sgvec",
+    "__skb_to_sgvec",
+]:
+    decl = by_name.get(fn_name)
+    if decl is None:
+        fail(f"{fn_name} function not found in declarations")
+    if not is_true_formula(decl.get("pre")):
+        fail(f"{fn_name} internal defensive guard leaked into pre: {decl.get('pre')}")
 
 checked_decl = by_name.get("checked")
 if checked_decl is None:

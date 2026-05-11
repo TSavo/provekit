@@ -8,6 +8,8 @@ FIXTURE="$SCRIPT_DIR/fixtures/wp_basic.c"
 CHECKED_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo.c"
 OPAQUE_BUG_ON_FIXTURE="$SCRIPT_DIR/fixtures/checked_demo_opaque_bug_on.c"
 TWO_ARMED_FIXTURE="$SCRIPT_DIR/fixtures/two_armed_if.c"
+CALL_STATEMENT_FIXTURE="$SCRIPT_DIR/fixtures/call_statement.c"
+HANDLED_GUARD_FIXTURE="$SCRIPT_DIR/fixtures/handled_guard.c"
 
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
@@ -31,6 +33,16 @@ fi
 
 if [ ! -f "$TWO_ARMED_FIXTURE" ]; then
     echo "FAIL: fixture not found: $TWO_ARMED_FIXTURE" >&2
+    exit 1
+fi
+
+if [ ! -f "$CALL_STATEMENT_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $CALL_STATEMENT_FIXTURE" >&2
+    exit 1
+fi
+
+if [ ! -f "$HANDLED_GUARD_FIXTURE" ]; then
+    echo "FAIL: fixture not found: $HANDLED_GUARD_FIXTURE" >&2
     exit 1
 fi
 
@@ -146,14 +158,12 @@ if entry is None:
     raise SystemExit("FAIL: checked_demo FunctionEntry arrival missing")
 
 entry_wp = entry.get("wp", {})
-if entry_wp.get("kind") == "atomic" and entry_wp.get("name") == "true":
-    raise SystemExit("FAIL: checked_demo FunctionEntry WP is trivial true")
+if entry_wp.get("kind") != "atomic" or entry_wp.get("name") != "true":
+    raise SystemExit(f"FAIL: checked_demo handled BUG_ON should not become caller pre, got {entry_wp}")
 
-if entry_wp.get("kind") != "atomic" or entry_wp.get("name") != "≥":
-    raise SystemExit(f"FAIL: checked_demo FunctionEntry WP should be ≥ atom, got {entry_wp}")
-args = entry_wp.get("args", [])
-if len(args) != 2 or args[0].get("kind") != "const" or args[0].get("value") != 42 or args[1].get("kind") != "const" or args[1].get("value") != 10:
-    raise SystemExit(f"FAIL: checked_demo FunctionEntry WP should be 42 ≥ 10, got {entry_wp}")
+callsite_wp = arrivals[0].get("wp", {})
+if callsite_wp.get("kind") != "atomic" or callsite_wp.get("name") != "true":
+    raise SystemExit(f"FAIL: checked_demo callsite WP should be true, got {callsite_wp}")
 
 if chain.get("post") != arrivals[0].get("wp"):
     raise SystemExit("FAIL: checked_demo chain post must match callsite WP")
@@ -202,11 +212,12 @@ entry = next((a for a in arrivals if a.get("kind") == "FunctionEntry"), None)
 if entry is None:
     raise SystemExit(f"FAIL: {label} FunctionEntry arrival missing")
 entry_wp = entry.get("wp", {})
-if entry_wp.get("kind") != "atomic" or entry_wp.get("name") != "≥":
-    raise SystemExit(f"FAIL: {label} FunctionEntry WP should be ≥ atom, got {entry_wp}")
-args = entry_wp.get("args", [])
-if len(args) != 2 or args[0].get("kind") != "const" or args[0].get("value") != 42 or args[1].get("kind") != "const" or args[1].get("value") != 10:
-    raise SystemExit(f"FAIL: {label} FunctionEntry WP should be 42 ≥ 10, got {entry_wp}")
+if entry_wp.get("kind") != "atomic" or entry_wp.get("name") != "true":
+    raise SystemExit(f"FAIL: {label} handled BUG_ON should not become caller pre, got {entry_wp}")
+
+callsite_wp = arrivals[0].get("wp", {})
+if callsite_wp.get("kind") != "atomic" or callsite_wp.get("name") != "true":
+    raise SystemExit(f"FAIL: {label} callsite WP should be true, got {callsite_wp}")
 
 print("opaque-bug-on-chain", " -> ".join(f"{a['kind']}@{a.get('line', 0)}:{a.get('column', 0)}" for a in arrivals))
 PY
@@ -279,4 +290,98 @@ def find_chain(callee, branch, guard_name):
 
 find_chain("helper_a", "then", ">")
 find_chain("helper_b", "else", "≤")
+PY
+
+CALL_STATEMENT_RESPONSES="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+        printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["call_statement.c"],"surface":"c-walk","parse_backend":"clang_ast"}}\n'
+        printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
+    } | "$BIN" --rpc
+)"
+
+CALL_STATEMENT_RESPONSES_JSON="$CALL_STATEMENT_RESPONSES" python3 - <<'PY'
+import json
+import os
+
+def is_true(formula):
+    return formula.get("kind") == "atomic" and formula.get("name") == "true" and not formula.get("args")
+
+responses = [json.loads(line) for line in os.environ["CALL_STATEMENT_RESPONSES_JSON"].splitlines() if line.strip()]
+lift = next((r for r in responses if r.get("id") == 2), None)
+if lift is None:
+    raise SystemExit("FAIL: call_statement lift response missing")
+
+chains = [
+    d for d in lift["result"]["declarations"]
+    if d.get("kind") == "function-contract"
+    and d.get("evidence", {}).get("kind") == "wp-walk-chain"
+    and d.get("evidence", {}).get("caller") == "call_statement"
+    and d.get("evidence", {}).get("callee") == "external_call"
+]
+if not chains:
+    raise SystemExit("FAIL: external call statement did not emit wp-walk-chain")
+
+chain = chains[0]
+arrivals = chain.get("evidence", {}).get("arrivals", [])
+if len(arrivals) < 2:
+    raise SystemExit(f"FAIL: external call statement expected callsite and entry arrivals, got {arrivals}")
+callsite = arrivals[0]
+if callsite.get("kind") != "Callsite" or callsite.get("stmt_index") != 0:
+    raise SystemExit(f"FAIL: external call statement arrival should be Callsite at stmt 0, got {callsite}")
+if not is_true(callsite.get("wp", {})):
+    raise SystemExit(f"FAIL: external call statement WP should be true, got {callsite.get('wp')}")
+if chain.get("post") != callsite.get("wp"):
+    raise SystemExit("FAIL: external call statement post must match callsite WP")
+print("external-call-statement-chain", " -> ".join(f"{a['kind']}@{a.get('line', 0)}:{a.get('column', 0)}" for a in arrivals))
+PY
+
+HANDLED_GUARD_RESPONSES="$(
+    {
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+        printf '{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["handled_guard.c"],"surface":"c-walk","parse_backend":"clang_ast"}}\n'
+        printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
+    } | "$BIN" --rpc
+)"
+
+HANDLED_GUARD_RESPONSES_JSON="$HANDLED_GUARD_RESPONSES" python3 - <<'PY'
+import json
+import os
+
+def is_true(formula):
+    return formula.get("kind") == "atomic" and formula.get("name") == "true" and not formula.get("args")
+
+responses = [json.loads(line) for line in os.environ["HANDLED_GUARD_RESPONSES_JSON"].splitlines() if line.strip()]
+lift = next((r for r in responses if r.get("id") == 2), None)
+if lift is None:
+    raise SystemExit("FAIL: handled_guard lift response missing")
+
+chains = [
+    d for d in lift["result"]["declarations"]
+    if d.get("kind") == "function-contract"
+    and d.get("evidence", {}).get("kind") == "wp-walk-chain"
+    and d.get("evidence", {}).get("caller") == "call_guarded"
+    and d.get("evidence", {}).get("callee") == "guarded_store"
+]
+if not chains:
+    raise SystemExit("FAIL: call_guarded -> guarded_store wp-walk-chain missing")
+
+chain = chains[0]
+arrivals = chain.get("evidence", {}).get("arrivals", [])
+if len(arrivals) < 2:
+    raise SystemExit(f"FAIL: handled guard expected callsite and entry arrivals, got {arrivals}")
+if not is_true(arrivals[0].get("wp", {})):
+    raise SystemExit(f"FAIL: handled null guard leaked into callsite WP: {arrivals[0].get('wp')}")
+entry = next((a for a in arrivals if a.get("kind") == "FunctionEntry"), None)
+if entry is None:
+    raise SystemExit("FAIL: handled guard FunctionEntry arrival missing")
+if not is_true(entry.get("wp", {})):
+    raise SystemExit(f"FAIL: handled null guard leaked into entry WP: {entry.get('wp')}")
+if not is_true(chain.get("pre", {})):
+    raise SystemExit(f"FAIL: handled null guard chain pre should be true, got {chain.get('pre')}")
+print("handled-guard-chain", " -> ".join(f"{a['kind']}@{a.get('line', 0)}:{a.get('column', 0)}" for a in arrivals))
 PY

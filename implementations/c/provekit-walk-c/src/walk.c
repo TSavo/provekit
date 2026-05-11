@@ -334,20 +334,32 @@ static int process_call(CallVisitCtx *ctx, CXCursor call_cursor) {
         return 0;
     }
     callee = find_function(ctx->functions, callee_name);
-    if (callee == NULL || pk_c_walk_formula_is_true(callee->pre)) {
-        free(callee_name);
-        return 0;
-    }
-    wp = pk_c_walk_formula_clone(callee->pre);
-    if (wp == NULL) {
-        free(callee_name);
-        return -1;
-    }
-    rc = substitute_actuals(&wp, callee, call_cursor);
-    if (rc != 0) {
-        pk_c_walk_formula_free(wp);
-        free(callee_name);
-        return rc < 0 ? -1 : 0;
+    if (callee != NULL && !pk_c_walk_formula_is_true(callee->pre)) {
+        wp = pk_c_walk_formula_clone(callee->pre);
+        if (wp == NULL) {
+            free(callee_name);
+            return -1;
+        }
+        rc = substitute_actuals(&wp, callee, call_cursor);
+        if (rc < 0) {
+            pk_c_walk_formula_free(wp);
+            free(callee_name);
+            return -1;
+        }
+        if (rc > 0) {
+            pk_c_walk_formula_free(wp);
+            wp = pk_c_walk_formula_true();
+            if (wp == NULL) {
+                free(callee_name);
+                return -1;
+            }
+        }
+    } else {
+        wp = pk_c_walk_formula_true();
+        if (wp == NULL) {
+            free(callee_name);
+            return -1;
+        }
     }
     pk_c_walk_chain_init(&chain);
     chain.caller_name = pk_c_walk_copy(ctx->caller->name);
@@ -441,7 +453,13 @@ static int walk_one_function(
         ctx.stmts = stmts.items;
         ctx.n_stmts = stmts.len;
         ctx.stmt_index = i;
-        (void)clang_visitChildren(stmts.items[i], call_visitor, &ctx);
+        if (clang_getCursorKind(stmts.items[i]) == CXCursor_CallExpr &&
+            process_call(&ctx, stmts.items[i]) != 0) {
+            ctx.failed = 1;
+        }
+        if (!ctx.failed) {
+            (void)clang_visitChildren(stmts.items[i], call_visitor, &ctx);
+        }
         if (ctx.failed) {
             rc = -1;
             break;
