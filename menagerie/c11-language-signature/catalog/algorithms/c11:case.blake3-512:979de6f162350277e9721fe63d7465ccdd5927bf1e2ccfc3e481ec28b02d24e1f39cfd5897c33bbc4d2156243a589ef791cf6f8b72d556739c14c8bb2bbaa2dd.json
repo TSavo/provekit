@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:case",
+    "formals": [
+      "value",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "case",
+      "arity": [
+        "Expr",
+        "Stmt"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      },
+      "result": "Stmt",
+      "wp": "switch case arm body guarded by value"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:979de6f162350277e9721fe63d7465ccdd5927bf1e2ccfc3e481ec28b02d24e1f39cfd5897c33bbc4d2156243a589ef791cf6f8b72d556739c14c8bb2bbaa2dd",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AqFbxtRsP1q6l8B0nJFJfRBylgWLTY5ikxgY4DqWGfaLJLbGm+96rCq4Tp3r4PiBXuSQdfnl8jt5X0oxx/14BQ=="
+  }
+}

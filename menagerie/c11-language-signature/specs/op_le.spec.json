@@ -35,7 +35,18 @@
       "Int"
     ],
     "result": "Bool",
-    "wp": "integer less-than-or-equal comparison"
+    "wp": "integer less-than-or-equal comparison",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": []

@@ -138,6 +138,381 @@ pub enum Term {
     Unit,
 }
 
+/// Declared child ordering policy for one operation in a language signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ArityShape {
+    /// Child order is semantic and index-bearing.
+    Positional { arity: usize },
+    /// Child slots are named; order in the source vector only assigns slots.
+    Named { slots: Vec<AritySlot> },
+    /// Child order is not semantic; children are sorted by child CID.
+    Set {
+        /// Uniform member sort for this set.
+        #[serde(default, skip_serializing_if = "slot_sort_is_default")]
+        member_sort: SlotSort,
+    },
+}
+
+/// Evaluation status declared for a child slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotEvaluation {
+    /// The child participates in normal evaluation.
+    #[default]
+    Evaluated,
+    /// The child is structurally present but its side effects do not fire.
+    Unevaluated,
+}
+
+/// Declared kind of value addressed by a child slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotSort {
+    /// A normal algebra term.
+    #[default]
+    Term,
+    /// A type-level child.
+    Type,
+    /// An identifier/designator child.
+    Identifier,
+    /// A literal payload child.
+    Literal,
+}
+
+/// One named child slot in an operation arity declaration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AritySlot {
+    /// Canonical slot name.
+    pub name: String,
+    /// Whether the algebra evaluates this child.
+    #[serde(default, skip_serializing_if = "slot_evaluation_is_default")]
+    pub evaluation: SlotEvaluation,
+    /// The kind of child addressed by this slot.
+    #[serde(default, skip_serializing_if = "slot_sort_is_default")]
+    pub slot_sort: SlotSort,
+    /// Optional nested shape for this slot's child value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Box<ArityShape>>,
+}
+
+impl AritySlot {
+    /// Construct an evaluated slot.
+    pub fn evaluated(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            evaluation: SlotEvaluation::Evaluated,
+            slot_sort: SlotSort::Term,
+            shape: None,
+        }
+    }
+
+    /// Construct an unevaluated slot.
+    pub fn unevaluated(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            evaluation: SlotEvaluation::Unevaluated,
+            slot_sort: SlotSort::Term,
+            shape: None,
+        }
+    }
+
+    /// Attach an explicit slot sort.
+    pub fn with_slot_sort(mut self, slot_sort: SlotSort) -> Self {
+        self.slot_sort = slot_sort;
+        self
+    }
+
+    /// Attach a nested shape to this slot.
+    pub fn with_shape(mut self, shape: ArityShape) -> Self {
+        self.shape = Some(Box::new(shape));
+        self
+    }
+}
+
+impl ArityShape {
+    /// Construct a positional child shape.
+    pub fn positional(arity: usize) -> Self {
+        Self::Positional { arity }
+    }
+
+    /// Construct a named-record child shape.
+    pub fn named<const N: usize>(slots: [&str; N]) -> Self {
+        Self::Named {
+            slots: slots.into_iter().map(AritySlot::evaluated).collect(),
+        }
+    }
+
+    /// Construct a named-record shape with explicit slot evaluation.
+    pub fn named_slots<const N: usize>(slots: [AritySlot; N]) -> Self {
+        Self::Named {
+            slots: slots.into_iter().collect(),
+        }
+    }
+
+    /// Construct an unordered-set child shape.
+    pub fn set() -> Self {
+        Self::Set {
+            member_sort: SlotSort::Term,
+        }
+    }
+
+    /// Construct an unordered-set child shape with a uniform member sort.
+    pub fn set_of(member_sort: SlotSort) -> Self {
+        Self::Set { member_sort }
+    }
+}
+
+/// One operation entry inside a language signature catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationSignature {
+    /// Operation memento CID.
+    pub op_cid: Cid,
+    /// Child ordering policy declared by the catalog.
+    pub arity_shape: ArityShape,
+}
+
+/// A resolved language signature with declared operation child shapes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanguageSignature {
+    cid: Cid,
+    operations: BTreeMap<String, OperationSignature>,
+}
+
+impl LanguageSignature {
+    /// Create an empty signature entry addressed by `cid`.
+    pub fn new(cid: Cid) -> Self {
+        Self {
+            cid,
+            operations: BTreeMap::new(),
+        }
+    }
+
+    /// Borrow the language-signature CID.
+    pub fn cid(&self) -> &Cid {
+        &self.cid
+    }
+
+    /// Add or replace one operation shape declaration.
+    pub fn with_operation(
+        mut self,
+        name: impl Into<String>,
+        op_cid: Cid,
+        arity_shape: ArityShape,
+    ) -> Self {
+        self.operations.insert(
+            name.into(),
+            OperationSignature {
+                op_cid,
+                arity_shape,
+            },
+        );
+        self
+    }
+
+    /// Return one operation declaration.
+    pub fn operation(&self, name: &str) -> Option<&OperationSignature> {
+        self.operations.get(name)
+    }
+
+    /// Compute a shape-aware CID for a term in this language signature.
+    pub fn term_cid(&self, term: &Term) -> Result<Cid, SignatureCatalogError> {
+        let value = self.term_value(term)?;
+        Ok(Cid::from_hash_output(blake3_512_of(
+            encode_jcs(value.as_ref()).as_bytes(),
+        )))
+    }
+
+    fn term_value(&self, term: &Term) -> Result<Arc<CValue>, SignatureCatalogError> {
+        match term {
+            Term::Op { op_cid, name, args } => {
+                let operation = self.operations.get(name).ok_or_else(|| {
+                    SignatureCatalogError::UnknownOperation { name: name.clone() }
+                })?;
+                if &operation.op_cid != op_cid {
+                    return Err(SignatureCatalogError::OperationCidMismatch {
+                        name: name.clone(),
+                        expected: operation.op_cid.clone(),
+                        actual: op_cid.clone(),
+                    });
+                }
+                let children = self.children_value(args, &operation.arity_shape)?;
+                Ok(CValue::object([
+                    ("kind", CValue::string("op")),
+                    (
+                        "signatureCid",
+                        CValue::string(self.cid.as_str().to_string()),
+                    ),
+                    ("opCid", CValue::string(op_cid.as_str().to_string())),
+                    ("name", CValue::string(name.clone())),
+                    ("arityShape", arity_shape_value(&operation.arity_shape)),
+                    ("children", children),
+                ]))
+            }
+            Term::Var { name } => Ok(CValue::object([
+                ("kind", CValue::string("var")),
+                ("name", CValue::string(name.clone())),
+            ])),
+            Term::Const { value, sort } => Ok(CValue::object([
+                ("kind", CValue::string("const")),
+                ("value", json_to_cvalue(value.clone())),
+                (
+                    "sort",
+                    json_to_cvalue(serde_json::to_value(sort).expect("sort serializes")),
+                ),
+            ])),
+            Term::Unit => Ok(CValue::object([("kind", CValue::string("unit"))])),
+        }
+    }
+
+    fn children_value(
+        &self,
+        args: &[Term],
+        shape: &ArityShape,
+    ) -> Result<Arc<CValue>, SignatureCatalogError> {
+        match shape {
+            ArityShape::Positional { arity } => {
+                require_arity(*arity, args.len(), shape)?;
+                Ok(CValue::array(
+                    args.iter()
+                        .map(|arg| self.term_value(arg))
+                        .collect::<Result<Vec<_>, _>>()?,
+                ))
+            }
+            ArityShape::Named { slots } => {
+                require_arity(slots.len(), args.len(), shape)?;
+                Ok(CValue::object(
+                    slots
+                        .iter()
+                        .zip(args)
+                        .map(|(slot, arg)| {
+                            self.term_value(arg).map(|value| (slot.name.clone(), value))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                ))
+            }
+            ArityShape::Set { .. } => {
+                let mut children = args
+                    .iter()
+                    .map(|arg| {
+                        let value = self.term_value(arg)?;
+                        let cid = Cid::from_hash_output(blake3_512_of(
+                            encode_jcs(value.as_ref()).as_bytes(),
+                        ));
+                        Ok((cid, value))
+                    })
+                    .collect::<Result<Vec<_>, SignatureCatalogError>>()?;
+                children.sort_by(|left, right| left.0.cmp(&right.0));
+                Ok(CValue::array(
+                    children.into_iter().map(|(_, value)| value).collect(),
+                ))
+            }
+        }
+    }
+}
+
+/// Errors from shape-aware language signature use.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum SignatureCatalogError {
+    /// A term names an operation not present in the signature.
+    #[error("language signature is missing operation `{name}`")]
+    UnknownOperation { name: String },
+    /// The term's op CID does not match the catalog entry for the name.
+    #[error("operation `{name}` CID mismatch: expected {expected}, got {actual}")]
+    OperationCidMismatch {
+        name: String,
+        expected: Cid,
+        actual: Cid,
+    },
+    /// The number of supplied children does not match the declared shape.
+    #[error("arity shape {shape:?} expected {expected} children, got {actual}")]
+    ArityMismatch {
+        shape: ArityShape,
+        expected: usize,
+        actual: usize,
+    },
+}
+
+fn require_arity(
+    expected: usize,
+    actual: usize,
+    shape: &ArityShape,
+) -> Result<(), SignatureCatalogError> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(SignatureCatalogError::ArityMismatch {
+            shape: shape.clone(),
+            expected,
+            actual,
+        })
+    }
+}
+
+fn arity_shape_value(shape: &ArityShape) -> Arc<CValue> {
+    match shape {
+        ArityShape::Positional { arity } => CValue::object([
+            ("kind", CValue::string("positional")),
+            ("arity", CValue::integer(*arity as i64)),
+        ]),
+        ArityShape::Named { slots } => CValue::object([
+            ("kind", CValue::string("named")),
+            (
+                "slots",
+                CValue::array(
+                    slots
+                        .iter()
+                        .map(|slot| {
+                            let mut fields = vec![("name", CValue::string(slot.name.clone()))];
+                            if slot.evaluation == SlotEvaluation::Unevaluated {
+                                fields.push(("evaluation", CValue::string("unevaluated")));
+                            }
+                            if slot.slot_sort != SlotSort::Term {
+                                fields.push((
+                                    "slot_sort",
+                                    CValue::string(match slot.slot_sort {
+                                        SlotSort::Term => "term",
+                                        SlotSort::Type => "type",
+                                        SlotSort::Identifier => "identifier",
+                                        SlotSort::Literal => "literal",
+                                    }),
+                                ));
+                            }
+                            if let Some(shape) = &slot.shape {
+                                fields.push(("shape", arity_shape_value(shape)));
+                            }
+                            CValue::object(fields)
+                        })
+                        .collect(),
+                ),
+            ),
+        ]),
+        ArityShape::Set { member_sort } => {
+            let mut fields = vec![("kind", CValue::string("set"))];
+            if *member_sort != SlotSort::Term {
+                fields.push((
+                    "member_sort",
+                    CValue::string(match member_sort {
+                        SlotSort::Term => "term",
+                        SlotSort::Type => "type",
+                        SlotSort::Identifier => "identifier",
+                        SlotSort::Literal => "literal",
+                    }),
+                ));
+            }
+            CValue::object(fields)
+        }
+    }
+}
+
+fn slot_evaluation_is_default(evaluation: &SlotEvaluation) -> bool {
+    *evaluation == SlotEvaluation::Evaluated
+}
+
+fn slot_sort_is_default(slot_sort: &SlotSort) -> bool {
+    *slot_sort == SlotSort::Term
+}
+
 impl From<IrTerm> for Term {
     fn from(value: IrTerm) -> Self {
         match value {

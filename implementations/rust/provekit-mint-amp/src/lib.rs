@@ -313,12 +313,23 @@ fn language_signature_payload<S: JsonSpec>(
         .get("return_sort")
         .cloned()
         .unwrap_or_else(|| json!({"kind": "ctor", "name": return_name, "args": []}));
-    payload["post"] = json!({
+    let mut post = json!({
         "sorts": sorts,
         "operations": operations,
         "equations": equations,
         "effect_signatures": effect_signatures,
     });
+    if !require_empty_effects {
+        if let Some(arity_shapes) = spec.raw().get("arity_shapes") {
+            if !arity_shapes.is_object() {
+                return Err(MintError::Validation(
+                    "`arity_shapes` must be an object keyed by operation name".into(),
+                ));
+            }
+            post["arity_shapes"] = arity_shapes.clone();
+        }
+    }
+    payload["post"] = post;
     if let Some(body_cid) = optional_string(spec.raw(), "body_cid") {
         validate_cid(&body_cid, "body_cid")?;
         payload["body_cid"] = Value::String(body_cid);

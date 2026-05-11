@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:bop_ge",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "bop_ge",
+      "arity": [
+        "Expr",
+        "Expr"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      },
+      "result": "Bool",
+      "wp": "C binary >= comparison with ordered operand roles"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:81c8afeeab2a43f08e1f2869274bfd6f0a759ca3ed74038ccc97588efb92fa70d8bba0cdd9e40a8f9c0053a68220c357f8938c6bcf7b1f6c5a0273d77110b4d8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "mDS0KymNm2P/rlsGOwbMjrz3mor5fi1tuf7+5w8KcfskArFhx7WxRDM5vPO1U6zr1hVeQhx7f0IpYOQweMn4AA=="
+  }
+}

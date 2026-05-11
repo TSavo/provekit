@@ -2,14 +2,18 @@
 
 #include "walk_c.h"
 #include "c11_cursor_dispatch.generated.h"
+#include "blake3.h"
 
 #ifdef PK_C_ENABLE_CLANG_AST
 
 #include <clang-c/Index.h>
+#include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define FOO_WP_NOTE "The branch-sensitive WP value is recorded in foo.expected-wp-contract.json. The current c-collectors-defensive lifter emits the same branch-sensitive contract in foo.contract.json."
 #define GENERIC_WP_NOTE "The branch-sensitive WP value is projected from this materialized C11 algebra term by provekit-c11-term-project."
@@ -18,7 +22,9 @@ typedef enum {
     C11_TERM_OP = 0,
     C11_TERM_VAR = 1,
     C11_TERM_CONST_INT = 2,
-    C11_TERM_UNIT = 3
+    C11_TERM_UNIT = 3,
+    C11_TERM_LITERAL = 4,
+    C11_TERM_BYTES = 5
 } C11TermKind;
 
 typedef struct C11Term C11Term;
@@ -58,6 +64,7 @@ typedef struct {
 static void term_free(C11Term *term);
 static C11Term *lift_stmt(CXCursor cursor);
 static C11Term *lift_expr(CXCursor cursor);
+static const char *compound_assign_symbol(const char *name);
 
 static void buf_free(Buf *b) {
     if (b == NULL) return;
@@ -146,6 +153,91 @@ static int buf_append_json_string(Buf *b, const char *s) {
     return buf_append_char(b, '"');
 }
 
+static int buf_append_c_string_literal(Buf *b, const char *s) {
+    if (buf_append_char(b, '"') != 0) return -1;
+    for (const unsigned char *p = (const unsigned char *)(s == NULL ? "" : s); *p; p++) {
+        switch (*p) {
+        case '"':
+            if (buf_append(b, "\\\"") != 0) return -1;
+            break;
+        case '\\':
+            if (buf_append(b, "\\\\") != 0) return -1;
+            break;
+        case '\n':
+            if (buf_append(b, "\\n") != 0) return -1;
+            break;
+        case '\r':
+            if (buf_append(b, "\\r") != 0) return -1;
+            break;
+        case '\t':
+            if (buf_append(b, "\\t") != 0) return -1;
+            break;
+        default:
+            if (*p < 0x20) {
+                char esc[5];
+
+                (void)snprintf(esc, sizeof(esc), "\\x%02x", *p);
+                if (buf_append(b, esc) != 0) return -1;
+            } else if (buf_append_char(b, (char)*p) != 0) {
+                return -1;
+            }
+            break;
+        }
+    }
+    return buf_append_char(b, '"');
+}
+
+static char *cid_for_bytes(const char *data, size_t len) {
+    uint8_t out[64];
+    blake3_hasher hasher;
+    char *cid = malloc(strlen("blake3-512:") + sizeof(out) * 2 + 1);
+
+    if (cid == NULL) return NULL;
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data == NULL ? "" : data, len);
+    blake3_hasher_finalize(&hasher, out, sizeof(out));
+    memcpy(cid, "blake3-512:", strlen("blake3-512:"));
+    for (size_t i = 0; i < sizeof(out); i++) {
+        static const char hex[] = "0123456789abcdef";
+        cid[strlen("blake3-512:") + i * 2] = hex[out[i] >> 4];
+        cid[strlen("blake3-512:") + i * 2 + 1] = hex[out[i] & 0x0f];
+    }
+    cid[strlen("blake3-512:") + sizeof(out) * 2] = '\0';
+    return cid;
+}
+
+static char *cid_for_inline_asm_source(const char *assembly_source) {
+    Buf b = {0};
+    char *cid = NULL;
+
+    if (buf_append(&b, "{\"kind\":\"assembly-source\",\"source\":") != 0 ||
+        buf_append_json_string(&b, assembly_source) != 0 ||
+        buf_append(&b, ",\"targetSurface\":\"x86-64:sysv\"}") != 0) {
+        goto done;
+    }
+    cid = cid_for_bytes(b.data, b.len);
+
+done:
+    buf_free(&b);
+    return cid;
+}
+
+static char *cid_for_inline_asm_path(const char *assembly_cid) {
+    Buf b = {0};
+    char *cid = NULL;
+
+    if (buf_append(&b, "{\"assemblyCid\":") != 0 ||
+        buf_append_json_string(&b, assembly_cid) != 0 ||
+        buf_append(&b, ",\"kind\":\"Path\",\"steps\":[{\"kit\":\"provekit-lift-asm-x86-64\",\"surface\":\"x86-64:sysv\",\"transform\":\"lift\"},{\"kit\":\"provekit-link\",\"transform\":\"link\"}]}") != 0) {
+        goto done;
+    }
+    cid = cid_for_bytes(b.data, b.len);
+
+done:
+    buf_free(&b);
+    return cid;
+}
+
 static const char *path_basename(const char *path) {
     const char *slash;
 
@@ -154,7 +246,7 @@ static const char *path_basename(const char *path) {
     return slash == NULL ? path : slash + 1;
 }
 
-static char *read_file(const char *path) {
+static char *read_file_bytes(const char *path, size_t *len_out) {
     FILE *fp = fopen(path, "rb");
     long size;
     char *data;
@@ -181,7 +273,101 @@ static char *read_file(const char *path) {
     }
     data[size] = '\0';
     fclose(fp);
+    if (len_out != NULL) *len_out = (size_t)size;
     return data;
+}
+
+static char *read_file(const char *path) {
+    return read_file_bytes(path, NULL);
+}
+
+static char *hex_for_bytes(const char *data, size_t len) {
+    char *hex = malloc(len * 2 + 1);
+
+    if (hex == NULL) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        static const char digits[] = "0123456789abcdef";
+        unsigned char byte = (unsigned char)data[i];
+
+        hex[i * 2] = digits[byte >> 4];
+        hex[i * 2 + 1] = digits[byte & 0x0f];
+    }
+    hex[len * 2] = '\0';
+    return hex;
+}
+
+static int hex_value(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static char *bytes_for_hex(const char *hex, size_t *len_out) {
+    size_t hex_len = hex == NULL ? 0 : strlen(hex);
+    size_t len = hex_len / 2;
+    char *bytes;
+
+    if ((hex_len % 2) != 0) return NULL;
+    bytes = malloc(len == 0 ? 1 : len);
+    if (bytes == NULL) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        int hi = hex_value(hex[i * 2]);
+        int lo = hex_value(hex[i * 2 + 1]);
+
+        if (hi < 0 || lo < 0) {
+            free(bytes);
+            return NULL;
+        }
+        bytes[i] = (char)((hi << 4) | lo);
+    }
+    if (len_out != NULL) *len_out = len;
+    return bytes;
+}
+
+static char *cursor_extent_source_text(CXCursor cursor) {
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation start = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+    CXFile start_file = NULL;
+    CXFile end_file = NULL;
+    CXString filename;
+    const char *path;
+    char *source = NULL;
+    char *copy = NULL;
+    unsigned start_offset = 0;
+    unsigned end_offset = 0;
+    size_t source_len;
+    size_t extent_len;
+
+    clang_getExpansionLocation(start, &start_file, NULL, NULL, &start_offset);
+    clang_getExpansionLocation(end, &end_file, NULL, NULL, &end_offset);
+    if (start_file == NULL || end_file == NULL || clang_File_isEqual(start_file, end_file) == 0 ||
+        end_offset < start_offset) {
+        return NULL;
+    }
+
+    filename = clang_getFileName(start_file);
+    path = clang_getCString(filename);
+    if (path == NULL || path[0] == '\0') {
+        clang_disposeString(filename);
+        return NULL;
+    }
+    source = read_file(path);
+    clang_disposeString(filename);
+    if (source == NULL) return NULL;
+
+    source_len = strlen(source);
+    if ((size_t)end_offset > source_len || (size_t)start_offset > source_len) goto done;
+    extent_len = (size_t)(end_offset - start_offset);
+    copy = malloc(extent_len + 1);
+    if (copy == NULL) goto done;
+    memcpy(copy, source + start_offset, extent_len);
+    copy[extent_len] = '\0';
+
+done:
+    free(source);
+    return copy;
 }
 
 static char *cx_string_copy(CXString string) {
@@ -250,6 +436,36 @@ static C11Term *term_var(const char *name) {
     return term_var_take(pk_c_walk_copy(name));
 }
 
+static C11Term *term_literal_take(char *value) {
+    C11Term *term = term_new(C11_TERM_LITERAL);
+
+    if (term == NULL) {
+        free(value);
+        return NULL;
+    }
+    term->name = value;
+    return term;
+}
+
+static C11Term *term_literal(const char *value) {
+    return term_literal_take(pk_c_walk_copy(value));
+}
+
+static C11Term *term_bytes_take(char *hex) {
+    C11Term *term = term_new(C11_TERM_BYTES);
+
+    if (term == NULL) {
+        free(hex);
+        return NULL;
+    }
+    term->name = hex;
+    return term;
+}
+
+static C11Term *term_bytes(const char *data, size_t len) {
+    return term_bytes_take(hex_for_bytes(data, len));
+}
+
 static C11Term *term_const_int(long value) {
     C11Term *term = term_new(C11_TERM_CONST_INT);
 
@@ -277,6 +493,10 @@ static C11Term *term_op_take(const char *name, C11Term **args, size_t n_args) {
         return NULL;
     }
     return term;
+}
+
+static C11Term *term_op0_take(const char *name) {
+    return term_op_take(name, NULL, 0);
 }
 
 static C11Term *term_op1_take(const char *name, C11Term *a) {
@@ -350,6 +570,10 @@ static C11Term *term_clone(const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return term_var(term->name);
+    case C11_TERM_LITERAL:
+        return term_literal(term->name);
+    case C11_TERM_BYTES:
+        return term_bytes_take(pk_c_walk_copy(term->name));
     case C11_TERM_CONST_INT:
         return term_const_int(term->value);
     case C11_TERM_UNIT:
@@ -465,45 +689,45 @@ static C11Term *lift_binary_expr(CXCursor cursor) {
     if (lhs == NULL || rhs == NULL) goto done;
 
     if (source_has_token(source, "==")) {
-        out = term_op2_take("eq", lhs, rhs);
+        out = term_op2_take("bop_eq", lhs, rhs);
     } else if (source_has_token(source, "!=")) {
-        out = term_op2_take("ne", lhs, rhs);
+        out = term_op2_take("bop_ne", lhs, rhs);
     } else if (source_has_token(source, "&&")) {
-        out = term_op2_take("and", lhs, rhs);
+        out = term_op2_take("bop_logand", lhs, rhs);
     } else if (source_has_token(source, "||")) {
-        out = term_op2_take("or", lhs, rhs);
+        out = term_op2_take("bop_logor", lhs, rhs);
     } else if (source_has_token(source, "<=")) {
-        out = term_op2_take("le", lhs, rhs);
+        out = term_op2_take("bop_le", lhs, rhs);
     } else if (source_has_token(source, ">=")) {
-        out = term_op2_take("ge", lhs, rhs);
+        out = term_op2_take("bop_ge", lhs, rhs);
     } else if (source_has_token(source, "<<")) {
-        out = term_op2_take("shl", lhs, rhs);
+        out = term_op2_take("bop_shl", lhs, rhs);
     } else if (source_has_token(source, ">>")) {
-        out = term_op2_take("shr", lhs, rhs);
+        out = term_op2_take("bop_shr", lhs, rhs);
     } else if (source_has_token(source, "<")) {
-        out = term_op2_take("lt", lhs, rhs);
+        out = term_op2_take("bop_lt", lhs, rhs);
     } else if (source_has_token(source, ">")) {
-        out = term_op2_take("gt", lhs, rhs);
+        out = term_op2_take("bop_gt", lhs, rhs);
     } else if (source_has_token(source, "=")) {
         out = term_op2_take("assign", lhs, rhs);
     } else if (source_has_token(source, "+")) {
-        out = term_op2_take("add", lhs, rhs);
+        out = term_op2_take("bop_add", lhs, rhs);
     } else if (source_has_token(source, "-")) {
-        out = term_op2_take("sub", lhs, rhs);
+        out = term_op2_take("bop_sub", lhs, rhs);
     } else if (source_has_token(source, "*")) {
-        out = term_op2_take("mul", lhs, rhs);
+        out = term_op2_take("bop_mul", lhs, rhs);
     } else if (source_has_token(source, "/")) {
-        out = term_op2_take("div", lhs, rhs);
+        out = term_op2_take("bop_div", lhs, rhs);
     } else if (source_has_token(source, "%")) {
-        out = term_op2_take("mod", lhs, rhs);
+        out = term_op2_take("bop_mod", lhs, rhs);
     } else if (source_has_token(source, "&")) {
-        out = term_op2_take("bit_and", lhs, rhs);
+        out = term_op2_take("bop_bitand", lhs, rhs);
     } else if (source_has_token(source, "|")) {
-        out = term_op2_take("bit_or", lhs, rhs);
+        out = term_op2_take("bop_bitor", lhs, rhs);
     } else if (source_has_token(source, "^")) {
-        out = term_op2_take("bit_xor", lhs, rhs);
+        out = term_op2_take("bop_bitxor", lhs, rhs);
     } else if (source_has_token(source, ",")) {
-        out = term_op2_take("comma", lhs, rhs);
+        out = term_op2_take("bop_comma", lhs, rhs);
     } else {
         out = term_op2_take("binary-operator", lhs, rhs);
     }
@@ -522,53 +746,44 @@ static C11Term *lift_compound_assign_expr(CXCursor cursor) {
     CursorList children = {0};
     char *source = NULL;
     C11Term *lhs = NULL;
-    C11Term *lhs_for_rhs = NULL;
     C11Term *rhs = NULL;
-    C11Term *value = NULL;
     C11Term *out = NULL;
 
     if (cursor_children(cursor, &children) != 0 || children.len != 2) goto done;
     source = pk_c_walk_cursor_source(cursor);
     lhs = unwrap_expr(children.items[0]);
-    lhs_for_rhs = term_clone(lhs);
     rhs = unwrap_expr(children.items[1]);
-    if (lhs == NULL || lhs_for_rhs == NULL || rhs == NULL) goto done;
+    if (lhs == NULL || rhs == NULL) goto done;
     if (source_has_token(source, "+=")) {
-        value = term_op2_take("add", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_add", lhs, rhs);
     } else if (source_has_token(source, "-=")) {
-        value = term_op2_take("sub", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_sub", lhs, rhs);
     } else if (source_has_token(source, "*=")) {
-        value = term_op2_take("mul", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_mul", lhs, rhs);
     } else if (source_has_token(source, "/=")) {
-        value = term_op2_take("div", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_div", lhs, rhs);
     } else if (source_has_token(source, "%=")) {
-        value = term_op2_take("mod", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_mod", lhs, rhs);
     } else if (source_has_token(source, "<<=")) {
-        value = term_op2_take("shl", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_shl", lhs, rhs);
     } else if (source_has_token(source, ">>=")) {
-        value = term_op2_take("shr", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_shr", lhs, rhs);
     } else if (source_has_token(source, "&=")) {
-        value = term_op2_take("bit_and", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_bitand", lhs, rhs);
     } else if (source_has_token(source, "|=")) {
-        value = term_op2_take("bit_or", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_bitor", lhs, rhs);
     } else if (source_has_token(source, "^=")) {
-        value = term_op2_take("bit_xor", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_bitxor", lhs, rhs);
     } else {
-        value = term_op2_take("binary-operator", lhs_for_rhs, rhs);
+        out = term_op2_take("binary-operator", lhs, rhs);
     }
-    lhs_for_rhs = NULL;
-    rhs = NULL;
-    if (value == NULL) goto done;
-    out = term_op2_take("assign", lhs, value);
     lhs = NULL;
-    value = NULL;
+    rhs = NULL;
 
 done:
     free(source);
     term_free(lhs);
-    term_free(lhs_for_rhs);
     term_free(rhs);
-    term_free(value);
     cursor_list_free(&children);
     return out == NULL ? wrap_generic_cursor(cursor, "binary-operator") : out;
 }
@@ -584,25 +799,25 @@ static C11Term *lift_unary_expr(CXCursor cursor) {
     inner = unwrap_expr(children.items[0]);
     if (inner == NULL) goto done;
     if (source_starts_with(source, "++")) {
-        out = term_op1_take("pre_inc", inner);
+        out = term_op1_take("uop_pre_inc", inner);
     } else if (source_ends_with(source, "++")) {
-        out = term_op1_take("post_inc", inner);
+        out = term_op1_take("uop_post_inc", inner);
     } else if (source_starts_with(source, "--")) {
-        out = term_op1_take("pre_dec", inner);
+        out = term_op1_take("uop_pre_dec", inner);
     } else if (source_ends_with(source, "--")) {
-        out = term_op1_take("post_dec", inner);
+        out = term_op1_take("uop_post_dec", inner);
     } else if (source != NULL && source[0] == '-') {
-        out = term_op1_take("neg", inner);
+        out = term_op1_take("uop_neg", inner);
     } else if (source != NULL && source[0] == '!') {
-        out = term_op1_take("not", inner);
+        out = term_op1_take("uop_lognot", inner);
     } else if (source != NULL && source[0] == '*') {
-        out = term_op1_take("deref", inner);
+        out = term_op1_take("uop_deref", inner);
     } else if (source != NULL && source[0] == '~') {
-        out = term_op1_take("bit_not", inner);
+        out = term_op1_take("uop_bitnot", inner);
     } else if (source != NULL && source[0] == '&') {
-        out = term_op1_take("addr_of", inner);
+        out = term_op1_take("uop_addr_of", inner);
     } else if (source != NULL && source[0] == '+') {
-        out = term_op1_take("plus", inner);
+        out = term_op1_take("uop_plus", inner);
     } else {
         out = term_op1_take("unary-operator", inner);
     }
@@ -631,6 +846,211 @@ static C11Term *lift_integer_literal(CXCursor cursor) {
     return term_const_int(value);
 }
 
+static char *extract_asm_template(const char *source) {
+    const char *p = source == NULL ? NULL : strchr(source, '"');
+    Buf out = {0};
+    char *copy = NULL;
+
+    if (p == NULL) return NULL;
+    p++;
+    while (*p != '\0') {
+        if (*p == '"') break;
+        if (*p == '\\' && p[1] != '\0') {
+            p++;
+            switch (*p) {
+            case 'n':
+                if (buf_append_char(&out, '\n') != 0) goto done;
+                break;
+            case 'r':
+                if (buf_append_char(&out, '\r') != 0) goto done;
+                break;
+            case 't':
+                if (buf_append_char(&out, '\t') != 0) goto done;
+                break;
+            case '\\':
+            case '"':
+                if (buf_append_char(&out, *p) != 0) goto done;
+                break;
+            default:
+                if (buf_append_char(&out, '\\') != 0 || buf_append_char(&out, *p) != 0) goto done;
+                break;
+            }
+            p++;
+            continue;
+        }
+        if (buf_append_char(&out, *p++) != 0) goto done;
+    }
+    copy = pk_c_walk_copy(out.data == NULL || out.data[0] == '\0' ? "nop" : out.data);
+
+done:
+    buf_free(&out);
+    return copy;
+}
+
+static const char *skip_ascii_space(const char *p) {
+    while (p != NULL && isspace((unsigned char)*p)) p++;
+    return p;
+}
+
+static int is_ident_char(char c) {
+    return isalnum((unsigned char)c) || c == '_';
+}
+
+static int consume_keyword(const char **p, const char *keyword) {
+    size_t len;
+
+    if (p == NULL || *p == NULL || keyword == NULL) return 0;
+    len = strlen(keyword);
+    if (strncmp(*p, keyword, len) != 0 || is_ident_char((*p)[len])) return 0;
+    *p += len;
+    return 1;
+}
+
+static char *copy_trimmed_range(const char *start, size_t len) {
+    char *copy;
+
+    while (len > 0 && isspace((unsigned char)*start)) {
+        start++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)start[len - 1])) len--;
+    copy = malloc(len + 1);
+    if (copy == NULL) return NULL;
+    memcpy(copy, start, len);
+    copy[len] = '\0';
+    return copy;
+}
+
+static char *extract_ms_asm_template(const char *source) {
+    const char *p = skip_ascii_space(source);
+    size_t len;
+
+    if (p == NULL) return NULL;
+    if (!consume_keyword(&p, "__asm__") && !consume_keyword(&p, "__asm") && !consume_keyword(&p, "asm")) {
+        return NULL;
+    }
+    p = skip_ascii_space(p);
+    len = strlen(p);
+    while (len > 0 && isspace((unsigned char)p[len - 1])) len--;
+    if (len > 0 && p[len - 1] == ';') len--;
+    while (len > 0 && isspace((unsigned char)p[len - 1])) len--;
+    if (len >= 2 && p[0] == '{' && p[len - 1] == '}') {
+        p++;
+        len -= 2;
+    }
+    while (len > 0 && isspace((unsigned char)*p)) {
+        p++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)p[len - 1])) len--;
+    return len == 0 ? NULL : copy_trimmed_range(p, len);
+}
+
+static char *inline_asm_symbol_from_cid(const char *cid) {
+    const char *hex = cid == NULL ? "" : strchr(cid, ':');
+    char *symbol = malloc(strlen("provekit_inline_asm_") + 17);
+
+    if (symbol == NULL) return NULL;
+    hex = hex == NULL ? cid : hex + 1;
+    (void)snprintf(symbol, strlen("provekit_inline_asm_") + 17, "provekit_inline_asm_%.16s", hex);
+    for (char *p = symbol; *p; p++) {
+        if (!((*p >= 'a' && *p <= 'f') || (*p >= '0' && *p <= '9') || *p == '_' ||
+              (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z'))) {
+            *p = '_';
+        }
+    }
+    return symbol;
+}
+
+static char *assembly_source_for_template(const char *symbol, const char *template_text) {
+    Buf b = {0};
+    char *source = NULL;
+
+    if (buf_append(&b, ".intel_syntax noprefix\n.text\n.globl ") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, "\n.type ") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, ", @function\n") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, ":\n    ") != 0 ||
+        buf_append(&b, template_text == NULL || template_text[0] == '\0' ? "nop" : template_text) != 0 ||
+        buf_append(&b, "\n    ret\n.size ") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, ", .-") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, "\n.section .note.GNU-stack,\"\",@progbits\n") != 0) {
+        goto done;
+    }
+    source = pk_c_walk_copy(b.data);
+
+done:
+    buf_free(&b);
+    return source;
+}
+
+static C11Term *lift_asm_stmt(CXCursor cursor) {
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+    char *cursor_source = cursor_extent_source_text(cursor);
+    char *template_text = NULL;
+    char *template_cid = NULL;
+    char *symbol = NULL;
+    char *assembly_source = NULL;
+    char *assembly_cid = NULL;
+    char *path_cid = NULL;
+    C11Term **args = NULL;
+    C11Term *out = NULL;
+
+    if (cursor_source == NULL) cursor_source = pk_c_walk_cursor_source(cursor);
+    template_text = extract_asm_template(cursor_source);
+    if (template_text == NULL && kind == CXCursor_MSAsmStmt) {
+        template_text = extract_ms_asm_template(cursor_source);
+    }
+    if (template_text == NULL && kind != CXCursor_MSAsmStmt) {
+        template_text = pk_c_walk_copy("nop");
+    }
+    if (template_text == NULL) goto done;
+    template_cid = cid_for_bytes(template_text, strlen(template_text));
+    symbol = inline_asm_symbol_from_cid(template_cid);
+    assembly_source = assembly_source_for_template(symbol, template_text);
+    if (assembly_source == NULL) goto done;
+    assembly_cid = cid_for_inline_asm_source(assembly_source);
+    path_cid = cid_for_inline_asm_path(assembly_cid);
+    if (assembly_cid == NULL || path_cid == NULL) goto done;
+
+    args = calloc(11, sizeof(*args));
+    if (args == NULL) goto done;
+    args[0] = term_var(path_cid);
+    args[1] = term_var(assembly_cid);
+    args[2] = term_var("x86-64:sysv");
+    args[3] = term_var("provekit-lift-asm-x86-64");
+    args[4] = term_var(symbol);
+    args[5] = term_var(kind == CXCursor_MSAsmStmt ? "ms-inline-asm" : "gnu-inline-asm");
+    args[6] = term_literal(template_text);
+    args[7] = term_literal(assembly_source);
+    args[8] = term_op0_take("set");
+    args[9] = term_op0_take("set");
+    args[10] = term_op0_take("set");
+    for (size_t i = 0; i < 11; i++) {
+        if (args[i] == NULL) goto done;
+    }
+    out = term_op_take("asm-link-edge", args, 11);
+    args = NULL;
+
+done:
+    free(cursor_source);
+    free(template_text);
+    free(template_cid);
+    free(symbol);
+    free(assembly_source);
+    free(assembly_cid);
+    free(path_cid);
+    if (args != NULL) {
+        for (size_t i = 0; i < 11; i++) term_free(args[i]);
+        free(args);
+    }
+    return out == NULL ? term_opaque() : out;
+}
+
 static C11Term *lift_expr(CXCursor cursor) {
     switch (clang_getCursorKind(cursor)) {
     case CXCursor_UnexposedExpr:
@@ -648,16 +1068,23 @@ static C11Term *lift_expr(CXCursor cursor) {
         return lift_compound_assign_expr(cursor);
     case CXCursor_CStyleCastExpr: {
         CursorList children = {0};
+        C11Term *target_type = NULL;
         C11Term *inner = NULL;
         C11Term *out = NULL;
+        char *type_name = cx_string_copy(clang_getTypeSpelling(clang_getCursorType(cursor)));
 
         if (cursor_children(cursor, &children) == 0 && children.len > 0) {
+            target_type = term_var_take(type_name);
+            type_name = NULL;
             inner = unwrap_expr(children.items[children.len - 1]);
-            if (inner != NULL) {
-                out = term_op1_take("cast", inner);
+            if (target_type != NULL && inner != NULL) {
+                out = term_op2_take("cast", target_type, inner);
+                target_type = NULL;
                 inner = NULL;
             }
         }
+        free(type_name);
+        term_free(target_type);
         term_free(inner);
         cursor_list_free(&children);
         return out == NULL ? wrap_generic_cursor(cursor, "cast") : out;
@@ -980,6 +1407,9 @@ static C11Term *lift_stmt(CXCursor cursor) {
         return term_op1_take("break", term_unit());
     case CXCursor_ContinueStmt:
         return term_op1_take("continue", term_unit());
+    case CXCursor_GCCAsmStmt:
+    case CXCursor_MSAsmStmt:
+        return lift_asm_stmt(cursor);
     case CXCursor_WhileStmt:
         return lift_while_stmt(cursor);
     case CXCursor_ForStmt:
@@ -1031,8 +1461,8 @@ static enum CXChildVisitResult find_function_visitor(CXCursor cursor, CXCursor p
     return CXChildVisit_Recurse;
 }
 
-static CXTranslationUnit parse_unit(const char *path, const char *source, CXIndex *index_out) {
-    static const char *const args[] = {"-x", "c", "-std=c11"};
+static CXTranslationUnit parse_unit(const char *path, const char *source, size_t source_len, CXIndex *index_out) {
+    static const char *const args[] = {"-x", "c", "-std=c11", "-fasm-blocks", "-fms-extensions"};
     struct CXUnsavedFile unsaved;
     CXTranslationUnit unit = NULL;
 
@@ -1040,7 +1470,7 @@ static CXTranslationUnit parse_unit(const char *path, const char *source, CXInde
     if (*index_out == NULL) return NULL;
     unsaved.Filename = path;
     unsaved.Contents = source;
-    unsaved.Length = (unsigned long)strlen(source);
+    unsaved.Length = (unsigned long)source_len;
     if (clang_parseTranslationUnit2(
             *index_out,
             path,
@@ -1062,6 +1492,14 @@ static int term_json(Buf *b, const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return buf_append(b, "{\"kind\":\"var\",\"name\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append_char(b, '}') == 0 ? 0 : -1;
+    case C11_TERM_LITERAL:
+        return buf_append(b, "{\"kind\":\"literal\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append_char(b, '}') == 0 ? 0 : -1;
+    case C11_TERM_BYTES:
+        return buf_append(b, "{\"kind\":\"bytes\",\"encoding\":\"hex\",\"value\":") == 0 &&
             buf_append_json_string(b, term->name) == 0 &&
             buf_append_char(b, '}') == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
@@ -1092,6 +1530,12 @@ static int term_surface(Buf *b, const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return buf_append(b, term->name);
+    case C11_TERM_LITERAL:
+        return buf_append_json_string(b, term->name);
+    case C11_TERM_BYTES:
+        return buf_append(b, "bytes(") == 0 &&
+            buf_append(b, term->name == NULL ? "" : term->name) == 0 &&
+            buf_append_char(b, ')') == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
         return buf_append_long(b, term->value);
     case C11_TERM_UNIT:
@@ -1114,17 +1558,32 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
     Buf surface = {0};
     const char *base = path_basename(source_path);
     const char *note = strcmp(base, "foo.c") == 0 ? FOO_WP_NOTE : GENERIC_WP_NOTE;
+    char *source = NULL;
+    char *source_cid = NULL;
+    size_t source_len = 0;
+    C11Term *source_term = NULL;
     int rc = -1;
 
     if (term_surface(&surface, term) != 0) goto done;
+    source = read_file_bytes(source_path, &source_len);
+    if (source == NULL) goto done;
+    source_cid = cid_for_bytes(source, source_len);
+    if (source_cid == NULL) goto done;
+    source_term = term_op2_take("source-unit", term_bytes(source, source_len), term_clone(term));
+    if (source_term == NULL) goto done;
+
     if (buf_append(out, "{\"kind\":\"c11-algebra-term\",\"signature_cid\":\"") != 0 ||
         buf_append(out, pk_c11_signature_cid()) != 0 ||
+        buf_append(out, "\",\"source_cid\":\"") != 0 ||
+        buf_append(out, source_cid) != 0 ||
         buf_append(out, "\",\"source\":") != 0 ||
         buf_append_json_string(out, base) != 0 ||
         buf_append(out, ",\"term_surface\":") != 0 ||
         buf_append_json_string(out, surface.data) != 0 ||
         buf_append(out, ",\"term\":") != 0 ||
         term_json(out, term) != 0 ||
+        buf_append(out, ",\"source_term\":") != 0 ||
+        term_json(out, source_term) != 0 ||
         buf_append(out, ",\"wp_value_note\":") != 0 ||
         buf_append_json_string(out, note) != 0 ||
         buf_append(out, "}\n") != 0) {
@@ -1133,6 +1592,9 @@ static int emit_term_memento(Buf *out, const char *source_path, const C11Term *t
     rc = 0;
 
 done:
+    term_free(source_term);
+    free(source_cid);
+    free(source);
     buf_free(&surface);
     return rc;
 }
@@ -1146,9 +1608,13 @@ static C11Term *project_value(const C11Term *term, const C11Term *continuation) 
 
     if (term == NULL) return NULL;
     if (term->kind != C11_TERM_OP) return continuation == NULL ? term_clone(term) : term_clone(continuation);
+    if (strcmp(term->name, "source-unit") == 0 && term->n_args == 2) {
+        return project_value(term->args[1], continuation);
+    }
     if (strcmp(term->name, "return") == 0 && term->n_args == 1) return term_clone(term->args[0]);
     if (strcmp(term->name, "skip") == 0) return continuation == NULL ? NULL : term_clone(continuation);
     if ((strcmp(term->name, "decl") == 0 || strcmp(term->name, "assign") == 0 ||
+         compound_assign_symbol(term->name) != NULL ||
          strcmp(term->name, "break") == 0 || strcmp(term->name, "continue") == 0) &&
         continuation != NULL) {
         return term_clone(continuation);
@@ -1176,22 +1642,24 @@ static C11Term *project_value(const C11Term *term, const C11Term *continuation) 
 }
 
 static const char *contract_ctor_name(const char *op_name) {
-    if (strcmp(op_name, "add") == 0) return "+";
-    if (strcmp(op_name, "sub") == 0) return "-";
-    if (strcmp(op_name, "mul") == 0) return "*";
-    if (strcmp(op_name, "div") == 0) return "/";
-    if (strcmp(op_name, "mod") == 0) return "%";
-    if (strcmp(op_name, "shl") == 0) return "<<";
-    if (strcmp(op_name, "shr") == 0) return ">>";
-    if (strcmp(op_name, "bit_and") == 0) return "&";
-    if (strcmp(op_name, "bit_or") == 0) return "|";
-    if (strcmp(op_name, "bit_xor") == 0) return "^";
-    if (strcmp(op_name, "eq") == 0) return "=";
-    if (strcmp(op_name, "lt") == 0) return "<";
-    if (strcmp(op_name, "le") == 0) return "<=";
-    if (strcmp(op_name, "gt") == 0) return ">";
-    if (strcmp(op_name, "ge") == 0) return ">=";
-    if (strcmp(op_name, "ne") == 0) return "!=";
+    if (strcmp(op_name, "add") == 0 || strcmp(op_name, "bop_add") == 0) return "+";
+    if (strcmp(op_name, "sub") == 0 || strcmp(op_name, "bop_sub") == 0) return "-";
+    if (strcmp(op_name, "mul") == 0 || strcmp(op_name, "bop_mul") == 0) return "*";
+    if (strcmp(op_name, "div") == 0 || strcmp(op_name, "bop_div") == 0) return "/";
+    if (strcmp(op_name, "mod") == 0 || strcmp(op_name, "bop_mod") == 0) return "%";
+    if (strcmp(op_name, "shl") == 0 || strcmp(op_name, "bop_shl") == 0) return "<<";
+    if (strcmp(op_name, "shr") == 0 || strcmp(op_name, "bop_shr") == 0) return ">>";
+    if (strcmp(op_name, "bit_and") == 0 || strcmp(op_name, "bop_bitand") == 0) return "&";
+    if (strcmp(op_name, "bit_or") == 0 || strcmp(op_name, "bop_bitor") == 0) return "|";
+    if (strcmp(op_name, "bit_xor") == 0 || strcmp(op_name, "bop_bitxor") == 0) return "^";
+    if (strcmp(op_name, "eq") == 0 || strcmp(op_name, "bop_eq") == 0) return "=";
+    if (strcmp(op_name, "lt") == 0 || strcmp(op_name, "bop_lt") == 0) return "<";
+    if (strcmp(op_name, "le") == 0 || strcmp(op_name, "bop_le") == 0) return "<=";
+    if (strcmp(op_name, "gt") == 0 || strcmp(op_name, "bop_gt") == 0) return ">";
+    if (strcmp(op_name, "ge") == 0 || strcmp(op_name, "bop_ge") == 0) return ">=";
+    if (strcmp(op_name, "ne") == 0 || strcmp(op_name, "bop_ne") == 0) return "!=";
+    if (strcmp(op_name, "bop_logand") == 0) return "&&";
+    if (strcmp(op_name, "bop_logor") == 0) return "||";
     return op_name;
 }
 
@@ -1202,6 +1670,14 @@ static int contract_term_json(Buf *b, const C11Term *term) {
         return buf_append(b, "{\"kind\":\"var\",\"name\":") == 0 &&
             buf_append_json_string(b, term->name) == 0 &&
             buf_append_char(b, '}') == 0 ? 0 : -1;
+    case C11_TERM_LITERAL:
+        return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append(b, ",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}") == 0 ? 0 : -1;
+    case C11_TERM_BYTES:
+        return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append(b, ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Bytes\"}}") == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
         return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
             buf_append_long(b, term->value) == 0 &&
@@ -1209,7 +1685,7 @@ static int contract_term_json(Buf *b, const C11Term *term) {
     case C11_TERM_UNIT:
         return buf_append(b, "{\"kind\":\"ctor\",\"name\":\"unit\",\"args\":[]}");
     case C11_TERM_OP:
-        if (strcmp(term->name, "neg") == 0 && term->n_args == 1 &&
+        if ((strcmp(term->name, "neg") == 0 || strcmp(term->name, "uop_neg") == 0) && term->n_args == 1 &&
             term->args[0]->kind == C11_TERM_CONST_INT) {
             return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
                 buf_append_long(b, -term->args[0]->value) == 0 &&
@@ -1536,6 +2012,7 @@ fail:
 static int parse_term_object(const char **p, C11Term **out) {
     char *kind = NULL;
     char *name = NULL;
+    char *literal_value = NULL;
     C11Term **args = NULL;
     size_t n_args = 0;
     long value = 0;
@@ -1578,16 +2055,26 @@ static int parse_term_object(const char **p, C11Term **out) {
             }
             *p = end + 1;
         } else if (strcmp(key, "value") == 0) {
-            char *num_end = NULL;
+            if (**p == '"') {
+                free(literal_value);
+                literal_value = decode_json_string(*p + 1, &end);
+                if (literal_value == NULL || end == NULL || *end != '"') {
+                    free(key);
+                    goto done;
+                }
+                *p = end + 1;
+            } else {
+                char *num_end = NULL;
 
-            errno = 0;
-            value = strtol(*p, &num_end, 10);
-            if (errno != 0 || num_end == *p) {
-                free(key);
-                goto done;
+                errno = 0;
+                value = strtol(*p, &num_end, 10);
+                if (errno != 0 || num_end == *p) {
+                    free(key);
+                    goto done;
+                }
+                *p = num_end;
+                have_value = 1;
             }
-            *p = num_end;
-            have_value = 1;
         } else if (strcmp(key, "args") == 0) {
             for (size_t i = 0; i < n_args; i++) term_free(args[i]);
             free(args);
@@ -1623,6 +2110,14 @@ static int parse_term_object(const char **p, C11Term **out) {
         if (name == NULL) goto done;
         *out = term_var_take(name);
         name = NULL;
+    } else if (strcmp(kind, "literal") == 0) {
+        if (literal_value == NULL) goto done;
+        *out = term_literal_take(literal_value);
+        literal_value = NULL;
+    } else if (strcmp(kind, "bytes") == 0) {
+        if (literal_value == NULL) goto done;
+        *out = term_bytes_take(literal_value);
+        literal_value = NULL;
     } else if (strcmp(kind, "const") == 0) {
         if (!have_value) goto done;
         *out = term_const_int(value);
@@ -1636,6 +2131,7 @@ static int parse_term_object(const char **p, C11Term **out) {
 done:
     free(kind);
     free(name);
+    free(literal_value);
     for (size_t i = 0; i < n_args; i++) term_free(args[i]);
     free(args);
     return ok;
@@ -1743,6 +2239,71 @@ static const char *label_name_or_done(const C11Term *term, size_t index) {
     return "done";
 }
 
+static const char *literal_arg_or(const C11Term *term, size_t index, const char *fallback) {
+    if (term->n_args > index && term->args[index]->kind == C11_TERM_LITERAL) {
+        return term->args[index]->name == NULL ? fallback : term->args[index]->name;
+    }
+    return fallback;
+}
+
+static const char *text_arg_or(const C11Term *term, size_t index, const char *fallback) {
+    if (term->n_args > index &&
+        (term->args[index]->kind == C11_TERM_VAR || term->args[index]->kind == C11_TERM_LITERAL)) {
+        return term->args[index]->name == NULL ? fallback : term->args[index]->name;
+    }
+    return fallback;
+}
+
+static const char *type_arg_or(const C11Term *term, size_t index, const char *fallback) {
+    if (term->n_args > index &&
+        (term->args[index]->kind == C11_TERM_VAR || term->args[index]->kind == C11_TERM_LITERAL)) {
+        return term->args[index]->name == NULL ? fallback : term->args[index]->name;
+    }
+    return fallback;
+}
+
+static int serialize_ms_asm_stmt(Buf *out, const char *template_text, int indent) {
+    const char *body = template_text == NULL || template_text[0] == '\0' ? "nop" : template_text;
+    const char *line = body;
+
+    if (strchr(body, '\n') == NULL) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "__asm ") == 0 &&
+            buf_append(out, body) == 0 &&
+            buf_append_char(out, '\n') == 0 ? 0 : -1;
+    }
+
+    if (buf_append_indent(out, indent) != 0 || buf_append(out, "__asm {\n") != 0) return -1;
+    while (*line != '\0') {
+        const char *end = strchr(line, '\n');
+        size_t len = end == NULL ? strlen(line) : (size_t)(end - line);
+
+        if (len > 0 &&
+            (buf_append_indent(out, indent + 1) != 0 ||
+                buf_append_n(out, line, len) != 0 ||
+                buf_append_char(out, '\n') != 0)) {
+            return -1;
+        }
+        if (end == NULL) break;
+        line = end + 1;
+    }
+    return buf_append_indent(out, indent) == 0 && buf_append(out, "}\n") == 0 ? 0 : -1;
+}
+
+static const char *compound_assign_symbol(const char *name) {
+    if (strcmp(name, "compound_assign_add") == 0) return "+=";
+    if (strcmp(name, "compound_assign_sub") == 0) return "-=";
+    if (strcmp(name, "compound_assign_mul") == 0) return "*=";
+    if (strcmp(name, "compound_assign_div") == 0) return "/=";
+    if (strcmp(name, "compound_assign_mod") == 0) return "%=";
+    if (strcmp(name, "compound_assign_shl") == 0) return "<<=";
+    if (strcmp(name, "compound_assign_shr") == 0) return ">>=";
+    if (strcmp(name, "compound_assign_bitand") == 0) return "&=";
+    if (strcmp(name, "compound_assign_bitor") == 0) return "|=";
+    if (strcmp(name, "compound_assign_bitxor") == 0) return "^=";
+    return NULL;
+}
+
 static const char *generic_assoc_type(size_t index) {
     static const char *const names[] = {"int", "long", "double", "char *", "void *"};
 
@@ -1779,40 +2340,49 @@ static int serialize_expr(Buf *out, const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return buf_append(out, term->name);
+    case C11_TERM_LITERAL:
+        return buf_append_c_string_literal(out, term->name);
+    case C11_TERM_BYTES:
+        return buf_append(out, "0");
     case C11_TERM_CONST_INT:
         return buf_append_long(out, term->value);
     case C11_TERM_UNIT:
         return buf_append(out, "0");
     case C11_TERM_OP:
-        if (strcmp(term->name, "add") == 0) return serialize_infix(out, term, "+");
-        if (strcmp(term->name, "sub") == 0) return serialize_infix(out, term, "-");
-        if (strcmp(term->name, "mul") == 0) return serialize_infix(out, term, "*");
-        if (strcmp(term->name, "div") == 0) return serialize_infix(out, term, "/");
-        if (strcmp(term->name, "mod") == 0) return serialize_infix(out, term, "%");
-        if (strcmp(term->name, "shl") == 0) return serialize_infix(out, term, "<<");
-        if (strcmp(term->name, "shr") == 0) return serialize_infix(out, term, ">>");
-        if (strcmp(term->name, "bit_and") == 0) return serialize_infix(out, term, "&");
-        if (strcmp(term->name, "bit_or") == 0) return serialize_infix(out, term, "|");
-        if (strcmp(term->name, "bit_xor") == 0) return serialize_infix(out, term, "^");
-        if (strcmp(term->name, "eq") == 0) return serialize_infix(out, term, "==");
-        if (strcmp(term->name, "lt") == 0) return serialize_infix(out, term, "<");
-        if (strcmp(term->name, "le") == 0) return serialize_infix(out, term, "<=");
-        if (strcmp(term->name, "gt") == 0) return serialize_infix(out, term, ">");
-        if (strcmp(term->name, "ge") == 0) return serialize_infix(out, term, ">=");
-        if (strcmp(term->name, "ne") == 0) return serialize_infix(out, term, "!=");
-        if (strcmp(term->name, "and") == 0) return serialize_infix(out, term, "&&");
-        if (strcmp(term->name, "or") == 0) return serialize_infix(out, term, "||");
-        if (strcmp(term->name, "comma") == 0) return serialize_infix(out, term, ",");
+        if (strcmp(term->name, "add") == 0 || strcmp(term->name, "bop_add") == 0) return serialize_infix(out, term, "+");
+        if (strcmp(term->name, "sub") == 0 || strcmp(term->name, "bop_sub") == 0) return serialize_infix(out, term, "-");
+        if (strcmp(term->name, "mul") == 0 || strcmp(term->name, "bop_mul") == 0) return serialize_infix(out, term, "*");
+        if (strcmp(term->name, "div") == 0 || strcmp(term->name, "bop_div") == 0) return serialize_infix(out, term, "/");
+        if (strcmp(term->name, "mod") == 0 || strcmp(term->name, "bop_mod") == 0) return serialize_infix(out, term, "%");
+        if (strcmp(term->name, "shl") == 0 || strcmp(term->name, "bop_shl") == 0) return serialize_infix(out, term, "<<");
+        if (strcmp(term->name, "shr") == 0 || strcmp(term->name, "bop_shr") == 0) return serialize_infix(out, term, ">>");
+        if (strcmp(term->name, "bit_and") == 0 || strcmp(term->name, "bop_bitand") == 0) return serialize_infix(out, term, "&");
+        if (strcmp(term->name, "bit_or") == 0 || strcmp(term->name, "bop_bitor") == 0) return serialize_infix(out, term, "|");
+        if (strcmp(term->name, "bit_xor") == 0 || strcmp(term->name, "bop_bitxor") == 0) return serialize_infix(out, term, "^");
+        if (strcmp(term->name, "eq") == 0 || strcmp(term->name, "bop_eq") == 0) return serialize_infix(out, term, "==");
+        if (strcmp(term->name, "lt") == 0 || strcmp(term->name, "bop_lt") == 0) return serialize_infix(out, term, "<");
+        if (strcmp(term->name, "le") == 0 || strcmp(term->name, "bop_le") == 0) return serialize_infix(out, term, "<=");
+        if (strcmp(term->name, "gt") == 0 || strcmp(term->name, "bop_gt") == 0) return serialize_infix(out, term, ">");
+        if (strcmp(term->name, "ge") == 0 || strcmp(term->name, "bop_ge") == 0) return serialize_infix(out, term, ">=");
+        if (strcmp(term->name, "ne") == 0 || strcmp(term->name, "bop_ne") == 0) return serialize_infix(out, term, "!=");
+        if (strcmp(term->name, "and") == 0 || strcmp(term->name, "bop_logand") == 0) return serialize_infix(out, term, "&&");
+        if (strcmp(term->name, "or") == 0 || strcmp(term->name, "bop_logor") == 0) return serialize_infix(out, term, "||");
+        if (strcmp(term->name, "comma") == 0 || strcmp(term->name, "bop_comma") == 0) return serialize_infix(out, term, ",");
         if (strcmp(term->name, "assign") == 0) return serialize_infix(out, term, "=");
+        if (compound_assign_symbol(term->name) != NULL) return serialize_infix(out, term, compound_assign_symbol(term->name));
         if (strcmp(term->name, "call") == 0) return serialize_call(out, term);
         if (strcmp(term->name, "member") == 0 && term->n_args >= 1) {
             return serialize_expr(out, term->args[0]) == 0 &&
                 buf_append_char(out, '.') == 0 &&
                 buf_append(out, member_field_name(term)) == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "cast") == 0 && term->n_args == 1) {
-            return buf_append(out, "((int)") == 0 &&
-                serialize_expr(out, term->args[0]) == 0 &&
+        if (strcmp(term->name, "cast") == 0 && term->n_args >= 1) {
+            size_t value_index = term->n_args >= 2 ? 1 : 0;
+
+            return buf_append(out, "((") == 0 &&
+                buf_append(out, type_arg_or(term, 0, "int")) == 0 &&
+                buf_append_char(out, ')') == 0 &&
+                serialize_expr(out, term->args[value_index]) == 0 &&
                 buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         if (strcmp(term->name, "array-subscript") == 0 && term->n_args == 2) {
@@ -1859,34 +2429,34 @@ static int serialize_expr(Buf *out, const C11Term *term) {
             return buf_append(out, "(~") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         if (strcmp(term->name, "opaque") == 0) return buf_append(out, "0 /* opaque */");
-        if (strcmp(term->name, "neg") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "neg") == 0 || strcmp(term->name, "uop_neg") == 0) && term->n_args == 1) {
             return buf_append(out, "(-") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "not") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "not") == 0 || strcmp(term->name, "uop_lognot") == 0) && term->n_args == 1) {
             return buf_append(out, "(!") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "deref") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "deref") == 0 || strcmp(term->name, "uop_deref") == 0) && term->n_args == 1) {
             return buf_append(out, "(*") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "bit_not") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "bit_not") == 0 || strcmp(term->name, "uop_bitnot") == 0) && term->n_args == 1) {
             return buf_append(out, "(~") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "addr_of") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "addr_of") == 0 || strcmp(term->name, "uop_addr_of") == 0) && term->n_args == 1) {
             return buf_append(out, "(&") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "pre_inc") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "pre_inc") == 0 || strcmp(term->name, "uop_pre_inc") == 0) && term->n_args == 1) {
             return buf_append(out, "(++") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "post_inc") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "post_inc") == 0 || strcmp(term->name, "uop_post_inc") == 0) && term->n_args == 1) {
             return buf_append_char(out, '(') == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append(out, "++)") == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "pre_dec") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "pre_dec") == 0 || strcmp(term->name, "uop_pre_dec") == 0) && term->n_args == 1) {
             return buf_append(out, "(--") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "post_dec") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "post_dec") == 0 || strcmp(term->name, "uop_post_dec") == 0) && term->n_args == 1) {
             return buf_append_char(out, '(') == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append(out, "--)") == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "plus") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "plus") == 0 || strcmp(term->name, "uop_plus") == 0) && term->n_args == 1) {
             return buf_append(out, "(+") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         fprintf(stderr, "serialize not implemented for expression op c11:%s\n", term->name);
@@ -1991,6 +2561,15 @@ static int serialize_stmt(Buf *out, const C11Term *term, int indent) {
             buf_append(out, " = ") == 0 &&
             serialize_expr(out, term->args[1]) == 0 &&
             buf_append(out, ";\n") == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "asm-link-edge") == 0 && term->n_args >= 7) {
+        if (strcmp(text_arg_or(term, 5, "gnu-inline-asm"), "ms-inline-asm") == 0) {
+            return serialize_ms_asm_stmt(out, literal_arg_or(term, 6, "nop"), indent);
+        }
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "__asm__ volatile(") == 0 &&
+            buf_append_c_string_literal(out, literal_arg_or(term, 6, "nop")) == 0 &&
+            buf_append(out, ");\n") == 0 ? 0 : -1;
     }
     if (strcmp(term->name, "switch") == 0 && term->n_args == 2) {
         return buf_append_indent(out, indent) == 0 &&
@@ -2103,6 +2682,21 @@ static int collect_names(
         return 0;
     }
     if (term->kind != C11_TERM_OP) return 0;
+    if (strcmp(term->name, "cast") == 0) {
+        size_t value_index = term->n_args >= 2 ? 1 : 0;
+
+        return term->n_args > value_index
+            ? collect_names(term->args[value_index], locals, params, pointer_params, struct_params, callees, 0)
+            : 0;
+    }
+    if (strcmp(term->name, "asm-link-edge") == 0) {
+        for (size_t i = 8; i < term->n_args && i <= 9; i++) {
+            if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
     if (strcmp(term->name, "call") == 0) {
         if (term->n_args > 0) {
             if (term->args[0]->kind == C11_TERM_VAR) {
@@ -2176,6 +2770,22 @@ static int serialize_translation_unit(Buf *out, const C11Term *term, const char 
     NameList callees = {0};
     int rc = -1;
 
+    if (term != NULL &&
+        term->kind == C11_TERM_OP &&
+        strcmp(term->name, "source-unit") == 0 &&
+        term->n_args == 2 &&
+        term->args[0] != NULL &&
+        term->args[0]->kind == C11_TERM_BYTES) {
+        char *bytes = NULL;
+        size_t len = 0;
+
+        bytes = bytes_for_hex(term->args[0]->name, &len);
+        if (bytes == NULL) return -1;
+        rc = buf_append_n(out, bytes, len);
+        free(bytes);
+        return rc;
+    }
+
     if (collect_names(term, &locals, &params, &pointer_params, &struct_params, &callees, 0) != 0) goto done;
     if (struct_params.len > 0 &&
         buf_append(out, "struct item {\n    int field;\n    int value;\n};\n\n") != 0) {
@@ -2216,18 +2826,19 @@ done:
     return rc;
 }
 
-static int build_term_from_source(const char *path, const char *function_name, C11Term **term_out, CXCursor *function_out, CXIndex *index_out, CXTranslationUnit *unit_out) {
-    char *source = NULL;
+static int build_term_from_source_buffer(
+    const char *path,
+    const char *source,
+    size_t source_len,
+    const char *function_name,
+    C11Term **term_out,
+    CXCursor *function_out,
+    CXIndex *index_out,
+    CXTranslationUnit *unit_out) {
     FindFunctionCtx find_ctx = {0};
     CXCursor body;
 
-    source = read_file(path);
-    if (source == NULL) {
-        fprintf(stderr, "failed to read %s\n", path);
-        return -1;
-    }
-    *unit_out = parse_unit(path, source, index_out);
-    free(source);
+    *unit_out = parse_unit(path, source, source_len, index_out);
     if (*unit_out == NULL) {
         fprintf(stderr, "libclang parse failed for %s\n", path);
         return -1;
@@ -2249,9 +2860,112 @@ static int build_term_from_source(const char *path, const char *function_name, C
     return 0;
 }
 
+static int build_term_from_source(const char *path, const char *function_name, C11Term **term_out, CXCursor *function_out, CXIndex *index_out, CXTranslationUnit *unit_out) {
+    char *source = NULL;
+    size_t source_len = 0;
+    int rc;
+
+    source = read_file_bytes(path, &source_len);
+    if (source == NULL) {
+        fprintf(stderr, "failed to read %s\n", path);
+        return -1;
+    }
+    rc = build_term_from_source_buffer(path, source, source_len, function_name, term_out, function_out, index_out, unit_out);
+    free(source);
+    return rc;
+}
+
+static int term_equal(const C11Term *a, const C11Term *b) {
+    if (a == NULL || b == NULL) return a == b;
+    if (a->kind != b->kind) return 0;
+    switch (a->kind) {
+    case C11_TERM_VAR:
+    case C11_TERM_LITERAL:
+    case C11_TERM_BYTES:
+        return strcmp(a->name == NULL ? "" : a->name, b->name == NULL ? "" : b->name) == 0;
+    case C11_TERM_CONST_INT:
+        return a->value == b->value;
+    case C11_TERM_UNIT:
+        return 1;
+    case C11_TERM_OP:
+        if (strcmp(a->name == NULL ? "" : a->name, b->name == NULL ? "" : b->name) != 0 ||
+            a->n_args != b->n_args) {
+            return 0;
+        }
+        for (size_t i = 0; i < a->n_args; i++) {
+            if (!term_equal(a->args[i], b->args[i])) return 0;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int write_all_fd(int fd, const char *data, size_t len) {
+    size_t offset = 0;
+
+    while (offset < len) {
+        ssize_t written = write(fd, data + offset, len - offset);
+
+        if (written <= 0) return -1;
+        offset += (size_t)written;
+    }
+    return 0;
+}
+
+static int check_source_unit_lift_witness(const C11Term *source_unit, const char *function_name, Buf *out) {
+    char template[] = "/tmp/provekit-source-unit.XXXXXX";
+    char *bytes = NULL;
+    size_t len = 0;
+    int fd = -1;
+    C11Term *lifted = NULL;
+    CXIndex index = NULL;
+    CXTranslationUnit unit = NULL;
+    int rc = -1;
+
+    if (source_unit == NULL ||
+        source_unit->kind != C11_TERM_OP ||
+        strcmp(source_unit->name, "source-unit") != 0 ||
+        source_unit->n_args != 2 ||
+        source_unit->args[0] == NULL ||
+        source_unit->args[0]->kind != C11_TERM_BYTES ||
+        source_unit->args[1] == NULL) {
+        fprintf(stderr, "source-unit lift witness expected c11:source-unit(bytes, operational_term)\n");
+        return -1;
+    }
+    bytes = bytes_for_hex(source_unit->args[0]->name, &len);
+    if (bytes == NULL) {
+        fprintf(stderr, "source-unit bytes slot is not valid hex\n");
+        return -1;
+    }
+    fd = mkstemp(template);
+    if (fd < 0) goto done;
+    if (write_all_fd(fd, bytes, len) != 0 || close(fd) != 0) {
+        fd = -1;
+        goto done;
+    }
+    fd = -1;
+    if (build_term_from_source(template, function_name, &lifted, NULL, &index, &unit) != 0) goto done;
+    if (!term_equal(lifted, source_unit->args[1])) {
+        fprintf(stderr, "source-unit lift witness mismatch\n");
+        goto done;
+    }
+    if (buf_append(out, "source-unit-ok\n") != 0) goto done;
+    rc = 0;
+
+done:
+    if (fd >= 0) close(fd);
+    unlink(template);
+    if (unit != NULL) clang_disposeTranslationUnit(unit);
+    if (index != NULL) clang_disposeIndex(index);
+    term_free(lifted);
+    free(bytes);
+    return rc;
+}
+
 static int usage(const char *argv0) {
     fprintf(stderr, "usage: %s SOURCE.c --function NAME (--term|--contract)\n", argv0);
     fprintf(stderr, "       %s --serialize TERM.json --function NAME\n", argv0);
+    fprintf(stderr, "       %s --check-source-unit TERM.json --function NAME\n", argv0);
     return 2;
 }
 
@@ -2259,6 +2973,7 @@ int main(int argc, char **argv) {
     const char *path = NULL;
     const char *function_name = NULL;
     const char *serialize_path = NULL;
+    const char *check_source_unit_path = NULL;
     int want_term = 0;
     int want_contract = 0;
     CXIndex index = NULL;
@@ -2272,10 +2987,13 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "--serialize") == 0) {
         if (argc < 5) return usage(argv[0]);
         serialize_path = argv[2];
+    } else if (strcmp(argv[1], "--check-source-unit") == 0) {
+        if (argc < 5) return usage(argv[0]);
+        check_source_unit_path = argv[2];
     } else {
         path = argv[1];
     }
-    for (int i = serialize_path == NULL ? 2 : 3; i < argc; i++) {
+    for (int i = serialize_path == NULL && check_source_unit_path == NULL ? 2 : 3; i < argc; i++) {
         if (strcmp(argv[i], "--function") == 0 && i + 1 < argc) {
             function_name = argv[++i];
         } else if (strcmp(argv[i], "--term") == 0) {
@@ -2287,21 +3005,26 @@ int main(int argc, char **argv) {
         }
     }
     if (function_name == NULL) return usage(argv[0]);
-    if (serialize_path != NULL) {
-        char *json = read_file(serialize_path);
+    if (serialize_path != NULL || check_source_unit_path != NULL) {
+        const char *json_path = serialize_path != NULL ? serialize_path : check_source_unit_path;
+        char *json = read_file(json_path);
 
         if (json == NULL) {
-            fprintf(stderr, "failed to read %s\n", serialize_path);
+            fprintf(stderr, "failed to read %s\n", json_path);
             goto done;
         }
         if (!parse_term_document(json, &term)) {
             free(json);
-            fprintf(stderr, "failed to parse term JSON %s\n", serialize_path);
+            fprintf(stderr, "failed to parse term JSON %s\n", json_path);
             goto done;
         }
         free(json);
-        if (serialize_translation_unit(&out, term, function_name) != 0) goto done;
-        fputs(out.data == NULL ? "" : out.data, stdout);
+        if (serialize_path != NULL) {
+            if (serialize_translation_unit(&out, term, function_name) != 0) goto done;
+        } else if (check_source_unit_lift_witness(term, function_name, &out) != 0) {
+            goto done;
+        }
+        if (out.data != NULL && out.len > 0) fwrite(out.data, 1, out.len, stdout);
         rc = 0;
         goto done;
     }
@@ -2312,7 +3035,7 @@ int main(int argc, char **argv) {
     } else if (emit_projected_contract(&out, function_cursor, term) != 0) {
         goto done;
     }
-    fputs(out.data == NULL ? "" : out.data, stdout);
+    if (out.data != NULL && out.len > 0) fwrite(out.data, 1, out.len, stdout);
     rc = 0;
 
 done:

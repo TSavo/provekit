@@ -27,6 +27,14 @@
     "arity": [
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "fallback unary operator when no core C11 operator is selected",
     "notes": "Negation, boolean not, and dereference dispatch to existing op CIDs."

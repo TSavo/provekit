@@ -27,6 +27,14 @@
     "arity": [
       "ListOfStmt"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "children"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "libclang unexposed statement with lifted child sequence"
   },

@@ -41,6 +41,20 @@
       "Expr",
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_expr"
+        },
+        {
+          "name": "else_expr"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "ternary expression selected by cond"
   },

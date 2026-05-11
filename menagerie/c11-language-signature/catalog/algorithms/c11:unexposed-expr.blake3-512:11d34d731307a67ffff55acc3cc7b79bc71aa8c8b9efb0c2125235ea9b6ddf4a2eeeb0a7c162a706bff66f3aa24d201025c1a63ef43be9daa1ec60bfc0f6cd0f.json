@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:unexposed-expr",
+    "formals": [
+      "children"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "ListOfExpr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unexposed-expr",
+      "arity": [
+        "ListOfExpr"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "children"
+          }
+        ]
+      },
+      "result": "Expr",
+      "wp": "libclang unexposed expression with lifted child sequence"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "bO6EeGbiBPGP8VnuqDVFSd0fkyB7SRuSmdM22UzufFtsaAlVWGLMwTtqVaz390TSpcj0+lTFBZ2Er8tbpUJ2Cw=="
+  }
+}

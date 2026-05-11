@@ -1,0 +1,58 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:bop_eq",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "bop_eq",
+      "arity": [
+        "Expr",
+        "Expr"
+      ],
+      "arity_shape": {
+        "kind": "set"
+      },
+      "result": "Bool",
+      "wp": "C binary == comparison; operand evaluation order is not sequenced"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:fc282507ba28afaaea31b21724476e0f3e6aeee5bc8599d7283f452a7e16f7e868ee98c19defa124064f884842f9e36e6e7e44f0baabe06ad5e9d3ca6a7660f4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "LbBuNneaZqgBaFlBio6yeDx0Ji22hlGDfDLrwkcMwVbBnwYJdbkxANXj7WYdXhSAiZKHylJKyC4GbcFM+n9fCg=="
+  }
+}

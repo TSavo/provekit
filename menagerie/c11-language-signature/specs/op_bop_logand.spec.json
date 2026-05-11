@@ -1,0 +1,55 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:bop_logand",
+  "formals": [
+    "left",
+    "right"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "bop_logand",
+    "arity": [
+      "Bool",
+      "Bool"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    },
+    "result": "Bool",
+    "wp": "C && short-circuit expression; left is evaluated before right"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

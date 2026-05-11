@@ -27,6 +27,14 @@
     "arity": [
       "ListOfExpr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "items"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "initializer list expression payload"
   },

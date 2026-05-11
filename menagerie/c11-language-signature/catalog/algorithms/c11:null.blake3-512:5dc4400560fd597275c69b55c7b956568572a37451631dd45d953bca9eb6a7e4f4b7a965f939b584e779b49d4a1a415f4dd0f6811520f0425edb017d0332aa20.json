@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:null",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "null",
+      "arity": [
+        "Unit"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      },
+      "result": "Expr",
+      "wp": "null pointer constant expression"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:5dc4400560fd597275c69b55c7b956568572a37451631dd45d953bca9eb6a7e4f4b7a965f939b584e779b49d4a1a415f4dd0f6811520f0425edb017d0332aa20",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "nKl1T1tG+Qod9c83JIaoe4LSZIKcpyOdUe7y7UoTk0QYddfKgWEGQ/qWR0vc6mRmID2vwBJ3tBem+rUplbEfDw=="
+  }
+}

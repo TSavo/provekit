@@ -35,7 +35,21 @@
       "ListOf<Expr>"
     ],
     "result": "Stmt",
-    "wp": "callee pre under bound args implies callee post under caller state"
+    "wp": "callee pre under bound args implies callee post under caller state",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "callee"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

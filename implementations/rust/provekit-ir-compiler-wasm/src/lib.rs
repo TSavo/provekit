@@ -22,6 +22,55 @@ pub const DIALECT: &str = "wasm-wat";
 pub const COMPILER_NAME: &str = "wasm-wat-reference";
 pub const COMPILER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const SUPPORTED_PREDICATES: &[&str] = &[
+    "seq",
+    "if",
+    "while",
+    "return",
+    "call",
+    "break",
+    "continue",
+    "skip",
+    "eq",
+    "lt",
+    "le",
+    "add",
+    "sub",
+    "mul",
+    "neg",
+    "and",
+    "or",
+    "not",
+    "deref",
+    "assign",
+    "source-unit",
+    "cast",
+    "bop_eq",
+    "bop_ne",
+    "bop_lt",
+    "bop_le",
+    "bop_gt",
+    "bop_ge",
+    "bop_add",
+    "bop_sub",
+    "bop_mul",
+    "bop_div",
+    "bop_mod",
+    "bop_shl",
+    "bop_shr",
+    "bop_bitand",
+    "bop_bitor",
+    "bop_bitxor",
+    "bop_logand",
+    "bop_logor",
+    "bop_comma",
+    "uop_neg",
+    "uop_lognot",
+    "uop_deref",
+    "uop_bitnot",
+    "uop_plus",
+];
+
 pub struct WasmCompiler;
 
 #[derive(Default)]
@@ -152,48 +201,53 @@ impl IrCompiler for WasmCompiler {
             version: COMPILER_VERSION.to_string(),
             protocol_version: PROTOCOL_VERSION.to_string(),
             dialects: vec![DIALECT.to_string()],
-            supported_sorts: vec!["Int".to_string(), "Bool".to_string(), "Addr".to_string()],
-            supported_predicates: vec![
-                "seq".to_string(),
-                "if".to_string(),
-                "while".to_string(),
-                "return".to_string(),
-                "call".to_string(),
-                "break".to_string(),
-                "continue".to_string(),
-                "skip".to_string(),
-                "eq".to_string(),
-                "lt".to_string(),
-                "le".to_string(),
-                "add".to_string(),
-                "sub".to_string(),
-                "mul".to_string(),
-                "neg".to_string(),
-                "and".to_string(),
-                "or".to_string(),
-                "not".to_string(),
-                "deref".to_string(),
-                "assign".to_string(),
+            supported_sorts: vec![
+                "Int".to_string(),
+                "Bool".to_string(),
+                "Addr".to_string(),
+                "Ptr".to_string(),
+                "LValue".to_string(),
+                "Expr".to_string(),
+                "Stmt".to_string(),
+                "Unit".to_string(),
             ],
+            supported_predicates: SUPPORTED_PREDICATES
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect(),
         }
     }
 }
 
 fn term_payload(input: &Json) -> Result<&Json, CompileError> {
-    match input.get("kind").and_then(Json::as_str) {
+    let term = match input.get("kind").and_then(Json::as_str) {
         Some("c11-algebra-term") => input
             .get("term")
             .ok_or_else(|| malformed("c11-algebra-term missing term")),
         _ => Ok(input),
-    }
+    }?;
+    operational_term(term)
 }
 
 fn function_name(input: &Json) -> Result<String, CompileError> {
     let raw = input
         .get("function")
-        .or_else(|| input.get("name"))
         .and_then(Json::as_str)
         .map(str::to_string)
+        .or_else(|| {
+            input
+                .get("function_name")
+                .or_else(|| input.get("fn_name"))
+                .and_then(Json::as_str)
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            if is_term_node(input) {
+                None
+            } else {
+                input.get("name").and_then(Json::as_str).map(str::to_string)
+            }
+        })
         .or_else(|| {
             input
                 .get("source")
@@ -206,6 +260,13 @@ fn function_name(input: &Json) -> Result<String, CompileError> {
     sanitize_identifier(&raw)
 }
 
+fn is_term_node(input: &Json) -> bool {
+    matches!(
+        input.get("kind").and_then(Json::as_str),
+        Some("op" | "var" | "const" | "unit" | "ctor" | "literal" | "bytes")
+    )
+}
+
 fn func_header(function_name: &str, params: &BTreeSet<String>) -> String {
     let mut header = format!("  (func ${function_name} (export \"{function_name}\")");
     for param in params {
@@ -216,6 +277,7 @@ fn func_header(function_name: &str, params: &BTreeSet<String>) -> String {
 }
 
 fn collect_vars(term: &Json, vars: &mut VarSets) -> Result<(), CompileError> {
+    let term = operational_term(term)?;
     match term.get("kind").and_then(Json::as_str) {
         Some("var") => {
             let name = name_field(term)?;
@@ -226,6 +288,14 @@ fn collect_vars(term: &Json, vars: &mut VarSets) -> Result<(), CompileError> {
         Some("op") => {
             let name = name_field(term)?;
             let args = args_field(term)?;
+            if is_boundary_op(name) {
+                return Ok(());
+            }
+            if name == "cast" {
+                expect_arity(name, args, 2)?;
+                collect_vars(&args[1], vars)?;
+                return Ok(());
+            }
             if name == "call" {
                 for arg in args.iter().skip(1) {
                     collect_vars(arg, vars)?;
@@ -251,11 +321,19 @@ fn collect_vars(term: &Json, vars: &mut VarSets) -> Result<(), CompileError> {
 }
 
 fn needs_memory(term: &Json) -> Result<bool, CompileError> {
+    let term = operational_term(term)?;
     match term.get("kind").and_then(Json::as_str) {
         Some("op") => {
             let name = name_field(term)?;
             let args = args_field(term)?;
-            if name == "deref" {
+            if is_boundary_op(name) {
+                return Ok(false);
+            }
+            if name == "cast" {
+                expect_arity(name, args, 2)?;
+                return needs_memory(&args[1]);
+            }
+            if is_deref_op(name) {
                 return Ok(true);
             }
             if name == "assign" {
@@ -275,6 +353,7 @@ fn needs_memory(term: &Json) -> Result<bool, CompileError> {
 }
 
 fn emit_stmt(term: &Json, ctx: &mut EmitContext, indent: usize) -> Result<(), CompileError> {
+    let term = operational_term(term)?;
     match term.get("kind").and_then(Json::as_str) {
         Some("unit") => Ok(()),
         Some("op") => {
@@ -352,6 +431,7 @@ fn emit_stmt(term: &Json, ctx: &mut EmitContext, indent: usize) -> Result<(), Co
 }
 
 fn emit_expr(term: &Json, ctx: &mut EmitContext, indent: usize) -> Result<(), CompileError> {
+    let term = operational_term(term)?;
     match term.get("kind").and_then(Json::as_str) {
         Some("var") => {
             let name = sanitize_identifier(name_field(term)?)?;
@@ -367,28 +447,49 @@ fn emit_expr(term: &Json, ctx: &mut EmitContext, indent: usize) -> Result<(), Co
             let name = name_field(term)?;
             let args = args_field(term)?;
             match name {
-                "eq" => emit_binary(args, ctx, indent, "i32.eq"),
-                "lt" => emit_binary(args, ctx, indent, "i32.lt_s"),
-                "le" => emit_binary(args, ctx, indent, "i32.le_s"),
-                "add" => emit_binary(args, ctx, indent, "i32.add"),
-                "sub" => emit_binary(args, ctx, indent, "i32.sub"),
-                "mul" => emit_binary(args, ctx, indent, "i32.mul"),
-                "and" => emit_binary(args, ctx, indent, "i32.and"),
-                "or" => emit_binary(args, ctx, indent, "i32.or"),
-                "neg" => {
+                "bop_logand" => emit_logical_and(args, ctx, indent),
+                "bop_logor" => emit_logical_or(args, ctx, indent),
+                name if binary_wasm_opcode(name).is_some() => emit_binary(
+                    args,
+                    ctx,
+                    indent,
+                    binary_wasm_opcode(name).expect("matched"),
+                ),
+                "bop_comma" => {
+                    expect_arity(name, args, 2)?;
+                    emit_expr(&args[0], ctx, indent)?;
+                    ctx.line(indent, "drop");
+                    emit_expr(&args[1], ctx, indent)
+                }
+                "neg" | "uop_neg" => {
                     expect_arity(name, args, 1)?;
                     ctx.line(indent, "i32.const 0");
                     emit_expr(&args[0], ctx, indent)?;
                     ctx.line(indent, "i32.sub");
                     Ok(())
                 }
-                "not" => {
+                "not" | "uop_lognot" => {
                     expect_arity(name, args, 1)?;
                     emit_expr(&args[0], ctx, indent)?;
                     ctx.line(indent, "i32.eqz");
                     Ok(())
                 }
-                "deref" => {
+                "uop_bitnot" => {
+                    expect_arity(name, args, 1)?;
+                    emit_expr(&args[0], ctx, indent)?;
+                    ctx.line(indent, "i32.const -1");
+                    ctx.line(indent, "i32.xor");
+                    Ok(())
+                }
+                "uop_plus" => {
+                    expect_arity(name, args, 1)?;
+                    emit_expr(&args[0], ctx, indent)
+                }
+                "cast" => {
+                    expect_arity(name, args, 2)?;
+                    emit_expr(&args[1], ctx, indent)
+                }
+                name if is_deref_op(name) => {
                     expect_arity(name, args, 1)?;
                     emit_expr(&args[0], ctx, indent)?;
                     ctx.line(indent, "i32.load");
@@ -437,6 +538,44 @@ fn emit_binary(
     Ok(())
 }
 
+fn emit_logical_and(
+    args: &[Json],
+    ctx: &mut EmitContext,
+    indent: usize,
+) -> Result<(), CompileError> {
+    expect_arity("bop_logand", args, 2)?;
+    emit_expr(&args[0], ctx, indent)?;
+    ctx.line(indent, "i32.eqz");
+    ctx.line(indent, "if (result i32)");
+    ctx.line(indent + 1, "i32.const 0");
+    ctx.line(indent, "else");
+    emit_expr(&args[1], ctx, indent + 1)?;
+    emit_to_bool(ctx, indent + 1);
+    ctx.line(indent, "end");
+    Ok(())
+}
+
+fn emit_logical_or(
+    args: &[Json],
+    ctx: &mut EmitContext,
+    indent: usize,
+) -> Result<(), CompileError> {
+    expect_arity("bop_logor", args, 2)?;
+    emit_expr(&args[0], ctx, indent)?;
+    ctx.line(indent, "if (result i32)");
+    ctx.line(indent + 1, "i32.const 1");
+    ctx.line(indent, "else");
+    emit_expr(&args[1], ctx, indent + 1)?;
+    emit_to_bool(ctx, indent + 1);
+    ctx.line(indent, "end");
+    Ok(())
+}
+
+fn emit_to_bool(ctx: &mut EmitContext, indent: usize) {
+    ctx.line(indent, "i32.eqz");
+    ctx.line(indent, "i32.eqz");
+}
+
 fn emit_assign(args: &[Json], ctx: &mut EmitContext, indent: usize) -> Result<(), CompileError> {
     expect_arity("assign", args, 2)?;
     if let Some(target) = local_assign_target(&args[0])? {
@@ -477,6 +616,7 @@ fn emit_branch(
 }
 
 fn is_statement_term(term: &Json) -> bool {
+    let term = operational_term(term).unwrap_or(term);
     term.get("kind")
         .and_then(Json::as_str)
         .is_some_and(|kind| match kind {
@@ -504,21 +644,65 @@ fn is_statement_op(name: &str) -> bool {
 }
 
 fn is_expr_op(name: &str) -> bool {
-    matches!(
-        name,
-        "eq" | "lt"
-            | "le"
-            | "add"
-            | "sub"
-            | "mul"
-            | "neg"
-            | "and"
-            | "or"
-            | "not"
-            | "deref"
-            | "call"
-            | "if"
-    )
+    binary_wasm_opcode(name).is_some()
+        || matches!(
+            name,
+            "bop_comma"
+                | "bop_logand"
+                | "bop_logor"
+                | "neg"
+                | "uop_neg"
+                | "not"
+                | "uop_lognot"
+                | "uop_bitnot"
+                | "uop_plus"
+                | "cast"
+                | "deref"
+                | "uop_deref"
+                | "call"
+                | "if"
+        )
+}
+
+fn is_deref_op(name: &str) -> bool {
+    matches!(name, "deref" | "uop_deref")
+}
+
+fn is_boundary_op(name: &str) -> bool {
+    matches!(name, "asm-link-edge")
+}
+
+fn operational_term(term: &Json) -> Result<&Json, CompileError> {
+    if term.get("kind").and_then(Json::as_str) == Some("op")
+        && term.get("name").and_then(Json::as_str) == Some("source-unit")
+    {
+        let args = args_field(term)?;
+        expect_arity("source-unit", args, 2)?;
+        return Ok(&args[1]);
+    }
+    Ok(term)
+}
+
+fn binary_wasm_opcode(name: &str) -> Option<&'static str> {
+    match name {
+        "eq" | "bop_eq" => Some("i32.eq"),
+        "bop_ne" => Some("i32.ne"),
+        "lt" | "bop_lt" => Some("i32.lt_s"),
+        "le" | "bop_le" => Some("i32.le_s"),
+        "bop_gt" => Some("i32.gt_s"),
+        "bop_ge" => Some("i32.ge_s"),
+        "add" | "bop_add" => Some("i32.add"),
+        "sub" | "bop_sub" => Some("i32.sub"),
+        "mul" | "bop_mul" => Some("i32.mul"),
+        "bop_div" => Some("i32.div_s"),
+        "bop_mod" => Some("i32.rem_s"),
+        "bop_shl" => Some("i32.shl"),
+        "bop_shr" => Some("i32.shr_s"),
+        "and" | "bop_bitand" => Some("i32.and"),
+        "or" | "bop_bitor" => Some("i32.or"),
+        "bop_bitxor" => Some("i32.xor"),
+        _ => None,
+    }
 }
 
 fn stmt_always_returns(term: &Json) -> bool {
@@ -565,7 +749,10 @@ fn call_parts(term: &Json) -> Result<(String, &[Json]), CompileError> {
 
 fn store_address_term(target: &Json) -> Result<&Json, CompileError> {
     if target.get("kind").and_then(Json::as_str) == Some("op")
-        && target.get("name").and_then(Json::as_str) == Some("deref")
+        && target
+            .get("name")
+            .and_then(Json::as_str)
+            .is_some_and(is_deref_op)
     {
         let args = args_field(target)?;
         expect_arity("deref", args, 1)?;

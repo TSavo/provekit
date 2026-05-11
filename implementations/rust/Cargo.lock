@@ -1824,6 +1824,7 @@ dependencies = [
  "provekit-ir-types",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
 ]
 

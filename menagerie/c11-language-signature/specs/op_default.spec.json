@@ -27,6 +27,14 @@
     "arity": [
       "Stmt"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "switch default arm body"
   },

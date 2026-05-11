@@ -27,6 +27,14 @@
     "arity": [
       "Unit"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "null pointer constant expression"
   },

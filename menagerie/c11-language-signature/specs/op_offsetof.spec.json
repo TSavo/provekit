@@ -1,0 +1,59 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:offsetof",
+  "formals": [
+    "type",
+    "designator"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "offsetof",
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "type",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        },
+        {
+          "name": "designator",
+          "evaluation": "unevaluated",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
+    "result": "Int",
+    "wp": "C offsetof query; type and designator are unevaluated structural operands"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

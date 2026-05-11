@@ -1,0 +1,56 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:compound_assign_mod",
+  "formals": [
+    "lvalue",
+    "rvalue"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "LValue",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "compound_assign_mod",
+    "arity": [
+      "LValue",
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "result": "Expr",
+    "wp": "C compound assignment %= expression; the lvalue is evaluated once and the implied combiner is bop_mod",
+    "notes": "This op is not assign(lvalue, bop_mod(lvalue, rvalue)); C evaluates the lvalue once."
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

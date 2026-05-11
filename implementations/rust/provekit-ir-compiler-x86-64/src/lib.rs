@@ -144,6 +144,7 @@ impl Lowerer {
     }
 
     fn compile_stmt(&mut self, term: &Json) -> Result<(), CompileError> {
+        let term = operational_term(term)?;
         match term_kind(term)? {
             "unit" => Ok(()),
             "op" => match op_name(term)? {
@@ -247,6 +248,7 @@ impl Lowerer {
     }
 
     fn compile_expr(&mut self, term: &Json) -> Result<(), CompileError> {
+        let term = operational_term(term)?;
         match term_kind(term)? {
             "var" => {
                 let name = var_name(term)?;
@@ -260,39 +262,74 @@ impl Lowerer {
                 Ok(())
             }
             "op" => match op_name(term)? {
-                "add" => self.compile_binary_arith(term, "add"),
-                "sub" => self.compile_binary_arith(term, "sub"),
-                "mul" => self.compile_binary_arith(term, "imul"),
-                "neg" => {
+                "add" | "bop_add" => self.compile_binary_arith(term, "add"),
+                "sub" | "bop_sub" => self.compile_binary_arith(term, "sub"),
+                "mul" | "bop_mul" => self.compile_binary_arith(term, "imul"),
+                "bop_div" => self.compile_div_mod(term, false),
+                "bop_mod" => self.compile_div_mod(term, true),
+                "bop_shl" => self.compile_shift(term, "shl"),
+                "bop_shr" => self.compile_shift(term, "sar"),
+                "bop_bitand" => self.compile_binary_arith(term, "and"),
+                "bop_bitor" => self.compile_binary_arith(term, "or"),
+                "bop_bitxor" => self.compile_binary_arith(term, "xor"),
+                "neg" | "uop_neg" => {
                     let args = op_args(term)?;
-                    expect_arity("neg", args, 1)?;
+                    expect_arity(op_name(term)?, args, 1)?;
                     self.compile_expr(&args[0])?;
                     self.inst0("neg     eax");
                     Ok(())
                 }
-                "eq" => self.compile_compare(term, "sete"),
-                "lt" => self.compile_compare(term, "setl"),
-                "le" => self.compile_compare(term, "setle"),
+                "eq" | "bop_eq" => self.compile_compare(term, "sete"),
+                "bop_ne" => self.compile_compare(term, "setne"),
+                "lt" | "bop_lt" => self.compile_compare(term, "setl"),
+                "le" | "bop_le" => self.compile_compare(term, "setle"),
+                "bop_gt" => self.compile_compare(term, "setg"),
+                "bop_ge" => self.compile_compare(term, "setge"),
                 "and" => self.compile_logical_binary(term, "and"),
                 "or" => self.compile_logical_binary(term, "or"),
-                "not" => {
+                "bop_logand" => self.compile_short_circuit_and(term),
+                "bop_logor" => self.compile_short_circuit_or(term),
+                "not" | "uop_lognot" => {
                     let args = op_args(term)?;
-                    expect_arity("not", args, 1)?;
+                    expect_arity(op_name(term)?, args, 1)?;
                     self.compile_expr(&args[0])?;
                     self.inst("cmp", "eax, 0");
                     self.inst("sete", "al");
                     self.inst("movzx", "eax, al");
                     Ok(())
                 }
-                "deref" => {
+                "uop_bitnot" => {
                     let args = op_args(term)?;
-                    expect_arity("deref", args, 1)?;
+                    expect_arity(op_name(term)?, args, 1)?;
+                    self.compile_expr(&args[0])?;
+                    self.inst0("not     eax");
+                    Ok(())
+                }
+                "uop_plus" => {
+                    let args = op_args(term)?;
+                    expect_arity(op_name(term)?, args, 1)?;
+                    self.compile_expr(&args[0])
+                }
+                "deref" | "uop_deref" => {
+                    let args = op_args(term)?;
+                    expect_arity(op_name(term)?, args, 1)?;
                     self.compile_address(&args[0])?;
                     self.inst("mov", "eax, DWORD PTR [rax]");
                     Ok(())
                 }
                 "call" => self.compile_call(term),
                 "assign" => self.compile_assign(term),
+                "bop_comma" => {
+                    let args = op_args(term)?;
+                    expect_arity("bop_comma", args, 2)?;
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])
+                }
+                "cast" => {
+                    let args = op_args(term)?;
+                    expect_arity("cast", args, 2)?;
+                    self.compile_expr(&args[1])
+                }
                 name => Err(unsupported_operation(name)),
             },
             other => Err(malformed(format!("unsupported expression kind {other}"))),
@@ -308,6 +345,34 @@ impl Lowerer {
         self.inst("mov", "ecx, eax");
         self.pop_to("rax");
         self.inst(mnemonic, "eax, ecx");
+        Ok(())
+    }
+
+    fn compile_shift(&mut self, term: &Json, mnemonic: &str) -> Result<(), CompileError> {
+        let args = op_args(term)?;
+        expect_arity(op_name(term)?, args, 2)?;
+        self.compile_expr(&args[0])?;
+        self.push_rax();
+        self.compile_expr(&args[1])?;
+        self.inst("mov", "ecx, eax");
+        self.pop_to("rax");
+        self.inst(mnemonic, "eax, cl");
+        Ok(())
+    }
+
+    fn compile_div_mod(&mut self, term: &Json, want_remainder: bool) -> Result<(), CompileError> {
+        let args = op_args(term)?;
+        expect_arity(op_name(term)?, args, 2)?;
+        self.compile_expr(&args[0])?;
+        self.push_rax();
+        self.compile_expr(&args[1])?;
+        self.inst("mov", "ecx, eax");
+        self.pop_to("rax");
+        self.inst0("cdq");
+        self.inst("idiv", "ecx");
+        if want_remainder {
+            self.inst("mov", "eax, edx");
+        }
         Ok(())
     }
 
@@ -348,6 +413,44 @@ impl Lowerer {
         Ok(())
     }
 
+    fn compile_short_circuit_and(&mut self, term: &Json) -> Result<(), CompileError> {
+        let args = op_args(term)?;
+        expect_arity(op_name(term)?, args, 2)?;
+        let false_label = self.fresh_label("false");
+        let end_label = self.fresh_label("end");
+        self.compile_expr(&args[0])?;
+        self.inst("cmp", "eax, 0");
+        self.inst("je", &false_label);
+        self.compile_expr(&args[1])?;
+        self.inst("cmp", "eax, 0");
+        self.inst("je", &false_label);
+        self.inst("mov", "eax, 1");
+        self.inst("jmp", &end_label);
+        self.label(&false_label);
+        self.inst("xor", "eax, eax");
+        self.label(&end_label);
+        Ok(())
+    }
+
+    fn compile_short_circuit_or(&mut self, term: &Json) -> Result<(), CompileError> {
+        let args = op_args(term)?;
+        expect_arity(op_name(term)?, args, 2)?;
+        let true_label = self.fresh_label("true");
+        let end_label = self.fresh_label("end");
+        self.compile_expr(&args[0])?;
+        self.inst("cmp", "eax, 0");
+        self.inst("jne", &true_label);
+        self.compile_expr(&args[1])?;
+        self.inst("cmp", "eax, 0");
+        self.inst("jne", &true_label);
+        self.inst("xor", "eax, eax");
+        self.inst("jmp", &end_label);
+        self.label(&true_label);
+        self.inst("mov", "eax, 1");
+        self.label(&end_label);
+        Ok(())
+    }
+
     fn compile_assign(&mut self, term: &Json) -> Result<(), CompileError> {
         let args = op_args(term)?;
         expect_arity("assign", args, 2)?;
@@ -360,9 +463,10 @@ impl Lowerer {
             return Ok(());
         }
 
-        if term_kind(target)? == "op" && op_name(target)? == "deref" {
+        let target = operational_term(target)?;
+        if term_kind(target)? == "op" && is_deref_op(op_name(target)?) {
             let target_args = op_args(target)?;
-            expect_arity("deref", target_args, 1)?;
+            expect_arity(op_name(target)?, target_args, 1)?;
             self.compile_expr(value)?;
             self.push_rax();
             self.compile_address(&target_args[0])?;
@@ -378,6 +482,7 @@ impl Lowerer {
     }
 
     fn compile_address(&mut self, term: &Json) -> Result<(), CompileError> {
+        let term = operational_term(term)?;
         match term_kind(term)? {
             "var" => {
                 let index = self.var_index(var_name(term)?)?;
@@ -389,9 +494,9 @@ impl Lowerer {
                 self.inst("mov", &format!("rax, {value}"));
                 Ok(())
             }
-            "op" if op_name(term)? == "deref" => {
+            "op" if is_deref_op(op_name(term)?) => {
                 let args = op_args(term)?;
-                expect_arity("deref", args, 1)?;
+                expect_arity(op_name(term)?, args, 1)?;
                 self.compile_address(&args[0])
             }
             "op" => {
@@ -479,12 +584,13 @@ impl Lowerer {
 }
 
 fn root_term(ir: &Json) -> Result<&Json, CompileError> {
-    match ir.get("kind").and_then(Json::as_str) {
+    let term = match ir.get("kind").and_then(Json::as_str) {
         Some("c11-algebra-term") => ir
             .get("term")
             .ok_or_else(|| malformed("c11 algebra term envelope missing term")),
         _ => Ok(ir),
-    }
+    }?;
+    operational_term(term)
 }
 
 fn function_name(ir: &Json) -> String {
@@ -522,6 +628,7 @@ fn sanitize_symbol(name: &str) -> String {
 }
 
 fn collect_vars(term: &Json, vars: &mut Vec<String>) {
+    let term = operational_term(term).unwrap_or(term);
     match term.get("kind").and_then(Json::as_str) {
         Some("var") => {
             if let Some(name) = term.get("name").and_then(Json::as_str) {
@@ -537,6 +644,18 @@ fn collect_vars(term: &Json, vars: &mut Vec<String>) {
                 }
             }
         }
+        Some("op") if term.get("name").and_then(Json::as_str) == Some("cast") => {
+            if let Some(args) = term.get("args").and_then(Json::as_array) {
+                if let Some(value) = args.get(1) {
+                    collect_vars(value, vars);
+                }
+            }
+        }
+        Some("op")
+            if term
+                .get("name")
+                .and_then(Json::as_str)
+                .is_some_and(is_boundary_op) => {}
         Some("op") | Some("ctor") => {
             if let Some(args) = term.get("args").and_then(Json::as_array) {
                 for arg in args {
@@ -586,6 +705,7 @@ fn callee_name(term: &Json) -> Result<String, CompileError> {
 }
 
 fn stmt_falls_through(term: &Json) -> bool {
+    let term = operational_term(term).unwrap_or(term);
     match term.get("kind").and_then(Json::as_str) {
         Some("op") => match term.get("name").and_then(Json::as_str).unwrap_or_default() {
             "return" | "break" | "continue" => false,
@@ -641,6 +761,25 @@ fn is_unit(term: &Json) -> bool {
     term.get("kind").and_then(Json::as_str) == Some("unit")
         || (term.get("kind").and_then(Json::as_str) == Some("op")
             && term.get("name").and_then(Json::as_str) == Some("skip"))
+}
+
+fn is_deref_op(name: &str) -> bool {
+    matches!(name, "deref" | "uop_deref")
+}
+
+fn is_boundary_op(name: &str) -> bool {
+    matches!(name, "asm-link-edge")
+}
+
+fn operational_term(term: &Json) -> Result<&Json, CompileError> {
+    if term.get("kind").and_then(Json::as_str) == Some("op")
+        && term.get("name").and_then(Json::as_str) == Some("source-unit")
+    {
+        let args = op_args(term)?;
+        expect_arity("source-unit", args, 2)?;
+        return Ok(&args[1]);
+    }
+    Ok(term)
 }
 
 fn expect_arity(name: &str, args: &[Json], arity: usize) -> Result<(), CompileError> {

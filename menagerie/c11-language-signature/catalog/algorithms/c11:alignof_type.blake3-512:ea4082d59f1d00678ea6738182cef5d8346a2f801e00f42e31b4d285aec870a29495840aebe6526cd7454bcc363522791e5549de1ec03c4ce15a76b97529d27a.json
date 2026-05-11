@@ -1,0 +1,58 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:alignof_type",
+    "formals": [
+      "operand"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "alignof_type",
+      "arity": [
+        "Expr"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "operand",
+            "evaluation": "unevaluated",
+            "slot_sort": "type"
+          }
+        ]
+      },
+      "result": "Int",
+      "wp": "C alignment query over type operand"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:ea4082d59f1d00678ea6738182cef5d8346a2f801e00f42e31b4d285aec870a29495840aebe6526cd7454bcc363522791e5549de1ec03c4ce15a76b97529d27a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "XT6by2LAa+O54dcSVmjI046b+1bdpCkLDouUf6e8PhkAfndk14YkhLBPDILvloyytwJpTLH4Htk49muaC2rmAQ=="
+  }
+}
