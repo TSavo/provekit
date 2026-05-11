@@ -494,6 +494,9 @@ const Lifter = struct {
 
     fn emitString(self: *Lifter, node: Node.Index) !provekit.Term {
         const raw = self.tree.getNodeSource(node);
+        if (std.mem.indexOfScalar(u8, raw, '\\') != null) {
+            return self.refuse(node, "unsupported-string-escape", "string literal with escape sequences not yet decoded on lift");
+        }
         if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return provekit.Str(raw[1 .. raw.len - 1]);
         return provekit.Str(raw);
     }
@@ -837,6 +840,20 @@ fn emitTermAsStmt(alloc: std.mem.Allocator, out: *std.ArrayList(u8), term: prove
                 try emitTermAsStmt(alloc, out, ctor.args[1], indent + 1);
                 try writeIndent(alloc, out, indent);
                 try out.appendSlice(alloc, "}\n");
+            } else if (std.mem.eql(u8, ctor.name, "zig:for")) {
+                try writeIndent(alloc, out, indent);
+                try out.appendSlice(alloc, "for (");
+                try emitTermAsExpr(alloc, out, ctor.args[0]);
+                try out.appendSlice(alloc, ") |_| {\n");
+                try emitTermAsStmt(alloc, out, ctor.args[1], indent + 1);
+                try writeIndent(alloc, out, indent);
+                try out.appendSlice(alloc, "}\n");
+            } else if (std.mem.eql(u8, ctor.name, "zig:break")) {
+                try writeIndent(alloc, out, indent);
+                try out.appendSlice(alloc, "break;\n");
+            } else if (std.mem.eql(u8, ctor.name, "zig:continue")) {
+                try writeIndent(alloc, out, indent);
+                try out.appendSlice(alloc, "continue;\n");
             } else if (!std.mem.eql(u8, ctor.name, "zig:skip")) {
                 try writeIndent(alloc, out, indent);
                 try emitTermAsExpr(alloc, out, term);
@@ -1076,6 +1093,27 @@ test "refuses unhandled switch without emitting unknown operation" {
     try std.testing.expectEqualStrings("switch.zig.f", out.refusals[0].function.?);
 }
 
+test "refuses string literal escape sequences instead of lifting literal backslashes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn label() []const u8 {
+        \\    return "a\nb";
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "strings.zig");
+    try std.testing.expectEqual(@as(usize, 0), out.declarations.len);
+    try std.testing.expectEqual(@as(usize, 1), out.refusals.len);
+    try std.testing.expectEqualStrings("unsupported-string-escape", out.refusals[0].kind);
+    try std.testing.expectEqualStrings("strings.zig.label", out.refusals[0].function.?);
+    try std.testing.expectEqual(@as(usize, 2), out.refusals[0].line);
+    try std.testing.expectEqualStrings("string literal with escape sequences not yet decoded on lift", out.refusals[0].reason);
+}
+
 test "sorts canonical effects and hashes opaque loop term" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1125,4 +1163,37 @@ test "round trip compile then lift preserves canonical body term bytes" {
     const first_bytes = try canonicalTermBytes(alloc, first.declarations[1].bodyTerm());
     const second_bytes = try canonicalTermBytes(alloc, second.declarations[1].bodyTerm());
     try std.testing.expectEqualStrings(first_bytes, second_bytes);
+}
+
+test "round trip compile then lift preserves canonical loop body term bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn scan(items: []const i32, flag: bool) i32 {
+        \\    for (items) |_| {
+        \\        if (flag) {
+        \\            break;
+        \\        }
+        \\        continue;
+        \\    }
+        \\    return 0;
+        \\}
+        \\
+    ;
+
+    const first = try liftSource(alloc, src, "loops.zig");
+    try std.testing.expectEqual(@as(usize, 0), first.refusals.len);
+    const compiled = try compileContract(alloc, first.declarations[1]);
+    const second = try liftSource(alloc, compiled, "loops.zig");
+    try std.testing.expectEqual(@as(usize, 0), second.refusals.len);
+
+    const first_bytes = try canonicalTermBytes(alloc, first.declarations[1].bodyTerm());
+    const second_bytes = try canonicalTermBytes(alloc, second.declarations[1].bodyTerm());
+    try std.testing.expectEqualStrings(first_bytes, second_bytes);
+
+    const first_hash = try provekit.jcsHash(alloc, first_bytes);
+    const second_hash = try provekit.jcsHash(alloc, second_bytes);
+    try std.testing.expectEqualStrings(first_hash, second_hash);
 }
