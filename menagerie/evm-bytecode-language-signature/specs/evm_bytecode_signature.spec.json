@@ -42,6 +42,21 @@
         "denotation": "contract-address-scoped persistent key-value storage"
       }
     ],
+    "operations": [
+      "op_add.spec.json",
+      "op_mul.spec.json",
+      "op_sub.spec.json",
+      "op_div.spec.json",
+      "op_mod.spec.json",
+      "op_lt.spec.json",
+      "op_gt.spec.json",
+      "op_eq.spec.json",
+      "op_and.spec.json",
+      "op_or.spec.json",
+      "op_xor.spec.json",
+      "op_iszero.spec.json",
+      "op_not.spec.json"
+    ],
     "arityShapePolicy": "Instruction streams are positional because byte offsets carry program order. Stack operators use Named slots so operand-stack pop order is represented directly; ADD is Named, not Set, because the EVM stack transition consumes operands in a fixed order even when a mathematical operator is commutative. PUSH immediates are Literal slots.",
     "primitiveOperations": [
       {

@@ -92,6 +92,7 @@ enum Step {
     Continue,
     Stop(IrTerm),
     EmptyStackAtStop,
+    UnsupportedReturnShape,
 }
 
 pub fn run_cli() {
@@ -209,7 +210,7 @@ fn initialize(id: Json) -> Json {
         "id": id,
         "result": {
             "name": "provekit-lift-evm-bytecode",
-            "version": "0.1.0",
+            "version": "0.1.0-draft",
             "protocol_version": "provekit-lift/1",
             "capabilities": {
                 "authoring_surfaces": [SURFACE, ASSEMBLY_SURFACE, HEX_SURFACE],
@@ -704,11 +705,21 @@ fn lift_instructions(function: &str, unit: &EvmUnit) -> Result<Json, Refusal> {
             }
             Ok(Step::EmptyStackAtStop) => {
                 return Err(Refusal {
-                    kind: "empty-stack-at-stop".to_string(),
+                    kind: "stop-with-no-return-value".to_string(),
                     function: Some(function.to_string()),
                     line: Some(instruction.line),
                     instruction: Some(instruction.text.clone()),
-                    reason: "STOP terminated execution but no stack value was available to bind as return_value".to_string(),
+                    reason: "program terminates via STOP with an empty stack; no return value"
+                        .to_string(),
+                });
+            }
+            Ok(Step::UnsupportedReturnShape) => {
+                return Err(Refusal {
+                    kind: "unsupported-return-shape".to_string(),
+                    function: Some(function.to_string()),
+                    line: Some(instruction.line),
+                    instruction: Some(instruction.text.clone()),
+                    reason: "RETURN yields a memory slice; a bytes-return sort + memory-read effect are not yet modeled in this lifter slice".to_string(),
                 });
             }
             Err(reason) => {
@@ -753,7 +764,7 @@ fn lift_instructions(function: &str, unit: &EvmUnit) -> Result<Json, Refusal> {
         "bodyCid": null,
         "effects": [],
         "locus": {
-            "file": unit.path,
+            "file": contract_locus_file(&unit.path),
             "line": 1,
             "col": 1
         },
@@ -814,10 +825,7 @@ fn apply_instruction(state: &mut SymbolicState, instruction: &Instruction) -> Re
             Ok(Step::Continue)
         }
         Opcode::JumpDest => Ok(Step::Continue),
-        Opcode::Return => Err(
-            "RETURN reads EVM memory and yields a byte slice; memory return data is not modeled in this lifter slice"
-                .to_string(),
-        ),
+        Opcode::Return => Ok(Step::UnsupportedReturnShape),
         Opcode::Unsupported { reason, .. } => Err(reason.clone()),
     }
 }
@@ -875,6 +883,18 @@ fn function_name_from_path(path: &str) -> String {
         name = "evm_program".to_string();
     }
     name
+}
+
+fn contract_locus_file(path: &str) -> String {
+    match source_extension(path).as_deref() {
+        Some("evmasm" | "evmhex") => {
+            let mut path = PathBuf::from(path);
+            path.set_extension("evm");
+            path.to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/")
+        }
+        _ => path.to_string(),
+    }
 }
 
 fn sanitize_name_part(part: &str) -> String {

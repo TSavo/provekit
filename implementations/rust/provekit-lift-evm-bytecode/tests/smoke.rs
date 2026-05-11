@@ -48,6 +48,18 @@ fn assembly_extension_prevents_hex_misclassification() {
 }
 
 #[test]
+fn extensionless_hex_heuristic_requires_0x_prefix() {
+    let unit = parse_evm_text("all_hex_letters", "DEAD\n")
+        .expect("extensionless source without 0x parses as assembly");
+
+    assert_eq!(unit.instructions.len(), 1);
+    match &unit.instructions[0].opcode {
+        Opcode::Unsupported { mnemonic, .. } => assert_eq!(mnemonic, "DEAD"),
+        other => panic!("expected assembly mnemonic refusal, got {other:?}"),
+    }
+}
+
+#[test]
 fn lifts_stack_arithmetic_fixture_to_contract() {
     let source = include_str!("fixtures/add.evm");
     let result = lift_source_text("add.evm", source).expect("EVM fixture lifts");
@@ -71,15 +83,40 @@ fn lifts_stack_arithmetic_fixture_to_contract() {
 }
 
 #[test]
+fn lifts_equivalent_assembly_and_hex_to_identical_contracts() {
+    let assembly = lift_source_text(
+        "tests/fixtures/trivial.evmasm",
+        include_str!("fixtures/trivial.evmasm"),
+    )
+    .expect("assembly EVM lifts");
+    let hex = lift_source_text(
+        "tests/fixtures/trivial.evmhex",
+        include_str!("fixtures/trivial.evmhex"),
+    )
+    .expect("hex EVM lifts");
+
+    assert!(assembly.refusals.is_empty());
+    assert!(hex.refusals.is_empty());
+    assert_eq!(
+        serde_json::to_vec(&assembly.declarations[0]).unwrap(),
+        serde_json::to_vec(&hex.declarations[0]).unwrap()
+    );
+}
+
+#[test]
 fn refuses_empty_stack_stop_without_unterminated_lie() {
     let result = lift_source_text("empty_stop.evm", "STOP\n").expect("STOP parses");
 
     assert!(result.declarations.is_empty());
     assert_eq!(result.refusals.len(), 1);
     let refusal = &result.refusals[0];
-    assert_eq!(refusal.kind, "empty-stack-at-stop");
+    assert_eq!(refusal.kind, "stop-with-no-return-value");
     assert_eq!(refusal.instruction.as_deref(), Some("STOP"));
-    assert!(refusal.reason.contains("STOP"));
+    assert_eq!(
+        refusal.reason,
+        "program terminates via STOP with an empty stack; no return value"
+    );
+    assert!(!refusal.reason.contains("stream ended without STOP"));
 }
 
 #[test]
@@ -90,14 +127,16 @@ fn refuses_return_until_memory_return_data_is_modeled() {
     assert!(result.declarations.is_empty());
     assert_eq!(result.refusals.len(), 1);
     let refusal = &result.refusals[0];
-    assert_eq!(refusal.kind, "unsupported-opcode");
+    assert_eq!(refusal.kind, "unsupported-return-shape");
     assert_eq!(refusal.instruction.as_deref(), Some("RETURN"));
-    assert!(refusal.reason.contains("memory"));
-    assert!(refusal.reason.contains("byte slice"));
+    assert_eq!(
+        refusal.reason,
+        "RETURN yields a memory slice; a bytes-return sort + memory-read effect are not yet modeled in this lifter slice"
+    );
 }
 
 #[test]
-fn signature_declares_all_emitted_stack_ops() {
+fn signature_declares_all_emitted_stack_ops_with_arity_shapes() {
     let spec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "../../../menagerie/evm-bytecode-language-signature/specs/evm_bytecode_signature.spec.json",
     );
@@ -114,12 +153,51 @@ fn signature_declares_all_emitted_stack_ops() {
         .filter_map(|operation| operation["name"].as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    for emitted in [
+    let emitted_ops = [
         "add", "mul", "sub", "div", "mod", "lt", "gt", "eq", "and", "or", "xor", "iszero", "not",
-    ] {
+    ];
+    for emitted in emitted_ops {
         assert!(
             names.contains(emitted),
             "signature must declare emitted op {emitted}"
+        );
+    }
+
+    for operation in operations {
+        assert!(
+            operation.get("arity_shape").is_some(),
+            "signature operation {} must declare arity_shape",
+            operation["name"]
+        );
+    }
+
+    let op_specs = spec["post"]["operations"]
+        .as_array()
+        .expect("operations is an array");
+    let op_spec_names = op_specs
+        .iter()
+        .filter_map(Json::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    for emitted in emitted_ops {
+        let spec_file = format!("op_{emitted}.spec.json");
+        assert!(
+            op_spec_names.contains(spec_file.as_str()),
+            "signature must register emitted op spec {spec_file}"
+        );
+
+        let op_spec_path = spec_path
+            .parent()
+            .expect("signature spec has parent directory")
+            .join(&spec_file);
+        let op_spec: Json = serde_json::from_str(
+            &std::fs::read_to_string(&op_spec_path)
+                .unwrap_or_else(|err| panic!("read {}: {err}", op_spec_path.display())),
+        )
+        .unwrap_or_else(|err| panic!("parse {}: {err}", op_spec_path.display()));
+        assert_eq!(op_spec["fn_name"], format!("evm:{emitted}"));
+        assert!(
+            op_spec["post"].get("arity_shape").is_some(),
+            "{spec_file} must declare post.arity_shape"
         );
     }
 }

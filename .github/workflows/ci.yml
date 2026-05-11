@@ -5,7 +5,7 @@
 # catalog-pinned protocol CIDs today" is committed to the repo, not asserted.
 #
 # Languages exercised:
-#   Rust 1.x stable, Go 1.22, .NET 10, Node 22 + pnpm 10,
+#   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
 #   Python 3.12, Java 21 (Temurin) + Maven, clang/clang++ via apt,
 #   C, C++, Zig, PHP, Ruby, and Swift in the macOS job.
 #
@@ -90,10 +90,14 @@ jobs:
             implementations/go/provekit-self-contracts/go.sum
             implementations/go/provekit-lift-go-tests/go.sum
 
-      - name: Set up .NET 10
+      - name: Set up .NET 10 (preview)
         uses: actions/setup-dotnet@v4
         with:
+          # net10.0 is pre-stable; setup-dotnet@v4 needs an explicit quality
+          # tag plus the major version. The 'preview' channel resolves to
+          # the latest 10.0.x SDK from the official Microsoft feed.
           dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -526,11 +530,12 @@ jobs:
             implementations/go/provekit-self-contracts/go.sum
             implementations/go/provekit-lift-go-tests/go.sum
 
-      - name: Set up .NET 10
+      - name: Set up .NET 10 (preview)
         if: matrix.kit == 'csharp' || matrix.kit == 'clr-bytecode'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
 
       - name: Set up pnpm
         if: matrix.kit == 'ts'
