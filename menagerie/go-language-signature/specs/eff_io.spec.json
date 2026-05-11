@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:effect:io",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "effect:io",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Unit",
+    "wp": "Perform I/O"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#effects"
+}

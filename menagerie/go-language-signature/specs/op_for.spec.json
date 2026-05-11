@@ -1,0 +1,84 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:for",
+  "formals": [
+    "init",
+    "cond",
+    "post",
+    "body"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Term",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "go:for",
+    "arity": [
+      "Term",
+      "Term",
+      "Term",
+      "Term"
+    ],
+    "result": "Term",
+    "wp": "Go for loop; opaque_loop effect required until invariant memento exists",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "init",
+          "slot_sort": "Term"
+        },
+        {
+          "name": "cond",
+          "slot_sort": "Term"
+        },
+        {
+          "name": "post",
+          "slot_sort": "Term"
+        },
+        {
+          "name": "body",
+          "slot_sort": "Term"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "OpaqueLoop"
+      }
+    ]
+  },
+  "locus": "menagerie/go-language-signature/README.md#operations"
+}

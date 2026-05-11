@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "go:Term",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Term",
+    "description": "Go operational algebra term"
+  }
+}

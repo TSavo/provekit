@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:effect:reads",
+  "formals": [
+    "target"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Identifier",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "effect:reads",
+    "arity": [
+      "Identifier"
+    ],
+    "result": "Unit",
+    "wp": "Read a named Go state cell"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#effects"
+}

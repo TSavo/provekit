@@ -1,0 +1,37 @@
+{
+  "kind": "equation",
+  "fn_name": "go:seq-skip-left",
+  "formals": [
+    "a"
+  ],
+  "formal_sorts": [
+    "sort_term.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "go:seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "go:skip",
+          "args": []
+        },
+        {
+          "kind": "var",
+          "name": "a"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "a"
+    }
+  }
+}

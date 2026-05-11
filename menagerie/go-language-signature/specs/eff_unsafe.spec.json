@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:effect:unsafe",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "effect:unsafe",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Unit",
+    "wp": "Use the unsafe package"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#effects"
+}
