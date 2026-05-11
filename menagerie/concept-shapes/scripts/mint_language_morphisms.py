@@ -3,11 +3,21 @@
 
 The generator builds the concept hub from existing operation contracts, then
 attempts to mint a refinement morphism from each real lifter-emitted op to the
-corresponding concept hub op. A morphism is minted only when the canonicalizer
-image of the transformed source contract lands exactly on the concept shape CID
-(canonicalizer-alpha-equivalence-plus-representation-map discharge obligation).
-Ops that do not discharge are recorded in transport-gaps.md with the structural
-reason for the mismatch.
+corresponding concept hub op.  Two discharge strategies are attempted in order:
+
+1. canonicalizer-alpha-equivalence-plus-representation-map: the canonicalizer
+   image of the transformed source contract lands exactly on the concept shape CID.
+
+2. Structural ⊑ discharge (sound conservative widening, no SMT required):
+   a. wp-text abstraction: if specs differ only in post.wp (documentation prose),
+      the morphism is discharged.  wp carries no semantic weight in the obligation.
+   b. pre-weakening: if lang_pre = true (trivially weak) and specs differ only in
+      {pre, post.wp}, the morphism is discharged.  Soundness: concept_pre → true
+      is a tautology, so in every calling context where concept:op is valid, the
+      lang:op (which accepts all inputs) is also valid.
+
+Ops that do not discharge under either strategy are recorded in transport-gaps.md
+with the structural reason for the mismatch.
 """
 import copy
 import json
@@ -340,6 +350,77 @@ def diff_reason(after, concept):
     return "canonical payload mismatch"
 
 
+def _is_true_pre(pre):
+    """Return True iff pre is the trivially-true formula {kind:atomic, name:true, args:[]}."""
+    return (
+        isinstance(pre, dict)
+        and pre.get("kind") == "atomic"
+        and pre.get("name") == "true"
+        and pre.get("args") == []
+    )
+
+
+def try_structural_subsumption(after_spec, concept_spec):
+    """Sound structural ⊑ discharge when byte-equality fails on documentation fields only.
+
+    Two relaxations, both sound under the morphism contract:
+
+    1. wp-text abstraction: the wp field is human-readable documentation; it carries
+       no semantic weight in the discharge obligation.  If after_spec matches
+       concept_spec in every field except post.wp, the morphism is discharged.
+       Discharge method: "structural-wp-abstraction".
+
+    2. pre-weakening: if lang_pre = true (the trivially-weak precondition) then
+       `concept_pre → lang_pre` holds for any concept_pre, because anything implies
+       true.  In every context where concept:op is invoked the concept precondition
+       holds, so lang:op (which works for all inputs) can substitute soundly.
+       Combined with (1) for wp, if after_spec matches concept_spec modulo {pre, wp},
+       and after_spec.pre == true, the morphism is discharged.
+       Discharge method: "structural-pre-weakening-and-wp-abstraction".
+
+    Returns (method_string, pre_relaxed, wp_abstracted) on success, or None on failure.
+    Sound: false-negatives (remaining gaps) are acceptable; false-positives are not
+    emitted because every structural claim has a verified implication.
+    """
+    import copy as _copy
+
+    after_pre = after_spec.get("pre")
+    concept_pre = concept_spec.get("pre")
+    after_wp = after_spec.get("post", {}).get("wp")
+    concept_wp = concept_spec.get("post", {}).get("wp")
+
+    pre_matches = after_pre == concept_pre
+    wp_matches = after_wp == concept_wp
+
+    if pre_matches and wp_matches:
+        # Byte-equality should have caught this already; shouldn't reach here.
+        return None
+
+    # Try wp-only relaxation first (no pre change needed).
+    if pre_matches and not wp_matches:
+        relaxed = _copy.deepcopy(after_spec)
+        if "post" in relaxed and "wp" in relaxed["post"]:
+            relaxed["post"]["wp"] = concept_wp
+        elif "post" in relaxed:
+            relaxed["post"]["wp"] = concept_wp
+        if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
+            return ("structural-wp-abstraction", False, True)
+        return None
+
+    # Try pre-weakening (lang pre must be true; also relax wp).
+    if not pre_matches and _is_true_pre(after_pre):
+        relaxed = _copy.deepcopy(after_spec)
+        relaxed["pre"] = concept_pre
+        if "post" in relaxed:
+            relaxed["post"]["wp"] = concept_wp
+        if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
+            return ("structural-pre-weakening-and-wp-abstraction", True, True)
+        return None
+
+    # Non-true lang pre that doesn't match concept pre: unsound to relax without SMT.
+    return None
+
+
 def morphism_spec(source_name, source_cid, concept_fn, shape_cid, renaming, operator_map):
     return {
         "kind": "algorithm",
@@ -484,8 +565,15 @@ def main():
                 after_spec, operator_map = transformed_source_spec(op_def, source_spec, language)
                 after_cid = canonical_cid_spec(after_spec)
                 if after_cid != shape_cid:
-                    gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": diff_reason(after_spec, concept_spec)})
-                    continue
+                    subsumption = try_structural_subsumption(after_spec, concept_spec)
+                    if subsumption is None:
+                        gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": diff_reason(after_spec, concept_spec)})
+                        continue
+                    discharge_method, pre_relaxed, wp_abstracted = subsumption
+                else:
+                    discharge_method = "canonicalizer-alpha-equivalence-plus-representation-map"
+                    pre_relaxed = False
+                    wp_abstracted = False
                 after_name = f"{sanitize(language['id'])}_{sanitize(source_name.split(':', 1)[-1])}_to_{sanitize(op_def['slug'])}_after_substitution.json"
                 write_json(DISCHARGE_DIR / after_name, after_spec)
                 m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map)
@@ -504,9 +592,15 @@ def main():
                     "after_substitution_cid": after_cid,
                     "shape_cid": shape_cid,
                     "discharged": True,
-                    "method": "canonicalizer-alpha-equivalence-plus-representation-map",
+                    "method": discharge_method,
                     "signature": None,
                 }
+                # Only annotate structural relaxation fields when actually used.
+                # Omitting them from byte-equality receipts preserves backward-compatible CIDs.
+                if pre_relaxed:
+                    receipt["pre_relaxed"] = True
+                if wp_abstracted:
+                    receipt["wp_abstracted"] = True
                 receipt_cid, receipt_path = discharge.store_receipt(stem, receipt)
                 rows.append({"kind": "receipt", "name": stem, "cid": receipt_cid, "path": receipt_path})
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})
