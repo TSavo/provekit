@@ -181,6 +181,41 @@ export function compileTypeScriptSourceIr(
     if (decl.fnName.endsWith(":<source-unit>")) continue;
     statements.push(compileFunctionContract(decl));
   }
+  return printStatements(statements);
+}
+
+export interface TypeScriptSourceBodyCompileOptions {
+  functionName?: string;
+  formals?: readonly string[];
+  formalSorts?: readonly Sort[];
+  returnSort?: Sort;
+}
+
+export function compileTypeScriptSourceBodyIr(
+  bodyTerm: IrTerm,
+  options: TypeScriptSourceBodyCompileOptions = {},
+): string {
+  const formals = [...(options.formals ?? freeVariableNames(bodyTerm))];
+  const formalSorts = formals.map((_, index) => options.formalSorts?.[index] ?? primitiveSort("Any"));
+  const functionName = options.functionName ?? "lifted";
+  const contract: FunctionContractMemento = {
+    schemaVersion: "1",
+    kind: "function-contract",
+    fnName: `roundtrip.ts:${functionName}`,
+    formals,
+    formalSorts,
+    returnSort: options.returnSort ?? primitiveSort("Any"),
+    pre: TRUE_FORMULA,
+    post: eqFormula(RETURN_VALUE, bodyTerm),
+    bodyCid: null,
+    effects: [],
+    locus: { file: "roundtrip.ts", line: 1, col: 1 },
+    autoMintedMementos: [],
+  };
+  return printStatements([compileFunctionContract(contract)]);
+}
+
+function printStatements(statements: ts.Statement[]): string {
   const sourceFile = ts.factory.updateSourceFile(
     ts.createSourceFile("roundtrip.ts", "", ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS),
     statements,
@@ -284,8 +319,9 @@ function liftFunctionLike(
   const qualifiedName = [...prefix, shortName].join(".");
   const fnName = `${fileContext.modulePath}:${qualifiedName}`;
 
-  if (hasUnsupportedFunctionShape(node)) {
-    addRefusal(fileContext, node, fnName, "async, generator, decorated, generic, rest, default, or destructured functions are not handled");
+  const unsupportedShapeReason = unsupportedFunctionShapeReason(node);
+  if (unsupportedShapeReason) {
+    addRefusal(fileContext, node, fnName, unsupportedShapeReason);
     return;
   }
 
@@ -655,15 +691,32 @@ function sourceUnitContract(sourceText: string, context: FileLiftContext, lifted
   };
 }
 
-function hasUnsupportedFunctionShape(node: ts.FunctionDeclaration | ts.MethodDeclaration): boolean {
+function unsupportedFunctionShapeReason(node: ts.FunctionDeclaration | ts.MethodDeclaration): string | null {
   const decorators = ts.canHaveDecorators(node) ? ts.getDecorators(node) : undefined;
-  return Boolean(
-    node.asteriskToken ||
-    node.typeParameters?.length ||
-    decorators?.length ||
-    node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ||
-    node.parameters.some((p) => p.dotDotDotToken || p.initializer || !ts.isIdentifier(p.name)),
-  );
+  if (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) {
+    return "async function not supported";
+  }
+  if (node.asteriskToken) {
+    return "generator function not supported";
+  }
+  if (decorators?.length) {
+    return "decorated function not supported";
+  }
+  if (node.typeParameters?.length) {
+    return "generic type parameters not supported";
+  }
+  for (const param of node.parameters) {
+    if (param.dotDotDotToken) {
+      return "rest parameters not supported";
+    }
+    if (param.initializer) {
+      return "default parameters not supported";
+    }
+    if (!ts.isIdentifier(param.name)) {
+      return "destructured parameters not supported";
+    }
+  }
+  return null;
 }
 
 function parameterName(param: ts.ParameterDeclaration): string {
@@ -772,6 +825,46 @@ function isCtor(term: IrTerm | undefined, name: string): boolean {
 function termArgs(term: IrTerm): IrTerm[] {
   if (term.kind !== "ctor") throw new Error(`expected ctor term, got ${term.kind}`);
   return term.args;
+}
+
+function freeVariableNames(term: IrTerm): string[] {
+  const names = new Set<string>();
+  const visit = (current: IrTerm, bound: Set<string>): void => {
+    if (current.kind === "var") {
+      if (current.name !== RETURN_VALUE.name && !bound.has(current.name)) names.add(current.name);
+      return;
+    }
+    if (current.kind === "const") return;
+    if (current.kind === "lambda") {
+      visit(current.body, new Set([...bound, current.paramName]));
+      return;
+    }
+    if (current.kind === "let") {
+      const letBound = new Set(bound);
+      for (const binding of current.bindings) {
+        visit(binding.boundTerm, letBound);
+        letBound.add(binding.name);
+      }
+      visit(current.body, letBound);
+      return;
+    }
+    if (current.name === "ts:seq") {
+      const seqBound = new Set(bound);
+      for (const arg of current.args) {
+        if (isCtor(arg, "ts:decl")) {
+          visit(termArgs(arg)[1] ?? unitConst(), seqBound);
+          const declared = stringValue(termArgs(arg)[0], "");
+          if (declared) seqBound.add(declared);
+        } else {
+          visit(arg, seqBound);
+        }
+      }
+      return;
+    }
+    for (const arg of current.args) visit(arg, bound);
+  };
+  visit(term, new Set());
+  return [...names];
 }
 
 function seqTerm(args: IrTerm[]): IrTerm {

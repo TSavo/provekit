@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { canonicalJsonString } from "../../claimEnvelope/canonicalize.js";
+import { canonicalEncode, canonicalJsonString } from "../../claimEnvelope/canonicalize.js";
+import { computeCid } from "../../canonicalizer/hash.js";
 import {
+  compileTypeScriptSourceBodyIr,
   compileTypeScriptSourceIr,
   functionContractCid,
   liftTypeScriptSourcePaths,
@@ -17,6 +19,10 @@ function tempDir(prefix = "provekit-ts-source-"): string {
 
 function rhs(contract: Record<string, any>): any {
   return contract.post.args[1];
+}
+
+function canonicalCid(value: unknown): string {
+  return computeCid(canonicalEncode(value));
 }
 
 describe("typescript-source lifter", () => {
@@ -115,16 +121,45 @@ describe("typescript-source lifter", () => {
     expect(canonicalJsonString(result)).not.toContain("ts:skip");
   });
 
-  it("round-trips lift(compile(lift(src))) with byte-identical canonical IR", () => {
-    const first = liftTypeScriptSourceText(
-      "function add(x: number, y: number): number { return x + y; }\n",
-      "src/roundtrip.ts",
+  it("emits distinct refusal reasons for unsupported function shapes", () => {
+    const result = liftTypeScriptSourceText(
+      `
+      declare function dec(...args: any[]): any;
+      async function asyncFn(x: number): Promise<number> { return x; }
+      function* generatorFn(x: number): Iterable<number> { yield x; }
+      function genericFn<T>(x: number): number { return x; }
+      function restFn(...xs: number[]): number { return 1; }
+      function defaultFn(x: number = 1): number { return x; }
+      function destructuredFn({ x }: { x: number }): number { return x; }
+      class C {
+        @dec
+        decoratedMethod(x: number): number { return x; }
+      }
+      `,
+      "src/refuse-shapes.ts",
     );
+
+    expect(result.declarations).toEqual([]);
+    expect(new Map(result.refusals.map((refusal) => [refusal.function, refusal.reason]))).toEqual(new Map([
+      ["src/refuse-shapes.ts:asyncFn", "async function not supported"],
+      ["src/refuse-shapes.ts:generatorFn", "generator function not supported"],
+      ["src/refuse-shapes.ts:genericFn", "generic type parameters not supported"],
+      ["src/refuse-shapes.ts:restFn", "rest parameters not supported"],
+      ["src/refuse-shapes.ts:defaultFn", "default parameters not supported"],
+      ["src/refuse-shapes.ts:destructuredFn", "destructured parameters not supported"],
+      ["src/refuse-shapes.ts:C.decoratedMethod", "decorated function not supported"],
+    ]));
+  });
+
+  it("preserves source-unit raw bytes for lift(compile(lift(src))) round-trips", () => {
+    const source = "function add(x: number, y: number): number { return x + y; }\n";
+    const first = liftTypeScriptSourceText(source, "src/roundtrip.ts");
     expect(first.refusals).toEqual([]);
 
     const compiled = compileTypeScriptSourceIr(first.declarations);
     const second = liftTypeScriptSourceText(compiled, "src/roundtrip.ts");
 
+    expect(compiled).toBe(source);
     expect(second.refusals).toEqual([]);
     expect(canonicalJsonString(second.declarations)).toBe(
       canonicalJsonString(first.declarations),
@@ -132,6 +167,30 @@ describe("typescript-source lifter", () => {
     expect(second.declarations.map(functionContractCid)).toEqual(
       first.declarations.map(functionContractCid),
     );
+  });
+
+  it("round-trips a bare body term through the AST printer with byte-identical canonical IR", () => {
+    const first = liftTypeScriptSourceText(
+      "function f(x: number, y: number): number { return x + y; }\n",
+      "src/body-roundtrip.ts",
+    );
+    expect(first.refusals).toEqual([]);
+
+    const firstContract = first.declarations.find((decl) => decl.fnName === "src/body-roundtrip.ts:f")!;
+    const originalBodyTerm = rhs(firstContract);
+    const compiled = compileTypeScriptSourceBodyIr(originalBodyTerm, {
+      functionName: "f",
+      formals: firstContract.formals,
+      formalSorts: firstContract.formalSorts,
+      returnSort: firstContract.returnSort,
+    });
+    const second = liftTypeScriptSourceText(compiled, "src/body-roundtrip.ts");
+
+    expect(second.refusals).toEqual([]);
+    const secondContract = second.declarations.find((decl) => decl.fnName === "src/body-roundtrip.ts:f")!;
+    const reliftedBodyTerm = rhs(secondContract);
+    expect([...canonicalEncode(reliftedBodyTerm)]).toEqual([...canonicalEncode(originalBodyTerm)]);
+    expect(canonicalCid(reliftedBodyTerm)).toBe(canonicalCid(originalBodyTerm));
   });
 
   it("rejects source paths that escape the workspace root", () => {
