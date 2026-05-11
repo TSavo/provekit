@@ -595,6 +595,10 @@ bug-zoo:
 python-language-signature:
 	python3 menagerie/python-language-signature/generate_assets.py --check
 
+.PHONY: menagerie-zig-language-signature
+menagerie-zig-language-signature:
+	python3 menagerie/zig-language-signature/generate_assets.py
+
 .PHONY: test-go
 test-go:
 	cd implementations/go/provekit-ir-symbolic && go test ./...
@@ -653,7 +657,9 @@ test-zig:
 	@echo "test-zig: native substrate (jcs + cbor + ed25519 + envelopes) verified"
 	cd implementations/zig/provekit-lift-zig && zig build test
 	cd implementations/zig/provekit-lift-zig && zig build
-	@echo "test-zig: lift-zig binary build verified"
+	cd implementations/zig/provekit-lift-zig-source && zig build test
+	cd implementations/zig/provekit-lift-zig-source && zig build
+	@echo "test-zig: lift-zig and lift-zig-source binary builds verified"
 	cd implementations/zig/provekit-lsp-zig && zig build test
 	cd implementations/zig/provekit-lsp-zig && zig build
 	@echo "test-zig: LSP lifecycle integration test"
@@ -664,6 +670,7 @@ build-zig:
 	cd implementations/zig/provekit-ir && zig build
 	cd implementations/zig/provekit-self-contracts && zig build
 	cd implementations/zig/provekit-lift-zig && zig build
+	cd implementations/zig/provekit-lift-zig-source && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
 	cd implementations/zig/provekit-proof-envelope-zig && zig build
 	cd implementations/zig/mint-zig-self-contracts && zig build

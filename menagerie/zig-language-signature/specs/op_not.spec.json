@@ -1,0 +1,46 @@
+{
+  "kind": "algorithm",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:not",
+  "formals": [
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "not",
+    "arity": [
+      "Bool"
+    ],
+    "result": "Bool",
+    "wp": "Zig unary !",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

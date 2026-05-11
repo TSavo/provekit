@@ -1,0 +1,24 @@
+{
+  "kind": "effect-signature",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:effect:UnresolvedCall",
+  "formals": [],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "effect-signature-description",
+    "name": "UnresolvedCall"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}
