@@ -1187,6 +1187,10 @@ std::string expr_from_term(const ValuePtr& term) {
     if (name == "cpp:bitnot") return unary_source(args, "~");
     if (name == "cpp:deref") return unary_source(args, "*");
     if (name == "cpp:addr") return unary_source(args, "&");
+    if (name == "cpp:preinc" && args.size() == 1) return "(++" + expr_from_term(args[0]) + ")";
+    if (name == "cpp:predec" && args.size() == 1) return "(--" + expr_from_term(args[0]) + ")";
+    if (name == "cpp:postinc" && args.size() == 1) return "(" + expr_from_term(args[0]) + "++)";
+    if (name == "cpp:postdec" && args.size() == 1) return "(" + expr_from_term(args[0]) + "--)";
     if (name == "cpp:index" && args.size() == 2) return expr_from_term(args[0]) + "[" + expr_from_term(args[1]) + "]";
     if (name == "cpp:member" && args.size() == 2) return expr_from_term(args[0]) + "." + string_value_from_term(args[1]);
     if (name == "cpp:ite" && args.size() == 3) return "(" + expr_from_term(args[0]) + " ? " + expr_from_term(args[1]) + " : " + expr_from_term(args[2]) + ")";
@@ -1214,6 +1218,15 @@ void emit_stmt(const ValuePtr& term, std::vector<std::string>& lines, int indent
 
 std::string ind(int indent) { return std::string(static_cast<size_t>(indent) * 4, ' '); }
 
+std::string for_header_init_from_term(const ValuePtr& term) {
+    if (is_kind_name(term, "ctor", "cpp:decl")) {
+        std::vector<ValuePtr> args = term_args(term);
+        if (args.size() == 2) return "int " + string_value_from_term(args[0]) + " = " + expr_from_term(args[1]);
+    }
+    if (is_kind_name(term, "ctor", "cpp:skip")) return "";
+    return expr_from_term(term);
+}
+
 void emit_stmt(const ValuePtr& term, std::vector<std::string>& lines, int indent) {
     if (!term || get_string(get_field(term, "kind")) != "ctor") {
         lines.push_back(ind(indent) + expr_from_term(term) + ";");
@@ -1238,6 +1251,10 @@ void emit_stmt(const ValuePtr& term, std::vector<std::string>& lines, int indent
     } else if (name == "cpp:while" && args.size() == 2) {
         lines.push_back(ind(indent) + "while (" + expr_from_term(args[0]) + ") {");
         emit_stmt(args[1], lines, indent + 1);
+        lines.push_back(ind(indent) + "}");
+    } else if (name == "cpp:for" && args.size() == 4) {
+        lines.push_back(ind(indent) + "for (" + for_header_init_from_term(args[0]) + "; " + expr_from_term(args[1]) + "; " + expr_from_term(args[2]) + ") {");
+        emit_stmt(args[3], lines, indent + 1);
         lines.push_back(ind(indent) + "}");
     } else if (name == "cpp:skip") {
         lines.push_back(ind(indent) + ";");
@@ -1381,7 +1398,8 @@ std::string compile_body_term(const ValuePtr& term, const CompileBodyOptions& op
     }
     sig << ") {";
     std::vector<std::string> body;
-    if (is_kind_name(term, "ctor", "cpp:return") || is_kind_name(term, "ctor", "cpp:seq") || is_kind_name(term, "ctor", "cpp:if")) {
+    if (is_kind_name(term, "ctor", "cpp:return") || is_kind_name(term, "ctor", "cpp:seq") || is_kind_name(term, "ctor", "cpp:if") ||
+        is_kind_name(term, "ctor", "cpp:while") || is_kind_name(term, "ctor", "cpp:for")) {
         emit_stmt(term, body, 1);
     } else {
         body.push_back("    return " + expr_from_term(term) + ";");

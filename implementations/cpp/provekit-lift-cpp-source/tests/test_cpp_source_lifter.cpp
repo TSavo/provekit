@@ -32,6 +32,27 @@ bool contains(const provekit::canonicalizer::ValuePtr& value, const std::string&
     return encoded(value).find(needle) != std::string::npos;
 }
 
+provekit::canonicalizer::ValuePtr field(const provekit::canonicalizer::ValuePtr& value, const std::string& key) {
+    if (!value || value->kind() != provekit::canonicalizer::ValueKind::Object) return nullptr;
+    for (const auto& [name, child] : value->as_object()) {
+        if (name == key) return child;
+    }
+    return nullptr;
+}
+
+provekit::canonicalizer::ValuePtr source_unit_body(const LiftResult& result) {
+    for (const auto& item : result.declarations) {
+        if (!contains(item, "\"cpp:source-unit\"")) continue;
+        auto source_unit = post_rhs(item);
+        auto args = field(source_unit, "args");
+        require(args && args->kind() == provekit::canonicalizer::ValueKind::Array,
+                "source-unit should have argument array");
+        require(args->as_array().size() == 2, "source-unit should carry bytes and operational term");
+        return args->as_array()[1];
+    }
+    return nullptr;
+}
+
 void test_lift_simple_add_emits_contract_and_source_unit() {
     const std::string source = "int f(int x, int y) { return x + y; }\n";
     LiftResult result = lift_source("add.cpp", source);
@@ -122,6 +143,38 @@ void test_round_trip_body_term_is_byte_identical() {
             "bare body compile-lift round trip should be byte-identical");
 }
 
+void test_for_loop_postinc_round_trip_body_term_is_byte_identical() {
+    const std::string source =
+        "int sum_to(int n) {\n"
+        "  int s = 0;\n"
+        "  for (int i = 0; i < n; i++) { s = s + i; }\n"
+        "  return s;\n"
+        "}\n";
+    LiftResult first = lift_source("for_postinc.cpp", source);
+    require(first.refusals.empty(), "for-loop postinc lift should not refuse");
+    const auto first_contract = find_contract(first, "sum_to");
+    require(first_contract != nullptr, "for-loop postinc contract missing");
+    auto body = source_unit_body(first);
+    require(body != nullptr, "for-loop source-unit operational body missing");
+    require(contains(body, "\"cpp:postinc\""), "for-loop update should lift to cpp:postinc");
+
+    CompileBodyOptions options;
+    options.function_name = "sum_to";
+    options.formals = {"n"};
+    options.return_type = "int";
+    const std::string compiled = compile_body_term(body, options);
+
+    LiftResult second = lift_source("for_postinc.cpp", compiled);
+    require(second.refusals.empty(), "compiled for-loop body should relift without refusals");
+    const auto second_contract = find_contract(second, "sum_to");
+    require(second_contract != nullptr, "relifted for-loop postinc contract missing");
+    auto relifted_body = source_unit_body(second);
+    require(relifted_body != nullptr, "relifted for-loop source-unit operational body missing");
+
+    require(canonical_bytes(body) == canonical_bytes(relifted_body),
+            "for-loop postinc body compile-lift round trip should be byte-identical");
+}
+
 void test_initialize_reports_cpp_source_draft() {
     const auto init = provekit::cpp_source::initialize_result();
     const std::string json = encoded(init);
@@ -140,6 +193,7 @@ int main() {
     test_refuses_unsupported_lambda_without_unknown_ops();
     test_effects_use_canonical_shapes_and_sort_order();
     test_round_trip_body_term_is_byte_identical();
+    test_for_loop_postinc_round_trip_body_term_is_byte_identical();
     test_initialize_reports_cpp_source_draft();
     std::cout << "cpp-source lifter tests passed\n";
     return 0;
