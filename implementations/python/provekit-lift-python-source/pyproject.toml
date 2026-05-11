@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provekit-lift-python-source"
+version = "0.1.0"
+description = "ProvekIt Python source-language lifter over a python: operation algebra."
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "ProvekIt" }]
+dependencies = [
+    "provekit-lift-py-tests @ file:../provekit-lift-py-tests",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+provekit-lift-python-source = "provekit_lift_python_source.rpc:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

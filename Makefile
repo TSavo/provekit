@@ -585,6 +585,10 @@ bug-zoo:
 	env -u PROVEKIT_CLI -u PROVEKIT_BUG_ZOO_EXTERNAL_CLI \
 		cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 
+.PHONY: python-language-signature
+python-language-signature:
+	python3 menagerie/python-language-signature/generate_assets.py --check
+
 .PHONY: test-go
 test-go:
 	cd implementations/go/provekit-ir-symbolic && go test ./...

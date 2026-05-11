@@ -213,6 +213,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "python-pydantic",
     "python-deal",
     "python-hypothesis",
+    "python-source",
     "java-bean-validation",
     "java-jml",
     "jvm-bytecode",
