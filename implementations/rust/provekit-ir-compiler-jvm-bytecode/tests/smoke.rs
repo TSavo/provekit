@@ -71,6 +71,110 @@ fn lowers_arithmetic_and_comparison_ops() {
 }
 
 #[test]
+fn projects_source_unit_to_operational_term() {
+    let input = json!({
+        "kind": "op",
+        "name": "source-unit",
+        "args": [
+            {"kind": "bytes", "encoding": "hex", "value": "696e74206628696e742078297b72657475726e20782b313b7d0a"},
+            {
+                "kind": "op",
+                "name": "return",
+                "args": [{
+                    "kind": "op",
+                    "name": "bop_add",
+                    "args": [
+                        {"kind": "var", "name": "x"},
+                        {"kind": "const", "value": 1, "sort": {"kind": "ctor", "name": "Int", "args": []}}
+                    ]
+                }]
+            }
+        ]
+    });
+
+    let jasmin = compile_jasmin(&input).expect("compile source-unit operational projection");
+
+    assert!(jasmin.contains(".method public static proofir_term(I)I"));
+    assert!(jasmin.contains("iadd"));
+}
+
+#[test]
+fn lowers_concrete_c11_ops_and_casts() {
+    let input = json!({
+        "kind": "c11-algebra-term",
+        "source": "cast.c",
+        "term": {
+            "kind": "op",
+            "name": "return",
+            "args": [{
+                "kind": "op",
+                "name": "bop_mul",
+                "args": [
+                    {
+                        "kind": "op",
+                        "name": "cast",
+                        "args": [
+                            {"kind": "var", "name": "int"},
+                            {"kind": "var", "name": "x"}
+                        ]
+                    },
+                    {
+                        "kind": "op",
+                        "name": "uop_neg",
+                        "args": [{"kind": "const", "value": 2, "sort": {"kind": "ctor", "name": "Int", "args": []}}]
+                    }
+                ]
+            }]
+        }
+    });
+
+    let jasmin = compile_jasmin(&input).expect("compile concrete op and typed cast");
+
+    assert!(jasmin.contains(".method public static cast(I)I"));
+    assert!(!jasmin.contains(".method public static cast(II)I"));
+    assert!(jasmin.contains("iload 0"));
+    assert!(jasmin.contains("ineg"));
+    assert!(jasmin.contains("imul"));
+}
+
+#[test]
+fn asm_link_edge_is_cleanly_rejected_as_a_boundary_op() {
+    let input = json!({
+        "kind": "c11-algebra-term",
+        "source": "asm.c",
+        "term": {
+            "kind": "op",
+            "name": "seq",
+            "args": [
+                {
+                    "kind": "op",
+                    "name": "asm-link-edge",
+                    "args": [
+                        {"kind": "var", "name": "blake3-512:path"},
+                        {"kind": "var", "name": "blake3-512:asm"},
+                        {"kind": "var", "name": "x86-64:sysv"},
+                        {"kind": "var", "name": "provekit-lift-asm-x86-64"},
+                        {"kind": "var", "name": "provekit_inline_asm"},
+                        {"kind": "var", "name": "gnu-inline-asm"},
+                        {"kind": "literal", "value": "nop"},
+                        {"kind": "literal", "value": ".text\n"},
+                        {"kind": "op", "name": "set", "args": []},
+                        {"kind": "op", "name": "set", "args": []},
+                        {"kind": "op", "name": "set", "args": []}
+                    ]
+                },
+                {"kind": "op", "name": "return", "args": [{"kind": "var", "name": "x"}]}
+            ]
+        }
+    });
+
+    let err = compile_jasmin(&input).expect_err("asm-link-edge is a link boundary");
+    assert!(err
+        .to_string()
+        .contains("unsupported operation asm-link-edge"));
+}
+
+#[test]
 fn lowers_memory_ops_with_static_int_memory() {
     let input = json!({
         "kind": "c11-algebra-term",
