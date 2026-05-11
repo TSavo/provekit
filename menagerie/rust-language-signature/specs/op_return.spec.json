@@ -28,7 +28,15 @@
       "Expr"
     ],
     "result": "Stmt",
-    "wp": "bind function out value and exit current body"
+    "wp": "bind function out value and exit current body",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

@@ -1,0 +1,49 @@
+{
+  "kind": "algorithm",
+  "fn_name": "morphism:rust:skip:to:concept:skip",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:7f1447f3e05432d938a51328fb74a7bb1dd3e664f1acb451b7d037798e435637f4c3ce7ff99bbc38d1e02b208f39200922f3ed03ba5bbffb00b9c9d201d91a89",
+    "target_shape_cid": "blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c",
+    "renaming_map": {
+      "unit": "unit"
+    },
+    "representation_map": {},
+    "operator_map": {
+      "skip": "skip"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "source": "blake3-512:7f1447f3e05432d938a51328fb74a7bb1dd3e664f1acb451b7d037798e435637f4c3ce7ff99bbc38d1e02b208f39200922f3ed03ba5bbffb00b9c9d201d91a89",
+      "target": "blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:7f1447f3e05432d938a51328fb74a7bb1dd3e664f1acb451b7d037798e435637f4c3ce7ff99bbc38d1e02b208f39200922f3ed03ba5bbffb00b9c9d201d91a89",
+    "blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c"
+  ]
+}

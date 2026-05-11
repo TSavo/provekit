@@ -3,14 +3,20 @@
     "schema_version": "1",
     "protocol": "AMP",
     "kind": "AlgorithmMemento",
-    "fn_name": "rust:return",
+    "fn_name": "rust:seq",
     "formals": [
-      "value"
+      "first",
+      "second"
     ],
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "Expr",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
         "args": []
       }
     ],
@@ -21,18 +27,23 @@
     },
     "post": {
       "kind": "operation-contract",
-      "operator": "return",
+      "operator": "seq",
       "arity": [
-        "Expr"
+        "Stmt",
+        "Stmt"
       ],
       "result": "Stmt",
-      "wp": "bind function out value and exit current body"
+      "wp": "wp(first, wp(second, post))",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 2
+      }
     },
     "effects": {
       "effects": [
         {
           "kind": "effect-polymorphic",
-          "rule": "early-return"
+          "rule": "union(first.effects, second.effects)"
         }
       ]
     },
@@ -44,10 +55,10 @@
     },
     "locus": "menagerie/rust-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:e0ee7290c273b2bf98d592fffd528feed5be4fff2ba98e9ed3c0d1c7d1c25b6b6f9bd6e1042329f36edafe9114fd83d342c97777a3537bd54422f7d03b9c5537",
+  "cid": "blake3-512:099002d6533397f360ed84d85778b3b4a18a577f54b43309f74949cacc8e9734cef6531e3829297e99bb89a3a4b1e1751997891fe9857dba2b4048d92945218b",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "PAF7DBXUcGEKYXCDwTHgzNw/ux+PKm/nziz//V6l9YNrs/RYcfJbx6XkAvlSkDi38RzYrcspJYxOTN3dP/lHDA=="
+    "sig_b64": "iVJjPcDZcJHw8fTRcB3tqfhziiclIDsKSYBaGz1Sq9yyjjUJ87kPk3z9qv4o4KxSy1Y6Fvc654bnwtbUG1O7CQ=="
   }
 }
