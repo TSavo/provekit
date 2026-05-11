@@ -293,7 +293,7 @@ enum SwiftEffect: Hashable {
         case .io: return "2:io"
         case .unsafe: return "3:unsafe"
         case .panics: return "4:panics"
-        case .unresolvedCall(let name): return "5:unresolved_call:\(name)"
+        case .unresolvedCall(let name): return "5:unresolved:\(name)"
         case .opaqueLoop(let loopCid): return "6:opaque_loop:\(loopCid)"
         }
     }

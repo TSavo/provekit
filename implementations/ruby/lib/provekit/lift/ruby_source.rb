@@ -702,7 +702,7 @@ module Provekit
           when "panics"
             "4:panics"
           when "unresolved_call"
-            "5:unresolved_call:#{effect["name"]}"
+            "5:unresolved:#{effect["name"]}"
           when "opaque_loop"
             "6:opaque_loop:#{effect["loopCid"]}"
           else

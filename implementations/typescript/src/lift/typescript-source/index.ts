@@ -614,7 +614,7 @@ function effectSortKey(effect: TypeScriptSourceEffect): string {
     case "writes": return `1:writes:${effect.target}`;
     case "io": return "2:io";
     case "panics": return "4:panics";
-    case "unresolved_call": return `5:unresolved_call:${effect.name}`;
+    case "unresolved_call": return `5:unresolved:${effect.name}`;
     case "opaque_loop": return `6:opaque_loop:${effect.loopCid}`;
   }
 }
