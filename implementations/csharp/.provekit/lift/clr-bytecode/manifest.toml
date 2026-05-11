@@ -1,0 +1,3 @@
+name = "provekit-lift-clr-bytecode"
+command = ["dotnet", "run", "--project", "Provekit.Lift.CLR/Provekit.Lift.CLR.csproj", "--", "--rpc"]
+working_dir = "."

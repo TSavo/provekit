@@ -1152,9 +1152,20 @@ mod tests {
     }
 
     #[test]
-    fn resolve_kit_all_11_kits() {
+    fn resolve_kit_all_12_kits() {
         let kits = [
-            "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c",
+            "rust",
+            "go",
+            "cpp",
+            "ts",
+            "csharp",
+            "clr-bytecode",
+            "swift",
+            "java",
+            "python",
+            "ruby",
+            "zig",
+            "c",
         ];
         for kit in kits {
             assert!(resolve_kit(kit).is_some(), "kit `{kit}` must resolve");

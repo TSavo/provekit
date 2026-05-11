@@ -564,7 +564,18 @@ fn selected_kits(args: &CiShadowArgs) -> Result<Vec<String>, String> {
 }
 
 const CICP_ACCEPT_KITS: &[&str] = &[
-    "rust", "go", "cpp", "ts", "csharp", "java", "python", "ruby", "zig", "c", "swift",
+    "rust",
+    "go",
+    "cpp",
+    "ts",
+    "csharp",
+    "clr-bytecode",
+    "java",
+    "python",
+    "ruby",
+    "zig",
+    "c",
+    "swift",
 ];
 
 fn selected_accept_kits(args: &CiAcceptArgs) -> Result<Vec<String>, String> {
@@ -745,6 +756,7 @@ impl KitCiProfile {
             "cpp" => "make prove-cpp",
             "ts" => "make prove-ts",
             "csharp" => "make prove-csharp",
+            "clr-bytecode" => "make prove-csharp",
             "swift" => "make prove-swift",
             "java" => "make prove-java",
             "python" => "make prove-python",
@@ -789,7 +801,7 @@ fn known_lockfiles(kit: &str, project_rel: &str) -> Vec<String> {
             "tsconfig.json".to_string(),
             "vitest.config.ts".to_string(),
         ],
-        "csharp" => vec![format!("{project_rel}/Provekit.sln")],
+        "csharp" | "clr-bytecode" => vec![format!("{project_rel}/Provekit.sln")],
         "swift" => vec![
             format!("{project_rel}/Package.swift"),
             format!("{project_rel}/Package.resolved"),
@@ -819,7 +831,7 @@ fn toolchain_markers(kit: &str) -> Vec<String> {
         "go" => vec!["go"],
         "cpp" => vec!["clang++", "bazel", "cmake"],
         "ts" => vec!["node", "pnpm", "typescript", "vitest"],
-        "csharp" => vec!["dotnet"],
+        "csharp" | "clr-bytecode" => vec!["dotnet"],
         "swift" => vec!["swift"],
         "java" => vec!["java", "maven"],
         "python" => vec!["python", "pytest"],
