@@ -1,0 +1,21 @@
+{
+  "kind": "equation",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:seq-skip-right",
+  "formals": [
+    "a"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "law": "seq(a,skip)=a"
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

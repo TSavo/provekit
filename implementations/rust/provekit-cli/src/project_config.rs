@@ -222,6 +222,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "cpp-26-contracts",
     "cpp-boost-contract",
     "clr-bytecode",
+    "zig-source",
 ];
 
 /// Agent menu shown by `provekit init`.

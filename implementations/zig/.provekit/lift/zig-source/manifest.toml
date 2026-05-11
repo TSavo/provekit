@@ -1,0 +1,10 @@
+name = "zig-source"
+version = "0.1.0-draft"
+protocol_version = "provekit-lift/1"
+command = ["zig", "build", "run", "--", "--rpc"]
+working_dir = "provekit-lift-zig-source"
+
+[capabilities]
+authoring_surfaces = ["zig-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

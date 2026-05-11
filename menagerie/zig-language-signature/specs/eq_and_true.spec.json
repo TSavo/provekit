@@ -1,0 +1,21 @@
+{
+  "kind": "equation",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:and-true",
+  "formals": [
+    "b"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "law": "and(true,b)=b"
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

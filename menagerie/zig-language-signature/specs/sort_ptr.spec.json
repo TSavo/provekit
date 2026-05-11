@@ -1,0 +1,15 @@
+{
+  "kind": "sort",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:Ptr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Ptr",
+    "description": "Pointer-like Zig source values."
+  }
+}
