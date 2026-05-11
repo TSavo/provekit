@@ -160,15 +160,51 @@ public static class ClrAssemblyLifter
             }
 
             var assemblyName = ProjectAssemblyName(project);
-            foreach (var candidate in Directory.EnumerateFiles(projectDir, $"{assemblyName}.*", SearchOption.AllDirectories)
-                         .Where(IsAssemblyPath)
-                         .Where(file => PathHasSegment(file, "bin"))
-                         .Where(file => !PathHasSegment(file, "ref") && !PathHasSegment(file, "refint"))
-                         .OrderBy(p => p, StringComparer.Ordinal))
+            var candidates = Directory.EnumerateFiles(projectDir, $"{assemblyName}.*", SearchOption.AllDirectories)
+                .Where(IsAssemblyPath)
+                .Where(file => PathHasSegment(file, "bin"))
+                .Where(file => !PathHasSegment(file, "ref") && !PathHasSegment(file, "refint"))
+                .OrderBy(p => p, StringComparer.Ordinal)
+                .ToArray();
+
+            foreach (var candidateGroup in candidates
+                         .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
             {
-                yield return candidate;
+                yield return SelectProjectOutputAssembly(project, candidateGroup.Key!, candidateGroup);
             }
         }
+    }
+
+    private static string SelectProjectOutputAssembly(
+        string projectPath,
+        string fileName,
+        IEnumerable<string> candidates)
+    {
+        var orderedCandidates = candidates
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        var releaseCandidates = orderedCandidates
+            .Where(path => PathHasBinConfiguration(path, "Release"))
+            .ToArray();
+        var preferredCandidates = releaseCandidates.Length > 0
+            ? releaseCandidates
+            : orderedCandidates;
+
+        if (preferredCandidates.Length == 1)
+        {
+            return preferredCandidates[0];
+        }
+
+        var projectDir = Path.GetDirectoryName(projectPath) ?? Directory.GetCurrentDirectory();
+        var relativeCandidates = preferredCandidates
+            .Select(path => Path.GetRelativePath(projectDir, path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        var scope = releaseCandidates.Length > 0 ? "bin/Release/" : "bin/";
+        throw new InvalidOperationException(
+            $"{projectPath}: ambiguous CLR project output assemblies named {fileName} under {scope}: "
+            + $"{string.Join(", ", relativeCandidates)}; specify the assembly path explicitly");
     }
 
     private static string ProjectAssemblyName(string projectPath)
@@ -199,6 +235,21 @@ public static class ClrAssemblyLifter
             .Any(part => part.Equals(segment, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool PathHasBinConfiguration(string path, string configuration)
+    {
+        var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var index = 0; index < parts.Length - 1; index++)
+        {
+            if (parts[index].Equals("bin", StringComparison.OrdinalIgnoreCase)
+                && parts[index + 1].Equals(configuration, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsAssemblyPath(string path)
     {
         var ext = Path.GetExtension(path);
@@ -208,8 +259,14 @@ public static class ClrAssemblyLifter
 
     private static string TypeName(MetadataReader metadata, TypeDefinition type)
     {
-        var ns = metadata.GetString(type.Namespace);
         var name = metadata.GetString(type.Name);
+        var declaringType = type.GetDeclaringType();
+        if (!declaringType.IsNil)
+        {
+            return $"{TypeName(metadata, metadata.GetTypeDefinition(declaringType))}+{name}";
+        }
+
+        var ns = metadata.GetString(type.Namespace);
         return string.IsNullOrEmpty(ns) ? name : $"{ns}.{name}";
     }
 
