@@ -11,6 +11,7 @@ fn parser_accepts_checked_jasmin_fixture() {
     assert_eq!(unit.methods.len(), 1);
     assert_eq!(unit.methods[0].name, "foo");
     assert_eq!(unit.methods[0].descriptor, "(I)I");
+    assert!(unit.methods[0].is_static);
     assert_eq!(unit.methods[0].instructions.len(), 12);
 }
 
@@ -29,6 +30,34 @@ fn lifts_checked_jasmin_fixture_to_contract() {
     let post = serde_json::to_string(&result.declarations[0]["post"]).unwrap();
     assert!(post.contains("jvm:icmp_eq"));
     assert!(post.contains("jvm:ite"));
+}
+
+#[test]
+fn lifts_instance_method_with_this_in_local_zero() {
+    let source = include_str!("fixtures/instance_method.j");
+    let unit =
+        parse_jasmin_text("InstanceExample.j", source).expect("instance Jasmin fixture parses");
+    assert!(!unit.methods[0].is_static);
+    assert_eq!(unit.methods[0].arg_count, 1);
+    assert_eq!(unit.methods[0].local_slot_count(), 2);
+
+    let result = lift_source_text("InstanceExample.j", source).expect("JVM bytecode lifts");
+
+    assert_eq!(result.declarations.len(), 1);
+    assert!(
+        result.refusals.is_empty(),
+        "unexpected refusals: {:?}",
+        result.refusals
+    );
+    let contract = &result.declarations[0];
+    assert_eq!(contract["fnName"], "add");
+    assert_eq!(contract["formals"], serde_json::json!(["local0", "local1"]));
+
+    let post = serde_json::to_string(&contract["post"]).unwrap();
+    assert!(post.contains("local1"));
+    assert!(post_equates_return_to_local(contract, "local1"));
+    assert!(!post_equates_return_to_local(contract, "local0"));
+    assert!(!has_undeclared_local_reference(contract));
 }
 
 #[test]
@@ -68,4 +97,83 @@ fn rpc_response_wraps_relifted_contracts() {
     assert_eq!(response["result"]["kind"], "ir-document");
     assert_eq!(response["result"]["ir"][0]["fnName"], "foo");
     assert!(response["result"].get("declarations").is_none());
+}
+
+fn has_undeclared_local_reference(contract: &Json) -> bool {
+    let formals = contract["formals"]
+        .as_array()
+        .expect("contract formals are an array")
+        .iter()
+        .map(|formal| {
+            formal
+                .as_str()
+                .expect("contract formal is a string")
+                .to_string()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut references = Vec::new();
+    collect_local_references(&contract["post"], &mut references);
+    references
+        .into_iter()
+        .any(|reference| !formals.contains(&reference))
+}
+
+fn post_equates_return_to_local(contract: &Json, local: &str) -> bool {
+    contains_return_equation(&contract["post"], local)
+}
+
+fn contains_return_equation(value: &Json, local: &str) -> bool {
+    match value {
+        Json::Object(map) => {
+            let is_return_equation = map.get("kind").and_then(Json::as_str) == Some("atomic")
+                && map.get("name").and_then(Json::as_str) == Some("=")
+                && map
+                    .get("args")
+                    .and_then(Json::as_array)
+                    .is_some_and(|args| {
+                        args.len() == 2
+                            && is_var_named(&args[0], "return_value")
+                            && is_var_named(&args[1], local)
+                    });
+            is_return_equation
+                || map
+                    .values()
+                    .any(|child| contains_return_equation(child, local))
+        }
+        Json::Array(items) => items
+            .iter()
+            .any(|item| contains_return_equation(item, local)),
+        _ => false,
+    }
+}
+
+fn is_var_named(value: &Json, name: &str) -> bool {
+    value.get("kind").and_then(Json::as_str) == Some("var")
+        && value.get("name").and_then(Json::as_str) == Some(name)
+}
+
+fn collect_local_references(value: &Json, references: &mut Vec<String>) {
+    match value {
+        Json::Object(map) => {
+            if let Some(name) = map.get("name").and_then(Json::as_str) {
+                if is_input_local_name(name) {
+                    references.push(name.to_string());
+                }
+            }
+            for child in map.values() {
+                collect_local_references(child, references);
+            }
+        }
+        Json::Array(items) => {
+            for item in items {
+                collect_local_references(item, references);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_input_local_name(name: &str) -> bool {
+    name.strip_prefix("local")
+        .is_some_and(|suffix| !suffix.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit()))
 }

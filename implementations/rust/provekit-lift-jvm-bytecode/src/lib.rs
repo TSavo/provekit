@@ -33,10 +33,25 @@ pub struct Method {
     pub name: String,
     pub descriptor: String,
     pub arg_count: usize,
+    pub is_static: bool,
     pub returns_int: bool,
     pub labels: BTreeMap<String, usize>,
     pub instructions: Vec<Instruction>,
     pub line: usize,
+}
+
+impl Method {
+    pub fn local_slot_count(&self) -> usize {
+        self.arg_base() + self.arg_count
+    }
+
+    pub fn arg_base(&self) -> usize {
+        if self.is_static {
+            0
+        } else {
+            1
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,13 +356,14 @@ fn parse_lines<'a>(
             if current.is_some() {
                 return Err(parse_error(path, line_no, "nested .method"));
             }
-            let (name, descriptor) = parse_method_header(path, line_no, trimmed)?;
+            let (name, descriptor, is_static) = parse_method_header(path, line_no, trimmed)?;
             let arg_count = descriptor_arg_count(path, line_no, &descriptor)?;
             let returns_int = descriptor_return(&descriptor) == Some("I");
             current = Some(Method {
                 name,
                 descriptor,
                 arg_count,
+                is_static,
                 returns_int,
                 labels: BTreeMap::new(),
                 instructions: Vec::new(),
@@ -425,12 +441,20 @@ fn parse_method_header(
     path: &str,
     line: usize,
     trimmed: &str,
-) -> Result<(String, String), LiftError> {
-    let token = trimmed
-        .split_whitespace()
-        .rev()
-        .find(|part| part.contains('('))
+) -> Result<(String, String, bool), LiftError> {
+    let tokens = trimmed
+        .strip_prefix(".method")
+        .map(str::split_whitespace)
+        .map(|parts| parts.collect::<Vec<_>>())
+        .unwrap_or_default();
+    let method_token_idx = tokens
+        .iter()
+        .rposition(|part| part.contains('('))
         .ok_or_else(|| parse_error(path, line, "method header missing descriptor"))?;
+    let token = tokens[method_token_idx];
+    let is_static = tokens[..method_token_idx]
+        .iter()
+        .any(|part| *part == "static");
     let open = token
         .find('(')
         .ok_or_else(|| parse_error(path, line, "method descriptor missing '('"))?;
@@ -439,7 +463,7 @@ fn parse_method_header(
     if name.is_empty() || !descriptor.starts_with('(') || !descriptor.contains(')') {
         return Err(parse_error(path, line, "malformed method descriptor"));
     }
-    Ok((name, descriptor))
+    Ok((name, descriptor, is_static))
 }
 
 fn descriptor_arg_count(path: &str, line: usize, descriptor: &str) -> Result<usize, LiftError> {
@@ -574,11 +598,12 @@ fn lift_method(unit: &JasminUnit, method: &Method) -> LiftedMethod {
         };
     }
 
-    let formals = (0..method.arg_count)
+    let local_slot_count = method.local_slot_count();
+    let formals = (0..local_slot_count)
         .map(|idx| format!("local{idx}"))
         .collect::<Vec<_>>();
-    let formal_sorts = (0..method.arg_count)
-        .map(|_| primitive_sort("Int"))
+    let formal_sorts = (0..local_slot_count)
+        .map(|idx| formal_sort_for_local(method, idx))
         .collect::<Vec<_>>();
     let pre = build_precondition(&exploration.outcomes);
     let post = build_postcondition(&exploration.outcomes);
@@ -613,7 +638,7 @@ fn explore_method(method: &Method) -> ExplorationResult {
     let mut refusals = Vec::new();
     let mut work = vec![PathState {
         idx: 0,
-        state: SymbolicState::new(method.arg_count),
+        state: SymbolicState::new(method.local_slot_count()),
         condition: true_condition(),
         preconditions: Vec::new(),
         seen: HashSet::new(),
@@ -1206,6 +1231,13 @@ fn primitive_sort(name: &str) -> Sort {
     }
 }
 
+fn formal_sort_for_local(_method: &Method, _idx: usize) -> Sort {
+    // The current lifted-contract slice has no JVM object-reference sort.
+    // Keep instance receiver `this` as an opaque symbolic formal using the same
+    // Int placeholder currently used for JVM local values.
+    primitive_sort("Int")
+}
+
 fn var(name: impl Into<String>) -> IrTerm {
     IrTerm::Var { name: name.into() }
 }
@@ -1341,6 +1373,7 @@ mod tests {
         assert_eq!(unit.methods.len(), 1);
         assert_eq!(unit.methods[0].name, "foo");
         assert_eq!(unit.methods[0].arg_count, 1);
+        assert!(unit.methods[0].is_static);
         assert_eq!(unit.methods[0].labels.get("L0"), Some(&0));
         assert_eq!(unit.methods[0].instructions[0].opcode, "iload");
     }
@@ -1354,6 +1387,7 @@ mod tests {
         assert_eq!(unit.methods[0].name, "main");
         assert_eq!(unit.methods[0].descriptor, "([Ljava/lang/String;)V");
         assert_eq!(unit.methods[0].arg_count, 1);
+        assert!(unit.methods[0].is_static);
     }
 
     #[test]
@@ -1387,7 +1421,12 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let result = lift_paths(root, &["tests/fixtures".to_string()]).expect("directory lifts");
 
-        assert_eq!(result.declarations.len(), 1);
-        assert_eq!(result.declarations[0]["fnName"], "foo");
+        assert_eq!(result.declarations.len(), 2);
+        let fn_names = result
+            .declarations
+            .iter()
+            .map(|contract| contract["fnName"].as_str().expect("fnName is a string"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(fn_names, BTreeSet::from(["add", "foo"]));
     }
 }
