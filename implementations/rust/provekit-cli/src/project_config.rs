@@ -50,6 +50,9 @@ pub struct ProjectConfig {
     /// e.g., an OpenAPI spec project whose .proof files are
     /// consumed alongside the main project.
     pub callees: Vec<String>,
+
+    /// Serialized command path documents, keyed by command.
+    pub path_mint: Option<String>,
 }
 
 impl ProjectConfig {
@@ -71,6 +74,13 @@ impl ProjectConfig {
             _ => &None,
         };
         per_cmd.clone().or_else(|| self.agent_default.clone())
+    }
+
+    pub fn path_for(&self, cmd: &str) -> Option<String> {
+        match cmd {
+            "mint" => self.path_mint.clone(),
+            _ => None,
+        }
     }
 }
 
@@ -141,6 +151,7 @@ fn parse_config(text: &str) -> ProjectConfig {
             (Some("verify"), "callees") => {
                 cfg.callees = parse_string_array(&val);
             }
+            (Some("paths.mint"), "file") => cfg.path_mint = Some(val),
             _ => {}
         }
     }
@@ -274,6 +285,16 @@ mod tests {
         ";
         let cfg = parse_config(raw);
         assert_eq!(cfg.surface_for("must").as_deref(), Some("kani"));
+    }
+
+    #[test]
+    fn parses_mint_path_file() {
+        let cfg = parse_config("[paths.mint]\nfile = \".provekit/paths/mint.json\"\n");
+        assert_eq!(
+            cfg.path_for("mint").as_deref(),
+            Some(".provekit/paths/mint.json")
+        );
+        assert_eq!(cfg.path_for("prove"), None);
     }
 
     #[test]

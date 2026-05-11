@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{IrFormula, IrTerm, LetBinding, Sort};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
@@ -20,8 +20,7 @@ use super::traits::Canonical;
 /// `Cid` is the algebra's address type. It has no internal structure beyond
 /// the hash algorithm tag and hex digest; any semantic meaning comes from the
 /// catalog entry found by `resolve`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Cid(String);
 
 impl Cid {
@@ -56,6 +55,25 @@ impl Cid {
 impl fmt::Display for Cid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl Serialize for Cid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Cid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(value).map_err(de::Error::custom)
     }
 }
 
@@ -453,7 +471,7 @@ pub enum VerdictCoercionError {
 /// input, and the step names it depends on. Executing a command is still one
 /// `Kit(Input) -> DomainClaim`; `Input::Path` carries the algebra needed for
 /// that kit to compose subordinate transforms when necessary.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Path {
     /// Algebra steps available to the transform.
     pub algebra: Vec<PathAlgebra>,
@@ -563,7 +581,8 @@ impl Path {
 }
 
 /// One algebra step inside a [`Path`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PathAlgebra {
     /// Stable step name inside the path.
     pub name: String,
@@ -587,6 +606,143 @@ pub enum PathError {
     /// The dependency graph contains a cycle.
     #[error("path dependency cycle includes step `{step}`")]
     Cycle { step: String },
+}
+
+/// Stable top-level kind for serialized path documents.
+pub const PATH_DOCUMENT_KIND: &str = "provekit-path/v1";
+
+/// Serializable, language-neutral path plus the materialized input catalog it
+/// needs to execute.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathDocument {
+    /// Wire kind/version for disk and cross-runtime transport.
+    pub kind: String,
+    /// The CID-able path algebra.
+    pub path: Path,
+    /// Materialized inputs keyed by the CIDs referenced from path steps.
+    #[serde(default)]
+    pub inputs: Vec<PathInputBinding>,
+}
+
+impl PathDocument {
+    /// Build a path document and address each materialized input.
+    pub fn from_path_and_inputs(path: Path, inputs: Vec<Input>) -> Result<Self, PathDocumentError> {
+        let mut bindings = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            bindings.push(PathInputBinding {
+                cid: super::primitives::address(&input),
+                input: PathInputMaterial::try_from_input(input)?,
+            });
+        }
+        Ok(Self {
+            kind: PATH_DOCUMENT_KIND.to_string(),
+            path,
+            inputs: bindings,
+        })
+    }
+
+    /// Validate and materialize the typed input catalog entries.
+    pub fn materialized_inputs(&self) -> Result<Vec<(Cid, Input)>, PathDocumentError> {
+        if self.kind != PATH_DOCUMENT_KIND {
+            return Err(PathDocumentError::InvalidKind {
+                expected: PATH_DOCUMENT_KIND,
+                actual: self.kind.clone(),
+            });
+        }
+
+        let mut out = Vec::with_capacity(self.inputs.len());
+        for binding in &self.inputs {
+            let input = binding.input.to_input();
+            let actual = super::primitives::address(&input);
+            if actual != binding.cid {
+                return Err(PathDocumentError::InputCidMismatch {
+                    expected: binding.cid.clone(),
+                    actual,
+                });
+            }
+            out.push((binding.cid.clone(), input));
+        }
+        Ok(out)
+    }
+}
+
+/// One materialized input entry in a [`PathDocument`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathInputBinding {
+    /// CID referenced from `PathAlgebra.inputs`.
+    pub cid: Cid,
+    /// Materialized input value.
+    pub input: PathInputMaterial,
+}
+
+/// Disk-safe subset of [`Input`] used by path documents.
+///
+/// The first durable shape only needs command specs. Claim/truth/refutation
+/// inputs should move here once their contract representation has a stable
+/// language-neutral wire form.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum PathInputMaterial {
+    /// JSON command/spec input.
+    Spec { value: JsonValue },
+}
+
+impl PathInputMaterial {
+    fn try_from_input(input: Input) -> Result<Self, PathDocumentError> {
+        match input {
+            Input::Spec(value) => Ok(Self::Spec { value }),
+            other => Err(PathDocumentError::UnsupportedInputMaterial {
+                kind: input_kind(&other).to_string(),
+            }),
+        }
+    }
+
+    fn to_input(&self) -> Input {
+        match self {
+            Self::Spec { value } => Input::Spec(value.clone()),
+        }
+    }
+}
+
+/// Serialized path document validation errors.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum PathDocumentError {
+    /// The top-level `kind` is not the current path document kind.
+    #[error("path document kind `{actual}` is not `{expected}`")]
+    InvalidKind {
+        /// Expected kind.
+        expected: &'static str,
+        /// Actual kind.
+        actual: String,
+    },
+    /// A materialized input's bytes do not address to its declared CID.
+    #[error("path input declared as `{expected}` materialized as `{actual}`")]
+    InputCidMismatch {
+        /// Declared CID.
+        expected: Cid,
+        /// Actual CID after canonicalization.
+        actual: Cid,
+    },
+    /// The input variant is not yet part of the disk-safe path catalog.
+    #[error("path documents currently support materialized spec inputs, not `{kind}`")]
+    UnsupportedInputMaterial {
+        /// Input variant name.
+        kind: String,
+    },
+}
+
+fn input_kind(input: &Input) -> &'static str {
+    match input {
+        Input::Source { .. } => "source",
+        Input::Spec(_) => "spec",
+        Input::Claim(_) => "claim",
+        Input::Truth(_) => "truth",
+        Input::Refutation(_) => "refutation",
+        Input::Term(_) => "term",
+        Input::Path(_) => "path",
+    }
 }
 
 /// Closed input universe for transforms.

@@ -6,6 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use libprovekit::core::{address, Input, Path as CorePath, PathAlgebra, PathDocument};
 use serde_json::json;
 
 fn provekit_bin() -> PathBuf {
@@ -318,6 +319,118 @@ done
         .as_str()
         .unwrap_or_default()
         .starts_with("blake3-512:"));
+}
+
+#[test]
+fn mint_uses_path_document_from_project_config() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let manifest_dir = project.join(".provekit/lift/path-lift");
+    let path_dir = project.join(".provekit/paths");
+    let out_dir = dir.path().join("path-out");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::create_dir_all(&path_dir).expect("create path dir");
+
+    let plugin = dir.path().join("path-lift-plugin.sh");
+    write_executable(
+        &plugin,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"path-lift","protocol_version":"provekit-lift/1","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"path.config.contract","outBinding":"out","post":{"kind":"atomic","name":"path_config_true","args":[]}}],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"path-lift\"\ncommand = [\"{}\"]\n",
+            plugin.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let lift_input = Input::Spec(json!({
+        "surface": "path-lift",
+        "workspace_root": project.canonicalize().unwrap_or_else(|_| project.clone()),
+        "config_path": ".provekit/config.toml",
+        "source_paths": ["."],
+        "options": {
+            "layer": "all",
+            "identifyOnly": false
+        }
+    }));
+    let mint_input = Input::Spec(json!({
+        "projectRoot": project.display().to_string(),
+        "surface": "path-lift",
+        "outDir": out_dir.display().to_string(),
+        "options": {
+            "quiet": true
+        }
+    }));
+    let lift_input_cid = address(&lift_input);
+    let mint_input_cid = address(&mint_input);
+    let path = CorePath {
+        algebra: vec![
+            PathAlgebra {
+                name: "lift".to_string(),
+                kit: "lift-plugin:path-lift".to_string(),
+                inputs: vec![lift_input_cid],
+                depends_on: vec![],
+            },
+            PathAlgebra {
+                name: "mint".to_string(),
+                kit: "provekit-mint".to_string(),
+                inputs: vec![mint_input_cid],
+                depends_on: vec!["lift".to_string()],
+            },
+        ],
+    };
+    let document = PathDocument::from_path_and_inputs(path, vec![lift_input, mint_input])
+        .expect("build path document");
+    fs::write(
+        path_dir.join("mint.json"),
+        serde_json::to_string_pretty(&document).expect("serialize path document"),
+    )
+    .expect("write path document");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        "[paths.mint]\nfile = \".provekit/paths/mint.json\"\n",
+    )
+    .expect("write config");
+
+    let output = Command::new(provekit_bin())
+        .arg("mint")
+        .arg("--project")
+        .arg(&project)
+        .arg("--no-attest")
+        .arg("--json")
+        .arg("--quiet")
+        .output()
+        .expect("spawn provekit mint");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mint should load PathDocument from [paths.mint], not require [authoring.lift]\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("mint JSON parses");
+    assert_eq!(report["surface"], "path-lift");
+    assert_eq!(
+        report["proofFile"]
+            .as_str()
+            .map(|value| value.contains("path-out")),
+        Some(true)
+    );
+    assert_eq!(report["lift"]["kind"], "ir-document");
 }
 
 #[test]
