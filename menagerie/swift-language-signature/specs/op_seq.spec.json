@@ -1,0 +1,48 @@
+{
+  "kind": "algorithm",
+  "fn_name": "swift:seq",
+  "formals": [
+    "first",
+    "second"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "seq",
+    "arity": [
+      "Stmt",
+      "Stmt"
+    ],
+    "result": "Stmt",
+    "wp": "execute first then second",
+    "arity_shape": {
+      "kind": "positional",
+      "arity": 2
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/swift-language-signature/README.md"
+}

@@ -31,9 +31,11 @@ let package = Package(
         .library(name: "Provekit", targets: ["Provekit"]),
         .library(name: "ProvekitCrypto", targets: ["ProvekitCrypto"]),
         .library(name: "SwiftLifter", targets: ["SwiftLifter"]),
+        .library(name: "ProvekitLiftSwiftSource", targets: ["ProvekitLiftSwiftSource"]),
         .executable(name: "conformance", targets: ["ConformanceRunner"]),
         .executable(name: "provekit-lsp-swift", targets: ["ProveKitLSPSwift"]),
         .executable(name: "mint-swift-self-contracts", targets: ["MintSwiftSelfContracts"]),
+        .executable(name: "provekit-lift-swift-source", targets: ["ProvekitLiftSwiftSourceCLI"]),
         .executable(name: "test-swift-lsp", targets: ["LSPTests"]),
         .executable(name: "test-swift-crypto", targets: ["CryptoTests"]),
     ],
@@ -116,6 +118,14 @@ let package = Package(
                 .product(name: "SwiftParser", package: "swift-syntax"),
             ]
         ),
+        .target(
+            name: "ProvekitLiftSwiftSource",
+            dependencies: [
+                "ProvekitCrypto",
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
+            ]
+        ),
         .executableTarget(
             name: "ConformanceRunner",
             dependencies: ["Provekit"]
@@ -127,6 +137,10 @@ let package = Package(
         .executableTarget(
             name: "MintSwiftSelfContracts",
             dependencies: ["Provekit", "ProvekitCrypto"]
+        ),
+        .executableTarget(
+            name: "ProvekitLiftSwiftSourceCLI",
+            dependencies: ["ProvekitLiftSwiftSource"]
         ),
         // LSPTests: standalone integration test runner (no XCTest/Testing dep needed).
         // `swift run test-swift-lsp` returns exit 0 on pass, non-zero on fail.
@@ -141,6 +155,10 @@ let package = Package(
         .executableTarget(
             name: "CryptoTests",
             dependencies: ["ProvekitCrypto"]
+        ),
+        .testTarget(
+            name: "ProvekitLiftSwiftSourceTests",
+            dependencies: ["ProvekitLiftSwiftSource", "ProvekitCrypto"]
         ),
     ],
     swiftLanguageModes: [.v6]
