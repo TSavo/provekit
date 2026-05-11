@@ -428,4 +428,51 @@ if printf '%s\n' "$SYMLINK_RESPONSE" | grep -q '"kind":"c-assertions.bug-on"'; t
     exit 1
 fi
 
+# Regression: callee-local and function-local state must not leak into a
+# caller's computed pre (over-extraction soundness fix).
+CALLEE_SCOPE_RESPONSES="$(
+    {
+        printf '{"jsonrpc":"2.0","id":200,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["assertions_callee_scope.c"],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+
+# g's formal "y" must appear in g's contract
+printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"g"' || {
+    echo "FAIL: callee_scope: g should emit a function-contract" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+}
+
+# f's formal "x" must appear in f's contract (f has assert(x != 0))
+printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"f"' || {
+    echo "FAIL: callee_scope: f should emit a function-contract for its own formal" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+}
+
+# "local_of_g" must NOT appear anywhere in f's contract (or at all in the output
+# except possibly in a non-entry-state opacity entry)
+if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep '"fn_name":"f"' | grep -q '"local_of_g"'; then
+    echo "FAIL: callee_scope: local_of_g must not appear in f's pre" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+fi
+
+# h's only assert references a local "tmp" -- no function-contract should be emitted
+if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"h"'; then
+    echo "FAIL: callee_scope: h should not emit a function-contract (local-only assert)" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+fi
+
+# A non-entry-state opacity entry should appear (for h's dropped predicate,
+# and possibly for g's local_of_g predicate)
+printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"kind":"c-assertions.non-entry-state"' || {
+    echo "FAIL: callee_scope: expected non-entry-state opacity for dropped local predicate" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+}
+
 printf 'provekit-lift-c-assertions integration passed\n'

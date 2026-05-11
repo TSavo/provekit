@@ -595,11 +595,145 @@ static char *name_from_not_condition(Slice condition) {
     return copy_n(condition.s, condition.n);
 }
 
+/*
+ * Return 1 if 'name' is safe to appear in a function's computed pre: it is
+ * either a formal parameter of the function, a well-known compile-time
+ * constant expression (sizeof / alignof / offsetof), or a known null-pointer
+ * constant (NULL).  Anything else -- locals, globals -- is not visible at the
+ * function's entry from the caller's perspective.
+ */
+static int is_entry_state_var_name(const char *name, char **formals, int n_formals) {
+    static const char *const ct_prefixes[] = {
+        "sizeof", "alignof", "_Alignof", "__alignof", "__alignof__",
+        "__builtin_offsetof", NULL
+    };
+    static const char *const known_constants[] = {"NULL", "null", "true", "false", NULL};
+    size_t nlen;
+    int i;
+
+    if (name == NULL) {
+        return 0;
+    }
+    /* formal parameters */
+    for (i = 0; i < n_formals; i++) {
+        if (formals[i] != NULL && strcmp(name, formals[i]) == 0) {
+            return 1;
+        }
+    }
+    /* known pointer/boolean constants */
+    for (i = 0; known_constants[i] != NULL; i++) {
+        if (strcmp(name, known_constants[i]) == 0) {
+            return 1;
+        }
+    }
+    /* compile-time operators: sizeof(T), alignof(T), etc.
+     * cursor_source joins tokens with spaces, so the name looks like
+     * "sizeof ( int )" -- match the prefix followed by space or '(' */
+    for (i = 0; ct_prefixes[i] != NULL; i++) {
+        nlen = strlen(ct_prefixes[i]);
+        if (strncmp(name, ct_prefixes[i], nlen) == 0 &&
+            (name[nlen] == '\0' || name[nlen] == ' ' || name[nlen] == '(')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Recursively check that every var-node in the formula tree references only
+ * entry-state names (formals, compile-time constants, known null constants).
+ * Returns 1 if safe, 0 if any var is not in entry state.
+ */
+static int formula_references_only_entry_state(const Formula *f, char **formals, int n_formals) {
+    size_t i;
+
+    if (f == NULL) {
+        return 1;
+    }
+    if (f->kind == FORMULA_ATOMIC) {
+        for (i = 0; i < f->n_args; i++) {
+            /* args are JSON term strings like {"kind":"var","name":"y"} --
+             * we need to check the raw arg blob for a var whose name is not
+             * in entry state.  The only non-const terms are var nodes; const
+             * nodes have "kind":"const" and carry no identifier name that
+             * matters here.  We look for "\"kind\":\"var\"" in the arg blob
+             * and then extract the name field. */
+            const char *arg = f->args[i];
+            const char *var_marker = "\"kind\":\"var\"";
+            const char *name_marker = "\"name\":\"";
+            const char *p;
+            const char *name_start;
+            const char *name_end;
+            char name_buf[256];
+            size_t name_len;
+
+            if (arg == NULL) {
+                continue;
+            }
+            if (strstr(arg, var_marker) == NULL) {
+                /* const node -- skip */
+                continue;
+            }
+            p = strstr(arg, name_marker);
+            if (p == NULL) {
+                /* malformed -- conservatively reject */
+                return 0;
+            }
+            name_start = p + strlen(name_marker);
+            name_end = strchr(name_start, '"');
+            if (name_end == NULL) {
+                return 0;
+            }
+            name_len = (size_t)(name_end - name_start);
+            if (name_len >= sizeof(name_buf)) {
+                name_len = sizeof(name_buf) - 1;
+            }
+            memcpy(name_buf, name_start, name_len);
+            name_buf[name_len] = '\0';
+            if (!is_entry_state_var_name(name_buf, formals, n_formals)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    /* AND / OR / NOT: recurse into operands */
+    for (i = 0; i < f->n_operands; i++) {
+        if (!formula_references_only_entry_state(f->operands[i], formals, n_formals)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int emit_non_entry_state_opacity(FunctionContracts *fn) {
+    return pk_c_lift_result_add_opacity_entry(
+        fn->result,
+        "c-assertions.non-entry-state",
+        fn->path == NULL ? "" : fn->path,
+        fn->line,
+        fn->column,
+        "assertion references non-entry-state (local variable); predicate dropped from pre",
+        "c-assertions");
+}
+
 static int function_add_precondition(FunctionContracts *fn, Formula *formula) {
     Formula **next;
     size_t next_cap;
 
     if (formula == NULL) {
+        return 0;
+    }
+    /* Guard: only emit preconditions that reference entry-state names
+     * (formal parameters, compile-time constants, or known null constants).
+     * A formula mentioning a local variable or a callee-internal name would
+     * make the caller's pre too tight -- it constrains state the caller
+     * cannot see or control. */
+    if (!formula_references_only_entry_state(formula, fn->formals, fn->n_formals)) {
+        if (emit_non_entry_state_opacity(fn) != 0) {
+            formula_free(formula);
+            return -1;
+        }
+        formula_free(formula);
         return 0;
     }
     if (fn->n_preconditions == fn->cap_preconditions) {
