@@ -1,0 +1,18 @@
+#!/usr/bin/env ruby
+# SPDX-License-Identifier: Apache-2.0
+
+if RUBY_VERSION < "3.0"
+  candidates = [
+    "/opt/homebrew/opt/ruby/bin/ruby",
+    "/usr/local/opt/ruby/bin/ruby",
+    "/opt/homebrew/bin/ruby",
+    "/usr/local/bin/ruby",
+  ]
+  better = candidates.find { |path| File.executable?(path) }
+  exec(better, __FILE__, *ARGV) if better
+end
+
+$LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+require "provekit/lift/ruby_source"
+
+exit Provekit::Lift::RubySource.main(ARGV)

@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "ruby:Stmt",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Stmt",
+    "description": "Ruby Stmt term sort."
+  }
+}

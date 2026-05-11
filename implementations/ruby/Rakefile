@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+
+require "rbconfig"
+require "rake/testtask"
+
+task :compile do
+  Dir.chdir("ext/provekit_blake3") do
+    sh RbConfig.ruby, "extconf.rb"
+    sh "make"
+  end
+end
+
+Rake::TestTask.new(:test => :compile) do |t|
+  t.libs << "lib"
+  t.libs << "test"
+  t.pattern = "test/test_*.rb"
+end
+
+task default: :test

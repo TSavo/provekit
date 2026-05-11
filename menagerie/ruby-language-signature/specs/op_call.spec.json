@@ -1,0 +1,66 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ruby:call",
+  "formals": [
+    "callee",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "ListOfValue",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "call",
+    "arity": [
+      "String",
+      "ListOfValue"
+    ],
+    "result": "Value",
+    "wp": "call callee with positional arguments",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "callee",
+          "evaluation": "unevaluated",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    },
+    "notes": "The term encoding stores callee followed by positional actual arguments."
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "UnresolvedCall"
+      }
+    ]
+  },
+  "locus": "menagerie/ruby-language-signature/README.md"
+}
