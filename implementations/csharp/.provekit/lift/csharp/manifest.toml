@@ -1,3 +1,10 @@
 name = "csharp-lift"
-command = ["dotnet", "run", "--project", "Provekit.SelfContracts/Provekit.SelfContracts.csproj", "--", "--rpc"]
-working_dir = "."
+version = "0.1.0"
+protocol_version = "provekit-lift/1"
+command = ["dotnet", "run", "--project", "Provekit.Lift.Csharp/Provekit.Lift.Csharp.csproj", "--", "--rpc"]
+working_dir = "implementations/csharp"
+
+[capabilities]
+authoring_surfaces = ["csharp", "csharp-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

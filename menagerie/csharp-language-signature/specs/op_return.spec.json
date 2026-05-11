@@ -1,0 +1,22 @@
+{
+  "kind": "algorithm",
+  "fn_name": "csharp:return",
+  "formals": ["value"],
+  "formal_sorts": [
+    {"kind": "ctor", "name": "Int", "args": []}
+  ],
+  "return_sort": {"kind": "ctor", "name": "Stmt", "args": []},
+  "pre": {"kind": "atomic", "name": "true", "args": []},
+  "post": {
+    "kind": "operation-contract",
+    "operator": "return",
+    "arity": ["Int"],
+    "result": "Stmt",
+    "wp": "post[return_value/value] (function result = value)",
+    "arity_shape": {"kind": "named", "slots": [{"name": "value"}]}
+  },
+  "effects": {
+    "effects": [{"kind": "effect-signature", "name": "Return"}]
+  },
+  "locus": "menagerie/csharp-language-signature/README.md"
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "csharp:effect-signature:Loop",
+  "sorts": ["sort_string.spec.json", "sort_unit.spec.json"],
+  "operations": ["eff_loop.spec.json"],
+  "equations": [],
+  "effect_signatures": []
+}

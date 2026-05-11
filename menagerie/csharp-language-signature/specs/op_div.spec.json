@@ -1,0 +1,14 @@
+{
+  "kind": "algorithm",
+  "fn_name": "csharp:div",
+  "formals": ["lhs", "rhs"],
+  "formal_sorts": [
+    {"kind": "ctor", "name": "Int", "args": []},
+    {"kind": "ctor", "name": "Int", "args": []}
+  ],
+  "return_sort": {"kind": "ctor", "name": "Int", "args": []},
+  "pre": {"kind": "atomic", "name": "not_zero", "args": [{"kind": "var", "name": "rhs"}]},
+  "post": {"kind": "operation-contract", "operator": "div", "arity": ["Int", "Int"], "result": "Int", "wp": "integer division truncating toward zero (C# behavior)", "arity_shape": {"kind": "named", "slots": [{"name": "lhs"}, {"name": "rhs"}]}},
+  "effects": {"effects": []},
+  "locus": "menagerie/csharp-language-signature/README.md"
+}

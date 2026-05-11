@@ -1,0 +1,7 @@
+{
+  "kind": "sort",
+  "fn_name": "csharp:Expr",
+  "formals": [],
+  "return_sort": {"kind": "kind", "name": "*"},
+  "post": {"kind": "sort-description", "name": "Expr", "description": "C# expression term sort."}
+}
