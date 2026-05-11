@@ -1,0 +1,16 @@
+{
+  "kind": "sort",
+  "fn_name": "ts:Args",
+  "version": "0.1.0-draft",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Args",
+    "description": "Ordered call/new argument list."
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#sorts"
+}

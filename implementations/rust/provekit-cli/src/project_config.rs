@@ -205,6 +205,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "rust-proptest",
     "rust-quickcheck",
     "ts-zod",
+    "typescript-source",
     "ts-class-validator",
     "ts-fast-check",
     "ts-jsdoc",
@@ -312,6 +313,7 @@ mod tests {
     fn known_lists_include_anchor_entries() {
         assert!(KNOWN_SURFACES.contains(&"default"));
         assert!(KNOWN_SURFACES.contains(&"ts-zod"));
+        assert!(KNOWN_SURFACES.contains(&"typescript-source"));
         assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
         assert!(KNOWN_AGENTS.contains(&"stub"));
         assert!(KNOWN_AGENTS.contains(&"claude-code"));

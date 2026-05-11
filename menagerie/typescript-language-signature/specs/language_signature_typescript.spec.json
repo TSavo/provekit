@@ -1,0 +1,571 @@
+{
+  "kind": "language_signature",
+  "fn_name": "typescript",
+  "version": "0.1.0-draft",
+  "sorts": [
+    "sort_number.spec.json",
+    "sort_boolean.spec.json",
+    "sort_string.spec.json",
+    "sort_null.spec.json",
+    "sort_any.spec.json",
+    "sort_unit.spec.json",
+    "sort_expr.spec.json",
+    "sort_stmt.spec.json",
+    "sort_args.spec.json",
+    "sort_lvalue.spec.json"
+  ],
+  "operations": [
+    "op_add.spec.json",
+    "op_and.spec.json",
+    "op_args.spec.json",
+    "op_assign.spec.json",
+    "op_bitand.spec.json",
+    "op_bitnot.spec.json",
+    "op_bitor.spec.json",
+    "op_bitxor.spec.json",
+    "op_break.spec.json",
+    "op_call.spec.json",
+    "op_continue.spec.json",
+    "op_decl.spec.json",
+    "op_div.spec.json",
+    "op_eq.spec.json",
+    "op_for.spec.json",
+    "op_ge.spec.json",
+    "op_gt.spec.json",
+    "op_if.spec.json",
+    "op_index.spec.json",
+    "op_ite.spec.json",
+    "op_le.spec.json",
+    "op_lt.spec.json",
+    "op_member.spec.json",
+    "op_mod.spec.json",
+    "op_mul.spec.json",
+    "op_ne.spec.json",
+    "op_neg.spec.json",
+    "op_new.spec.json",
+    "op_not.spec.json",
+    "op_nullish.spec.json",
+    "op_or.spec.json",
+    "op_pos.spec.json",
+    "op_postdec.spec.json",
+    "op_postinc.spec.json",
+    "op_predec.spec.json",
+    "op_preinc.spec.json",
+    "op_return.spec.json",
+    "op_seq.spec.json",
+    "op_shl.spec.json",
+    "op_shr.spec.json",
+    "op_source-unit.spec.json",
+    "op_sub.spec.json",
+    "op_throw.spec.json",
+    "op_typeof.spec.json",
+    "op_ushr.spec.json",
+    "op_while.spec.json"
+  ],
+  "equations": [
+    "eq_seq_assoc.spec.json",
+    "eq_seq_empty_left.spec.json",
+    "eq_seq_empty_right.spec.json"
+  ],
+  "effects": [
+    "eff_io.spec.json",
+    "eff_opaque_loop.spec.json",
+    "eff_panic.spec.json",
+    "eff_read.spec.json",
+    "eff_unresolved_call.spec.json",
+    "eff_write.spec.json"
+  ],
+  "effect_signatures": [
+    "effsig_call.spec.json",
+    "effsig_io.spec.json",
+    "effsig_loop.spec.json",
+    "effsig_panic.spec.json",
+    "effsig_read.spec.json",
+    "effsig_write.spec.json"
+  ],
+  "arity_shapes": {
+    "ts:add": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:and": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "ts:args": {
+      "kind": "positional",
+      "variadic": true
+    },
+    "ts:assign": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        },
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "ts:bitand": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:bitnot": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:bitor": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:bitxor": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:break": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "ts:call": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "callee"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    },
+    "ts:continue": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "ts:decl": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "name"
+        },
+        {
+          "name": "initializer"
+        }
+      ]
+    },
+    "ts:div": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:eq": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:for": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "init"
+        },
+        {
+          "name": "cond"
+        },
+        {
+          "name": "update"
+        },
+        {
+          "name": "body",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "ts:ge": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:gt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:if": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_branch",
+          "evaluation": "unevaluated"
+        },
+        {
+          "name": "else_branch",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "ts:index": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "object"
+        },
+        {
+          "name": "index"
+        }
+      ]
+    },
+    "ts:ite": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_expr",
+          "evaluation": "unevaluated"
+        },
+        {
+          "name": "else_expr",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "ts:le": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:lt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:member": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "object"
+        },
+        {
+          "name": "property"
+        }
+      ]
+    },
+    "ts:mod": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:mul": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:ne": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:neg": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:new": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "constructor"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    },
+    "ts:not": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:nullish": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "ts:or": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "ts:pos": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:postdec": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:postinc": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:predec": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:preinc": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:return": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "ts:seq": {
+      "kind": "positional",
+      "variadic": true
+    },
+    "ts:shl": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:shr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:source-unit": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "bytes",
+          "evaluation": "unevaluated",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "operational_term"
+        }
+      ]
+    },
+    "ts:sub": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:throw": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "ts:typeof": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "ts:ushr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "ts:while": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "body",
+          "evaluation": "unevaluated"
+        }
+      ]
+    }
+  },
+  "locus": "menagerie/typescript-language-signature/README.md"
+}

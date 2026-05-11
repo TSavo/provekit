@@ -116,6 +116,8 @@ help:
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean          remove build artifacts"
+	@echo "  make mint-typescript-language-signature"
+	@echo "                       mint the draft TypeScript source language-signature catalog"
 	@echo ""
 	@echo "Pinned CIDs (catalog v1.6.2):"
 	@echo "  catalog: $(CATALOG_CID)"
@@ -510,6 +512,10 @@ catalog-verify:
 .PHONY: c11-cursorkind-check
 c11-cursorkind-check:
 	python3 tools/generate-c11-from-cursorkind.py --check
+
+.PHONY: mint-typescript-language-signature
+mint-typescript-language-signature:
+	menagerie/typescript-language-signature/mint.sh
 
 .PHONY: protocol-verify
 protocol-verify: build-rust

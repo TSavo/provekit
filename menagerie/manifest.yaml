@@ -29,6 +29,11 @@ destinations:
       witnessCid). Aspirational: no grammar-conformance execution against the
       prose specs, no implementation conformance witness, no separate
       compatibility-invariant or bridge-checker witnesses yet.
+  - id: typescript-language-signature
+    path: typescript-language-signature
+    runnable: true
+    claim: TypeScript source AST operation algebra for ts:-namespaced function-contract mementos
+    command: menagerie/typescript-language-signature/mint.sh
   - id: change-station
     path: change-station
     runnable: planned

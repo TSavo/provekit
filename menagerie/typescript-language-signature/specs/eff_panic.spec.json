@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ts:effect:panic",
+  "version": "0.1.0-draft",
+  "formals": [],
+  "formal_sorts": [],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "panic-effect",
+    "arity": [],
+    "result": "Unit",
+    "wp": "record throw/panic behavior",
+    "arity_shape": {
+      "kind": "positional",
+      "arity": 0
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#effects"
+}

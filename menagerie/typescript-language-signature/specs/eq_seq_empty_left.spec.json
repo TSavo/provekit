@@ -1,0 +1,39 @@
+{
+  "kind": "equation",
+  "fn_name": "ts:seq-empty-left",
+  "version": "0.1.0-draft",
+  "formals": [
+    "a"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "ts:seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "ts:seq",
+          "args": []
+        },
+        {
+          "kind": "var",
+          "name": "a"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "a"
+    }
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#equations"
+}
