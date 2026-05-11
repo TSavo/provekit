@@ -18,6 +18,19 @@ def compile_ir_document(ir: list[Json]) -> str:
     return text + ("\n" if text else "")
 
 
+def compile_body_term(term: Json, *, fn_name: str = "f", formals: list[str] | None = None) -> str:
+    contract = {
+        "kind": "function-contract",
+        "fnName": fn_name,
+        "formals": list(formals or []),
+        "post": {"args": [None, term]},
+    }
+    module = ast.Module(body=[_compile_contract(contract)], type_ignores=[])
+    ast.fix_missing_locations(module)
+    text = ast.unparse(module)
+    return text + ("\n" if text else "")
+
+
 def _source_unit_bytes(ir: list[Json]) -> str | None:
     for contract in ir:
         if not _is_function_contract(contract):
