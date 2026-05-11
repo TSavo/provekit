@@ -1,0 +1,66 @@
+{
+  "kind": "equation",
+  "fn_name": "python:not-desugar",
+  "formals": [
+    "operand"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json"
+  ],
+  "role": "desugaring",
+  "direction": "left-to-right",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "python:not",
+      "args": [
+        {
+          "kind": "var",
+          "name": "operand"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "python:ite-bool",
+      "args": [
+        {
+          "kind": "var",
+          "name": "operand"
+        },
+        {
+          "kind": "const",
+          "value": false,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        },
+        {
+          "kind": "const",
+          "value": true,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "obligations": {
+    "wp_preservation": {
+      "kind": "wp-preservation",
+      "status": "discharged",
+      "method": "boolean negation wp identity for Bool operands"
+    }
+  }
+}

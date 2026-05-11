@@ -1,0 +1,67 @@
+{
+  "kind": "equation",
+  "fn_name": "python:or-desugar",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json",
+    "sort_bool.spec.json"
+  ],
+  "role": "desugaring",
+  "direction": "left-to-right",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "python:or",
+      "args": [
+        {
+          "kind": "var",
+          "name": "lhs"
+        },
+        {
+          "kind": "var",
+          "name": "rhs"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "python:ite-bool",
+      "args": [
+        {
+          "kind": "var",
+          "name": "lhs"
+        },
+        {
+          "kind": "const",
+          "value": true,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        },
+        {
+          "kind": "var",
+          "name": "rhs"
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "obligations": {
+    "wp_preservation": {
+      "kind": "wp-preservation",
+      "status": "discharged",
+      "method": "short-circuit boolean disjunction wp identity for Bool operands"
+    }
+  }
+}

@@ -4,6 +4,7 @@ pub mod canonical;
 pub mod ci;
 pub mod compose;
 pub mod core;
+pub mod desugar;
 pub mod ffi;
 
 #[derive(Debug, thiserror::Error)]
