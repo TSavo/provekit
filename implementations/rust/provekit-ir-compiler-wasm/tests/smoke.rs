@@ -112,6 +112,97 @@ fn lowers_c11_logical_ops_as_short_circuit_truthy_ops() {
 }
 
 #[test]
+fn projects_source_unit_to_operational_term() {
+    let input = json!({
+        "kind": "op",
+        "name": "source-unit",
+        "args": [
+            {"kind": "bytes", "encoding": "hex", "value": "696e74206628696e742078297b72657475726e20782b313b7d0a"},
+            {
+                "kind": "op",
+                "name": "return",
+                "args": [{
+                    "kind": "op",
+                    "name": "bop_add",
+                    "args": [
+                        {"kind": "var", "name": "x"},
+                        {"kind": "const", "value": 1, "sort": {"kind": "ctor", "name": "Int", "args": []}}
+                    ]
+                }]
+            }
+        ]
+    });
+
+    let wat = compile_wat(&input).expect("compile source-unit operational projection");
+
+    assert!(wat.contains("(param $x i32)"));
+    assert!(wat.contains("i32.add"));
+}
+
+#[test]
+fn cast_uses_value_slot_not_target_type_as_runtime_input() {
+    let input = json!({
+        "kind": "c11-algebra-term",
+        "source": "cast.c",
+        "term": {
+            "kind": "op",
+            "name": "return",
+            "args": [{
+                "kind": "op",
+                "name": "cast",
+                "args": [
+                    {"kind": "var", "name": "int"},
+                    {"kind": "var", "name": "x"}
+                ]
+            }]
+        }
+    });
+
+    let wat = compile_wat(&input).expect("compile typed cast projection");
+
+    assert!(wat.contains("(param $x i32)"));
+    assert!(!wat.contains("(param $int i32)"));
+    assert!(wat.contains("local.get $x"));
+}
+
+#[test]
+fn asm_link_edge_is_cleanly_rejected_as_a_boundary_op() {
+    let input = json!({
+        "kind": "c11-algebra-term",
+        "source": "asm.c",
+        "term": {
+            "kind": "op",
+            "name": "seq",
+            "args": [
+                {
+                    "kind": "op",
+                    "name": "asm-link-edge",
+                    "args": [
+                        {"kind": "var", "name": "blake3-512:path"},
+                        {"kind": "var", "name": "blake3-512:asm"},
+                        {"kind": "var", "name": "x86-64:sysv"},
+                        {"kind": "var", "name": "provekit-lift-asm-x86-64"},
+                        {"kind": "var", "name": "provekit_inline_asm"},
+                        {"kind": "var", "name": "gnu-inline-asm"},
+                        {"kind": "literal", "value": "nop"},
+                        {"kind": "literal", "value": ".text\n"},
+                        {"kind": "op", "name": "set", "args": []},
+                        {"kind": "op", "name": "set", "args": []},
+                        {"kind": "op", "name": "set", "args": []}
+                    ]
+                },
+                {"kind": "op", "name": "return", "args": [{"kind": "var", "name": "x"}]}
+            ]
+        }
+    });
+
+    let err = compile_wat(&input).expect_err("asm-link-edge is a link boundary");
+    assert!(err
+        .to_string()
+        .contains("unsupported predicate: asm-link-edge"));
+}
+
+#[test]
 fn lowers_memory_ops_with_exported_memory() {
     let input = json!({
         "kind": "c11-algebra-term",

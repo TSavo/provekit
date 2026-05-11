@@ -72,6 +72,14 @@ pub const ALGEBRA_TO_WASM_TABLE: &[(&str, &str)] = &[
     ("deref(p)", "emit p; i32.load"),
     ("uop_deref(p)", "emit p; i32.load"),
     (
+        "source-unit(bytes, term)",
+        "project to term before lowering",
+    ),
+    (
+        "cast(target_type,value)",
+        "target_type is type metadata; lower value in the i32 subset",
+    ),
+    (
         "assign(x,v)",
         "emit v; local.set $x when x is a local variable",
     ),
