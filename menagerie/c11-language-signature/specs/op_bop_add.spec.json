@@ -1,0 +1,47 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:bop_add",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "bop_add",
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "set"
+    },
+    "result": "Expr",
+    "wp": "C binary + expression; operand evaluation order is not sequenced"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

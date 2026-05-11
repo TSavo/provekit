@@ -34,6 +34,18 @@
       "Expr",
       "Stmt"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "name",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "statement label with body"
   },

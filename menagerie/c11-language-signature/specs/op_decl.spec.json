@@ -34,6 +34,18 @@
       "Expr",
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "name",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "initializer"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "bind local name to initializer before continuing"
   },

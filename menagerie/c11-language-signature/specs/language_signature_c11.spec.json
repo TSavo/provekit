@@ -55,9 +55,19 @@
     "op_float_literal.spec.json",
     "op_imaginary_literal.spec.json",
     "op_null.spec.json",
+    "op_sizeof_expr.spec.json",
+    "op_sizeof_type.spec.json",
+    "op_alignof_expr.spec.json",
+    "op_alignof_type.spec.json",
+    "op_typeof_expr.spec.json",
+    "op_typeof_type.spec.json",
+    "op_offsetof.spec.json",
+    "op_builtin_types_compatible_p.spec.json",
+    "op_builtin_choose_expr.spec.json",
     "op_generic_selection.spec.json",
     "op_stmt_expr.spec.json",
     "op_addr_label.spec.json",
+    "op_asm_link_edge.spec.json",
     "op_div.spec.json",
     "op_mod.spec.json",
     "op_shl.spec.json",
@@ -79,8 +89,1191 @@
     "op_unexposed_stmt.spec.json",
     "op_unexposed_expr.spec.json",
     "op_binary_operator.spec.json",
-    "op_unary_operator.spec.json"
+    "op_unary_operator.spec.json",
+    "op_bop_add.spec.json",
+    "op_bop_sub.spec.json",
+    "op_bop_mul.spec.json",
+    "op_bop_div.spec.json",
+    "op_bop_mod.spec.json",
+    "op_bop_shl.spec.json",
+    "op_bop_shr.spec.json",
+    "op_bop_bitand.spec.json",
+    "op_bop_bitor.spec.json",
+    "op_bop_bitxor.spec.json",
+    "op_bop_eq.spec.json",
+    "op_bop_ne.spec.json",
+    "op_bop_lt.spec.json",
+    "op_bop_le.spec.json",
+    "op_bop_gt.spec.json",
+    "op_bop_ge.spec.json",
+    "op_bop_logand.spec.json",
+    "op_bop_logor.spec.json",
+    "op_bop_comma.spec.json",
+    "op_uop_neg.spec.json",
+    "op_uop_lognot.spec.json",
+    "op_uop_deref.spec.json",
+    "op_uop_bitnot.spec.json",
+    "op_uop_addr_of.spec.json",
+    "op_uop_pre_inc.spec.json",
+    "op_uop_post_inc.spec.json",
+    "op_uop_pre_dec.spec.json",
+    "op_uop_post_dec.spec.json",
+    "op_uop_plus.spec.json",
+    "op_compound_assign_add.spec.json",
+    "op_compound_assign_sub.spec.json",
+    "op_compound_assign_mul.spec.json",
+    "op_compound_assign_div.spec.json",
+    "op_compound_assign_mod.spec.json",
+    "op_compound_assign_shl.spec.json",
+    "op_compound_assign_shr.spec.json",
+    "op_compound_assign_bitand.spec.json",
+    "op_compound_assign_bitor.spec.json",
+    "op_compound_assign_bitxor.spec.json"
   ],
+  "arity_shapes": {
+    "c11:skip": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:seq": {
+      "kind": "positional",
+      "arity": 2
+    },
+    "c11:if": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_branch"
+        },
+        {
+          "name": "else_branch"
+        }
+      ]
+    },
+    "c11:while": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "c11:for": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "init"
+        },
+        {
+          "name": "cond"
+        },
+        {
+          "name": "step"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "c11:switch": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "scrutinee"
+        },
+        {
+          "name": "arms"
+        }
+      ]
+    },
+    "c11:call": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "callee"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    },
+    "c11:return": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:break": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:continue": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:deref": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "ptr"
+        }
+      ]
+    },
+    "c11:member": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "field",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
+    "c11:add": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:sub": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:mul": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:eq": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:lt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:le": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:and": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    },
+    "c11:or": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    },
+    "c11:not": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:assign": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:neg": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:opaque": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:decl": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "name",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "initializer"
+        }
+      ]
+    },
+    "c11:case": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "c11:default": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "c11:label": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "name",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "c11:goto": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
+    "c11:do": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        },
+        {
+          "name": "cond"
+        }
+      ]
+    },
+    "c11:cast": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:array-subscript": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "index"
+        }
+      ]
+    },
+    "c11:conditional": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_expr"
+        },
+        {
+          "name": "else_expr"
+        }
+      ]
+    },
+    "c11:compound-literal": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:init-list": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "items"
+        }
+      ]
+    },
+    "c11:string-literal": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:char-literal": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:float-literal": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:imaginary-literal": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:null": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "c11:sizeof_expr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "c11:sizeof_type": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        }
+      ]
+    },
+    "c11:alignof_expr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "c11:alignof_type": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        }
+      ]
+    },
+    "c11:typeof_expr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated"
+        }
+      ]
+    },
+    "c11:typeof_type": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        }
+      ]
+    },
+    "c11:offsetof": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "type",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        },
+        {
+          "name": "designator",
+          "evaluation": "unevaluated",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
+    "c11:builtin_types_compatible_p": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        },
+        {
+          "name": "rhs",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        }
+      ]
+    },
+    "c11:builtin_choose_expr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "controlling"
+        },
+        {
+          "name": "then_expr"
+        },
+        {
+          "name": "else_expr"
+        }
+      ]
+    },
+    "c11:generic-selection": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "controlling",
+          "evaluation": "unevaluated"
+        },
+        {
+          "name": "branches",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    },
+    "c11:stmt-expr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "c11:addr-label": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "label",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
+    "c11:asm-link-edge": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "path_cid",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "assembly_cid",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "target_surface",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "target_lifter",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "target_symbol",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "dialect",
+          "slot_sort": "identifier"
+        },
+        {
+          "name": "template",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "assembly_source",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "outputs",
+          "shape": {
+            "kind": "set"
+          }
+        },
+        {
+          "name": "inputs",
+          "shape": {
+            "kind": "set"
+          }
+        },
+        {
+          "name": "clobbers",
+          "shape": {
+            "kind": "set",
+            "member_sort": "identifier"
+          }
+        }
+      ]
+    },
+    "c11:div": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:mod": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:shl": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:shr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bit_and": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bit_or": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bit_xor": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:gt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:ge": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:ne": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:comma": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bit_not": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:addr_of": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:pre_inc": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:post_inc": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:pre_dec": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:post_dec": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:plus": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:unexposed-stmt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "children"
+        }
+      ]
+    },
+    "c11:unexposed-expr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "children"
+        }
+      ]
+    },
+    "c11:binary-operator": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:unary-operator": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "c11:bop_add": {
+      "kind": "set"
+    },
+    "c11:bop_sub": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_mul": {
+      "kind": "set"
+    },
+    "c11:bop_div": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_mod": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_shl": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_shr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_bitand": {
+      "kind": "set"
+    },
+    "c11:bop_bitor": {
+      "kind": "set"
+    },
+    "c11:bop_bitxor": {
+      "kind": "set"
+    },
+    "c11:bop_eq": {
+      "kind": "set"
+    },
+    "c11:bop_ne": {
+      "kind": "set"
+    },
+    "c11:bop_lt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_le": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_gt": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_ge": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "c11:bop_logand": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    },
+    "c11:bop_logor": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    },
+    "c11:bop_comma": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "first"
+        },
+        {
+          "name": "second"
+        }
+      ]
+    },
+    "c11:uop_neg": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "c11:uop_lognot": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "c11:uop_deref": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "c11:uop_bitnot": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "c11:uop_addr_of": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "c11:uop_pre_inc": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:uop_post_inc": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:uop_pre_dec": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:uop_post_dec": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "c11:uop_plus": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    },
+    "c11:compound_assign_add": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_sub": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_mul": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_div": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_mod": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_shl": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_shr": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_bitand": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_bitor": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    },
+    "c11:compound_assign_bitxor": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lvalue"
+        },
+        {
+          "name": "rvalue"
+        }
+      ]
+    }
+  },
   "equations": [
     "eq_seq_assoc.spec.json",
     "eq_seq_skip_left.spec.json",

@@ -2,11 +2,13 @@
 
 #include "walk_c.h"
 #include "c11_cursor_dispatch.generated.h"
+#include "blake3.h"
 
 #ifdef PK_C_ENABLE_CLANG_AST
 
 #include <clang-c/Index.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +20,8 @@ typedef enum {
     C11_TERM_OP = 0,
     C11_TERM_VAR = 1,
     C11_TERM_CONST_INT = 2,
-    C11_TERM_UNIT = 3
+    C11_TERM_UNIT = 3,
+    C11_TERM_LITERAL = 4
 } C11TermKind;
 
 typedef struct C11Term C11Term;
@@ -58,6 +61,7 @@ typedef struct {
 static void term_free(C11Term *term);
 static C11Term *lift_stmt(CXCursor cursor);
 static C11Term *lift_expr(CXCursor cursor);
+static const char *compound_assign_symbol(const char *name);
 
 static void buf_free(Buf *b) {
     if (b == NULL) return;
@@ -144,6 +148,91 @@ static int buf_append_json_string(Buf *b, const char *s) {
         }
     }
     return buf_append_char(b, '"');
+}
+
+static int buf_append_c_string_literal(Buf *b, const char *s) {
+    if (buf_append_char(b, '"') != 0) return -1;
+    for (const unsigned char *p = (const unsigned char *)(s == NULL ? "" : s); *p; p++) {
+        switch (*p) {
+        case '"':
+            if (buf_append(b, "\\\"") != 0) return -1;
+            break;
+        case '\\':
+            if (buf_append(b, "\\\\") != 0) return -1;
+            break;
+        case '\n':
+            if (buf_append(b, "\\n") != 0) return -1;
+            break;
+        case '\r':
+            if (buf_append(b, "\\r") != 0) return -1;
+            break;
+        case '\t':
+            if (buf_append(b, "\\t") != 0) return -1;
+            break;
+        default:
+            if (*p < 0x20) {
+                char esc[5];
+
+                (void)snprintf(esc, sizeof(esc), "\\x%02x", *p);
+                if (buf_append(b, esc) != 0) return -1;
+            } else if (buf_append_char(b, (char)*p) != 0) {
+                return -1;
+            }
+            break;
+        }
+    }
+    return buf_append_char(b, '"');
+}
+
+static char *cid_for_bytes(const char *data, size_t len) {
+    uint8_t out[64];
+    blake3_hasher hasher;
+    char *cid = malloc(strlen("blake3-512:") + sizeof(out) * 2 + 1);
+
+    if (cid == NULL) return NULL;
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data == NULL ? "" : data, len);
+    blake3_hasher_finalize(&hasher, out, sizeof(out));
+    memcpy(cid, "blake3-512:", strlen("blake3-512:"));
+    for (size_t i = 0; i < sizeof(out); i++) {
+        static const char hex[] = "0123456789abcdef";
+        cid[strlen("blake3-512:") + i * 2] = hex[out[i] >> 4];
+        cid[strlen("blake3-512:") + i * 2 + 1] = hex[out[i] & 0x0f];
+    }
+    cid[strlen("blake3-512:") + sizeof(out) * 2] = '\0';
+    return cid;
+}
+
+static char *cid_for_inline_asm_source(const char *assembly_source) {
+    Buf b = {0};
+    char *cid = NULL;
+
+    if (buf_append(&b, "{\"kind\":\"assembly-source\",\"source\":") != 0 ||
+        buf_append_json_string(&b, assembly_source) != 0 ||
+        buf_append(&b, ",\"targetSurface\":\"x86-64:sysv\"}") != 0) {
+        goto done;
+    }
+    cid = cid_for_bytes(b.data, b.len);
+
+done:
+    buf_free(&b);
+    return cid;
+}
+
+static char *cid_for_inline_asm_path(const char *assembly_cid) {
+    Buf b = {0};
+    char *cid = NULL;
+
+    if (buf_append(&b, "{\"assemblyCid\":") != 0 ||
+        buf_append_json_string(&b, assembly_cid) != 0 ||
+        buf_append(&b, ",\"kind\":\"Path\",\"steps\":[{\"kit\":\"provekit-lift-asm-x86-64\",\"surface\":\"x86-64:sysv\",\"transform\":\"lift\"},{\"kit\":\"provekit-link\",\"transform\":\"link\"}]}") != 0) {
+        goto done;
+    }
+    cid = cid_for_bytes(b.data, b.len);
+
+done:
+    buf_free(&b);
+    return cid;
 }
 
 static const char *path_basename(const char *path) {
@@ -250,6 +339,21 @@ static C11Term *term_var(const char *name) {
     return term_var_take(pk_c_walk_copy(name));
 }
 
+static C11Term *term_literal_take(char *value) {
+    C11Term *term = term_new(C11_TERM_LITERAL);
+
+    if (term == NULL) {
+        free(value);
+        return NULL;
+    }
+    term->name = value;
+    return term;
+}
+
+static C11Term *term_literal(const char *value) {
+    return term_literal_take(pk_c_walk_copy(value));
+}
+
 static C11Term *term_const_int(long value) {
     C11Term *term = term_new(C11_TERM_CONST_INT);
 
@@ -277,6 +381,10 @@ static C11Term *term_op_take(const char *name, C11Term **args, size_t n_args) {
         return NULL;
     }
     return term;
+}
+
+static C11Term *term_op0_take(const char *name) {
+    return term_op_take(name, NULL, 0);
 }
 
 static C11Term *term_op1_take(const char *name, C11Term *a) {
@@ -350,6 +458,8 @@ static C11Term *term_clone(const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return term_var(term->name);
+    case C11_TERM_LITERAL:
+        return term_literal(term->name);
     case C11_TERM_CONST_INT:
         return term_const_int(term->value);
     case C11_TERM_UNIT:
@@ -465,45 +575,45 @@ static C11Term *lift_binary_expr(CXCursor cursor) {
     if (lhs == NULL || rhs == NULL) goto done;
 
     if (source_has_token(source, "==")) {
-        out = term_op2_take("eq", lhs, rhs);
+        out = term_op2_take("bop_eq", lhs, rhs);
     } else if (source_has_token(source, "!=")) {
-        out = term_op2_take("ne", lhs, rhs);
+        out = term_op2_take("bop_ne", lhs, rhs);
     } else if (source_has_token(source, "&&")) {
-        out = term_op2_take("and", lhs, rhs);
+        out = term_op2_take("bop_logand", lhs, rhs);
     } else if (source_has_token(source, "||")) {
-        out = term_op2_take("or", lhs, rhs);
+        out = term_op2_take("bop_logor", lhs, rhs);
     } else if (source_has_token(source, "<=")) {
-        out = term_op2_take("le", lhs, rhs);
+        out = term_op2_take("bop_le", lhs, rhs);
     } else if (source_has_token(source, ">=")) {
-        out = term_op2_take("ge", lhs, rhs);
+        out = term_op2_take("bop_ge", lhs, rhs);
     } else if (source_has_token(source, "<<")) {
-        out = term_op2_take("shl", lhs, rhs);
+        out = term_op2_take("bop_shl", lhs, rhs);
     } else if (source_has_token(source, ">>")) {
-        out = term_op2_take("shr", lhs, rhs);
+        out = term_op2_take("bop_shr", lhs, rhs);
     } else if (source_has_token(source, "<")) {
-        out = term_op2_take("lt", lhs, rhs);
+        out = term_op2_take("bop_lt", lhs, rhs);
     } else if (source_has_token(source, ">")) {
-        out = term_op2_take("gt", lhs, rhs);
+        out = term_op2_take("bop_gt", lhs, rhs);
     } else if (source_has_token(source, "=")) {
         out = term_op2_take("assign", lhs, rhs);
     } else if (source_has_token(source, "+")) {
-        out = term_op2_take("add", lhs, rhs);
+        out = term_op2_take("bop_add", lhs, rhs);
     } else if (source_has_token(source, "-")) {
-        out = term_op2_take("sub", lhs, rhs);
+        out = term_op2_take("bop_sub", lhs, rhs);
     } else if (source_has_token(source, "*")) {
-        out = term_op2_take("mul", lhs, rhs);
+        out = term_op2_take("bop_mul", lhs, rhs);
     } else if (source_has_token(source, "/")) {
-        out = term_op2_take("div", lhs, rhs);
+        out = term_op2_take("bop_div", lhs, rhs);
     } else if (source_has_token(source, "%")) {
-        out = term_op2_take("mod", lhs, rhs);
+        out = term_op2_take("bop_mod", lhs, rhs);
     } else if (source_has_token(source, "&")) {
-        out = term_op2_take("bit_and", lhs, rhs);
+        out = term_op2_take("bop_bitand", lhs, rhs);
     } else if (source_has_token(source, "|")) {
-        out = term_op2_take("bit_or", lhs, rhs);
+        out = term_op2_take("bop_bitor", lhs, rhs);
     } else if (source_has_token(source, "^")) {
-        out = term_op2_take("bit_xor", lhs, rhs);
+        out = term_op2_take("bop_bitxor", lhs, rhs);
     } else if (source_has_token(source, ",")) {
-        out = term_op2_take("comma", lhs, rhs);
+        out = term_op2_take("bop_comma", lhs, rhs);
     } else {
         out = term_op2_take("binary-operator", lhs, rhs);
     }
@@ -522,53 +632,44 @@ static C11Term *lift_compound_assign_expr(CXCursor cursor) {
     CursorList children = {0};
     char *source = NULL;
     C11Term *lhs = NULL;
-    C11Term *lhs_for_rhs = NULL;
     C11Term *rhs = NULL;
-    C11Term *value = NULL;
     C11Term *out = NULL;
 
     if (cursor_children(cursor, &children) != 0 || children.len != 2) goto done;
     source = pk_c_walk_cursor_source(cursor);
     lhs = unwrap_expr(children.items[0]);
-    lhs_for_rhs = term_clone(lhs);
     rhs = unwrap_expr(children.items[1]);
-    if (lhs == NULL || lhs_for_rhs == NULL || rhs == NULL) goto done;
+    if (lhs == NULL || rhs == NULL) goto done;
     if (source_has_token(source, "+=")) {
-        value = term_op2_take("add", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_add", lhs, rhs);
     } else if (source_has_token(source, "-=")) {
-        value = term_op2_take("sub", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_sub", lhs, rhs);
     } else if (source_has_token(source, "*=")) {
-        value = term_op2_take("mul", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_mul", lhs, rhs);
     } else if (source_has_token(source, "/=")) {
-        value = term_op2_take("div", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_div", lhs, rhs);
     } else if (source_has_token(source, "%=")) {
-        value = term_op2_take("mod", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_mod", lhs, rhs);
     } else if (source_has_token(source, "<<=")) {
-        value = term_op2_take("shl", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_shl", lhs, rhs);
     } else if (source_has_token(source, ">>=")) {
-        value = term_op2_take("shr", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_shr", lhs, rhs);
     } else if (source_has_token(source, "&=")) {
-        value = term_op2_take("bit_and", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_bitand", lhs, rhs);
     } else if (source_has_token(source, "|=")) {
-        value = term_op2_take("bit_or", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_bitor", lhs, rhs);
     } else if (source_has_token(source, "^=")) {
-        value = term_op2_take("bit_xor", lhs_for_rhs, rhs);
+        out = term_op2_take("compound_assign_bitxor", lhs, rhs);
     } else {
-        value = term_op2_take("binary-operator", lhs_for_rhs, rhs);
+        out = term_op2_take("binary-operator", lhs, rhs);
     }
-    lhs_for_rhs = NULL;
-    rhs = NULL;
-    if (value == NULL) goto done;
-    out = term_op2_take("assign", lhs, value);
     lhs = NULL;
-    value = NULL;
+    rhs = NULL;
 
 done:
     free(source);
     term_free(lhs);
-    term_free(lhs_for_rhs);
     term_free(rhs);
-    term_free(value);
     cursor_list_free(&children);
     return out == NULL ? wrap_generic_cursor(cursor, "binary-operator") : out;
 }
@@ -584,25 +685,25 @@ static C11Term *lift_unary_expr(CXCursor cursor) {
     inner = unwrap_expr(children.items[0]);
     if (inner == NULL) goto done;
     if (source_starts_with(source, "++")) {
-        out = term_op1_take("pre_inc", inner);
+        out = term_op1_take("uop_pre_inc", inner);
     } else if (source_ends_with(source, "++")) {
-        out = term_op1_take("post_inc", inner);
+        out = term_op1_take("uop_post_inc", inner);
     } else if (source_starts_with(source, "--")) {
-        out = term_op1_take("pre_dec", inner);
+        out = term_op1_take("uop_pre_dec", inner);
     } else if (source_ends_with(source, "--")) {
-        out = term_op1_take("post_dec", inner);
+        out = term_op1_take("uop_post_dec", inner);
     } else if (source != NULL && source[0] == '-') {
-        out = term_op1_take("neg", inner);
+        out = term_op1_take("uop_neg", inner);
     } else if (source != NULL && source[0] == '!') {
-        out = term_op1_take("not", inner);
+        out = term_op1_take("uop_lognot", inner);
     } else if (source != NULL && source[0] == '*') {
-        out = term_op1_take("deref", inner);
+        out = term_op1_take("uop_deref", inner);
     } else if (source != NULL && source[0] == '~') {
-        out = term_op1_take("bit_not", inner);
+        out = term_op1_take("uop_bitnot", inner);
     } else if (source != NULL && source[0] == '&') {
-        out = term_op1_take("addr_of", inner);
+        out = term_op1_take("uop_addr_of", inner);
     } else if (source != NULL && source[0] == '+') {
-        out = term_op1_take("plus", inner);
+        out = term_op1_take("uop_plus", inner);
     } else {
         out = term_op1_take("unary-operator", inner);
     }
@@ -629,6 +730,144 @@ static C11Term *lift_integer_literal(CXCursor cursor) {
     }
     free(source);
     return term_const_int(value);
+}
+
+static char *extract_asm_template(const char *source) {
+    const char *p = source == NULL ? NULL : strchr(source, '"');
+    Buf out = {0};
+    char *copy = NULL;
+
+    if (p == NULL) return pk_c_walk_copy("nop");
+    p++;
+    while (*p != '\0') {
+        if (*p == '"') break;
+        if (*p == '\\' && p[1] != '\0') {
+            p++;
+            switch (*p) {
+            case 'n':
+                if (buf_append_char(&out, '\n') != 0) goto done;
+                break;
+            case 'r':
+                if (buf_append_char(&out, '\r') != 0) goto done;
+                break;
+            case 't':
+                if (buf_append_char(&out, '\t') != 0) goto done;
+                break;
+            case '\\':
+            case '"':
+                if (buf_append_char(&out, *p) != 0) goto done;
+                break;
+            default:
+                if (buf_append_char(&out, '\\') != 0 || buf_append_char(&out, *p) != 0) goto done;
+                break;
+            }
+            p++;
+            continue;
+        }
+        if (buf_append_char(&out, *p++) != 0) goto done;
+    }
+    copy = pk_c_walk_copy(out.data == NULL || out.data[0] == '\0' ? "nop" : out.data);
+
+done:
+    buf_free(&out);
+    return copy;
+}
+
+static char *inline_asm_symbol_from_cid(const char *cid) {
+    const char *hex = cid == NULL ? "" : strchr(cid, ':');
+    char *symbol = malloc(strlen("provekit_inline_asm_") + 17);
+
+    if (symbol == NULL) return NULL;
+    hex = hex == NULL ? cid : hex + 1;
+    (void)snprintf(symbol, strlen("provekit_inline_asm_") + 17, "provekit_inline_asm_%.16s", hex);
+    for (char *p = symbol; *p; p++) {
+        if (!((*p >= 'a' && *p <= 'f') || (*p >= '0' && *p <= '9') || *p == '_' ||
+              (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z'))) {
+            *p = '_';
+        }
+    }
+    return symbol;
+}
+
+static char *assembly_source_for_template(const char *symbol, const char *template_text) {
+    Buf b = {0};
+    char *source = NULL;
+
+    if (buf_append(&b, ".intel_syntax noprefix\n.text\n.globl ") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, "\n.type ") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, ", @function\n") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, ":\n    ") != 0 ||
+        buf_append(&b, template_text == NULL || template_text[0] == '\0' ? "nop" : template_text) != 0 ||
+        buf_append(&b, "\n    ret\n.size ") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, ", .-") != 0 ||
+        buf_append(&b, symbol) != 0 ||
+        buf_append(&b, "\n.section .note.GNU-stack,\"\",@progbits\n") != 0) {
+        goto done;
+    }
+    source = pk_c_walk_copy(b.data);
+
+done:
+    buf_free(&b);
+    return source;
+}
+
+static C11Term *lift_asm_stmt(CXCursor cursor) {
+    char *cursor_source = pk_c_walk_cursor_source(cursor);
+    char *template_text = NULL;
+    char *template_cid = NULL;
+    char *symbol = NULL;
+    char *assembly_source = NULL;
+    char *assembly_cid = NULL;
+    char *path_cid = NULL;
+    C11Term **args = NULL;
+    C11Term *out = NULL;
+
+    template_text = extract_asm_template(cursor_source);
+    if (template_text == NULL) goto done;
+    template_cid = cid_for_bytes(template_text, strlen(template_text));
+    symbol = inline_asm_symbol_from_cid(template_cid);
+    assembly_source = assembly_source_for_template(symbol, template_text);
+    if (assembly_source == NULL) goto done;
+    assembly_cid = cid_for_inline_asm_source(assembly_source);
+    path_cid = cid_for_inline_asm_path(assembly_cid);
+    if (assembly_cid == NULL || path_cid == NULL) goto done;
+
+    args = calloc(11, sizeof(*args));
+    if (args == NULL) goto done;
+    args[0] = term_var(path_cid);
+    args[1] = term_var(assembly_cid);
+    args[2] = term_var("x86-64:sysv");
+    args[3] = term_var("provekit-lift-asm-x86-64");
+    args[4] = term_var(symbol);
+    args[5] = term_var("gnu-inline-asm");
+    args[6] = term_literal(template_text);
+    args[7] = term_literal(assembly_source);
+    args[8] = term_op0_take("set");
+    args[9] = term_op0_take("set");
+    args[10] = term_op0_take("set");
+    for (size_t i = 0; i < 11; i++) {
+        if (args[i] == NULL) goto done;
+    }
+    out = term_op_take("asm-link-edge", args, 11);
+    args = NULL;
+
+done:
+    free(cursor_source);
+    free(template_text);
+    free(template_cid);
+    free(symbol);
+    free(assembly_source);
+    free(assembly_cid);
+    free(path_cid);
+    if (args != NULL) {
+        for (size_t i = 0; i < 11; i++) term_free(args[i]);
+        free(args);
+    }
+    return out == NULL ? term_opaque() : out;
 }
 
 static C11Term *lift_expr(CXCursor cursor) {
@@ -980,6 +1219,9 @@ static C11Term *lift_stmt(CXCursor cursor) {
         return term_op1_take("break", term_unit());
     case CXCursor_ContinueStmt:
         return term_op1_take("continue", term_unit());
+    case CXCursor_GCCAsmStmt:
+    case CXCursor_MSAsmStmt:
+        return lift_asm_stmt(cursor);
     case CXCursor_WhileStmt:
         return lift_while_stmt(cursor);
     case CXCursor_ForStmt:
@@ -1064,6 +1306,10 @@ static int term_json(Buf *b, const C11Term *term) {
         return buf_append(b, "{\"kind\":\"var\",\"name\":") == 0 &&
             buf_append_json_string(b, term->name) == 0 &&
             buf_append_char(b, '}') == 0 ? 0 : -1;
+    case C11_TERM_LITERAL:
+        return buf_append(b, "{\"kind\":\"literal\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append_char(b, '}') == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
         return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
             buf_append_long(b, term->value) == 0 &&
@@ -1092,6 +1338,8 @@ static int term_surface(Buf *b, const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return buf_append(b, term->name);
+    case C11_TERM_LITERAL:
+        return buf_append_json_string(b, term->name);
     case C11_TERM_CONST_INT:
         return buf_append_long(b, term->value);
     case C11_TERM_UNIT:
@@ -1149,6 +1397,7 @@ static C11Term *project_value(const C11Term *term, const C11Term *continuation) 
     if (strcmp(term->name, "return") == 0 && term->n_args == 1) return term_clone(term->args[0]);
     if (strcmp(term->name, "skip") == 0) return continuation == NULL ? NULL : term_clone(continuation);
     if ((strcmp(term->name, "decl") == 0 || strcmp(term->name, "assign") == 0 ||
+         compound_assign_symbol(term->name) != NULL ||
          strcmp(term->name, "break") == 0 || strcmp(term->name, "continue") == 0) &&
         continuation != NULL) {
         return term_clone(continuation);
@@ -1176,22 +1425,24 @@ static C11Term *project_value(const C11Term *term, const C11Term *continuation) 
 }
 
 static const char *contract_ctor_name(const char *op_name) {
-    if (strcmp(op_name, "add") == 0) return "+";
-    if (strcmp(op_name, "sub") == 0) return "-";
-    if (strcmp(op_name, "mul") == 0) return "*";
-    if (strcmp(op_name, "div") == 0) return "/";
-    if (strcmp(op_name, "mod") == 0) return "%";
-    if (strcmp(op_name, "shl") == 0) return "<<";
-    if (strcmp(op_name, "shr") == 0) return ">>";
-    if (strcmp(op_name, "bit_and") == 0) return "&";
-    if (strcmp(op_name, "bit_or") == 0) return "|";
-    if (strcmp(op_name, "bit_xor") == 0) return "^";
-    if (strcmp(op_name, "eq") == 0) return "=";
-    if (strcmp(op_name, "lt") == 0) return "<";
-    if (strcmp(op_name, "le") == 0) return "<=";
-    if (strcmp(op_name, "gt") == 0) return ">";
-    if (strcmp(op_name, "ge") == 0) return ">=";
-    if (strcmp(op_name, "ne") == 0) return "!=";
+    if (strcmp(op_name, "add") == 0 || strcmp(op_name, "bop_add") == 0) return "+";
+    if (strcmp(op_name, "sub") == 0 || strcmp(op_name, "bop_sub") == 0) return "-";
+    if (strcmp(op_name, "mul") == 0 || strcmp(op_name, "bop_mul") == 0) return "*";
+    if (strcmp(op_name, "div") == 0 || strcmp(op_name, "bop_div") == 0) return "/";
+    if (strcmp(op_name, "mod") == 0 || strcmp(op_name, "bop_mod") == 0) return "%";
+    if (strcmp(op_name, "shl") == 0 || strcmp(op_name, "bop_shl") == 0) return "<<";
+    if (strcmp(op_name, "shr") == 0 || strcmp(op_name, "bop_shr") == 0) return ">>";
+    if (strcmp(op_name, "bit_and") == 0 || strcmp(op_name, "bop_bitand") == 0) return "&";
+    if (strcmp(op_name, "bit_or") == 0 || strcmp(op_name, "bop_bitor") == 0) return "|";
+    if (strcmp(op_name, "bit_xor") == 0 || strcmp(op_name, "bop_bitxor") == 0) return "^";
+    if (strcmp(op_name, "eq") == 0 || strcmp(op_name, "bop_eq") == 0) return "=";
+    if (strcmp(op_name, "lt") == 0 || strcmp(op_name, "bop_lt") == 0) return "<";
+    if (strcmp(op_name, "le") == 0 || strcmp(op_name, "bop_le") == 0) return "<=";
+    if (strcmp(op_name, "gt") == 0 || strcmp(op_name, "bop_gt") == 0) return ">";
+    if (strcmp(op_name, "ge") == 0 || strcmp(op_name, "bop_ge") == 0) return ">=";
+    if (strcmp(op_name, "ne") == 0 || strcmp(op_name, "bop_ne") == 0) return "!=";
+    if (strcmp(op_name, "bop_logand") == 0) return "&&";
+    if (strcmp(op_name, "bop_logor") == 0) return "||";
     return op_name;
 }
 
@@ -1202,6 +1453,10 @@ static int contract_term_json(Buf *b, const C11Term *term) {
         return buf_append(b, "{\"kind\":\"var\",\"name\":") == 0 &&
             buf_append_json_string(b, term->name) == 0 &&
             buf_append_char(b, '}') == 0 ? 0 : -1;
+    case C11_TERM_LITERAL:
+        return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
+            buf_append_json_string(b, term->name) == 0 &&
+            buf_append(b, ",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}") == 0 ? 0 : -1;
     case C11_TERM_CONST_INT:
         return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
             buf_append_long(b, term->value) == 0 &&
@@ -1209,7 +1464,7 @@ static int contract_term_json(Buf *b, const C11Term *term) {
     case C11_TERM_UNIT:
         return buf_append(b, "{\"kind\":\"ctor\",\"name\":\"unit\",\"args\":[]}");
     case C11_TERM_OP:
-        if (strcmp(term->name, "neg") == 0 && term->n_args == 1 &&
+        if ((strcmp(term->name, "neg") == 0 || strcmp(term->name, "uop_neg") == 0) && term->n_args == 1 &&
             term->args[0]->kind == C11_TERM_CONST_INT) {
             return buf_append(b, "{\"kind\":\"const\",\"value\":") == 0 &&
                 buf_append_long(b, -term->args[0]->value) == 0 &&
@@ -1536,6 +1791,7 @@ fail:
 static int parse_term_object(const char **p, C11Term **out) {
     char *kind = NULL;
     char *name = NULL;
+    char *literal_value = NULL;
     C11Term **args = NULL;
     size_t n_args = 0;
     long value = 0;
@@ -1578,16 +1834,26 @@ static int parse_term_object(const char **p, C11Term **out) {
             }
             *p = end + 1;
         } else if (strcmp(key, "value") == 0) {
-            char *num_end = NULL;
+            if (**p == '"') {
+                free(literal_value);
+                literal_value = decode_json_string(*p + 1, &end);
+                if (literal_value == NULL || end == NULL || *end != '"') {
+                    free(key);
+                    goto done;
+                }
+                *p = end + 1;
+            } else {
+                char *num_end = NULL;
 
-            errno = 0;
-            value = strtol(*p, &num_end, 10);
-            if (errno != 0 || num_end == *p) {
-                free(key);
-                goto done;
+                errno = 0;
+                value = strtol(*p, &num_end, 10);
+                if (errno != 0 || num_end == *p) {
+                    free(key);
+                    goto done;
+                }
+                *p = num_end;
+                have_value = 1;
             }
-            *p = num_end;
-            have_value = 1;
         } else if (strcmp(key, "args") == 0) {
             for (size_t i = 0; i < n_args; i++) term_free(args[i]);
             free(args);
@@ -1623,6 +1889,10 @@ static int parse_term_object(const char **p, C11Term **out) {
         if (name == NULL) goto done;
         *out = term_var_take(name);
         name = NULL;
+    } else if (strcmp(kind, "literal") == 0) {
+        if (literal_value == NULL) goto done;
+        *out = term_literal_take(literal_value);
+        literal_value = NULL;
     } else if (strcmp(kind, "const") == 0) {
         if (!have_value) goto done;
         *out = term_const_int(value);
@@ -1636,6 +1906,7 @@ static int parse_term_object(const char **p, C11Term **out) {
 done:
     free(kind);
     free(name);
+    free(literal_value);
     for (size_t i = 0; i < n_args; i++) term_free(args[i]);
     free(args);
     return ok;
@@ -1743,6 +2014,27 @@ static const char *label_name_or_done(const C11Term *term, size_t index) {
     return "done";
 }
 
+static const char *literal_arg_or(const C11Term *term, size_t index, const char *fallback) {
+    if (term->n_args > index && term->args[index]->kind == C11_TERM_LITERAL) {
+        return term->args[index]->name == NULL ? fallback : term->args[index]->name;
+    }
+    return fallback;
+}
+
+static const char *compound_assign_symbol(const char *name) {
+    if (strcmp(name, "compound_assign_add") == 0) return "+=";
+    if (strcmp(name, "compound_assign_sub") == 0) return "-=";
+    if (strcmp(name, "compound_assign_mul") == 0) return "*=";
+    if (strcmp(name, "compound_assign_div") == 0) return "/=";
+    if (strcmp(name, "compound_assign_mod") == 0) return "%=";
+    if (strcmp(name, "compound_assign_shl") == 0) return "<<=";
+    if (strcmp(name, "compound_assign_shr") == 0) return ">>=";
+    if (strcmp(name, "compound_assign_bitand") == 0) return "&=";
+    if (strcmp(name, "compound_assign_bitor") == 0) return "|=";
+    if (strcmp(name, "compound_assign_bitxor") == 0) return "^=";
+    return NULL;
+}
+
 static const char *generic_assoc_type(size_t index) {
     static const char *const names[] = {"int", "long", "double", "char *", "void *"};
 
@@ -1779,31 +2071,34 @@ static int serialize_expr(Buf *out, const C11Term *term) {
     switch (term->kind) {
     case C11_TERM_VAR:
         return buf_append(out, term->name);
+    case C11_TERM_LITERAL:
+        return buf_append_c_string_literal(out, term->name);
     case C11_TERM_CONST_INT:
         return buf_append_long(out, term->value);
     case C11_TERM_UNIT:
         return buf_append(out, "0");
     case C11_TERM_OP:
-        if (strcmp(term->name, "add") == 0) return serialize_infix(out, term, "+");
-        if (strcmp(term->name, "sub") == 0) return serialize_infix(out, term, "-");
-        if (strcmp(term->name, "mul") == 0) return serialize_infix(out, term, "*");
-        if (strcmp(term->name, "div") == 0) return serialize_infix(out, term, "/");
-        if (strcmp(term->name, "mod") == 0) return serialize_infix(out, term, "%");
-        if (strcmp(term->name, "shl") == 0) return serialize_infix(out, term, "<<");
-        if (strcmp(term->name, "shr") == 0) return serialize_infix(out, term, ">>");
-        if (strcmp(term->name, "bit_and") == 0) return serialize_infix(out, term, "&");
-        if (strcmp(term->name, "bit_or") == 0) return serialize_infix(out, term, "|");
-        if (strcmp(term->name, "bit_xor") == 0) return serialize_infix(out, term, "^");
-        if (strcmp(term->name, "eq") == 0) return serialize_infix(out, term, "==");
-        if (strcmp(term->name, "lt") == 0) return serialize_infix(out, term, "<");
-        if (strcmp(term->name, "le") == 0) return serialize_infix(out, term, "<=");
-        if (strcmp(term->name, "gt") == 0) return serialize_infix(out, term, ">");
-        if (strcmp(term->name, "ge") == 0) return serialize_infix(out, term, ">=");
-        if (strcmp(term->name, "ne") == 0) return serialize_infix(out, term, "!=");
-        if (strcmp(term->name, "and") == 0) return serialize_infix(out, term, "&&");
-        if (strcmp(term->name, "or") == 0) return serialize_infix(out, term, "||");
-        if (strcmp(term->name, "comma") == 0) return serialize_infix(out, term, ",");
+        if (strcmp(term->name, "add") == 0 || strcmp(term->name, "bop_add") == 0) return serialize_infix(out, term, "+");
+        if (strcmp(term->name, "sub") == 0 || strcmp(term->name, "bop_sub") == 0) return serialize_infix(out, term, "-");
+        if (strcmp(term->name, "mul") == 0 || strcmp(term->name, "bop_mul") == 0) return serialize_infix(out, term, "*");
+        if (strcmp(term->name, "div") == 0 || strcmp(term->name, "bop_div") == 0) return serialize_infix(out, term, "/");
+        if (strcmp(term->name, "mod") == 0 || strcmp(term->name, "bop_mod") == 0) return serialize_infix(out, term, "%");
+        if (strcmp(term->name, "shl") == 0 || strcmp(term->name, "bop_shl") == 0) return serialize_infix(out, term, "<<");
+        if (strcmp(term->name, "shr") == 0 || strcmp(term->name, "bop_shr") == 0) return serialize_infix(out, term, ">>");
+        if (strcmp(term->name, "bit_and") == 0 || strcmp(term->name, "bop_bitand") == 0) return serialize_infix(out, term, "&");
+        if (strcmp(term->name, "bit_or") == 0 || strcmp(term->name, "bop_bitor") == 0) return serialize_infix(out, term, "|");
+        if (strcmp(term->name, "bit_xor") == 0 || strcmp(term->name, "bop_bitxor") == 0) return serialize_infix(out, term, "^");
+        if (strcmp(term->name, "eq") == 0 || strcmp(term->name, "bop_eq") == 0) return serialize_infix(out, term, "==");
+        if (strcmp(term->name, "lt") == 0 || strcmp(term->name, "bop_lt") == 0) return serialize_infix(out, term, "<");
+        if (strcmp(term->name, "le") == 0 || strcmp(term->name, "bop_le") == 0) return serialize_infix(out, term, "<=");
+        if (strcmp(term->name, "gt") == 0 || strcmp(term->name, "bop_gt") == 0) return serialize_infix(out, term, ">");
+        if (strcmp(term->name, "ge") == 0 || strcmp(term->name, "bop_ge") == 0) return serialize_infix(out, term, ">=");
+        if (strcmp(term->name, "ne") == 0 || strcmp(term->name, "bop_ne") == 0) return serialize_infix(out, term, "!=");
+        if (strcmp(term->name, "and") == 0 || strcmp(term->name, "bop_logand") == 0) return serialize_infix(out, term, "&&");
+        if (strcmp(term->name, "or") == 0 || strcmp(term->name, "bop_logor") == 0) return serialize_infix(out, term, "||");
+        if (strcmp(term->name, "comma") == 0 || strcmp(term->name, "bop_comma") == 0) return serialize_infix(out, term, ",");
         if (strcmp(term->name, "assign") == 0) return serialize_infix(out, term, "=");
+        if (compound_assign_symbol(term->name) != NULL) return serialize_infix(out, term, compound_assign_symbol(term->name));
         if (strcmp(term->name, "call") == 0) return serialize_call(out, term);
         if (strcmp(term->name, "member") == 0 && term->n_args >= 1) {
             return serialize_expr(out, term->args[0]) == 0 &&
@@ -1859,34 +2154,34 @@ static int serialize_expr(Buf *out, const C11Term *term) {
             return buf_append(out, "(~") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         if (strcmp(term->name, "opaque") == 0) return buf_append(out, "0 /* opaque */");
-        if (strcmp(term->name, "neg") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "neg") == 0 || strcmp(term->name, "uop_neg") == 0) && term->n_args == 1) {
             return buf_append(out, "(-") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "not") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "not") == 0 || strcmp(term->name, "uop_lognot") == 0) && term->n_args == 1) {
             return buf_append(out, "(!") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "deref") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "deref") == 0 || strcmp(term->name, "uop_deref") == 0) && term->n_args == 1) {
             return buf_append(out, "(*") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "bit_not") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "bit_not") == 0 || strcmp(term->name, "uop_bitnot") == 0) && term->n_args == 1) {
             return buf_append(out, "(~") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "addr_of") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "addr_of") == 0 || strcmp(term->name, "uop_addr_of") == 0) && term->n_args == 1) {
             return buf_append(out, "(&") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "pre_inc") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "pre_inc") == 0 || strcmp(term->name, "uop_pre_inc") == 0) && term->n_args == 1) {
             return buf_append(out, "(++") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "post_inc") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "post_inc") == 0 || strcmp(term->name, "uop_post_inc") == 0) && term->n_args == 1) {
             return buf_append_char(out, '(') == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append(out, "++)") == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "pre_dec") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "pre_dec") == 0 || strcmp(term->name, "uop_pre_dec") == 0) && term->n_args == 1) {
             return buf_append(out, "(--") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "post_dec") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "post_dec") == 0 || strcmp(term->name, "uop_post_dec") == 0) && term->n_args == 1) {
             return buf_append_char(out, '(') == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append(out, "--)") == 0 ? 0 : -1;
         }
-        if (strcmp(term->name, "plus") == 0 && term->n_args == 1) {
+        if ((strcmp(term->name, "plus") == 0 || strcmp(term->name, "uop_plus") == 0) && term->n_args == 1) {
             return buf_append(out, "(+") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
         fprintf(stderr, "serialize not implemented for expression op c11:%s\n", term->name);
@@ -1991,6 +2286,12 @@ static int serialize_stmt(Buf *out, const C11Term *term, int indent) {
             buf_append(out, " = ") == 0 &&
             serialize_expr(out, term->args[1]) == 0 &&
             buf_append(out, ";\n") == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "asm-link-edge") == 0 && term->n_args >= 7) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "__asm__ volatile(") == 0 &&
+            buf_append_c_string_literal(out, literal_arg_or(term, 6, "nop")) == 0 &&
+            buf_append(out, ");\n") == 0 ? 0 : -1;
     }
     if (strcmp(term->name, "switch") == 0 && term->n_args == 2) {
         return buf_append_indent(out, indent) == 0 &&
@@ -2103,6 +2404,14 @@ static int collect_names(
         return 0;
     }
     if (term->kind != C11_TERM_OP) return 0;
+    if (strcmp(term->name, "asm-link-edge") == 0) {
+        for (size_t i = 8; i < term->n_args && i <= 9; i++) {
+            if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
     if (strcmp(term->name, "call") == 0) {
         if (term->n_args > 0) {
             if (term->args[0]->kind == C11_TERM_VAR) {

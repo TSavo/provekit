@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:stmt-expr",
+    "formals": [
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "stmt-expr",
+      "arity": [
+        "Stmt"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "body"
+          }
+        ]
+      },
+      "result": "Expr",
+      "wp": "GNU statement expression payload"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:8fcb7768f3e515c28c234eae758b43e86fb0ff989a3fbeae141cb1475b2e2121fb4f213d0afdef21a250aa6c9c09479b3a0145a6cc7dd67997bdcbf498152132",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "C8A3XnT/YbWQYXVkEADtNQ6RABC+ymYffGlogddQCO7OGh9F+EKETioKqVTx8zM67h5J6ROdk8qGJwqmHCGRDQ=="
+  }
+}

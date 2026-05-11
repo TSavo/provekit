@@ -69,9 +69,58 @@ fn rpc_lift_response_returns_ir_document_with_foo_contract() {
     assert_eq!(declarations[0]["kind"], "function-contract");
 }
 
+#[test]
+fn x86_lifter_accepts_c11_inline_asm_link_edge_source() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../menagerie/c11-language-signature/example/asm_link.term.json");
+    let fixture = std::fs::read_to_string(&fixture_path)
+        .unwrap_or_else(|err| panic!("read {}: {err}", fixture_path.display()));
+    let value: serde_json::Value = serde_json::from_str(&fixture).expect("C11 asm term JSON");
+    let asm_source = find_asm_link_edge_assembly_source(&value).expect("assembly_source slot");
+
+    let temp_path = std::env::temp_dir().join(format!(
+        "provekit-inline-asm-link-{}-{}.s",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    std::fs::write(&temp_path, asm_source).expect("write emitted asm source");
+    let lifted =
+        provekit_lift_asm_x86_64::lift_paths(".", &[temp_path.to_string_lossy().to_string()])
+            .expect("x86 lifter accepts emitted asm source");
+    let _ = std::fs::remove_file(&temp_path);
+
+    assert!(
+        lifted
+            .contracts
+            .iter()
+            .any(|contract| contract.fn_name.starts_with("provekit_inline_asm_")),
+        "expected x86 lifter contract for C-emitted inline asm source"
+    );
+}
+
 fn lift_foo_fixture() -> provekit_lift_asm_x86_64::LiftResult {
     provekit_lift_asm_x86_64::lift_disassembly_text(FOO_SOURCE_PATH, FOO_DISASSEMBLY)
         .expect("foo disassembly lifts")
+}
+
+fn find_asm_link_edge_assembly_source(value: &serde_json::Value) -> Option<&str> {
+    if value.get("kind").and_then(serde_json::Value::as_str) == Some("op")
+        && value.get("name").and_then(serde_json::Value::as_str) == Some("asm-link-edge")
+    {
+        return value
+            .get("args")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|args| args.get(7))
+            .and_then(|slot| slot.get("value"))
+            .and_then(serde_json::Value::as_str);
+    }
+    match value {
+        serde_json::Value::Array(items) => {
+            items.iter().find_map(find_asm_link_edge_assembly_source)
+        }
+        serde_json::Value::Object(map) => map.values().find_map(find_asm_link_edge_assembly_source),
+        _ => None,
+    }
 }
 
 fn assert_formula_mentions(formula: &IrFormula, needle: &str) {

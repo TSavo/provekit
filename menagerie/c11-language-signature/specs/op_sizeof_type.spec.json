@@ -1,0 +1,47 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:sizeof_type",
+  "formals": [
+    "operand"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "sizeof_type",
+    "arity": [
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand",
+          "evaluation": "unevaluated",
+          "slot_sort": "type"
+        }
+      ]
+    },
+    "result": "Int",
+    "wp": "C sizeof type form; type operand is unevaluated"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

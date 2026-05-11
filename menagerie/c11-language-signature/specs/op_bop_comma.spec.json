@@ -1,0 +1,55 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:bop_comma",
+  "formals": [
+    "first",
+    "second"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "bop_comma",
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "first"
+        },
+        {
+          "name": "second"
+        }
+      ]
+    },
+    "result": "Expr",
+    "wp": "C comma expression sequence-points first before second"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

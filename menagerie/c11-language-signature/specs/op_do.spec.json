@@ -34,6 +34,17 @@
       "Stmt",
       "Bool"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        },
+        {
+          "name": "cond"
+        }
+      ]
+    },
     "result": "Stmt",
     "wp": "do body once, then loop while cond"
   },

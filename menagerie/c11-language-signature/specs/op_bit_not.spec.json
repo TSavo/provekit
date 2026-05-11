@@ -27,6 +27,14 @@
     "arity": [
       "Int"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
     "result": "Int",
     "wp": "integer bitwise complement expression"
   },

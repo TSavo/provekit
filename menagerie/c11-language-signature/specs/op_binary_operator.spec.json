@@ -34,6 +34,17 @@
       "Expr",
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "fallback binary operator when no core C11 operator is selected",
     "notes": "Core arithmetic and comparison operators dispatch to their existing op CIDs."

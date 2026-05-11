@@ -6,7 +6,7 @@
 #include <string.h>
 
 const char *pk_c11_signature_cid(void) {
-    return "blake3-512:34e0cd60770468dc5d6c5825bb393251debbfd0eaef11c1dec642fb1f7a04d05fa3a14db5cf4a54e5e74eaadc6cdd7c785baf437adfa84dbdce011b74b157b21";
+    return "blake3-512:a27e0770973e891baf139fea6e121ea14a474618738438fbb90edcc98dcd25b686e4fb0e1958e31736a00f07baaff2ef9c1d1db45cac45f0b0dfd5c0a7ddb86f";
 }
 
 const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind kind) {
@@ -16,8 +16,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)1, /* CXCursor_UnexposedDecl */
             "CXCursor_UnexposedDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -29,8 +30,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)2, /* CXCursor_StructDecl */
             "CXCursor_StructDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -42,8 +44,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)3, /* CXCursor_UnionDecl */
             "CXCursor_UnionDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -55,8 +58,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)4, /* CXCursor_ClassDecl */
             "CXCursor_ClassDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -68,8 +72,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)5, /* CXCursor_EnumDecl */
             "CXCursor_EnumDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -81,8 +86,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)6, /* CXCursor_FieldDecl */
             "CXCursor_FieldDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -94,8 +100,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)7, /* CXCursor_EnumConstantDecl */
             "CXCursor_EnumConstantDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -107,8 +114,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)8, /* CXCursor_FunctionDecl */
             "CXCursor_FunctionDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -120,8 +128,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)9, /* CXCursor_VarDecl */
             "CXCursor_VarDecl",
             "c11:decl",
-            "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99",
+            "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\", \"slot_sort\": \"identifier\"}, {\"name\": \"initializer\"}]}",
             "declared name, initializer or unit",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -133,8 +142,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)10, /* CXCursor_ParmDecl */
             "CXCursor_ParmDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -146,8 +156,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)11, /* CXCursor_ObjCInterfaceDecl */
             "CXCursor_ObjCInterfaceDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -159,8 +170,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)12, /* CXCursor_ObjCCategoryDecl */
             "CXCursor_ObjCCategoryDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -172,8 +184,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)13, /* CXCursor_ObjCProtocolDecl */
             "CXCursor_ObjCProtocolDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -185,8 +198,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)14, /* CXCursor_ObjCPropertyDecl */
             "CXCursor_ObjCPropertyDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -198,8 +212,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)15, /* CXCursor_ObjCIvarDecl */
             "CXCursor_ObjCIvarDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -211,8 +226,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)16, /* CXCursor_ObjCInstanceMethodDecl */
             "CXCursor_ObjCInstanceMethodDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -224,8 +240,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)17, /* CXCursor_ObjCClassMethodDecl */
             "CXCursor_ObjCClassMethodDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -237,8 +254,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)18, /* CXCursor_ObjCImplementationDecl */
             "CXCursor_ObjCImplementationDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -250,8 +268,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)19, /* CXCursor_ObjCCategoryImplDecl */
             "CXCursor_ObjCCategoryImplDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -263,8 +282,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)20, /* CXCursor_TypedefDecl */
             "CXCursor_TypedefDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -276,8 +296,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)21, /* CXCursor_CXXMethod */
             "CXCursor_CXXMethod",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -289,8 +310,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)22, /* CXCursor_Namespace */
             "CXCursor_Namespace",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -302,8 +324,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)23, /* CXCursor_LinkageSpec */
             "CXCursor_LinkageSpec",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -315,8 +338,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)24, /* CXCursor_Constructor */
             "CXCursor_Constructor",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -328,8 +352,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)25, /* CXCursor_Destructor */
             "CXCursor_Destructor",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -341,8 +366,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)26, /* CXCursor_ConversionFunction */
             "CXCursor_ConversionFunction",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -354,8 +380,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)27, /* CXCursor_TemplateTypeParameter */
             "CXCursor_TemplateTypeParameter",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -367,8 +394,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)28, /* CXCursor_NonTypeTemplateParameter */
             "CXCursor_NonTypeTemplateParameter",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -380,8 +408,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)29, /* CXCursor_TemplateTemplateParameter */
             "CXCursor_TemplateTemplateParameter",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -393,8 +422,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)30, /* CXCursor_FunctionTemplate */
             "CXCursor_FunctionTemplate",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -406,8 +436,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)31, /* CXCursor_ClassTemplate */
             "CXCursor_ClassTemplate",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -419,8 +450,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)32, /* CXCursor_ClassTemplatePartialSpecialization */
             "CXCursor_ClassTemplatePartialSpecialization",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -432,8 +464,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)33, /* CXCursor_NamespaceAlias */
             "CXCursor_NamespaceAlias",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -445,8 +478,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)34, /* CXCursor_UsingDirective */
             "CXCursor_UsingDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -458,8 +492,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)35, /* CXCursor_UsingDeclaration */
             "CXCursor_UsingDeclaration",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -471,8 +506,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)36, /* CXCursor_TypeAliasDecl */
             "CXCursor_TypeAliasDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -484,8 +520,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)37, /* CXCursor_ObjCSynthesizeDecl */
             "CXCursor_ObjCSynthesizeDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -497,8 +534,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)38, /* CXCursor_ObjCDynamicDecl */
             "CXCursor_ObjCDynamicDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -510,8 +548,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)39, /* CXCursor_CXXAccessSpecifier */
             "CXCursor_CXXAccessSpecifier",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -523,8 +562,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)40, /* CXCursor_ObjCSuperClassRef */
             "CXCursor_ObjCSuperClassRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -536,8 +576,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)41, /* CXCursor_ObjCProtocolRef */
             "CXCursor_ObjCProtocolRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -549,8 +590,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)42, /* CXCursor_ObjCClassRef */
             "CXCursor_ObjCClassRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -562,8 +604,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)43, /* CXCursor_TypeRef */
             "CXCursor_TypeRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -575,8 +618,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)44, /* CXCursor_CXXBaseSpecifier */
             "CXCursor_CXXBaseSpecifier",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -588,8 +632,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)45, /* CXCursor_TemplateRef */
             "CXCursor_TemplateRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -601,8 +646,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)46, /* CXCursor_NamespaceRef */
             "CXCursor_NamespaceRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -614,8 +660,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)47, /* CXCursor_MemberRef */
             "CXCursor_MemberRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -627,8 +674,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)48, /* CXCursor_LabelRef */
             "CXCursor_LabelRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -640,8 +688,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)49, /* CXCursor_OverloadedDeclRef */
             "CXCursor_OverloadedDeclRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -653,8 +702,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)50, /* CXCursor_VariableRef */
             "CXCursor_VariableRef",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -666,8 +716,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)70, /* CXCursor_InvalidFile */
             "CXCursor_InvalidFile",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -679,8 +730,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)71, /* CXCursor_NoDeclFound */
             "CXCursor_NoDeclFound",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -692,8 +744,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)72, /* CXCursor_NotImplemented */
             "CXCursor_NotImplemented",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -705,8 +758,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)73, /* CXCursor_InvalidCode */
             "CXCursor_InvalidCode",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -718,8 +772,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)100, /* CXCursor_UnexposedExpr */
             "CXCursor_UnexposedExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded children",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -733,6 +788,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "var",
             NULL,
             0,
+            NULL,
             "term leaf; spelling is the variable name",
             "term-leaf",
             "Leaf term constructor, not a minted operation."
@@ -746,6 +802,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:member",
             "blake3-512:9f52681b25fa589ad6fc38d26981756d4c44330f687c79b04b7f39f049816d625a57551b303aee1567c6451b153bb9dc0f383671545a934087f195b2d5033a5e",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"base\"}, {\"name\": \"field\", \"slot_sort\": \"identifier\"}]}",
             "base lvalue, field name",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -759,6 +816,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:call",
             "blake3-512:60d53cea89198925ed2b932d076bc348f980854458567d233399444bd462018a591ea42d05a6b4a240c3d9a96fe3f6a748f2428fae0c5dde2d47c34ee1f4daee",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"callee\"}, {\"name\": \"args\", \"shape\": {\"kind\": \"set\"}}]}",
             "callee reference, argument list",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -770,8 +828,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)104, /* CXCursor_ObjCMessageExpr */
             "CXCursor_ObjCMessageExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -783,8 +842,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)105, /* CXCursor_BlockExpr */
             "CXCursor_BlockExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -798,6 +858,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "const",
             NULL,
             0,
+            NULL,
             "term leaf; token text is the integer value",
             "term-leaf",
             "Leaf term constructor, not a minted operation."
@@ -809,8 +870,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)107, /* CXCursor_FloatingLiteral */
             "CXCursor_FloatingLiteral",
             "c11:float-literal",
-            "blake3-512:c624627cb15481230ad1e475d7330dc3c4261e5ac757e1f5d54ccdaccc3cb25e01cbb8696bffdc67e721f4f5679e8e09ae54b21dddcddaf37247ddb334250ce4",
+            "blake3-512:db46e4174f9ef6d47fc69dae2ef25f651a206d70d483075f46b363a91f84bc9dd9051f1bbb1b7a0dc0a3ec322648a098dd86228242c8d5948b20a74dc33b3547",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit placeholder",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -822,8 +884,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)108, /* CXCursor_ImaginaryLiteral */
             "CXCursor_ImaginaryLiteral",
             "c11:imaginary-literal",
-            "blake3-512:f49dec04735ac1c96e75e9a2044c189f2ac742f319e10237e9b3f1247d89ffab046f07072556e4dd3f075ba4eac4a672510428a850469429dbd0f2b3e045b107",
+            "blake3-512:211ec8f4c27cf13d5a0291e20b69a50f1083330b8d3384aa54478328d2b2db58cff2c7b0b3a0b1748b4397a6812d5c1176539d374024fdadb934a371d66a230b",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit placeholder",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -835,8 +898,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)109, /* CXCursor_StringLiteral */
             "CXCursor_StringLiteral",
             "c11:string-literal",
-            "blake3-512:c046b297480acfc4666a840ea8bdc75d10611a029f782e4f45b84590e184fdc0ee0b0e4bdb744c05d4fb8100ce99dea1f6f940be8ec25801548f677d8043f34e",
+            "blake3-512:3f29c9a02587ad6326ca5fa67f6ab095051edc4bd51cb28bbaea694895b8af589b60702c197d608d831ea7ddf3acef92116102901a43947a1dd509960fa3d891",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit placeholder",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -848,8 +912,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)110, /* CXCursor_CharacterLiteral */
             "CXCursor_CharacterLiteral",
             "c11:char-literal",
-            "blake3-512:73bc286f5ab6565014093e2b6249a1fca830ef62b04eb61246e806e7a57af59ede99005b88227ccd90f7d515d07ff39134c948c06362d0170a2dea4c612fe419",
+            "blake3-512:fe49919c2a731e1dd6b1836aaea0b8756dc8e759b3ac092157825154c1baf54c2d2edabb0697ba14f087218f3cdec2140cc50e4712e8bdc58cd3237d5798060d",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit placeholder",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -863,6 +928,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "passthrough",
             NULL,
             1,
+            NULL,
             "single child expression",
             "passthrough",
             "Parser unwraps this cursor kind and emits its child term."
@@ -876,6 +942,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "operator-dispatch",
             NULL,
             1,
+            NULL,
             "operand; token text and prefix/postfix position select a concrete unary op or fallback unary-operator",
             "operator-dispatch",
             "Operator spelling selects one of the listed op CIDs."
@@ -887,8 +954,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)113, /* CXCursor_ArraySubscriptExpr */
             "CXCursor_ArraySubscriptExpr",
             "c11:array-subscript",
-            "blake3-512:7f024dbda459084cfb33c2563c1c5de4757e4abb9721a2ebf4073a33eacaf85b148a3c415f52d9ce6b5a94ae37ec6e609a7217eca124f738abfe9d701b059092",
+            "blake3-512:8717248821a76c0738e512b25bffe2267d63144fa2fa9255ba2c083bb8dee101a138d3f094ccc9c4c2c199b09f29e28590133285c630035f236d6169eaf5e66f",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"base\"}, {\"name\": \"index\"}]}",
             "base, index",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -902,6 +970,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "operator-dispatch",
             NULL,
             2,
+            NULL,
             "lhs, rhs; token text selects a concrete binary op or fallback binary-operator",
             "operator-dispatch",
             "Operator spelling selects one of the listed op CIDs."
@@ -915,7 +984,8 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "operator-dispatch",
             NULL,
             2,
-            "lhs, rhs; token text desugars to assign(lhs, op(lhs, rhs)) or fallback binary-operator",
+            NULL,
+            "lvalue, rvalue; token text selects a concrete compound assignment op",
             "operator-dispatch",
             "Operator spelling selects one of the listed op CIDs."
         };
@@ -926,8 +996,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)116, /* CXCursor_ConditionalOperator */
             "CXCursor_ConditionalOperator",
             "c11:conditional",
-            "blake3-512:641b32b866cbbc19796036614ca4e4600ca00cf6ecfd0c461da59e37aa3d798e5c20794fe85a9907379a29143a5ed314172425b28f8cd3b89e44d5184759d566",
+            "blake3-512:2acf875b4f735918479586850d58f90ac4dc827e9ae7c2a586055e0752f291f1c9a7c7bf7d8cf69cd645e84edfead5459c3d67df934c31cc1c95736b6016a2aa",
             3,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"cond\"}, {\"name\": \"then_expr\"}, {\"name\": \"else_expr\"}]}",
             "condition, then expression, else expression",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -939,8 +1010,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)117, /* CXCursor_CStyleCastExpr */
             "CXCursor_CStyleCastExpr",
             "c11:cast",
-            "blake3-512:96e075c18c0be03322ec199e1b2501c98d355210f5920ab8c6e867771ed9ce28245481426728181f0f1504c56c94fcfebfbeb0b59e7e7fd37dc1375f2f55a98a",
+            "blake3-512:f611c8adf97a3ab5a3877523b8e6e5099bb5974a5077cb18240e7cbb4f56ae16e4c1121062e6778ad03cee9b35e2969809cf9a73249b398a77438bf18cc1a00d",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"value\"}]}",
             "cast child expression",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -952,8 +1024,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)118, /* CXCursor_CompoundLiteralExpr */
             "CXCursor_CompoundLiteralExpr",
             "c11:compound-literal",
-            "blake3-512:312a5249609aab8bcc22dc2d1371206ff9b5480aa6bd572200c13c2ad4952e304a220b634d047fa62fd1f2d65bf1923f1927e88a687f3ce8031470d32fb9a35d",
+            "blake3-512:7fdf598b330a758ce24cd9060f055b0f6fad6ce4a1bf3f2552ddb0b19cd085bcaadd6896f1518cddf3ba08978244e29f9b25d831548378491dae0e369040a4e3",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"value\"}]}",
             "initializer payload",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -965,8 +1038,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)119, /* CXCursor_InitListExpr */
             "CXCursor_InitListExpr",
             "c11:init-list",
-            "blake3-512:6133aad08ba77ca07cc767e6b8c79933366c8e6035e27031ebe6e47300c09a43242e4ede6b2aa91546669a14b21fef06443678fbcbcddea46d63c55360661527",
+            "blake3-512:95b3e4c1ed53506a3f876bc8a60c5ec9f18271945cd94d553c679d969c8607e407738c10ffb33d070cb92b1abb489fb58462b897389fabdd5e064eb14d2374ec",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"items\"}]}",
             "list payload",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -978,8 +1052,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)120, /* CXCursor_AddrLabelExpr */
             "CXCursor_AddrLabelExpr",
             "c11:addr-label",
-            "blake3-512:c8a0a1404292e5dd6b50e7dd5cc096f96e5d97c7c0e8172eb86bf35d981d35b8ad06486d7f682e58e44db377eda89d2870d5c064b4580e87e13d682bec3cd0fa",
+            "blake3-512:2b5fbe07e2dfb8235a31211c1fd56d9fffd54e24c5a8169308f14b1d18ea62eb18063b6f0384cca66f629bfeb2aa36b9a5138c9ce4c7c8e27f75fb6bf2078329",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"label\", \"slot_sort\": \"identifier\"}]}",
             "label target",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -991,8 +1066,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)121, /* CXCursor_StmtExpr */
             "CXCursor_StmtExpr",
             "c11:stmt-expr",
-            "blake3-512:886f39c45ff932473099380820bd08a69ce197cc87ac94158e57b69ea41ee7da3955f916ff9321529406eda24d4e3fb15b972e433dc4be1783df5425bbc362a2",
+            "blake3-512:8fcb7768f3e515c28c234eae758b43e86fb0ff989a3fbeae141cb1475b2e2121fb4f213d0afdef21a250aa6c9c09479b3a0145a6cc7dd67997bdcbf498152132",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"body\"}]}",
             "compound statement payload",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1004,8 +1080,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)122, /* CXCursor_GenericSelectionExpr */
             "CXCursor_GenericSelectionExpr",
             "c11:generic-selection",
-            "blake3-512:88a06ccdbef31969de90f5cb4c58317aaf9b897f121861168a9654501300bbf7881435f379e8e66317f76a3f2bf4d76c15e04945b0f6d3ce7908c97ca92ad3c5",
+            "blake3-512:3b74c43ad0d266168df309ac76c2ae841596adbd152b755a038137c64d9136120d042241b4a836fa8d5abab9b3546ce04050dba491d15f0bb7ebfc96383ac2aa",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"evaluation\": \"unevaluated\", \"name\": \"controlling\"}, {\"name\": \"branches\", \"shape\": {\"kind\": \"set\"}}]}",
             "control expression, association list",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1017,8 +1094,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)123, /* CXCursor_GNUNullExpr */
             "CXCursor_GNUNullExpr",
             "c11:null",
-            "blake3-512:ca8576ee4e65552a2f82d55a82909100151c1bbb12d5c00d08119a68d1fb6ff730aad94f140fc9b2312a29c0b9dc2c51d01ef13d9e7c392c8ff7708805b19c3b",
+            "blake3-512:5dc4400560fd597275c69b55c7b956568572a37451631dd45d953bca9eb6a7e4f4b7a965f939b584e779b49d4a1a415f4dd0f6811520f0425edb017d0332aa20",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit placeholder",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1030,8 +1108,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)124, /* CXCursor_CXXStaticCastExpr */
             "CXCursor_CXXStaticCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1043,8 +1122,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)125, /* CXCursor_CXXDynamicCastExpr */
             "CXCursor_CXXDynamicCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1056,8 +1136,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)126, /* CXCursor_CXXReinterpretCastExpr */
             "CXCursor_CXXReinterpretCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1069,8 +1150,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)127, /* CXCursor_CXXConstCastExpr */
             "CXCursor_CXXConstCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1082,8 +1164,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)128, /* CXCursor_CXXFunctionalCastExpr */
             "CXCursor_CXXFunctionalCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1095,8 +1178,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)129, /* CXCursor_CXXTypeidExpr */
             "CXCursor_CXXTypeidExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1108,8 +1192,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)130, /* CXCursor_CXXBoolLiteralExpr */
             "CXCursor_CXXBoolLiteralExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1121,8 +1206,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)131, /* CXCursor_CXXNullPtrLiteralExpr */
             "CXCursor_CXXNullPtrLiteralExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1134,8 +1220,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)132, /* CXCursor_CXXThisExpr */
             "CXCursor_CXXThisExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1147,8 +1234,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)133, /* CXCursor_CXXThrowExpr */
             "CXCursor_CXXThrowExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1160,8 +1248,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)134, /* CXCursor_CXXNewExpr */
             "CXCursor_CXXNewExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1173,8 +1262,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)135, /* CXCursor_CXXDeleteExpr */
             "CXCursor_CXXDeleteExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1186,8 +1276,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)136, /* CXCursor_UnaryExpr */
             "CXCursor_UnaryExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1199,8 +1290,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)137, /* CXCursor_ObjCStringLiteral */
             "CXCursor_ObjCStringLiteral",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1212,8 +1304,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)138, /* CXCursor_ObjCEncodeExpr */
             "CXCursor_ObjCEncodeExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1225,8 +1318,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)139, /* CXCursor_ObjCSelectorExpr */
             "CXCursor_ObjCSelectorExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1238,8 +1332,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)140, /* CXCursor_ObjCProtocolExpr */
             "CXCursor_ObjCProtocolExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1251,8 +1346,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)141, /* CXCursor_ObjCBridgedCastExpr */
             "CXCursor_ObjCBridgedCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1264,8 +1360,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)142, /* CXCursor_PackExpansionExpr */
             "CXCursor_PackExpansionExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1277,8 +1374,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)143, /* CXCursor_SizeOfPackExpr */
             "CXCursor_SizeOfPackExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1290,8 +1388,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)144, /* CXCursor_LambdaExpr */
             "CXCursor_LambdaExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1303,8 +1402,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)145, /* CXCursor_ObjCBoolLiteralExpr */
             "CXCursor_ObjCBoolLiteralExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1316,8 +1416,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)146, /* CXCursor_ObjCSelfExpr */
             "CXCursor_ObjCSelfExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1329,8 +1430,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)147, /* CXCursor_ArraySectionExpr */
             "CXCursor_ArraySectionExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1342,8 +1444,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)148, /* CXCursor_ObjCAvailabilityCheckExpr */
             "CXCursor_ObjCAvailabilityCheckExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1355,8 +1458,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)149, /* CXCursor_FixedPointLiteral */
             "CXCursor_FixedPointLiteral",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1368,8 +1472,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)150, /* CXCursor_OMPArrayShapingExpr */
             "CXCursor_OMPArrayShapingExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1381,8 +1486,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)151, /* CXCursor_OMPIteratorExpr */
             "CXCursor_OMPIteratorExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1394,8 +1500,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)152, /* CXCursor_CXXAddrspaceCastExpr */
             "CXCursor_CXXAddrspaceCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1407,8 +1514,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)153, /* CXCursor_ConceptSpecializationExpr */
             "CXCursor_ConceptSpecializationExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1420,8 +1528,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)154, /* CXCursor_RequiresExpr */
             "CXCursor_RequiresExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1433,8 +1542,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)155, /* CXCursor_CXXParenListInitExpr */
             "CXCursor_CXXParenListInitExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1446,8 +1556,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)156, /* CXCursor_PackIndexingExpr */
             "CXCursor_PackIndexingExpr",
             "c11:unexposed-expr",
-            "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+            "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded child expressions",
             "newly-minted",
             "Generated fallback expression op for a C-family expression cursor."
@@ -1459,8 +1570,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)200, /* CXCursor_UnexposedStmt */
             "CXCursor_UnexposedStmt",
             "c11:unexposed-stmt",
-            "blake3-512:8556d80b81d477ba120a22f5ccc19d4e86fd315225014d13f7ab9e1bb5073605d797dafed8737ff6defce7a476a3e6200b496437fb63f47f6f2fe718ad6905f1",
+            "blake3-512:7800cb0e7dd03d6785510e1d5735a7e7f32e65fd80df378badadb7d3db3bb7e4e24dd31bbfdc6c1ab84a277127127850861a00d46c36ce5d8cae272b3a1e5c75",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"children\"}]}",
             "folded children",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1472,8 +1584,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)201, /* CXCursor_LabelStmt */
             "CXCursor_LabelStmt",
             "c11:label",
-            "blake3-512:267398f175a32e44f33f3fcec4a81689c80affe8d88831e59ff17286fea38d2b7c8b32aeb18ebd98b133f8298959152ebb85f5f5830bad9c03f36320c89b8062",
+            "blake3-512:c81cbb7ba8308cd3f709f642387e9c41997c44c548afe941b65f7d167d65a116102b23f73d7150ed27f3942e3aaa66b0cf5b7d5b513a6ae4a02b03b8f2eee6a2",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\", \"slot_sort\": \"identifier\"}, {\"name\": \"body\"}]}",
             "label name, body",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1487,6 +1600,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:seq",
             "blake3-512:f8390f57e0f4408252211849b4e62639c9779a19bcdfc207eb80e2f3225e2f3a1262434a0e56b0de765b35ad377ffee3b91e69750996104505dc9ed7c1398915",
             2,
+            "{\"arity\": 2, \"kind\": \"positional\"}",
             "fold children left with seq; empty body is skip",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1498,8 +1612,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)203, /* CXCursor_CaseStmt */
             "CXCursor_CaseStmt",
             "c11:case",
-            "blake3-512:76e0dcf8c0f591cfa0eaac0addf37c3785230a8c134531c96250eba9de3c133abca61f044c58cbb7e11b24744928491a1e95642b7a4b5b541d79505e3e16a986",
+            "blake3-512:979de6f162350277e9721fe63d7465ccdd5927bf1e2ccfc3e481ec28b02d24e1f39cfd5897c33bbc4d2156243a589ef791cf6f8b72d556739c14c8bb2bbaa2dd",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"value\"}, {\"name\": \"body\"}]}",
             "case expression, folded body",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1511,8 +1626,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)204, /* CXCursor_DefaultStmt */
             "CXCursor_DefaultStmt",
             "c11:default",
-            "blake3-512:319e2bbd1cf2cf85dcd08ecde664972a83befc990375d47ae622a24a927cb79e4da7934d45cfb40402a0fcd9a4f48ca262c87fe68fedff5153c451d8b156adc4",
+            "blake3-512:3285e01084c79f734c5fed24bfe38f52627dc052482e7de68df3f8882662b2d329efe7b03e27207c5a37982f0d1a005a48916195be7afaaae944859c47efb9cd",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"body\"}]}",
             "folded body",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1526,6 +1642,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:if",
             "blake3-512:402feb91b68096553e0c7f000cdb47c50a2d16094571a426639d6be487b934b9f1664bd4b8aa5f8cc2acf5d47f44cee31882c6dc8799e71aa29381fd91309b65",
             3,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"cond\"}, {\"name\": \"then_branch\"}, {\"name\": \"else_branch\"}]}",
             "condition, then branch, else branch or skip",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1539,6 +1656,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:switch",
             "blake3-512:600483b325098b9f47363fb1257b5a99ef4d1117dad06c05e09fa0626ad59747539c9ec2f17e6da859c1f8931a6a9d0b5e60a198dd6b69742d6f01f99897dd6c",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"scrutinee\"}, {\"name\": \"arms\"}]}",
             "scrutinee, folded arm body",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1552,6 +1670,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:while",
             "blake3-512:d2ad96e177a16cd03ad4c924c9e789b90382bb163cc4cdf19cd6c4e16a656c55ab9dbb654d4257b521cc61be6a7e980505214668bf70e57a7dd1c969767c0aff",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"cond\"}, {\"name\": \"body\"}]}",
             "condition, body",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1563,8 +1682,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)208, /* CXCursor_DoStmt */
             "CXCursor_DoStmt",
             "c11:do",
-            "blake3-512:eb17887f16d6264f8dcefd302bc94320b54978412407128c88ebba4c125e5eb1e6ba16b8aa57f4919ad1fbfab2595fd363e7be77ef8d82b23061bc9d1a02ff21",
+            "blake3-512:ec4d45631f2be0a3f3bc56a0cdb7be848a6095f5f2924f53986d0d6124ce072fba0d5933e5593ed64fd50fff27f264c4df2c551ad1fee36a69d170d1968b60d8",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"body\"}, {\"name\": \"cond\"}]}",
             "body, condition",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1578,6 +1698,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:for",
             "blake3-512:1befb2ce1afd30e48439a6e3e0cda8cbc1a965c0c55a4d0b1dde409ea2aa12d8e970f0a5b05c53d71ecb36a443730392adb2c70fba5045945b4c267dddb6a2d3",
             4,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"init\"}, {\"name\": \"cond\"}, {\"name\": \"step\"}, {\"name\": \"body\"}]}",
             "init, condition, step, body",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1589,8 +1710,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)210, /* CXCursor_GotoStmt */
             "CXCursor_GotoStmt",
             "c11:goto",
-            "blake3-512:64c8cf86af35a25e1a388e710b53e007bfe2fca0615229cefd55d2ddf782f0819ff00c10d18e66e734ff43c0399b4dc35f4f28f76ee4d839f078b5f281999d63",
+            "blake3-512:517350df7b9a44573dabae1390162fd8afb2a06b7c90acef3a0ced3d3bc9e5c1edf339db7a92699f9111011012c800a60e58ef02eb33194b558ca45d8df9f66f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"target\", \"slot_sort\": \"identifier\"}]}",
             "label target",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1602,8 +1724,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)211, /* CXCursor_IndirectGotoStmt */
             "CXCursor_IndirectGotoStmt",
             "c11:goto",
-            "blake3-512:64c8cf86af35a25e1a388e710b53e007bfe2fca0615229cefd55d2ddf782f0819ff00c10d18e66e734ff43c0399b4dc35f4f28f76ee4d839f078b5f281999d63",
+            "blake3-512:517350df7b9a44573dabae1390162fd8afb2a06b7c90acef3a0ced3d3bc9e5c1edf339db7a92699f9111011012c800a60e58ef02eb33194b558ca45d8df9f66f",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"target\", \"slot_sort\": \"identifier\"}]}",
             "computed label target",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1617,6 +1740,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:continue",
             "blake3-512:26b6cba9563e7f756d7e65d81eee266613ff63c0b30144445fec7d4db117a323afc1ccdea8e4268f7a46e88986aa5b9b1d73300d9f69ae32df8390ec076b7e46",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1630,6 +1754,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:break",
             "blake3-512:3a43532860e5dbd125a89564b51af5a754dbabefbd5cdfb1b01e2c4ff2cab1752d188e59cb9b57d9a2049bc871923808e2115caf70e018d3f9cdeffcfa7cd778",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1643,6 +1768,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:return",
             "blake3-512:5f1b6815fc786463b21234a14b2216a5156ebd5e385eadb1c749c0fa62e28e09f38adc37de9da36502200a4ee8e364e08b23f8767267e04dfb700c3061bb0428",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"value\"}]}",
             "returned expression or unit",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1653,12 +1779,13 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         static const pk_c11_cursor_dispatch info = {
             (enum CXCursorKind)215, /* CXCursor_GCCAsmStmt */
             "CXCursor_GCCAsmStmt",
-            "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
-            1,
-            "unit",
-            "opaque",
-            "Non-lifted cursor kind maps stably to c11:opaque."
+            "c11:asm-link-edge",
+            "blake3-512:506a77e58f0116c97b58a1b1148fbd1180ab87a68a5533fd0aee13175deff6abec3a269204c07fb854c4946a19b662fd63fb7227f6a2e5605e48da3ee033fcb4",
+            11,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"path_cid\", \"slot_sort\": \"identifier\"}, {\"name\": \"assembly_cid\", \"slot_sort\": \"identifier\"}, {\"name\": \"target_surface\", \"slot_sort\": \"identifier\"}, {\"name\": \"target_lifter\", \"slot_sort\": \"identifier\"}, {\"name\": \"target_symbol\", \"slot_sort\": \"identifier\"}, {\"name\": \"dialect\", \"slot_sort\": \"identifier\"}, {\"name\": \"template\", \"slot_sort\": \"literal\"}, {\"name\": \"assembly_source\", \"slot_sort\": \"literal\"}, {\"name\": \"outputs\", \"shape\": {\"kind\": \"set\"}}, {\"name\": \"inputs\", \"shape\": {\"kind\": \"set\"}}, {\"name\": \"clobbers\", \"shape\": {\"kind\": \"set\", \"member_sort\": \"identifier\"}}]}",
+            "path CID, assembly CID, target surface, target lifter, target symbol, dialect, template, assembly source, outputs, inputs, clobbers",
+            "newly-minted",
+            "Generated minimal stable op for this libclang cursor kind."
         };
         return &info;
     }
@@ -1667,8 +1794,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)216, /* CXCursor_ObjCAtTryStmt */
             "CXCursor_ObjCAtTryStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1680,8 +1808,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)217, /* CXCursor_ObjCAtCatchStmt */
             "CXCursor_ObjCAtCatchStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1693,8 +1822,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)218, /* CXCursor_ObjCAtFinallyStmt */
             "CXCursor_ObjCAtFinallyStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1706,8 +1836,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)219, /* CXCursor_ObjCAtThrowStmt */
             "CXCursor_ObjCAtThrowStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1719,8 +1850,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)220, /* CXCursor_ObjCAtSynchronizedStmt */
             "CXCursor_ObjCAtSynchronizedStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1732,8 +1864,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)221, /* CXCursor_ObjCAutoreleasePoolStmt */
             "CXCursor_ObjCAutoreleasePoolStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1745,8 +1878,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)222, /* CXCursor_ObjCForCollectionStmt */
             "CXCursor_ObjCForCollectionStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1758,8 +1892,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)223, /* CXCursor_CXXCatchStmt */
             "CXCursor_CXXCatchStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1771,8 +1906,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)224, /* CXCursor_CXXTryStmt */
             "CXCursor_CXXTryStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1784,8 +1920,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)225, /* CXCursor_CXXForRangeStmt */
             "CXCursor_CXXForRangeStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1797,8 +1934,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)226, /* CXCursor_SEHTryStmt */
             "CXCursor_SEHTryStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1810,8 +1948,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)227, /* CXCursor_SEHExceptStmt */
             "CXCursor_SEHExceptStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1823,8 +1962,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)228, /* CXCursor_SEHFinallyStmt */
             "CXCursor_SEHFinallyStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1835,12 +1975,13 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
         static const pk_c11_cursor_dispatch info = {
             (enum CXCursorKind)229, /* CXCursor_MSAsmStmt */
             "CXCursor_MSAsmStmt",
-            "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
-            1,
-            "unit",
-            "opaque",
-            "Non-lifted cursor kind maps stably to c11:opaque."
+            "c11:asm-link-edge",
+            "blake3-512:506a77e58f0116c97b58a1b1148fbd1180ab87a68a5533fd0aee13175deff6abec3a269204c07fb854c4946a19b662fd63fb7227f6a2e5605e48da3ee033fcb4",
+            11,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"path_cid\", \"slot_sort\": \"identifier\"}, {\"name\": \"assembly_cid\", \"slot_sort\": \"identifier\"}, {\"name\": \"target_surface\", \"slot_sort\": \"identifier\"}, {\"name\": \"target_lifter\", \"slot_sort\": \"identifier\"}, {\"name\": \"target_symbol\", \"slot_sort\": \"identifier\"}, {\"name\": \"dialect\", \"slot_sort\": \"identifier\"}, {\"name\": \"template\", \"slot_sort\": \"literal\"}, {\"name\": \"assembly_source\", \"slot_sort\": \"literal\"}, {\"name\": \"outputs\", \"shape\": {\"kind\": \"set\"}}, {\"name\": \"inputs\", \"shape\": {\"kind\": \"set\"}}, {\"name\": \"clobbers\", \"shape\": {\"kind\": \"set\", \"member_sort\": \"identifier\"}}]}",
+            "path CID, assembly CID, target surface, target lifter, target symbol, dialect, template, assembly source, outputs, inputs, clobbers",
+            "newly-minted",
+            "Generated minimal stable op for this libclang cursor kind."
         };
         return &info;
     }
@@ -1851,6 +1992,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:skip",
             "blake3-512:f6d5647365eb408ec445a22218b0587f23c37a6a635fac4f398a48469fb7a190c7751bac9640b918b0f27f08038ad7dc38837cbd718115bb99644cc5a7fbb93a",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "existing-core",
             "Reuses an existing hand-curated C11 core op."
@@ -1862,8 +2004,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)231, /* CXCursor_DeclStmt */
             "CXCursor_DeclStmt",
             "c11:decl",
-            "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99",
+            "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161",
             2,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\", \"slot_sort\": \"identifier\"}, {\"name\": \"initializer\"}]}",
             "fold variable declarations as decl terms",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -1875,8 +2018,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)232, /* CXCursor_OMPParallelDirective */
             "CXCursor_OMPParallelDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1888,8 +2032,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)233, /* CXCursor_OMPSimdDirective */
             "CXCursor_OMPSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1901,8 +2046,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)234, /* CXCursor_OMPForDirective */
             "CXCursor_OMPForDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1914,8 +2060,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)235, /* CXCursor_OMPSectionsDirective */
             "CXCursor_OMPSectionsDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1927,8 +2074,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)236, /* CXCursor_OMPSectionDirective */
             "CXCursor_OMPSectionDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1940,8 +2088,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)237, /* CXCursor_OMPSingleDirective */
             "CXCursor_OMPSingleDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1953,8 +2102,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)238, /* CXCursor_OMPParallelForDirective */
             "CXCursor_OMPParallelForDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1966,8 +2116,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)239, /* CXCursor_OMPParallelSectionsDirective */
             "CXCursor_OMPParallelSectionsDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1979,8 +2130,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)240, /* CXCursor_OMPTaskDirective */
             "CXCursor_OMPTaskDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -1992,8 +2144,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)241, /* CXCursor_OMPMasterDirective */
             "CXCursor_OMPMasterDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2005,8 +2158,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)242, /* CXCursor_OMPCriticalDirective */
             "CXCursor_OMPCriticalDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2018,8 +2172,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)243, /* CXCursor_OMPTaskyieldDirective */
             "CXCursor_OMPTaskyieldDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2031,8 +2186,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)244, /* CXCursor_OMPBarrierDirective */
             "CXCursor_OMPBarrierDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2044,8 +2200,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)245, /* CXCursor_OMPTaskwaitDirective */
             "CXCursor_OMPTaskwaitDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2057,8 +2214,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)246, /* CXCursor_OMPFlushDirective */
             "CXCursor_OMPFlushDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2070,8 +2228,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)247, /* CXCursor_SEHLeaveStmt */
             "CXCursor_SEHLeaveStmt",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2083,8 +2242,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)248, /* CXCursor_OMPOrderedDirective */
             "CXCursor_OMPOrderedDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2096,8 +2256,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)249, /* CXCursor_OMPAtomicDirective */
             "CXCursor_OMPAtomicDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2109,8 +2270,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)250, /* CXCursor_OMPForSimdDirective */
             "CXCursor_OMPForSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2122,8 +2284,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)251, /* CXCursor_OMPParallelForSimdDirective */
             "CXCursor_OMPParallelForSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2135,8 +2298,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)252, /* CXCursor_OMPTargetDirective */
             "CXCursor_OMPTargetDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2148,8 +2312,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)253, /* CXCursor_OMPTeamsDirective */
             "CXCursor_OMPTeamsDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2161,8 +2326,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)254, /* CXCursor_OMPTaskgroupDirective */
             "CXCursor_OMPTaskgroupDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2174,8 +2340,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)255, /* CXCursor_OMPCancellationPointDirective */
             "CXCursor_OMPCancellationPointDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2187,8 +2354,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)256, /* CXCursor_OMPCancelDirective */
             "CXCursor_OMPCancelDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2200,8 +2368,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)257, /* CXCursor_OMPTargetDataDirective */
             "CXCursor_OMPTargetDataDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2213,8 +2382,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)258, /* CXCursor_OMPTaskLoopDirective */
             "CXCursor_OMPTaskLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2226,8 +2396,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)259, /* CXCursor_OMPTaskLoopSimdDirective */
             "CXCursor_OMPTaskLoopSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2239,8 +2410,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)260, /* CXCursor_OMPDistributeDirective */
             "CXCursor_OMPDistributeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2252,8 +2424,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)261, /* CXCursor_OMPTargetEnterDataDirective */
             "CXCursor_OMPTargetEnterDataDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2265,8 +2438,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)262, /* CXCursor_OMPTargetExitDataDirective */
             "CXCursor_OMPTargetExitDataDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2278,8 +2452,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)263, /* CXCursor_OMPTargetParallelDirective */
             "CXCursor_OMPTargetParallelDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2291,8 +2466,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)264, /* CXCursor_OMPTargetParallelForDirective */
             "CXCursor_OMPTargetParallelForDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2304,8 +2480,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)265, /* CXCursor_OMPTargetUpdateDirective */
             "CXCursor_OMPTargetUpdateDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2317,8 +2494,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)266, /* CXCursor_OMPDistributeParallelForDirective */
             "CXCursor_OMPDistributeParallelForDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2330,8 +2508,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)267, /* CXCursor_OMPDistributeParallelForSimdDirective */
             "CXCursor_OMPDistributeParallelForSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2343,8 +2522,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)268, /* CXCursor_OMPDistributeSimdDirective */
             "CXCursor_OMPDistributeSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2356,8 +2536,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)269, /* CXCursor_OMPTargetParallelForSimdDirective */
             "CXCursor_OMPTargetParallelForSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2369,8 +2550,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)270, /* CXCursor_OMPTargetSimdDirective */
             "CXCursor_OMPTargetSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2382,8 +2564,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)271, /* CXCursor_OMPTeamsDistributeDirective */
             "CXCursor_OMPTeamsDistributeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2395,8 +2578,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)272, /* CXCursor_OMPTeamsDistributeSimdDirective */
             "CXCursor_OMPTeamsDistributeSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2408,8 +2592,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)273, /* CXCursor_OMPTeamsDistributeParallelForSimdDirective */
             "CXCursor_OMPTeamsDistributeParallelForSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2421,8 +2606,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)274, /* CXCursor_OMPTeamsDistributeParallelForDirective */
             "CXCursor_OMPTeamsDistributeParallelForDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2434,8 +2620,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)275, /* CXCursor_OMPTargetTeamsDirective */
             "CXCursor_OMPTargetTeamsDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2447,8 +2634,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)276, /* CXCursor_OMPTargetTeamsDistributeDirective */
             "CXCursor_OMPTargetTeamsDistributeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2460,8 +2648,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)277, /* CXCursor_OMPTargetTeamsDistributeParallelForDirective */
             "CXCursor_OMPTargetTeamsDistributeParallelForDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2473,8 +2662,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)278, /* CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective */
             "CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2486,8 +2676,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)279, /* CXCursor_OMPTargetTeamsDistributeSimdDirective */
             "CXCursor_OMPTargetTeamsDistributeSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2499,8 +2690,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)280, /* CXCursor_BuiltinBitCastExpr */
             "CXCursor_BuiltinBitCastExpr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2512,8 +2704,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)281, /* CXCursor_OMPMasterTaskLoopDirective */
             "CXCursor_OMPMasterTaskLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2525,8 +2718,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)282, /* CXCursor_OMPParallelMasterTaskLoopDirective */
             "CXCursor_OMPParallelMasterTaskLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2538,8 +2732,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)283, /* CXCursor_OMPMasterTaskLoopSimdDirective */
             "CXCursor_OMPMasterTaskLoopSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2551,8 +2746,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)284, /* CXCursor_OMPParallelMasterTaskLoopSimdDirective */
             "CXCursor_OMPParallelMasterTaskLoopSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2564,8 +2760,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)285, /* CXCursor_OMPParallelMasterDirective */
             "CXCursor_OMPParallelMasterDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2577,8 +2774,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)286, /* CXCursor_OMPDepobjDirective */
             "CXCursor_OMPDepobjDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2590,8 +2788,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)287, /* CXCursor_OMPScanDirective */
             "CXCursor_OMPScanDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2603,8 +2802,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)288, /* CXCursor_OMPTileDirective */
             "CXCursor_OMPTileDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2616,8 +2816,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)289, /* CXCursor_OMPCanonicalLoop */
             "CXCursor_OMPCanonicalLoop",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2629,8 +2830,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)290, /* CXCursor_OMPInteropDirective */
             "CXCursor_OMPInteropDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2642,8 +2844,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)291, /* CXCursor_OMPDispatchDirective */
             "CXCursor_OMPDispatchDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2655,8 +2858,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)292, /* CXCursor_OMPMaskedDirective */
             "CXCursor_OMPMaskedDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2668,8 +2872,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)293, /* CXCursor_OMPUnrollDirective */
             "CXCursor_OMPUnrollDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2681,8 +2886,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)294, /* CXCursor_OMPMetaDirective */
             "CXCursor_OMPMetaDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2694,8 +2900,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)295, /* CXCursor_OMPGenericLoopDirective */
             "CXCursor_OMPGenericLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2707,8 +2914,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)296, /* CXCursor_OMPTeamsGenericLoopDirective */
             "CXCursor_OMPTeamsGenericLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2720,8 +2928,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)297, /* CXCursor_OMPTargetTeamsGenericLoopDirective */
             "CXCursor_OMPTargetTeamsGenericLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2733,8 +2942,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)298, /* CXCursor_OMPParallelGenericLoopDirective */
             "CXCursor_OMPParallelGenericLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2746,8 +2956,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)299, /* CXCursor_OMPTargetParallelGenericLoopDirective */
             "CXCursor_OMPTargetParallelGenericLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2759,8 +2970,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)300, /* CXCursor_OMPParallelMaskedDirective */
             "CXCursor_OMPParallelMaskedDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2772,8 +2984,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)301, /* CXCursor_OMPMaskedTaskLoopDirective */
             "CXCursor_OMPMaskedTaskLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2785,8 +2998,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)302, /* CXCursor_OMPMaskedTaskLoopSimdDirective */
             "CXCursor_OMPMaskedTaskLoopSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2798,8 +3012,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)303, /* CXCursor_OMPParallelMaskedTaskLoopDirective */
             "CXCursor_OMPParallelMaskedTaskLoopDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2811,8 +3026,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)304, /* CXCursor_OMPParallelMaskedTaskLoopSimdDirective */
             "CXCursor_OMPParallelMaskedTaskLoopSimdDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2824,8 +3040,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)305, /* CXCursor_OMPErrorDirective */
             "CXCursor_OMPErrorDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2837,8 +3054,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)306, /* CXCursor_OMPScopeDirective */
             "CXCursor_OMPScopeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2850,8 +3068,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)307, /* CXCursor_OMPReverseDirective */
             "CXCursor_OMPReverseDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2863,8 +3082,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)308, /* CXCursor_OMPInterchangeDirective */
             "CXCursor_OMPInterchangeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2876,8 +3096,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)309, /* CXCursor_OMPAssumeDirective */
             "CXCursor_OMPAssumeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2889,8 +3110,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)310, /* CXCursor_OMPStripeDirective */
             "CXCursor_OMPStripeDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2902,8 +3124,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)311, /* CXCursor_OMPFuseDirective */
             "CXCursor_OMPFuseDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2915,8 +3138,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)320, /* CXCursor_OpenACCComputeConstruct */
             "CXCursor_OpenACCComputeConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2928,8 +3152,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)321, /* CXCursor_OpenACCLoopConstruct */
             "CXCursor_OpenACCLoopConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2941,8 +3166,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)322, /* CXCursor_OpenACCCombinedConstruct */
             "CXCursor_OpenACCCombinedConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2954,8 +3180,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)323, /* CXCursor_OpenACCDataConstruct */
             "CXCursor_OpenACCDataConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2967,8 +3194,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)324, /* CXCursor_OpenACCEnterDataConstruct */
             "CXCursor_OpenACCEnterDataConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2980,8 +3208,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)325, /* CXCursor_OpenACCExitDataConstruct */
             "CXCursor_OpenACCExitDataConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -2993,8 +3222,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)326, /* CXCursor_OpenACCHostDataConstruct */
             "CXCursor_OpenACCHostDataConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3006,8 +3236,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)327, /* CXCursor_OpenACCWaitConstruct */
             "CXCursor_OpenACCWaitConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3019,8 +3250,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)328, /* CXCursor_OpenACCInitConstruct */
             "CXCursor_OpenACCInitConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3032,8 +3264,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)329, /* CXCursor_OpenACCShutdownConstruct */
             "CXCursor_OpenACCShutdownConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3045,8 +3278,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)330, /* CXCursor_OpenACCSetConstruct */
             "CXCursor_OpenACCSetConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3058,8 +3292,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)331, /* CXCursor_OpenACCUpdateConstruct */
             "CXCursor_OpenACCUpdateConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3071,8 +3306,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)332, /* CXCursor_OpenACCAtomicConstruct */
             "CXCursor_OpenACCAtomicConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3084,8 +3320,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)333, /* CXCursor_OpenACCCacheConstruct */
             "CXCursor_OpenACCCacheConstruct",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3097,8 +3334,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)350, /* CXCursor_TranslationUnit */
             "CXCursor_TranslationUnit",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3110,8 +3348,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)400, /* CXCursor_UnexposedAttr */
             "CXCursor_UnexposedAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3123,8 +3362,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)401, /* CXCursor_IBActionAttr */
             "CXCursor_IBActionAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3136,8 +3376,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)402, /* CXCursor_IBOutletAttr */
             "CXCursor_IBOutletAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3149,8 +3390,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)403, /* CXCursor_IBOutletCollectionAttr */
             "CXCursor_IBOutletCollectionAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3162,8 +3404,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)404, /* CXCursor_CXXFinalAttr */
             "CXCursor_CXXFinalAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3175,8 +3418,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)405, /* CXCursor_CXXOverrideAttr */
             "CXCursor_CXXOverrideAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3188,8 +3432,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)406, /* CXCursor_AnnotateAttr */
             "CXCursor_AnnotateAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3201,8 +3446,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)407, /* CXCursor_AsmLabelAttr */
             "CXCursor_AsmLabelAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3214,8 +3460,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)408, /* CXCursor_PackedAttr */
             "CXCursor_PackedAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3227,8 +3474,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)409, /* CXCursor_PureAttr */
             "CXCursor_PureAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3240,8 +3488,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)410, /* CXCursor_ConstAttr */
             "CXCursor_ConstAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3253,8 +3502,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)411, /* CXCursor_NoDuplicateAttr */
             "CXCursor_NoDuplicateAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3266,8 +3516,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)412, /* CXCursor_CUDAConstantAttr */
             "CXCursor_CUDAConstantAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3279,8 +3530,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)413, /* CXCursor_CUDADeviceAttr */
             "CXCursor_CUDADeviceAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3292,8 +3544,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)414, /* CXCursor_CUDAGlobalAttr */
             "CXCursor_CUDAGlobalAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3305,8 +3558,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)415, /* CXCursor_CUDAHostAttr */
             "CXCursor_CUDAHostAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3318,8 +3572,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)416, /* CXCursor_CUDASharedAttr */
             "CXCursor_CUDASharedAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3331,8 +3586,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)417, /* CXCursor_VisibilityAttr */
             "CXCursor_VisibilityAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3344,8 +3600,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)418, /* CXCursor_DLLExport */
             "CXCursor_DLLExport",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3357,8 +3614,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)419, /* CXCursor_DLLImport */
             "CXCursor_DLLImport",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3370,8 +3628,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)420, /* CXCursor_NSReturnsRetained */
             "CXCursor_NSReturnsRetained",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3383,8 +3642,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)421, /* CXCursor_NSReturnsNotRetained */
             "CXCursor_NSReturnsNotRetained",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3396,8 +3656,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)422, /* CXCursor_NSReturnsAutoreleased */
             "CXCursor_NSReturnsAutoreleased",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3409,8 +3670,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)423, /* CXCursor_NSConsumesSelf */
             "CXCursor_NSConsumesSelf",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3422,8 +3684,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)424, /* CXCursor_NSConsumed */
             "CXCursor_NSConsumed",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3435,8 +3698,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)425, /* CXCursor_ObjCException */
             "CXCursor_ObjCException",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3448,8 +3712,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)426, /* CXCursor_ObjCNSObject */
             "CXCursor_ObjCNSObject",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3461,8 +3726,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)427, /* CXCursor_ObjCIndependentClass */
             "CXCursor_ObjCIndependentClass",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3474,8 +3740,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)428, /* CXCursor_ObjCPreciseLifetime */
             "CXCursor_ObjCPreciseLifetime",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3487,8 +3754,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)429, /* CXCursor_ObjCReturnsInnerPointer */
             "CXCursor_ObjCReturnsInnerPointer",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3500,8 +3768,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)430, /* CXCursor_ObjCRequiresSuper */
             "CXCursor_ObjCRequiresSuper",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3513,8 +3782,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)431, /* CXCursor_ObjCRootClass */
             "CXCursor_ObjCRootClass",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3526,8 +3796,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)432, /* CXCursor_ObjCSubclassingRestricted */
             "CXCursor_ObjCSubclassingRestricted",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3539,8 +3810,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)433, /* CXCursor_ObjCExplicitProtocolImpl */
             "CXCursor_ObjCExplicitProtocolImpl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3552,8 +3824,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)434, /* CXCursor_ObjCDesignatedInitializer */
             "CXCursor_ObjCDesignatedInitializer",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3565,8 +3838,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)435, /* CXCursor_ObjCRuntimeVisible */
             "CXCursor_ObjCRuntimeVisible",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3578,8 +3852,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)436, /* CXCursor_ObjCBoxable */
             "CXCursor_ObjCBoxable",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3591,8 +3866,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)437, /* CXCursor_FlagEnum */
             "CXCursor_FlagEnum",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3604,8 +3880,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)438, /* CXCursor_ConvergentAttr */
             "CXCursor_ConvergentAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3617,8 +3894,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)439, /* CXCursor_WarnUnusedAttr */
             "CXCursor_WarnUnusedAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3630,8 +3908,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)440, /* CXCursor_WarnUnusedResultAttr */
             "CXCursor_WarnUnusedResultAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3643,8 +3922,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)441, /* CXCursor_AlignedAttr */
             "CXCursor_AlignedAttr",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3656,8 +3936,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)500, /* CXCursor_PreprocessingDirective */
             "CXCursor_PreprocessingDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3669,8 +3950,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)501, /* CXCursor_MacroDefinition */
             "CXCursor_MacroDefinition",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3682,8 +3964,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)502, /* CXCursor_MacroExpansion */
             "CXCursor_MacroExpansion",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3695,8 +3978,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)503, /* CXCursor_InclusionDirective */
             "CXCursor_InclusionDirective",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3708,8 +3992,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)600, /* CXCursor_ModuleImportDecl */
             "CXCursor_ModuleImportDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3721,8 +4006,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)601, /* CXCursor_TypeAliasTemplateDecl */
             "CXCursor_TypeAliasTemplateDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3734,8 +4020,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)602, /* CXCursor_StaticAssert */
             "CXCursor_StaticAssert",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3747,8 +4034,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)603, /* CXCursor_FriendDecl */
             "CXCursor_FriendDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3760,8 +4048,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)604, /* CXCursor_ConceptDecl */
             "CXCursor_ConceptDecl",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3773,8 +4062,9 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)700, /* CXCursor_OverloadCandidate */
             "CXCursor_OverloadCandidate",
             "c11:opaque",
-            "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+            "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499",
             1,
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
             "opaque",
             "Non-lifted cursor kind maps stably to c11:opaque."
@@ -3809,48 +4099,97 @@ static const pk_c11_op_dispatch PK_C11_OPS[] = {
     {"c11:not", "blake3-512:13f0e635b60fe52d0c853adfb13c38431e0e0da1787236759736ffe420948a2cee01ebf0d275cdbe6d9cf8edc3aefb88556b1257d0e3dcd962c1f971372a2830", 1},
     {"c11:assign", "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556", 1},
     {"c11:neg", "blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961", 1},
-    {"c11:opaque", "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4", 1},
-    {"c11:decl", "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99", 1},
-    {"c11:case", "blake3-512:76e0dcf8c0f591cfa0eaac0addf37c3785230a8c134531c96250eba9de3c133abca61f044c58cbb7e11b24744928491a1e95642b7a4b5b541d79505e3e16a986", 1},
-    {"c11:default", "blake3-512:319e2bbd1cf2cf85dcd08ecde664972a83befc990375d47ae622a24a927cb79e4da7934d45cfb40402a0fcd9a4f48ca262c87fe68fedff5153c451d8b156adc4", 1},
-    {"c11:label", "blake3-512:267398f175a32e44f33f3fcec4a81689c80affe8d88831e59ff17286fea38d2b7c8b32aeb18ebd98b133f8298959152ebb85f5f5830bad9c03f36320c89b8062", 1},
-    {"c11:goto", "blake3-512:64c8cf86af35a25e1a388e710b53e007bfe2fca0615229cefd55d2ddf782f0819ff00c10d18e66e734ff43c0399b4dc35f4f28f76ee4d839f078b5f281999d63", 1},
-    {"c11:do", "blake3-512:eb17887f16d6264f8dcefd302bc94320b54978412407128c88ebba4c125e5eb1e6ba16b8aa57f4919ad1fbfab2595fd363e7be77ef8d82b23061bc9d1a02ff21", 1},
-    {"c11:cast", "blake3-512:96e075c18c0be03322ec199e1b2501c98d355210f5920ab8c6e867771ed9ce28245481426728181f0f1504c56c94fcfebfbeb0b59e7e7fd37dc1375f2f55a98a", 1},
-    {"c11:array-subscript", "blake3-512:7f024dbda459084cfb33c2563c1c5de4757e4abb9721a2ebf4073a33eacaf85b148a3c415f52d9ce6b5a94ae37ec6e609a7217eca124f738abfe9d701b059092", 1},
-    {"c11:conditional", "blake3-512:641b32b866cbbc19796036614ca4e4600ca00cf6ecfd0c461da59e37aa3d798e5c20794fe85a9907379a29143a5ed314172425b28f8cd3b89e44d5184759d566", 1},
-    {"c11:compound-literal", "blake3-512:312a5249609aab8bcc22dc2d1371206ff9b5480aa6bd572200c13c2ad4952e304a220b634d047fa62fd1f2d65bf1923f1927e88a687f3ce8031470d32fb9a35d", 1},
-    {"c11:init-list", "blake3-512:6133aad08ba77ca07cc767e6b8c79933366c8e6035e27031ebe6e47300c09a43242e4ede6b2aa91546669a14b21fef06443678fbcbcddea46d63c55360661527", 1},
-    {"c11:string-literal", "blake3-512:c046b297480acfc4666a840ea8bdc75d10611a029f782e4f45b84590e184fdc0ee0b0e4bdb744c05d4fb8100ce99dea1f6f940be8ec25801548f677d8043f34e", 1},
-    {"c11:char-literal", "blake3-512:73bc286f5ab6565014093e2b6249a1fca830ef62b04eb61246e806e7a57af59ede99005b88227ccd90f7d515d07ff39134c948c06362d0170a2dea4c612fe419", 1},
-    {"c11:float-literal", "blake3-512:c624627cb15481230ad1e475d7330dc3c4261e5ac757e1f5d54ccdaccc3cb25e01cbb8696bffdc67e721f4f5679e8e09ae54b21dddcddaf37247ddb334250ce4", 1},
-    {"c11:imaginary-literal", "blake3-512:f49dec04735ac1c96e75e9a2044c189f2ac742f319e10237e9b3f1247d89ffab046f07072556e4dd3f075ba4eac4a672510428a850469429dbd0f2b3e045b107", 1},
-    {"c11:null", "blake3-512:ca8576ee4e65552a2f82d55a82909100151c1bbb12d5c00d08119a68d1fb6ff730aad94f140fc9b2312a29c0b9dc2c51d01ef13d9e7c392c8ff7708805b19c3b", 1},
-    {"c11:generic-selection", "blake3-512:88a06ccdbef31969de90f5cb4c58317aaf9b897f121861168a9654501300bbf7881435f379e8e66317f76a3f2bf4d76c15e04945b0f6d3ce7908c97ca92ad3c5", 1},
-    {"c11:stmt-expr", "blake3-512:886f39c45ff932473099380820bd08a69ce197cc87ac94158e57b69ea41ee7da3955f916ff9321529406eda24d4e3fb15b972e433dc4be1783df5425bbc362a2", 1},
-    {"c11:addr-label", "blake3-512:c8a0a1404292e5dd6b50e7dd5cc096f96e5d97c7c0e8172eb86bf35d981d35b8ad06486d7f682e58e44db377eda89d2870d5c064b4580e87e13d682bec3cd0fa", 1},
-    {"c11:div", "blake3-512:61535696ae1adf2117d1bed76608309ae1756f07c5593e785155520277c9a7ee2ab26050bfa600d27fad86068b9cceff73bcbafb80abcf6346f8b4618998999e", 1},
-    {"c11:mod", "blake3-512:f8f2053b8077f5d809ba26ffe064d5c860425e6cd534be7f9b709aeaf6b1a38e4875d5afb0c91a0112fa55e4122d0ab4555c060f4878d0b250148063bae064cd", 1},
-    {"c11:shl", "blake3-512:3645c4a8260cf81344a80f882d166be7f1077cc52e6928f8a22caed0e1709faeed07c0d8aaf5423124e9b9362443af5481d9a67fb9e46582fb5510bec8105806", 1},
-    {"c11:shr", "blake3-512:df471fc97d7e6480ff43e35c22f8a8ebffceb532d09d5895b3486bfb1ba77efb6f292e87ab68d5da25facbcb013304ca95ac323438656b40d62b72bb12308963", 1},
-    {"c11:bit_and", "blake3-512:27cd28a24ddb477cdeb2cf26093ba19211bb7f00c4e5132227dd034c7bcc611183477f8d7595ac5d1190c14ab30a4d84744e59d19fc6f32b1f05bc93eec1ed13", 1},
-    {"c11:bit_or", "blake3-512:91df079fd90f39b1a8ae79100f5669c2783a3fbfdb4f9020df5a7b41346ba84fc0de3945afedbbcb238f40ac1f7af00120368f075df9227acb9268e9ea8a5f69", 1},
-    {"c11:bit_xor", "blake3-512:10d9c19644d05f0594cf217a99fed307e3fd8fa023da2e62c03d23e9fd24af794f7e2684a38b09f88a33ec0a6e107e3181d9abb1bff135089797bf4933dbbeac", 1},
-    {"c11:gt", "blake3-512:533d7c1cb1f130ffce0681c52d34d11277cb0dd108128fffa8e3a1b87fc0f8fadb81fa0bc7d5c2435795f5ffa35484b6492c3770e3eb107d43944a4169302922", 1},
-    {"c11:ge", "blake3-512:eb6df424266fff3a9e6c275f0f2107c8b0bee0f32d42e2429ef91ff8c900f99c2943db700143ea841f14bae70cc51388b29fbfd76207dc26a990522326d47060", 1},
-    {"c11:ne", "blake3-512:35ac3f3e5e698eb6c2bfe351dbbc0da7ba720276b844c165226cdd522a1e2564a163d941545e946dde3b298fb2b1a3becfcf7d2c03a3cfd8e1ea5f12ad1dada9", 1},
-    {"c11:comma", "blake3-512:35d31555d187eb21001dd65c2c1360945b92765204b402a492e40ab7c2bec6e3fbb3e8ed17f77137bf12966199321ed774ed05b5e5d13f7610bc64622e087515", 1},
-    {"c11:bit_not", "blake3-512:cc5f0fa79ecb1658a22a776ec5a7a3afa34de99076500f454ab0ba46f57f16d693be77096492fc12bbbb023749da38b0ef8a76110d5a81ded346aa5780f52ebe", 1},
-    {"c11:addr_of", "blake3-512:297ac1752207a4416bf6a6637f1945c3a0df7f6970159677e2ccb8f51edeece3ad78b516caf5cf53cd7bc1be45822d9ee015663fba79e413e458e332510e80e1", 1},
-    {"c11:pre_inc", "blake3-512:6bb7eafa9f3595e2257fc5e34f538be37b4e74c7618db07900356562933dae58e55e89de6585f7a7a30435535da41db78da31df3e3bfe2811c46c3f1d59354b4", 1},
-    {"c11:post_inc", "blake3-512:19530750696c8862b05468546aa0bf2b6620126504f148c96201c2c76d614292b171dfd02bbf4c69aef42a29b3e43c0a167f19c758dd80ce1e7ac774cfbf6d32", 1},
-    {"c11:pre_dec", "blake3-512:4008719681f58933c4ead6773196b18dada3ca51e2ec71ba9e19bf6562d7a024b3c02d82752d828c58f16bdd892e6bba4dccd7346d1877725fbda96e221f33c7", 1},
-    {"c11:post_dec", "blake3-512:61b51e3e8b0445e45125217800875ac9a6859a90714b778a6fdbbaf692538899a192f0885b59fbf4f3b2c5751515f1622c4945feef18bbf5ca3757f4d2b5906c", 1},
-    {"c11:plus", "blake3-512:6a0dbd7ca8be895b72ea1be71e06dc2b9a9d8528242b9231d0aaa487a897be27731b40dec44dada8678f5c780e2d85f52a08df60db486d44b3dc4b4827068c8b", 1},
-    {"c11:unexposed-stmt", "blake3-512:8556d80b81d477ba120a22f5ccc19d4e86fd315225014d13f7ab9e1bb5073605d797dafed8737ff6defce7a476a3e6200b496437fb63f47f6f2fe718ad6905f1", 1},
-    {"c11:unexposed-expr", "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980", 1},
-    {"c11:binary-operator", "blake3-512:38bb352ecd5a3a553d26a625e2b33c5d2d88b72af5911bfb6a218df61a8f3f8cab91f08608a161ac192449548fdecbf47adf5bccd2d064b1eaf98b2b54a8fa93", 1},
-    {"c11:unary-operator", "blake3-512:9a852e24983a9b2730da4273fd45859a566c4574b7dcd1083a20f08ce7ec6a8f8145d1053c6e1b0eb654a327e72caee6b071940c265c602a4e6c36e948f7ff62", 1},
+    {"c11:opaque", "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499", 1},
+    {"c11:decl", "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161", 1},
+    {"c11:case", "blake3-512:979de6f162350277e9721fe63d7465ccdd5927bf1e2ccfc3e481ec28b02d24e1f39cfd5897c33bbc4d2156243a589ef791cf6f8b72d556739c14c8bb2bbaa2dd", 1},
+    {"c11:default", "blake3-512:3285e01084c79f734c5fed24bfe38f52627dc052482e7de68df3f8882662b2d329efe7b03e27207c5a37982f0d1a005a48916195be7afaaae944859c47efb9cd", 1},
+    {"c11:label", "blake3-512:c81cbb7ba8308cd3f709f642387e9c41997c44c548afe941b65f7d167d65a116102b23f73d7150ed27f3942e3aaa66b0cf5b7d5b513a6ae4a02b03b8f2eee6a2", 1},
+    {"c11:goto", "blake3-512:517350df7b9a44573dabae1390162fd8afb2a06b7c90acef3a0ced3d3bc9e5c1edf339db7a92699f9111011012c800a60e58ef02eb33194b558ca45d8df9f66f", 1},
+    {"c11:do", "blake3-512:ec4d45631f2be0a3f3bc56a0cdb7be848a6095f5f2924f53986d0d6124ce072fba0d5933e5593ed64fd50fff27f264c4df2c551ad1fee36a69d170d1968b60d8", 1},
+    {"c11:cast", "blake3-512:f611c8adf97a3ab5a3877523b8e6e5099bb5974a5077cb18240e7cbb4f56ae16e4c1121062e6778ad03cee9b35e2969809cf9a73249b398a77438bf18cc1a00d", 1},
+    {"c11:array-subscript", "blake3-512:8717248821a76c0738e512b25bffe2267d63144fa2fa9255ba2c083bb8dee101a138d3f094ccc9c4c2c199b09f29e28590133285c630035f236d6169eaf5e66f", 1},
+    {"c11:conditional", "blake3-512:2acf875b4f735918479586850d58f90ac4dc827e9ae7c2a586055e0752f291f1c9a7c7bf7d8cf69cd645e84edfead5459c3d67df934c31cc1c95736b6016a2aa", 1},
+    {"c11:compound-literal", "blake3-512:7fdf598b330a758ce24cd9060f055b0f6fad6ce4a1bf3f2552ddb0b19cd085bcaadd6896f1518cddf3ba08978244e29f9b25d831548378491dae0e369040a4e3", 1},
+    {"c11:init-list", "blake3-512:95b3e4c1ed53506a3f876bc8a60c5ec9f18271945cd94d553c679d969c8607e407738c10ffb33d070cb92b1abb489fb58462b897389fabdd5e064eb14d2374ec", 1},
+    {"c11:string-literal", "blake3-512:3f29c9a02587ad6326ca5fa67f6ab095051edc4bd51cb28bbaea694895b8af589b60702c197d608d831ea7ddf3acef92116102901a43947a1dd509960fa3d891", 1},
+    {"c11:char-literal", "blake3-512:fe49919c2a731e1dd6b1836aaea0b8756dc8e759b3ac092157825154c1baf54c2d2edabb0697ba14f087218f3cdec2140cc50e4712e8bdc58cd3237d5798060d", 1},
+    {"c11:float-literal", "blake3-512:db46e4174f9ef6d47fc69dae2ef25f651a206d70d483075f46b363a91f84bc9dd9051f1bbb1b7a0dc0a3ec322648a098dd86228242c8d5948b20a74dc33b3547", 1},
+    {"c11:imaginary-literal", "blake3-512:211ec8f4c27cf13d5a0291e20b69a50f1083330b8d3384aa54478328d2b2db58cff2c7b0b3a0b1748b4397a6812d5c1176539d374024fdadb934a371d66a230b", 1},
+    {"c11:null", "blake3-512:5dc4400560fd597275c69b55c7b956568572a37451631dd45d953bca9eb6a7e4f4b7a965f939b584e779b49d4a1a415f4dd0f6811520f0425edb017d0332aa20", 1},
+    {"c11:sizeof_expr", "blake3-512:529ad110cff8021b55eee41d9de4dc3e1329048e144112f05a4d62f2cef3174832f08ed2a76b7b55699a0b08c58f0f1c66f9fa97a1ad308488dde79d8fda0027", 1},
+    {"c11:sizeof_type", "blake3-512:dcb3918512fa1b0b08fc69402677d33649973b4d98351e83f487dcdc5c5b6ea39a22d08f9a1c4b446686e65c7932063a86f188aa38e57776610119195c7b9928", 1},
+    {"c11:alignof_expr", "blake3-512:50ad85a3768e2538aaf592578ea9d487d6045c132497e20c164e38ce02643e2e4c9c420aae2014e5427a652d12a20676f19cfa143bc8f1fdb23da0605c46728a", 1},
+    {"c11:alignof_type", "blake3-512:ea4082d59f1d00678ea6738182cef5d8346a2f801e00f42e31b4d285aec870a29495840aebe6526cd7454bcc363522791e5549de1ec03c4ce15a76b97529d27a", 1},
+    {"c11:typeof_expr", "blake3-512:d973be8a96288878ea27c9e5debabf2a7b859c590139429323aa874b5657d07e20832a65cc3820e67b32d354d0e7915ebc3971436992f06b5c69e19458c25e60", 1},
+    {"c11:typeof_type", "blake3-512:ab24a1dce9ec1ab4ece548f5378fa3dde01c13d8b929e2f48ebe8ff6f9e26692b369e0f9304f6548b0f33342feaf31b0a45ea3368b500aef973c50c7400e78c2", 1},
+    {"c11:offsetof", "blake3-512:6f83b294f5b74cd8232296f9b1ddba74d1e28d9c960c495551694b9668403062a71f9c4682ea3e670e27bacba573f442aad552c139fd3960112237401e85adda", 1},
+    {"c11:builtin_types_compatible_p", "blake3-512:4143510ac2843381927254a1220eea17a0df97ee3032d7d35a3f0a84b8c29374f0af89490c333eceac11349dd18af8a7897cdf82d2071b5b6a3b231d67d65e44", 1},
+    {"c11:builtin_choose_expr", "blake3-512:0ece7c9f49fa1f7d4c339556b4133be09119851b12383c3f66e5fc7d5f77820e7b938e6946488c8dfb553777259d13f483c4c590bc2ac2862dc2f0d417c9a62d", 1},
+    {"c11:generic-selection", "blake3-512:3b74c43ad0d266168df309ac76c2ae841596adbd152b755a038137c64d9136120d042241b4a836fa8d5abab9b3546ce04050dba491d15f0bb7ebfc96383ac2aa", 1},
+    {"c11:stmt-expr", "blake3-512:8fcb7768f3e515c28c234eae758b43e86fb0ff989a3fbeae141cb1475b2e2121fb4f213d0afdef21a250aa6c9c09479b3a0145a6cc7dd67997bdcbf498152132", 1},
+    {"c11:addr-label", "blake3-512:2b5fbe07e2dfb8235a31211c1fd56d9fffd54e24c5a8169308f14b1d18ea62eb18063b6f0384cca66f629bfeb2aa36b9a5138c9ce4c7c8e27f75fb6bf2078329", 1},
+    {"c11:asm-link-edge", "blake3-512:506a77e58f0116c97b58a1b1148fbd1180ab87a68a5533fd0aee13175deff6abec3a269204c07fb854c4946a19b662fd63fb7227f6a2e5605e48da3ee033fcb4", 1},
+    {"c11:div", "blake3-512:681f9a6d80bfc26a679c493137a2a0ce6c2dc3d00e718b0e22a959a05bfaaed5ad7a0f1459187f363edf94b3437909fdb9954425f7355458ae46d1c3c74ef0a6", 1},
+    {"c11:mod", "blake3-512:b98f567bb619a26ef34a539cb3556521242e5a7f3bb65fcae4e4580579ab3a72e9ae637d07693c5cf0687df53069b48083477510d3410e5fca3af9d06394cf19", 1},
+    {"c11:shl", "blake3-512:79493ae7406929f1bc40700ca35c5fcc38e4e2cec61b20f3164c44812c71a92a30a0f857345cae08dbc54eb66f27945e9b0f51eedba98b0131ab8172c83337a5", 1},
+    {"c11:shr", "blake3-512:c00df36dc1c1baaa32af5ec544809482687576d52ef80ae80722b40aace3de3df76d720be6405b6cc876ccfdab89d29d23f4136987ea4e9906c4dac0487a2342", 1},
+    {"c11:bit_and", "blake3-512:86606cb7be04a2276ccee8e36ccc84549b9da3500b8d422be5208f49d19041d3bdfd72ef161d7e19ad7762f7ce1085d6ec86992c68f6803b473656f236d0bf32", 1},
+    {"c11:bit_or", "blake3-512:0493367378f71a903fff7c48614006b01f1144083f99b65a416c726584f459f8ab42eca0f2a3d7459ee8e198d5c31ff5ff9f33828391b66abbc015c2fb3bd48d", 1},
+    {"c11:bit_xor", "blake3-512:eef2636eee984c44ea7defa8f433c7adb76a5997c26bf5fece45d23aa3f30c4acd14f2a673cdfc993c519bd3a7d0b6901549db2764a48dea63a4e864f5bbbf91", 1},
+    {"c11:gt", "blake3-512:1960395e59783258638166dbb215b69a420aba494c5fa7b55fb996a22671baedbe5f7d595af08b69d689ad5fcac220baea165345aae1cf85609494fb9cbe672a", 1},
+    {"c11:ge", "blake3-512:9526dffbfdec02dfdc5f301a4b9569afc81742180847cda6b4efaee2f007095520029179d883b4a4a4d13e5bc4d8331572793e84a5a3349848d5cc57058b7e8a", 1},
+    {"c11:ne", "blake3-512:336c2ca0714857b531345273eee7fb5928538b758c74777cc91ef9ead52d39cbe5518e617002c2ffd99336c6ea01c6965b655df12003abebc46e1024d8637129", 1},
+    {"c11:comma", "blake3-512:4cfe5a047d524c9db3e49ce6b427261ecf00d14808ad510c03464472be97c46b2ed0e623428daf9377ee0f2112be689ba6f39d83bc2f34d1c373281c861dfac4", 1},
+    {"c11:bit_not", "blake3-512:ad6d58ff99ea993af0b72e49b0c169ced5ff869844028d0ecfbdcb6f0aa0855bd224c92f4821c8373a92748721300169696d77d382f2a7c4dd7896317284aac0", 1},
+    {"c11:addr_of", "blake3-512:bfd40cd23c3e09329e0e90db391ee2619e4fcd117df385cbe4e55831b76c8de96ce67806a9057748b65550fc6acda7b01699c04cc42b2a3449614264661b7277", 1},
+    {"c11:pre_inc", "blake3-512:6680c47280bfa5259e5b12e7c2077884a8e7d24981c1475848d7019737d212eb4b8d145bc3b7ace884176dcd58d5a3470e138f5215c764d8351d7095e683dafb", 1},
+    {"c11:post_inc", "blake3-512:23c41d669e4d29ca7adf38b957fc666268f39a6fd989920c4dc2337997a4b9d3cc8d993a0ef48630381d078afde5701217b5f6c339693564215401cac3f9786e", 1},
+    {"c11:pre_dec", "blake3-512:f26ef575de78b3a1a9710b59e2edfcfb40c6dae169db5f26beda437f4813ab52fda276bd0f6ade48266b723e72f9e65d5bc273cdddc4fdd1c1332725f943028f", 1},
+    {"c11:post_dec", "blake3-512:a13eccdb1a6e947ee2c694d011fd800a19134cda2a039782a1e90aadb3f1cc5e44e563fef4a56a07cc7c968d101dad1f3ed9165db2eb5398c0d3520d323a9345", 1},
+    {"c11:plus", "blake3-512:0c9e369bae62d6682b7d37697322972afd929ad3e5f0bc3e5184320806563e108caec80fa33dea52fce44085944f45afc4da55509669e24a9842ef1482ff6002", 1},
+    {"c11:unexposed-stmt", "blake3-512:7800cb0e7dd03d6785510e1d5735a7e7f32e65fd80df378badadb7d3db3bb7e4e24dd31bbfdc6c1ab84a277127127850861a00d46c36ce5d8cae272b3a1e5c75", 1},
+    {"c11:unexposed-expr", "blake3-512:11d34d731307a67ffff55acc3cc7b79bc71aa8c8b9efb0c2125235ea9b6ddf4a2eeeb0a7c162a706bff66f3aa24d201025c1a63ef43be9daa1ec60bfc0f6cd0f", 1},
+    {"c11:binary-operator", "blake3-512:c45a6a79b1e679fee0ec9c2c393ba91f0ecef5d3495a6f4020829732f57f7c0ed28756532d37ea9b0f1ff72170098816d8aa08d3107f41ea11f6f448a4dede70", 1},
+    {"c11:unary-operator", "blake3-512:9b66e6a212b1458649730df8f3b4c28ce60c979d761f1e5eac0190d8ffce278c6394d610accfe63f25e71b485c3fd3a678aaa0ef5cb34bd116955eb21616b6c2", 1},
+    {"c11:bop_add", "blake3-512:eb80e71bbe342132e701677d68abaeaee544b2f583c8e67161152bd38b922cc9234cac8b74557a07242d92e9b74067248feaeb2882d7edb86e185455330d569f", 1},
+    {"c11:bop_sub", "blake3-512:d713dfe2cc65c702b0bc14111f841f27e0643bb9c7e36371d9787a61f111873b859c473ef4454b3f799cc2d989d69bcca97368c498c2c8a3116e3b19aa94c5b7", 1},
+    {"c11:bop_mul", "blake3-512:77dda6e101705b911f866d1aec17db9faef52ff7d8311f83468bc45bddabf170201eff3fb317afb915bf61b6719477898630147f3297380d067d430fdedb87b6", 1},
+    {"c11:bop_div", "blake3-512:e38ab9dfcb3b09ca963339493311ef9f24dc254056019882e4f96fd7a24a685ca80fcbe70c1f89f1b2f63b347508e73bcaa621eaa6d3b31b2e539211bb96ac59", 1},
+    {"c11:bop_mod", "blake3-512:d31b15806db1221fd29279b264b382eb68c0906348a3d49794b63e23bf4ad18e2489984571636ca8e998cf4caef525d79387149616ae259ac10a7c50a184f65a", 1},
+    {"c11:bop_shl", "blake3-512:f517dc5db2d6eebcad437af744bcea724e0bb35d68b5e71d5a2d0c40a872da8a8a5492ba7b35448ced516218e36cc39df47c6f765a1ba10215f4a6b261a3b9b9", 1},
+    {"c11:bop_shr", "blake3-512:beaec4fa54f87b44b83cbbbbdb753eef7adc12406f363b238f50df81ac14183f902734517661b26315060f1c0e2707f05a4a0ee644abe9c866ba9bb8a721e3e8", 1},
+    {"c11:bop_bitand", "blake3-512:1d46a533688e6651463131f9a079c6e15e8880e3fd1abff975c5768495913aac30aac5938b452c04579ef5200757e46093acf7e7fb4001d4f25f7a9e2fd24cf0", 1},
+    {"c11:bop_bitor", "blake3-512:52c439c24f68bd0adb890b4204bd4f919a73400656a648a862ab30151afd11e12c99514cfac05d55d65c0eba112e7d336675f422e9ac750ea799e299e37cc92a", 1},
+    {"c11:bop_bitxor", "blake3-512:b29328474ae3a6898f1e34035784635b27ce0bcffac0e66425a1aabdcdb2c334559fc01dd11318dcf60db1a7bb3b50ec488e61b69f42106e54dffc3ea057641b", 1},
+    {"c11:bop_eq", "blake3-512:fc282507ba28afaaea31b21724476e0f3e6aeee5bc8599d7283f452a7e16f7e868ee98c19defa124064f884842f9e36e6e7e44f0baabe06ad5e9d3ca6a7660f4", 1},
+    {"c11:bop_ne", "blake3-512:2474bccf5563c0e3c2f2dd237804906675220b570ba7768ef7271c24f231ecc94b1fda09bfb46321a827aa2f0eb8ae9a114d1116785f5579e50b80fb62f5b98a", 1},
+    {"c11:bop_lt", "blake3-512:353b5c9383f323eb931d63fe226615344dc963b55a4eba572a9f41f91513656736b2632bb16b0aea2dcd7bb6fc83aeba5a11f950e8fd2b0696c140d1278099fe", 1},
+    {"c11:bop_le", "blake3-512:11665d5126dd203e8b26790a553e0dab50815904a411728e53cb51ba8afa4f94289ec1e99cdead96fb1501580a6c65ff5ecf3215120671878ddd5b9190ba0a8c", 1},
+    {"c11:bop_gt", "blake3-512:5f80a746f09537ba951fb0cdcf844688774a346235b67f874d035b5de06b44f20224c018662b4becd08a1709fff99a384ef684d0e3580f25c01443c3305ab11a", 1},
+    {"c11:bop_ge", "blake3-512:81c8afeeab2a43f08e1f2869274bfd6f0a759ca3ed74038ccc97588efb92fa70d8bba0cdd9e40a8f9c0053a68220c357f8938c6bcf7b1f6c5a0273d77110b4d8", 1},
+    {"c11:bop_logand", "blake3-512:34f0e99bf7866839763e4fa3fcfff673dc5dd916c712f14e4b317221f69300a777544d4b2dca400513ad1bc96baa8fb59361d3187afe8c25dde5914210b8d31e", 1},
+    {"c11:bop_logor", "blake3-512:ba219720fa84317257e85af9baf1d4b2bb3311c1d4577e7b38b72def6a8d5d4153df1ddc6864db77fbea28c3726ec9458ddbf6c921fa32eb1bf844dfd611c38e", 1},
+    {"c11:bop_comma", "blake3-512:e69f389125ca5389d85c51688c429a3d4067b46aa562c25f8118764c6d35ec09e21a9404f1b232c928c8d574d5fe3f69791fd6f83ee4fb8106e2843194abb2ab", 1},
+    {"c11:uop_neg", "blake3-512:60b24e5552b2ae35730d1ce519e449a10b9106c0ba948f9e051a926f694a2fedf1214a09fb6377afb358268f5adca2a4a77ac4b90c157d1ab5d5fa8735c3ddd2", 1},
+    {"c11:uop_lognot", "blake3-512:bd3c7584e6bb4260b3255614b411dbab1fa24860c5d9235190b5c8472402bcaf34f0b25d08c655af29c6f2c27a4fdbb4b38a0534b9a872525f4da99bfa55445d", 1},
+    {"c11:uop_deref", "blake3-512:757cca7242e6aa971ac1216108e3ae07c6575689c6967052bade7595175e86d9dcccf51915db268e043ad472b94718fa1797cde2888837066a3dade0ad1a2ba5", 1},
+    {"c11:uop_bitnot", "blake3-512:6f7a3331ff1a6df38b1e0d599b51cc5941d2b78485bd3c590fa1a5556241f46f7c5306e318fc43112b03be9ba1c916e318476a6c22f8f83c95fe9ecf50a69114", 1},
+    {"c11:uop_addr_of", "blake3-512:8c66103f80b98534c1751926997d80248c17a70ae6d2ded667995a2690af2fe8f8e86c4a94d11116ba46c672761d51bbed0fc43146130e17f9df5b48ab2bf5e3", 1},
+    {"c11:uop_pre_inc", "blake3-512:233b98f6b8991c42b6e2f5d11242b1d00315d5c6c1d802a5aa3fa22457a5faae8ae2eaa206aaf2d645c492e00a34591d6d9cf8fcf892c8f706c0b1208c7814b4", 1},
+    {"c11:uop_post_inc", "blake3-512:b9a129707db15fc984ae1b3416130aaea0f9d2aac1d568933f42e10b0b83afcdf396484d760a931907e0b544487c522bbf77c70f5fb7da201bbe0402f5cf4049", 1},
+    {"c11:uop_pre_dec", "blake3-512:a6abade6666c8a8ffc311592114ec9415ce9a4fc36cd1716dd46b3e986d0acfc7bb693513d04e87fa4a53abbe136fc63bfc57cbf6fc6064e512c7c4e14589037", 1},
+    {"c11:uop_post_dec", "blake3-512:c4ac8768b50bd27cc2a322dc8adec5bf5cb2ad6d2682568642b7f77cbe82e49acbe01182147f3e399c6a39cfa6ddc041f0f2bb7519a36a629c97a24a05dfd632", 1},
+    {"c11:uop_plus", "blake3-512:be5755de9e8b32b9e523f4666f62b809f6b2e1a29cfd9e296aadd3f057ea0b50264fbaa7e9e947aae5774739fa4d98b5d62125f6694abb1e63e61cde9a3682cc", 1},
+    {"c11:compound_assign_add", "blake3-512:4193da5ecd7fb72d9382967fb5f05d7bdcae65adafc13d73e4d0e2cd979bb12715e9d38e62cb317e39246c10be5a53ffa1bef46b5f007e5ed33b58fee845eb19", 1},
+    {"c11:compound_assign_sub", "blake3-512:599b46a328fba8228d991b413b9082cc2d8b81db2c2e5ec8b68c20ff5fe7eb2ac7a94907a8cdf4290935c9a0eff2c76fce97cd04118440e50e2cbd750c25c053", 1},
+    {"c11:compound_assign_mul", "blake3-512:ac62705b41a23189fd4d7e1e5a5f65f4c4c56525725125ae9ab3f1135d379709e97a8562bb138a5a4d02dbb09710f0729c4ee6a4eb54c4fa8eea4879fe40c5b0", 1},
+    {"c11:compound_assign_div", "blake3-512:39cdb1449a34fc761839ee20f291603e3ad5bf3e5b82de2a76ad749ef26fdecf5084b57653f652c3134349b2ae061164a8d4d6121a2ef998e73d4b47865240b2", 1},
+    {"c11:compound_assign_mod", "blake3-512:10b01b4e97bcfacfa0b9d145b72d8547d9b7a4417976fca959da7f96f0544bc7fefdb5c3f713a4977e6a76ac0caa7513ce7a56ec45751e70cd96d7e8d7154fd2", 1},
+    {"c11:compound_assign_shl", "blake3-512:71ddca2c95f1ce2f3b60e254f948700e6158b33632ac5a236ebd9582317394a18a71e72be7fc8af86b90b2adb2014e6d94100ce1375a0ff5a7b16e90efcbc2aa", 1},
+    {"c11:compound_assign_shr", "blake3-512:04156b266093d02b5be6bac7a50f5dd5369cbca1cbce05174fd41de08314cbb0447d510cde9c72b5d02ddaa026363407f84ca8765517a11a937977417f993b4d", 1},
+    {"c11:compound_assign_bitand", "blake3-512:225ae463d5b5d22d557810c4ef49c3d521ef28169475bcaf86b2140da2274b752658854d77db521e5cd7f8be931f7cd14e32b8461f2a106e985edb2735473ce2", 1},
+    {"c11:compound_assign_bitor", "blake3-512:a4ff651621c474b9f6464d0e47fc25d7ac20c802b47131c5be32788c370902bf9925e0b09e425e4cbe0acb269dcde38a69bb27c3fc10685ab3c58cfd765bfdaf", 1},
+    {"c11:compound_assign_bitxor", "blake3-512:6a67e23c00ab896d3b7b9ab2e93554f67e0e36aced1a113374d768f7fdff4e814e4055bbcd6a35bdadf033fef13e8a3c36036ec52a9a7ac96cb644ebf2b15888", 1},
     {NULL, NULL, 0}
 };
 

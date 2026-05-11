@@ -27,6 +27,14 @@
     "arity": [
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "C cast expression preserving lifted child value"
   },

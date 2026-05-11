@@ -27,6 +27,15 @@
     "arity": [
       "Expr"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "label",
+          "slot_sort": "identifier"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "GNU address-of-label expression"
   },

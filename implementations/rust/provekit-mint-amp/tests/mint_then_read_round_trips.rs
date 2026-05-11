@@ -5,6 +5,7 @@ use provekit_mint_amp::{
     mint_language_signature, mint_sort, AlgorithmSpec, BindingSpec, EffectSignatureSpec,
     EquationSpec, LanguageMorphismSpec, LanguageSignatureSpec, SortSpec,
 };
+use serde_json::json;
 
 #[test]
 fn mint_each_kind_then_read_payload_by_cid() {
@@ -71,4 +72,89 @@ fn mint_each_kind_then_read_payload_by_cid() {
         assert_eq!(stored, memento.payload);
         assert!(memento.path.exists(), "memento path should exist");
     }
+}
+
+#[test]
+fn language_signature_mint_preserves_declared_arity_shapes() {
+    let (_dir, catalog) = common::test_catalog("arity-shape").expect("catalog");
+    let signer = common::signer();
+    let spec = LanguageSignatureSpec::from_value(json!({
+        "kind": "language_signature",
+        "fn_name": "c:c11",
+        "sorts": [],
+        "operations": [],
+        "equations": [],
+        "effect_signatures": [],
+        "arity_shapes": {
+            "c11:bop_add": {"kind": "set"},
+            "c11:bop_logand": {
+                "kind": "named",
+                "slots": [
+                    {"name": "left"},
+                    {"name": "right"}
+                ]
+            },
+            "c11:sizeof_expr": {
+                "kind": "named",
+                "slots": [{"name": "operand", "evaluation": "unevaluated"}]
+            },
+            "c11:sizeof_type": {
+                "kind": "named",
+                "slots": [{"name": "operand", "evaluation": "unevaluated", "slot_sort": "type"}]
+            },
+            "c11:generic-selection": {
+                "kind": "named",
+                "slots": [
+                    {"name": "controlling", "evaluation": "unevaluated"},
+                    {"name": "branches", "shape": {"kind": "set"}}
+                ]
+            },
+            "c11:offsetof": {
+                "kind": "named",
+                "slots": [
+                    {"name": "type", "evaluation": "unevaluated", "slot_sort": "type"},
+                    {"name": "designator", "evaluation": "unevaluated", "slot_sort": "identifier"}
+                ]
+            },
+            "c11:seq": {"kind": "positional", "arity": 2}
+        }
+    }));
+
+    let minted = mint_language_signature(spec, &signer, &catalog).expect("mint signature");
+    assert_eq!(
+        minted.payload["post"]["arity_shapes"],
+        json!({
+            "c11:bop_add": {"kind": "set"},
+            "c11:bop_logand": {
+                "kind": "named",
+                "slots": [
+                    {"name": "left"},
+                    {"name": "right"}
+                ]
+            },
+            "c11:sizeof_expr": {
+                "kind": "named",
+                "slots": [{"name": "operand", "evaluation": "unevaluated"}]
+            },
+            "c11:sizeof_type": {
+                "kind": "named",
+                "slots": [{"name": "operand", "evaluation": "unevaluated", "slot_sort": "type"}]
+            },
+            "c11:generic-selection": {
+                "kind": "named",
+                "slots": [
+                    {"name": "controlling", "evaluation": "unevaluated"},
+                    {"name": "branches", "shape": {"kind": "set"}}
+                ]
+            },
+            "c11:offsetof": {
+                "kind": "named",
+                "slots": [
+                    {"name": "type", "evaluation": "unevaluated", "slot_sort": "type"},
+                    {"name": "designator", "evaluation": "unevaluated", "slot_sort": "identifier"}
+                ]
+            },
+            "c11:seq": {"kind": "positional", "arity": 2}
+        })
+    );
 }

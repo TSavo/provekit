@@ -27,6 +27,14 @@
     "arity": [
       "Unit"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
     "result": "Expr",
     "wp": "floating literal token payload elided at this layer",
     "notes": "Serializer is stubbed until literal payload terms are added."
