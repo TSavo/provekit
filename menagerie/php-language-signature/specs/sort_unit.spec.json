@@ -1,0 +1,7 @@
+{
+    "kind": "sort",
+    "fn_name": "php:sort:unit",
+    "version": "0.1.0-draft",
+    "name": "Unit",
+    "locus": "menagerie/php-language-signature/README.md#sorts"
+}

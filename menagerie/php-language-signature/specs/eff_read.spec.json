@@ -1,0 +1,51 @@
+{
+    "kind": "algorithm",
+    "fn_name": "php:effect:read",
+    "version": "0.1.0-draft",
+    "formals": [
+        "target"
+    ],
+    "formal_sorts": [
+        {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+        }
+    ],
+    "return_sort": {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+    },
+    "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+    },
+    "post": {
+        "kind": "operation-contract",
+        "operator": "read-effect",
+        "arity": [
+            "String"
+        ],
+        "result": "Unit",
+        "wp": "record read from target state cell",
+        "arity_shape": {
+            "kind": "named",
+            "slots": [
+                {
+                    "name": "target"
+                }
+            ]
+        }
+    },
+    "effects": {
+        "effects": [
+            {
+                "kind": "effect-signature",
+                "name": "Read"
+            }
+        ]
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+}

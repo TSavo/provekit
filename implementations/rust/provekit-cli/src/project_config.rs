@@ -216,6 +216,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "python-hypothesis",
     "python-source",
     "ruby-source",
+    "php-source",
     "java-bean-validation",
     "java-jml",
     "jvm-bytecode",
@@ -320,6 +321,7 @@ mod tests {
         assert!(KNOWN_SURFACES.contains(&"default"));
         assert!(KNOWN_SURFACES.contains(&"ts-zod"));
         assert!(KNOWN_SURFACES.contains(&"typescript-source"));
+        assert!(KNOWN_SURFACES.contains(&"php-source"));
         assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
         assert!(KNOWN_SURFACES.contains(&"evm-bytecode"));
         assert!(KNOWN_AGENTS.contains(&"stub"));

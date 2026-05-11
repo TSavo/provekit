@@ -1,0 +1,56 @@
+{
+    "kind": "algorithm",
+    "fn_name": "php:assign",
+    "version": "0.1.0-draft",
+    "formals": [
+        "target",
+        "value"
+    ],
+    "formal_sorts": [
+        {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+        },
+        {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+        }
+    ],
+    "return_sort": {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+    },
+    "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+    },
+    "post": {
+        "kind": "operation-contract",
+        "operator": "assign",
+        "arity": [
+            "Value",
+            "Value"
+        ],
+        "result": "Stmt",
+        "wp": "store value in target",
+        "arity_shape": {
+            "kind": "named",
+            "slots": [
+                {
+                    "name": "target"
+                },
+                {
+                    "name": "value"
+                }
+            ]
+        }
+    },
+    "effects": {
+        "effects": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+}
