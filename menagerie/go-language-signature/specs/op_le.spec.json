@@ -8,12 +8,12 @@
   "formal_sorts": [
     {
       "kind": "ctor",
-      "name": "Term",
+      "name": "Int",
       "args": []
     },
     {
       "kind": "ctor",
-      "name": "Term",
+      "name": "Int",
       "args": []
     }
   ],
@@ -31,21 +31,19 @@
     "kind": "operation-contract",
     "operator": "go:le",
     "arity": [
-      "Term",
-      "Term"
+      "Int",
+      "Int"
     ],
     "result": "Bool",
-    "wp": "less-than-or-equal comparison",
+    "wp": "integer less-than-or-equal comparison",
     "arity_shape": {
       "kind": "named",
       "slots": [
         {
-          "name": "lhs",
-          "slot_sort": "Term"
+          "name": "lhs"
         },
         {
-          "name": "rhs",
-          "slot_sort": "Term"
+          "name": "rhs"
         }
       ]
     }

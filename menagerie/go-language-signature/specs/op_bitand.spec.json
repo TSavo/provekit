@@ -8,18 +8,18 @@
   "formal_sorts": [
     {
       "kind": "ctor",
-      "name": "Term",
+      "name": "Int",
       "args": []
     },
     {
       "kind": "ctor",
-      "name": "Term",
+      "name": "Int",
       "args": []
     }
   ],
   "return_sort": {
     "kind": "ctor",
-    "name": "Term",
+    "name": "Int",
     "args": []
   },
   "pre": {
@@ -31,21 +31,19 @@
     "kind": "operation-contract",
     "operator": "go:bitand",
     "arity": [
-      "Term",
-      "Term"
+      "Int",
+      "Int"
     ],
-    "result": "Term",
+    "result": "Int",
     "wp": "bitwise and",
     "arity_shape": {
       "kind": "named",
       "slots": [
         {
-          "name": "lhs",
-          "slot_sort": "Term"
+          "name": "lhs"
         },
         {
-          "name": "rhs",
-          "slot_sort": "Term"
+          "name": "rhs"
         }
       ]
     }
