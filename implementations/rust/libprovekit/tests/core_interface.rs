@@ -7,9 +7,9 @@ use libprovekit::compose::{
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, prove, transform, verify, Boundary, CKit, Cid, DomainClaim, DomainKind,
-    FunctionContractDomain, HashMapCatalog, Input, NoopPortfolio, Refutation, Term, Truth, Verdict,
-    Witness,
+    address, compose, link, prove, transform, verify, CKit, Cid, DomainClaim, DomainKind,
+    FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
+    LiftPluginKit, Path, PathAlgebra, PathError, Refutation, Term, Truth, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{IrFormula, IrTerm, Sort};
@@ -80,12 +80,11 @@ fn pure_identity_contract(fn_name: &str, formal: &str) -> FunctionContractMement
 
 fn claim_for_contract(contract: FunctionContractMemento) -> DomainClaim {
     let to = Cid::try_from(contract.cid.clone()).expect("fixture cid is valid");
+    let artifact = address(&format!("contract:{}", contract.cid));
     DomainClaim {
         domain: DomainKind::FunctionContract,
-        term: Some(Term::Var {
-            name: contract.fn_name.clone(),
-        }),
         contract,
+        artifacts: vec![artifact],
         from: vec![],
         premises: vec![],
         to,
@@ -167,26 +166,259 @@ fn core_compose_tracks_source_endpoints_and_input_claims() {
     let actual = compose(&a, &b).expect("core compose works");
     assert_eq!(actual.from, expected_from);
     assert_eq!(actual.premises, expected_premises);
+
+    let unioned = a
+        .union(&b)
+        .expect("domain claims union through composition");
+    assert_eq!(unioned.from, actual.from);
+    assert_eq!(unioned.premises, actual.premises);
+    assert_eq!(unioned.to, actual.to);
+}
+
+#[test]
+fn link_cross_domain_claims_by_shared_contract_cid() {
+    let contract = pure_identity_contract("ffi_shared", "x");
+    let shared_cid = Cid::try_from(contract.cid.clone()).expect("fixture cid is valid");
+
+    let mut ts_claim = claim_for_contract(contract.clone());
+    ts_claim.domain = DomainKind::Other("typescript".to_string());
+    ts_claim.artifacts = vec![address(&"ts.proof")];
+    ts_claim.from = vec![address(&"typescript-source")];
+
+    let mut c_claim = claim_for_contract(contract);
+    c_claim.domain = DomainKind::Other("c".to_string());
+    c_claim.artifacts = vec![address(&"c.proof")];
+    c_claim.from = vec![address(&"c-source")];
+
+    let linked = link(&[ts_claim.clone(), c_claim.clone()])
+        .expect("cross-domain claims link through shared contract cid");
+    let mut expected_premises = vec![ts_claim.cid(), c_claim.cid()];
+    expected_premises.sort();
+
+    assert_eq!(
+        linked.domain,
+        DomainKind::Other("linked-program".to_string())
+    );
+    assert_eq!(linked.to, shared_cid);
+    assert_eq!(linked.premises, expected_premises);
+    assert_eq!(linked.artifacts.len(), 2);
+    assert!(linked.artifacts.contains(&address(&"ts.proof")));
+    assert!(linked.artifacts.contains(&address(&"c.proof")));
 }
 
 #[test]
 fn transform_and_prove_build_a_contract_claim_with_stub_kits() {
     let kit = CKit::default();
-    let domain = FunctionContractDomain;
-    let boundary = Boundary::default();
     let input = Input::Term(Term::Var {
         name: "x".to_string(),
     });
 
-    let claim = transform(&kit, &domain, &input, &boundary).expect("transform succeeds");
+    let claim = kit.transform(&input).expect("kit transform succeeds");
     assert_eq!(claim.domain, DomainKind::FunctionContract);
-    assert!(claim.term.is_some());
+    assert!(!claim.artifacts.is_empty());
+    assert_eq!(claim.from, vec![address(&input)]);
     assert_eq!(claim.verdict, Verdict::Unresolved);
 
-    let proved =
-        prove(&kit, &domain, &input, &boundary, &NoopPortfolio).expect("prove skeleton succeeds");
+    let verb_claim = transform(&kit, &input).expect("transform verb delegates to kit");
+    assert_eq!(verb_claim.from, claim.from);
+
+    let proved = kit.prove(claim).expect("kit prove accepts a domain claim");
+    assert_eq!(
+        prove(&kit, verb_claim)
+            .expect("prove verb delegates")
+            .verdict,
+        Verdict::Unknown
+    );
     assert_eq!(proved.verdict, Verdict::Unknown);
     assert!(matches!(proved.witness, Some(Witness::Unknown { .. })));
+}
+
+#[test]
+fn path_is_cidable_language_neutral_algebra() {
+    let lift_step = PathAlgebra {
+        name: "lift".to_string(),
+        kit: "lift-plugin:rust".to_string(),
+        inputs: vec![address(&Input::Spec(serde_json::json!({
+            "surface": "rust",
+            "workspace_root": "/repo"
+        })))],
+        depends_on: vec![],
+    };
+    let mint_step = PathAlgebra {
+        name: "mint".to_string(),
+        kit: "provekit-mint".to_string(),
+        inputs: vec![address(&Input::Spec(serde_json::json!({
+            "outDir": "/repo/out"
+        })))],
+        depends_on: vec!["lift".to_string()],
+    };
+
+    let path = Path {
+        algebra: vec![mint_step.clone(), lift_step.clone()],
+    };
+    let reordered = Path {
+        algebra: vec![lift_step, mint_step],
+    };
+
+    assert_eq!(path.cid(), reordered.cid());
+    assert_eq!(
+        address(&Input::Path(Box::new(path.clone()))),
+        address(&Input::Path(Box::new(reordered)))
+    );
+    assert_eq!(
+        path.step("mint").expect("mint step").depends_on,
+        vec!["lift".to_string()]
+    );
+}
+
+#[test]
+fn path_derives_order_from_dependencies() {
+    let lift_step = PathAlgebra {
+        name: "lift".to_string(),
+        kit: "lift-plugin:rust".to_string(),
+        inputs: vec![address(&Input::Spec(
+            serde_json::json!({"surface": "rust"}),
+        ))],
+        depends_on: vec![],
+    };
+    let mint_step = PathAlgebra {
+        name: "mint".to_string(),
+        kit: "provekit-mint".to_string(),
+        inputs: vec![address(&Input::Spec(serde_json::json!({"outDir": "out"})))],
+        depends_on: vec!["lift".to_string()],
+    };
+    let path = Path {
+        algebra: vec![mint_step, lift_step],
+    };
+
+    let ordered_names: Vec<&str> = path
+        .ordered_steps()
+        .expect("path dependency order")
+        .into_iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    assert_eq!(ordered_names, vec!["lift", "mint"]);
+
+    let terminal_names: Vec<&str> = path
+        .terminal_steps()
+        .into_iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    assert_eq!(terminal_names, vec!["mint"]);
+}
+
+#[test]
+fn input_catalog_materializes_path_step_inputs_by_cid() {
+    let mut catalog = HashMapInputCatalog::default();
+    let input = Input::Spec(serde_json::json!({
+        "surface": "jvm-bytecode",
+        "artifact": "target/classes/App.class"
+    }));
+    let input_cid = catalog.insert(input);
+    let path = Path {
+        algebra: vec![PathAlgebra {
+            name: "lift-jvm".to_string(),
+            kit: "lift-plugin:jvm-bytecode".to_string(),
+            inputs: vec![input_cid.clone()],
+            depends_on: vec![],
+        }],
+    };
+
+    let step = path.step("lift-jvm").expect("path step");
+    let materialized = catalog
+        .get_input(&step.inputs[0])
+        .expect("input materializes from catalog");
+    let Input::Spec(value) = materialized else {
+        panic!("catalog returned unexpected input");
+    };
+    assert_eq!(value["surface"].as_str(), Some("jvm-bytecode"));
+    assert_eq!(step.inputs, vec![input_cid]);
+}
+
+#[test]
+fn path_rejects_invalid_dependency_graphs() {
+    let step = |name: &str, depends_on: Vec<&str>| PathAlgebra {
+        name: name.to_string(),
+        kit: format!("kit:{name}"),
+        inputs: vec![address(&format!("input:{name}"))],
+        depends_on: depends_on.into_iter().map(str::to_string).collect(),
+    };
+
+    let duplicate = Path {
+        algebra: vec![step("same", vec![]), step("same", vec![])],
+    };
+    assert!(matches!(
+        duplicate.ordered_steps(),
+        Err(PathError::DuplicateStep { name }) if name == "same"
+    ));
+
+    let missing = Path {
+        algebra: vec![step("mint", vec!["lift"])],
+    };
+    assert!(matches!(
+        missing.ordered_steps(),
+        Err(PathError::MissingDependency { step, dependency })
+            if step == "mint" && dependency == "lift"
+    ));
+
+    let cycle = Path {
+        algebra: vec![step("a", vec!["b"]), step("b", vec!["a"])],
+    };
+    assert!(matches!(
+        cycle.ordered_steps(),
+        Err(PathError::Cycle { step }) if step == "a" || step == "b"
+    ));
+}
+
+#[test]
+fn path_orders_cross_domain_link_after_shared_contract_proofs() {
+    let shared_contract = address(&"shared-ts-c-contract");
+    let ts_proof = PathAlgebra {
+        name: "ts-proof".to_string(),
+        kit: "lift-plugin:typescript".to_string(),
+        inputs: vec![address(&Input::Spec(serde_json::json!({
+            "proofFile": "ts.proof",
+            "contractCid": shared_contract.as_str()
+        })))],
+        depends_on: vec![],
+    };
+    let c_proof = PathAlgebra {
+        name: "c-proof".to_string(),
+        kit: "lift-plugin:c".to_string(),
+        inputs: vec![address(&Input::Spec(serde_json::json!({
+            "proofFile": "c.proof",
+            "contractCid": shared_contract.as_str()
+        })))],
+        depends_on: vec![],
+    };
+    let link = PathAlgebra {
+        name: "link".to_string(),
+        kit: "provekit-link".to_string(),
+        inputs: vec![address(&Input::Spec(serde_json::json!({
+            "sharedContractCid": shared_contract.as_str()
+        })))],
+        depends_on: vec!["ts-proof".to_string(), "c-proof".to_string()],
+    };
+    let path = Path {
+        algebra: vec![link, ts_proof, c_proof],
+    };
+
+    let ordered_names: Vec<&str> = path
+        .ordered_steps()
+        .expect("cross-domain path order")
+        .into_iter()
+        .map(|step| step.name.as_str())
+        .collect();
+    assert_eq!(ordered_names.last(), Some(&"link"));
+    assert!(ordered_names[..2].contains(&"ts-proof"));
+    assert!(ordered_names[..2].contains(&"c-proof"));
+    assert_eq!(
+        path.terminal_steps()
+            .into_iter()
+            .map(|step| step.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["link"]
+    );
 }
 
 #[test]
@@ -254,4 +486,69 @@ fn resolve_reads_canonical_bytes_from_hash_map_catalog() {
 
     let bytes = libprovekit::core::resolve(&cid, &catalog).expect("claim bytes resolve");
     assert_eq!(bytes, claim.canonical_bytes());
+}
+
+#[test]
+fn lift_plugin_transport_is_a_core_kit_with_legacy_response_escape_hatch() {
+    let temp =
+        std::env::temp_dir().join(format!("provekit-lift-plugin-kit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&temp);
+    std::fs::create_dir_all(&temp).expect("create temp dir");
+    let script = temp.join("fake-lifter.sh");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*) echo '{"jsonrpc":"2.0","id":1,"result":{"name":"fake-lifter"}}' ;;
+    *'"method":"lift"'*) echo '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[],"diagnostics":[]}}' ;;
+    *'"method":"shutdown"'*) exit 0 ;;
+  esac
+done
+"#,
+    )
+    .expect("write fake lifter");
+
+    let kit = LiftPluginKit::new(
+        "test-surface",
+        vec!["sh".to_string(), script.display().to_string()],
+        Some(temp.clone()),
+    );
+    let input = Input::Spec(serde_json::json!({
+        "surface": "test-surface",
+        "workspace_root": temp,
+        "config_path": ".provekit/config.toml",
+        "source_paths": ["."],
+        "options": {"layer": "all", "identifyOnly": false}
+    }));
+
+    let session = kit
+        .parse_session(&input)
+        .expect("session exposes transport metadata");
+    assert_eq!(
+        session.response().get("kind").and_then(|v| v.as_str()),
+        Some("ir-document")
+    );
+    assert_eq!(
+        session.claim.domain,
+        DomainKind::Other("lift-plugin".to_string())
+    );
+    assert_eq!(session.claim.from, vec![address(&input)]);
+    let response_term = Term::Const {
+        value: session.response().clone(),
+        sort: Sort::Primitive {
+            name: "LiftPluginResponse".to_string(),
+        },
+    };
+    assert_eq!(session.claim.to, address(&response_term));
+    assert_eq!(session.claim.artifacts, vec![address(&response_term)]);
+    assert_eq!(
+        session.claim.contract.body_cid.as_deref(),
+        Some(session.claim.to.as_str())
+    );
+    assert_eq!(
+        session.response().get("kind").and_then(|v| v.as_str()),
+        Some("ir-document")
+    );
+    let _ = std::fs::remove_dir_all(&temp);
 }

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Lift-plugin RPC client.
+// Lift-plugin resolver and legacy CLI adapter.
 //
-// This module owns exactly one protocol boundary: read a lift surface manifest,
-// spawn the configured lifter, speak initialize/lift/shutdown, and return the
-// raw lift result. Callers decide what to do with that result.
+// The transport and primitive claim construction are `libprovekit::core::Kit`.
+// This module only resolves the surface manifest, builds the lift request
+// input, and keeps the legacy CLI response escape hatch while old command edges
+// are migrated.
 
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::Instant;
 
+use libprovekit::core::{DomainClaim, Input, LiftPluginKit, LiftPluginKitError};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
@@ -23,7 +23,14 @@ pub(crate) struct LiftPluginManifest {
 
 #[derive(Debug, Clone)]
 pub(crate) struct LiftPluginSession {
-    pub response: Value,
+    pub claim: DomainClaim,
+    legacy_response: Value,
+}
+
+impl LiftPluginSession {
+    pub(crate) fn response(&self) -> &Value {
+        &self.legacy_response
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -35,6 +42,18 @@ pub(crate) struct LiftPluginOptions {
 pub(crate) enum LiftPluginError {
     MissingBinary { binary: String },
     Failed(String),
+}
+
+impl From<LiftPluginKitError> for LiftPluginError {
+    fn from(value: LiftPluginKitError) -> Self {
+        match value {
+            LiftPluginKitError::MissingBinary { binary } => Self::MissingBinary { binary },
+            LiftPluginKitError::Failed(message) => Self::Failed(message),
+            LiftPluginKitError::LegacyResponseUnavailable => {
+                Self::Failed("lift plugin term no longer carries a legacy response".to_string())
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for LiftPluginError {
@@ -72,130 +91,32 @@ pub(crate) fn dispatch_lift(
         );
     }
 
-    let mut cmd = Command::new(&manifest.command[0]);
-    if manifest.command.len() > 1 {
-        cmd.args(&manifest.command[1..]);
-    }
-    if !manifest.command.iter().any(|a| a == "--rpc") {
-        cmd.arg("--rpc");
-    }
-    if let Some(wd) = &manifest.working_dir {
-        let resolved = if wd.is_absolute() {
-            wd.clone()
-        } else {
-            project_root.join(wd)
-        };
-        cmd.current_dir(resolved);
-    }
-    cmd.stdin(Stdio::piped());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::inherit());
-
+    let lift_params = build_lift_params(project_root, surface, options);
+    let kit = LiftPluginKit::new(
+        surface,
+        manifest.command.clone(),
+        resolved_working_dir(project_root, &manifest),
+    );
+    trace_log(format!("lift kit parse surface={surface}"));
+    let core_session = kit.parse_session(&Input::Spec(lift_params.clone()))?;
     trace_log(format!(
-        "lift rpc spawn surface={surface} command={:?}",
-        manifest.command
-    ));
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Err(LiftPluginError::MissingBinary {
-                binary: manifest.command[0].clone(),
-            });
-        }
-        Err(error) => {
-            return Err(LiftPluginError::Failed(format!(
-                "spawn {:?}: {error}",
-                manifest.command
-            )))
-        }
-    };
-    trace_log(format!(
-        "lift rpc spawned surface={surface} pid={}",
-        child.id()
-    ));
-
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| LiftPluginError::Failed("lift plugin stdin unavailable".into()))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| LiftPluginError::Failed("lift plugin stdout unavailable".into()))?;
-    let mut reader = BufReader::new(stdout);
-
-    let init_req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-cli", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": "provekit-lift/1",
-            "workspace_root": project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf()),
-            "config_path": ".provekit/config.toml"
-        }
-    });
-    trace_log(format!("lift rpc send initialize surface={surface} id=1"));
-    writeln!(stdin, "{init_req}")
-        .map_err(|e| LiftPluginError::Failed(format!("write lift initialize: {e}")))?;
-
-    trace_log(format!(
-        "lift rpc wait initialize response surface={surface} id=1"
-    ));
-    let init_resp = read_response(&mut reader, 1).map_err(LiftPluginError::Failed)?;
-    trace_log(format!(
-        "lift rpc got initialize response surface={surface} elapsed={:?}",
+        "lift kit parsed surface={surface} elapsed={:?}",
         started.elapsed()
     ));
     if !quiet {
-        if let Some(name) = init_resp.get("name").and_then(|v| v.as_str()) {
+        if let Some(name) = core_session
+            .initialize_response
+            .get("name")
+            .and_then(|value| value.as_str())
+        {
             println!("{}: plugin `{}` ready", "ok".green().bold(), name);
         }
     }
 
-    let lift_params = build_lift_params(project_root, surface, options);
-    let lift_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "lift",
-        "params": lift_params
-    });
-    trace_log(format!("lift rpc send lift surface={surface} id=2"));
-    writeln!(stdin, "{lift_req}")
-        .map_err(|e| LiftPluginError::Failed(format!("write lift request: {e}")))?;
-    trace_log(format!(
-        "lift rpc wait lift response surface={surface} id=2"
-    ));
-    let response = read_response(&mut reader, 2).map_err(LiftPluginError::Failed)?;
-    trace_log(format!(
-        "lift rpc got lift response surface={surface} elapsed={:?}",
-        started.elapsed()
-    ));
-
-    let shutdown_req = json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "shutdown"
-    });
-    trace_log(format!("lift rpc send shutdown surface={surface} id=3"));
-    let _ = writeln!(stdin, "{shutdown_req}");
-    drop(stdin);
-    trace_log(format!("lift rpc wait child exit surface={surface}"));
-    let status = child
-        .wait()
-        .map_err(|e| LiftPluginError::Failed(format!("wait lift plugin: {e}")))?;
-    trace_log(format!(
-        "lift rpc child exit surface={surface} status={status:?} elapsed={:?}",
-        started.elapsed()
-    ));
-    if !status.success() {
-        return Err(LiftPluginError::Failed(format!(
-            "lift plugin exited {status} after {:?}",
-            started.elapsed()
-        )));
-    }
-
-    Ok(LiftPluginSession { response })
+    Ok(LiftPluginSession {
+        legacy_response: core_session.legacy_response,
+        claim: core_session.claim,
+    })
 }
 
 fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
@@ -263,6 +184,16 @@ fn find_manifest(project_root: &Path, surface: &str) -> Result<LiftPluginManifes
     ))
 }
 
+fn resolved_working_dir(project_root: &Path, manifest: &LiftPluginManifest) -> Option<PathBuf> {
+    manifest.working_dir.as_ref().map(|working_dir| {
+        if working_dir.is_absolute() {
+            working_dir.clone()
+        } else {
+            project_root.join(working_dir)
+        }
+    })
+}
+
 pub(crate) fn build_lift_params(
     project_root: &Path,
     surface: &str,
@@ -288,30 +219,6 @@ pub(crate) fn build_lift_params(
     })
 }
 
-fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
-    let mut line = String::new();
-    let n = reader
-        .read_line(&mut line)
-        .map_err(|e| format!("read lift response: {e}"))?;
-    if n == 0 {
-        return Err("lift plugin closed stdout before responding".into());
-    }
-    let value: Value = serde_json::from_str(line.trim())
-        .map_err(|e| format!("parse lift JSON-RPC response: {e}\n  raw: {line}"))?;
-    if value.get("id").and_then(Value::as_i64) != Some(id) {
-        return Err(format!(
-            "lift response id mismatch: expected {id}, got {value:?}"
-        ));
-    }
-    if let Some(error) = value.get("error") {
-        return Err(format!("lift plugin returned error: {error}"));
-    }
-    value
-        .get("result")
-        .cloned()
-        .ok_or_else(|| "lift response missing `result`".into())
-}
-
 fn trace_enabled() -> bool {
     std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
 }
@@ -319,5 +226,53 @@ fn trace_enabled() -> bool {
 fn trace_log(message: impl std::fmt::Display) {
     if trace_enabled() {
         eprintln!("provekit trace: {message}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use libprovekit::core::{DomainKind, Term};
+    use provekit_ir_types::Sort;
+
+    #[test]
+    fn lift_session_is_domain_claim_first_and_legacy_response_round_trips() {
+        let response = json!({
+            "kind": "ir-document",
+            "ir": [],
+            "diagnostics": []
+        });
+        let request = build_lift_params(
+            Path::new("."),
+            "rust",
+            LiftPluginOptions {
+                identify_only: false,
+            },
+        );
+
+        let term = Term::Const {
+            value: response.clone(),
+            sort: Sort::Primitive {
+                name: "LiftPluginResponse".to_string(),
+            },
+        };
+        let kit = LiftPluginKit::new("rust", Vec::new(), None);
+        let input = Input::Spec(request);
+        let claim = kit
+            .claim_from_response_term(&input, term)
+            .expect("lift response becomes a primitive claim");
+        let session = LiftPluginSession {
+            claim,
+            legacy_response: response.clone(),
+        };
+
+        assert_eq!(
+            session.claim.domain,
+            DomainKind::Other("lift-plugin".to_string())
+        );
+        assert_eq!(session.claim.from.len(), 1);
+        assert!(session.claim.premises.is_empty());
+        assert_eq!(session.claim.artifacts.len(), 1);
+        assert_eq!(session.response(), &response);
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::fmt;
 use std::sync::Arc;
@@ -320,16 +321,16 @@ pub struct Attestation {
 /// Central IPath type: a domain-specific path from input CIDs to an output CID.
 ///
 /// A `DomainClaim` is unresolved when no witness is present, and resolved when
-/// `witness` and `verdict` agree. `term` is the faithful stratum and may be
-/// absent after projection; `contract` is the durable WP projection.
+/// `witness` and `verdict` agree. Faithful language-specific terms live in
+/// addressed artifacts owned by kits; the primitive carries only their CIDs.
 #[derive(Debug, Clone)]
 pub struct DomainClaim {
     /// Domain polymorphism axis.
     pub domain: DomainKind,
-    /// Optional faithful term, discardable for verification.
-    pub term: Option<Term>,
     /// Durable lossy projection.
     pub contract: Contract,
+    /// Kit-owned artifacts used to derive this claim.
+    pub artifacts: Vec<Cid>,
     /// Input endpoint CIDs.
     pub from: Vec<Cid>,
     /// Immediate input claim CIDs used to derive this claim.
@@ -360,6 +361,11 @@ impl DomainClaim {
         let mut clone = self.clone();
         clone.attestation = None;
         clone
+    }
+
+    /// Union this claim with another claim in the same domain.
+    pub fn union(&self, other: &Self) -> Result<Self, super::primitives::ComposeError> {
+        super::primitives::compose(self, other)
     }
 }
 
@@ -441,6 +447,148 @@ pub enum VerdictCoercionError {
     ExpectedRefuted { actual: Verdict },
 }
 
+/// A composed transformation path.
+///
+/// A path is a set of algebra steps. Each step names a kit transform, its
+/// input, and the step names it depends on. Executing a command is still one
+/// `Kit(Input) -> DomainClaim`; `Input::Path` carries the algebra needed for
+/// that kit to compose subordinate transforms when necessary.
+#[derive(Debug, Clone)]
+pub struct Path {
+    /// Algebra steps available to the transform.
+    pub algebra: Vec<PathAlgebra>,
+}
+
+impl Path {
+    /// Return `address(self)`: the CID of this language-neutral composition value.
+    pub fn cid(&self) -> Cid {
+        super::primitives::address(self)
+    }
+
+    /// Find one named algebra step.
+    pub fn step(&self, name: &str) -> Option<&PathAlgebra> {
+        self.algebra.iter().find(|step| step.name == name)
+    }
+
+    /// Return algebra steps in dependency order.
+    pub fn ordered_steps(&self) -> Result<Vec<&PathAlgebra>, PathError> {
+        let mut steps = BTreeMap::new();
+        for step in &self.algebra {
+            if steps.insert(step.name.clone(), step).is_some() {
+                return Err(PathError::DuplicateStep {
+                    name: step.name.clone(),
+                });
+            }
+        }
+
+        let mut incoming = BTreeMap::new();
+        let mut outgoing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for step in &self.algebra {
+            let mut dependencies = BTreeSet::new();
+            for dependency in &step.depends_on {
+                if !steps.contains_key(dependency) {
+                    return Err(PathError::MissingDependency {
+                        step: step.name.clone(),
+                        dependency: dependency.clone(),
+                    });
+                }
+                dependencies.insert(dependency.clone());
+                outgoing
+                    .entry(dependency.clone())
+                    .or_default()
+                    .insert(step.name.clone());
+            }
+            incoming.insert(step.name.clone(), dependencies);
+        }
+
+        let mut ready: BTreeSet<String> = incoming
+            .iter()
+            .filter_map(|(name, dependencies)| {
+                if dependencies.is_empty() {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut ordered = Vec::with_capacity(self.algebra.len());
+
+        while let Some(name) = ready.iter().next().cloned() {
+            ready.remove(&name);
+            ordered.push(*steps.get(&name).expect("ready step exists"));
+
+            for dependent in outgoing.get(&name).into_iter().flatten() {
+                let dependencies = incoming
+                    .get_mut(dependent)
+                    .expect("dependent step has incoming set");
+                dependencies.remove(&name);
+                if dependencies.is_empty() {
+                    ready.insert(dependent.clone());
+                }
+            }
+        }
+
+        if ordered.len() != self.algebra.len() {
+            let step = incoming
+                .iter()
+                .find_map(|(name, dependencies)| {
+                    if dependencies.is_empty() {
+                        None
+                    } else {
+                        Some(name.clone())
+                    }
+                })
+                .unwrap_or_default();
+            return Err(PathError::Cycle { step });
+        }
+
+        Ok(ordered)
+    }
+
+    /// Return steps that no other step depends on.
+    pub fn terminal_steps(&self) -> Vec<&PathAlgebra> {
+        let dependencies: BTreeSet<&str> = self
+            .algebra
+            .iter()
+            .flat_map(|step| step.depends_on.iter().map(String::as_str))
+            .collect();
+        let mut terminals: Vec<&PathAlgebra> = self
+            .algebra
+            .iter()
+            .filter(|step| !dependencies.contains(step.name.as_str()))
+            .collect();
+        terminals.sort_by(|left, right| left.name.cmp(&right.name));
+        terminals
+    }
+}
+
+/// One algebra step inside a [`Path`].
+#[derive(Debug, Clone)]
+pub struct PathAlgebra {
+    /// Stable step name inside the path.
+    pub name: String,
+    /// Kit transform to apply.
+    pub kit: String,
+    /// Input artifact CIDs to that transform.
+    pub inputs: Vec<Cid>,
+    /// Names of prerequisite algebra steps.
+    pub depends_on: Vec<String>,
+}
+
+/// Invalid path algebra.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum PathError {
+    /// Two steps share the same stable name.
+    #[error("path contains duplicate step `{name}`")]
+    DuplicateStep { name: String },
+    /// A step names a prerequisite that does not exist in the path.
+    #[error("path step `{step}` depends on missing step `{dependency}`")]
+    MissingDependency { step: String, dependency: String },
+    /// The dependency graph contains a cycle.
+    #[error("path dependency cycle includes step `{step}`")]
+    Cycle { step: String },
+}
+
 /// Closed input universe for transforms.
 ///
 /// A source file, a spec, a raw claim, a `Truth`, a `Refutation`, or a faithful
@@ -460,6 +608,8 @@ pub enum Input {
     Refutation(Refutation),
     /// Faithful term input.
     Term(Term),
+    /// Composed path input.
+    Path(Box<Path>),
 }
 
 impl Canonical for String {
@@ -512,6 +662,18 @@ impl Canonical for DomainClaim {
     fn canonical_bytes(&self) -> Vec<u8> {
         let value = domain_claim_to_value(self);
         encode_jcs(&value).into_bytes()
+    }
+}
+
+impl Canonical for Path {
+    fn canonical_bytes(&self) -> Vec<u8> {
+        encode_jcs(&path_to_value(self)).into_bytes()
+    }
+}
+
+impl Canonical for Input {
+    fn canonical_bytes(&self) -> Vec<u8> {
+        encode_jcs(&input_to_value(self)).into_bytes()
     }
 }
 
@@ -620,6 +782,13 @@ pub(crate) fn memento_from_parts(
 }
 
 fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
+    let mut artifacts = claim.artifacts.clone();
+    artifacts.sort();
+    artifacts.dedup();
+    let artifact_values: Vec<Arc<CValue>> = artifacts
+        .iter()
+        .map(|cid| CValue::string(cid.as_str().to_string()))
+        .collect();
     let from_values: Vec<Arc<CValue>> = claim
         .from
         .iter()
@@ -630,16 +799,13 @@ fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
         .iter()
         .map(|cid| CValue::string(cid.as_str().to_string()))
         .collect();
-    let term_value = match &claim.term {
-        Some(term) => json_to_cvalue(serde_json::to_value(term).expect("term serializes")),
-        None => CValue::null(),
-    };
     let witness_value = match &claim.witness {
         Some(witness) => json_to_cvalue(serde_json::to_value(witness).expect("witness serializes")),
         None => CValue::null(),
     };
 
     CValue::object([
+        ("artifacts", CValue::array(artifact_values)),
         ("contract", contract_to_cvalue(&claim.contract)),
         (
             "domain",
@@ -647,13 +813,92 @@ fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
         ),
         ("from", CValue::array(from_values)),
         ("premises", CValue::array(premise_values)),
-        ("term", term_value),
         ("to", CValue::string(claim.to.as_str().to_string())),
         (
             "verdict",
             json_to_cvalue(serde_json::to_value(claim.verdict).expect("verdict serializes")),
         ),
         ("witness", witness_value),
+    ])
+}
+
+fn input_to_value(input: &Input) -> Arc<CValue> {
+    match input {
+        Input::Source { dialect, bytes } => CValue::object([
+            ("kind", CValue::string("source")),
+            (
+                "dialect",
+                json_to_cvalue(serde_json::to_value(dialect).expect("dialect serializes")),
+            ),
+            (
+                "bytes",
+                CValue::array(
+                    bytes
+                        .iter()
+                        .map(|byte| CValue::integer(i64::from(*byte)))
+                        .collect(),
+                ),
+            ),
+        ]),
+        Input::Spec(value) => CValue::object([
+            ("kind", CValue::string("spec")),
+            ("value", json_to_cvalue(value.clone())),
+        ]),
+        Input::Claim(claim) => CValue::object([
+            ("kind", CValue::string("claim")),
+            ("claim", domain_claim_to_value(claim)),
+        ]),
+        Input::Truth(truth) => CValue::object([
+            ("kind", CValue::string("truth")),
+            ("claim", domain_claim_to_value(truth.claim())),
+        ]),
+        Input::Refutation(refutation) => CValue::object([
+            ("kind", CValue::string("refutation")),
+            ("claim", domain_claim_to_value(refutation.claim())),
+        ]),
+        Input::Term(term) => CValue::object([
+            ("kind", CValue::string("term")),
+            (
+                "term",
+                json_to_cvalue(serde_json::to_value(term).expect("term serializes")),
+            ),
+        ]),
+        Input::Path(path) => CValue::object([
+            ("kind", CValue::string("path")),
+            ("path", path_to_value(path.as_ref())),
+        ]),
+    }
+}
+
+fn path_to_value(path: &Path) -> Arc<CValue> {
+    let mut steps: Vec<&PathAlgebra> = path.algebra.iter().collect();
+    steps.sort_by(|left, right| left.name.cmp(&right.name));
+    CValue::array(steps.into_iter().map(path_algebra_to_value).collect())
+}
+
+fn path_algebra_to_value(step: &PathAlgebra) -> Arc<CValue> {
+    let mut depends_on = step.depends_on.clone();
+    depends_on.sort();
+    depends_on.dedup();
+    let mut inputs = step.inputs.clone();
+    inputs.sort();
+    inputs.dedup();
+    CValue::object([
+        (
+            "inputs",
+            CValue::array(
+                inputs
+                    .into_iter()
+                    .map(|cid| CValue::string(cid.as_str().to_string()))
+                    .collect(),
+            ),
+        ),
+        ("kit", CValue::string(step.kit.clone())),
+        ("name", CValue::string(step.name.clone())),
+        (
+            "dependsOn",
+            CValue::array(depends_on.into_iter().map(CValue::string).collect()),
+        ),
     ])
 }
 

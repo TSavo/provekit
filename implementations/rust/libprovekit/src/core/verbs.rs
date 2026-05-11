@@ -1,49 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
+
 use super::primitives::{compose, verify_sig};
-use super::traits::{Catalog, CoreError, DischargeMode, Domain, Kit, Portfolio};
-use super::types::{Boundary, DomainClaim, Input, Truth, Verdict};
+use super::traits::{Catalog, CoreError, DischargeMode, Domain, Kit};
+use super::types::{Boundary, Cid, DomainClaim, DomainKind, Input, Truth, Verdict};
 
 /// Named verb: transform an input into an unresolved domain claim.
 ///
-/// Composition: `Kit::parse ; Domain::project ; address`. The faithful term is
-/// retained in the claim for later realization/cross-compilation; verification
-/// can ignore it once the contract projection is present.
-pub fn transform(
-    kit: &dyn Kit,
-    domain: &dyn Domain,
-    input: &Input,
-    boundary: &Boundary,
-) -> Result<DomainClaim, CoreError> {
-    let term = kit.parse(input)?;
-    let contract = domain.project(&term, boundary)?;
-    let from = vec![super::primitives::address(&term)];
-    let to = super::primitives::address(&contract);
-    Ok(DomainClaim {
-        domain: domain.name(),
-        term: Some(term),
-        contract,
-        from,
-        premises: vec![],
-        to,
-        witness: None,
-        verdict: Verdict::Unresolved,
-        attestation: None,
-    })
+/// Composition: `Kit::transform`.
+pub fn transform(kit: &dyn Kit, input: &Input) -> Result<DomainClaim, CoreError> {
+    Ok(kit.transform(input)?)
 }
 
-/// Named verb: prove an input by transforming then discharging in search mode.
+/// Named verb: prove an already-transformed domain claim.
 ///
-/// Composition: `transform ; Domain::discharge(Search { portfolio })`.
-pub fn prove(
-    kit: &dyn Kit,
-    domain: &dyn Domain,
-    input: &Input,
-    boundary: &Boundary,
-    portfolio: &dyn Portfolio,
-) -> Result<DomainClaim, CoreError> {
-    let claim = transform(kit, domain, input, boundary)?;
-    Ok(domain.discharge(claim, DischargeMode::Search { portfolio })?)
+/// Composition: `Kit::prove`.
+pub fn prove(kit: &dyn Kit, claim: DomainClaim) -> Result<DomainClaim, CoreError> {
+    Ok(kit.prove(claim)?)
 }
 
 /// Named verb: verify a truth by recomputing, resolving, and checking witness.
@@ -71,16 +45,15 @@ pub fn verify(truth: &Truth, domain: &dyn Domain, catalog: &dyn Catalog) -> bool
 
 /// Named verb: realize a claim into a target dialect.
 ///
-/// If the faithful term is present, this is just `Kit::serialize`. If only the
-/// contract remains, the future path is `dropper/synthesize ; serialize`; the
-/// initial pass returns `MissingTerm` for that TODO-stubbed branch.
+/// Primitive claims no longer embed language terms. Realization must resolve
+/// one of the claim's addressed artifacts through a kit-owned catalog; the
+/// initial pass keeps the typed boundary and reports the unresolved edge.
 pub fn realize(
     _domain: &dyn Domain,
-    target: &dyn Kit,
-    claim: &DomainClaim,
+    _target: &dyn Kit,
+    _claim: &DomainClaim,
 ) -> Result<Input, CoreError> {
-    let term = claim.term.as_ref().ok_or(CoreError::MissingTerm)?;
-    Ok(target.serialize(term)?)
+    Err(CoreError::MissingTerm)
 }
 
 /// Named verb: cross-compile through a domain morphism.
@@ -91,15 +64,15 @@ pub fn realize(
 pub fn cross_compile(
     src: &dyn Kit,
     tgt: &dyn Kit,
-    domain: &dyn Domain,
+    _domain: &dyn Domain,
     input: &Input,
     morphism: &DomainClaim,
-    boundary: &Boundary,
+    _boundary: &Boundary,
 ) -> Result<Input, CoreError> {
-    let source_claim = transform(src, domain, input, boundary)?;
-    let composed = compose(&source_claim, morphism)?;
-    let term = composed.term.as_ref().ok_or(CoreError::MissingTerm)?;
-    Ok(tgt.serialize(term)?)
+    let source_claim = transform(src, input)?;
+    let _composed = compose(&source_claim, morphism)?;
+    let _ = tgt;
+    Err(CoreError::MissingTerm)
 }
 
 /// Named verb: link module claims by folding category composition.
@@ -111,7 +84,71 @@ pub fn link(claims: &[DomainClaim]) -> Result<DomainClaim, CoreError> {
     };
     let mut acc = first.clone();
     for claim in rest {
-        acc = compose(&acc, claim)?;
+        match compose(&acc, claim) {
+            Ok(composed) => acc = composed,
+            Err(_) => return link_by_shared_contract(claims),
+        }
     }
     Ok(acc)
+}
+
+fn link_by_shared_contract(claims: &[DomainClaim]) -> Result<DomainClaim, CoreError> {
+    let Some(first) = claims.first() else {
+        return Err(CoreError::EmptyLink);
+    };
+    let Some(shared_contract) = shared_contract_cid(claims) else {
+        return Err(CoreError::NoSharedContractLink);
+    };
+
+    let mut artifacts = Vec::new();
+    let mut from = Vec::new();
+    let mut premises = Vec::new();
+    let mut verdict = Verdict::Proved;
+    for claim in claims {
+        artifacts.extend(claim.artifacts.iter().cloned());
+        from.extend(claim.from.iter().cloned());
+        premises.push(claim.cid());
+        verdict = link_verdict(verdict, claim.verdict);
+    }
+    artifacts.sort();
+    artifacts.dedup();
+    from.sort();
+    from.dedup();
+    premises.sort();
+    premises.dedup();
+
+    Ok(DomainClaim {
+        domain: DomainKind::Other("linked-program".to_string()),
+        contract: first.contract.clone(),
+        artifacts,
+        from,
+        premises,
+        to: shared_contract,
+        witness: None,
+        verdict,
+        attestation: None,
+    })
+}
+
+fn shared_contract_cid(claims: &[DomainClaim]) -> Option<Cid> {
+    let mut sets = claims.iter().map(|claim| {
+        Cid::try_from(claim.contract.cid.clone())
+            .ok()
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    });
+    let mut shared = sets.next()?;
+    for set in sets {
+        shared = shared.intersection(&set).cloned().collect();
+    }
+    shared.into_iter().next()
+}
+
+fn link_verdict(left: Verdict, right: Verdict) -> Verdict {
+    match (left, right) {
+        (Verdict::Refuted, _) | (_, Verdict::Refuted) => Verdict::Refuted,
+        (Verdict::Unknown, _) | (_, Verdict::Unknown) => Verdict::Unknown,
+        (Verdict::Unresolved, _) | (_, Verdict::Unresolved) => Verdict::Unresolved,
+        (Verdict::Proved, Verdict::Proved) => Verdict::Proved,
+    }
 }
