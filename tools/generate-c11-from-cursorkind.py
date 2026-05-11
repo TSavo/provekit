@@ -491,6 +491,76 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
     ]
 )
 
+SERIALIZER_TEMPLATES: OrderedDict[str, str] = OrderedDict(
+    [
+        ("skip", ";"),
+        ("seq", "<a>\n<b>"),
+        ("if", "if (<cond>) { <then> } else { <else> }"),
+        ("while", "while (<cond>) { <body> }"),
+        ("for", "for (<init>; <cond>; <step>) { <body> }"),
+        ("switch", "switch (<scrutinee>) { <body> }"),
+        ("call", "<callee>(<args...>)"),
+        ("return", "return <value>;"),
+        ("break", "break;"),
+        ("continue", "continue;"),
+        ("deref", "(*<value>)"),
+        ("member", "<base>.<field>"),
+        ("add", "(<lhs> + <rhs>)"),
+        ("sub", "(<lhs> - <rhs>)"),
+        ("mul", "(<lhs> * <rhs>)"),
+        ("eq", "(<lhs> == <rhs>)"),
+        ("lt", "(<lhs> < <rhs>)"),
+        ("le", "(<lhs> <= <rhs>)"),
+        ("and", "(<lhs> && <rhs>)"),
+        ("or", "(<lhs> || <rhs>)"),
+        ("not", "(!<value>)"),
+        ("assign", "(<lhs> = <rhs>)"),
+        ("neg", "(-<value>)"),
+        ("div", "(<lhs> / <rhs>)"),
+        ("mod", "(<lhs> % <rhs>)"),
+        ("shl", "(<lhs> << <rhs>)"),
+        ("shr", "(<lhs> >> <rhs>)"),
+        ("bit_and", "(<lhs> & <rhs>)"),
+        ("bit_or", "(<lhs> | <rhs>)"),
+        ("bit_xor", "(<lhs> ^ <rhs>)"),
+        ("gt", "(<lhs> > <rhs>)"),
+        ("ge", "(<lhs> >= <rhs>)"),
+        ("ne", "(<lhs> != <rhs>)"),
+        ("comma", "(<lhs>, <rhs>)"),
+        ("bit_not", "(~<value>)"),
+        ("addr_of", "(&<value>)"),
+        ("pre_inc", "(++<value>)"),
+        ("post_inc", "(<value>++)"),
+        ("pre_dec", "(--<value>)"),
+        ("post_dec", "(<value>--)"),
+        ("plus", "(+<value>)"),
+        ("opaque", "/* opaque */"),
+        ("decl", "int <name> = <initializer>;"),
+        ("case", "case <value>: <body>"),
+        ("default", "default: <body>"),
+        ("label", "<name>: <body>"),
+        ("goto", "goto <target>;"),
+        ("do", "do { <body> } while (<cond>);"),
+        ("cast", "((int)<value>)"),
+        ("array-subscript", "<base>[<index>]"),
+        ("conditional", "(<cond> ? <then_expr> : <else_expr>)"),
+        ("compound-literal", "((int){<value>})"),
+        ("init-list", "{<items...>}"),
+        ("string-literal", "\"provekit\""),
+        ("char-literal", "'p'"),
+        ("float-literal", "1.5"),
+        ("imaginary-literal", "1.0i"),
+        ("null", "0"),
+        ("generic-selection", "_Generic(<control>, <associations...>)"),
+        ("stmt-expr", "({ <body> })"),
+        ("addr-label", "&&<label>"),
+        ("unexposed-stmt", "<children...>"),
+        ("unexposed-expr", "<children...>"),
+        ("binary-operator", "(<lhs> / <rhs>)"),
+        ("unary-operator", "(~<value>)"),
+    ]
+)
+
 
 CORE_CURSOR_MAP = {
     "CXCursor_CompoundStmt": ("seq", 2, "fold children left with seq; empty body is skip"),
@@ -1014,6 +1084,14 @@ def build_mapping(entries: list[dict], op_cids: dict[str, str], signature_cid: s
         "generated_by": GENERATOR,
         "source": source_path_for(index_h),
         "signature_cid": signature_cid,
+        "serializers": [
+            {
+                "op_name": f"c11:{name}",
+                "op_cid": op_cids.get(name),
+                "render_template": template,
+            }
+            for name, template in SERIALIZER_TEMPLATES.items()
+        ],
         "cursor_kind_count": len(rows),
         "rows": rows,
     }
@@ -1108,54 +1186,20 @@ def generated_c_source(mapping: dict, op_cids: dict[str, str]) -> str:
             "static const pk_c11_op_dispatch PK_C11_OPS[] = {",
         ]
     )
-    serializable = {
-        "skip",
-        "seq",
-        "if",
-        "switch",
-        "return",
-        "break",
-        "continue",
-        "add",
-        "sub",
-        "mul",
-        "eq",
-        "lt",
-        "le",
-        "and",
-        "or",
-        "not",
-        "assign",
-        "neg",
-        "deref",
-        "div",
-        "mod",
-        "shl",
-        "shr",
-        "bit_and",
-        "bit_or",
-        "bit_xor",
-        "gt",
-        "ge",
-        "ne",
-        "comma",
-        "bit_not",
-        "addr_of",
-        "pre_inc",
-        "post_inc",
-        "pre_dec",
-        "post_dec",
-        "plus",
-        "decl",
-        "case",
-        "default",
-    }
     all_ops = OrderedDict()
     for spec in CORE_OPS:
         name = op_name_for_spec(spec)
         all_ops[name] = op_cids.get(name)
     for name in MINTED_OPS:
         all_ops[name] = op_cids.get(name)
+    missing_templates = sorted(set(all_ops) - set(SERIALIZER_TEMPLATES))
+    extra_templates = sorted(set(SERIALIZER_TEMPLATES) - set(all_ops))
+    if missing_templates or extra_templates:
+        raise SystemExit(
+            "serializer template mismatch: "
+            f"missing={','.join(missing_templates)} extra={','.join(extra_templates)}"
+        )
+    serializable = set(SERIALIZER_TEMPLATES)
     for name, cid in all_ops.items():
         lines.append(f"    {{{c_string('c11:' + name)}, {c_string(cid)}, {1 if name in serializable else 0}}},")
     lines.extend(

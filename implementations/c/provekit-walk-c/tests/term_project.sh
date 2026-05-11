@@ -17,6 +17,16 @@ mkdir -p "$TMP_DIR"
 
 python3 "$ROOT/tools/generate-c11-from-cursorkind.py" --check
 
+python3 - "$ROOT/implementations/c/provekit-walk-c/src/c11_cursor_dispatch.generated.c" <<'PY'
+import re
+import sys
+
+source = open(sys.argv[1], encoding="utf-8").read()
+fail_closed = re.findall(r'\{"c11:[^"]+",\s*"[^"]*",\s*0\}', source)
+if fail_closed:
+    raise SystemExit("FAIL: fail-closed serializer dispatch entries remain: " + ", ".join(fail_closed))
+PY
+
 if [ ! -x "$BIN" ]; then
     echo "FAIL: binary not found: $BIN" >&2
     exit 1
@@ -33,23 +43,21 @@ check_example() {
     roundtrip_term="$TMP_DIR/$name.roundtrip.term.json"
 
     "$BIN" "$src" --function "$name" --term > "$actual_term"
-    "$BIN" "$src" --function "$name" --contract > "$actual_contract"
+
+    if [ -f "$expected_contract" ]; then
+        "$BIN" "$src" --function "$name" --contract > "$actual_contract"
+    fi
 
     python3 - "$expected_term" "$actual_term" "$expected_contract" "$actual_contract" "$name" <<'PY'
 import json
 import sys
+from pathlib import Path
 
 expected_term = json.load(open(sys.argv[1]))
 actual_term = json.load(open(sys.argv[2]))
-expected_contract = json.load(open(sys.argv[3]))
-actual_contract = json.load(open(sys.argv[4]))
+expected_contract_path = Path(sys.argv[3])
+actual_contract_path = Path(sys.argv[4])
 name = sys.argv[5]
-
-if isinstance(expected_contract, list):
-    expected_contract = next(
-        d for d in expected_contract
-        if d.get("kind") == "function-contract" and d.get("fn_name") == name
-    )
 
 if actual_term != expected_term:
     raise SystemExit(
@@ -58,13 +66,21 @@ if actual_term != expected_term:
         + "\nactual="
         + json.dumps(actual_term, sort_keys=True)
     )
-if actual_contract != expected_contract:
-    raise SystemExit(
-        f"FAIL: {name} projected contract mismatch\nexpected="
-        + json.dumps(expected_contract, sort_keys=True)
-        + "\nactual="
-        + json.dumps(actual_contract, sort_keys=True)
-    )
+if expected_contract_path.exists():
+    expected_contract = json.load(open(expected_contract_path))
+    actual_contract = json.load(open(actual_contract_path))
+    if isinstance(expected_contract, list):
+        expected_contract = next(
+            d for d in expected_contract
+            if d.get("kind") == "function-contract" and d.get("fn_name") == name
+        )
+    if actual_contract != expected_contract:
+        raise SystemExit(
+            f"FAIL: {name} projected contract mismatch\nexpected="
+            + json.dumps(expected_contract, sort_keys=True)
+            + "\nactual="
+            + json.dumps(actual_contract, sort_keys=True)
+        )
 PY
 
     "$BIN" --serialize "$actual_term" --function "$name" > "$serial_c"
@@ -89,6 +105,12 @@ PY
 check_example foo
 check_example add
 check_example g
+check_example loop
+check_example call
+check_example cond
+check_example lit
+check_example control
+check_example gnu
 
 operator_src="$TMP_DIR/operator_ops.c"
 operator_term="$TMP_DIR/operator_ops.term.json"
