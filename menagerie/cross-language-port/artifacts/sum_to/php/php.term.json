@@ -1,0 +1,155 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+  "name": "php:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+      "name": "php:seq",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+          "name": "php:seq",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:0c09f064515fea07640a0c8d3fcc8b41a0bb051911ad6d3a696e58a22cc453713622efc471b3a820b963606392a3aa7d0b6f1153f1d0316f4b64e2cb9045188a",
+              "name": "php:decl",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "s"
+                },
+                {
+                  "kind": "const",
+                  "value": 0,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:0c09f064515fea07640a0c8d3fcc8b41a0bb051911ad6d3a696e58a22cc453713622efc471b3a820b963606392a3aa7d0b6f1153f1d0316f4b64e2cb9045188a",
+              "name": "php:decl",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "i"
+                },
+                {
+                  "kind": "const",
+                  "value": 0,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:4d8a4457208eff1256548ca876b16f7493f35c335b8d3e874c487f46e89a17bc6e46d3908d218dcab60a6be504a86d228af396784af6611e7dbb654b20644f5e",
+          "name": "php:while",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:923f6fefeb08df70b8f7e3ddee7fb19a9f8750a4a50ae8892517318db4fb11c655d9fc5fea00df2fe5fb75d144d24fb4a044b60e13287b4c4fb8cbc04e83ddcd",
+              "name": "php:lt",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "i"
+                },
+                {
+                  "kind": "var",
+                  "name": "n"
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+              "name": "php:seq",
+              "args": [
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:ebcefd2cb226660edbdb43b1b2c31a74e4f7ca4c90b8cfbcfb6dcfa05f8f5997c6ae3851ac74f2fe74b86fb300881eff35955b36eddd794ae4c400744973ebb8",
+                  "name": "php:assign",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "s"
+                    },
+                    {
+                      "kind": "op",
+                      "opCid": "blake3-512:4bd0e2038a7b3f999c14828176e94ec36c5f2a3fb24b79deb36166f5a755d1e15b1b9e6777758a16638f4d1ffc94988bb32483918eb4c3fb3ff1ecd6bb02257e",
+                      "name": "php:add",
+                      "args": [
+                        {
+                          "kind": "var",
+                          "name": "s"
+                        },
+                        {
+                          "kind": "var",
+                          "name": "i"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:ebcefd2cb226660edbdb43b1b2c31a74e4f7ca4c90b8cfbcfb6dcfa05f8f5997c6ae3851ac74f2fe74b86fb300881eff35955b36eddd794ae4c400744973ebb8",
+                  "name": "php:assign",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "i"
+                    },
+                    {
+                      "kind": "op",
+                      "opCid": "blake3-512:4bd0e2038a7b3f999c14828176e94ec36c5f2a3fb24b79deb36166f5a755d1e15b1b9e6777758a16638f4d1ffc94988bb32483918eb4c3fb3ff1ecd6bb02257e",
+                      "name": "php:add",
+                      "args": [
+                        {
+                          "kind": "var",
+                          "name": "i"
+                        },
+                        {
+                          "kind": "const",
+                          "value": 1,
+                          "sort": {
+                            "kind": "primitive",
+                            "name": "Int"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:c4c39e666e367ddc436688789215070aa61dd274ad6492d64d584b30f0052bb182526b92c47a52bfa69e5959ff2441ff6512591b37b43f9421265520beaa05e8",
+      "name": "php:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "s"
+        }
+      ]
+    }
+  ]
+}

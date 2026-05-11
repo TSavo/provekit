@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:6cdb1de2fdf11c63f205f4f3628d2414a2d72be3d5c16fb8ee0741381722b18923ef9e0dd12d44a613a0383def034a691147804b2300fa297723a445608a8a87",
+  "name": "zig:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:3845abf77d11fbc11e2e86327769925f3de948c454c704d2882aea2207abb2fd652235154cf1fa36670305a2cd8e2ccf97796ea07b3e4a4ab4547e60731afe26",
+      "name": "zig:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:58db0ff89aedff73c03b00e553d6806702a34d3c09f5a2d876e8b65c7c5aa49d832e80adad92452378340984138cd6ec7cb3974f9303a15aa87876803d7e18be",
+          "name": "zig:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:66f37523e649c458025715ad80af10093a538dfc7ab79a10c069837bb95c3771f1c038070e52661f79db2a32fb40f5c6abd205af84f27455c064bc35d6c43e67",
+          "name": "zig:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:583f5dc017cbcc09ce8967e4799d75693bfd814e380fbef6c169c737029696ae13c951ba250a8402e2e03bfd5603e1321780a0e14fca23ce5bdd0eaa6460191e",
+          "name": "zig:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:66f37523e649c458025715ad80af10093a538dfc7ab79a10c069837bb95c3771f1c038070e52661f79db2a32fb40f5c6abd205af84f27455c064bc35d6c43e67",
+      "name": "zig:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

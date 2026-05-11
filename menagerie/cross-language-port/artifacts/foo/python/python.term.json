@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:c1a4582488e9fed2f8e6cbc0a9e04758529afd76b44f840fc7a6dcff2a78a7f572b558c0f6545f493bf1321cd70917d8bdf49dd47811d1edb6855943cb8c827a",
+  "name": "python:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:71f2f2a10c01d46b083fe7db9b969d21cd7803b4241d1ca5b0b3389d7c75aec74bd7e79e513c8708a548651495328649df73f6ad4cd4437c14b039bc392e631c",
+      "name": "python:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:879f4b706822d69c838e7577ec0a4c4668ea3999893f6fe2fe9e0dedc5da59ce838083788e4d465741bcf0547e335d33f08e2e22f3cfed1222123dbbf87f3f33",
+          "name": "python:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:3f27f0b841cd71287569ee1ee37f45b3af91c43a60124c4d0376e31b7992545d237e5be023e342ec13b2b4bf3b903835e58d915f539681e7e82c6ac6054c6abb",
+          "name": "python:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:ff6906c7d90de2b9a527852b59ee1fb2f839f7df9afab82b843911687adfd2f4d116e107523acce431d991ed19b9396f43190d4898a6e9b54d5baf696f3e1b62",
+          "name": "python:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:3f27f0b841cd71287569ee1ee37f45b3af91c43a60124c4d0376e31b7992545d237e5be023e342ec13b2b4bf3b903835e58d915f539681e7e82c6ac6054c6abb",
+      "name": "python:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

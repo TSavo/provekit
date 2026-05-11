@@ -133,6 +133,8 @@ enum Cmd {
     Link(LinkArgs),
     /// Transport an accepted source program through the concept hub to a target algebra/source.
     Transport(cmd_transport::TransportArgs),
+    /// Alias for `transport` when the intent is a source-language port.
+    Migrate(cmd_transport::TransportArgs),
     /// JSON-RPC subprocess transport for the canonical compose primitive.
     /// Per spec protocol/specs/2026-05-09-contract-composition-protocol.md §6.3.
     /// Reads JSON-RPC requests on stdin, writes responses on stdout.
@@ -349,7 +351,7 @@ fn main() -> ExitCode {
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Link(a) => cmd_link::run(a),
-        Cmd::Transport(a) => cmd_transport::run(a),
+        Cmd::Transport(a) | Cmd::Migrate(a) => cmd_transport::run(a),
         Cmd::Compose(a) => cmd_compose::run(a),
     };
     ExitCode::from(code)

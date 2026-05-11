@@ -1,0 +1,44 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:predec",
+  "formals": [
+    "target"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "LValue",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "predec",
+    "arity": [
+      "LValue"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "result": "Expr",
+    "wp": "prefix decrement expression yielding the updated value"
+  },
+  "effects": {
+    "effects": []
+  }
+}

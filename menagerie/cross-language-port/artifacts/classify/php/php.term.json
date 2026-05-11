@@ -1,0 +1,134 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+  "name": "php:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:8b7541a62a3044d7abcea83eda0be5783e6c37c312b8c0dd3856538f2f8888a7bdf3dfeecfe69faa46ad89c5a4ba7de5c6b0c72ce6f05135f070601c2fe17c17",
+      "name": "php:seq",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:0c09f064515fea07640a0c8d3fcc8b41a0bb051911ad6d3a696e58a22cc453713622efc471b3a820b963606392a3aa7d0b6f1153f1d0316f4b64e2cb9045188a",
+          "name": "php:decl",
+          "args": [
+            {
+              "kind": "var",
+              "name": "y"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:1a3a53e8c2f5dec4ab04489ae31dbb4f81ff5cf6201a93291b0902024f6f20deb67eb5ef2f1afb450eb7d8f5527a63d8112bcc97a13193aa67b6595891f6eb31",
+          "name": "php:if",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:14807d3613c01979dc4c6a0a755afc58aafbfe9ad5525f3702ffa620aff7431dd0fb5cd7b828993fcfd63bd561b1d461672f1e44c7fc8eaa5b02d317ebf59c2a",
+              "name": "php:and",
+              "args": [
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:9d7519e937339045f16225415af27404d7a450e9d19acd75af76907dcc3c9baabacaf8033bc27272ac0c60359c56b9869b50ea842b9d86203d621c02ac8dd637",
+                  "name": "php:gt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 0,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:923f6fefeb08df70b8f7e3ddee7fb19a9f8750a4a50ae8892517318db4fb11c655d9fc5fea00df2fe5fb75d144d24fb4a044b60e13287b4c4fb8cbc04e83ddcd",
+                  "name": "php:lt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 10,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:ebcefd2cb226660edbdb43b1b2c31a74e4f7ca4c90b8cfbcfb6dcfa05f8f5997c6ae3851ac74f2fe74b86fb300881eff35955b36eddd794ae4c400744973ebb8",
+              "name": "php:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 1,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:ebcefd2cb226660edbdb43b1b2c31a74e4f7ca4c90b8cfbcfb6dcfa05f8f5997c6ae3851ac74f2fe74b86fb300881eff35955b36eddd794ae4c400744973ebb8",
+              "name": "php:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 2,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:c4c39e666e367ddc436688789215070aa61dd274ad6492d64d584b30f0052bb182526b92c47a52bfa69e5959ff2441ff6512591b37b43f9421265520beaa05e8",
+      "name": "php:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "y"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "contract_exhibit": "artifacts/foo_contract_transport_rust.json",
+  "functions": [
+    "classify",
+    "foo",
+    "sum_to"
+  ],
+  "receipt_table": "artifacts/receipt-cids.tsv",
+  "targets": [
+    "csharp",
+    "go",
+    "java",
+    "php",
+    "python",
+    "ruby",
+    "rust",
+    "typescript",
+    "zig"
+  ]
+}

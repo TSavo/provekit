@@ -1,7 +1,21 @@
-# Cross-Language Port Demonstrator
+# Cross-Language Program Transport Exhibit
 
-This exhibit is the minimal real C11-to-Rust transport path through primitive concept hub nodes.
-It is intentionally narrow: the accepted program is `foo.c`, and unsupported operations refuse instead of guessing.
+This exhibit runs the program-transport path through the `concept:*` common-imperative hub:
+
+1. lift C11 source with `provekit-c11-term-project`
+2. check the source desugaring-equation set
+3. transport C11 algebra to `concept:*` through discharged morphisms
+4. transport `concept:*` to the target language algebra through discharged inverse morphisms
+5. emit target core-form source
+6. transport the target algebra back to `concept:*` and compare the concept artifact byte-for-byte
+
+The driver covers three C functions and nine target languages: C#, Go, Python, TypeScript, Zig, Ruby, PHP, Java, and Rust.
+
+## Inputs
+
+- `foo.c`: the original if-shape, `if (x == 0) return -22; return x;`
+- `sum_to.c`: declarations, assignment, arithmetic, comparison, and a `while` loop
+- `classify.c`: comparisons, short-circuit boolean `and`, assignment, and conditional branches
 
 ## Command
 
@@ -9,80 +23,50 @@ It is intentionally narrow: the accepted program is `foo.c`, and unsupported ope
 menagerie/cross-language-port/driver.sh
 ```
 
-The driver builds the existing C term projector, builds `provekit`, runs:
+The driver builds the C term projector and `provekit-cli`, then writes one artifact directory per function and target under `artifacts/<function>/<target>/`.
 
-```sh
-provekit transport menagerie/cross-language-port/foo.c --to rust --function foo --out menagerie/cross-language-port/artifacts --json
-```
+Each target directory contains:
 
-Then it checks that `artifacts/concept.term.json` and `artifacts/roundtrip.concept.term.json` are byte-identical.
+- `<target>.term.json`: the target-language algebra term
+- `concept.term.json`: the concept-hub transport image
+- `roundtrip.concept.term.json`: target algebra transported back to concept
+- `<function>.<ext>`: realized target source in core form
+- `transport-report.json`: stage report and morphism receipt references
 
-## Worked Artifact
+The driver also writes:
 
-Input C:
+- `artifacts/receipt-cids.tsv`: every morphism receipt CID used by every function and target case
+- `artifacts/foo_contract_transport_rust.json`: the contract-level C-to-Rust exhibit path for `foo`, referencing the existing C and Rust function contracts and the operation morphism receipts
+- `artifacts/summary.json`: function and target summary
 
-```c
-static int foo(int x) {
-    if (x == 0)
-        return -22;
-    return x;
-}
-```
+## Receipts And Gaps
 
-Produced Rust:
+The receipt table is generated from the CLI reports so it stays in sync with the minted catalog. The complete source of truth for minted and refused operation morphisms is `../concept-shapes/transport-gaps.md`.
 
-```rust
-pub fn foo(x: i32) -> i32 {
-    if x == 0 {
-        return -22;
-    }
-    return x;
-}
-```
+A morphism is present only when the canonicalizer discharge lands exactly on the concept operation CID after namespace, operator, slot, and representation maps. Unsupported or semantically broader source operations are recorded as gaps instead of being guessed.
 
-Artifacts:
+## Worked Artifact Boundary
 
-- `artifacts/c11.term.json`: normalized C11 algebra term with op CIDs.
-- `artifacts/concept.term.json`: transport image in the concept hub.
-- `artifacts/rust.term.json`: Rust-algebra term.
-- `artifacts/foo.rs`: minimal realized Rust source.
-- `artifacts/roundtrip.concept.term.json`: Rust term transported back to the same concept term.
-- `artifacts/transport-report.json`: command report, normalizations, and receipt CIDs.
+Worked artifacts in this exhibit:
 
-The C projector emits `bop_eq` and `uop_neg(22)` for this source. The CLI normalizes only the safe subset used here: side-effect-free integer `bop_eq` to primitive `c11:eq`, and literal unary minus to the signed integer constant `-22`. Any other unmapped source op is a `Refusal`.
+- generated `concept:*` operation-contract shape nodes for the common-imperative op set
+- discharged `LanguageMorphismMemento` files (minted from real lifter-emitted op specs) and unsigned `MorphismDischargeReceipt` files
+- C11-to-target term transport for the three sample functions across the listed targets
+- target core-form source emission for those samples
+- concept round-trip closure from target algebra back to the same concept term
+- a C-to-Rust `foo` contract transport exhibit record under Lemma 4
 
-## Minted Concept Hubs
+Spec artifacts:
 
-Primitive operation shape nodes added to `menagerie/concept-shapes/specs/`:
+- the protocol is specified in `../../protocol/specs/2026-05-12-program-transport-protocol.md`
+- `transport-gaps.md` documents semantic restrictions and refusal cases
 
-- `concept:conditional`: `blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd`
-- `concept:seq`: `blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412`
-- `concept:return`: `blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607`
-- `concept:eq`: `blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4`
-- `concept:skip`: `blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c`
+Deferred here:
 
-Each has C11 and Rust `op -> concept` morphism specs plus unsigned `MorphismDischargeReceipt` artifacts in `menagerie/concept-shapes/receipts/` and `catalog/receipts/`. The receipts are unsigned because the local provenance signing key is not available; they are still content-addressed and discharged by canonicalizer alpha-equivalence plus the representation/operator map.
+- bytecode and asm control-flow recovery through `conditional-jump`
+- cosmetic re-sugaring after core-form realization
+- new desugaring equation sets for languages that do not already have one
+- non-C source lifter subprocess wiring inside `provekit transport`; the CLI currently accepts C source directly and can accept already-lifted term JSON for other source algebras
+- proof envelope emission for transported function contracts; the exhibit records the Lemma 4 path and operation receipts, while source proof serialization remains a follow-up adapter
 
-## CLI Surface
-
-There is an existing `provekit migrate` protocol for catalog-version migration, not program ports. This slice therefore wires `provekit transport <src-file> --to rust`. A future protocol should reserve `provekit migrate <src> --to <lang>` for the program-port workflow.
-
-## Specification Changes
-
-`rust:if` now has the missing `arity_shape` named slots `cond`, `then_branch`, and `else_branch`. The same required slot policies were added to Rust `seq`, `return`, `eq`, and `skip` so their morphisms can discharge byte-identically.
-
-The Rust language signature was re-minted. New Rust signature CID:
-
-`blake3-512:6e96976ee181cc32de6dfb326b9b9a96e5f47b7ba8afef9606d93cee15984fc1c81de78491da094a788bf50725b26824e22b16d79a5b80dc76cd169c59aa844c`
-
-No `.provekit/ci/accepted/*`, `.provekit/self-contracts-attestations/*`, or pins were touched. Any accepted-set refresh is left to CI or a separate CICP regeneration step.
-
-## Deferred
-
-- General C11 desugaring-collapse beyond this `foo` slice, including the architecture from `protocol/specs/2026-05-11-desugaring-and-the-core-compression.md`.
-- Additional primitive op hubs and morphisms for Python, TypeScript, Go, C#, Zig, and the rest of Rust/C11.
-- A signed receipt path using the provenance key.
-- Rust source re-lift through `provekit-walk` as a stable `provekit transport` substep. I tried the existing `provekit-walk` Cargo manifest directly; Cargo currently refuses it because the crate believes it is in the Rust workspace while not listed as a workspace member. This exhibit therefore closes the checked roundtrip at the Rust-algebra term back to concept IR.
-- Transporting the C `.proof` function contract to a Rust `.proof` under Lemma 4. The operation `wp` contracts are preserved by the op morphisms here, but proof envelope transport is not wired in this slice.
-- Bytecode path: `ifz -> concept:conditional-jump -> concept:conditional`, with a reducibility precondition.
-- Broader realize-side coverage beyond the tiny Rust subset generated for `foo`.
+T Savo
