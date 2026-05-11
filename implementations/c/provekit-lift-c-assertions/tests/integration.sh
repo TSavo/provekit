@@ -428,8 +428,10 @@ if printf '%s\n' "$SYMLINK_RESPONSE" | grep -q '"kind":"c-assertions.bug-on"'; t
     exit 1
 fi
 
-# Regression: callee-local and function-local state must not leak into a
-# caller's computed pre (over-extraction soundness fix).
+# Scope classification: a function's computed pre may reference only state
+# reachable/controllable at the function's own entry -- formals, file-scope
+# globals, state reachable from those (p->field, p[i]) -- and never a variable
+# local to the function or a callee-internal name.
 CALLEE_SCOPE_RESPONSES="$(
     {
         printf '{"jsonrpc":"2.0","id":200,"method":"lift","params":{"workspace_root":'
@@ -452,10 +454,10 @@ printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"f"' || {
     exit 1
 }
 
-# "local_of_g" must NOT appear anywhere in f's contract (or at all in the output
-# except possibly in a non-entry-state opacity entry)
-if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep '"fn_name":"f"' | grep -q '"local_of_g"'; then
-    echo "FAIL: callee_scope: local_of_g must not appear in f's pre" >&2
+# g's own local "local_of_g" must NOT appear anywhere in the output (neither in
+# g's pre, f's pre, nor any contract) -- only in a non-entry-state opacity entry.
+if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"local_of_g"'; then
+    echo "FAIL: callee_scope: local_of_g (g's own local) must not appear in any pre" >&2
     echo "$CALLEE_SCOPE_RESPONSES" >&2
     exit 1
 fi
@@ -467,8 +469,60 @@ if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"h"'; then
     exit 1
 fi
 
-# A non-entry-state opacity entry should appear (for h's dropped predicate,
-# and possibly for g's local_of_g predicate)
+# A file-scope global IS part of a function's entry state: assert(file_scope_global > 0)
+# in uses_global should be kept as a real pre clause referencing the global.
+printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"uses_global"' &&
+    printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"file_scope_global"' || {
+    echo "FAIL: callee_scope: uses_global should keep assert(file_scope_global > 0) as a pre" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+}
+
+# Param-reachable memory is part of entry state: assert(p->len > 0) where p is a
+# formal should be kept as a real pre clause referencing "p -> len".
+printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"member_pre"' &&
+    printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"name":"p -> len"' || {
+    echo "FAIL: callee_scope: member_pre should keep assert(p->len > 0) as a pre" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+}
+
+# Indexing through a formal array is entry state: assert(arr[0] != 0) and
+# assert(arr[i] >= 0) where arr, i are formals should be kept.
+printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"index_pre"' &&
+    printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"name":"arr \[ 0 \]"' &&
+    printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"name":"arr \[ i \]"' || {
+    echo "FAIL: callee_scope: index_pre should keep assert(arr[0] != 0) and assert(arr[i] >= 0) as pre clauses" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+}
+
+# Multi-var case: assert(p->arr[local_idx] != 0) where p is a formal but
+# local_idx is a function-local -> the whole clause is dropped (the var that the
+# old strstr-once missed). member_index_local emits no contract; local_idx
+# never appears in any pre.
+if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"member_index_local"'; then
+    echo "FAIL: callee_scope: member_index_local should not emit a contract (assert mixes a formal with a local index)" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+fi
+if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"local_idx"'; then
+    echo "FAIL: callee_scope: local_idx (a function-local) must not appear in any pre" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+fi
+
+# Shadowing: a block-scope local "w" shadows the formal "w".  With no per-locus
+# scope, a name declared local to the function anywhere is treated as
+# non-entry-state -> shadowed_formal emits no contract.
+if printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"fn_name":"shadowed_formal"'; then
+    echo "FAIL: callee_scope: shadowed_formal should not emit a contract (local shadows the formal)" >&2
+    echo "$CALLEE_SCOPE_RESPONSES" >&2
+    exit 1
+fi
+
+# A non-entry-state opacity entry should appear for each dropped local predicate
+# (g's local_of_g, h's tmp, member_index_local's mixed clause).
 printf '%s\n' "$CALLEE_SCOPE_RESPONSES" | grep -q '"kind":"c-assertions.non-entry-state"' || {
     echo "FAIL: callee_scope: expected non-entry-state opacity for dropped local predicate" >&2
     echo "$CALLEE_SCOPE_RESPONSES" >&2
