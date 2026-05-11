@@ -2,6 +2,7 @@
 
 #include "walk_c.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,13 +177,22 @@ static char *json_buf_take(JsonBuf *buf) {
 
 static int json_buf_grow(JsonBuf *buf, size_t need) {
     size_t next = buf->cap ? buf->cap : 256;
+    size_t required;
     char *data;
 
-    while (next < buf->len + need + 1) {
-        if (next > ((size_t)-1) / 2) {
-            return -1;
+    if (buf->len > SIZE_MAX - 1 || need > SIZE_MAX - buf->len - 1) {
+        return -1;
+    }
+    required = buf->len + need + 1;
+    while (next < required) {
+        if (next > SIZE_MAX / 2) {
+            next = required;
+            break;
         }
         next *= 2;
+    }
+    if (next < required) {
+        return -1;
     }
     data = realloc(buf->data, next);
     if (data == NULL) {
@@ -191,6 +201,18 @@ static int json_buf_grow(JsonBuf *buf, size_t need) {
     buf->data = data;
     buf->cap = next;
     return 0;
+}
+
+static int json_buf_append_n(JsonBuf *buf, const char *text, size_t len);
+
+static int json_buf_append_int(JsonBuf *buf, int value) {
+    char text[32];
+    int len = snprintf(text, sizeof(text), "%d", value);
+
+    if (len < 0 || (size_t)len >= sizeof(text)) {
+        return -1;
+    }
+    return json_buf_append_n(buf, text, (size_t)len);
 }
 
 static int json_buf_append_n(JsonBuf *buf, const char *text, size_t len) {
@@ -223,6 +245,33 @@ static int json_buf_append_quoted(JsonBuf *buf, const char *text) {
         json_buf_append_char(buf, '"') == 0 ? 0 : -1;
     free(escaped);
     return rc;
+}
+
+static int json_buf_append_callsite_arg(
+    JsonBuf *buf,
+    int position,
+    const char *text,
+    const char *kind,
+    const char *type,
+    const char *term_json
+) {
+    return json_buf_append(buf, "{\"position\":") == 0 &&
+        json_buf_append_int(buf, position) == 0 &&
+        json_buf_append(buf, ",\"text\":") == 0 &&
+        json_buf_append_quoted(buf, text) == 0 &&
+        json_buf_append(buf, ",\"kind\":") == 0 &&
+        json_buf_append_quoted(buf, kind) == 0 &&
+        json_buf_append(buf, ",\"type\":") == 0 &&
+        json_buf_append_quoted(buf, type) == 0 &&
+        json_buf_append(buf, ",\"term\":") == 0 &&
+        json_buf_append(buf, term_json == NULL ? "null" : term_json) == 0 &&
+        json_buf_append_char(buf, '}') == 0 ? 0 : -1;
+}
+
+static int json_buf_append_callsite_arg_fallback(JsonBuf *buf, int position) {
+    return json_buf_append(buf, "{\"position\":") == 0 &&
+        json_buf_append_int(buf, position) == 0 &&
+        json_buf_append(buf, ",\"text\":\"\",\"kind\":\"\",\"type\":\"\",\"term\":null}") == 0 ? 0 : -1;
 }
 
 static enum CXChildVisitResult single_child_visitor(CXCursor cursor, CXCursor parent, CXClientData data) {
@@ -456,15 +505,32 @@ static char *extract_callsite_actuals(CXCursor call_cursor) {
     }
     for (int i = 0; i < n_args; i++) {
         CXCursor arg = unwrap_actual_cursor(clang_Cursor_getArgument(call_cursor, (unsigned)i));
-        char position[32];
+        JsonBuf arg_buf;
+        int arg_serialized = 0;
+        int arg_buf_live = 0;
         char *text = pk_c_walk_cursor_source(arg);
         char *kind = cx_string_copy(clang_getCursorKindSpelling(clang_getCursorKind(arg)));
         char *type = cx_string_copy(clang_getTypeSpelling(clang_getCursorType(arg)));
-        pk_c_walk_term *term = pk_c_walk_lift_term(arg);
+        pk_c_walk_term *term = pk_c_walk_lift_term_full(arg);
         char *term_json = term == NULL ? NULL : pk_c_walk_term_json(term);
 
-        if (snprintf(position, sizeof(position), "%d", i) < 0 ||
-            text == NULL || kind == NULL || type == NULL || term_json == NULL) {
+        if (json_buf_init(&arg_buf) == 0) {
+            arg_buf_live = 1;
+            if (json_buf_append_callsite_arg(&arg_buf, i, text, kind, type, term_json) == 0) {
+                arg_serialized = 1;
+            } else {
+                json_buf_free(&arg_buf);
+                arg_buf_live = 0;
+                if (json_buf_init(&arg_buf) == 0) {
+                    arg_buf_live = 1;
+                    arg_serialized = json_buf_append_callsite_arg_fallback(&arg_buf, i) == 0;
+                }
+            }
+        }
+        if (i > 0 && json_buf_append_char(&buf, ',') != 0) {
+            if (arg_buf_live) {
+                json_buf_free(&arg_buf);
+            }
             free(text);
             free(kind);
             free(type);
@@ -472,24 +538,21 @@ static char *extract_callsite_actuals(CXCursor call_cursor) {
             free(term_json);
             goto done;
         }
-        if ((i > 0 && json_buf_append_char(&buf, ',') != 0) ||
-            json_buf_append(&buf, "{\"position\":") != 0 ||
-            json_buf_append(&buf, position) != 0 ||
-            json_buf_append(&buf, ",\"text\":") != 0 ||
-            json_buf_append_quoted(&buf, text) != 0 ||
-            json_buf_append(&buf, ",\"kind\":") != 0 ||
-            json_buf_append_quoted(&buf, kind) != 0 ||
-            json_buf_append(&buf, ",\"type\":") != 0 ||
-            json_buf_append_quoted(&buf, type) != 0 ||
-            json_buf_append(&buf, ",\"term\":") != 0 ||
-            json_buf_append(&buf, term_json) != 0 ||
-            json_buf_append_char(&buf, '}') != 0) {
+        if ((arg_serialized
+                ? json_buf_append_n(&buf, arg_buf.data, arg_buf.len)
+                : json_buf_append_callsite_arg_fallback(&buf, i)) != 0) {
+            if (arg_buf_live) {
+                json_buf_free(&arg_buf);
+            }
             free(text);
             free(kind);
             free(type);
             pk_c_walk_term_free(term);
             free(term_json);
             goto done;
+        }
+        if (arg_buf_live) {
+            json_buf_free(&arg_buf);
         }
         free(text);
         free(kind);

@@ -154,6 +154,18 @@ pk_c_walk_term *pk_c_walk_lift_term(CXCursor cursor) {
     return term;
 }
 
+pk_c_walk_term *pk_c_walk_lift_term_full(CXCursor cursor) {
+    char *source = pk_c_walk_cursor_source(cursor);
+    pk_c_walk_term *term;
+
+    if (source == NULL) {
+        return NULL;
+    }
+    term = pk_c_walk_term_from_text_full(source, strlen(source));
+    free(source);
+    return term;
+}
+
 pk_c_walk_formula *pk_c_walk_lift_condition(CXCursor cursor) {
     char *source = pk_c_walk_cursor_source(cursor);
     pk_c_walk_formula *formula;

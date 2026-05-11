@@ -416,7 +416,7 @@ ACTUALS_RESPONSES_JSON="$ACTUALS_RESPONSES" ACTUALS_RESPONSES_AGAIN_JSON="$ACTUA
 import json
 import os
 
-def callsite_arrival(blob):
+def callsite_arrival(blob, caller="actuals_caller", callee="actuals_callee"):
     responses = [json.loads(line) for line in blob.splitlines() if line.strip()]
     lift = next((r for r in responses if r.get("id") == 2), None)
     if lift is None:
@@ -426,16 +426,16 @@ def callsite_arrival(blob):
         d for d in lift["result"]["declarations"]
         if d.get("kind") == "function-contract"
         and d.get("evidence", {}).get("kind") == "wp-walk-chain"
-        and d.get("evidence", {}).get("caller") == "actuals_caller"
-        and d.get("evidence", {}).get("callee") == "actuals_callee"
+        and d.get("evidence", {}).get("caller") == caller
+        and d.get("evidence", {}).get("callee") == callee
     ]
     if not chains:
-        raise SystemExit("FAIL: no actuals_caller -> actuals_callee wp-walk-chain emitted")
+        raise SystemExit(f"FAIL: no {caller} -> {callee} wp-walk-chain emitted")
 
     arrivals = chains[0]["evidence"].get("arrivals", [])
     callsites = [a for a in arrivals if a.get("kind") == "Callsite"]
     if not callsites:
-        raise SystemExit("FAIL: callsite_actuals chain missing Callsite arrival")
+        raise SystemExit(f"FAIL: {caller} -> {callee} chain missing Callsite arrival")
     for arrival in callsites:
         if "args" not in arrival:
             raise SystemExit(f"FAIL: Callsite arrival missing args field: {arrival}")
@@ -474,6 +474,61 @@ for arg in args:
 
 if arrival != again:
     raise SystemExit(f"FAIL: callsite arrival changed across identical runs: {arrival} != {again}")
+
+def require_single_arg(caller, callee, expected_text):
+    arrival = callsite_arrival(os.environ["ACTUALS_RESPONSES_JSON"], caller, callee)
+    args = arrival["args"]
+    if len(args) != 1:
+        raise SystemExit(f"FAIL: {caller} expected one callsite arg, got {len(args)}: {args}")
+    arg = args[0]
+    if arg.get("position") != 0:
+        raise SystemExit(f"FAIL: {caller} arg position should be 0, got {arg}")
+    if arg.get("text") != expected_text:
+        raise SystemExit(f"FAIL: {caller} arg text should be {expected_text!r}, got {arg.get('text')!r}")
+    if "term" not in arg:
+        raise SystemExit(f"FAIL: {caller} arg missing nullable term field: {arg}")
+    return arg
+
+def reject_truncated_prefix(arg, forbidden_term, label):
+    term = arg.get("term")
+    if term == forbidden_term:
+        raise SystemExit(f"FAIL: {label} arg term is a truncated prefix parse: {arg}")
+    if term is not None and not isinstance(term, dict):
+        raise SystemExit(f"FAIL: {label} arg term must be object or null: {arg}")
+
+ternary_arg = require_single_arg(
+    "actuals_ternary_caller",
+    "actuals_single_callee",
+    "cond?x:y",
+)
+reject_truncated_prefix(ternary_arg, {"kind": "var", "name": "cond"}, "ternary")
+
+comma_arg = require_single_arg(
+    "actuals_comma_caller",
+    "actuals_single_callee",
+    "x,y",
+)
+reject_truncated_prefix(comma_arg, {"kind": "var", "name": "x"}, "comma-expression")
+
+compound_arg = require_single_arg(
+    "actuals_compound_literal_caller",
+    "actuals_struct_callee",
+    "(structfoo){.x=1}",
+)
+reject_truncated_prefix(compound_arg, {"kind": "var", "name": "structfoo"}, "compound-literal")
+
+mixed = callsite_arrival(
+    os.environ["ACTUALS_RESPONSES_JSON"],
+    "actuals_mixed_caller",
+    "actuals_mixed_callee",
+)
+mixed_args = mixed["args"]
+if len(mixed_args) != 2:
+    raise SystemExit(f"FAIL: mixed callsite should keep two args, got {mixed_args}")
+if mixed_args[0].get("text") != "x" or not isinstance(mixed_args[0].get("term"), dict):
+    raise SystemExit(f"FAIL: mixed callsite should preserve liftable first arg term: {mixed_args}")
+if mixed_args[1].get("text") != "cond?y:z" or mixed_args[1].get("term") is not None:
+    raise SystemExit(f"FAIL: mixed callsite should preserve unliftable second arg with term null: {mixed_args}")
 
 print("callsite-actuals", ",".join(f"{a['position']}:{a['kind']}:{a['text']}" for a in args))
 PY

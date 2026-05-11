@@ -942,6 +942,21 @@ pk_c_walk_term *pk_c_walk_term_from_text(const char *start, size_t len) {
     return parse_term_expr(&parser);
 }
 
+pk_c_walk_term *pk_c_walk_term_from_text_full(const char *start, size_t len) {
+    WpParser parser = {start, start + len};
+    pk_c_walk_term *term = parse_term_expr(&parser);
+
+    if (term == NULL) {
+        return NULL;
+    }
+    parser_skip_ws(&parser);
+    if (parser.p != parser.end) {
+        pk_c_walk_term_free(term);
+        return NULL;
+    }
+    return term;
+}
+
 pk_c_walk_formula *pk_c_walk_formula_from_text(const char *start, size_t len) {
     WpParser parser = {start, start + len};
 
