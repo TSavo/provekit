@@ -1,17 +1,17 @@
 {
   "status": "transported",
-  "source_file": "/private/tmp/pk-transport-all/menagerie/cross-language-port/foo.c",
+  "source_file": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/foo.c",
   "source_language": "c11",
   "target_language": "rust",
   "function": "foo",
   "artifacts": {
-    "concept_term": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/concept.term.json",
-    "roundtrip_concept_term": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/roundtrip.concept.term.json",
-    "rust_source": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
-    "rust_term": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/rust.term.json",
-    "source_term": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/c11.term.json",
-    "target_source": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
-    "target_term": "/private/tmp/pk-transport-all/menagerie/cross-language-port/artifacts/foo/rust/rust.term.json"
+    "concept_term": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/concept.term.json",
+    "roundtrip_concept_term": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/roundtrip.concept.term.json",
+    "rust_source": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
+    "rust_term": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/rust.term.json",
+    "source_term": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/c11.term.json",
+    "target_source": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
+    "target_term": "/Users/tsavo/provekit-worktrees/pk-transport-discharge/menagerie/cross-language-port/artifacts/foo/rust/rust.term.json"
   },
   "stages": [
     {
