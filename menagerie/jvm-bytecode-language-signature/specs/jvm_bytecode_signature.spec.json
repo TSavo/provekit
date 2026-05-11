@@ -1,0 +1,353 @@
+{
+  "schemaVersion": "0.1.0-draft",
+  "kind": "LanguageSignatureMementoDraft",
+  "fnName": "jvm-bytecode:jasmin-core:2026-05-11",
+  "formals": [],
+  "returnSort": "LanguageSignature",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "surface": "jvm-bytecode",
+    "dialect": "jvm-jasmin",
+    "sorts": [
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "JvmInt",
+        "denotation": "signed 32-bit JVM int value"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "JvmLocal",
+        "denotation": "method-frame local slot address"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "JvmStack",
+        "denotation": "ordered operand stack"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "JvmLabel",
+        "denotation": "method-local branch target identifier"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "JvmMethod",
+        "denotation": "class-qualified method descriptor"
+      },
+      {
+        "kind": "SortMementoDraft",
+        "fnName": "JvmState",
+        "denotation": "record { locals: JvmLocal -> Value, stack: JvmStack, static_fields: Field -> Value }"
+      }
+    ],
+    "arityShapePolicy": "Instruction streams are positional. Branch targets, field names, and method descriptors are identifier slots. Literal operands carry literal slots.",
+    "primitiveOperations": [
+      {
+        "name": "source-unit",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "bytes",
+              "slot_sort": "literal",
+              "evaluation": "unevaluated"
+            },
+            {
+              "name": "operational_term"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "method",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "name",
+              "slot_sort": "identifier"
+            },
+            {
+              "name": "descriptor",
+              "slot_sort": "literal"
+            },
+            {
+              "name": "code",
+              "shape": {
+                "kind": "positional",
+                "arity": "*"
+              }
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "iload",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "local",
+              "slot_sort": "identifier"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "istore",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "local",
+              "slot_sort": "identifier"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "iconst",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value",
+              "slot_sort": "literal"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "iadd",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "notes": "Named slots preserve JVM operand-stack pop order; iadd consumes value1 then value2 even though integer addition is commutative.",
+        "effects": []
+      },
+      {
+        "name": "isub",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "imul",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "idiv",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": [
+          "trap"
+        ]
+      },
+      {
+        "name": "irem",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            }
+          ]
+        },
+        "effects": [
+          "trap"
+        ]
+      },
+      {
+        "name": "ineg",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "icmp",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "relation",
+              "slot_sort": "identifier"
+            },
+            {
+              "name": "left"
+            },
+            {
+              "name": "right"
+            },
+            {
+              "name": "target",
+              "slot_sort": "identifier"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "ifz",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "relation",
+              "slot_sort": "identifier"
+            },
+            {
+              "name": "value"
+            },
+            {
+              "name": "target",
+              "slot_sort": "identifier"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "goto",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target",
+              "slot_sort": "identifier"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "ireturn",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": []
+      },
+      {
+        "name": "invokestatic",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target",
+              "slot_sort": "identifier"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "positional",
+                "arity": "*"
+              }
+            }
+          ]
+        },
+        "effects": [
+          "unresolved_call"
+        ]
+      },
+      {
+        "name": "iaload",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "array"
+            },
+            {
+              "name": "index"
+            }
+          ]
+        },
+        "effects": [
+          "read"
+        ]
+      },
+      {
+        "name": "iastore",
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "array"
+            },
+            {
+              "name": "index"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "effects": [
+          "write"
+        ]
+      }
+    ]
+  }
+}

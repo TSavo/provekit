@@ -30,6 +30,12 @@ use std::process::Command;
 /// Produced by `compute_contract_set_cid(vec![])`. Verified empirically.
 const EMPTY_SET_CID: &str = "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229";
 
+fn panic_if_empty_set_cid_in_ci(kit: &str) {
+    if std::env::var("CI").is_ok() {
+        panic!("{kit} kit collapsed to the empty-set CID in CI — routing or lifter regression");
+    }
+}
+
 /// Return the path to the `provekit` binary (release or debug, whichever exists).
 fn provekit_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -408,6 +414,13 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
         let lang = if *kit == "ts" { "ts" } else { kit };
         let attest = read_attestation(root, lang);
         let cset = attest["contractSetCid"].as_str().unwrap();
+        if *kit == "zig" && cset == EMPTY_SET_CID {
+            panic_if_empty_set_cid_in_ci(kit);
+            eprintln!(
+                "kit `{kit}`: lifter binary not built locally; skipping aggregate non-empty assertion"
+            );
+            continue;
+        }
         assert_ne!(
             cset, EMPTY_SET_CID,
             "kit `{kit}`: expected non-empty contractSetCid when lifter finds real contracts"
@@ -579,12 +592,12 @@ fn go_kit_pins_expected_contract_set_cid() {
 const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
     "blake3-512:eb9979cc46b716217ece7340696ba2d0a97fac61a39f9673a1dfa8e38441737ca6e4dd307e2e1fb404093b98b6b412d1bd51a515e7405282bdd5ad32dff02dc0";
 
-/// macOS currently emits a distinct full Rust self-contract surface CID.
-/// The pin is explicit so host drift remains loud instead of silently
-/// weakening the CI canonical Linux gate.
+/// macOS currently emits the same full Rust self-contract surface CID as Linux.
+/// The pin remains explicit so host drift stays loud instead of silently
+/// weakening the canonical Linux gate.
 #[cfg(not(target_os = "linux"))]
 const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
-    "blake3-512:404a1489b43a76b87f2b47592eaaf91ce2713af694c4a0ad1470f9e6a6195d541480d298e3b84c3542794e8423167f2cbde77c55e86ec6f22ba4187fe41cd405";
+    "blake3-512:eb9979cc46b716217ece7340696ba2d0a97fac61a39f9673a1dfa8e38441737ca6e4dd307e2e1fb404093b98b6b412d1bd51a515e7405282bdd5ad32dff02dc0";
 
 /// Pinned contractSetCid produced by `--kit=cpp` after routing to the
 /// `cpp-self-contracts` surface (mint_cpp_self_contracts binary, canonical
@@ -871,6 +884,12 @@ fn swift_kit_pins_expected_contract_set_cid() {
     let attest = read_attestation(root, "swift");
     let cset = attest["contractSetCid"].as_str().unwrap();
 
+    if cset == EMPTY_SET_CID {
+        panic_if_empty_set_cid_in_ci("swift");
+        eprintln!("swift kit: lifter binary not built locally -- skipping pinning assertion");
+        return;
+    }
+
     assert_ne!(
         cset, EMPTY_SET_CID,
         "swift kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #211)"
@@ -1104,6 +1123,7 @@ fn zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     // Only fail when the lifter ran AND produced a non-pinned CID, which
     // would be a real regression. Mirrors the cpp/swift skip pattern.
     if cset == EMPTY_SET_CID {
+        panic_if_empty_set_cid_in_ci("zig");
         eprintln!("zig kit: lifter binary not built (zig toolchain may not be on PATH) -- skipping pinning assertion");
         return;
     }

@@ -36,6 +36,7 @@ members = [
     "provekit-lift-verus",
     "provekit-lift-rust-tests",
     "provekit-lift-asm-x86-64",
+    "provekit-lift-jvm-bytecode",
     "provekit-lift-openapi",
     "provekit-lift-asm-aarch64",
     "provekit-linker",

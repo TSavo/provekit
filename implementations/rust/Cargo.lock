@@ -1859,6 +1859,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-jvm-bytecode"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler-jvm-bytecode",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "provekit-lift-kani"
 version = "0.1.0"
 dependencies = [

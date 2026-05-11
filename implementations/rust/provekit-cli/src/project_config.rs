@@ -215,6 +215,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "python-hypothesis",
     "java-bean-validation",
     "java-jml",
+    "jvm-bytecode",
     "cpp-26-contracts",
     "cpp-boost-contract",
 ];
