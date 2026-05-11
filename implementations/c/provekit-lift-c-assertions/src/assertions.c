@@ -48,6 +48,14 @@ typedef struct {
     char *name;
     char **formals;
     int n_formals;
+    /* Names of variables declared local to this function (VarDecls nested in
+     * the function body / blocks).  Owned by the FunctionContracts. */
+    char **locals;
+    int n_locals;
+    /* Names of file-scope symbols (translation-unit VarDecls and FunctionDecls).
+     * Borrowed: owned by the per-translation-unit AstContractCtx. */
+    char *const *globals;
+    int n_globals;
     const char *path;
     int line;
     int column;
@@ -482,6 +490,12 @@ static int find_top_level_operator(Slice s, const char *const *ops, size_t n_ops
             depth--;
             continue;
         }
+        /* Skip the member-access arrow "->": its '>' must not be mistaken for
+         * a relational operator (it is part of an lvalue chain like p->len). */
+        if (s.s[i] == '-' && i + 1 < s.n && s.s[i + 1] == '>') {
+            i++;
+            continue;
+        }
         if (depth != 0) {
             continue;
         }
@@ -595,11 +609,300 @@ static char *name_from_not_condition(Slice condition) {
     return copy_n(condition.s, condition.n);
 }
 
+/*
+ * Compile-time-constant operator prefixes (sizeof(T), alignof(T), ...).  The
+ * lifter builds var-node names from space-joined tokens, so the name of such a
+ * term looks like "sizeof ( int )".  These reference no run-time state at all,
+ * so they are always entry-state safe.
+ */
+static int name_is_compile_time_const(const char *name) {
+    static const char *const ct_prefixes[] = {
+        "sizeof", "alignof", "_Alignof", "__alignof", "__alignof__",
+        "__builtin_offsetof", NULL
+    };
+    size_t nlen;
+    int i;
+
+    if (name == NULL) {
+        return 0;
+    }
+    for (i = 0; ct_prefixes[i] != NULL; i++) {
+        nlen = strlen(ct_prefixes[i]);
+        if (strncmp(name, ct_prefixes[i], nlen) == 0 &&
+            (name[nlen] == '\0' || name[nlen] == ' ' || name[nlen] == '(')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int name_is_known_constant(const char *name) {
+    static const char *const known_constants[] = {"NULL", "null", "true", "false", NULL};
+    int i;
+
+    if (name == NULL) {
+        return 0;
+    }
+    for (i = 0; known_constants[i] != NULL; i++) {
+        if (strcmp(name, known_constants[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* C keywords that may appear as identifier-shaped tokens inside an expression
+ * blob but never name a run-time value (so they are not "locals" to reject). */
+static int name_is_c_keyword(const char *s, size_t len) {
+    static const char *const keywords[] = {
+        "sizeof", "alignof", "_Alignof", "__alignof", "__alignof__",
+        "__builtin_offsetof", "_Bool", "__typeof__", "typeof",
+        "int", "char", "short", "long", "unsigned", "signed", "float",
+        "double", "void", "struct", "union", "enum", "const", "volatile",
+        "static", "extern", "register", "auto", "inline", "restrict",
+        "if", "else", "for", "while", "do", "switch", "case", "default",
+        "return", "goto", "break", "continue",
+        NULL
+    };
+    int i;
+
+    for (i = 0; keywords[i] != NULL; i++) {
+        if (strlen(keywords[i]) == len && strncmp(keywords[i], s, len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+typedef enum {
+    SCOPE_ENTRY_STATE, /* formal of this function, or a file-scope symbol */
+    SCOPE_LOCAL,       /* a variable local to this function -- not entry state */
+    SCOPE_UNKNOWN      /* cannot classify -- conservatively not entry state */
+} VarScope;
+
+static VarScope classify_root_identifier(const char *name, size_t len, const FunctionContracts *fn) {
+    int i;
+    char buf[256];
+
+    if (len == 0) {
+        return SCOPE_UNKNOWN;
+    }
+    if (len >= sizeof(buf)) {
+        /* implausibly long identifier -- be conservative */
+        return SCOPE_UNKNOWN;
+    }
+    memcpy(buf, name, len);
+    buf[len] = '\0';
+    if (name_is_known_constant(buf)) {
+        return SCOPE_ENTRY_STATE;
+    }
+    /* Locals are checked first: the lifter has no per-locus scope, so a name
+     * that is declared local to this function anywhere -- even a block-scope
+     * local that shadows a formal or a global -- is conservatively treated as
+     * non-entry-state (drop + opacity, never keep-and-hope). */
+    for (i = 0; i < fn->n_locals; i++) {
+        if (fn->locals[i] != NULL && strcmp(buf, fn->locals[i]) == 0) {
+            return SCOPE_LOCAL;
+        }
+    }
+    for (i = 0; i < fn->n_formals; i++) {
+        if (fn->formals[i] != NULL && strcmp(buf, fn->formals[i]) == 0) {
+            return SCOPE_ENTRY_STATE;
+        }
+    }
+    for (i = 0; i < fn->n_globals; i++) {
+        if (fn->globals[i] != NULL && strcmp(buf, fn->globals[i]) == 0) {
+            return SCOPE_ENTRY_STATE;
+        }
+    }
+    return SCOPE_UNKNOWN;
+}
+
+/*
+ * Classify the var-node name "name" -- a space-joined token blob for some C
+ * subexpression (e.g. "y", "p -> len", "arr [ 0 ]", "& p -> field",
+ * "p -> arr [ q ]", "sizeof ( int )") -- as entry-state safe or not.
+ *
+ * A name is entry-state safe iff every identifier token in it that names a
+ * run-time value (i.e. not a member name following '.' / '->', not a C keyword)
+ * classifies as a formal of this function or a file-scope symbol.  Any
+ * identifier that is a function-local, or that we cannot classify, makes the
+ * whole term non-entry-state.  A function call inside the term is also treated
+ * as non-entry-state (a derived value, not addressable entry state) -- except
+ * the compile-time-constant operator forms (sizeof(T), __builtin_offsetof, ...)
+ * which are matched up front and accepted.  Known pointer / boolean constants
+ * are entry-state safe outright.
+ */
+static int var_name_is_entry_state(const char *name, const FunctionContracts *fn) {
+    const char *p;
+    char prev_op = '\0';   /* last operator token seen ('.', '>' for "->", etc.) */
+    int after_member_arrow = 0;
+
+    if (name == NULL) {
+        return 0;
+    }
+    if (name_is_compile_time_const(name) || name_is_known_constant(name)) {
+        return 1;
+    }
+    p = name;
+    while (*p != '\0') {
+        if (isspace((unsigned char)*p)) {
+            p++;
+            continue;
+        }
+        if (isalpha((unsigned char)*p) || *p == '_') {
+            const char *start = p;
+            size_t len;
+            const char *q;
+
+            while (is_ident_char((unsigned char)*p)) {
+                p++;
+            }
+            len = (size_t)(p - start);
+            if (after_member_arrow) {
+                /* member name after '.' or '->' -- not an lvalue identifier */
+                after_member_arrow = 0;
+                prev_op = '\0';
+                continue;
+            }
+            if (name_is_c_keyword(start, len)) {
+                prev_op = '\0';
+                continue;
+            }
+            /* If this identifier is the callee of a call (next non-space is
+             * '('), the term contains a call -- conservatively not entry state.
+             * (Compile-time-constant operator forms were already accepted.) */
+            q = p;
+            while (isspace((unsigned char)*q)) {
+                q++;
+            }
+            if (*q == '(') {
+                return 0;
+            }
+            switch (classify_root_identifier(start, len, fn)) {
+            case SCOPE_ENTRY_STATE:
+                break;
+            case SCOPE_LOCAL:
+            case SCOPE_UNKNOWN:
+            default:
+                return 0;
+            }
+            prev_op = '\0';
+            continue;
+        }
+        /* operator / punctuation token */
+        if (*p == '.') {
+            after_member_arrow = 1;
+        } else if (*p == '>' && prev_op == '-') {
+            after_member_arrow = 1;
+        }
+        if (*p == '"') {
+            /* string literal in the blob -- should not happen, but be safe */
+            return 0;
+        }
+        prev_op = *p;
+        p++;
+    }
+    return 1;
+}
+
+/*
+ * Recursively check that every var-node in the formula tree references only
+ * entry-state names.  Returns 1 if safe, 0 if any var-node is not entry state.
+ *
+ * Terms are flat var/const nodes whose "name" is the space-joined token blob
+ * of the subexpression -- the lifter does not build member/index/deref node
+ * hierarchies -- so each atomic arg carries at most one var-node "name", which
+ * we parse properly (every identifier token in it is classified by scope).
+ */
+static int formula_references_only_entry_state(const Formula *f, const FunctionContracts *fn) {
+    size_t i;
+
+    if (f == NULL) {
+        return 1;
+    }
+    if (f->kind == FORMULA_ATOMIC) {
+        for (i = 0; i < f->n_args; i++) {
+            const char *arg = f->args[i];
+            const char *var_marker = "\"kind\":\"var\"";
+            const char *name_marker = "\"name\":\"";
+            const char *p;
+            const char *name_start;
+            const char *name_end;
+            char name_buf[256];
+            size_t name_len;
+
+            if (arg == NULL) {
+                continue;
+            }
+            if (strstr(arg, var_marker) == NULL) {
+                /* const node -- carries no identifier name that matters */
+                continue;
+            }
+            p = strstr(arg, name_marker);
+            if (p == NULL) {
+                /* malformed -- conservatively reject */
+                return 0;
+            }
+            name_start = p + strlen(name_marker);
+            name_end = strchr(name_start, '"');
+            if (name_end == NULL) {
+                return 0;
+            }
+            name_len = (size_t)(name_end - name_start);
+            if (name_len >= sizeof(name_buf)) {
+                /* implausibly long -- be conservative */
+                return 0;
+            }
+            memcpy(name_buf, name_start, name_len);
+            name_buf[name_len] = '\0';
+            if (!var_name_is_entry_state(name_buf, fn)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    /* AND / OR / NOT: recurse into operands */
+    for (i = 0; i < f->n_operands; i++) {
+        if (!formula_references_only_entry_state(f->operands[i], fn)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int emit_non_entry_state_opacity(FunctionContracts *fn) {
+    return pk_c_lift_result_add_opacity_entry(
+        fn->result,
+        "c-assertions.non-entry-state",
+        fn->path == NULL ? "" : fn->path,
+        fn->line,
+        fn->column,
+        "assertion references non-entry-state (function-local or unclassifiable name); predicate dropped from pre",
+        "c-assertions");
+}
+
 static int function_add_precondition(FunctionContracts *fn, Formula *formula) {
     Formula **next;
     size_t next_cap;
 
     if (formula == NULL) {
+        return 0;
+    }
+    /* Guard: only emit preconditions that reference entry-state names --
+     * formal parameters, file-scope/global symbols (incl. static-at-file-
+     * scope), state reachable from those (p->field, p[i], *p, &p->field),
+     * compile-time constants (sizeof T, ...), and known null/bool constants.
+     * A formula mentioning a variable local to this function (or any name we
+     * cannot classify as entry state) would make the caller's pre too tight --
+     * it would constrain state the caller cannot see or control -- so the
+     * predicate is dropped and an auditable opacity entry is emitted instead. */
+    if (!formula_references_only_entry_state(formula, fn)) {
+        if (emit_non_entry_state_opacity(fn) != 0) {
+            formula_free(formula);
+            return -1;
+        }
+        formula_free(formula);
         return 0;
     }
     if (fn->n_preconditions == fn->cap_preconditions) {
@@ -1069,6 +1372,15 @@ done:
     return rc;
 }
 
+static void strlist_free(char **list, int n) {
+    int i;
+
+    for (i = 0; i < n; i++) {
+        free(list[i]);
+    }
+    free(list);
+}
+
 static void function_contracts_free(FunctionContracts *fn) {
     if (fn == NULL) {
         return;
@@ -1078,6 +1390,8 @@ static void function_contracts_free(FunctionContracts *fn) {
         free(fn->formals[i]);
     }
     free(fn->formals);
+    strlist_free(fn->locals, fn->n_locals);
+    /* fn->globals is borrowed from the per-translation-unit context */
     for (size_t i = 0; i < fn->n_preconditions; i++) {
         formula_free(fn->preconditions[i]);
     }
@@ -1089,6 +1403,11 @@ static void function_contracts_free(FunctionContracts *fn) {
 typedef struct {
     pk_c_lift_result *result;
     const char *path;
+    /* File-scope symbol names (translation-unit VarDecls / FunctionDecls /
+     * enum constants).  Referencing one of these is part of a function's
+     * entry state.  Owned by this context. */
+    char **globals;
+    int n_globals;
     int failed;
     int saw_function;
 } AstContractCtx;
@@ -1099,6 +1418,104 @@ static char *clang_string(CXString string) {
 
     clang_disposeString(string);
     return copy;
+}
+
+/* Append a copy of 'name' to an owned, dynamically-grown string list.
+ * Returns 0 on success, -1 on allocation failure. */
+static int strlist_push(char ***list, int *n, const char *name) {
+    char **next;
+    char *copy;
+
+    if (name == NULL || name[0] == '\0') {
+        return 0;
+    }
+    copy = copy_string(name);
+    if (copy == NULL) {
+        return -1;
+    }
+    next = realloc(*list, (size_t)(*n + 1) * sizeof(**list));
+    if (next == NULL) {
+        free(copy);
+        return -1;
+    }
+    *list = next;
+    (*list)[*n] = copy;
+    (*n)++;
+    return 0;
+}
+
+/* Visitor: collect VarDecl spellings reachable under a FunctionDecl into
+ * fn->locals.  Recurses into nested blocks; ParmDecls are not VarDecls so
+ * they are not collected (they are already in fn->formals). */
+static enum CXChildVisitResult collect_locals_visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
+    FunctionContracts *fn = (FunctionContracts *)client_data;
+    (void)parent;
+
+    if (clang_getCursorKind(cursor) == CXCursor_VarDecl) {
+        char *name = clang_string(clang_getCursorSpelling(cursor));
+
+        if (name == NULL) {
+            return CXChildVisit_Break;
+        }
+        if (strlist_push(&fn->locals, &fn->n_locals, name) != 0) {
+            free(name);
+            return CXChildVisit_Break;
+        }
+        free(name);
+    }
+    return CXChildVisit_Recurse;
+}
+
+static int collect_locals(FunctionContracts *fn, CXCursor cursor) {
+    fn->locals = NULL;
+    fn->n_locals = 0;
+    /* clang_visitChildren returns non-zero if the visitor requested a Break;
+     * collect_locals_visitor only Breaks on allocation failure. */
+    if (clang_visitChildren(cursor, collect_locals_visitor, fn) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+/* Visitor: collect file-scope symbol names (VarDecl / FunctionDecl /
+ * EnumConstantDecl) directly under the translation-unit cursor. */
+static enum CXChildVisitResult collect_globals_visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
+    AstContractCtx *ctx = (AstContractCtx *)client_data;
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+    (void)parent;
+
+    if (kind == CXCursor_VarDecl || kind == CXCursor_FunctionDecl) {
+        char *name = clang_string(clang_getCursorSpelling(cursor));
+
+        if (name == NULL) {
+            return CXChildVisit_Break;
+        }
+        if (strlist_push(&ctx->globals, &ctx->n_globals, name) != 0) {
+            free(name);
+            return CXChildVisit_Break;
+        }
+        free(name);
+        return CXChildVisit_Continue;
+    }
+    if (kind == CXCursor_EnumDecl) {
+        /* enum constants are compile-time constants -- entry-state safe.
+         * Recurse to pick up the EnumConstantDecl children. */
+        return CXChildVisit_Recurse;
+    }
+    if (kind == CXCursor_EnumConstantDecl) {
+        char *name = clang_string(clang_getCursorSpelling(cursor));
+
+        if (name == NULL) {
+            return CXChildVisit_Break;
+        }
+        if (strlist_push(&ctx->globals, &ctx->n_globals, name) != 0) {
+            free(name);
+            return CXChildVisit_Break;
+        }
+        free(name);
+        return CXChildVisit_Continue;
+    }
+    return CXChildVisit_Continue;
 }
 
 static void set_locus(FunctionContracts *fn, CXCursor cursor, const char *fallback_path) {
@@ -1199,10 +1616,14 @@ static enum CXChildVisitResult visit_ast_function(CXCursor cursor, CXCursor pare
 
         memset(&fn, 0, sizeof(fn));
         fn.result = ctx->result;
+        fn.globals = ctx->globals;
+        fn.n_globals = ctx->n_globals;
         fn.name = clang_string(clang_getCursorSpelling(cursor));
         set_locus(&fn, cursor, ctx->path);
         source = cursor_source(cursor);
-        if (fn.name == NULL || source == NULL || collect_formals(&fn, cursor) != 0) {
+        if (fn.name == NULL || source == NULL ||
+            collect_formals(&fn, cursor) != 0 ||
+            collect_locals(&fn, cursor) != 0) {
             free(source);
             function_contracts_free(&fn);
             ctx->failed = 1;
@@ -1268,7 +1689,16 @@ static int lift_ast_contracts(
     memset(&ctx, 0, sizeof(ctx));
     ctx.result = result;
     ctx.path = filename;
+    /* Collect file-scope symbol names first so per-function entry-state
+     * classification can recognise references to globals. */
+    if (clang_visitChildren(clang_getTranslationUnitCursor(unit), collect_globals_visitor, &ctx) != 0) {
+        strlist_free(ctx.globals, ctx.n_globals);
+        clang_disposeTranslationUnit(unit);
+        clang_disposeIndex(index);
+        return -1;
+    }
     (void)clang_visitChildren(clang_getTranslationUnitCursor(unit), visit_ast_function, &ctx);
+    strlist_free(ctx.globals, ctx.n_globals);
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
     return ctx.failed ? -1 : 0;
