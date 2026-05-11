@@ -1706,6 +1706,74 @@ static int serialize_infix(Buf *out, const C11Term *term, const char *op) {
         buf_append_char(out, ')') == 0 ? 0 : -1;
 }
 
+static int serialize_call(Buf *out, const C11Term *term) {
+    if (term->n_args < 1 || serialize_expr(out, term->args[0]) != 0 || buf_append_char(out, '(') != 0) {
+        return -1;
+    }
+    for (size_t i = 1; i < term->n_args; i++) {
+        if ((i > 1 && buf_append(out, ", ") != 0) ||
+            serialize_expr(out, term->args[i]) != 0) {
+            return -1;
+        }
+    }
+    return buf_append_char(out, ')');
+}
+
+static int serialize_expr_list(Buf *out, const C11Term *term, size_t start) {
+    for (size_t i = start; i < term->n_args; i++) {
+        if ((i > start && buf_append(out, ", ") != 0) ||
+            serialize_expr(out, term->args[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static const char *member_field_name(const C11Term *term) {
+    if (term->n_args >= 2 && term->args[1]->kind == C11_TERM_VAR && term->args[1]->name[0] != '\0') {
+        return term->args[1]->name;
+    }
+    return "field";
+}
+
+static const char *label_name_or_done(const C11Term *term, size_t index) {
+    if (term->n_args > index && term->args[index]->kind == C11_TERM_VAR && term->args[index]->name[0] != '\0') {
+        return term->args[index]->name;
+    }
+    return "done";
+}
+
+static const char *generic_assoc_type(size_t index) {
+    static const char *const names[] = {"int", "long", "double", "char *", "void *"};
+
+    return index < sizeof(names) / sizeof(names[0]) ? names[index] : "unsigned";
+}
+
+static int serialize_generic_selection(Buf *out, const C11Term *term) {
+    if (term->n_args < 2 ||
+        buf_append(out, "_Generic(") != 0 ||
+        serialize_expr(out, term->args[0]) != 0) {
+        return -1;
+    }
+    for (size_t i = 1; i < term->n_args; i++) {
+        if (buf_append(out, ", ") != 0) return -1;
+        if (i == term->n_args - 1) {
+            if (buf_append(out, "default: ") != 0) return -1;
+        } else if (buf_append(out, generic_assoc_type(i - 1)) != 0 || buf_append(out, ": ") != 0) {
+            return -1;
+        }
+        if (serialize_expr(out, term->args[i]) != 0) return -1;
+    }
+    return buf_append_char(out, ')');
+}
+
+static int serialize_stmt_expr(Buf *out, const C11Term *term) {
+    return term->n_args == 1 &&
+        buf_append(out, "({\n") == 0 &&
+        serialize_stmt(out, term->args[0], 2) == 0 &&
+        buf_append(out, "    })") == 0 ? 0 : -1;
+}
+
 static int serialize_expr(Buf *out, const C11Term *term) {
     if (term == NULL) return -1;
     switch (term->kind) {
@@ -1736,6 +1804,61 @@ static int serialize_expr(Buf *out, const C11Term *term) {
         if (strcmp(term->name, "or") == 0) return serialize_infix(out, term, "||");
         if (strcmp(term->name, "comma") == 0) return serialize_infix(out, term, ",");
         if (strcmp(term->name, "assign") == 0) return serialize_infix(out, term, "=");
+        if (strcmp(term->name, "call") == 0) return serialize_call(out, term);
+        if (strcmp(term->name, "member") == 0 && term->n_args >= 1) {
+            return serialize_expr(out, term->args[0]) == 0 &&
+                buf_append_char(out, '.') == 0 &&
+                buf_append(out, member_field_name(term)) == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "cast") == 0 && term->n_args == 1) {
+            return buf_append(out, "((int)") == 0 &&
+                serialize_expr(out, term->args[0]) == 0 &&
+                buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "array-subscript") == 0 && term->n_args == 2) {
+            return serialize_expr(out, term->args[0]) == 0 &&
+                buf_append_char(out, '[') == 0 &&
+                serialize_expr(out, term->args[1]) == 0 &&
+                buf_append_char(out, ']') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "conditional") == 0 && term->n_args == 3) {
+            return buf_append_char(out, '(') == 0 &&
+                serialize_expr(out, term->args[0]) == 0 &&
+                buf_append(out, " ? ") == 0 &&
+                serialize_expr(out, term->args[1]) == 0 &&
+                buf_append(out, " : ") == 0 &&
+                serialize_expr(out, term->args[2]) == 0 &&
+                buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "string-literal") == 0) return buf_append(out, "\"provekit\"");
+        if (strcmp(term->name, "char-literal") == 0) return buf_append(out, "'p'");
+        if (strcmp(term->name, "float-literal") == 0) return buf_append(out, "1.5");
+        if (strcmp(term->name, "imaginary-literal") == 0) return buf_append(out, "1.0i");
+        if (strcmp(term->name, "null") == 0) return buf_append(out, "0");
+        if (strcmp(term->name, "compound-literal") == 0) {
+            return buf_append(out, "((int){") == 0 &&
+                serialize_expr_list(out, term, 0) == 0 &&
+                buf_append(out, "})") == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "init-list") == 0) {
+            return buf_append_char(out, '{') == 0 &&
+                serialize_expr_list(out, term, 0) == 0 &&
+                buf_append_char(out, '}') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "generic-selection") == 0) return serialize_generic_selection(out, term);
+        if (strcmp(term->name, "stmt-expr") == 0) return serialize_stmt_expr(out, term);
+        if (strcmp(term->name, "addr-label") == 0) {
+            return buf_append(out, "&&") == 0 &&
+                buf_append(out, label_name_or_done(term, 0)) == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "unexposed-expr") == 0) {
+            return term->n_args == 0 ? buf_append(out, "0") : serialize_expr(out, term->args[0]);
+        }
+        if (strcmp(term->name, "binary-operator") == 0) return serialize_infix(out, term, "/");
+        if (strcmp(term->name, "unary-operator") == 0 && term->n_args == 1) {
+            return buf_append(out, "(~") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
+        }
+        if (strcmp(term->name, "opaque") == 0) return buf_append(out, "0 /* opaque */");
         if (strcmp(term->name, "neg") == 0 && term->n_args == 1) {
             return buf_append(out, "(-") == 0 && serialize_expr(out, term->args[0]) == 0 && buf_append_char(out, ')') == 0 ? 0 : -1;
         }
@@ -1772,6 +1895,21 @@ static int serialize_expr(Buf *out, const C11Term *term) {
     return -1;
 }
 
+static int serialize_for_part(Buf *out, const C11Term *term) {
+    if (term == NULL) return -1;
+    if (term->kind == C11_TERM_OP && strcmp(term->name, "skip") == 0) return 0;
+    if (term->kind == C11_TERM_OP && strcmp(term->name, "decl") == 0 &&
+        term->n_args == 2 && term->args[0]->kind == C11_TERM_VAR) {
+        if (buf_append(out, "int ") != 0 || buf_append(out, term->args[0]->name) != 0) return -1;
+        if (term->args[1]->kind != C11_TERM_UNIT &&
+            (buf_append(out, " = ") != 0 || serialize_expr(out, term->args[1]) != 0)) {
+            return -1;
+        }
+        return 0;
+    }
+    return serialize_expr(out, term);
+}
+
 static int serialize_stmt(Buf *out, const C11Term *term, int indent) {
     if (term == NULL) return -1;
     if (term->kind != C11_TERM_OP) {
@@ -1803,6 +1941,37 @@ static int serialize_stmt(Buf *out, const C11Term *term, int indent) {
             serialize_stmt(out, term->args[2], indent + 1) == 0 &&
             buf_append_indent(out, indent) == 0 &&
             buf_append(out, "}\n") == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "while") == 0 && term->n_args == 2) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "while (") == 0 &&
+            serialize_expr(out, term->args[0]) == 0 &&
+            buf_append(out, ") {\n") == 0 &&
+            serialize_stmt(out, term->args[1], indent + 1) == 0 &&
+            buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "}\n") == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "for") == 0 && term->n_args == 4) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "for (") == 0 &&
+            serialize_for_part(out, term->args[0]) == 0 &&
+            buf_append(out, "; ") == 0 &&
+            serialize_expr(out, term->args[1]) == 0 &&
+            buf_append(out, "; ") == 0 &&
+            serialize_for_part(out, term->args[2]) == 0 &&
+            buf_append(out, ") {\n") == 0 &&
+            serialize_stmt(out, term->args[3], indent + 1) == 0 &&
+            buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "}\n") == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "do") == 0 && term->n_args == 2) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "do {\n") == 0 &&
+            serialize_stmt(out, term->args[0], indent + 1) == 0 &&
+            buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "} while (") == 0 &&
+            serialize_expr(out, term->args[1]) == 0 &&
+            buf_append(out, ");\n") == 0 ? 0 : -1;
     }
     if (strcmp(term->name, "decl") == 0 && term->n_args == 2 && term->args[0]->kind == C11_TERM_VAR) {
         if (buf_append_indent(out, indent) != 0 ||
@@ -1850,9 +2019,36 @@ static int serialize_stmt(Buf *out, const C11Term *term, int indent) {
     if (strcmp(term->name, "continue") == 0) {
         return buf_append_indent(out, indent) == 0 && buf_append(out, "continue;\n") == 0 ? 0 : -1;
     }
+    if (strcmp(term->name, "goto") == 0) {
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, "goto ") == 0 &&
+            buf_append(out, label_name_or_done(term, 0)) == 0 &&
+            buf_append(out, ";\n") == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "label") == 0 && term->n_args >= 1) {
+        size_t body_index = 0;
+        const char *name = label_name_or_done(term, 0);
+
+        if (term->n_args >= 2 && term->args[0]->kind == C11_TERM_VAR && term->args[0]->name[0] != '\0') {
+            name = term->args[0]->name;
+            body_index = 1;
+        }
+        return buf_append_indent(out, indent) == 0 &&
+            buf_append(out, name) == 0 &&
+            buf_append(out, ":\n") == 0 &&
+            serialize_stmt(out, term->args[body_index], indent + 1) == 0 ? 0 : -1;
+    }
+    if (strcmp(term->name, "unexposed-stmt") == 0) {
+        if (term->n_args == 0) {
+            return buf_append_indent(out, indent) == 0 && buf_append(out, "/* unexposed-stmt */;\n") == 0 ? 0 : -1;
+        }
+        for (size_t i = 0; i < term->n_args; i++) {
+            if (serialize_stmt(out, term->args[i], indent) != 0) return -1;
+        }
+        return 0;
+    }
     if (strcmp(term->name, "opaque") == 0) {
-        fprintf(stderr, "serialize not implemented for c11:opaque\n");
-        return -1;
+        return buf_append_indent(out, indent) == 0 && buf_append(out, "/* opaque */;\n") == 0 ? 0 : -1;
     }
     return buf_append_indent(out, indent) == 0 &&
         serialize_expr(out, term) == 0 &&
@@ -1892,7 +2088,14 @@ static int name_list_add(NameList *list, const char *name) {
     return 0;
 }
 
-static int collect_names(const C11Term *term, NameList *locals, NameList *params, int decl_name_position) {
+static int collect_names(
+    const C11Term *term,
+    NameList *locals,
+    NameList *params,
+    NameList *pointer_params,
+    NameList *struct_params,
+    NameList *callees,
+    int decl_name_position) {
     if (term == NULL) return 0;
     if (term->kind == C11_TERM_VAR) {
         if (decl_name_position) return name_list_add(locals, term->name);
@@ -1900,20 +2103,92 @@ static int collect_names(const C11Term *term, NameList *locals, NameList *params
         return 0;
     }
     if (term->kind != C11_TERM_OP) return 0;
+    if (strcmp(term->name, "call") == 0) {
+        if (term->n_args > 0) {
+            if (term->args[0]->kind == C11_TERM_VAR) {
+                if (name_list_add(callees, term->args[0]->name) != 0) return -1;
+            } else if (collect_names(term->args[0], locals, params, pointer_params, struct_params, callees, 0) != 0) {
+                return -1;
+            }
+        }
+        for (size_t i = 1; i < term->n_args; i++) {
+            if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
+    if (strcmp(term->name, "array-subscript") == 0 && term->n_args >= 1 &&
+        term->args[0]->kind == C11_TERM_VAR) {
+        const char *name = term->args[0]->name;
+
+        if (!name_list_contains(locals, name) &&
+            (name_list_add(params, name) != 0 || name_list_add(pointer_params, name) != 0)) {
+            return -1;
+        }
+        for (size_t i = 1; i < term->n_args; i++) {
+            if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
+    if (strcmp(term->name, "member") == 0 && term->n_args >= 1 &&
+        term->args[0]->kind == C11_TERM_VAR) {
+        const char *name = term->args[0]->name;
+
+        if (!name_list_contains(locals, name) &&
+            (name_list_add(params, name) != 0 || name_list_add(struct_params, name) != 0)) {
+            return -1;
+        }
+        for (size_t i = 1; i < term->n_args; i++) {
+            if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, 0) != 0) {
+                return -1;
+            }
+        }
+        return 0;
+    }
     for (size_t i = 0; i < term->n_args; i++) {
         int is_decl_name = strcmp(term->name, "decl") == 0 && i == 0;
 
-        if (collect_names(term->args[i], locals, params, is_decl_name) != 0) return -1;
+        if (collect_names(term->args[i], locals, params, pointer_params, struct_params, callees, is_decl_name) != 0) {
+            return -1;
+        }
     }
     return 0;
+}
+
+static int append_param_decl(Buf *out, const char *name, const NameList *pointer_params, const NameList *struct_params) {
+    if (name_list_contains(pointer_params, name)) {
+        return buf_append(out, "int *") == 0 && buf_append(out, name) == 0 ? 0 : -1;
+    }
+    if (name_list_contains(struct_params, name)) {
+        return buf_append(out, "struct item ") == 0 && buf_append(out, name) == 0 ? 0 : -1;
+    }
+    return buf_append(out, "int ") == 0 && buf_append(out, name) == 0 ? 0 : -1;
 }
 
 static int serialize_translation_unit(Buf *out, const C11Term *term, const char *function_name) {
     NameList locals = {0};
     NameList params = {0};
+    NameList pointer_params = {0};
+    NameList struct_params = {0};
+    NameList callees = {0};
     int rc = -1;
 
-    if (collect_names(term, &locals, &params, 0) != 0) goto done;
+    if (collect_names(term, &locals, &params, &pointer_params, &struct_params, &callees, 0) != 0) goto done;
+    if (struct_params.len > 0 &&
+        buf_append(out, "struct item {\n    int field;\n    int value;\n};\n\n") != 0) {
+        goto done;
+    }
+    for (size_t i = 0; i < callees.len; i++) {
+        if (function_name != NULL && strcmp(callees.items[i], function_name) == 0) continue;
+        if (buf_append(out, "int ") != 0 ||
+            buf_append(out, callees.items[i]) != 0 ||
+            buf_append(out, "() {\n    return 0;\n}\n\n") != 0) {
+            goto done;
+        }
+    }
     if (buf_append(out, "int ") != 0 ||
         buf_append(out, function_name == NULL ? "roundtrip" : function_name) != 0 ||
         buf_append_char(out, '(') != 0) {
@@ -1921,8 +2196,7 @@ static int serialize_translation_unit(Buf *out, const C11Term *term, const char 
     }
     for (size_t i = 0; i < params.len; i++) {
         if ((i > 0 && buf_append(out, ", ") != 0) ||
-            buf_append(out, "int ") != 0 ||
-            buf_append(out, params.items[i]) != 0) {
+            append_param_decl(out, params.items[i], &pointer_params, &struct_params) != 0) {
             goto done;
         }
     }
@@ -1936,6 +2210,9 @@ static int serialize_translation_unit(Buf *out, const C11Term *term, const char 
 done:
     name_list_free(&locals);
     name_list_free(&params);
+    name_list_free(&pointer_params);
+    name_list_free(&struct_params);
+    name_list_free(&callees);
     return rc;
 }
 

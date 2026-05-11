@@ -2,6 +2,333 @@
   "generated_by": "tools/generate-c11-from-cursorkind.py",
   "source": "tools/c11gen/cxcursorkind-snapshot.h",
   "signature_cid": "blake3-512:34e0cd60770468dc5d6c5825bb393251debbfd0eaef11c1dec642fb1f7a04d05fa3a14db5cf4a54e5e74eaadc6cdd7c785baf437adfa84dbdce011b74b157b21",
+  "serializers": [
+    {
+      "op_name": "c11:skip",
+      "op_cid": "blake3-512:f6d5647365eb408ec445a22218b0587f23c37a6a635fac4f398a48469fb7a190c7751bac9640b918b0f27f08038ad7dc38837cbd718115bb99644cc5a7fbb93a",
+      "render_template": ";"
+    },
+    {
+      "op_name": "c11:seq",
+      "op_cid": "blake3-512:f8390f57e0f4408252211849b4e62639c9779a19bcdfc207eb80e2f3225e2f3a1262434a0e56b0de765b35ad377ffee3b91e69750996104505dc9ed7c1398915",
+      "render_template": "<a>\n<b>"
+    },
+    {
+      "op_name": "c11:if",
+      "op_cid": "blake3-512:402feb91b68096553e0c7f000cdb47c50a2d16094571a426639d6be487b934b9f1664bd4b8aa5f8cc2acf5d47f44cee31882c6dc8799e71aa29381fd91309b65",
+      "render_template": "if (<cond>) { <then> } else { <else> }"
+    },
+    {
+      "op_name": "c11:while",
+      "op_cid": "blake3-512:d2ad96e177a16cd03ad4c924c9e789b90382bb163cc4cdf19cd6c4e16a656c55ab9dbb654d4257b521cc61be6a7e980505214668bf70e57a7dd1c969767c0aff",
+      "render_template": "while (<cond>) { <body> }"
+    },
+    {
+      "op_name": "c11:for",
+      "op_cid": "blake3-512:1befb2ce1afd30e48439a6e3e0cda8cbc1a965c0c55a4d0b1dde409ea2aa12d8e970f0a5b05c53d71ecb36a443730392adb2c70fba5045945b4c267dddb6a2d3",
+      "render_template": "for (<init>; <cond>; <step>) { <body> }"
+    },
+    {
+      "op_name": "c11:switch",
+      "op_cid": "blake3-512:600483b325098b9f47363fb1257b5a99ef4d1117dad06c05e09fa0626ad59747539c9ec2f17e6da859c1f8931a6a9d0b5e60a198dd6b69742d6f01f99897dd6c",
+      "render_template": "switch (<scrutinee>) { <body> }"
+    },
+    {
+      "op_name": "c11:call",
+      "op_cid": "blake3-512:60d53cea89198925ed2b932d076bc348f980854458567d233399444bd462018a591ea42d05a6b4a240c3d9a96fe3f6a748f2428fae0c5dde2d47c34ee1f4daee",
+      "render_template": "<callee>(<args...>)"
+    },
+    {
+      "op_name": "c11:return",
+      "op_cid": "blake3-512:5f1b6815fc786463b21234a14b2216a5156ebd5e385eadb1c749c0fa62e28e09f38adc37de9da36502200a4ee8e364e08b23f8767267e04dfb700c3061bb0428",
+      "render_template": "return <value>;"
+    },
+    {
+      "op_name": "c11:break",
+      "op_cid": "blake3-512:3a43532860e5dbd125a89564b51af5a754dbabefbd5cdfb1b01e2c4ff2cab1752d188e59cb9b57d9a2049bc871923808e2115caf70e018d3f9cdeffcfa7cd778",
+      "render_template": "break;"
+    },
+    {
+      "op_name": "c11:continue",
+      "op_cid": "blake3-512:26b6cba9563e7f756d7e65d81eee266613ff63c0b30144445fec7d4db117a323afc1ccdea8e4268f7a46e88986aa5b9b1d73300d9f69ae32df8390ec076b7e46",
+      "render_template": "continue;"
+    },
+    {
+      "op_name": "c11:deref",
+      "op_cid": "blake3-512:9eb190c5974e70675bd969eb2b7ab1245ac9b3ce4c2272cfdc64f539813a893aaaf586a55b1600c33e80ffb4b79726bbe57f8aee186044656e8b92887a2850a7",
+      "render_template": "(*<value>)"
+    },
+    {
+      "op_name": "c11:member",
+      "op_cid": "blake3-512:9f52681b25fa589ad6fc38d26981756d4c44330f687c79b04b7f39f049816d625a57551b303aee1567c6451b153bb9dc0f383671545a934087f195b2d5033a5e",
+      "render_template": "<base>.<field>"
+    },
+    {
+      "op_name": "c11:add",
+      "op_cid": "blake3-512:e9ac31bccee2eda6a417385fa1e7c702622566930d18b17283acedee2c25122cf0155e5a8743a9afc3296cc25376900e1e46824332bcbeb6ba8f11d3ab500805",
+      "render_template": "(<lhs> + <rhs>)"
+    },
+    {
+      "op_name": "c11:sub",
+      "op_cid": "blake3-512:3948e3fe1b84d2f18fb3d3430d0995ac05e41c0e9bb850f337a8141bf296fd3e4dd7d618bafe5e8b2995f45bcedf4652f07b3b32632c5eb05b7657e1644217b8",
+      "render_template": "(<lhs> - <rhs>)"
+    },
+    {
+      "op_name": "c11:mul",
+      "op_cid": "blake3-512:9e56b26a160ec1c977fe593c12da21edcf57cc86e5bd2018e0fc0215e9b12f14ec6f1a0b584c8863a33513ce01d0513627054c05f700d6f44f28ae96497be32e",
+      "render_template": "(<lhs> * <rhs>)"
+    },
+    {
+      "op_name": "c11:eq",
+      "op_cid": "blake3-512:be234846ff5993e9492eedb48c537f9750a5992e882e90b640728b52ad91b3d94c9b67e9f6b3f140711feb149e273a089eed6fb8eb337ab2dea6b2b11b0cfa7b",
+      "render_template": "(<lhs> == <rhs>)"
+    },
+    {
+      "op_name": "c11:lt",
+      "op_cid": "blake3-512:ec6098a797df50b97060e9392f55fbd0df7c437e70e3c72b32922d72a785701a900891cc88eb0d24e8ad21ec130ce7bdc21aa89a1b1623996012effe80461420",
+      "render_template": "(<lhs> < <rhs>)"
+    },
+    {
+      "op_name": "c11:le",
+      "op_cid": "blake3-512:c79c47a0c0dacd987390f54895c4c07afe3eb4f2271214fb486902333d141fe5cd3530493762af13ba0393de75ce7a8422e73bb4e41eb43cfd8f9b921afc30b4",
+      "render_template": "(<lhs> <= <rhs>)"
+    },
+    {
+      "op_name": "c11:and",
+      "op_cid": "blake3-512:52e14c5d4279dd96569cc053530fee38e3188a939e9567931e397653e98ae0c1bdaa2e5aacc1792af44fa7c9fc11c92ef6eae19d6ea183fa82e4a6072eab8812",
+      "render_template": "(<lhs> && <rhs>)"
+    },
+    {
+      "op_name": "c11:or",
+      "op_cid": "blake3-512:7d14955205e010a7cd9a7844406e54f8cb1ce81afad75279e0c5e9a7192cb1b82821a4aae6c1449ec588aa29eb0ed19ddf577599363146b492e9f48d72fdcf35",
+      "render_template": "(<lhs> || <rhs>)"
+    },
+    {
+      "op_name": "c11:not",
+      "op_cid": "blake3-512:13f0e635b60fe52d0c853adfb13c38431e0e0da1787236759736ffe420948a2cee01ebf0d275cdbe6d9cf8edc3aefb88556b1257d0e3dcd962c1f971372a2830",
+      "render_template": "(!<value>)"
+    },
+    {
+      "op_name": "c11:assign",
+      "op_cid": "blake3-512:ac74b58892500ca88ba86dcd2a60015c742dc604b9b12d688a66b0a7d068e791471ee38126837954589b83c5f270171be32554d83494f33d7d057c2089f8e556",
+      "render_template": "(<lhs> = <rhs>)"
+    },
+    {
+      "op_name": "c11:neg",
+      "op_cid": "blake3-512:9c272325e9a7d7e9d8c5f7b575f36b9024ffd45f8c4863343be39aa6c6573548898b3c6ffb8566b1d44f51bead519871af6acb3fa5ad0f1dd46b7aa04ac30961",
+      "render_template": "(-<value>)"
+    },
+    {
+      "op_name": "c11:div",
+      "op_cid": "blake3-512:61535696ae1adf2117d1bed76608309ae1756f07c5593e785155520277c9a7ee2ab26050bfa600d27fad86068b9cceff73bcbafb80abcf6346f8b4618998999e",
+      "render_template": "(<lhs> / <rhs>)"
+    },
+    {
+      "op_name": "c11:mod",
+      "op_cid": "blake3-512:f8f2053b8077f5d809ba26ffe064d5c860425e6cd534be7f9b709aeaf6b1a38e4875d5afb0c91a0112fa55e4122d0ab4555c060f4878d0b250148063bae064cd",
+      "render_template": "(<lhs> % <rhs>)"
+    },
+    {
+      "op_name": "c11:shl",
+      "op_cid": "blake3-512:3645c4a8260cf81344a80f882d166be7f1077cc52e6928f8a22caed0e1709faeed07c0d8aaf5423124e9b9362443af5481d9a67fb9e46582fb5510bec8105806",
+      "render_template": "(<lhs> << <rhs>)"
+    },
+    {
+      "op_name": "c11:shr",
+      "op_cid": "blake3-512:df471fc97d7e6480ff43e35c22f8a8ebffceb532d09d5895b3486bfb1ba77efb6f292e87ab68d5da25facbcb013304ca95ac323438656b40d62b72bb12308963",
+      "render_template": "(<lhs> >> <rhs>)"
+    },
+    {
+      "op_name": "c11:bit_and",
+      "op_cid": "blake3-512:27cd28a24ddb477cdeb2cf26093ba19211bb7f00c4e5132227dd034c7bcc611183477f8d7595ac5d1190c14ab30a4d84744e59d19fc6f32b1f05bc93eec1ed13",
+      "render_template": "(<lhs> & <rhs>)"
+    },
+    {
+      "op_name": "c11:bit_or",
+      "op_cid": "blake3-512:91df079fd90f39b1a8ae79100f5669c2783a3fbfdb4f9020df5a7b41346ba84fc0de3945afedbbcb238f40ac1f7af00120368f075df9227acb9268e9ea8a5f69",
+      "render_template": "(<lhs> | <rhs>)"
+    },
+    {
+      "op_name": "c11:bit_xor",
+      "op_cid": "blake3-512:10d9c19644d05f0594cf217a99fed307e3fd8fa023da2e62c03d23e9fd24af794f7e2684a38b09f88a33ec0a6e107e3181d9abb1bff135089797bf4933dbbeac",
+      "render_template": "(<lhs> ^ <rhs>)"
+    },
+    {
+      "op_name": "c11:gt",
+      "op_cid": "blake3-512:533d7c1cb1f130ffce0681c52d34d11277cb0dd108128fffa8e3a1b87fc0f8fadb81fa0bc7d5c2435795f5ffa35484b6492c3770e3eb107d43944a4169302922",
+      "render_template": "(<lhs> > <rhs>)"
+    },
+    {
+      "op_name": "c11:ge",
+      "op_cid": "blake3-512:eb6df424266fff3a9e6c275f0f2107c8b0bee0f32d42e2429ef91ff8c900f99c2943db700143ea841f14bae70cc51388b29fbfd76207dc26a990522326d47060",
+      "render_template": "(<lhs> >= <rhs>)"
+    },
+    {
+      "op_name": "c11:ne",
+      "op_cid": "blake3-512:35ac3f3e5e698eb6c2bfe351dbbc0da7ba720276b844c165226cdd522a1e2564a163d941545e946dde3b298fb2b1a3becfcf7d2c03a3cfd8e1ea5f12ad1dada9",
+      "render_template": "(<lhs> != <rhs>)"
+    },
+    {
+      "op_name": "c11:comma",
+      "op_cid": "blake3-512:35d31555d187eb21001dd65c2c1360945b92765204b402a492e40ab7c2bec6e3fbb3e8ed17f77137bf12966199321ed774ed05b5e5d13f7610bc64622e087515",
+      "render_template": "(<lhs>, <rhs>)"
+    },
+    {
+      "op_name": "c11:bit_not",
+      "op_cid": "blake3-512:cc5f0fa79ecb1658a22a776ec5a7a3afa34de99076500f454ab0ba46f57f16d693be77096492fc12bbbb023749da38b0ef8a76110d5a81ded346aa5780f52ebe",
+      "render_template": "(~<value>)"
+    },
+    {
+      "op_name": "c11:addr_of",
+      "op_cid": "blake3-512:297ac1752207a4416bf6a6637f1945c3a0df7f6970159677e2ccb8f51edeece3ad78b516caf5cf53cd7bc1be45822d9ee015663fba79e413e458e332510e80e1",
+      "render_template": "(&<value>)"
+    },
+    {
+      "op_name": "c11:pre_inc",
+      "op_cid": "blake3-512:6bb7eafa9f3595e2257fc5e34f538be37b4e74c7618db07900356562933dae58e55e89de6585f7a7a30435535da41db78da31df3e3bfe2811c46c3f1d59354b4",
+      "render_template": "(++<value>)"
+    },
+    {
+      "op_name": "c11:post_inc",
+      "op_cid": "blake3-512:19530750696c8862b05468546aa0bf2b6620126504f148c96201c2c76d614292b171dfd02bbf4c69aef42a29b3e43c0a167f19c758dd80ce1e7ac774cfbf6d32",
+      "render_template": "(<value>++)"
+    },
+    {
+      "op_name": "c11:pre_dec",
+      "op_cid": "blake3-512:4008719681f58933c4ead6773196b18dada3ca51e2ec71ba9e19bf6562d7a024b3c02d82752d828c58f16bdd892e6bba4dccd7346d1877725fbda96e221f33c7",
+      "render_template": "(--<value>)"
+    },
+    {
+      "op_name": "c11:post_dec",
+      "op_cid": "blake3-512:61b51e3e8b0445e45125217800875ac9a6859a90714b778a6fdbbaf692538899a192f0885b59fbf4f3b2c5751515f1622c4945feef18bbf5ca3757f4d2b5906c",
+      "render_template": "(<value>--)"
+    },
+    {
+      "op_name": "c11:plus",
+      "op_cid": "blake3-512:6a0dbd7ca8be895b72ea1be71e06dc2b9a9d8528242b9231d0aaa487a897be27731b40dec44dada8678f5c780e2d85f52a08df60db486d44b3dc4b4827068c8b",
+      "render_template": "(+<value>)"
+    },
+    {
+      "op_name": "c11:opaque",
+      "op_cid": "blake3-512:74bb779296c91b9dc92c37f660b0ed6fe0da7f90f83090431ed378209df365389a010b36ef0080106e10cba9f94a5a9daf03f5674b5d668e1df13f17f6222ed4",
+      "render_template": "/* opaque */"
+    },
+    {
+      "op_name": "c11:decl",
+      "op_cid": "blake3-512:5abfe8bff471d3f83c4432535ebc8756f0b644e470c4e637d538dc0a6d2f33cc8b456c3f2c1257d30d3ffd054408970b3e10befd6aff0d4963e1c95e13744c99",
+      "render_template": "int <name> = <initializer>;"
+    },
+    {
+      "op_name": "c11:case",
+      "op_cid": "blake3-512:76e0dcf8c0f591cfa0eaac0addf37c3785230a8c134531c96250eba9de3c133abca61f044c58cbb7e11b24744928491a1e95642b7a4b5b541d79505e3e16a986",
+      "render_template": "case <value>: <body>"
+    },
+    {
+      "op_name": "c11:default",
+      "op_cid": "blake3-512:319e2bbd1cf2cf85dcd08ecde664972a83befc990375d47ae622a24a927cb79e4da7934d45cfb40402a0fcd9a4f48ca262c87fe68fedff5153c451d8b156adc4",
+      "render_template": "default: <body>"
+    },
+    {
+      "op_name": "c11:label",
+      "op_cid": "blake3-512:267398f175a32e44f33f3fcec4a81689c80affe8d88831e59ff17286fea38d2b7c8b32aeb18ebd98b133f8298959152ebb85f5f5830bad9c03f36320c89b8062",
+      "render_template": "<name>: <body>"
+    },
+    {
+      "op_name": "c11:goto",
+      "op_cid": "blake3-512:64c8cf86af35a25e1a388e710b53e007bfe2fca0615229cefd55d2ddf782f0819ff00c10d18e66e734ff43c0399b4dc35f4f28f76ee4d839f078b5f281999d63",
+      "render_template": "goto <target>;"
+    },
+    {
+      "op_name": "c11:do",
+      "op_cid": "blake3-512:eb17887f16d6264f8dcefd302bc94320b54978412407128c88ebba4c125e5eb1e6ba16b8aa57f4919ad1fbfab2595fd363e7be77ef8d82b23061bc9d1a02ff21",
+      "render_template": "do { <body> } while (<cond>);"
+    },
+    {
+      "op_name": "c11:cast",
+      "op_cid": "blake3-512:96e075c18c0be03322ec199e1b2501c98d355210f5920ab8c6e867771ed9ce28245481426728181f0f1504c56c94fcfebfbeb0b59e7e7fd37dc1375f2f55a98a",
+      "render_template": "((int)<value>)"
+    },
+    {
+      "op_name": "c11:array-subscript",
+      "op_cid": "blake3-512:7f024dbda459084cfb33c2563c1c5de4757e4abb9721a2ebf4073a33eacaf85b148a3c415f52d9ce6b5a94ae37ec6e609a7217eca124f738abfe9d701b059092",
+      "render_template": "<base>[<index>]"
+    },
+    {
+      "op_name": "c11:conditional",
+      "op_cid": "blake3-512:641b32b866cbbc19796036614ca4e4600ca00cf6ecfd0c461da59e37aa3d798e5c20794fe85a9907379a29143a5ed314172425b28f8cd3b89e44d5184759d566",
+      "render_template": "(<cond> ? <then_expr> : <else_expr>)"
+    },
+    {
+      "op_name": "c11:compound-literal",
+      "op_cid": "blake3-512:312a5249609aab8bcc22dc2d1371206ff9b5480aa6bd572200c13c2ad4952e304a220b634d047fa62fd1f2d65bf1923f1927e88a687f3ce8031470d32fb9a35d",
+      "render_template": "((int){<value>})"
+    },
+    {
+      "op_name": "c11:init-list",
+      "op_cid": "blake3-512:6133aad08ba77ca07cc767e6b8c79933366c8e6035e27031ebe6e47300c09a43242e4ede6b2aa91546669a14b21fef06443678fbcbcddea46d63c55360661527",
+      "render_template": "{<items...>}"
+    },
+    {
+      "op_name": "c11:string-literal",
+      "op_cid": "blake3-512:c046b297480acfc4666a840ea8bdc75d10611a029f782e4f45b84590e184fdc0ee0b0e4bdb744c05d4fb8100ce99dea1f6f940be8ec25801548f677d8043f34e",
+      "render_template": "\"provekit\""
+    },
+    {
+      "op_name": "c11:char-literal",
+      "op_cid": "blake3-512:73bc286f5ab6565014093e2b6249a1fca830ef62b04eb61246e806e7a57af59ede99005b88227ccd90f7d515d07ff39134c948c06362d0170a2dea4c612fe419",
+      "render_template": "'p'"
+    },
+    {
+      "op_name": "c11:float-literal",
+      "op_cid": "blake3-512:c624627cb15481230ad1e475d7330dc3c4261e5ac757e1f5d54ccdaccc3cb25e01cbb8696bffdc67e721f4f5679e8e09ae54b21dddcddaf37247ddb334250ce4",
+      "render_template": "1.5"
+    },
+    {
+      "op_name": "c11:imaginary-literal",
+      "op_cid": "blake3-512:f49dec04735ac1c96e75e9a2044c189f2ac742f319e10237e9b3f1247d89ffab046f07072556e4dd3f075ba4eac4a672510428a850469429dbd0f2b3e045b107",
+      "render_template": "1.0i"
+    },
+    {
+      "op_name": "c11:null",
+      "op_cid": "blake3-512:ca8576ee4e65552a2f82d55a82909100151c1bbb12d5c00d08119a68d1fb6ff730aad94f140fc9b2312a29c0b9dc2c51d01ef13d9e7c392c8ff7708805b19c3b",
+      "render_template": "0"
+    },
+    {
+      "op_name": "c11:generic-selection",
+      "op_cid": "blake3-512:88a06ccdbef31969de90f5cb4c58317aaf9b897f121861168a9654501300bbf7881435f379e8e66317f76a3f2bf4d76c15e04945b0f6d3ce7908c97ca92ad3c5",
+      "render_template": "_Generic(<control>, <associations...>)"
+    },
+    {
+      "op_name": "c11:stmt-expr",
+      "op_cid": "blake3-512:886f39c45ff932473099380820bd08a69ce197cc87ac94158e57b69ea41ee7da3955f916ff9321529406eda24d4e3fb15b972e433dc4be1783df5425bbc362a2",
+      "render_template": "({ <body> })"
+    },
+    {
+      "op_name": "c11:addr-label",
+      "op_cid": "blake3-512:c8a0a1404292e5dd6b50e7dd5cc096f96e5d97c7c0e8172eb86bf35d981d35b8ad06486d7f682e58e44db377eda89d2870d5c064b4580e87e13d682bec3cd0fa",
+      "render_template": "&&<label>"
+    },
+    {
+      "op_name": "c11:unexposed-stmt",
+      "op_cid": "blake3-512:8556d80b81d477ba120a22f5ccc19d4e86fd315225014d13f7ab9e1bb5073605d797dafed8737ff6defce7a476a3e6200b496437fb63f47f6f2fe718ad6905f1",
+      "render_template": "<children...>"
+    },
+    {
+      "op_name": "c11:unexposed-expr",
+      "op_cid": "blake3-512:00ebaaa10a5ad6e78779d3e4cd2f9795127453c478f5ed1e62c3ba3a85fc03cbb628079d912fec1b2bf22eefb045c022c8168eab49e3eecf169fb2ee313f9980",
+      "render_template": "<children...>"
+    },
+    {
+      "op_name": "c11:binary-operator",
+      "op_cid": "blake3-512:38bb352ecd5a3a553d26a625e2b33c5d2d88b72af5911bfb6a218df61a8f3f8cab91f08608a161ac192449548fdecbf47adf5bccd2d064b1eaf98b2b54a8fa93",
+      "render_template": "(<lhs> / <rhs>)"
+    },
+    {
+      "op_name": "c11:unary-operator",
+      "op_cid": "blake3-512:9a852e24983a9b2730da4273fd45859a566c4574b7dcd1083a20f08ce7ec6a8f8145d1053c6e1b0eb654a327e72caee6b071940c265c602a4e6c36e948f7ff62",
+      "render_template": "(~<value>)"
+    }
+  ],
   "cursor_kind_count": 292,
   "rows": [
     {
