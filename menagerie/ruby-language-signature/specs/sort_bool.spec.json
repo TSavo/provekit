@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "ruby:Bool",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Bool",
+    "description": "Ruby Bool term sort."
+  }
+}

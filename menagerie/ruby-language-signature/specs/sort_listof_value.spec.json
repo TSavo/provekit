@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "ruby:ListOfValue",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "ListOfValue",
+    "description": "Ruby ListOfValue term sort."
+  }
+}

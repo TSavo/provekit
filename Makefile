@@ -20,7 +20,7 @@
 # Per-language targets:
 #   make build-rust: cargo build --release for workspace + tools
 #   make build-cpp: vendored-blake3 clang++ build of the C++ orchestrator
-#   make test-rust / test-go / test-ts / test-csharp / test-python
+#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby
 #
 # Determinism:
 #   make ci is the local Linux-profile contract. If it's green, the non-Swift
@@ -103,7 +103,7 @@ help:
 	@echo "  make build-swift    swift build -c release"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c  test-swift"
+	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-ruby  test-java  test-c  test-swift"
 	@echo ""
 	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
 	@echo "  make prove-all      all 12 Linux kits (swift excluded: macOS-only)"
@@ -600,6 +600,10 @@ bug-zoo:
 python-language-signature:
 	python3 menagerie/python-language-signature/generate_assets.py --check
 
+.PHONY: ruby-language-signature
+ruby-language-signature:
+	python3 menagerie/ruby-language-signature/generate_assets.py --check
+
 .PHONY: menagerie-zig-language-signature
 menagerie-zig-language-signature:
 	python3 menagerie/zig-language-signature/generate_assets.py
@@ -644,6 +648,10 @@ test-python:
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
 		pytest
+
+.PHONY: test-ruby
+test-ruby: build-ruby ruby-language-signature
+	cd implementations/ruby && $(RUBY) -S bundle exec rake test
 
 .PHONY: test-java
 test-java: build-java
