@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:pre_inc",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "LValue",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "pre_inc",
+      "arity": [
+        "LValue"
+      ],
+      "result": "Expr",
+      "wp": "prefix increment expression yielding the updated value"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:6bb7eafa9f3595e2257fc5e34f538be37b4e74c7618db07900356562933dae58e55e89de6585f7a7a30435535da41db78da31df3e3bfe2811c46c3f1d59354b4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "FCr7k+Lq6Gxdi2vTfgphVjskMVZUFC1K9VHgCl6gGbihoDKyW7cSB9H6AsTK/7fDrPrG1yEt4/Z09QcLlLAJAw=="
+  }
+}

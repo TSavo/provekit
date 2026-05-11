@@ -289,6 +289,168 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
             },
         ),
         (
+            "div",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer division expression",
+            },
+        ),
+        (
+            "mod",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer remainder expression",
+            },
+        ),
+        (
+            "shl",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer left shift expression",
+            },
+        ),
+        (
+            "shr",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer right shift expression",
+            },
+        ),
+        (
+            "bit_and",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer bitwise and expression",
+            },
+        ),
+        (
+            "bit_or",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer bitwise or expression",
+            },
+        ),
+        (
+            "bit_xor",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Int",
+                "wp": "integer bitwise xor expression",
+            },
+        ),
+        (
+            "gt",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Bool",
+                "wp": "integer greater-than comparison",
+            },
+        ),
+        (
+            "ge",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Bool",
+                "wp": "integer greater-than-or-equal comparison",
+            },
+        ),
+        (
+            "ne",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Int", "Int"],
+                "return_sort": "Bool",
+                "wp": "integer not-equal comparison",
+            },
+        ),
+        (
+            "comma",
+            {
+                "formals": ["lhs", "rhs"],
+                "formal_sorts": ["Expr", "Expr"],
+                "return_sort": "Expr",
+                "wp": "comma expression evaluates lhs then yields rhs",
+            },
+        ),
+        (
+            "bit_not",
+            {
+                "formals": ["value"],
+                "formal_sorts": ["Int"],
+                "return_sort": "Int",
+                "wp": "integer bitwise complement expression",
+            },
+        ),
+        (
+            "addr_of",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Ptr",
+                "wp": "address-of expression yielding a pointer to target",
+            },
+        ),
+        (
+            "pre_inc",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "prefix increment expression yielding the updated value",
+            },
+        ),
+        (
+            "post_inc",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "postfix increment expression yielding the previous value",
+            },
+        ),
+        (
+            "pre_dec",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "prefix decrement expression yielding the updated value",
+            },
+        ),
+        (
+            "post_dec",
+            {
+                "formals": ["target"],
+                "formal_sorts": ["LValue"],
+                "return_sort": "Expr",
+                "wp": "postfix decrement expression yielding the previous value",
+            },
+        ),
+        (
+            "plus",
+            {
+                "formals": ["value"],
+                "formal_sorts": ["Int"],
+                "return_sort": "Int",
+                "wp": "unary plus expression preserving value",
+            },
+        ),
+        (
             "unexposed-stmt",
             {
                 "formals": ["children"],
@@ -349,24 +511,82 @@ LEAF_CURSOR_MAP = {
     "CXCursor_IntegerLiteral": ("const", 0, "term leaf; token text is the integer value"),
 }
 
+BINARY_OPERATOR_TOKENS: OrderedDict[str, str] = OrderedDict(
+    [
+        ("==", "eq"),
+        ("!=", "ne"),
+        ("&&", "and"),
+        ("||", "or"),
+        ("<=", "le"),
+        (">=", "ge"),
+        ("<<", "shl"),
+        (">>", "shr"),
+        ("<", "lt"),
+        (">", "gt"),
+        ("=", "assign"),
+        ("+", "add"),
+        ("-", "sub"),
+        ("*", "mul"),
+        ("/", "div"),
+        ("%", "mod"),
+        ("&", "bit_and"),
+        ("|", "bit_or"),
+        ("^", "bit_xor"),
+        (",", "comma"),
+    ]
+)
+
+COMPOUND_ASSIGN_OPERATOR_TOKENS: OrderedDict[str, str] = OrderedDict(
+    [
+        ("+=", "add"),
+        ("-=", "sub"),
+        ("*=", "mul"),
+        ("/=", "div"),
+        ("%=", "mod"),
+        ("<<=", "shl"),
+        (">>=", "shr"),
+        ("&=", "bit_and"),
+        ("|=", "bit_or"),
+        ("^=", "bit_xor"),
+    ]
+)
+
+UNARY_OPERATOR_TOKENS: OrderedDict[str, str] = OrderedDict(
+    [
+        ("-", "neg"),
+        ("!", "not"),
+        ("*", "deref"),
+        ("~", "bit_not"),
+        ("&", "addr_of"),
+        ("prefix ++", "pre_inc"),
+        ("postfix ++", "post_inc"),
+        ("prefix --", "pre_dec"),
+        ("postfix --", "post_dec"),
+        ("+", "plus"),
+    ]
+)
+
 DISPATCH_CURSOR_MAP = {
     "CXCursor_BinaryOperator": {
         "op_name": "operator-dispatch",
         "arity": 2,
-        "child_shape": "lhs, rhs; token text selects add/sub/mul/eq/lt/le/and/or/assign or fallback binary-operator",
-        "ops": ["add", "sub", "mul", "eq", "lt", "le", "and", "or", "assign", "binary-operator"],
+        "child_shape": "lhs, rhs; token text selects a concrete binary op or fallback binary-operator",
+        "token_ops": BINARY_OPERATOR_TOKENS,
+        "fallback": "binary-operator",
     },
     "CXCursor_CompoundAssignOperator": {
         "op_name": "operator-dispatch",
         "arity": 2,
-        "child_shape": "lhs, rhs; token text desugars to assign(lhs, op(lhs, rhs))",
-        "ops": ["assign", "add", "sub", "mul", "binary-operator"],
+        "child_shape": "lhs, rhs; token text desugars to assign(lhs, op(lhs, rhs)) or fallback binary-operator",
+        "token_ops": COMPOUND_ASSIGN_OPERATOR_TOKENS,
+        "fallback": "binary-operator",
     },
     "CXCursor_UnaryOperator": {
         "op_name": "operator-dispatch",
         "arity": 1,
-        "child_shape": "operand; token text selects neg/not/deref or fallback unary-operator",
-        "ops": ["neg", "not", "deref", "unary-operator"],
+        "child_shape": "operand; token text and prefix/postfix position select a concrete unary op or fallback unary-operator",
+        "token_ops": UNARY_OPERATOR_TOKENS,
+        "fallback": "unary-operator",
     },
 }
 
@@ -511,6 +731,19 @@ def parse_cursor_enum(index_h: Path) -> list[dict]:
     return entries
 
 
+def op_name_for_spec(spec: str) -> str:
+    path = SPECS / spec
+    if path.exists():
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            fn_name = value.get("fn_name", "")
+            if fn_name.startswith("c11:"):
+                return fn_name.removeprefix("c11:")
+        except (OSError, json.JSONDecodeError):
+            pass
+    return spec.removeprefix("op_").removesuffix(".spec.json").replace("_", "-")
+
+
 def cids_by_op() -> tuple[dict[str, str], str | None, list[dict]]:
     entries = []
     cids_path = SIG / "cids.tsv"
@@ -537,8 +770,7 @@ def cids_by_op() -> tuple[dict[str, str], str | None, list[dict]]:
         if not cid:
             continue
         if spec.startswith("op_") and spec.endswith(".spec.json"):
-            name = spec.removeprefix("op_").removesuffix(".spec.json").replace("_", "-")
-            op_cids[name] = cid
+            op_cids[op_name_for_spec(spec)] = cid
         elif spec == "language_signature_c11.spec.json":
             signature_cid = cid
         elif spec.startswith("eff_op_") and spec.endswith(".spec.json"):
@@ -702,7 +934,20 @@ def classify_entry(entry: dict, op_cids: dict[str, str]) -> dict:
         )
     elif name in DISPATCH_CURSOR_MAP:
         cfg = DISPATCH_CURSOR_MAP[name]
-        dispatch = {op: op_cids.get(op) for op in cfg["ops"]}
+        dispatch = {
+            "tokens": [
+                {
+                    "token": token,
+                    "op_name": f"c11:{op}",
+                    "op_cid": op_cids.get(op),
+                }
+                for token, op in cfg["token_ops"].items()
+            ],
+            "fallback": {
+                "op_name": f"c11:{cfg['fallback']}",
+                "op_cid": op_cids.get(cfg["fallback"]),
+            },
+        }
         row.update(
             {
                 "op_name": cfg["op_name"],
@@ -883,13 +1128,31 @@ def generated_c_source(mapping: dict, op_cids: dict[str, str]) -> str:
         "assign",
         "neg",
         "deref",
+        "div",
+        "mod",
+        "shl",
+        "shr",
+        "bit_and",
+        "bit_or",
+        "bit_xor",
+        "gt",
+        "ge",
+        "ne",
+        "comma",
+        "bit_not",
+        "addr_of",
+        "pre_inc",
+        "post_inc",
+        "pre_dec",
+        "post_dec",
+        "plus",
         "decl",
         "case",
         "default",
     }
     all_ops = OrderedDict()
     for spec in CORE_OPS:
-        name = spec.removeprefix("op_").removesuffix(".spec.json").replace("_", "-")
+        name = op_name_for_spec(spec)
         all_ops[name] = op_cids.get(name)
     for name in MINTED_OPS:
         all_ops[name] = op_cids.get(name)
@@ -939,7 +1202,8 @@ def generated_readme(signature_cid: str | None) -> str:
         if spec_path.exists():
             value = json.loads(spec_path.read_text(encoding="utf-8"))
         elif spec.startswith("op_") and spec.endswith(".spec.json"):
-            op_name = spec.removeprefix("op_").removesuffix(".spec.json").replace("_", "-")
+            matches = [name for name in MINTED_OPS if spec_filename_for_op(name) == spec]
+            op_name = matches[0] if matches else spec.removeprefix("op_").removesuffix(".spec.json").replace("_", "-")
             value = algorithm_spec(op_name, MINTED_OPS[op_name])
         else:
             continue

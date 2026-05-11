@@ -90,6 +90,93 @@ check_example foo
 check_example add
 check_example g
 
+operator_src="$TMP_DIR/operator_ops.c"
+operator_term="$TMP_DIR/operator_ops.term.json"
+cat > "$operator_src" <<'C'
+static int operator_ops(int a, int b, int *p) {
+    int x = a / b;
+    x = x % b;
+    x = x << 1;
+    x = x >> 1;
+    x = x & b;
+    x = x | b;
+    x = x ^ b;
+    if (x > b)
+        x = x + 1;
+    if (x >= b)
+        x = x + 1;
+    if (x != b)
+        x = x + 1;
+    x = ~x;
+    x = +x;
+    x = *p;
+    int *q = &x;
+    ++x;
+    x++;
+    --x;
+    x--;
+    x += b;
+    x /= b;
+    x %= b;
+    x <<= 1;
+    x >>= 1;
+    x &= b;
+    x |= b;
+    x ^= b;
+    return x + *q;
+}
+C
+
+"$BIN" "$operator_src" --function operator_ops --term > "$operator_term"
+
+python3 - "$operator_term" <<'PY'
+import json
+import sys
+
+term = json.load(open(sys.argv[1]))["term"]
+names = set()
+
+def walk(node):
+    if isinstance(node, dict):
+        if node.get("kind") == "op":
+            names.add(node.get("name"))
+        for value in node.values():
+            walk(value)
+    elif isinstance(node, list):
+        for item in node:
+            walk(item)
+
+walk(term)
+expected = {
+    "div",
+    "mod",
+    "shl",
+    "shr",
+    "bit_and",
+    "bit_or",
+    "bit_xor",
+    "gt",
+    "ge",
+    "ne",
+    "bit_not",
+    "addr_of",
+    "pre_inc",
+    "post_inc",
+    "pre_dec",
+    "post_dec",
+    "plus",
+}
+missing = sorted(expected - names)
+fallbacks = sorted({"binary-operator", "unary-operator"} & names)
+if missing or fallbacks:
+    raise SystemExit(
+        "FAIL: missing concrete operator ops: "
+        + ",".join(missing)
+        + "; fallback ops present: "
+        + ",".join(fallbacks)
+    )
+PY
+
 python3 - "$EXAMPLE_DIR/g.term.json" <<'PY'
 import json
 import sys
