@@ -1,0 +1,76 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:ite",
+    "formals": [
+      "cond",
+      "then_expr",
+      "else_expr"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "ite",
+      "arity": [
+        "Bool",
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "cond ? then_expr : else_expr (if-then-else expression)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "cond"
+          },
+          {
+            "name": "then_expr"
+          },
+          {
+            "name": "else_expr"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:a9940f225e12ccad73343382113c3d7533856a89739c41c67eb0b3442dd8f0b935d722e36c2ca8a6e3538f245b8a300402faf12d1ff646ea9c9e273aa35acae4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "w3yOgDsHT4fBauTZuZ7+KQTKkaoD+0Z8UFZaZF+6Tb0VnefU0jhfeuyJwEYKcq4/MbRwhvn4Hj/MO+8DT1zZDA=="
+  }
+}

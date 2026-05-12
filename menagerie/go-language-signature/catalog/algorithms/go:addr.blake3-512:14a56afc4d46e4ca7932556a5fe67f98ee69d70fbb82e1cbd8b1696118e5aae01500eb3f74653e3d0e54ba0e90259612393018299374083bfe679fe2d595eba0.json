@@ -1,0 +1,57 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:addr",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:addr",
+      "arity": [
+        "Term"
+      ],
+      "result": "Term",
+      "wp": "address-of expression",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target",
+            "slot_sort": "Term"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:14a56afc4d46e4ca7932556a5fe67f98ee69d70fbb82e1cbd8b1696118e5aae01500eb3f74653e3d0e54ba0e90259612393018299374083bfe679fe2d595eba0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "qol1HLfWi3Ln/b2pXg4Nr7ilXsHD0f8g9WNVRzGDTktcQPpl3+dLY2me5O2VceLfYzjQE40Nvv0L1OBjs07ZCQ=="
+  }
+}

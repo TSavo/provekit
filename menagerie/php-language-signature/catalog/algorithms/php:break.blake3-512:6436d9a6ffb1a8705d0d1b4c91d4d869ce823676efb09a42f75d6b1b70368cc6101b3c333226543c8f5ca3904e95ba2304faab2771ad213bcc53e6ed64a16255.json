@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:break",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "break",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Stmt",
+      "wp": "break out of loop",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:6436d9a6ffb1a8705d0d1b4c91d4d869ce823676efb09a42f75d6b1b70368cc6101b3c333226543c8f5ca3904e95ba2304faab2771ad213bcc53e6ed64a16255",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "mvHCQoBBxohsloFRvS8PVG8h8h+va/501VU0XFycSBJaGqtpqbg4HLgv7AvvE0B4152R6aJprYoUqxZp6p2oDg=="
+  }
+}

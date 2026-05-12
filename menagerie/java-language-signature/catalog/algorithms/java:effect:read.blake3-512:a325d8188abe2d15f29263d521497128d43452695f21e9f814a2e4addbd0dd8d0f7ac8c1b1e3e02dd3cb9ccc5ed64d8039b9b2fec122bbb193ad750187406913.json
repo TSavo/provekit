@@ -1,0 +1,62 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "java:effect:read",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "read-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "canonical reads effect target",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target",
+            "slot_sort": "literal"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemRead"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/java-language-signature/README.md"
+  },
+  "cid": "blake3-512:a325d8188abe2d15f29263d521497128d43452695f21e9f814a2e4addbd0dd8d0f7ac8c1b1e3e02dd3cb9ccc5ed64d8039b9b2fec122bbb193ad750187406913",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "6GTF1ciPbVHz3Yj3De46yHROT9GNlE+kuGlA+p0+GXfnWRzPAITQdjN3WZVReJ+qtHv76ckuwiDkr81R4Z2FBQ=="
+  }
+}

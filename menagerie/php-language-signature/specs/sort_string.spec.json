@@ -1,7 +1,14 @@
 {
-    "kind": "sort",
-    "fn_name": "php:sort:string",
-    "version": "0.1.0-draft",
+  "kind": "sort",
+  "fn_name": "php:String",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
     "name": "String",
-    "locus": "menagerie/php-language-signature/README.md#sorts"
+    "description": "PHP string values."
+  }
 }

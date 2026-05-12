@@ -1,0 +1,71 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:div",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "not_zero",
+      "args": [
+        {
+          "kind": "var",
+          "name": "rhs"
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "div",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "integer division truncating toward zero (C# behavior)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:52c8965d0e6c6887c50f07afdf2bb7f0891997c4e25b0f6a9235848100a746b1b6d1abb9296abdb635550696e7cf27ba8283f388ed81f21e93956467f75f5802",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "D6G2ncKaH3Ckaak8jWFWJwi3yl1DQLg3WNHtddtzkZrY0QyxjOy/DZwbhtueehFUws+YX5khHbepwW8NcKC+Cw=="
+  }
+}

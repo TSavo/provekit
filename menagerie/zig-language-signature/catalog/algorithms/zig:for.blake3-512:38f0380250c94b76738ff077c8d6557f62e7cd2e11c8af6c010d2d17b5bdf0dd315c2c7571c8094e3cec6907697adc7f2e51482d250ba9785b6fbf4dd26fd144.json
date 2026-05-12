@@ -1,0 +1,71 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "zig:for",
+    "formals": [
+      "iterable",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "for",
+      "arity": [
+        "Expr",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "opaque for loop requiring an invariant memento keyed by loopCid",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "iterable"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "OpaqueLoop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:38f0380250c94b76738ff077c8d6557f62e7cd2e11c8af6c010d2d17b5bdf0dd315c2c7571c8094e3cec6907697adc7f2e51482d250ba9785b6fbf4dd26fd144",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "dlckNlRqDsevoiSMC0JGRmT6kY7zIq1OkheHg3utixb+6HFDkmNu3QKscJcQO9Jj0etX2W3DScOmX6rozY93Dg=="
+  }
+}

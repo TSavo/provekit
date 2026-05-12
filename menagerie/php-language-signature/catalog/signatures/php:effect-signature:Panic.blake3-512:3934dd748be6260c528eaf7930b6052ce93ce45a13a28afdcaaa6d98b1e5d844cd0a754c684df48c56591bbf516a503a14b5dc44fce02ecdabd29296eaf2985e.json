@@ -1,0 +1,38 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EffectSignatureMemento",
+    "fn_name": "php:effect-signature:Panic",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "sorts": [
+        "blake3-512:7381b540984edab196a73b73cfbea0e1a45d518b1a9187bb29cad742cccca1c3b18b4db3665dae3542c11065691cbc38d466602b535ce87506d916ea92a851c7"
+      ],
+      "operations": [],
+      "equations": [],
+      "effect_signatures": []
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "EffectSignature",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:3934dd748be6260c528eaf7930b6052ce93ce45a13a28afdcaaa6d98b1e5d844cd0a754c684df48c56591bbf516a503a14b5dc44fce02ecdabd29296eaf2985e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "0pgFEREWIwPxpmNMcoRP9+sXTM411Ec+Z4aUvFmEQW57LmUy1AkDWFjGKIyMUMwa4nAOVUWgh8tr4b/FTRWJAA=="
+  }
+}

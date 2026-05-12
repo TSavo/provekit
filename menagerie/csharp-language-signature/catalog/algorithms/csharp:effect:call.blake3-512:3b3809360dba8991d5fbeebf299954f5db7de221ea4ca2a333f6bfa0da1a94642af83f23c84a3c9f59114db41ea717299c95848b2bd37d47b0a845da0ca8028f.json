@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:effect:call",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "call-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "note that a call to target occurred"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Call"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:3b3809360dba8991d5fbeebf299954f5db7de221ea4ca2a333f6bfa0da1a94642af83f23c84a3c9f59114db41ea717299c95848b2bd37d47b0a845da0ca8028f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "qGfr4htVI+3GnrC7ml1pLVr5bzAzPtbZmY/t4hjHv3iA3oiZERuFTbIxc4H5cFzp/MHD+wvFMOK8n0/v/P4SDA=="
+  }
+}

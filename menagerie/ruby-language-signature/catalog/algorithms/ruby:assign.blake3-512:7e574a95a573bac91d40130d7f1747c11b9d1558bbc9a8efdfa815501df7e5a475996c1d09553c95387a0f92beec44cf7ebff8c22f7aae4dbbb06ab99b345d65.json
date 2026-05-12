@@ -1,0 +1,71 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ruby:assign",
+    "formals": [
+      "target",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "assign",
+      "arity": [
+        "Value",
+        "Value"
+      ],
+      "result": "Stmt",
+      "wp": "store value in target",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target"
+          },
+          {
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Writes"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/ruby-language-signature/README.md"
+  },
+  "cid": "blake3-512:7e574a95a573bac91d40130d7f1747c11b9d1558bbc9a8efdfa815501df7e5a475996c1d09553c95387a0f92beec44cf7ebff8c22f7aae4dbbb06ab99b345d65",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "LdME2+GvbCs1SmicVg/42Ig/jMhWyEFeHvhn+6/v+Uyh04ItRdXOU1+z1azrdm4MCKeqsuuC2Y0pn6QyxhvBBg=="
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "zig:panic",
+    "formals": [
+      "reason"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Reason",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "panic",
+      "arity": [
+        "Reason"
+      ],
+      "result": "Bottom",
+      "wp": "controlled @panic divergence",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "reason"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Panic"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bottom",
+      "args": []
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:3de01f87a37636103e33944957b3b0d355b1a2e071e58bbe378059b2ea3c48c98e361f73251e0b8ef603685788154bbaaecdf02afd0d693f09313c87abbce6c5",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "gDHTMah8jVNbVJJIoMqoLyOYLkHc+5+wFQv3+gXdT2U2mrIjdACaZc6XMRiEV2NgiPwkbRSyMw7iD40XPlEeDw=="
+  }
+}

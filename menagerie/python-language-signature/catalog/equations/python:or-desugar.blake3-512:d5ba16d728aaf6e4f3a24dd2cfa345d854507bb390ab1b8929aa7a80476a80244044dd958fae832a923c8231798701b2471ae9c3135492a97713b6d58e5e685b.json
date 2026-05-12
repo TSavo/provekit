@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "python:or-desugar",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      "blake3-512:6ae3c18305c16a1407ab86d793f5ee8038f42d808356279ba9a5b72c982b821dbb4c573d6d7034776f4464fd31a85f67743eac875f9d329b7c9c420290b720d8",
+      "blake3-512:6ae3c18305c16a1407ab86d793f5ee8038f42d808356279ba9a5b72c982b821dbb4c573d6d7034776f4464fd31a85f67743eac875f9d329b7c9c420290b720d8"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "python:or",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:ite-bool",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "const",
+            "value": true,
+            "sort": {
+              "kind": "ctor",
+              "name": "Bool",
+              "args": []
+            }
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:d5ba16d728aaf6e4f3a24dd2cfa345d854507bb390ab1b8929aa7a80476a80244044dd958fae832a923c8231798701b2471ae9c3135492a97713b6d58e5e685b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "FlY2B2o+dJUpFTWxOg5CL99/LS9qB6TRwUZc+XctjanWXNImFFci/OKmsa2EV4n568cSi9CCzI3cKJi/B/ggBw=="
+  }
+}

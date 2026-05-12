@@ -1,0 +1,61 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ts:effect:opaque-loop",
+    "formals": [
+      "loopCid"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "opaque-loop-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "record an opaque loop keyed by its lifted sub-IR CID",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "loopCid"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Loop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#effects"
+  },
+  "cid": "blake3-512:ec61fdef43638c131712bee545dc158b1235985978c4367fb61e40adc8a1f0561f42d06d92a5681402780187f3a2b4b33809a161b872d1bdcdd444a31efa7ed6",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "wFV4q28Lg9RP1ndvyAhP6AbxdwYdzYYASFg449mHTkpvoDMWaB5whVfU9d9ybkGJvNrBmp4oQGOP7q9rV4PTDA=="
+  }
+}

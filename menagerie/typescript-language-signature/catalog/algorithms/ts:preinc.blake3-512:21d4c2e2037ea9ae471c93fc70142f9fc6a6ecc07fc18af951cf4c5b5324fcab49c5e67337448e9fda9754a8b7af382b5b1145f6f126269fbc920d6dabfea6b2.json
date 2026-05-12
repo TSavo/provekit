@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ts:preinc",
+    "formals": [
+      "operand"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "preinc",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Expr",
+      "wp": "TypeScript unary operator ++x",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "operand"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:21d4c2e2037ea9ae471c93fc70142f9fc6a6ecc07fc18af951cf4c5b5324fcab49c5e67337448e9fda9754a8b7af382b5b1145f6f126269fbc920d6dabfea6b2",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "vjAfTyosfeysMXPGG/EbD1hOpOr7h4ZAQ96xXYRriYwJwjpB2xqkkOMd68P/vZy+QE08zD/IYU/rTmNNPT34DA=="
+  }
+}

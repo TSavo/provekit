@@ -1,7 +1,10 @@
 {
-    "kind": "effect-signature",
-    "fn_name": "php:effect-signature:opaque_loop",
-    "version": "0.1.0-draft",
-    "name": "Loop",
-    "locus": "menagerie/php-language-signature/README.md#effects"
+  "kind": "effect_signature",
+  "fn_name": "php:effect-signature:OpaqueLoop",
+  "sorts": [
+    "sort_unit.spec.json"
+  ],
+  "operations": [],
+  "equations": [],
+  "effect_signatures": []
 }

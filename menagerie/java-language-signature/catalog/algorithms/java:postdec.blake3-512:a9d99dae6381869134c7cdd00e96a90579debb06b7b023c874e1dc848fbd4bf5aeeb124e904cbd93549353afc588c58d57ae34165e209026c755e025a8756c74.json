@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "java:postdec",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "postdec",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Expr",
+      "wp": "post-- value",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/java-language-signature/README.md"
+  },
+  "cid": "blake3-512:a9d99dae6381869134c7cdd00e96a90579debb06b7b023c874e1dc848fbd4bf5aeeb124e904cbd93549353afc588c58d57ae34165e209026c755e025a8756c74",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "3Wy8sKPskk5GQYJvZ2CAEe/VxdUeuN5n4ZlY/0191S5aTZ2I0Xo9sw32E4T6rZALyjy5acvzqJ5xhHQvymMICg=="
+  }
+}

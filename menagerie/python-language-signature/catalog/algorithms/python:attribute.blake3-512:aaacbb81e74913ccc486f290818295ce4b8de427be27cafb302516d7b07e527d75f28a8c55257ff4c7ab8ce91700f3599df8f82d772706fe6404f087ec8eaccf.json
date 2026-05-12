@@ -1,0 +1,73 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "python:attribute",
+    "formals": [
+      "object",
+      "field"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "attribute",
+      "arity": [
+        "Value",
+        "String"
+      ],
+      "result": "Value",
+      "wp": "attribute projection",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "object"
+          },
+          {
+            "name": "field",
+            "evaluation": "unevaluated",
+            "slot_sort": "literal"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Read"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/python-language-signature/README.md"
+  },
+  "cid": "blake3-512:aaacbb81e74913ccc486f290818295ce4b8de427be27cafb302516d7b07e527d75f28a8c55257ff4c7ab8ce91700f3599df8f82d772706fe6404f087ec8eaccf",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "r/QKNmBnCAu+KuCiGAPuzO81HsuvqDTxiEvHxq1tgBrtqBbI/9x3Ssf3kGume8ZtKGV5GMX+8kp3F842R+b1BQ=="
+  }
+}

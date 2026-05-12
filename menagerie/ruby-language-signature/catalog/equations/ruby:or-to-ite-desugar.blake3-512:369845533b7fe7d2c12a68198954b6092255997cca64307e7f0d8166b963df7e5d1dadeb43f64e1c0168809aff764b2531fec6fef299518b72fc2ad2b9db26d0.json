@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "ruby:or-to-ite-desugar",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      "blake3-512:24ab0e7056f4e1dba12b6e0a19592f6adbebad55535ee644f408aa28361d095c64821c72d7ee284340245278c6d521df36a4e4b6e9ccaf07bbfa2348679a933b",
+      "blake3-512:24ab0e7056f4e1dba12b6e0a19592f6adbebad55535ee644f408aa28361d095c64821c72d7ee284340245278c6d521df36a4e4b6e9ccaf07bbfa2348679a933b"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "ruby:or",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "ruby:ternary",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "const",
+            "value": true,
+            "sort": {
+              "kind": "ctor",
+              "name": "Bool",
+              "args": []
+            }
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:369845533b7fe7d2c12a68198954b6092255997cca64307e7f0d8166b963df7e5d1dadeb43f64e1c0168809aff764b2531fec6fef299518b72fc2ad2b9db26d0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "bfcC6/dPRBkAJH4zWv5J7jIoLaGI3H3SVoZUBL3wk+PC+UwsygSEeD+1MAHMQnOQKnER09nAESt12EbaCSMPCQ=="
+  }
+}

@@ -1,7 +1,14 @@
 {
-    "kind": "sort",
-    "fn_name": "php:sort:int",
-    "version": "0.1.0-draft",
+  "kind": "sort",
+  "fn_name": "php:Int",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
     "name": "Int",
-    "locus": "menagerie/php-language-signature/README.md#sorts"
+    "description": "PHP integer values."
+  }
 }

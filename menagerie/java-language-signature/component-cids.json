@@ -1,0 +1,440 @@
+[
+  {
+    "kind": "sort",
+    "spec": "sort_bool.spec.json",
+    "cid": "blake3-512:12587740bd90feaaf63c7cfc9780fd523a1cf0b8c821366eb305b294f2c2777a4bbd0bdcbc77fc890e1087f3b088c2f4dace18d1d0434e26efa6fb54e91fd899",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Bool.blake3-512:12587740bd90feaaf63c7cfc9780fd523a1cf0b8c821366eb305b294f2c2777a4bbd0bdcbc77fc890e1087f3b088c2f4dace18d1d0434e26efa6fb54e91fd899.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_expr.spec.json",
+    "cid": "blake3-512:f8095b6d5a869c98d06607ef5d938a339785ddbca99a8f92edd249f1824fedbef32ff48e0e06d7a861ee06ea1f3c14b089032119f6bd1a7e6677023c63b4f19e",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Expr.blake3-512:f8095b6d5a869c98d06607ef5d938a339785ddbca99a8f92edd249f1824fedbef32ff48e0e06d7a861ee06ea1f3c14b089032119f6bd1a7e6677023c63b4f19e.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_int.spec.json",
+    "cid": "blake3-512:5545316c2dc20b5b83318900c3aaa819fb25706314f9355cfc000be623039b507590ba52fee0dd0b102b0d0fcc33ddd46f8c0a3363e9e88c750d1cf044b202c5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Int.blake3-512:5545316c2dc20b5b83318900c3aaa819fb25706314f9355cfc000be623039b507590ba52fee0dd0b102b0d0fcc33ddd46f8c0a3363e9e88c750d1cf044b202c5.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_real.spec.json",
+    "cid": "blake3-512:484a52211f7da78267052614488f602dd5cb2ea30b1819a33ac00a36903a1ca76ef5868bfa24ec2779effca022f55da40ac23c8186cd9b57f59bed4aedcab1c5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Real.blake3-512:484a52211f7da78267052614488f602dd5cb2ea30b1819a33ac00a36903a1ca76ef5868bfa24ec2779effca022f55da40ac23c8186cd9b57f59bed4aedcab1c5.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_ref.spec.json",
+    "cid": "blake3-512:ce36d6b03f5bf92d45f2859c37fb3ef5caafe17cbc7a85659ecac8c6622b307e42f068a5782a92a6de1b4161e8876462677ea332067f5313e62277c84ec327d2",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Ref.blake3-512:ce36d6b03f5bf92d45f2859c37fb3ef5caafe17cbc7a85659ecac8c6622b307e42f068a5782a92a6de1b4161e8876462677ea332067f5313e62277c84ec327d2.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_stmt.spec.json",
+    "cid": "blake3-512:4430b6d5f65cfdc34b50ad62c37cc350642e3a48f2271033de081a2fee0ab9678dc6b58adfb56a5834d2b3ac3b4644aa19d1214b493637f887a6f22968a3639e",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Stmt.blake3-512:4430b6d5f65cfdc34b50ad62c37cc350642e3a48f2271033de081a2fee0ab9678dc6b58adfb56a5834d2b3ac3b4644aa19d1214b493637f887a6f22968a3639e.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_string.spec.json",
+    "cid": "blake3-512:fb05268e26b1d858902e9325769fa18a703a7445f631d05fc88e20f011535b468c1afbddcebd97843f82502f831f87c8a5747746dc0f4840e5d2607f8032273f",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:String.blake3-512:fb05268e26b1d858902e9325769fa18a703a7445f631d05fc88e20f011535b468c1afbddcebd97843f82502f831f87c8a5747746dc0f4840e5d2607f8032273f.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_unit.spec.json",
+    "cid": "blake3-512:98abe42db8d815357e8736229133ab10e927a57860b7ad5ded5c7dc7dbfe1e532d6f47c9f852b8c8642d7f81ae5d195111b868a5c21fef8fd7f89a88f7f00e8d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/sorts/java:Unit.blake3-512:98abe42db8d815357e8736229133ab10e927a57860b7ad5ded5c7dc7dbfe1e532d6f47c9f852b8c8642d7f81ae5d195111b868a5c21fef8fd7f89a88f7f00e8d.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_add.spec.json",
+    "cid": "blake3-512:d583779e2ea701ef09bc3c91dc3477f1f80a631ff5feed0797e361da7c5eb36392f3469f065f9d28371cb66affd0c7db5d249b37ad568bc414ee86c0b41fa4f3",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:add.blake3-512:d583779e2ea701ef09bc3c91dc3477f1f80a631ff5feed0797e361da7c5eb36392f3469f065f9d28371cb66affd0c7db5d249b37ad568bc414ee86c0b41fa4f3.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_and.spec.json",
+    "cid": "blake3-512:1f182cdfe555ff984b10833304307fca3e30e8bd74b102eb78bf4e360d75196066eca4ae534289642c9e84954c98f45b9621b48349fc005eb453a771d8042fa5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:and.blake3-512:1f182cdfe555ff984b10833304307fca3e30e8bd74b102eb78bf4e360d75196066eca4ae534289642c9e84954c98f45b9621b48349fc005eb453a771d8042fa5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_assign.spec.json",
+    "cid": "blake3-512:74be5f1f15206f4c9d06ebe1b415c5924d665bdd595a79a8e2687740d7816b0fd7020b51641c5b1638c36afdea0f9a6a3fae2daf47b7e9ba57ca50f462bdc5e5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:assign.blake3-512:74be5f1f15206f4c9d06ebe1b415c5924d665bdd595a79a8e2687740d7816b0fd7020b51641c5b1638c36afdea0f9a6a3fae2daf47b7e9ba57ca50f462bdc5e5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitand.spec.json",
+    "cid": "blake3-512:a4e89492c55aa3f73c95c5b99154c9d73c3be48be5a8edfcd0eb662f0f1c27fcf49cf2e0c59c7c7c261bcd59038d8e67df97313a0fbdf8d82c894208a3875463",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:bitand.blake3-512:a4e89492c55aa3f73c95c5b99154c9d73c3be48be5a8edfcd0eb662f0f1c27fcf49cf2e0c59c7c7c261bcd59038d8e67df97313a0fbdf8d82c894208a3875463.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitnot.spec.json",
+    "cid": "blake3-512:5500f594661a617745338106e1c3a4b9b51e54154403d3d8653b119eb8303f5607d94ac658448b6c9b899006bf865560e3140fa3368bc2d8d6c0dd6a7a77168e",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:bitnot.blake3-512:5500f594661a617745338106e1c3a4b9b51e54154403d3d8653b119eb8303f5607d94ac658448b6c9b899006bf865560e3140fa3368bc2d8d6c0dd6a7a77168e.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitor.spec.json",
+    "cid": "blake3-512:96a8db6faa5de8e452f83707ea0f37536e35e85f61e714e6d9d151a0e4032b76659aa0f1bf4aca745ebcfcf7f71da06e48fa94ed0d53c2f1c8054897ebf6a2f1",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:bitor.blake3-512:96a8db6faa5de8e452f83707ea0f37536e35e85f61e714e6d9d151a0e4032b76659aa0f1bf4aca745ebcfcf7f71da06e48fa94ed0d53c2f1c8054897ebf6a2f1.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitxor.spec.json",
+    "cid": "blake3-512:6bb769d376bcb586977cabfd0c32a87119fe77c2f0d8165818b4849062a6cd4bd964061a6da9845520d4c2d6dc5db1710054c2948aad43dbde518f2f353c3e95",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:bitxor.blake3-512:6bb769d376bcb586977cabfd0c32a87119fe77c2f0d8165818b4849062a6cd4bd964061a6da9845520d4c2d6dc5db1710054c2948aad43dbde518f2f353c3e95.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_break.spec.json",
+    "cid": "blake3-512:ceddeadb11907a7d5752ae2caa1d4bef82acd8689285a3a4cff84ab211bfaf52807184b4d4ac2a82cb92eb38b1878c9d6c8305edb432a047a48187be33f2c857",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:break.blake3-512:ceddeadb11907a7d5752ae2caa1d4bef82acd8689285a3a4cff84ab211bfaf52807184b4d4ac2a82cb92eb38b1878c9d6c8305edb432a047a48187be33f2c857.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_call.spec.json",
+    "cid": "blake3-512:7338aea900cc11fb71d99d7d35089e1816577f8655b5a7ec81687e54352f19701078b14208c50be61bf57847a06c23ca40b30a4a5ff90b11b06f569dab96a33c",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:call.blake3-512:7338aea900cc11fb71d99d7d35089e1816577f8655b5a7ec81687e54352f19701078b14208c50be61bf57847a06c23ca40b30a4a5ff90b11b06f569dab96a33c.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_cast.spec.json",
+    "cid": "blake3-512:d19de89187e42a5e776873e59c41bc77690cbfd77b63faf43c3ab29ae2e85fe47f81653a8e019570f07abaf61541abb94c735ad24ebaa4a036d7342d15261fc3",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:cast.blake3-512:d19de89187e42a5e776873e59c41bc77690cbfd77b63faf43c3ab29ae2e85fe47f81653a8e019570f07abaf61541abb94c735ad24ebaa4a036d7342d15261fc3.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_continue.spec.json",
+    "cid": "blake3-512:c288c71f31b8315027b7ecfde5bcaca3f5b9fda3fcacd62afbe58454f30a87ad4e3d3ae3702beba823bffdfb41efdf01ffb7ffb1e6cfdfbab2398cb80902fcd4",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:continue.blake3-512:c288c71f31b8315027b7ecfde5bcaca3f5b9fda3fcacd62afbe58454f30a87ad4e3d3ae3702beba823bffdfb41efdf01ffb7ffb1e6cfdfbab2398cb80902fcd4.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_decl.spec.json",
+    "cid": "blake3-512:7cf5c6d74d3e9a13696f712350112262e29fde83eade35b09f25abdc4c6538aa47139ae38d991fe75f8f91e14fd045bd0829e97e0150166010ca801777e473b9",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:decl.blake3-512:7cf5c6d74d3e9a13696f712350112262e29fde83eade35b09f25abdc4c6538aa47139ae38d991fe75f8f91e14fd045bd0829e97e0150166010ca801777e473b9.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_div.spec.json",
+    "cid": "blake3-512:4b2d12483a22e472d8bc52d0e08e16a9fb0589dbb6252716c4f48697be0e5d448f4fd33ffd48d586f2bd998885436e1bbe9d4dcfa3cbe15892f8e4099545dfcb",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:div.blake3-512:4b2d12483a22e472d8bc52d0e08e16a9fb0589dbb6252716c4f48697be0e5d448f4fd33ffd48d586f2bd998885436e1bbe9d4dcfa3cbe15892f8e4099545dfcb.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_do.spec.json",
+    "cid": "blake3-512:ddb2462d2be537adce415c3ac2da9ebdfd77911e83d115dfd1d878b0a0db703bca9bf0918b27379e99f7612c04355b36f120e9a93ecd685f6acabf6874b13b8c",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:do.blake3-512:ddb2462d2be537adce415c3ac2da9ebdfd77911e83d115dfd1d878b0a0db703bca9bf0918b27379e99f7612c04355b36f120e9a93ecd685f6acabf6874b13b8c.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_eq.spec.json",
+    "cid": "blake3-512:63f388ef8803c32aebb9e7e1cc9bd9c0762db99d0121b4e91fb8c135f6c3628779c59b264510a6238681c5cbb6d368e73eb2894a9611205f403ea3fff6f16cc0",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:eq.blake3-512:63f388ef8803c32aebb9e7e1cc9bd9c0762db99d0121b4e91fb8c135f6c3628779c59b264510a6238681c5cbb6d368e73eb2894a9611205f403ea3fff6f16cc0.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_for.spec.json",
+    "cid": "blake3-512:234117d9ceeb84345126d554cc010a515b896f304a9ca0568b5449eccbbe587163e0d026c6e3f9327a4f85bc3464dbf3f048fc86a0e61fd91910b68b92d717dc",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:for.blake3-512:234117d9ceeb84345126d554cc010a515b896f304a9ca0568b5449eccbbe587163e0d026c6e3f9327a4f85bc3464dbf3f048fc86a0e61fd91910b68b92d717dc.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_foreach.spec.json",
+    "cid": "blake3-512:94eb4e7eb49613cbf11442c7fc1d174fa97811052ea22e3b51f2ed2f38fcffe6d55ef1e79a60e813b58d8e1f26bc2a713c602313a6f3ecf141d158d1fa7b7077",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:foreach.blake3-512:94eb4e7eb49613cbf11442c7fc1d174fa97811052ea22e3b51f2ed2f38fcffe6d55ef1e79a60e813b58d8e1f26bc2a713c602313a6f3ecf141d158d1fa7b7077.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_ge.spec.json",
+    "cid": "blake3-512:0ea13dd2e1a3c71084ec1ff771ab0fd742ba6dc469665bebee9cefc9e99a34283480de407835f2974e16c8c434355f973b094bc825cffacc2b86a3cc756d5efd",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:ge.blake3-512:0ea13dd2e1a3c71084ec1ff771ab0fd742ba6dc469665bebee9cefc9e99a34283480de407835f2974e16c8c434355f973b094bc825cffacc2b86a3cc756d5efd.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_gt.spec.json",
+    "cid": "blake3-512:f6a73cdc44db9df07573bcf44afb0f1e8d2e23288aa6e488c1d75ec63b3f64be6d82cbe8abec08b76425e9d8346664feb26978c9b0fc65422799596a7b47d4e6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:gt.blake3-512:f6a73cdc44db9df07573bcf44afb0f1e8d2e23288aa6e488c1d75ec63b3f64be6d82cbe8abec08b76425e9d8346664feb26978c9b0fc65422799596a7b47d4e6.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_if.spec.json",
+    "cid": "blake3-512:5ee376a94e1fab707de0a4722c038bb5df720d6b8a014c6200cb607ba1b9373ee7217965c745bd97b71b1be6b12f89233b97de135f2d8b7afe4c7c9f12729f26",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:if.blake3-512:5ee376a94e1fab707de0a4722c038bb5df720d6b8a014c6200cb607ba1b9373ee7217965c745bd97b71b1be6b12f89233b97de135f2d8b7afe4c7c9f12729f26.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_index.spec.json",
+    "cid": "blake3-512:71f7f72036ea36497333e1b962d0a566b8732f7e89a021d9f27f483191bf107486a8396689b17eddb5fab18ab798f6b78cd26222a97c0317f496adfb19a142d4",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:index.blake3-512:71f7f72036ea36497333e1b962d0a566b8732f7e89a021d9f27f483191bf107486a8396689b17eddb5fab18ab798f6b78cd26222a97c0317f496adfb19a142d4.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_ite.spec.json",
+    "cid": "blake3-512:bc709a6687b4028379389375e54208fa1994ed7628e9970e922ca15dc7f0f5dbf8564f2ef2179826e12a81583077cf9a36ce85e050a1344c07a1a0979ecd8f58",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:ite.blake3-512:bc709a6687b4028379389375e54208fa1994ed7628e9970e922ca15dc7f0f5dbf8564f2ef2179826e12a81583077cf9a36ce85e050a1344c07a1a0979ecd8f58.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_le.spec.json",
+    "cid": "blake3-512:20dd356fc8befb742bc45967bc7f1d944eb68530d42dfa9aaa7c298be79b4b69e6bc1f5c29fb331c97b2715ecfd8797bf1d22604ad898d9f280f98117b5de945",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:le.blake3-512:20dd356fc8befb742bc45967bc7f1d944eb68530d42dfa9aaa7c298be79b4b69e6bc1f5c29fb331c97b2715ecfd8797bf1d22604ad898d9f280f98117b5de945.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_lt.spec.json",
+    "cid": "blake3-512:d4739018bc6b5542b95ae14972c5995dff0bad82c03d89babe2e40cdb8ad264d8772f08483543f82cf867a474eea165c93bb0581a6da094a03daee1b209e2e8c",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:lt.blake3-512:d4739018bc6b5542b95ae14972c5995dff0bad82c03d89babe2e40cdb8ad264d8772f08483543f82cf867a474eea165c93bb0581a6da094a03daee1b209e2e8c.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_member.spec.json",
+    "cid": "blake3-512:ccaebaba6c5004b5245bbd24f54510d02f91ed23b0c4690e6e31b602294b49bcb770a9a3b1e1c49cebb726c0a8ba3a5ec5e657fca6b3c98c71c0dce441537ff5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:member.blake3-512:ccaebaba6c5004b5245bbd24f54510d02f91ed23b0c4690e6e31b602294b49bcb770a9a3b1e1c49cebb726c0a8ba3a5ec5e657fca6b3c98c71c0dce441537ff5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_mod.spec.json",
+    "cid": "blake3-512:a5769ef290ef033df4c2ea5fe81c3913f84ec0576517dbaf0f28e9768e702225c8608e58111e54c1788665e7890df481383584fc9cc3d54cadf30150bbc7a3eb",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:mod.blake3-512:a5769ef290ef033df4c2ea5fe81c3913f84ec0576517dbaf0f28e9768e702225c8608e58111e54c1788665e7890df481383584fc9cc3d54cadf30150bbc7a3eb.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_mul.spec.json",
+    "cid": "blake3-512:4ae2f39004d84999405621947a876e6c867ee233d2d9d626321491beced8ebb1a50c577668ab459447536a0106c8d344e24531f5a73374b01ed5ebe5d86ea84b",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:mul.blake3-512:4ae2f39004d84999405621947a876e6c867ee233d2d9d626321491beced8ebb1a50c577668ab459447536a0106c8d344e24531f5a73374b01ed5ebe5d86ea84b.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_ne.spec.json",
+    "cid": "blake3-512:6adf14e4e58c5fde1d6e6bc9b78eda229cfe751903a9683b1ade5c5d5799b4e763424e29a9362927210981dff6fbc995d95a7573005ee35fab1af0276a0ad7b6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:ne.blake3-512:6adf14e4e58c5fde1d6e6bc9b78eda229cfe751903a9683b1ade5c5d5799b4e763424e29a9362927210981dff6fbc995d95a7573005ee35fab1af0276a0ad7b6.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_neg.spec.json",
+    "cid": "blake3-512:7cb9832bec09c74414e3c8daa2eadd09cd3d116d3f15d7dc50c2d843ed29f74c98882b075bc1aacdeaa05b106c632bfc78b836a98b88ed22a26a2066f16dbbf4",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:neg.blake3-512:7cb9832bec09c74414e3c8daa2eadd09cd3d116d3f15d7dc50c2d843ed29f74c98882b075bc1aacdeaa05b106c632bfc78b836a98b88ed22a26a2066f16dbbf4.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_new.spec.json",
+    "cid": "blake3-512:0cd8b33bb66efdda837a872776bf2b48362ada0a2d432d8b8f55c229ba35606ca29ffd809cba53769e8823917cbf8df15cf5781503fb4b4a69595075a653762d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:new.blake3-512:0cd8b33bb66efdda837a872776bf2b48362ada0a2d432d8b8f55c229ba35606ca29ffd809cba53769e8823917cbf8df15cf5781503fb4b4a69595075a653762d.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_not.spec.json",
+    "cid": "blake3-512:83a3885d8c760a7b1fef6ddf19dba7310c4016e5eea5162e0501669d915f9e3c108aeb5e3a267a87575295f98cd53b534e3d36ca9e1f4ebb55561290b4bc2fea",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:not.blake3-512:83a3885d8c760a7b1fef6ddf19dba7310c4016e5eea5162e0501669d915f9e3c108aeb5e3a267a87575295f98cd53b534e3d36ca9e1f4ebb55561290b4bc2fea.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_or.spec.json",
+    "cid": "blake3-512:3beeb0b4f5b37af18b4f5ca8794d2f10d61560ccd81a663c409f5c2876b4b870e3b280d88ba70a8942d30934b4934c37f7711cc6933ee697e9c7946a1d3971f5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:or.blake3-512:3beeb0b4f5b37af18b4f5ca8794d2f10d61560ccd81a663c409f5c2876b4b870e3b280d88ba70a8942d30934b4934c37f7711cc6933ee697e9c7946a1d3971f5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_plus.spec.json",
+    "cid": "blake3-512:f40d7ac510b3118ce0a11e5467eaa453b0720ad3dc9ff95655317c89dee07becd36dae6e5550e52a4fe37224112e7b2b8d34bee1a425c5180425c19aaffe7066",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:plus.blake3-512:f40d7ac510b3118ce0a11e5467eaa453b0720ad3dc9ff95655317c89dee07becd36dae6e5550e52a4fe37224112e7b2b8d34bee1a425c5180425c19aaffe7066.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_postdec.spec.json",
+    "cid": "blake3-512:a9d99dae6381869134c7cdd00e96a90579debb06b7b023c874e1dc848fbd4bf5aeeb124e904cbd93549353afc588c58d57ae34165e209026c755e025a8756c74",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:postdec.blake3-512:a9d99dae6381869134c7cdd00e96a90579debb06b7b023c874e1dc848fbd4bf5aeeb124e904cbd93549353afc588c58d57ae34165e209026c755e025a8756c74.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_postinc.spec.json",
+    "cid": "blake3-512:fcf5b6683825471f256438560f87f8c31fb6febc6d101b291f852e81891da7c1ea87376fb51ea47081e8816d4df0e8f5444e32e696e59d4882b86b7980bef0a6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:postinc.blake3-512:fcf5b6683825471f256438560f87f8c31fb6febc6d101b291f852e81891da7c1ea87376fb51ea47081e8816d4df0e8f5444e32e696e59d4882b86b7980bef0a6.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_predec.spec.json",
+    "cid": "blake3-512:1b73deb3bffd75d5e35e67cfa8e156d7c8bde25657a1f16cc656d13c84a3bc27e866d156e635c4f8db1f2fd0fb42c330aa4009f6b1e352da0734866125e3961e",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:predec.blake3-512:1b73deb3bffd75d5e35e67cfa8e156d7c8bde25657a1f16cc656d13c84a3bc27e866d156e635c4f8db1f2fd0fb42c330aa4009f6b1e352da0734866125e3961e.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_preinc.spec.json",
+    "cid": "blake3-512:e2b40b6ac24426cc028019070dbe4f29a020d67ffa2fefba5e3ff0056e356cc4bc365b94f25708ee2698ecb1cb92b826269114bc6ef0c7aa957805b2355786c5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:preinc.blake3-512:e2b40b6ac24426cc028019070dbe4f29a020d67ffa2fefba5e3ff0056e356cc4bc365b94f25708ee2698ecb1cb92b826269114bc6ef0c7aa957805b2355786c5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_return.spec.json",
+    "cid": "blake3-512:945aa6f8ace011ee841e6a6954399bff3dcb173bc17e1be9e074d35c4f5b5777dcf3901dbbab59cf7a01be867cb63c4d3a5ae0621bf7b1deaee57b691a2c7cff",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:return.blake3-512:945aa6f8ace011ee841e6a6954399bff3dcb173bc17e1be9e074d35c4f5b5777dcf3901dbbab59cf7a01be867cb63c4d3a5ae0621bf7b1deaee57b691a2c7cff.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_seq.spec.json",
+    "cid": "blake3-512:43f5e6472fba61fb095f70a306e5420d508b670e34d0508fe9f5ec74909e3c14a983cac3530609ab74b1bf8f9dba26183f3110a7342f221396b78cf895c9107b",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:seq.blake3-512:43f5e6472fba61fb095f70a306e5420d508b670e34d0508fe9f5ec74909e3c14a983cac3530609ab74b1bf8f9dba26183f3110a7342f221396b78cf895c9107b.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_shl.spec.json",
+    "cid": "blake3-512:0d26f22bde204f324fa64437914a06bbb40562c38b11b9090988df5f03d23336ac91b26f3d1f3efda4830457c63aee0dddf201072c305f34cf74c9c4bc3805c9",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:shl.blake3-512:0d26f22bde204f324fa64437914a06bbb40562c38b11b9090988df5f03d23336ac91b26f3d1f3efda4830457c63aee0dddf201072c305f34cf74c9c4bc3805c9.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_shr.spec.json",
+    "cid": "blake3-512:9a0724e22f50c90640fec97ad2540aab5b5eba7afbe6b0597b0ca0536375d327eb62d85e9608f8b89ce5fffccbbd212135b75c990dc7cbd6951d3307a2af396a",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:shr.blake3-512:9a0724e22f50c90640fec97ad2540aab5b5eba7afbe6b0597b0ca0536375d327eb62d85e9608f8b89ce5fffccbbd212135b75c990dc7cbd6951d3307a2af396a.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_skip.spec.json",
+    "cid": "blake3-512:ae999a196a7339fe4a955dbe4d9c8ceac34784890148f3d4f846122691bf736c5509423b47e3316ed2f8d4fb2bba3d68d55187a4b55406fc1d33da6c96a00880",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:skip.blake3-512:ae999a196a7339fe4a955dbe4d9c8ceac34784890148f3d4f846122691bf736c5509423b47e3316ed2f8d4fb2bba3d68d55187a4b55406fc1d33da6c96a00880.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_source-unit.spec.json",
+    "cid": "blake3-512:6f700e89732ab780279859ed24c57dd29e490e6591f6277b0bc3819f96b972274417ec1d75abfc9ac2183dc1a8f50f1d63ea5a4b6a647bb63c5118735c52ec87",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:source-unit.blake3-512:6f700e89732ab780279859ed24c57dd29e490e6591f6277b0bc3819f96b972274417ec1d75abfc9ac2183dc1a8f50f1d63ea5a4b6a647bb63c5118735c52ec87.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_sub.spec.json",
+    "cid": "blake3-512:712a35f97a53f710612779fadcff6810943bbc32e8b2d6cb5f1b8f11db811122a43c18e6cbad33df7e955170177b991c0dc6fb0cbd221103cd79dab2fee41af6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:sub.blake3-512:712a35f97a53f710612779fadcff6810943bbc32e8b2d6cb5f1b8f11db811122a43c18e6cbad33df7e955170177b991c0dc6fb0cbd221103cd79dab2fee41af6.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_throw.spec.json",
+    "cid": "blake3-512:ff44e2246ccc54061aed9362332072c3ab39c204a4e7b760d293816cf015aecbbf8fc2d729fff2e21ffae1b6b8d4f0277a291bdad27ffcb8e6b23ec705b06bf6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:throw.blake3-512:ff44e2246ccc54061aed9362332072c3ab39c204a4e7b760d293816cf015aecbbf8fc2d729fff2e21ffae1b6b8d4f0277a291bdad27ffcb8e6b23ec705b06bf6.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_ushr.spec.json",
+    "cid": "blake3-512:2034521a5ae4859efae5a0e5795df0aaf5a51d284e836cbe35d9fe713e196ba844ab127ed5a3f748b799b3f4ed2653402f3380a37baf6c3b4fd98d2511ba330f",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:ushr.blake3-512:2034521a5ae4859efae5a0e5795df0aaf5a51d284e836cbe35d9fe713e196ba844ab127ed5a3f748b799b3f4ed2653402f3380a37baf6c3b4fd98d2511ba330f.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_while.spec.json",
+    "cid": "blake3-512:fe2ba119147ceb265c499ec99c85fe57bbac752eb0f0565326535dc6a744aaa6cd474dfad862023e3ec6a6dc567c928a572233f6532daac0252932b3500556be",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:while.blake3-512:fe2ba119147ceb265c499ec99c85fe57bbac752eb0f0565326535dc6a744aaa6cd474dfad862023e3ec6a6dc567c928a572233f6532daac0252932b3500556be.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "eff_io.spec.json",
+    "cid": "blake3-512:90630a6ecc8450a966820ca80868e834568d8741700d0ac35a04f98d8ab8c6ea3f0531ac25327f0a5f32fd2ce79b118ae100b8892ce6f800e344bff05ab95072",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:effect:io.blake3-512:90630a6ecc8450a966820ca80868e834568d8741700d0ac35a04f98d8ab8c6ea3f0531ac25327f0a5f32fd2ce79b118ae100b8892ce6f800e344bff05ab95072.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "eff_opaque_loop.spec.json",
+    "cid": "blake3-512:aad864a9fed48fcfc60fff1aea01cc8179fe0c8bb4cc13c9cbc50cf9ba9ab559aecb07159e6241720999cb0839848ab8761cbb6bfd06873823b6c95d0417c003",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:effect:opaque_loop.blake3-512:aad864a9fed48fcfc60fff1aea01cc8179fe0c8bb4cc13c9cbc50cf9ba9ab559aecb07159e6241720999cb0839848ab8761cbb6bfd06873823b6c95d0417c003.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "eff_panics.spec.json",
+    "cid": "blake3-512:b2d3baa470d2bfdfc6eabb36252c25cd27e5e43a233259430029573ba1841329300a82058116e9df9213c333ea179007f6eec6d6dbb333ce246dac7a875231b6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:effect:panics.blake3-512:b2d3baa470d2bfdfc6eabb36252c25cd27e5e43a233259430029573ba1841329300a82058116e9df9213c333ea179007f6eec6d6dbb333ce246dac7a875231b6.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "eff_read.spec.json",
+    "cid": "blake3-512:a325d8188abe2d15f29263d521497128d43452695f21e9f814a2e4addbd0dd8d0f7ac8c1b1e3e02dd3cb9ccc5ed64d8039b9b2fec122bbb193ad750187406913",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:effect:read.blake3-512:a325d8188abe2d15f29263d521497128d43452695f21e9f814a2e4addbd0dd8d0f7ac8c1b1e3e02dd3cb9ccc5ed64d8039b9b2fec122bbb193ad750187406913.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "eff_unresolved_call.spec.json",
+    "cid": "blake3-512:47d8eb03afd9af67521e1c182bac4f8b1f0fdade87bdeb8fdaadec90bd0cb2e15d1468b9cbb7bd1ca159f5847d9b71512dc0a610987eb58ee78e0703faa9e8e5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:effect:unresolved_call.blake3-512:47d8eb03afd9af67521e1c182bac4f8b1f0fdade87bdeb8fdaadec90bd0cb2e15d1468b9cbb7bd1ca159f5847d9b71512dc0a610987eb58ee78e0703faa9e8e5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "eff_write.spec.json",
+    "cid": "blake3-512:5af3831b61dec86fe03c1fbae122be1bfcbe66cb1f0eab6d0afb54178d1cc0febf4c53b967be3e3d249bf5a7d45409cb5c3147b1ef628bc177a3244fe4d9f83b",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/algorithms/java:effect:write.blake3-512:5af3831b61dec86fe03c1fbae122be1bfcbe66cb1f0eab6d0afb54178d1cc0febf4c53b967be3e3d249bf5a7d45409cb5c3147b1ef628bc177a3244fe4d9f83b.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_and_to_ite_desugar.spec.json",
+    "cid": "blake3-512:70fd3d93443f5e6c3ffc15b5cf53f4bf1782516ac83de509255f6cbff4dd0305b326284db374a593566b0ff6c25ed186c9b7e53979b86d666be5a97b01ec9632",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/equations/java:and-to-ite-desugar.blake3-512:70fd3d93443f5e6c3ffc15b5cf53f4bf1782516ac83de509255f6cbff4dd0305b326284db374a593566b0ff6c25ed186c9b7e53979b86d666be5a97b01ec9632.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_or_to_ite_desugar.spec.json",
+    "cid": "blake3-512:ed1a80b5277ad984faad255864bb1e64d6e511d04fde3041f95a0b28f4229f18969abc92e02300c22b992a735681d1eec7a34dba8e14fb544c92046113835475",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/equations/java:or-to-ite-desugar.blake3-512:ed1a80b5277ad984faad255864bb1e64d6e511d04fde3041f95a0b28f4229f18969abc92e02300c22b992a735681d1eec7a34dba8e14fb544c92046113835475.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_seq_assoc.spec.json",
+    "cid": "blake3-512:c7c7ea6ad376aabeef9c89825436f5798dfa4ad15eacceb3cedca2046f3bf088fba18b381a3f1dc4ec6f5d425c6f9c2ca7a2dee3f558995634b6d39bbbed79fa",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/equations/java:seq-assoc.blake3-512:c7c7ea6ad376aabeef9c89825436f5798dfa4ad15eacceb3cedca2046f3bf088fba18b381a3f1dc4ec6f5d425c6f9c2ca7a2dee3f558995634b6d39bbbed79fa.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_seq_skip_left.spec.json",
+    "cid": "blake3-512:b0e2982f48902e682b7710c301ac8a826d43fa0a2f1f5547410626f343a17c6dce5c1f62895d88e31bf0e5e26e8e84fb0655f1714fe47595654b8723d58930f0",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/equations/java:seq-skip-left.blake3-512:b0e2982f48902e682b7710c301ac8a826d43fa0a2f1f5547410626f343a17c6dce5c1f62895d88e31bf0e5e26e8e84fb0655f1714fe47595654b8723d58930f0.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_seq_skip_right.spec.json",
+    "cid": "blake3-512:14a79eb85f7a62c69e7c42ac185136dea56a74ea18a8e21db6cc422278303e95313eccc534f4f8e33ee72677ff2d5367510a54e0144d2b709d0543f2fa431d16",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/equations/java:seq-skip-right.blake3-512:14a79eb85f7a62c69e7c42ac185136dea56a74ea18a8e21db6cc422278303e95313eccc534f4f8e33ee72677ff2d5367510a54e0144d2b709d0543f2fa431d16.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_io.spec.json",
+    "cid": "blake3-512:e469cefa73185af265c52c1c9b5daf4666cc7d24a18c29e1c0a70954c3492c32be177fdf95f3ca7de91904d8a9dac57df20d446135a91a6c9e0119643bf44a7c",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java:effect-signature:IO.blake3-512:e469cefa73185af265c52c1c9b5daf4666cc7d24a18c29e1c0a70954c3492c32be177fdf95f3ca7de91904d8a9dac57df20d446135a91a6c9e0119643bf44a7c.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_memread.spec.json",
+    "cid": "blake3-512:030984ee5d45f4cedce56dca63a541039087d7955de65e9ab975d502d6928ab1812e143ecc6923f1716260f980b81b02d325005f2a3651379513a0bfe449d943",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java:effect-signature:MemRead.blake3-512:030984ee5d45f4cedce56dca63a541039087d7955de65e9ab975d502d6928ab1812e143ecc6923f1716260f980b81b02d325005f2a3651379513a0bfe449d943.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_memwrite.spec.json",
+    "cid": "blake3-512:0df09dcf5dd6c99f7e29ffe9555381df83ce093e61e6dd699c9d525542d2e4f2abb07a829925c18199797ba2fb1e16dc292d734d47abcaa0899347528bd6a17a",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java:effect-signature:MemWrite.blake3-512:0df09dcf5dd6c99f7e29ffe9555381df83ce093e61e6dd699c9d525542d2e4f2abb07a829925c18199797ba2fb1e16dc292d734d47abcaa0899347528bd6a17a.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_opaque_loop.spec.json",
+    "cid": "blake3-512:d35dbcfbc817b35c5cf90253ff25dec1674119738c6094de58e0bec70a76a0c48bcd19507540017ace06d294c46927d386c07e38a67ca37de7c3440247790345",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java:effect-signature:OpaqueLoop.blake3-512:d35dbcfbc817b35c5cf90253ff25dec1674119738c6094de58e0bec70a76a0c48bcd19507540017ace06d294c46927d386c07e38a67ca37de7c3440247790345.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_panics.spec.json",
+    "cid": "blake3-512:800ab347173edd93b6b62fb532a51e659a116614d269afe091e113abe1c03df72a12e895b2aa9242b57fffd2f4149cd65bd5f3444d3887a81e9831263789c2b6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java:effect-signature:Panics.blake3-512:800ab347173edd93b6b62fb532a51e659a116614d269afe091e113abe1c03df72a12e895b2aa9242b57fffd2f4149cd65bd5f3444d3887a81e9831263789c2b6.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_unresolved_call.spec.json",
+    "cid": "blake3-512:d8bc31cc89094925e4153d1d46b1ac9945c0715ff2c145a57d02d0248633c99d0168ac490f3735f688b878c0005a8ecfd8789224e6755ac9852f51b0dc718a70",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java:effect-signature:UnresolvedCall.blake3-512:d8bc31cc89094925e4153d1d46b1ac9945c0715ff2c145a57d02d0248633c99d0168ac490f3735f688b878c0005a8ecfd8789224e6755ac9852f51b0dc718a70.json"
+  },
+  {
+    "kind": "language-signature",
+    "spec": "language_signature_java.spec.json",
+    "cid": "blake3-512:4d312a5ab13eba517063f097a73b8675f1ea2a915ab5cc5b92587c83b47f707b0298858ac2c48061eee73e30e1c48983bd0aec5641bc806561624fc7e4da44ef",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/java-language-signature/dev/../catalog/signatures/java.blake3-512:4d312a5ab13eba517063f097a73b8675f1ea2a915ab5cc5b92587c83b47f707b0298858ac2c48061eee73e30e1c48983bd0aec5641bc806561624fc7e4da44ef.json"
+  }
+]

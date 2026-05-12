@@ -1,0 +1,47 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:effect:panic",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "panic-effect",
+      "arity": [],
+      "result": "Unit",
+      "wp": "record throw, die, exit, or fatal trigger_error behavior",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 0
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Panic"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:1f0f5a43b27625a27896dc5544e92ff2281360a1b74bf5ddea3f2a826c9e063a94104c2783dc9d818bb4713e6f279a868094d9aadc620ccec7fb686fef5baa06",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "7eYYx30MCDltEuX9YWZY2/ulCU4QHswYR2aDfhZoj1K1h4Uwgq5nxn2DdWaTW8M/qZa01ZhVyXWAukCL6WhTDQ=="
+  }
+}

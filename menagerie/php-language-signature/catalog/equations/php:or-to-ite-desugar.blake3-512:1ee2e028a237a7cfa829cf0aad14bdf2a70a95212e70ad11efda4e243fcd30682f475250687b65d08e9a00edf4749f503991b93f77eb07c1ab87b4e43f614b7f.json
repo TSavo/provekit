@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "php:or-to-ite-desugar",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      "blake3-512:7d626b123f1a972ab3552088a6ece5b577c4c1c6b3faa3725e173b5cad668d07c56aaf3f9a315eceb213aa87326efa337595821408466fb3639ed24a9b4788b5",
+      "blake3-512:7d626b123f1a972ab3552088a6ece5b577c4c1c6b3faa3725e173b5cad668d07c56aaf3f9a315eceb213aa87326efa337595821408466fb3639ed24a9b4788b5"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "php:or",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "php:ternary",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "const",
+            "value": true,
+            "sort": {
+              "kind": "ctor",
+              "name": "Bool",
+              "args": []
+            }
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:1ee2e028a237a7cfa829cf0aad14bdf2a70a95212e70ad11efda4e243fcd30682f475250687b65d08e9a00edf4749f503991b93f77eb07c1ab87b4e43f614b7f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "s/rrJ1n4XO7SfjAZJLZ213zHViw4e5z/xMgvorn2dD2EESTzGq89NU9a7B/YHalXLgv7H1BtFE6RHPSJMCMTCQ=="
+  }
+}

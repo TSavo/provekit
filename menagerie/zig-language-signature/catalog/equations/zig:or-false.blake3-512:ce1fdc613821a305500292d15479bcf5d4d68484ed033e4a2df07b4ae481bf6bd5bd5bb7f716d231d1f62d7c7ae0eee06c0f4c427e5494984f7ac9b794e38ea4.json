@@ -1,0 +1,38 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "zig:or-false",
+    "formals": [
+      "b"
+    ],
+    "formal_sorts": [
+      "blake3-512:45df3640bad816635e715a24c6619b84535d61737856a5dc9cb9f515a5cf5c3d66396a83a3bb93a138ca10e2456079ca63fa3c42dd39559a393633eb16e9db7c"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "law": "or(false,b)=b"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:ce1fdc613821a305500292d15479bcf5d4d68484ed033e4a2df07b4ae481bf6bd5bd5bb7f716d231d1f62d7c7ae0eee06c0f4c427e5494984f7ac9b794e38ea4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "T1t5Upbi9xd8C6cVQhkRrGIgvsdEkxHE2Xfx4laCiHTHEjmpvyURHhMtbx5bEzYgpdGyZU0hY1jxwUfd4OavDA=="
+  }
+}

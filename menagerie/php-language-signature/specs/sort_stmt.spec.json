@@ -1,7 +1,14 @@
 {
-    "kind": "sort",
-    "fn_name": "php:sort:stmt",
-    "version": "0.1.0-draft",
+  "kind": "sort",
+  "fn_name": "php:Stmt",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
     "name": "Stmt",
-    "locus": "menagerie/php-language-signature/README.md#sorts"
+    "description": "PHP statement sort."
+  }
 }

@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:effect:read",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "read-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "note that target was read"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemRead"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:1f7762a62c2ad05ba1dcb48991d07b5c463e8c82fcdbec22a9883656b53b700244a226ba98aa53816cb88f5f6f5c5e6aa5bf3f9af6496b06e0db6f3ef24ce809",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "ENsgP3cko+sEKWp/KFB0HH0SfWprL+2+mhJA3g8lF26p9zktlXJc89jFhKZ9iMFGM4ln03o4Hbsd44nCgjjWAQ=="
+  }
+}

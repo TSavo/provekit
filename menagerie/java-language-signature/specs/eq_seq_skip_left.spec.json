@@ -1,7 +1,37 @@
 {
   "kind": "equation",
-  "fn_name": "java:eq:seq-skip-left",
-  "lhs": "java:seq(java:skip(unit),s)",
-  "rhs": "s",
-  "locus": "menagerie/java-language-signature/README.md"
+  "fn_name": "java:seq-skip-left",
+  "formals": [
+    "s"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "java:seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "java:skip",
+          "args": []
+        },
+        {
+          "kind": "var",
+          "name": "s"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "s"
+    }
+  }
 }

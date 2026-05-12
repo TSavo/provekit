@@ -1,7 +1,70 @@
 {
   "kind": "equation",
-  "fn_name": "java:eq:seq-assoc",
-  "lhs": "java:seq(java:seq(a,b),c)",
-  "rhs": "java:seq(a,java:seq(b,c))",
-  "locus": "menagerie/java-language-signature/README.md"
+  "fn_name": "java:seq-assoc",
+  "formals": [
+    "a",
+    "b",
+    "c"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "java:seq",
+      "args": [
+        {
+          "kind": "op",
+          "name": "java:seq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "a"
+            },
+            {
+              "kind": "var",
+              "name": "b"
+            }
+          ]
+        },
+        {
+          "kind": "var",
+          "name": "c"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "java:seq",
+      "args": [
+        {
+          "kind": "var",
+          "name": "a"
+        },
+        {
+          "kind": "op",
+          "name": "java:seq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "b"
+            },
+            {
+              "kind": "var",
+              "name": "c"
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

@@ -1,0 +1,69 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:call",
+    "formals": [
+      "callee",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "call",
+      "arity": [
+        "String",
+        "Value"
+      ],
+      "result": "Value",
+      "wp": "function call",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "callee"
+          },
+          {
+            "name": "args",
+            "shape": {
+              "kind": "set"
+            }
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:1ce68510b4d3d1a7c28b51f7ddf1e97dc63e197edfa7db6bd516d4eda31a12931acaa3ef6992772df29194575011e54e11a71e0117aca1e69a41f9a071d26e1f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "PrhVdXiDLc++abosmnL0APKrvVvl2x73WBlGyMvPt3pIoOUaVF1WPv3DtSk+cPon6KGEYfREyJrjYjnC5+ADAA=="
+  }
+}

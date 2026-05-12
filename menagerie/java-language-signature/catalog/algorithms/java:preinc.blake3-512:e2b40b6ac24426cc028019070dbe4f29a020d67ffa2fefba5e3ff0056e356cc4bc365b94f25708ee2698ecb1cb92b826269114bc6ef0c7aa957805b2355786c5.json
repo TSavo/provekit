@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "java:preinc",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "preinc",
+      "arity": [
+        "Expr"
+      ],
+      "result": "Expr",
+      "wp": "++pre value",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/java-language-signature/README.md"
+  },
+  "cid": "blake3-512:e2b40b6ac24426cc028019070dbe4f29a020d67ffa2fefba5e3ff0056e356cc4bc365b94f25708ee2698ecb1cb92b826269114bc6ef0c7aa957805b2355786c5",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "/I6trhH1xPfPvmgrCTtQ09zeVeTxb2Ty4E48A/vaViwAWmEyauDEXg0PZ4RsWAAXaoz3Cwsi3KwqAJ+3l7ppDQ=="
+  }
+}

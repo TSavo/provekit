@@ -1,0 +1,71 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ruby:until",
+    "formals": [
+      "cond",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "until",
+      "arity": [
+        "Bool",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "opaque Ruby until loop awaiting invariant memento",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "cond"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "OpaqueLoop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/ruby-language-signature/README.md"
+  },
+  "cid": "blake3-512:bfbce3fcfec4813a4d91210cb10f4f2c0fc00a0c1279131cc9f961867840526df6e634b6dbeb74d2ecde79ca8a040b6285c885395fe7741145b2525e3d72ff96",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "pA2Ase1IQraNS43wBeBUNzSlbZFYDcGqvogoYjACA2f/u6PPN499W3wwHI2bEp3A4v9oNNqCrg810hE8rsvXAw=="
+  }
+}

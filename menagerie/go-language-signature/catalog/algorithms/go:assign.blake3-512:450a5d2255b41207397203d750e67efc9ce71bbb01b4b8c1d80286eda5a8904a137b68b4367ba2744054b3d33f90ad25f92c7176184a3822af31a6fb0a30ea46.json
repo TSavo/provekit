@@ -1,0 +1,68 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:assign",
+    "formals": [
+      "target",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Identifier",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:assign",
+      "arity": [
+        "Identifier",
+        "Term"
+      ],
+      "result": "Term",
+      "wp": "Go assignment statement",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target",
+            "slot_sort": "Identifier"
+          },
+          {
+            "name": "value",
+            "slot_sort": "Term"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:450a5d2255b41207397203d750e67efc9ce71bbb01b4b8c1d80286eda5a8904a137b68b4367ba2744054b3d33f90ad25f92c7176184a3822af31a6fb0a30ea46",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "G8LGSj3bvZC6tdQvDFeOyRhM6ebemvdIgzs4r3ciCOBXgW/+c98kHSuC4KLaaDtmzGzqVGKD7zvR2rPxBWQsBA=="
+  }
+}

@@ -1,7 +1,14 @@
 {
-    "kind": "sort",
-    "fn_name": "php:sort:value",
-    "version": "0.1.0-draft",
+  "kind": "sort",
+  "fn_name": "php:Value",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
     "name": "Value",
-    "locus": "menagerie/php-language-signature/README.md#sorts"
+    "description": "PHP value sort (int, real, string, bool)."
+  }
 }

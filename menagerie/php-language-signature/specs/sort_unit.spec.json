@@ -1,7 +1,14 @@
 {
-    "kind": "sort",
-    "fn_name": "php:sort:unit",
-    "version": "0.1.0-draft",
+  "kind": "sort",
+  "fn_name": "php:Unit",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
     "name": "Unit",
-    "locus": "menagerie/php-language-signature/README.md#sorts"
+    "description": "Unit sort for zero-argument statement operations."
+  }
 }
