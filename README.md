@@ -3,6 +3,32 @@
 > *Supra omnia, rectum.*
 >: T
 
+## ProvekIt makes software age backwards.
+
+For 70 years, code has rotted. Every line written makes the next line harder. Every system grows brittle as it grows. Every legacy codebase is a debt that compounds. The industry's working assumption is that software ages forward, toward more debt, more bugs, less certainty.
+
+ProvekIt inverts the curve.
+
+Here is the mechanism. ProvekIt lifts your existing codebase, in whatever language it is written in, into a provably correct intermediate representation. It marries that IR with the implications of every concept the code expresses. Then it rewrites the code in a way that proves each concept is well-behaved.
+
+What ProvekIt finds, it tells you. There are two kinds of finding.
+
+The first is the bug. The substrate proves that a piece of code violates the contract of the concept it claims to implement. Every static analyzer finds bugs. ProvekIt finds them more rigorously, but bug-finding is table stakes.
+
+The second is the gap. The substrate identifies regions of your codebase where the *behavior itself is not specified*. Not "this code is wrong" but "this code has no defined notion of right." These are the regions where future bugs live. No test will ever exercise them, because no one has framed what the test should check. Heartbleed was a gap. Log4Shell was a gap. SolarWinds was a gap. CrowdStrike was a gap. Every catastrophic outage in the last decade traces to a gap, not a bug. ProvekIt is the first system that surfaces gaps as a first-class artifact, content-addressed and signed.
+
+Here is the architectural claim. ProvekIt collapses software's quadratic-complexity accident. For 70 years, software has been O(N²) at every scale, because every relationship between languages, libraries, tests, docs, codebases, and tools required bespoke pairwise work. ProvekIt makes it linear. M+N where it was M×N. That is not a productivity improvement, it is a topology change.
+
+The mechanism is one fact: concepts have contracts attached. Once a concept is named and content-addressed in a universal address space, every relationship in software passes through that concept's identity instead of through bespoke pairs. The catalog of named concepts with attached contracts grows as codebases lift through the substrate. The catalog is the moat. It cannot be reimplemented; it can only be accumulated.
+
+The longer ProvekIt runs against your codebase, the more provable your existing code becomes, without you rewriting a line. New concepts get named. Old code re-lifts under richer contracts. Tomorrow's substrate proves more of yesterday's code.
+
+**Software ages backwards.**
+
+The 70-year accident of software's quadratic complexity ends when contracts attach to concepts. That is not hyperbole. That is what the topology says.
+
+---
+
 ProvekIt is the geometry of how lossy abstract interpretations compose
 into a sound joint inference over a content-addressed federated substrate.
 
