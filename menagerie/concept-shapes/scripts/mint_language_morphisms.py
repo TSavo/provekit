@@ -92,7 +92,7 @@ COMMON_ALIASES = {
 }
 
 
-def op(slug, base, concept_operator=None, base_operator=None, renaming=None, aliases=None, patches=None, sort_renames=None, notes=""):
+def op(slug, base, concept_operator=None, base_operator=None, renaming=None, aliases=None, patches=None, sort_renames=None, notes="", wp_rule=None):
     """Define a concept hub op and its per-language discharge configuration.
 
     sort_renames: per-language sort-name rename map, keyed by language id.
@@ -113,6 +113,7 @@ def op(slug, base, concept_operator=None, base_operator=None, renaming=None, ali
         "patches": patches or {},
         "sort_renames": sort_renames or {},
         "notes": notes,
+        "wp_rule": wp_rule,
     }
 
 
@@ -139,9 +140,25 @@ OPS = [
     op("not", ("c11", "op_not.spec.json")),
     op("assign", ("c11", "op_assign.spec.json"), renaming={"lvalue": "target", "rvalue": "value"}),
     op("decl", ("c11", "op_decl.spec.json"), renaming={"value": "initializer"}),
-    op("seq", ("c11", "op_seq.spec.json")),
-    op("skip", ("c11", "op_skip.spec.json")),
-    op("conditional", ("c11", "op_if.spec.json"), concept_operator="conditional", base_operator="if"),
+    op("seq", ("c11", "op_seq.spec.json"), wp_rule={
+        "kind": "apply",
+        "fn": "wp_first",
+        "args": [{"kind": "apply", "fn": "wp_second", "args": [{"kind": "var", "name": "Q"}]}],
+    }),
+    op("skip", ("c11", "op_skip.spec.json"), wp_rule={"kind": "var", "name": "Q"}),
+    op("conditional", ("c11", "op_if.spec.json"), concept_operator="conditional", base_operator="if", wp_rule={
+        "kind": "and",
+        "operands": [
+            {"kind": "implies", "operands": [
+                {"kind": "var", "name": "cond"},
+                {"kind": "apply", "fn": "wp_then_branch", "args": [{"kind": "var", "name": "Q"}]},
+            ]},
+            {"kind": "implies", "operands": [
+                {"kind": "not", "operands": [{"kind": "var", "name": "cond"}]},
+                {"kind": "apply", "fn": "wp_else_branch", "args": [{"kind": "var", "name": "Q"}]},
+            ]},
+        ],
+    }),
     op("ite", ("c11", "op_conditional.spec.json"), base_operator="conditional", renaming={"when_true": "then_expr", "when_false": "else_expr"}),
     op("while", ("c11", "op_while.spec.json")),
     op("do", ("c11", "op_do.spec.json")),
@@ -169,7 +186,11 @@ OPS = [
     op("postdec", ("c11", "op_post_dec.spec.json"), base_operator="post_dec"),
     op("preinc", ("c11", "op_pre_inc.spec.json"), base_operator="pre_inc"),
     op("predec", ("c11", "op_pre_dec.spec.json"), base_operator="pre_dec"),
-    op("source-unit", ("c11", "op_source_unit.spec.json"), concept_operator="source-unit"),
+    op("source-unit", ("c11", "op_source_unit.spec.json"), concept_operator="source-unit", wp_rule={
+        "kind": "apply",
+        "fn": "wp_operational_term",
+        "args": [{"kind": "var", "name": "Q"}],
+    }),
 ]
 
 PORTABLE_ALL = {
@@ -278,6 +299,25 @@ def apply_patches(spec, patches):
                 slot["evaluation"] = "unevaluated"
 
 
+def apply_wp_rule(spec, op_def):
+    """Rename post.wp -> post.wp_note and inject post.wp_rule from op_def if present.
+
+    Per spec 2026-05-13-wp-as-formula.md §1.1: wp_note replaces the old prose wp field
+    (non-load-bearing); wp_rule is the machine-checkable formula (required for Stmt-sorted
+    ops, synthesized for value-ops when absent).  This function is called after all other
+    transformations so the canonical bytes of every concept op spec include wp_note (not wp)
+    and wp_rule where authored.
+    """
+    post = spec.get("post", {})
+    # Rename "wp" -> "wp_note" (always, for all ops)
+    if "wp" in post:
+        post["wp_note"] = post.pop("wp")
+    # Inject authored wp_rule if the op definition carries one
+    wp_rule = op_def.get("wp_rule")
+    if wp_rule is not None:
+        post["wp_rule"] = copy.deepcopy(wp_rule)
+
+
 def normalize_node(value, renaming, representation, operators, literals):
     return discharge.normalize_node(value, renaming, representation, operators, literals)
 
@@ -297,6 +337,7 @@ def concept_spec_from_base(op_def):
     # op's CID must not change when a language spec adds wp_rule (PR3+).
     data["post"].pop("wp_rule", None)
     apply_patches(data, op_def["patches"])
+    apply_wp_rule(data, op_def)
     return data
 
 
@@ -402,9 +443,11 @@ def diff_reason(after, concept, lang_id=None, slug=None):
     if after.get("post") != concept.get("post"):
         post = after.get("post", {})
         target = concept.get("post", {})
-        if post.get("wp") != target.get("wp"):
+        # concept specs use wp_note after migration; language specs still use wp
+        target_wp = target.get("wp") or target.get("wp_note")
+        if post.get("wp") != target_wp:
             got = json.dumps(post.get("wp"), separators=(",", ":"))
-            want = json.dumps(target.get("wp"), separators=(",", ":"))
+            want = json.dumps(target_wp, separators=(",", ":"))
             return f"wp mismatch: got `{got}` want `{want}`"
         if post.get("arity_shape") != target.get("arity_shape"):
             got = json.dumps(post.get("arity_shape"), separators=(",", ":"))
@@ -499,27 +542,45 @@ def try_structural_subsumption(after_spec, concept_spec):
 
     after_pre = after_spec.get("pre")
     concept_pre = concept_spec.get("pre")
-    after_wp = after_spec.get("post", {}).get("wp")
-    concept_wp = concept_spec.get("post", {}).get("wp")
+    after_post = after_spec.get("post", {})
+    concept_post = concept_spec.get("post", {})
+    # Resolve the wp key and value for each side independently.  Language specs
+    # carry post.wp (pre-PR3); concept specs carry post.wp_note (post-PR2 rename).
+    # Read each side from whichever key it actually uses so comparisons are accurate.
+    after_wp_key = "wp_note" if "wp_note" in after_post else ("wp" if "wp" in after_post else None)
+    after_wp = after_post.get(after_wp_key) if after_wp_key else None
+    concept_wp_key = "wp_note" if "wp_note" in concept_post else ("wp" if "wp" in concept_post else None)
+    # concept_wp is the value used by _make_relaxed to populate wp_note in the
+    # relaxed copy, so it always needs the actual value regardless of key name.
+    concept_wp = concept_post.get(concept_wp_key) if concept_wp_key else None
     after_effects = _effect_set(after_spec)
     concept_effects = _effect_set(concept_spec)
     # wp_rule is a per-language annotation; concept specs never include it (stripped
     # in concept_spec_from_base).  It is always treated as abstract for discharge.
-    after_has_wp_rule = "wp_rule" in after_spec.get("post", {})
+    after_has_wp_rule = "wp_rule" in after_post
 
     # notes_match: True if the post.notes field (or its absence) is identical
     # on both sides.  A language spec may carry notes that the concept hub lacks;
     # that difference is documentation-only and folds into wp-abstraction.
-    after_notes = after_spec.get("post", {}).get("notes")
-    concept_notes = concept_spec.get("post", {}).get("notes")
+    after_notes = after_post.get("notes")
+    concept_notes = concept_post.get("notes")
     notes_match = after_notes == concept_notes
 
     pre_matches = after_pre == concept_pre
+    # wp_byte_same: True only when key AND value agree (i.e., the serialised bytes
+    # are identical).  After the wp-as-formula rename (PR2), concept specs carry
+    # post.wp_note while language specs still carry post.wp.  When both hold the
+    # same value but different keys, CIDs disagree -- the morphism requires a
+    # wp-key-rename relaxation and must NOT be short-circuited by the early-exit
+    # or skipped by the needs-guard below.
+    wp_byte_same = (after_wp_key == concept_wp_key) and (after_wp == concept_wp)
+    # wp_matches: value-only comparison, used by the needs-guard to check whether
+    # relax_wp would have any effect on the value (key normalisation still needed).
     wp_matches = after_wp == concept_wp
     effects_match = after_effects == concept_effects
     effects_ok = _effects_subset(after_effects, concept_effects)
 
-    if pre_matches and wp_matches and notes_match and effects_match and not after_has_wp_rule:
+    if pre_matches and wp_byte_same and notes_match and effects_match and not after_has_wp_rule:
         # Byte-equality should have caught this already; shouldn't reach here.
         return None
 
@@ -530,13 +591,17 @@ def try_structural_subsumption(after_spec, concept_spec):
             relaxed["pre"] = concept_pre
         if relax_wp:
             if "post" in relaxed:
-                relaxed["post"]["wp"] = concept_wp
+                # Normalise the wp key: remove both wp and wp_note, then emit
+                # wp_note (the post-PR2 canonical key used by concept hub specs).
+                relaxed["post"].pop("wp", None)
+                relaxed["post"].pop("wp_note", None)
+                if concept_wp is not None:
+                    relaxed["post"]["wp_note"] = concept_wp
                 # Strip documentation-only keys that the concept hub doesn't carry.
                 # notes (and any future doc-only key) has no semantic role in the
                 # discharge obligation; its presence in a language spec must not
                 # block an otherwise-sound structural subsumption.
-                concept_post = concept_spec.get("post", {})
-                for doc_key in _DOC_ONLY_KEYS - {"wp"}:
+                for doc_key in _DOC_ONLY_KEYS - {"wp", "wp_note"}:
                     if doc_key in relaxed["post"] and doc_key not in concept_post:
                         del relaxed["post"][doc_key]
         # wp_rule is always stripped: it is a language-spec annotation and concept
@@ -595,9 +660,12 @@ def try_structural_subsumption(after_spec, concept_spec):
         # byte-equal fast-path should have caught full-match already).
         # notes_match is folded into relax_wp: the wp-abstraction path strips
         # documentation-only extra keys (notes) in addition to normalising wp text.
+        # wp_byte_same: key AND value must agree for the relaxation to be a no-op.
+        # When keys differ (wp vs wp_note) but values are equal, wp_byte_same is
+        # False, so relax_wp is correctly flagged as needed.
         needs = (
             (relax_pre and not pre_matches)
-            or (relax_wp and (not wp_matches or not notes_match))
+            or (relax_wp and (not wp_byte_same or not notes_match))
             or (relax_effects and not effects_match)
         )
         if not needs:

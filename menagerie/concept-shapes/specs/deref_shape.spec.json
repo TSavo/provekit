@@ -1,4 +1,73 @@
 {
+  "kind": "algorithm",
+  "fn_name": "concept:deref",
+  "formals": [
+    "ptr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Ptr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "LValue",
+    "args": []
+  },
+  "pre": {
+    "kind": "connective",
+    "op": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "!=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "ptr"
+          },
+          {
+            "kind": "const",
+            "value": "NULL",
+            "sort": {
+              "kind": "ctor",
+              "name": "Ptr",
+              "args": []
+            }
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "valid",
+        "args": [
+          {
+            "kind": "var",
+            "name": "ptr"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "deref",
+    "arity": [
+      "Ptr"
+    ],
+    "result": "LValue",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "ptr"
+        }
+      ]
+    },
+    "wp_note": "lvalue at ptr"
+  },
   "effects": {
     "effects": [
       {

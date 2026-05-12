@@ -1,0 +1,25 @@
+{
+  "cid": "blake3-512:2ede3cb40640caa04c9690021f9d57d12b1d45d5e6103b695ba956bfae18e1df93efaec27029d4a040cca7b1ebfadf9b40f36aaf5ba2cfc7067586362657154c",
+  "memento": {
+    "after_substitution_cid": "blake3-512:1c859931275d6fdba3bde697fb1249cf5533f6388e360f3c641cdbb602807b1ae5f17e68069a3d03d97df651dc3fe3b6f75df0772f1839922b6c5596e5f9148f",
+    "discharged": true,
+    "effect_subset_relaxed": true,
+    "kind": "MorphismDischargeReceipt",
+    "morphism_cid": "blake3-512:864cf651e9a6f015b9c5586bac6e99094edb1665d2852817b614f7916f4b52eb658e13bea68327f2b4eef1ef36fa7c27782f111f106c2db83ab4596566773f0e",
+    "source_contract_cid": "blake3-512:3ff181ea4b9fa837e54f3f5248a2527b10d7410418a09e61e61a015cbb023d5bbacc1ecf59653b3437a25b1a12313fbc8abc573f290ea2a891bbc748745b5bb1",
+    "renaming_map": {
+      "value": "initializer"
+    },
+    "representation_map": {},
+    "operator_map": {},
+    "literal_map": {},
+    "after_substitution_cid": "blake3-512:1c859931275d6fdba3bde697fb1249cf5533f6388e360f3c641cdbb602807b1ae5f17e68069a3d03d97df651dc3fe3b6f75df0772f1839922b6c5596e5f9148f",
+    "shape_cid": "blake3-512:8fa95384a32b13dc6589299f30fcf78e2a1b8dc3be188a04ce7edfaf988b3c7aae3420447e2bb1ebee1a635e1d51df2f807bf159d1ca35e77741aee131faba84",
+    "discharged": true,
+    "method": "structural-wp-abstraction-and-effect-subset",
+    "signature": null,
+    "wp_abstracted": true,
+    "effect_subset_relaxed": true
+  },
+  "signature": null
+}

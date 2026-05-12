@@ -1,4 +1,68 @@
 {
+  "kind": "algorithm",
+  "fn_name": "concept:mul",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "no_signed_overflow",
+    "args": [
+      {
+        "kind": "op",
+        "name": "mul",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "mul",
+    "arity": [
+      "Int",
+      "Int"
+    ],
+    "result": "Int",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "wp_note": "mathematical integer multiplication when no overflow holds"
+  },
   "effects": {
     "effects": [
       {

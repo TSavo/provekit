@@ -29,7 +29,7 @@
     "kind": "operation-contract",
     "operator": "predec",
     "result": "Expr",
-    "wp": "prefix decrement expression yielding the updated value"
+    "wp_note": "prefix decrement expression yielding the updated value"
   },
   "pre": {
     "args": [],

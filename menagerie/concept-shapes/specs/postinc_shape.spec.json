@@ -34,7 +34,7 @@
     "kind": "operation-contract",
     "operator": "postinc",
     "result": "Expr",
-    "wp": "postfix increment expression yielding the previous value"
+    "wp_note": "postfix increment expression yielding the previous value"
   },
   "pre": {
     "args": [],

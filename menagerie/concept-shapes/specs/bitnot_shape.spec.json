@@ -29,7 +29,7 @@
     "kind": "operation-contract",
     "operator": "bitnot",
     "result": "Int",
-    "wp": "integer bitwise complement expression"
+    "wp_note": "integer bitwise complement expression"
   },
   "pre": {
     "args": [],

@@ -29,7 +29,7 @@
     "kind": "operation-contract",
     "operator": "preinc",
     "result": "Expr",
-    "wp": "prefix increment expression yielding the updated value"
+    "wp_note": "prefix increment expression yielding the updated value"
   },
   "pre": {
     "args": [],

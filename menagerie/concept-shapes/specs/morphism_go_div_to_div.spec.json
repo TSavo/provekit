@@ -19,29 +19,28 @@
   ],
   "kind": "algorithm",
   "post": {
-    "homomorphism_obligation": {
-      "kind": "structural-wp-abstraction-and-effect-subset",
-      "source": "blake3-512:9e51447f7507c6fd2a616e4ec06ff1800d98f7708f83bee83f94e2ce72a078cf83c85120a305c824d138de31826b32a9ee6ce063a2ef6b84e48646aa95b80988",
-      "target": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
-    },
     "kind": "contract-renaming-morphism",
-    "literal_map": {},
+    "source_contract_cid": "blake3-512:9e51447f7507c6fd2a616e4ec06ff1800d98f7708f83bee83f94e2ce72a078cf83c85120a305c824d138de31826b32a9ee6ce063a2ef6b84e48646aa95b80988",
+    "target_shape_cid": "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839",
+    "renaming_map": {},
+    "representation_map": {},
     "operator_map": {
       "go:div": "div"
     },
-    "renaming_map": {},
-    "representation_map": {},
-    "source_contract_cid": "blake3-512:9e51447f7507c6fd2a616e4ec06ff1800d98f7708f83bee83f94e2ce72a078cf83c85120a305c824d138de31826b32a9ee6ce063a2ef6b84e48646aa95b80988",
-    "target_shape_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction-and-effect-subset",
+      "source": "blake3-512:9e51447f7507c6fd2a616e4ec06ff1800d98f7708f83bee83f94e2ce72a078cf83c85120a305c824d138de31826b32a9ee6ce063a2ef6b84e48646aa95b80988",
+      "target": "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839"
+    }
   },
   "pre": {
     "args": [],
     "kind": "atomic",
     "name": "true"
   },
-  "return_sort": {
-    "args": [],
-    "kind": "ctor",
-    "name": "FunctionContractMemento"
-  }
+  "input_cids": [
+    "blake3-512:9e51447f7507c6fd2a616e4ec06ff1800d98f7708f83bee83f94e2ce72a078cf83c85120a305c824d138de31826b32a9ee6ce063a2ef6b84e48646aa95b80988",
+    "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839"
+  ]
 }

@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "do",
     "result": "Stmt",
-    "wp": "do body once, then loop while cond"
+    "wp_note": "do body once, then loop while cond"
   },
   "pre": {
     "args": [],

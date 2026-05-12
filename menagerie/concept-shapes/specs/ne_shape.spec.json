@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "ne",
     "result": "Bool",
-    "wp": "integer not-equal comparison"
+    "wp_note": "integer not-equal comparison"
   },
   "pre": {
     "args": [],

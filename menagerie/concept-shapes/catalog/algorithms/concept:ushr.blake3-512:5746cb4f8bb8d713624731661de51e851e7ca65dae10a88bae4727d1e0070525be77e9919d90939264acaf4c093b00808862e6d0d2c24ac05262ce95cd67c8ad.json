@@ -1,0 +1,63 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:ushr",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Int"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Int"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      },
+      "wp_note": "TypeScript binary operator >>> (zero-fill right shift, operands coerced to ToUint32)"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  },
+  "cid": "blake3-512:5746cb4f8bb8d713624731661de51e851e7ca65dae10a88bae4727d1e0070525be77e9919d90939264acaf4c093b00808862e6d0d2c24ac05262ce95cd67c8ad",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "h2ndWdQ0Gu/puCmOOOCqfFB8leA2/Flnp4elMKhkjA1zig0u76AkPxfxnWRwQN3abt4s66jPY4EmTJ7NgYB4Cg=="
+  }
+}

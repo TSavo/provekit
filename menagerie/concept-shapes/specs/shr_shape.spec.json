@@ -44,7 +44,7 @@
     "kind": "operation-contract",
     "operator": "shr",
     "result": "Int",
-    "wp": "integer right shift expression"
+    "wp_note": "integer right shift expression"
   },
   "pre": {
     "args": [],

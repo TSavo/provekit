@@ -25,6 +25,7 @@
       "Int",
       "Int"
     ],
+    "result": "Bool",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -36,10 +37,7 @@
         }
       ]
     },
-    "kind": "operation-contract",
-    "operator": "lt",
-    "result": "Bool",
-    "wp": "integer less-than comparison"
+    "wp_note": "integer less-than comparison"
   },
   "pre": {
     "args": [],

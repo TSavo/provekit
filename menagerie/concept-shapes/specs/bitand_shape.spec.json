@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "bitand",
     "result": "Int",
-    "wp": "integer bitwise and expression"
+    "wp_note": "integer bitwise and expression"
   },
   "pre": {
     "args": [],

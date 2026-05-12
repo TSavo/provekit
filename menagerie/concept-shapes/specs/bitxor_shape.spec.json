@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "bitxor",
     "result": "Int",
-    "wp": "integer bitwise xor expression"
+    "wp_note": "integer bitwise xor expression"
   },
   "pre": {
     "args": [],

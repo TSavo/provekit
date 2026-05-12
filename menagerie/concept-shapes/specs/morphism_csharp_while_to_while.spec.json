@@ -19,27 +19,26 @@
   ],
   "kind": "algorithm",
   "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:9e17ea6aea8c466be983443fbb08356ca010183f8b695c02c40793fd80f7afb542d6925c304e4c3a38e053a22fa57ab89ebf3e8698b9536947f1c3a0bfd4e4a0",
+    "target_shape_cid": "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {},
+    "literal_map": {},
     "homomorphism_obligation": {
       "kind": "structural-wp-abstraction-and-effect-subset",
       "source": "blake3-512:9e17ea6aea8c466be983443fbb08356ca010183f8b695c02c40793fd80f7afb542d6925c304e4c3a38e053a22fa57ab89ebf3e8698b9536947f1c3a0bfd4e4a0",
-      "target": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
-    },
-    "kind": "contract-renaming-morphism",
-    "literal_map": {},
-    "operator_map": {},
-    "renaming_map": {},
-    "representation_map": {},
-    "source_contract_cid": "blake3-512:9e17ea6aea8c466be983443fbb08356ca010183f8b695c02c40793fd80f7afb542d6925c304e4c3a38e053a22fa57ab89ebf3e8698b9536947f1c3a0bfd4e4a0",
-    "target_shape_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+      "target": "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
+    }
   },
   "pre": {
     "args": [],
     "kind": "atomic",
     "name": "true"
   },
-  "return_sort": {
-    "args": [],
-    "kind": "ctor",
-    "name": "FunctionContractMemento"
-  }
+  "input_cids": [
+    "blake3-512:9e17ea6aea8c466be983443fbb08356ca010183f8b695c02c40793fd80f7afb542d6925c304e4c3a38e053a22fa57ab89ebf3e8698b9536947f1c3a0bfd4e4a0",
+    "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
+  ]
 }

@@ -44,7 +44,7 @@
     "kind": "operation-contract",
     "operator": "shl",
     "result": "Int",
-    "wp": "integer left shift expression"
+    "wp_note": "integer left shift expression"
   },
   "pre": {
     "args": [],

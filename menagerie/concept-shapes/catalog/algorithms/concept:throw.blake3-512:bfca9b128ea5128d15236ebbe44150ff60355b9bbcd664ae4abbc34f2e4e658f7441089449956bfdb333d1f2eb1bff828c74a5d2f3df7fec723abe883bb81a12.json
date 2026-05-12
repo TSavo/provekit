@@ -1,0 +1,62 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:throw",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Value"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "Value"
+      ],
+      "result": "Stmt",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      },
+      "wp_note": "throw exception or value"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Panic"
+        },
+        {
+          "kind": "effect-signature",
+          "name": "Panics"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  },
+  "cid": "blake3-512:bfca9b128ea5128d15236ebbe44150ff60355b9bbcd664ae4abbc34f2e4e658f7441089449956bfdb333d1f2eb1bff828c74a5d2f3df7fec723abe883bb81a12",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "J7EEOwQwydT92XfVQwJiqh0rVG37ZsguQH5nzVobc6dhegaOvRZIX3o+YA/bFUZBCNWw1ssherBUezUFK+CLCA=="
+  }
+}
