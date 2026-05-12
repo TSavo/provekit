@@ -20,10 +20,11 @@ corresponding concept hub op.  Three discharge strategies are attempted in order
       concept op's full effect set is not surprised if the actual lang op does
       fewer effects.  The reverse (lang does MORE than concept promised) is never
       discharged.  Composes with wp-abstraction and pre-weakening.
-   d. wp_rule abstraction: if the lang spec carries post.wp_rule but the concept
-      spec does not (hub ops do not yet carry wp_rule; deferred to #633 per spec
-      §1.4), strip wp_rule from the comparison and attempt byte-equality discharge.
-      Discharge method: "structural-wp-rule-abstraction".
+   d. wp_rule substitution: if the lang spec carries post.wp_rule, strip it, then
+      re-inject concept's wp_rule (when present) and attempt byte-equality discharge.
+      Equality-gated: when BOTH sides carry wp_rule and they disagree, discharge is
+      refused (soundness guard).  When only lang carries wp_rule the gate is silent.
+      Discharge method: "structural-wp-rule-substitution".
 
 Concept ops declare the UNION of all language effects for the same op, so the
 effect-⊆ relaxation discharges language ops that do a proper subset of those effects.
@@ -530,8 +531,9 @@ def try_structural_subsumption(after_spec, concept_spec):
        the concept CID regardless of which side originated the wp_rule.
        Fast path: when the only differences are wp_rule presence and/or the wp/wp_note
        key rename, the fast path handles both in one step.
-       Discharge methods: "structural-wp-rule-abstraction" (wp_rule-only difference,
-       same key), "structural-wp-abstraction" (key rename or both key + wp_rule).
+       Discharge methods: "structural-wp-rule-substitution" (wp_rule-only difference,
+       same key -- concept's wp_rule substituted into relaxed copy; equality-gated),
+       "structural-wp-abstraction" (key rename or both key + wp_rule).
 
     Returns (method_string, pre_relaxed, wp_abstracted) on success, or None on failure.
     Sound: false-negatives (remaining gaps) are acceptable; false-positives are not
@@ -564,6 +566,18 @@ def try_structural_subsumption(after_spec, concept_spec):
     # (injected by apply_wp_rule in concept_spec_from_base).  _make_relaxed handles
     # both sides symmetrically by re-injecting concept's wp_rule into the relaxed copy.
     after_has_wp_rule = "wp_rule" in after_post
+    after_wp_rule = after_post.get("wp_rule")
+    concept_wp_rule = concept_post.get("wp_rule")
+
+    # Soundness gate: when BOTH sides carry a wp_rule and they disagree, the
+    # lang spec is asserting a different weakest-precondition formula than the
+    # concept hub declares.  Structural subsumption cannot discharge that --
+    # it would be a false positive.  Return None to leave the gap open.
+    # (If only one side carries wp_rule the gate is silent: concept makes no
+    # claim, or lang makes a claim the concept doesn't constrain -- both are
+    # sound outcomes handled downstream.)
+    if after_wp_rule is not None and concept_wp_rule is not None and after_wp_rule != concept_wp_rule:
+        return None
 
     # notes_match: True if the post.notes field (or its absence) is identical
     # on both sides.  A language spec may carry notes that the concept hub lacks;
@@ -654,7 +668,7 @@ def try_structural_subsumption(after_spec, concept_spec):
         needs_key_norm = not wp_byte_same
         relaxed = _make_relaxed(False, needs_key_norm, False)
         if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
-            method = "structural-wp-rule-abstraction" if not needs_key_norm else "structural-wp-abstraction"
+            method = "structural-wp-rule-substitution" if not needs_key_norm else "structural-wp-abstraction"
             return (method, False, needs_key_norm)
 
     # Try all useful combinations of relaxations.
