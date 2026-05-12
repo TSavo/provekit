@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs;
+use std::io::Write as _;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -24,8 +25,26 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Write `text` to `path` and mark it executable.
+///
+/// Uses explicit `sync_all` + drop before `set_permissions` to ensure the
+/// kernel writer-fd is fully closed before the caller spawns the script.
+/// This prevents ETXTBSY (os error 26) races on Linux where `exec` refuses
+/// a file that still has an open writer fd.
 fn write_executable(path: &Path, text: &str) {
-    fs::write(path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap_or_else(|e| panic!("open {}: {e}", path.display()));
+        f.write_all(text.as_bytes())
+            .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+        f.sync_all()
+            .unwrap_or_else(|e| panic!("sync {}: {e}", path.display()));
+        // f is dropped here — fd closed before chmod
+    }
     #[cfg(unix)]
     {
         let mut perms = fs::metadata(path)
@@ -35,6 +54,29 @@ fn write_executable(path: &Path, text: &str) {
         fs::set_permissions(path, perms)
             .unwrap_or_else(|e| panic!("chmod {}: {e}", path.display()));
     }
+}
+
+/// Spawn `cmd` and retry up to 5 times if the CLI subprocess reports
+/// ETXTBSY ("Text file busy", os error 26) in stderr.
+///
+/// The root cause is a Linux kernel race: `exec` refuses a file that still
+/// has an open writer fd anywhere on the system (e.g. the parallel test
+/// runner's cargo worker just finished writing the plugin script).
+/// `write_executable` closes + syncs before returning, but a belt-and-braces
+/// retry catches any residual races.
+fn output_retrying_etxtbsy(cmd: &mut Command) -> std::process::Output {
+    const MAX_ATTEMPTS: u32 = 5;
+    for attempt in 0..MAX_ATTEMPTS {
+        let out = cmd.output().expect("spawn provekit");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let is_etxtbsy = !out.status.success()
+            && (stderr.contains("Text file busy") || stderr.contains("os error 26"));
+        if !is_etxtbsy {
+            return out;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20 * u64::from(attempt + 1)));
+    }
+    cmd.output().expect("spawn provekit (final attempt)")
 }
 
 #[test]
@@ -235,14 +277,14 @@ done
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
-        .arg("lift")
-        .arg(&project)
-        .arg("--identify-only")
-        .arg("--json")
-        .arg("--quiet")
-        .output()
-        .expect("spawn provekit lift --identify-only");
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("lift")
+            .arg(&project)
+            .arg("--identify-only")
+            .arg("--json")
+            .arg("--quiet"),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -294,17 +336,17 @@ done
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
-        .arg("mint")
-        .arg("--project")
-        .arg(&project)
-        .arg("--out")
-        .arg(&out_dir)
-        .arg("--no-attest")
-        .arg("--json")
-        .arg("--quiet")
-        .output()
-        .expect("spawn provekit mint");
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("mint")
+            .arg("--project")
+            .arg(&project)
+            .arg("--out")
+            .arg(&out_dir)
+            .arg("--no-attest")
+            .arg("--json")
+            .arg("--quiet"),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -406,15 +448,15 @@ done
     )
     .expect("write config");
 
-    let output = Command::new(provekit_bin())
-        .arg("mint")
-        .arg("--project")
-        .arg(&project)
-        .arg("--no-attest")
-        .arg("--json")
-        .arg("--quiet")
-        .output()
-        .expect("spawn provekit mint");
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("mint")
+            .arg("--project")
+            .arg(&project)
+            .arg("--no-attest")
+            .arg("--json")
+            .arg("--quiet"),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -831,14 +873,14 @@ surface = "zig"
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
-        .arg("lift")
-        .arg(project.path())
-        .arg("--json")
-        .arg("--quiet")
-        .current_dir(&root)
-        .output()
-        .expect("spawn provekit lift zig");
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("lift")
+            .arg(project.path())
+            .arg("--json")
+            .arg("--quiet")
+            .current_dir(&root),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -968,14 +1010,14 @@ surface = "cpp"
     )
     .expect("write manifest");
 
-    let output = Command::new(provekit_bin())
-        .arg("lift")
-        .arg(project.path())
-        .arg("--json")
-        .arg("--quiet")
-        .current_dir(&root)
-        .output()
-        .expect("spawn provekit lift cpp");
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("lift")
+            .arg(project.path())
+            .arg("--json")
+            .arg("--quiet")
+            .current_dir(&root),
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
