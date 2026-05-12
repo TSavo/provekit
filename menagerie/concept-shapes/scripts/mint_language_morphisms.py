@@ -901,7 +901,8 @@ def emit_gap_memento(gap, after_spec=None, concept_spec=None, source_op_cid=None
     stem = f"gap_{sanitize(language)}_{sanitize(concept_slug)}_to_{sanitize(concept)}"
     path = GAP_DIR / f"{stem}.json"
     write_json(path, memento)
-    return path
+    cid = discharge.canonical_cid_file(path)
+    return path, cid, stem
 
 
 def write_gap_report(gaps, records):
@@ -1102,13 +1103,15 @@ def main():
             if not directory.is_dir():
                 gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": f"menagerie/{language['dir']}/specs", "reason": "language signature directory is absent", "lang_id": language["id"], "slug": op_def["slug"]}
                 gaps.append(gap_entry)
-                emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
                 continue
             found = False
             if op_def["slug"] not in LANG_SUPPORTED.get(language["id"], set()):
                 gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": "not-supported", "reason": "operation not in supported set for this language", "lang_id": language["id"], "slug": op_def["slug"]}
                 gaps.append(gap_entry)
-                emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
                 continue
             for candidate in spec_candidates(op_def, language):
                 path = directory / candidate
@@ -1132,7 +1135,8 @@ def main():
                         reason_str = diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])
                         gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": reason_str, "lang_id": language["id"], "slug": op_def["slug"]}
                         gaps.append(gap_entry)
-                        emit_gap_memento(gap_entry, after_spec=after_spec, concept_spec=concept_spec, source_op_cid=source_cid, shape_cid=shape_cid)
+                        gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, after_spec=after_spec, concept_spec=concept_spec, source_op_cid=source_cid, shape_cid=shape_cid)
+                        rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
                         continue
                     discharge_method, pre_relaxed, wp_abstracted = subsumption
                     effect_subset_relaxed = "effect-subset" in discharge_method
@@ -1179,7 +1183,8 @@ def main():
             if not found:
                 gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": f"op_{op_def['slug'].replace('-', '_')}.spec.json", "reason": "no candidate source operation spec", "lang_id": language["id"], "slug": op_def["slug"]}
                 gaps.append(gap_entry)
-                emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
         records.append(record)
     append_cids(rows)
     write_gap_report(gaps, records)
