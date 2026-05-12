@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:assert->java:assert-statement",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:assert",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "java:assert-statement",
+        "args": [
+          {
+            "kind": "const",
+            "value": "assert pred : \"assertion failed\"",
+            "sort": {
+              "kind": "ctor",
+              "name": "AssertStmt",
+              "args": []
+            }
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "assert is a statement syntactic form, not a method call; cannot be stored in a variable or passed as first-class value; takes a boolean expression directly; no custom handler hook; syntax is 'assert expr : detail' not a function call",
+      "domain_narrowing": "Java assertions disabled by default at JVM startup; -ea (enableassertions) flag required to activate; in production, assertions are typically not enabled; realization domain narrowed to JVM invocations with -ea; programs running without -ea silently skip the held(p) check",
+      "ub_introduction": "none: Java has no undefined behavior; assert throws AssertionError (extends Error) which is a structured throwable; no memory corruption or undefined state introduced",
+      "effect_divergence": "Java assert throws AssertionError (catchable) vs concept:assert held(p) postcondition implying program termination on failure; a caller catching AssertionError can continue execution, violating the postcondition; effect diverges when caught",
+      "value_divergence": "none: predicate slot maps directly to assert boolean expression; no value-representation gap"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:c8ef8b9aafeb49b5203bcbf1d5f66866c6357a571441a26f5b05a5c560f435e11e3b4420f87e2e5de97ea8da3f55e4dc8f7b290263696af2445e5e46d934e7de",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
