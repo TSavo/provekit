@@ -36,6 +36,7 @@ use std::sync::Arc;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
+use libprovekit::core::Term as LibTerm;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
@@ -331,6 +332,12 @@ pub struct BindingRecord {
     pub pretty_pre: Option<String>,
     pub pretty_post: Option<String>,
     pub site_memento_cid: String,
+    /// Wave-C: lifted source body for cross-language canonical rewrite. `Some`
+    /// means the body fit the wave-c lift slice and a real term graph is
+    /// available for the realizer; `None` means the canonical-rewrite path
+    /// falls back to the language-idiomatic stub and we record a
+    /// `bind-stub-body-emitted` gap covering this binding.
+    pub body_term: Option<LibTerm>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -408,6 +415,10 @@ struct RawLift {
     attr_post: Option<String>,
     concept_annotation: Option<String>,
     term_shape: TermShape,
+    /// Wave-C: optional lifted function body. `Some` means the source body
+    /// fit the wave-c slice (return/var/const/if/binop/loop/...); `None` means
+    /// the canonical-rewrite path falls back to the language-idiomatic stub.
+    body_term: Option<LibTerm>,
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +479,7 @@ fn run_bind_engine(
                 let attr_contract = extract_contract_attrs(&item_fn.attrs);
                 let concept_comment = extract_concept_annotation(&src, &fn_name);
                 let term_shape = TermShape::from_fn(item_fn);
+                let body_term = crate::syn_to_term::lift_fn_body(item_fn);
                 raw_lifts.push(RawLift {
                     file: rel.clone(),
                     fn_name,
@@ -476,6 +488,7 @@ fn run_bind_engine(
                     attr_post: attr_contract.post,
                     concept_annotation: concept_comment,
                     term_shape,
+                    body_term,
                 });
             }
         }
@@ -563,7 +576,26 @@ fn run_bind_engine(
 
     for lift in &raw_lifts {
         let shape_cid = lift.term_shape.shape_cid();
-        let concept_idx = *shape_to_concept.get(&shape_cid).expect("shape was clustered");
+        // Wave-C Gap 3 fix: bind v0 previously looked up `concept_idx` solely by
+        // `shape_cid`, but bucket creation (first loop) prefers
+        // `// concept: NAME` annotations over shape-CID identity. When several
+        // functions share a shape (e.g. `wrap_identity`, `toggle`, `swap_pair`
+        // all collapse to `Body([Opaque])`), the last bucket inserted under that
+        // shape would silently overwrite the human-annotated `concept:identity`
+        // and `concept:bool-cell` buckets with `concept:pair`. Recompute the
+        // same priority key here and use `key_to_concept_idx` so each function
+        // keeps the concept its annotation declares.
+        let bucket_key = if let Some(human) = lift.concept_annotation.as_ref() {
+            format!("human:{human}")
+        } else if let Some(c) = catalog.match_shape(&shape_cid, &lift.term_shape) {
+            format!("catalog:{}", c.id)
+        } else {
+            format!("shape:{shape_cid}")
+        };
+        let concept_idx = *key_to_concept_idx
+            .get(&bucket_key)
+            .or_else(|| shape_to_concept.get(&shape_cid))
+            .expect("shape was clustered");
 
         // Contract origin priority: attribute > test > algebra-synthesis > empty.
         let (origin, pre, post) = if lift.attr_pre.is_some() || lift.attr_post.is_some() {
@@ -765,6 +797,7 @@ fn run_bind_engine(
             pretty_pre: pre,
             pretty_post: post,
             site_memento_cid,
+            body_term: lift.body_term.clone(),
         });
     }
 
@@ -792,22 +825,49 @@ fn run_bind_engine(
         kind: "v0-capability-gap".into(),
         detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
     });
-    // F6: Record stub-body gap when bindings exist.
+    // F6 + Wave-C: stub-body gap is now CONDITIONAL on real fallback.
     //
-    // In v0 the canonical-rewrite path has no full term graph; it delegates to
-    // `realize_for_bind` which always emits idiomatic stub bodies (panic/raise/todo).
-    // This gap record is the honest substrate disclosure: real lifted source bodies
-    // are NOT present in these outputs.  A future PR that wires the term graph to the
-    // canonical path should remove this gap kind and replace it with a "term-body-realized"
-    // kind.
-    if !bindings.is_empty() {
+    // Wave-C (PR #748) plumbed `body_term` through the lift pipeline. Bindings
+    // whose source body fit the wave-c lift slice ride the realizer with a real
+    // term graph; bindings outside that slice fall back to the language stub.
+    // The gap is recorded only when at least one binding actually falls back,
+    // and lists the affected function names so downstream consumers can target
+    // slice extension precisely (Supra omnia rectum: never claim more than we
+    // can prove).
+    let stubbed_fns: Vec<String> = bindings
+        .iter()
+        .filter(|b| b.body_term.is_none())
+        .map(|b| b.site_fn.clone())
+        .collect();
+    let realized_fns: Vec<String> = bindings
+        .iter()
+        .filter(|b| b.body_term.is_some())
+        .map(|b| b.site_fn.clone())
+        .collect();
+    if !stubbed_fns.is_empty() {
         gaps.push(GapRecord {
             kind: "bind-stub-body-emitted".into(),
             detail: format!(
-                "canonical-rewrite emitted stub bodies for {n} binding(s): no real lifted term \
-                 graph available in v0; bodies are idiomatic language stubs \
-                 (panic/raise/todo/throw). Real bodies deferred to v1.",
-                n = bindings.len()
+                "canonical-rewrite emitted stub bodies for {n} of {total} binding(s): \
+                 these source bodies fall outside the wave-c lift slice. \
+                 stubbed=[{stubbed}] realized=[{realized}]",
+                n = stubbed_fns.len(),
+                total = bindings.len(),
+                stubbed = stubbed_fns.join(","),
+                realized = realized_fns.join(","),
+            ),
+        });
+    }
+    if !realized_fns.is_empty() {
+        gaps.push(GapRecord {
+            kind: "bind-real-body-emitted".into(),
+            detail: format!(
+                "canonical-rewrite emitted real lifted bodies for {n} of {total} binding(s): \
+                 fns=[{fns}]. Each realized body went through realize_for_bind with a \
+                 wave-c-lifted Term graph rather than a Term::Unit stub.",
+                n = realized_fns.len(),
+                total = bindings.len(),
+                fns = realized_fns.join(","),
             ),
         });
     }
@@ -1101,14 +1161,18 @@ fn apply_canonical_rewrite(
 
                 if let Some(b) = by_fn.get(&fn_name) {
                     let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);
-                    // Delegate to ORP realize_for_bind; fall back to emit_target_stub if
-                    // the ORP realizer refuses (e.g. unsupported language).
+                    // Wave-C (PR #748): when the lift pipeline produced a real
+                    // body term, pass it through; otherwise fall through to a
+                    // Term::Unit body which the realizer renders as a language
+                    // stub. The fall-back is the honest loss-record path —
+                    // never claim a real body when none was lifted.
                     let realized_chunk = match crate::cmd_transport::realize_for_bind(
                         target_lang,
                         &fn_name,
                         &params,
                         &orig,
                         &concept_name,
+                        b.body_term.as_ref(),
                     ) {
                         Ok(r) => {
                             // Prepend bind-specific metadata (substrate-origin, memento-cid,
@@ -1117,8 +1181,9 @@ fn apply_canonical_rewrite(
                             format!("{meta}\n{}", r.source)
                         }
                         Err(_) => {
-                            // ORP refused (unsupported language or parse error); fall back
-                            // to the annotation-level stub so output is never empty.
+                            // ORP refused (unsupported language or parse error
+                            // mid-realize); fall back to the annotation-level
+                            // stub so output is never empty.
                             emit_target_stub(target_lang, &fn_name, &params, b, &concept_name, mode)
                         }
                     };

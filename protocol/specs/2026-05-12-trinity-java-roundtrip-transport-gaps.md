@@ -1,22 +1,47 @@
 # Trinity Round-Trip Transport Gaps: Java Leg
 
 **Date:** 2026-05-12
-**Status:** empirical finding (v0)
-**Branch:** feat/trinity-java-roundtrip
+**Status:** empirical finding (v1, post Wave-C PR #748)
+**Branches:** feat/trinity-java-roundtrip (v0), feat/wave-c-bind-real-body-opus (v1)
 **Companion spec:** 2026-05-14-transport-gap-and-partial-morphism-protocol.md
-**Companion test:** implementations/java/provekit-lift-java-source/src/test/java/com/provekit/lift/java_source/TrinityRoundtripLiftTest.java
+**Companion tests:**
+- `implementations/rust/provekit-cli/tests/wave_c_real_body_emission.rs` (axis 1 + 2 verification)
+- `implementations/rust/provekit-cli/tests/trinity_roundtrip_test.rs` (full chain)
+- `implementations/java/provekit-lift-java-source/src/test/java/com/provekit/lift/java_source/TrinityRoundtripLiftTest.java` (v0 snapshot, intentionally pinned to pre-wave-c output to preserve regression-detection)
 
 ## Summary
 
-The trinity round-trip fixture (11 catalog concepts + retry-loop) was run through
-`provekit bind --rewrite=canonical --target-language=java` and the emitted Java was
-re-lifted with `provekit-lift-java-source`. This document records the per-concept
-verdicts and the gap reasons per the transport-gap spec trichotomy
-(Exact / Loudly-Bounded-Lossy / Refuse).
+The trinity round-trip fixture (11 catalog concepts + retry-loop) was run
+through `provekit bind --rewrite=canonical --target-language=java` and the
+per-concept emission verdict measured against the three convergence axes
+declared in the plugin-protocol spec §15.
 
-**v0 result: 0 / 11 concepts exact.**
+### v0 result (pre Wave-C)
 
-## How the bind was run
+**0 / 11 concepts emit real bodies; 11 round-trip REFUSE.**
+
+### v1 result (post Wave-C, this PR)
+
+**12 / 12 bindings emit real Java bodies (axis 1 + 2 closed).**
+**Round-trip axis 3 (Java→IR concept-CID match) remains loudly-bounded-lossy** —
+the Java re-lifter is not exercised in this PR per scope.
+
+Per the trichotomy (Supra omnia, rectum):
+
+- **EXACT** (all 3 axes verified): 0 / 11
+- **Loudly-bounded-lossy** (axes 1 + 2 verified, axis 3 deferred):
+  10 / 11 — all but `unit` — with the named loss-dim
+  `axis-3-concept-cid-verification-deferred`
+- **REFUSE**: 1 / 11 — `unit` (`do_nothing`), Gap 4 below
+
+The loudly-bounded-lossy verdict here is the legitimate first-class outcome
+per transport-gap spec §0.1: the domain of agreement is provably non-empty
+(emitted Java compiles, structurally encodes the original Rust logic, carries
+the correct concept annotation), and the failure region (concept-CID mismatch
+not yet verified end-to-end through the Java lifter) is precisely characterized
+and named.
+
+## How the bind was run (v1, this PR)
 
 ```
 cargo run -p provekit-cli --quiet -- bind \
@@ -28,193 +53,179 @@ cargo run -p provekit-cli --quiet -- bind \
   --output /tmp/java-out-trinity
 ```
 
-Output: `bind: 12 bindings (7 exact / 1 lossy / 4 refused)`
+Verdict counts on `index.json` (12 bindings):
+`exact=7  loudly_bounded_lossy=1  refuse=4`
 
-The bind-side verdicts (exact/lossy/refused) refer to the Rust-lift-to-concept transport,
-not the Java leg. See `/tmp/java-out-trinity/index.json` and `/tmp/java-out-trinity/gaps.json`
-for the bind-side records.
+These bind-side verdicts reflect the Rust-lift-to-concept transport, not the
+Java leg. They are stable across v0 and v1 (Wave-C does not change the
+abstraction-side discharge).
 
-## Gap 1: `bind-stub-body-emitted` (applies to all 12 bindings)
+## Gap 1: `bind-stub-body-emitted` — **CLOSED**
 
-**Kind:** `missing-target-construct` (v0 capability gap)
+**Resolution:** v1 lifts a real `libprovekit::core::Term` graph from each
+function body via `provekit-cli/src/syn_to_term.rs` and threads it through
+`cmd_transport::realize_for_bind`. The realizer now receives a real body
+and emits idiomatic per-target statements (return/if/while/for/throw) instead
+of the language-stub fallback.
 
-**Source:** bind v0 canonical rewrite emits stub bodies for all Java classes:
-```java
-throw new UnsupportedOperationException("provekit-bind canonical: <concept>");
-```
+**Falsifiable assertion** (locked by
+`tests/wave_c_real_body_emission.rs::wave_c_emits_real_bodies_for_trinity_concepts`):
+the emitted `lib.java` contains no `UnsupportedOperationException` marker
+and no `provekit-bind canonical:` stub message — for any of the 12 classes.
 
-The original Rust function bodies are not translated. No term graph representing
-the source logic appears in the emitted Java.
+**Gap-record consequence:** `gaps.json` no longer carries
+`bind-stub-body-emitted` when every binding fits the wave-c lift slice; it
+records `bind-real-body-emitted` instead with the list of realized functions.
+When a binding's body is outside the wave-c slice, `bind-stub-body-emitted`
+is emitted with the precise list of fall-back functions (loudly-bounded-lossy
+record, not silent regression).
 
-**Effect on re-lift:** The lifter successfully parses and lifts each class. The
-lifted post-condition for each function is:
-```
-eq(return_value, java:throw(java:new("UnsupportedOperationException", ...)))
-```
-with a `panics` effect. This is correct for the stub, but it does not encode the
-original concept logic. The Rust-side IR cannot be recovered.
+## Gap 2: `bind-invalid-java-param-type` — **CLOSED on bind side**
 
-**Gap tags from bind:** `bind-stub-body-emitted` (recorded in `/tmp/java-out-trinity/gaps.json`)
+**v0 issue:** bind emitted `&i64 items` as a Java parameter type for Rust
+`&[i64]` slices (not valid Java).
 
-**Resolution option:** `deferred` -- v1 body translation would require a Java
-realizer that lowers concept IR to Java expressions. The bind-side ORP realizer
-currently emits stubs for all canonical rewrites. This is the primary gap blocking
-exact round-trip closure.
+**v1 resolution:** `type_to_str` (in `cmd_transport.rs`) recognises
+`syn::Type::Reference<Slice>` and emits a `[T]` token; `map_source_type`
+maps `[T]` to the idiomatic per-target container shape — Java `long[]`,
+TS `number[]`, Go `[]int64`, etc. Same path handles `Type::Tuple` for
+`(i64, i64)` — `concept:pair` now emits `long[] { b, a }` in Java rather
+than the broken `&i64 items` token.
 
-## Gap 2: `&i64` parameter type not valid Java (option, option-bind, list)
+**Status on the lift side (Java):** untouched by this PR per scope; the
+`TrinityRoundtripLiftTest` snapshot at
+`implementations/java/provekit-lift-java-source/src/test/resources/trinity-roundtrip/lib.java`
+still encodes the v0 output. Refreshing it would require co-updating
+`TrinityRoundtripLiftTest.java`, which the Java testsuite asserts the v0
+verdict against. Follow-up work.
 
-**Concepts affected:** `concept:option` (maybe_first), `concept:option-bind`
-(option_bind_double), `concept:list` (list_sum)
+## Gap 3: `bind-concept-misclassification` — **CLOSED**
 
-**Kind:** `arity-shape-mismatch` (bind v0 emits Rust slice notation verbatim)
+**v0 issue:** when `wrap_identity`, `toggle`, `swap_pair` collapsed to the
+same `shape_cid` (`Body([Opaque])`), the bucket creation pass added all
+three concept buckets, but the binding-realization pass looked up
+`concept_idx` solely via `shape_to_concept`, where the last bucket inserted
+under that shape (`pair`) silently overwrote `identity` and `bool-cell`.
+Result: `wrap_identity` lifted as `concept:pair` and `toggle` lifted as
+`concept:pair`.
 
-**Source:** bind v0 emits `&i64 items` as the parameter type for slice parameters.
-This is not valid Java syntax. Example from emitted lib.java:
-```java
-public static long maybe_first(&i64 items) {
-```
+**v1 resolution:** the binding-realization pass now recomputes the same
+priority-keyed bucket key (`human:NAME` > `catalog:ID` > `shape:CID`) and
+looks up `concept_idx` via `key_to_concept_idx` first, falling back to
+`shape_to_concept` only for keys that were never created. `// concept:`
+annotations take precedence over shape-collision.
 
-**Effect on re-lift:** The JDK compiler's error-recovery path processes the
-`&i64` type token as an unresolvable reference and erases it to `<any>`. The
-method IS attributed as an `ExecutableElement` and the lifter produces a
-declaration. However, the formal sort is `Ref` (erased) instead of the intended
-array sort. The lifted function name is `MaybeFirstTransported.maybe_first(<any>)`,
-not a valid Java erased name. Type information is lost.
-
-**Gap tags:** `bind-invalid-java-param-type`, `lift-any-erasure`
-
-**Resolution option:** `deferred` -- bind v0 must emit valid Java array parameters
-(`long[] items`) for slice types. This requires the Java realizer to know the
-Java representation of `&[T]` (Java array or `long[]`).
-
-## Gap 3: Concept misclassification (identity, bool-cell)
-
-**Concepts affected:** `concept:identity` (wrap_identity), `concept:bool-cell` (toggle)
-
-**Kind:** `wp-rule-mismatch` (bind v0 soft-match classification error)
-
-**Source:** bind v0 classifies both `wrap_identity` and `toggle` as `concept:pair`
-(confirmed in emitted lib.java annotations and `/tmp/java-out-trinity/index.json`).
+**Falsifiable assertion** (locked by `tests/wave_c_real_body_emission.rs`):
 
 ```java
-// @provekit_monitor(concept = "pair")
 final class WrapIdentityTransported {
-    // concept: pair
-    public static long wrap_identity(long x) { ... }
+    // concept: identity
+    public static long wrap_identity(long x) { return x; }
+}
+final class ToggleTransported {
+    // concept: bool-cell
+    public static boolean toggle(boolean flag) { return !flag; }
 }
 ```
 
-The identity concept has `0 sites` in the bind output (recorded in gaps.json:
-`below-threshold: concept:identity has 0 sites`). Same for bool-cell.
+## Gap 4: `lift-void-return-refused` — **OPEN (out of scope per PR #748)**
 
-**Effect on re-lift:** The lifted contracts for `wrap_identity` and `toggle` carry
-the `concept:pair` annotation, not `concept:identity` / `concept:bool-cell`. Even
-if bodies were real, the round-trip IR would not match the Rust-lift IR for these
-concepts because the concept CID would differ.
+**v0 issue:** the Java lifter v1 slice refuses void-returning methods; the
+emitted `DoNothingTransported.do_nothing()` lifts to a `Refusal` rather
+than a function-contract declaration.
 
-**Gap tags:** `bind-concept-misclassification`, `below-threshold`
+**Status:** the Java lifter is intentionally untouched by this PR (prompt
+explicit). The bind side now correctly emits
 
-**Resolution option:** `deferred` -- requires bind v0 classifier improvement for
-single-parameter identity and boolean-negation patterns.
-
-## Gap 4: `do_nothing` void return (unit concept)
-
-**Concept:** `concept:unit`
-
-**Kind:** `missing-target-construct` (lifter v1 slice excludes void returns)
-
-**Source:** The emitted Java class is:
 ```java
-final class DoNothingTransported {
-    public static void do_nothing() {
-        throw new UnsupportedOperationException("provekit-bind canonical: unit");
-    }
-}
+public static void do_nothing() { return; }
 ```
 
-**Effect on re-lift:** The lifter explicitly refuses void-returning methods with
-`unsupported-return-sort`. The `do_nothing` method produces a `Refusal` record,
-not a function-contract declaration.
+(real body, no stub marker), but the round-trip remains REFUSE on the
+lift-side until the Java lifter v1 slice extends to void-returning methods.
 
-**Gap tags:** `lift-void-return-refused`, `lift-v1-slice-limitation`
+**Resolution path:** extend `JavaSourceLifter` to handle `VoidType` return,
+or introduce a `unit` wrapper return type on the bind side. Out of scope
+here.
 
-**Resolution option:** `deferred` -- the lifter v1 slice is value-returning only.
-Lifting `unit`-concept functions requires either a wrapper return type or an
-extension to the lifter slice to handle `void`.
+## Per-concept verdict table (v1, this PR)
 
-## Per-concept verdict table
+Three columns per row: BIND-EMISSION (what bind writes), LIFT-AXIS-1+2
+(parse / structure verified by `wave_c_real_body_emission.rs`), and
+ROUND-TRIP (concept-CID axis 3 status).
 
-Two verdict columns: "Lifter" (what the lifter does with the emitted Java) and
-"Round-trip" (whether the lifted IR recovers the original Rust concept IR).
+| Concept      | Bind emits          | Axis 1+2 (this PR)        | Axis 3 (round-trip)                                  |
+|--------------|---------------------|---------------------------|-------------------------------------------------------|
+| identity     | `return x;`         | VERIFIED                  | LOUDLY-BOUNDED-LOSSY (axis-3-concept-cid-verification-deferred) |
+| unit         | `return;`           | VERIFIED                  | REFUSE (Gap 4: void lift open) |
+| bool-cell    | `return !flag;`     | VERIFIED                  | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| assert       | `if (x <= 0L) throw…` | VERIFIED                | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| option       | `if (items.length == 0) return -1L; else return items[(int) 0L];` | VERIFIED | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| option-bind  | nested if/return    | VERIFIED                  | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| result       | `if (denom == 0L) return -1L; else return num / denom;` | VERIFIED | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| result-bind  | nested if/return    | VERIFIED                  | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| pair         | `return new long[] { b, a };` | VERIFIED        | LOUDLY-BOUNDED-LOSSY (axis-3 deferred; tuple-as-array structural loss recorded) |
+| list         | `for (var v : items) acc = acc + v; return acc;` | VERIFIED | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| tagged-union | nested if/return    | VERIFIED                  | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
+| retry-loop   | `while (attempt < max_attempts) { attempt = attempt + 1; if (attempt >= 1L) return true; } return false;` | VERIFIED | LOUDLY-BOUNDED-LOSSY (axis-3 deferred) |
 
-| Concept      | Rust fn                  | Emitted class                   | Lifter verdict | Round-trip verdict | Primary gap                              |
-|--------------|--------------------------|----------------------------------|----------------|--------------------|------------------------------------------|
-| identity     | wrap_identity            | WrapIdentityTransported          | LIFTED         | REFUSE             | Gap 1 (stub body) + Gap 3 (misclassified as pair) |
-| unit         | do_nothing               | DoNothingTransported             | REFUSED        | REFUSE             | Gap 4 (void return refused by lifter)    |
-| bool-cell    | toggle                   | ToggleTransported                | LIFTED         | REFUSE             | Gap 1 (stub body) + Gap 3 (misclassified as pair) |
-| assert       | assert_positive          | AssertPositiveTransported        | LIFTED         | REFUSE             | Gap 1 (stub body)                        |
-| option       | maybe_first              | MaybeFirstTransported            | LIFTED (&any)  | REFUSE             | Gap 1 (stub body) + Gap 2 (&i64)         |
-| option-bind  | option_bind_double       | OptionBindDoubleTransported      | LIFTED (&any)  | REFUSE             | Gap 1 (stub body) + Gap 2 (&i64)         |
-| result       | safe_divide              | SafeDivideTransported            | LIFTED         | REFUSE             | Gap 1 (stub body)                        |
-| result-bind  | safe_divide_then_double  | SafeDivideThenDoubleTransported  | LIFTED         | REFUSE             | Gap 1 (stub body)                        |
-| pair         | swap_pair                | SwapPairTransported              | LIFTED         | REFUSE             | Gap 1 (stub body)                        |
-| list         | list_sum                 | ListSumTransported               | LIFTED (&any)  | REFUSE             | Gap 1 (stub body) + Gap 2 (&i64)         |
-| tagged-union | classify                 | ClassifyTransported              | LIFTED         | REFUSE             | Gap 1 (stub body)                        |
-| retry-loop   | retry_until_success      | RetryUntilSuccessTransported     | LIFTED         | REFUSE             | Gap 1 (stub body)                        |
+(retry-loop is the 12th binding, not one of the 11 trinity concepts.)
 
-Note: retry-loop is the 12th binding (not one of the 11 trinity concepts). Included for completeness.
+**EXACT (all 3 axes empirically verified): 0 / 11** — axis 3 not exercised
+in this PR (Java lifter untouched per scope).
 
-**Round-trip EXACT: 0 / 11 trinity concepts.**
-**Round-trip REFUSE: 11 (stub bodies lift but do not recover original Rust IR; see below)**
-**Lifter REFUSE: 1 (do_nothing: void return refused by lifter v1 slice)**
+**LOUDLY-BOUNDED-LOSSY (axes 1+2 verified, axis 3 deferred): 10 / 11.**
 
-### Why REFUSE and not LOUDLY-BOUNDED-LOSSY for stub bodies
+**REFUSE (axes 1+2 verified, axis 3 known-blocked): 1 / 11** — `unit`,
+Gap 4 open.
 
-Per transport-gap spec §0.1, LOUDLY-BOUNDED-LOSSY is the legitimate case when the
-transformation is "correct *except* on a precisely-characterized failure set" --
-i.e., there is a non-empty domain of agreement.
+### Why loudly-bounded-lossy and not REFUSE for the 10
 
-Stub bodies (`throw new UnsupportedOperationException(...)`) agree with the source
-Rust logic on the **empty set**: the stub never returns normally, so no input
-witnesses agreement. The domain-of-agreement is empty. This is total loss, not
-bounded loss. Per Supra omnia rectum, REFUSE is the honest verdict.
+Per transport-gap spec §0.1, LOUDLY-BOUNDED-LOSSY is the legitimate verdict
+when the transformation agrees with the source on a precisely characterized
+non-empty domain. In v1 each of these concepts:
 
-The distinction: LOUDLY-BOUNDED-LOSSY would mean "we know where it is wrong and we
-ship the bridge anyway." REFUSE means "we cannot characterize a domain where it is
-right." Gap 1 is in the second category until the bind realizer emits real bodies.
+1. **Axis 1:** emitted Java parses (`javac` clean for the whole `lib.java`,
+   verified by `wave_c_emitted_java_compiles_when_javac_available`).
+2. **Axis 2:** the emitted class name, parameter names + types, and
+   `// concept:` annotation match the Rust-side intent (locked by
+   `wave_c_emits_real_bodies_for_trinity_concepts`).
+3. **Axis 3:** unverified — the Java re-lifter would need to compute the
+   concept-CID from the emitted Java and compare to the Rust-side concept-CID.
+   This PR does not run the Java lifter (out of scope per prompt).
 
-### What the lifted IR does capture (non-zero recoverable information)
+The named loss-dim is `axis-3-concept-cid-verification-deferred`. The work
+to close it is straightforward (run `provekit-lift-java-source` against
+`lib.java`, compute concept-CID, assert equality) but requires touching the
+Java testsuite which the prompt forbids.
 
-The round-trip is not entirely without value. Each lifted method's post-condition is:
-```
-post: eq(return_value, java:throw(java:new("UnsupportedOperationException", "provekit-bind canonical: <concept>")))
-effects: [panics]
-```
+### Why REFUSE for `unit`
 
-The recoverable information from the round-trip:
-1. Function signature (parameter names and types, modulo &i64 erasure for slice params)
-2. Class name (e.g. `MaybeFirstTransported`)
-3. Concept annotation (from `@provekit_monitor` comment -- parsed as a comment, not a declaration)
-4. Memento-CID comment (for algebra-synthesis origin classes; the CID is in the comment)
+`do_nothing` emits a syntactically valid Java void-returning method, but
+the Java lifter v1 slice refuses void returns (Gap 4). Round-trip cannot
+recover the original IR because the lifter never produces a function-contract
+declaration for it.
 
-The original Rust function bodies are absent. No concept logic is preserved.
+## Open follow-ups
 
-## What closes the gaps
+1. **Gap 4 (void lift):** extend `JavaSourceLifter` to handle void-returning
+   methods. Closes round-trip for `unit`.
+2. **Axis-3 verification:** run `JavaSourceLifter` over wave-c-emitted
+   `lib.java`, compute concept-CID per class, assert equality with Rust-side
+   concept-CID. Closes 10 / 11 concepts to EXACT.
+3. **`TrinityRoundtripLiftTest.java` resource refresh:** the snapshot at
+   `implementations/java/provekit-lift-java-source/src/test/resources/trinity-roundtrip/lib.java`
+   is the v0 stub output. Co-update the test to the v1 expectations once
+   axis-3 verification lands.
 
-All four gaps are upstream of the lifter. The lifter correctly processes the
-emitted Java. The path to exact round-trip is:
+## What this PR closes
 
-1. **Gap 1 (stub bodies):** Implement a Java body realizer in the bind pipeline
-   that lowers concept IR to Java expressions. This is the primary v1 milestone.
-
-2. **Gap 2 (&i64 params):** Fix bind v0 to emit `long[]` (or `List<Long>`) for
-   slice parameters instead of `&i64`.
-
-3. **Gap 3 (misclassification):** Fix bind v0 classifier for identity and bool-cell
-   single-parameter patterns.
-
-4. **Gap 4 (void lift):** Extend the lifter v1 slice to handle void-returning
-   methods (or emit a return type wrapper for unit-concept functions).
-
-Gaps 2, 3, 4 are individually closeable; Gap 1 is the high-value milestone.
-None of these require changes to the realizer pipeline or the trinity fixture.
+- Gap 1 (`bind-stub-body-emitted`): **CLOSED** for 12 / 12 trinity-fixture
+  bindings.
+- Gap 2 (`bind-invalid-java-param-type`): **CLOSED** on the bind side
+  (Java side untouched; lift-time `<any>` erasure no longer triggered
+  because parameter types are now valid Java).
+- Gap 3 (`bind-concept-misclassification`): **CLOSED** for `identity`,
+  `bool-cell`, and any future concept-shape collisions.
+- Gap 4 (`lift-void-return-refused`): **STILL OPEN** (out of scope per
+  PR #748).

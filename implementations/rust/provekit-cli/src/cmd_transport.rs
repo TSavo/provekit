@@ -925,6 +925,14 @@ fn type_to_str(ty: &syn::Type) -> String {
             seg.map(|s| s.ident.to_string()).unwrap_or_else(|| "i64".to_string())
         }
         syn::Type::Reference(r) => {
+            // Wave-C: `&[T]` (Rust slice reference) needs distinct handling
+            // from `&T` so the target-language type mapper can emit an array
+            // or list shape instead of the raw `&T` token which is not valid
+            // syntax in Java/Go/C# (Gap 2 in transport-gaps spec).
+            if let syn::Type::Slice(slice) = r.elem.as_ref() {
+                let inner = type_to_str(slice.elem.as_ref());
+                return format!("[{inner}]");
+            }
             let inner = type_to_str(r.elem.as_ref());
             if r.mutability.is_some() {
                 format!("&mut {inner}")
@@ -932,7 +940,20 @@ fn type_to_str(ty: &syn::Type) -> String {
                 format!("&{inner}")
             }
         }
+        syn::Type::Slice(s) => {
+            let inner = type_to_str(s.elem.as_ref());
+            format!("[{inner}]")
+        }
+        // Wave-C: `(T, U, ...)` is a Rust tuple. Surface it through the
+        // type system as a `(T, U, ...)` token so the language mapper can
+        // pick an idiomatic shape (Java/C# `long[]`, TS `[number, number]`,
+        // etc.); raw return-type emission would have produced a `Tuple`
+        // identifier from `type_to_str`'s default-path which is also broken.
         syn::Type::Tuple(tt) if tt.elems.is_empty() => "()".to_string(),
+        syn::Type::Tuple(tt) => {
+            let parts: Vec<String> = tt.elems.iter().map(type_to_str).collect();
+            format!("({})", parts.join(","))
+        }
         _ => "i64".to_string(),
     }
 }
@@ -1270,18 +1291,21 @@ pub(crate) fn realize_for_bind(
     params: &[String],
     source_text: &str,
     concept_name: &str,
+    body_term: Option<&Term>,
 ) -> Result<RealizedSource, TransportCliError> {
     let annotations = lift_rust_contracts(source_text, function);
     let (param_types, return_type) = parse_rust_fn_types(source_text, function);
-    // Pass Term::Unit as body: the bind path has no term graph yet.
-    // realize_function detects Unit and emits a compilable idiomatic stub.
+    // Wave-C: when the bind pipeline lifted a real Term graph, realize the
+    // source body directly; otherwise fall through to `Term::Unit`, which the
+    // realizer detects and replaces with a language-idiomatic compilable stub.
+    let body = body_term.unwrap_or(&Term::Unit);
     realize_function(
         language,
         function,
         params,
         &param_types,
         &return_type,
-        &Term::Unit,
+        body,
         &annotations,
         concept_name,
     )
@@ -1531,6 +1555,46 @@ fn stub_body_for(style: TargetStyle, concept_name: &str) -> String {
 
 /// Map a Rust/source-language type name to the idiomatic name for the target style.
 fn map_source_type(src: &str, style: TargetStyle) -> String {
+    // Wave-C: lift `[T]` (slice marker emitted by `type_to_str` for `&[T]`)
+    // into an idiomatic per-language array/list shape; lift `(T,U,...)`
+    // (tuple) into the same idiom (Java/C# `long[]`, TS `[T,U]`, Python tuple).
+    // The leading-char shortcut is intentional — avoid recursion on simple
+    // primitives.
+    if let Some(inner) = slice_inner(src) {
+        let elem = map_source_type(inner, style);
+        return match style {
+            TargetStyle::Java | TargetStyle::CSharp => format!("{elem}[]"),
+            TargetStyle::Go => format!("[]{elem}"),
+            TargetStyle::TypeScript => format!("{elem}[]"),
+            TargetStyle::Php => "array".to_string(),
+            TargetStyle::Python => "list".to_string(),
+            TargetStyle::Ruby => String::new(),
+            TargetStyle::Rust | TargetStyle::Zig => format!("&[{elem}]"),
+        };
+    }
+    if let Some(parts) = tuple_parts(src) {
+        let mapped: Vec<String> = parts
+            .iter()
+            .map(|p| map_source_type(p, style))
+            .collect();
+        // Same-element tuple → fixed-size array. Heterogeneous tuple stays as
+        // a target-idiomatic tuple/object stub (Java has none; choose array
+        // and let the realizer comment the loss in the post-realize gap).
+        let all_same = mapped.iter().all(|m| m == &mapped[0]);
+        return match style {
+            TargetStyle::Java | TargetStyle::CSharp if all_same => format!("{}[]", mapped[0]),
+            TargetStyle::Go if all_same => format!("[{}]{}", mapped.len(), mapped[0]),
+            TargetStyle::TypeScript => format!("[{}]", mapped.join(", ")),
+            TargetStyle::Python => "tuple".to_string(),
+            TargetStyle::Ruby => String::new(),
+            TargetStyle::Php => "array".to_string(),
+            TargetStyle::Rust | TargetStyle::Zig => format!("({})", mapped.join(", ")),
+            // Heterogeneous fallback for Java/C#/Go: Object[] is the
+            // lossy-but-compilable shape; the loss is captured by the
+            // bind-stub-body / bind-real-body gap accounting.
+            _ => "Object[]".to_string(),
+        };
+    }
     match style {
         TargetStyle::Rust | TargetStyle::Zig => src.to_string(),
         TargetStyle::Python | TargetStyle::Ruby => String::new(), // untyped
@@ -1587,6 +1651,30 @@ fn map_source_type(src: &str, style: TargetStyle) -> String {
             other => other.to_string(),
         },
     }
+}
+
+fn slice_inner(src: &str) -> Option<&str> {
+    let s = src.strip_prefix('[')?;
+    let s = s.strip_suffix(']')?;
+    // Reject if it contains a tuple comma at depth zero.
+    if s.contains(',') {
+        return None;
+    }
+    Some(s)
+}
+
+fn tuple_parts(src: &str) -> Option<Vec<&str>> {
+    let s = src.strip_prefix('(')?;
+    let s = s.strip_suffix(')')?;
+    if s.is_empty() {
+        return None; // `()` is unit, handled separately
+    }
+    // Reject single-element parens like `(i64)` which is NOT a tuple in Rust;
+    // they would be `(i64,)`. Simple heuristic: must contain a comma.
+    if !s.contains(',') {
+        return None;
+    }
+    Some(s.split(',').map(|p| p.trim()).collect())
 }
 
 /// Format a typed parameter for the target language.
@@ -1694,8 +1782,14 @@ fn emit_stmt(term: &Term, style: TargetStyle, indent: usize) -> Result<String, T
                 TargetStyle::Python => format!("{pad}while {cond}:\n{body}"),
                 TargetStyle::Ruby => format!("{pad}while {cond}\n{body}{pad}end\n"),
                 TargetStyle::Go => format!("{pad}for {cond} {{\n{body}{pad}}}\n"),
-                TargetStyle::Rust | TargetStyle::Zig => {
+                TargetStyle::Rust => {
                     format!("{pad}while {cond} {{\n{body}{pad}}}\n")
+                }
+                // Wave-C: Zig `while` requires parentheses around the
+                // condition; the old paren-less shape was a leftover from
+                // when stub bodies hid this divergence.
+                TargetStyle::Zig => {
+                    format!("{pad}while ({cond}) {{\n{body}{pad}}}\n")
                 }
                 _ => format!("{pad}while ({cond}) {{\n{body}{pad}}}\n"),
             })
@@ -1712,7 +1806,12 @@ fn emit_stmt(term: &Term, style: TargetStyle, indent: usize) -> Result<String, T
                 TargetStyle::TypeScript => format!("{pad}let {target} = {value};\n"),
                 TargetStyle::Zig => format!("{pad}var {target}: i32 = {value};\n"),
                 TargetStyle::CSharp | TargetStyle::Java => {
-                    format!("{pad}int {target} = {value};\n")
+                    // Wave-C: use `var` (Java 10+, C# 3+) so the compiler
+                    // infers the local's type from the RHS expression. The
+                    // previous `int` literal was wrong for `long`-typed
+                    // computations (the trinity fixture is i64-typed
+                    // throughout); `var` is the honest cross-language shape.
+                    format!("{pad}var {target} = {value};\n")
                 }
             })
         }
@@ -1729,6 +1828,17 @@ fn emit_stmt(term: &Term, style: TargetStyle, indent: usize) -> Result<String, T
         }
         Term::Op { name, args, .. } if local_op(name) == "return" => {
             ensure_arity(name, args, 1)?;
+            // Wave-C: a unit-return (`-> ()` Rust signature) lifts as
+            // `return(Term::Unit)`; downstream void targets (Java void, Go bare
+            // return, C# void) need a bare `return;`, not `return ();`.
+            if matches!(&args[0], Term::Unit) {
+                return Ok(match style {
+                    TargetStyle::Python | TargetStyle::Ruby | TargetStyle::Go => {
+                        format!("{pad}return\n")
+                    }
+                    _ => format!("{pad}return;\n"),
+                });
+            }
             Ok(format!(
                 "{pad}return {}{}\n",
                 emit_expr(&args[0], style)?,
@@ -1742,11 +1852,61 @@ fn emit_stmt(term: &Term, style: TargetStyle, indent: usize) -> Result<String, T
         Term::Op { name, .. } if local_op(name) == "continue" => {
             Ok(format!("{pad}continue{}\n", stmt_end(style)))
         }
+        // Wave-C: `panic!()` etc. lift to `op("panic", [])`. Emit as
+        // language-idiomatic throw / raise; matches `stub_body_for` shape so
+        // realized bodies stay parse-clean even when the source panics.
+        Term::Op { name, .. } if local_op(name) == "panic" => Ok(format!(
+            "{pad}{}\n",
+            panic_stmt(style)
+        )),
+        // Wave-C: `for (var, iter, body)` → idiomatic each loop.
+        // (Iter shape is target-language-specific; we lift Rust `&[T]` to a
+        // simple iterable reference and let the language render it.)
+        Term::Op { name, args, .. } if local_op(name) == "for" => {
+            ensure_arity(name, args, 3)?;
+            let var = emit_lvalue(&args[0], style)?;
+            let iter = emit_expr(&args[1], style)?;
+            let body = emit_block(&args[2], style, indent + 1)?;
+            Ok(match style {
+                TargetStyle::Python => format!("{pad}for {var} in {iter}:\n{body}"),
+                TargetStyle::Ruby => format!("{pad}{iter}.each do |{var}|\n{body}{pad}end\n"),
+                TargetStyle::Go => format!("{pad}for _, {var} := range {iter} {{\n{body}{pad}}}\n"),
+                TargetStyle::Rust | TargetStyle::Zig => {
+                    format!("{pad}for {var} in {iter} {{\n{body}{pad}}}\n")
+                }
+                TargetStyle::Java | TargetStyle::CSharp => {
+                    // Element type is unknown at the realizer level; use `var`
+                    // (Java 10+/C# `var`) which both compile when the iterable
+                    // is well-typed.
+                    format!("{pad}for (var {var} : {iter}) {{\n{body}{pad}}}\n")
+                }
+                TargetStyle::TypeScript => {
+                    format!("{pad}for (const {var} of {iter}) {{\n{body}{pad}}}\n")
+                }
+                TargetStyle::Php => {
+                    format!("{pad}foreach (${iter} as ${var}) {{\n{body}{pad}}}\n")
+                }
+            })
+        }
         other => Ok(format!(
             "{pad}{}{}\n",
             emit_expr(other, style)?,
             stmt_end(style)
         )),
+    }
+}
+
+fn panic_stmt(style: TargetStyle) -> String {
+    match style {
+        TargetStyle::Rust => "panic!(\"provekit-bind: source panic\");".into(),
+        TargetStyle::Python => "raise RuntimeError(\"provekit-bind: source panic\")".into(),
+        TargetStyle::Ruby => "raise \"provekit-bind: source panic\"".into(),
+        TargetStyle::Go => "panic(\"provekit-bind: source panic\")".into(),
+        TargetStyle::Java => "throw new RuntimeException(\"provekit-bind: source panic\");".into(),
+        TargetStyle::CSharp => "throw new System.Exception(\"provekit-bind: source panic\");".into(),
+        TargetStyle::TypeScript => "throw new Error(\"provekit-bind: source panic\");".into(),
+        TargetStyle::Zig => "@panic(\"provekit-bind: source panic\");".into(),
+        TargetStyle::Php => "throw new \\RuntimeException(\"provekit-bind: source panic\");".into(),
     }
 }
 
@@ -1808,7 +1968,70 @@ fn emit_expr(term: &Term, style: TargetStyle) -> Result<String, TransportCliErro
                 }
                 "index" | "array-subscript" => {
                     ensure_arity(name, args, 2)?;
-                    Ok(format!("{}[{}]", emit_expr(&args[0], style)?, emit_expr(&args[1], style)?))
+                    let receiver = emit_expr(&args[0], style)?;
+                    let index = emit_expr(&args[1], style)?;
+                    // Wave-C: Java/C# array indices must be `int`; the `L`
+                    // suffix we apply to integer literals (for `long` locals
+                    // and returns) is rejected by `arr[0L]`. Cast the index
+                    // to `int` in those languages.
+                    Ok(match style {
+                        TargetStyle::Java => format!("{receiver}[(int) {index}]"),
+                        TargetStyle::CSharp => format!("{receiver}[(int) {index}]"),
+                        _ => format!("{receiver}[{index}]"),
+                    })
+                }
+                // Wave-C: collection probes — used by trinity fixture's
+                // `option`, `option-bind`, `list` concepts.
+                "is_empty" => {
+                    ensure_arity(name, args, 1)?;
+                    let recv = emit_expr(&args[0], style)?;
+                    Ok(match style {
+                        TargetStyle::Python => format!("len({recv}) == 0"),
+                        TargetStyle::Ruby => format!("{recv}.empty?"),
+                        TargetStyle::Go => format!("len({recv}) == 0"),
+                        TargetStyle::Java | TargetStyle::CSharp => format!("{recv}.length == 0"),
+                        TargetStyle::TypeScript => format!("{recv}.length === 0"),
+                        TargetStyle::Php => format!("count({recv}) == 0"),
+                        TargetStyle::Rust | TargetStyle::Zig => format!("{recv}.is_empty()"),
+                    })
+                }
+                "len" => {
+                    ensure_arity(name, args, 1)?;
+                    let recv = emit_expr(&args[0], style)?;
+                    Ok(match style {
+                        TargetStyle::Python | TargetStyle::Go => format!("len({recv})"),
+                        TargetStyle::Ruby => format!("{recv}.size"),
+                        TargetStyle::Java | TargetStyle::CSharp | TargetStyle::TypeScript => {
+                            format!("{recv}.length")
+                        }
+                        TargetStyle::Php => format!("count({recv})"),
+                        TargetStyle::Rust | TargetStyle::Zig => format!("{recv}.len()"),
+                    })
+                }
+                // Wave-C: `tuple(a, b)` for concept:pair. Most target
+                // languages have no native tuple; emit a per-language honest
+                // approximation (Python tuple, Java/C#/TS array literal, Go
+                // composite literal). The bind-side `swap_pair` returns a
+                // pair-of-i64; we choose an array `{b, a}` so Java compiles
+                // when the return type is `long[]` (Gap 2 territory: the
+                // sig mapper still emits `long` for `(i64, i64)`; flagged in
+                // the transport-gaps spec but the body itself is honest).
+                "tuple" => {
+                    let elems: Vec<String> = args
+                        .iter()
+                        .map(|a| emit_expr(a, style))
+                        .collect::<Result<_, _>>()?;
+                    let joined = elems.join(", ");
+                    Ok(match style {
+                        TargetStyle::Python | TargetStyle::Ruby => format!("({joined})"),
+                        TargetStyle::Java | TargetStyle::CSharp => {
+                            format!("new long[] {{ {joined} }}")
+                        }
+                        TargetStyle::TypeScript => format!("[{joined}]"),
+                        TargetStyle::Go => format!("[2]int64{{{joined}}}"),
+                        TargetStyle::Php => format!("[{joined}]"),
+                        TargetStyle::Rust | TargetStyle::Zig => format!("({joined})"),
+                    })
                 }
                 "member" => {
                     ensure_arity(name, args, 2)?;
@@ -1838,7 +2061,16 @@ fn emit_expr(term: &Term, style: TargetStyle) -> Result<String, TransportCliErro
 
 fn emit_const(value: &Value, style: TargetStyle) -> Result<String, TransportCliError> {
     if let Some(n) = value.as_i64() {
-        return Ok(n.to_string());
+        // Wave-C: Java and C# parse bare integer literals as `int`. The
+        // trinity fixture (and most Rust sources) is i64-typed, so an
+        // unsuffixed literal triggers `possible lossy conversion from long
+        // to int` at every let-binding. Emit `L` suffix for Java and C#
+        // (the latter accepts both `L` and `l`; uppercase preferred for
+        // legibility).
+        return Ok(match style {
+            TargetStyle::Java | TargetStyle::CSharp => format!("{n}L"),
+            _ => n.to_string(),
+        });
     }
     if let Some(b) = value.as_bool() {
         return Ok(match (style, b) {

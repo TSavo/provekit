@@ -947,11 +947,23 @@ fn f5_csharp_canonical_parses() {
 }
 
 // ============================================================================
-// F6: Test 27 -- gaps.json records bind-stub-body-emitted for stub functions
+// F6 + Wave-C: gaps.json records honest body-emission state.
+//
+// Original contract (F6): the canonical-rewrite path always emitted stub
+// bodies, and the bind engine MUST record `bind-stub-body-emitted` whenever
+// any binding existed. This was the v0 honest-disclosure rule.
+//
+// Wave-C (PR #748) closed that gap: the bind pipeline now lifts a real Term
+// graph for the trinity-slice of Rust constructs and threads it through to
+// the realizer. The contract therefore changes from "always declare stubs"
+// to "declare the actual emission state — stubs xor real bodies xor both —
+// per binding". Every bind run with bindings MUST record at least one of
+// `bind-stub-body-emitted` / `bind-real-body-emitted`; the substrate is
+// loud-on-which-it-emitted regardless of slice coverage.
 // ============================================================================
 
 #[test]
-fn f6_gaps_record_stub_body_emitted() {
+fn f6_gaps_record_body_emission_state() {
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     // Use invisible mode so the bind engine runs without writing files.
@@ -961,10 +973,15 @@ fn f6_gaps_record_stub_body_emitted() {
         serde_json::from_str(&fs::read_to_string(out.join("gaps.json")).unwrap()).unwrap();
     let gap_arr = gaps["gaps"].as_array().expect("gaps must be array");
     let kinds: Vec<&str> = gap_arr.iter().filter_map(|g| g["kind"].as_str()).collect();
-    // v0 canonical bind always emits stub bodies (no term graph yet).
-    // The gap record is the honest disclosure: substrate knows stubs were emitted.
+    // At least one of stub-body-emitted / real-body-emitted MUST be present
+    // when bindings exist, because the substrate must be honest about which
+    // path it took. Both can be present simultaneously when the fixture has
+    // a mix of in-slice and out-of-slice functions.
+    let has_stub = kinds.contains(&"bind-stub-body-emitted");
+    let has_real = kinds.contains(&"bind-real-body-emitted");
     assert!(
-        kinds.contains(&"bind-stub-body-emitted"),
-        "gaps.json must record bind-stub-body-emitted when canonical stubs are emitted; kinds found: {kinds:?}"
+        has_stub || has_real,
+        "gaps.json must record bind-{{stub,real}}-body-emitted when bindings exist; \
+         kinds found: {kinds:?}"
     );
 }

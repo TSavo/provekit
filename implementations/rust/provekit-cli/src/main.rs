@@ -47,6 +47,7 @@ mod project_config;
 mod prompts;
 mod protocol;
 mod report_fmt;
+mod syn_to_term;
 
 /// Exit codes used across subcommands.
 pub const EXIT_OK: u8 = 0;
