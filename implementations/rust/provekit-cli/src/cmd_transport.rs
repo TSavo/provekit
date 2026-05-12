@@ -1030,7 +1030,7 @@ fn formula_to_syntax(formula: &Formula, style: TargetStyle) -> String {
                     .unwrap_or_else(|| "<COMPLEX>".to_string());
                 match style {
                     TargetStyle::Python | TargetStyle::Ruby => format!("not {inner}"),
-                    _ => format!("!{inner}"),
+                    _ => format!("!({inner})"),
                 }
             }
             "implies" => {
@@ -1731,7 +1731,7 @@ mod annotation_tests {
     fn test_not_rust() {
         let f = not_(gt(var("x"), num(0)));
         let s = formula_to_syntax(&f, TargetStyle::Rust);
-        assert_eq!(s, "!x > 0");
+        assert_eq!(s, "!(x > 0)");
     }
 
     #[test]
@@ -1739,6 +1739,30 @@ mod annotation_tests {
         let f = not_(gt(var("x"), num(0)));
         let s = formula_to_syntax(&f, TargetStyle::Python);
         assert_eq!(s, "not x > 0");
+    }
+
+    // Regression: unary `!` must paren its inner expression in C-family targets.
+    // Without parens, `!x > 0` parses as `(!x) > 0` in Rust/Go/TS/Zig/Java/PHP/C# —
+    // wrong semantics. The parenthesized form `!(x > 0)` is unambiguous in all targets.
+    #[test]
+    fn not_with_comparison_emits_parenthesized() {
+        for style in [
+            TargetStyle::Rust,
+            TargetStyle::Go,
+            TargetStyle::TypeScript,
+            TargetStyle::Zig,
+            TargetStyle::Java,
+            TargetStyle::Php,
+            TargetStyle::CSharp,
+        ] {
+            let f = not_(gt(var("x"), num(0)));
+            let out = formula_to_syntax(&f, style);
+            assert_eq!(
+                out, "!(x > 0)",
+                "style {:?} emitted `{out}` — expected `!(x > 0)`",
+                style
+            );
+        }
     }
 
     #[test]
