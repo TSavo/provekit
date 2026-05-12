@@ -1312,3 +1312,245 @@ pub struct CompoundContractMemento {
 // ============================================================
 // End manual extension block -- compound-contract layer (PR-A)
 // ============================================================
+
+// ============================================================
+// MANUAL EXTENSION BLOCK -- DomainClaim normalization (PR-A)
+// Source of truth:
+//   protocol/specs/2026-05-13-domain-claim-normalization.md §1
+//
+// The canonical wire-form `k(I) = t` surface for the substrate's
+// verifier. Every memento type that can be verified projects onto a
+// `DomainClaim` via an `Into<DomainClaim>` impl. The verifier consumes
+// only `DomainClaim`s; per-memento-type dispatch moves out of the
+// verifier into thin From-impls.
+//
+// NOTE ON NAMING COLLISION: a `DomainClaim` type also exists in
+// `libprovekit::core::types`. That type is the IN-MEMORY AGGREGATE used
+// by libprovekit primitives (`compose`, `address`, `discharge`).
+// The type defined here is the WIRE FORM. The two coexist; see spec §0.1
+// and the PR roadmap (§6, PR-D considers renaming the libprovekit one).
+//
+// Per JCS canonicalization (2026-04-30-canonicalization-grammar.md),
+// serde field order MUST equal alphabetical order. Optional fields are
+// omitted from the serialized JSON when None.
+//
+// The `signature` field is REQUIRED in the wire form but is REPLACED by
+// the empty string when computing the CID-determining bytes (signer-
+// independent addressing). The CID computation itself lives in
+// `provekit-claim-envelope` (this crate has no JCS encoder).
+// ============================================================
+
+/// The trichotomy verdict kind for a `DomainClaim`. Exactly one of three.
+///
+/// Source of truth: spec §1.
+///
+/// - `Exact`: `k(I) = t` with `loss_record` empty in every dimension.
+/// - `LoudlyBoundedLossy`: `k(I) = t` modulo the loss bounded by `loss_record`.
+///   `loss_record` is non-empty in at least one dimension.
+/// - `Refuse`: `k(I)` cannot be shown to equal `t` under any tractable
+///   loss-record. `refusal_reason` is required.
+///
+/// Serializes as the kebab-case wire strings `"exact"`,
+/// `"loudly-bounded-lossy"`, `"refuse"`, matching
+/// `ConceptSiteMemento.discharge.verdict` exactly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VerdictKind {
+    #[serde(rename = "exact")]
+    Exact,
+    #[serde(rename = "loudly-bounded-lossy")]
+    LoudlyBoundedLossy,
+    #[serde(rename = "refuse")]
+    Refuse,
+}
+
+/// The verdict body of a `DomainClaim`.
+///
+/// Locked JCS key order: `discharge_receipt_cid` (omitted when absent),
+/// `kind`, `loss_record`, `refusal_reason` (omitted when absent).
+///
+/// Consistency invariants (spec §1.2) -- enforced by validators, not by
+/// serde:
+///   * `kind == Exact`               => `loss_record` empty,
+///                                       `discharge_receipt_cid` present,
+///                                       `refusal_reason` absent.
+///   * `kind == LoudlyBoundedLossy`  => `loss_record` non-empty,
+///                                       `discharge_receipt_cid` present,
+///                                       `refusal_reason` absent.
+///   * `kind == Refuse`              => `discharge_receipt_cid` absent,
+///                                       `refusal_reason` present.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerdictBody {
+    #[serde(rename = "discharge_receipt_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discharge_receipt_cid: Option<String>,
+    pub kind: VerdictKind,
+    #[serde(rename = "loss_record")]
+    pub loss_record: LossRecord,
+    #[serde(rename = "refusal_reason")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal_reason: Option<String>,
+}
+
+/// Provenance metadata for a `DomainClaim`.
+///
+/// Lean by design: the rich provenance lives on the source memento. The
+/// `DomainClaim` carries only the minimum required for the verifier to
+/// record who staked which claim and when.
+///
+/// Locked JCS key order: `declared_at`, `signer`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DomainClaimProvenance {
+    #[serde(rename = "declared_at")]
+    pub declared_at: String,
+    pub signer: String,
+}
+
+/// The canonical wire-form `k(I) = t` surface of the substrate.
+///
+/// Source of truth: protocol/specs/2026-05-13-domain-claim-normalization.md §1
+///
+/// Locked JCS key order (alphabetical):
+///   `input_cid`, `kind`, `kit_cid`, `provenance`, `signature`, `truth_cid`,
+///   `verdict`.
+///
+/// The CID-determining bytes are JCS(claim with `signature` replaced by the
+/// empty string) -- see spec §3.1. CID computation lives in
+/// `provekit-claim-envelope`.
+///
+/// Wire-name semantics (spec §1.1):
+///   * `kit_cid` = `k`, the operation that produced the claim.
+///   * `input_cid` = `I`, the artifact the operation was applied to.
+///   * `truth_cid` = `t`, the canonical truth claim (concept, target source, ...).
+///
+/// `kind` is always `"domain-claim"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DomainClaim {
+    #[serde(rename = "input_cid")]
+    pub input_cid: String,
+    pub kind: String,
+    #[serde(rename = "kit_cid")]
+    pub kit_cid: String,
+    pub provenance: DomainClaimProvenance,
+    pub signature: String,
+    #[serde(rename = "truth_cid")]
+    pub truth_cid: String,
+    pub verdict: VerdictBody,
+}
+
+impl DomainClaim {
+    /// The canonical `kind` discriminator for a `DomainClaim` wire object.
+    pub const KIND: &'static str = "domain-claim";
+
+    /// Construct an unsigned `DomainClaim`. The `signature` field is set
+    /// to the empty string; envelope-layer signers fill it in at mint
+    /// time. The CID-determining bytes treat the empty-string signature
+    /// as the elided placeholder (spec §3.1).
+    pub fn unsigned(
+        kit_cid: String,
+        input_cid: String,
+        truth_cid: String,
+        verdict: VerdictBody,
+        provenance: DomainClaimProvenance,
+    ) -> Self {
+        Self {
+            input_cid,
+            kind: Self::KIND.to_string(),
+            kit_cid,
+            provenance,
+            signature: String::new(),
+            truth_cid,
+            verdict,
+        }
+    }
+}
+
+/// Errors that may occur projecting a memento onto the wire-form `DomainClaim`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomainClaimConversionError {
+    /// The source memento carries a verdict string not in the trichotomy.
+    /// This indicates a bug in the source-memento validator (spec §2.4).
+    InvalidVerdictString(String),
+    /// A `RealizationDesugaringMemento` was offered standalone (not via a
+    /// citing `ConceptSiteMemento`). Standalone realizations are catalog
+    /// entries and are not directly verifiable through the `DomainClaim`
+    /// surface (spec §2.2).
+    StandaloneRealization,
+}
+
+impl std::fmt::Display for DomainClaimConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidVerdictString(s) => write!(
+                f,
+                "invalid verdict string on source memento: {s:?} \
+                 (expected one of \"exact\", \"loudly-bounded-lossy\", \"refuse\")"
+            ),
+            Self::StandaloneRealization => write!(
+                f,
+                "RealizationDesugaringMemento is standalone (not cited by a \
+                 ConceptSiteMemento); standalone realizations are catalog \
+                 entries and do not project directly onto DomainClaim"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DomainClaimConversionError {}
+
+/// Parse a `Discharge.verdict` wire-string into a `VerdictKind`.
+///
+/// This parser is INFALLIBLE on well-formed source mementos: the source
+/// memento's own validator rejects out-of-trichotomy verdict strings before
+/// the memento is minted. A failure here indicates a substrate invariant
+/// violation upstream (spec §2.4).
+fn parse_verdict_kind(s: &str) -> Result<VerdictKind, DomainClaimConversionError> {
+    match s {
+        "exact" => Ok(VerdictKind::Exact),
+        "loudly-bounded-lossy" => Ok(VerdictKind::LoudlyBoundedLossy),
+        "refuse" => Ok(VerdictKind::Refuse),
+        other => Err(DomainClaimConversionError::InvalidVerdictString(
+            other.to_string(),
+        )),
+    }
+}
+
+/// `ConceptSiteMemento -> DomainClaim` (spec §2.1).
+///
+/// Mapping:
+///   * `kit_cid`   <- `provenance.discharger_cid`
+///   * `input_cid` <- `code_site.source_cid`
+///   * `truth_cid` <- `concept_cid`
+///   * `verdict`   <- `discharge` (trichotomy preserved by construction)
+///
+/// The produced claim is UNSIGNED: `signature` is the empty string and
+/// `provenance.signer` / `provenance.declared_at` carry zero-value
+/// placeholders. Envelope-layer signers fill these in at mint time before
+/// computing the wire-form CID.
+impl TryFrom<&ConceptSiteMemento> for DomainClaim {
+    type Error = DomainClaimConversionError;
+
+    fn try_from(m: &ConceptSiteMemento) -> Result<Self, Self::Error> {
+        let kind = parse_verdict_kind(&m.discharge.verdict)?;
+        let verdict = VerdictBody {
+            discharge_receipt_cid: m.discharge.discharge_receipt_cid.clone(),
+            kind,
+            loss_record: m.discharge.loss_record.clone(),
+            refusal_reason: m.discharge.refusal_reason.clone(),
+        };
+        let provenance = DomainClaimProvenance {
+            declared_at: String::new(),
+            signer: String::new(),
+        };
+        Ok(Self::unsigned(
+            m.provenance.discharger_cid.clone(),
+            m.code_site.source_cid.clone(),
+            m.concept_cid.clone(),
+            verdict,
+            provenance,
+        ))
+    }
+}
+
+// ============================================================
+// End manual extension block -- DomainClaim normalization (PR-A)
+// ============================================================
