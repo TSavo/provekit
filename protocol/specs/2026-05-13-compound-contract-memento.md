@@ -43,6 +43,8 @@ Per Supra omnia, rectum (the 2026-05-11 refinement: "never claim more than you c
 - **Per-evidence verdict.** Each evidence has its own verdict when discharged against the concept's `wp_rule`. Verdicts are recorded in the discharge receipt (PR-F), not inside the evidence itself; the evidence is the raw contract bytes, not the discharge.
 - **Compound verdict.** The compound's verdict is DERIVED from the per-evidence verdicts under the recorded `aggregation_strategy`. See §2.
 
+A third path to `loudly-bounded-lossy` exists by construction: a binding-target CID that is recorded openly as a `pending:<symbol>` sentinel rather than as a resolved BLAKE3-512 digest. The sentinel's existence IS its contract; the discharger MUST NOT silently treat such a target as resolved. See §10.1 for the admitted form and the discharge consequence.
+
 ### §0.2 Why the evidence-set bytes are part of the compound CID
 
 Two compounds aggregating the same function's evidence but drawing from different sources (one with annotations only, one with annotations + tests + docstring) live at different CIDs. Different evidence-sets = different compound bytes = different CID. This is the same principle as ConceptSite §0.2 (different loss-record bytes = different binding CID): different addresses, different things. Adding a new evidence rolls the compound's CID, which rolls the binding's CID, which rolls every downstream consumer that cited that binding. The substrate's address space is its propagation engine.
@@ -403,7 +405,7 @@ Reject if:
 - Any required field is missing.
 - For `EvidenceMemento`: `kind != "evidence"`, `schemaVersion != "1"`, `confidence_basis_points > 10000`.
 - For `CompoundContractMemento`: `kind != "compound-contract"`, `schemaVersion != "1"`, any `evidence-ref.weight_basis_points > 10000`, or (when `aggregation_strategy = "conjunction"`) any `evidence-ref.weight_basis_points != 10000`.
-- Any hash/CID field does not match `"blake3-512:" ++ 128-hex`.
+- Any hash/CID field does not match `"blake3-512:" ++ 128-hex`, EXCEPT in the slots admitting the `pending:<symbol>` sentinel form per §10.1.
 - For `CompoundContractMemento`: `aggregation_strategy` is not one of the canonical labels AND v0 does not accept extension labels at all (per §0; only `"conjunction"` is wired in v0; the others are spec'd but return `Err(WpError::UnimplementedAggregationStrategy)` in Rust).
 
 NOTE on `source_kind`: validators MUST accept unknown source-kind labels at shape level (open extension). Downstream consumers decide whether to refuse unknown kinds; the spec does not.
@@ -443,12 +445,12 @@ For `EvidenceMemento`:
 
 - The pool MUST contain a canonical-source artifact with `cid = header.source_locator.source_cid`.
 - The pool MUST contain a lifter binary or rule-set with `cid = header.lifter_cid` (EXCEPT when `lifter_cid` is the reserved `auto-promote` sentinel, §4.4).
-- Any extension-field CIDs (e.g., `test_target_function_cid`) MUST resolve to existing mementos.
+- Any extension-field CIDs (e.g., `test_target_function_cid`) MUST resolve to existing mementos, EXCEPT in the slots admitting the `pending:<symbol>` sentinel form per §10.1.2 (`extension_fields.test_target_function_cid`, `extension_fields.loop_invariant_memento_cid`, `extension_fields.witness_memento_cid`, `extension_fields.synthesized_from_cluster_cid`): when such a slot literally matches the `pending:<symbol>` regex of §10.1.1, the resolve-or-reject check is skipped for THAT slot only (other CIDs in the same memento still go through the normal Pass-4 resolve check). The Pass-4 pool-referent check is replaced for that slot by the trichotomy substitution of §10.1.3: the discharger MUST emit a `loudly-bounded-lossy` per-evidence verdict and populate the receipt's `loss_record` under the `pending-target-not-resolved` loss-dimension (§10.1.3 step 2); the slot is NOT silently passed.
 
 For `CompoundContractMemento`:
 
-- The pool MUST contain a `FunctionContractMemento` with `cid = header.function_term_cid`.
-- For each `evidence-ref` in `evidences`, the pool MUST contain an `EvidenceMemento` with that CID.
+- The pool MUST contain a `FunctionContractMemento` with `cid = header.function_term_cid`, EXCEPT when `header.function_term_cid` literally matches the `pending:<symbol>` regex of §10.1.1 in the slot admitted by §10.1.2: the pool-referent check is skipped for `function_term_cid` only (the carve-out is narrow to that one slot). The check is replaced by the trichotomy substitution of §10.1.3: the discharger MUST emit a `loudly-bounded-lossy` compound verdict and populate the receipt's `loss_record` under the `pending-target-not-resolved` loss-dimension; the slot is NOT silently passed.
+- For each `evidence-ref` in `evidences`, the pool MUST contain an `EvidenceMemento` with that CID. The `evidences[*].evidence_cid` slot is explicitly forbidden to the sentinel by §10.1.2; this Pass-4 check stays a hard pool-referent requirement and admits no carve-out.
 
 ## §6. Composition semantics
 
@@ -582,6 +584,164 @@ The ten canonical `source_kind` labels and their extraction guidance:
 
 Each label is extension-open: validators MUST accept unknown labels at shape level (§5.1). Downstream consumers MAY refuse to compose through an unknown-kind evidence.
 
+Every `extension_fields` slot in this table that names a CID-valued back-link (`test_target_function_cid`, `loop_invariant_memento_cid`, `witness_memento_cid`, `synthesized_from_cluster_cid`) MAY carry the `pending:<symbol>` sentinel form per §10.1 in place of a resolved BLAKE3-512 CID, with the validation carve-out specified there. The `lifter_cid` of an `EvidenceMemento` (and the `source_locator.source_cid`) MUST NOT carry the sentinel; those are resolved at mint by construction.
+
+### §10.1 The `pending:<symbol>` sentinel (loudly-bounded-lossy form)
+
+**Normative.** A CID-valued field MAY carry the literal string form `pending:<symbol>` in place of a `blake3-512:` digest in the slots enumerated in §10.1.2, and only there. The sentinel is a content-addressed declaration that the field's resolved target is known by name but not yet resolved to a CID (cross-crate links, forward references, lazy resolution during multi-pass mint). The sentinel's wire-form existence IS the binding's contract: the substrate openly records that the target is unresolved rather than silently substituting a placeholder digest. This is the loudly-bounded-lossy arm of the trichotomy (per `docs/papers/09-lossy-boundary-compression.md` and the 2026-05-11 Supra omnia rectum refinement: never claim more than you can prove; an openly-recorded placeholder plus a characterized loss is legitimate, a silent placeholder is forbidden).
+
+#### §10.1.1 Syntax
+
+```
+pending-sentinel = "pending:" symbol
+symbol           = symbol-head symbol-tail*
+symbol-head      = ALPHA / "_"
+symbol-tail      = ALPHA / DIGIT / "_" / ":" / "."
+```
+
+Where `ALPHA` is `[A-Za-z]` and `DIGIT` is `[0-9]`. Both `::` (Rust / C++ qualified path) and `.` (Java / Python qualified path) are permitted in the symbol body to reach cross-language naming conventions. The symbol MUST NOT contain whitespace and MUST NOT be empty.
+
+**Separator semantics (non-normative for the substrate).** This spec does NOT mandate a semantic interpretation of `::` vs `.` within a symbol body. Implementations MAY treat them interchangeably as path separators OR MAY treat them as distinct (e.g., `::` as `ResolvedQualifiedPath` and `.` as `FieldAccess`). The only normative requirement is byte-level: two pending sentinels with byte-different `symbol` strings produce byte-different `pending:<symbol>` field values and therefore byte-different mementos (their CIDs differ by construction per §3.1). Symbol-byte identity, not semantic equivalence, governs sentinel identity in the substrate.
+
+Validators MUST reject (Pass 1, §5.1) the malformed forms:
+
+- `pending:` (no symbol body).
+- The bare word `pending` (no colon).
+- Any `pending:<symbol>` containing ASCII whitespace, control characters, or any character outside the grammar above.
+- The literal `pending::` (no name after the leading separator) or `pending:.` (no name after the leading separator).
+
+A well-formed `pending:<symbol>` is treated by the JCS canonicalizer (`2026-04-30-canonicalization-grammar.md`) as a UTF-8 string literal in the field's position. No CDDL change is required beyond a regex-validated `tstr` at the admitting slots; the open-extension nature of `tstr` accommodates the sentinel form without grammar amendment.
+
+#### §10.1.2 Permitted slots
+
+The sentinel form MAY occupy the following slots in the substrate:
+
+| Memento | Field | Rationale |
+|---|---|---|
+| `EvidenceMemento` | `extension_fields.test_target_function_cid` | The test assertion's target function may not yet be lifted into the pool (cross-crate test). |
+| `EvidenceMemento` | `extension_fields.loop_invariant_memento_cid` | A loop invariant evidence may be minted before its referent `LoopInvariantMemento` has been content-addressed. |
+| `EvidenceMemento` | `extension_fields.witness_memento_cid` | A witness reference may be minted ahead of the witness's discharge cycle. |
+| `EvidenceMemento` | `extension_fields.synthesized_from_cluster_cid` | A structural-synthesis evidence may reference a cluster CID resolved in a later mint pass. |
+| `CompoundContractMemento` | `header.function_term_cid` | The compound may be minted before its target `FunctionContractMemento` is resolved (cross-crate compound, two-pass lift). |
+
+The following slots MUST NOT carry the sentinel; validators MUST reject any `pending:<symbol>` at these positions in Pass 1 (§5.1):
+
+| Memento | Field | Rationale |
+|---|---|---|
+| `EvidenceMemento` | `header.lifter_cid` | The lifter is required to be resolved at mint time (the evidence's provenance is load-bearing); the §4.4 all-zeros sentinel is a distinct CID-shape mechanism for the auto-promotion lifter and is NOT equivalent to `pending:<symbol>`. |
+| `EvidenceMemento` | `header.source_locator.source_cid` | The source artifact is the lift input; it MUST be content-addressed before the evidence is minted. |
+| `EvidenceMemento.header.cid` | (the memento's own CID) | A memento's own CID is DERIVED per §3.1 from its other bytes; it cannot be pending. |
+| `CompoundContractMemento.header.cid` | (the memento's own CID) | Same as above. |
+| `CompoundContractMemento` | `evidences[*].evidence_cid` | The compound's §5.3 INVARIANT (composed-pre/post) requires resolving each evidence's predicate to recompute `composed_pre`/`composed_post` byte-for-byte. A pending evidence_cid makes that recompute undefined and breaks the cached-with-truth-source duality. |
+
+**Mutual-exclusion rule (empty-evidences + pending function_term_cid).** A `CompoundContractMemento` MUST NOT carry empty `evidences` AND `function_term_cid` of form `pending:<symbol>` simultaneously. If the compound's evidence pool is empty, the `function_term_cid` MUST resolve to a concrete `blake3-512:` CID. Validators MUST reject the forbidden combination at Pass 1 (§5.1). Rationale: §5.2's empty-evidences degenerate-compound base case has verdict `"exact"` by construction (the trivial contract `{ pre: true, post: true }` with no evidences to introduce loss), and §10.1.3 step 3 forbids `"exact"` against any pending sentinel. The two rules are jointly satisfiable only by excluding the combination at the mint gate. There is no admitted use case for empty-evidences + pending function_term_cid: an empty-evidences compound is by construction the resolved trivial-contract base case before any lifter has run, and the function it names is already pool-resident (otherwise the compound has no referent to be a base case for).
+
+#### §10.1.3 Loss-record contribution and trichotomy
+
+Per `2026-05-14-transport-gap-and-partial-morphism-protocol.md` §1.3, the `loss-record` schema is `{ loss-dimension => ir-formula }` with `loss-dimension` an open `tstr` enum. This spec extends that open enum with:
+
+```
+loss-dimension /= "pending-target-not-resolved"
+```
+
+When the discharger (PR-F) encounters a `pending:<symbol>` sentinel at any admitted slot during compound discharge, it MUST:
+
+1. Emit a per-evidence verdict of `loudly-bounded-lossy` for the affected evidence (or `loudly-bounded-lossy` at the compound level when the sentinel sits on `CompoundContractMemento.function_term_cid`).
+2. Contribute the formula `pending_target(<symbol>)` to the discharge receipt's `loss_record` under the `pending-target-not-resolved` dimension. The formula is an `IrFormula` of shape `AtomicFormula` (per `2026-04-30-ir-formal-grammar.md` §AtomicFormula) using the `KitDefinedAtomicName` open extension, with `name = "pending_target"` and a single `ConstTerm` arg whose `value` is the unresolved symbol string and whose `sort` is the built-in `{ "kind": "primitive", "name": "String" }`. No grammar extension is required: `AtomicFormula` already admits any non-colliding kit-defined name with `args: [IrTerm]`, and `ConstTerm` admits a `String` value at the built-in `String` sort. The wire form for `pending_target(account::transfer)` is `{ "kind": "atomic", "name": "pending_target", "args": [{ "kind": "const", "value": "account::transfer", "sort": { "kind": "primitive", "name": "String" } }] }`. If multiple sentinels are present, the dimension's formula is the JCS-normalized conjunction (per §6.2) of one such atomic per occurrence.
+3. NEVER discharge the receipt as `"exact"` against a compound carrying any `pending:<symbol>` target in an admitted slot. The discharger MUST refuse to claim resolution it cannot prove. A refusal here is loudly-bounded-lossy with a characterized loss, NOT `"refuse"`: the loss is precisely "the target named `<symbol>` is not yet resolved," and that IS the contract.
+
+At the compound verdict level under `aggregation_strategy = "conjunction"` (§2.1), any per-evidence `loudly-bounded-lossy` arising from a pending sentinel propagates to the compound verdict per the existing §2.1 rule. The binding's `ConceptSiteMemento.discharge.verdict` inherits this per §2.4 (three levels). The `DomainClaim` wire form (`2026-05-13-domain-claim-normalization.md` §1.2) records the `loudly-bounded-lossy` verdict with the `pending-target-not-resolved` loss dimension populated; the verdict-consistency invariant (§1.2 of that spec: `loudly-bounded-lossy` REQUIRES non-empty `loss_record`) is satisfied by construction.
+
+#### §10.1.4 Resolution semantics
+
+At any later mint pass, if the symbol resolves to a real CID:
+
+1. The minter constructs a NEW `EvidenceMemento` (or `CompoundContractMemento`) with the resolved CID in place of the sentinel.
+2. The new memento's `cid` (§3.1) differs from the pending memento's `cid` by construction: the field is part of the JCS-canonical bytes, so substituting `pending:<symbol>` with a real CID rolls the memento's CID.
+3. The OLD pending memento and the NEW resolved memento are independent content-addresses; they ARE NOT "the same memento updated." Content-addressing forbids mutation (§3.1 INVARIANT mint-idempotency).
+4. Convention: mint the resolved one as a successor. The pending memento stays in the trail. Bindings that cited the pending compound continue to cite the pending compound; bindings minted after resolution cite the resolved compound. Both addresses coexist in the pool.
+
+There is no spec-defined back-link from the resolved memento to the pending memento. Tooling MAY record the succession in an external index (out of scope for this amendment); the substrate's content-addressing makes any such index reconstructible by symbol lookup.
+
+#### §10.1.5 Distinction from the §4.4 auto-promote sentinel
+
+The §4.4 reserved all-zeros lifter CID (`blake3-512:` followed by 128 hex `0`s) is a distinct mechanism: it is a well-formed BLAKE3-512 CID-shape that satisfies the Pass 1 (§5.1) "128-hex" rule by construction and identifies the auto-promotion lifter. It occupies the `lifter_cid` slot, which §10.1.2 forbids to `pending:<symbol>`. Implementations MUST NOT conflate the two: the all-zeros sentinel is a resolved-but-reserved CID; the `pending:<symbol>` sentinel is an openly-recorded unresolved-target string.
+
+#### §10.1.6 Worked example
+
+A multi-crate Rust workspace where crate `accounts` contains a function `transfer` that calls into crate `ledger`. A test in crate `accounts` asserts on `transfer`'s behavior; the lifter for `accounts` runs before the lifter for `ledger`. The test-assertion evidence is minted with a pending target for the cross-crate function reference:
+
+```json
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T15:21:09Z",
+    "signature":  "ed25519:...",
+    "signer":     "ed25519:..."
+  },
+  "header": {
+    "cid":                     "blake3-512:7b4c...d9a3",
+    "confidence_basis_points": 10000,
+    "extension_fields": {
+      "test_target_function_cid": "pending:account::transfer"
+    },
+    "kind":          "evidence",
+    "lifter_cid":    "blake3-512:8e21...4f0b",
+    "predicate":     { "ensures": { "...": "..." } },
+    "schemaVersion": "1",
+    "source_kind":   "test-assertion",
+    "source_locator": {
+      "source_cid": "blake3-512:1a5f...c2e7",
+      "span":       { "end": { "line": 18, "col": 1 }, "start": { "line": 14, "col": 4 } }
+    }
+  },
+  "metadata": {}
+}
+```
+
+When this evidence is rolled into a compound for the (later-resolved) `account::transfer` function, the discharger's receipt records (sketch):
+
+```json
+{
+  "per_evidence_verdicts": [
+    {
+      "evidence_cid": "blake3-512:7b4c...d9a3",
+      "verdict":      "loudly-bounded-lossy",
+      "loss_record": {
+        "pending-target-not-resolved": {
+          "kind": "atomic",
+          "name": "pending_target",
+          "args": [
+            {
+              "kind":  "const",
+              "value": "account::transfer",
+              "sort":  { "kind": "primitive", "name": "String" }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "compound_verdict": "loudly-bounded-lossy",
+  "compound_loss_record": {
+    "pending-target-not-resolved": {
+      "kind": "atomic",
+      "name": "pending_target",
+      "args": [
+        {
+          "kind":  "const",
+          "value": "account::transfer",
+          "sort":  { "kind": "primitive", "name": "String" }
+        }
+      ]
+    }
+  }
+}
+```
+
+The binding's `DomainClaim` (per `2026-05-13-domain-claim-normalization.md`) carries `verdict.kind = "loudly-bounded-lossy"` with `loss_record` mapping `"pending-target-not-resolved"` to the same `AtomicFormula` shown above. The verdict-consistency invariant (that spec §1.2: loudly-bounded-lossy REQUIRES non-empty loss_record) holds; the loss-record's value is a valid `IrFormula` per the loss-record schema in `2026-05-14-transport-gap-and-partial-morphism-protocol.md` §1.3.
+
+When the `ledger` lifter runs and `account::transfer` resolves to a real `FunctionContractMemento` at CID `blake3-512:f0c2...92ab`, a successor evidence is minted with `extension_fields.test_target_function_cid = "blake3-512:f0c2...92ab"`. Its CID differs from the pending evidence's CID (the extension_fields bytes differ). The successor flows into a successor compound; a fresh binding minted against the resolved compound discharges to `"exact"` (no pending loss). The pending memento and the resolved memento both persist; different addresses, different things.
+
 ## §11. Cross-references
 
 - This spec AMENDS `2026-05-12-concept-site-memento.md` §1.1 and §5.4 (§0.4 above).
@@ -591,6 +751,8 @@ Each label is extension-open: validators MUST accept unknown labels at shape lev
 - Structural-synthesis evidences (`source_kind = "structural-synthesis"`) flow from `2026-05-13-wp-as-formula.md`.
 - The per-evidence verdict trichotomy IS the §2 trichotomy of `2026-05-12-concept-site-memento.md`; this spec adds the compound-level derivation rule on top.
 - Loss-record dimensions per `2026-05-15 §2.4`.
+- §10.1 extends the open `loss-dimension` enum of `2026-05-14-transport-gap-and-partial-morphism-protocol.md` §1.3 with `"pending-target-not-resolved"`.
+- §10.1 trichotomy alignment with `2026-05-13-domain-claim-normalization.md` §1.2 (verdict-consistency invariant: `loudly-bounded-lossy` REQUIRES non-empty `loss_record`; the pending-sentinel discharge satisfies this by construction).
 
 ## §12. Out of scope for PR-A
 
