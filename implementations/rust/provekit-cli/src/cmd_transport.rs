@@ -228,7 +228,9 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
     };
 
     // Derive a stable concept binding for the `// concept: ...` comment.
-    let concept_name = derive_concept_comment(&catalog, target_prefix);
+    // The name is deterministic from the target term's JSON serialization so
+    // every distinct function shape gets a unique, stable, per-function name.
+    let concept_name = derive_concept_comment(&target_term);
 
     let realized = realize_function(
         &target_language,
@@ -907,34 +909,32 @@ fn lift_rust_contracts(source_text: &str, function_name: &str) -> ContractAnnota
     ContractAnnotations::default()
 }
 
-/// Derive a stable `// concept: <name>` comment for the realized function.
+/// Derive a stable per-function concept binding name for the
+/// `// concept: <name>` comment.
 ///
-/// We look up all concept-hub op-names that the target language's morphism
-/// catalog maps to, collect the unique concept base-names (the part after
-/// `concept:`) and join them with `+`. When no catalog entries are found
-/// we fall back to `UNNAMED-CONCEPT-<hash>` where the hash is a stable
-/// truncated hex of the function name and target language.
-fn derive_concept_comment(catalog: &MorphismCatalog, target_prefix: &str) -> String {
-    let mut names: Vec<String> = catalog
-        .rows
-        .iter()
-        .filter(|row| row.language_prefix == target_prefix)
-        .filter_map(|row| row.concept_name.strip_prefix("concept:").map(str::to_string))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    names.sort();
-    if names.is_empty() {
-        // Stable fallback: FNV-1a 64-bit hash of the prefix bytes.
-        let mut h: u64 = 0xcbf29ce484222325; // FNV-1a 64-bit offset basis
-        for b in target_prefix.bytes() {
-            h ^= b as u64;
-            h = h.wrapping_mul(0x100000001b3);
-        }
-        format!("UNNAMED-CONCEPT-{h:016x}")
-    } else {
-        names.join("+")
+/// The name is derived from the **target term's** JSON serialization so every
+/// structurally-distinct function gets a unique, reproducible name regardless
+/// of the language. This is a content-addressed FNV-1a 64-bit hash — the same
+/// hash used everywhere in the ProvekIt toolchain for stable naming before a
+/// full CID is assigned.
+///
+/// Format: `UNNAMED-CONCEPT-<16 hex digits>`
+///
+/// Named concepts are not derived here because the hub concept name is an
+/// editorial property of the morphism catalog, not of the individual term.
+/// The naming-roundtrip lifter can replace this marker with a catalog-resolved
+/// name after the fact; the `UNNAMED-CONCEPT-*` form is what it starts with.
+fn derive_concept_comment(target_term: &Term) -> String {
+    // Serialize to canonical JSON and hash the bytes. serde_json's default
+    // serialization is deterministic for the same input value.
+    let json = serde_json::to_string(target_term)
+        .unwrap_or_else(|_| "<unserializable>".to_string());
+    let mut h: u64 = 0xcbf29ce484222325; // FNV-1a 64-bit offset basis
+    for b in json.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
     }
+    format!("UNNAMED-CONCEPT-{h:016x}")
 }
 
 /// Render an IR-symbolic `Term` to target-language expression syntax.
@@ -1118,7 +1118,13 @@ fn emit_annotation_prefix(
     let mut out = String::new();
 
     // concept binding comment — canonical format consumed by naming-roundtrip lifter.
-    out.push_str(&format!("{indent}// concept: {concept_name}\n"));
+    // The comment marker is language-specific: `#` for Python/Ruby where `//` is
+    // the floor-division operator, `//` for all other target languages.
+    let concept_marker = match style {
+        TargetStyle::Python | TargetStyle::Ruby => "#",
+        _ => "//",
+    };
+    out.push_str(&format!("{indent}{concept_marker} concept: {concept_name}\n"));
 
     if let Some(pre) = &annotations.pre {
         // Peel Forall wrappers added by provekit-lift-contracts: the params
@@ -1784,7 +1790,8 @@ mod annotation_tests {
             post: None,
         };
         let out = emit_annotation_prefix("my-fn", &anns, TargetStyle::Python, "");
-        assert_eq!(out, "// concept: my-fn\n# requires: x > 0\n");
+        // Python uses `#` for comments; `//` is floor-division and would be a syntax error.
+        assert_eq!(out, "# concept: my-fn\n# requires: x > 0\n");
     }
 
     #[test]
@@ -1930,7 +1937,8 @@ pub fn bar(x: i32) -> i32 { x + 1 }
         let result = realize_function("python", "compute", &["n".to_string()], &body, &anns, "seq");
         assert!(result.is_ok());
         let src = result.unwrap().source;
-        assert!(src.contains("// concept: seq"), "concept comment missing in: {src}");
+        // Python: concept comment uses `#`, not `//` (which is floor-division).
+        assert!(src.contains("# concept: seq"), "concept comment missing in: {src}");
         assert!(src.contains("# requires: n > 0"), "python requires comment missing in: {src}");
         assert!(src.contains("def compute(n):"), "def missing in: {src}");
     }
@@ -1948,16 +1956,36 @@ pub fn bar(x: i32) -> i32 { x + 1 }
     }
 
     // ------------------------------------------------------------------
-    // derive_concept_comment fallback test
+    // derive_concept_comment tests
     // ------------------------------------------------------------------
 
     #[test]
-    fn test_derive_concept_comment_fallback_unnamed() {
-        let catalog = MorphismCatalog { rows: vec![] };
-        let s = derive_concept_comment(&catalog, "rust");
+    fn test_derive_concept_comment_always_unnamed_concept() {
+        // Every call produces an UNNAMED-CONCEPT-<hex> name derived from the term.
+        let term = Term::Unit;
+        let s = derive_concept_comment(&term);
         assert!(
             s.starts_with("UNNAMED-CONCEPT-"),
-            "expected fallback name, got: {s}"
+            "expected UNNAMED-CONCEPT-* name, got: {s}"
         );
+    }
+
+    #[test]
+    fn test_derive_concept_comment_stable_for_same_term() {
+        // Same term must always produce the same name.
+        let term = Term::Var { name: "x".into() };
+        let a = derive_concept_comment(&term);
+        let b = derive_concept_comment(&term);
+        assert_eq!(a, b, "concept name must be deterministic for the same term");
+    }
+
+    #[test]
+    fn test_derive_concept_comment_distinct_for_different_terms() {
+        // Different terms must produce different names.
+        let t1 = Term::Var { name: "x".into() };
+        let t2 = Term::Var { name: "y".into() };
+        let n1 = derive_concept_comment(&t1);
+        let n2 = derive_concept_comment(&t2);
+        assert_ne!(n1, n2, "distinct terms should produce distinct concept names");
     }
 }
