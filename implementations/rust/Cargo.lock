@@ -1942,10 +1942,14 @@ name = "provekit-lift-rust-tests"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "provekit-canonicalizer",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "provekit-lift",
  "provekit-verifier",
+ "provekit-walk",
  "quote",
+ "serde_json",
  "syn",
 ]
 
@@ -2129,6 +2133,23 @@ dependencies = [
  "thiserror",
  "toml 0.8.23",
  "walkdir",
+]
+
+[[package]]
+name = "provekit-walk"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "libprovekit",
+ "proc-macro2",
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-types",
+ "provekit-proof-envelope",
+ "quote",
+ "serde_json",
+ "syn",
+ "thiserror",
 ]
 
 [[package]]

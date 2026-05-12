@@ -227,6 +227,8 @@ fn formula_to_term(formula: IrFormula) -> Option<IrTerm> {
         IrFormula::Not { operands } => formula_operands_to_term("not", operands),
         IrFormula::Implies { operands } => formula_operands_to_term("implies", operands),
         IrFormula::Forall { .. } | IrFormula::Exists { .. } | IrFormula::Choice { .. } => None,
+        // Substitute and Apply are meta-level; not reducible to a term here.
+        IrFormula::Substitute { .. } | IrFormula::Apply { .. } => None,
     }
 }
 
