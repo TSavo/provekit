@@ -39,6 +39,15 @@
     }
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Panics"
+      }
+    ]
   }
 }

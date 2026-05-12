@@ -47,8 +47,7 @@
       "kind": "named",
       "slots": [
         {
-          "name": "cond",
-          "slot_sort": "Bool"
+          "name": "cond"
         },
         {
           "name": "when_true"

@@ -1,0 +1,22 @@
+{
+  "cid": "blake3-512:661580220dc4c36852f82d93c4e40d51977e8e66ed4b09ac92b05a26bfe68abd8bb20a491437d1b81df8571a2aab837bca8e86b24f0268c2e05cc2693ab59539",
+  "memento": {
+    "schema_version": "1",
+    "kind": "MorphismDischargeReceipt",
+    "morphism_cid": "blake3-512:7f56a7037d5c47103c662d0f7631ce8699f214fe7cf08faeb1b193be026af009219ec8e2ea89383494f3fa5d9cf217691f46b74386ea9be4df6941e82a2eea7e",
+    "source_contract_cid": "blake3-512:a1590c122e5d907e98af45d9e08b756812bdc0b5113ad517cc1807090a8f2b5c0dad9d6f95a78c105a910144d4bfa8284a87840b9de6a0d7fa653bf774e0ec2f",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {},
+    "literal_map": {},
+    "after_substitution_cid": "blake3-512:28fa3947950c70a1bdebb3f0005d35cfa5da46e405541bab0652844a3a852c10a81b375858bde08872af02030e7f5c8ba6f8fa406b0c255da373a0574cf97654",
+    "shape_cid": "blake3-512:206044a975f7f56eff3a9eb08b7dbfe402547f391c1d15f5d82011d297f71514e510a1c4d45bbc18f419f1e4e1362fa3f321aa16f6d5354856b33e2f30d2dad7",
+    "discharged": true,
+    "method": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
+    "signature": null,
+    "pre_relaxed": true,
+    "wp_abstracted": true,
+    "effect_subset_relaxed": true
+  },
+  "signature": null
+}

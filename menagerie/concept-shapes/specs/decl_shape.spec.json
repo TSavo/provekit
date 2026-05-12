@@ -50,6 +50,11 @@
     "wp": "bind local name to initializer before continuing"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemWrite"
+      }
+    ]
   }
 }

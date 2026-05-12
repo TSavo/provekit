@@ -68,6 +68,10 @@
       {
         "kind": "effect-signature",
         "name": "Trap"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
       }
     ]
   }

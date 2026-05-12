@@ -43,6 +43,10 @@
       {
         "kind": "effect-polymorphic",
         "rule": "early-return"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Return"
       }
     ]
   }

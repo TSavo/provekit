@@ -1,0 +1,67 @@
+{
+  "kind": "equation",
+  "fn_name": "java:or-to-ite-desugar",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    "sort_bool.spec.json",
+    "sort_bool.spec.json"
+  ],
+  "role": "desugaring",
+  "direction": "left-to-right",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "java:or",
+      "args": [
+        {
+          "kind": "var",
+          "name": "lhs"
+        },
+        {
+          "kind": "var",
+          "name": "rhs"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "op",
+      "name": "java:ite",
+      "args": [
+        {
+          "kind": "var",
+          "name": "lhs"
+        },
+        {
+          "kind": "const",
+          "value": true,
+          "sort": {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        },
+        {
+          "kind": "var",
+          "name": "rhs"
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "obligations": {
+    "wp_preservation": {
+      "kind": "wp-preservation",
+      "status": "discharged",
+      "method": "McCarthy short-circuit boolean identity"
+    }
+  }
+}

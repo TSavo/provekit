@@ -49,6 +49,11 @@
     "wp": "integer right shift expression"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
   }
 }

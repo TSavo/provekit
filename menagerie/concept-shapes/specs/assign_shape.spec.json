@@ -53,6 +53,14 @@
       {
         "kind": "effect-signature",
         "name": "MemWrite"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Write"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Writes"
       }
     ]
   }

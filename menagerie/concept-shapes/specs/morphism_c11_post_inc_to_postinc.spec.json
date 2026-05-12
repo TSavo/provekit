@@ -24,7 +24,7 @@
   "post": {
     "kind": "contract-renaming-morphism",
     "source_contract_cid": "blake3-512:23c41d669e4d29ca7adf38b957fc666268f39a6fd989920c4dc2337997a4b9d3cc8d993a0ef48630381d078afde5701217b5f6c339693564215401cac3f9786e",
-    "target_shape_cid": "blake3-512:179aed79acabd66b4faa9184bb68c429f94767b01e0ae4f618cf6052beb2aa44167bc594380ff5c9184b03837fa8fe6ccbc25ce36a2b933cf88df1278def9ef3",
+    "target_shape_cid": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523",
     "renaming_map": {},
     "representation_map": {},
     "operator_map": {
@@ -32,9 +32,9 @@
     },
     "literal_map": {},
     "homomorphism_obligation": {
-      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "kind": "structural-effect-subset",
       "source": "blake3-512:23c41d669e4d29ca7adf38b957fc666268f39a6fd989920c4dc2337997a4b9d3cc8d993a0ef48630381d078afde5701217b5f6c339693564215401cac3f9786e",
-      "target": "blake3-512:179aed79acabd66b4faa9184bb68c429f94767b01e0ae4f618cf6052beb2aa44167bc594380ff5c9184b03837fa8fe6ccbc25ce36a2b933cf88df1278def9ef3"
+      "target": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
     }
   },
   "effects": {
@@ -42,6 +42,6 @@
   },
   "input_cids": [
     "blake3-512:23c41d669e4d29ca7adf38b957fc666268f39a6fd989920c4dc2337997a4b9d3cc8d993a0ef48630381d078afde5701217b5f6c339693564215401cac3f9786e",
-    "blake3-512:179aed79acabd66b4faa9184bb68c429f94767b01e0ae4f618cf6052beb2aa44167bc594380ff5c9184b03837fa8fe6ccbc25ce36a2b933cf88df1278def9ef3"
+    "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
   ]
 }
