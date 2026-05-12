@@ -31,10 +31,14 @@
 // Both copies are pure formula manipulations over identical types from
 // provekit-ir-types; byte-equivalent output is guaranteed by construction.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_ir_types::{IrFormula, IrTerm, Sort};
+use provekit_ir_types::{
+    AggregationStrategy, CompoundContractMemento, EvidenceMemento, EvidenceRef, IrFormula, IrTerm,
+    Sort, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
+};
 
 /// CCP version tag carried inside the composed memento body. Bumped only
 /// when the algebra changes in a CID-affecting way.
@@ -1100,6 +1104,623 @@ impl TryFrom<&FunctionContractMemento> for provekit_ir_types::DomainClaim {
 
     fn try_from(_m: &FunctionContractMemento) -> Result<Self, Self::Error> {
         Err(provekit_ir_types::DomainClaimConversionError::UnboundContract)
+    }
+}
+
+// ============================================================
+// FCM auto-promotion to CompoundContractMemento (PR-B of #716)
+//
+// Source of truth: protocol/specs/2026-05-13-compound-contract-memento.md §4.3
+//
+// Backward-compat path: when a consumer encounters a bare
+// FunctionContractMemento it MUST auto-promote it to a single-evidence
+// CompoundContractMemento before passing it downstream. Two calls with
+// byte-identical FCM inputs MUST produce identical output bytes and
+// therefore identical CIDs (§4.4 mint-idempotency invariant).
+//
+// `source_locator` derivation from FCM `Locus`:
+//   FCM carries a single point {file, line, col} -- not a CID-bearing
+//   source artifact reference. For determinism, we use:
+//     source_cid = the all-zeros sentinel CID (same token as lifter_cid;
+//                  both signal "auto-promote" provenance)
+//     span.start = span.end = {line: locus.line, col: locus.col}
+//   A zero locus (unknown) maps to {line:0, col:0}, which is distinct
+//   from any real source point and is stable across validators.
+// ============================================================
+
+/// The all-zeros sentinel CID used for the `lifter_cid` (and for
+/// `source_locator.source_cid`) of auto-promoted evidence.
+///
+/// Per compound spec §4.4: `blake3-512:` followed by 128 hex `0`s.
+/// Provably not a real BLAKE3-512 hash (P ≈ 2^-512). Pass-1 CID
+/// validation accepts it without a special-case exception ("128-hex"
+/// is satisfied by 128 hex `0` digits).
+pub const AUTO_PROMOTE_LIFTER_CID: &str =
+    "blake3-512:0000000000000000000000000000000000000000000000000000000000000000\
+     0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Compute the CID for an `EvidenceMemento` per compound spec §3.1.
+///
+/// The CID is BLAKE3-512 of the JCS-canonical bytes of the header with
+/// the `cid` field elided. We build the canonical Value directly from
+/// the struct fields, omitting `cid`, rather than serializing the struct
+/// (which would include `cid`) and then patching.
+fn evidence_cid(
+    confidence_basis_points: u16,
+    extension_fields: &BTreeMap<String, serde_json::Value>,
+    lifter_cid: &str,
+    predicate: &IrFormula,
+    source_kind: &SourceKind,
+    source_locator: &SourceLocator,
+) -> String {
+    // Build extension_fields as canonical Value (BTreeMap order = JCS order).
+    let ext_entries: Vec<(String, Arc<Value>)> = extension_fields
+        .iter()
+        .map(|(k, v)| {
+            let canonical_v = serde_to_canonical(v.clone());
+            (k.clone(), canonical_v)
+        })
+        .collect();
+
+    // source_kind wire form is a bare JSON string.
+    let source_kind_str: String = source_kind.clone().into();
+
+    // source_locator: {source_cid, span:{end:{col,line},start:{col,line}}}
+    // Locked JCS key order: source_cid, span. Span: end, start. Point: col, line.
+    let sloc_value = Value::object(vec![
+        (
+            "source_cid".to_string(),
+            Value::string(source_locator.source_cid.clone()),
+        ),
+        (
+            "span".to_string(),
+            Value::object(vec![
+                (
+                    "end".to_string(),
+                    Value::object(vec![
+                        (
+                            "col".to_string(),
+                            Value::integer(i64::from(source_locator.span.end.col)),
+                        ),
+                        (
+                            "line".to_string(),
+                            Value::integer(i64::from(source_locator.span.end.line)),
+                        ),
+                    ]),
+                ),
+                (
+                    "start".to_string(),
+                    Value::object(vec![
+                        (
+                            "col".to_string(),
+                            Value::integer(i64::from(source_locator.span.start.col)),
+                        ),
+                        (
+                            "line".to_string(),
+                            Value::integer(i64::from(source_locator.span.start.line)),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+
+    // Locked JCS key order (alphabetical, cid elided):
+    //   confidence_basis_points, extension_fields, kind, lifter_cid,
+    //   predicate, schemaVersion, source_kind, source_locator.
+    let header = Value::object(vec![
+        (
+            "confidence_basis_points".to_string(),
+            Value::integer(i64::from(confidence_basis_points)),
+        ),
+        (
+            "extension_fields".to_string(),
+            Value::object(ext_entries),
+        ),
+        ("kind".to_string(), Value::string("evidence".to_string())),
+        (
+            "lifter_cid".to_string(),
+            Value::string(lifter_cid.to_string()),
+        ),
+        ("predicate".to_string(), formula_to_canonical(predicate)),
+        (
+            "schemaVersion".to_string(),
+            Value::string("1".to_string()),
+        ),
+        (
+            "source_kind".to_string(),
+            Value::string(source_kind_str),
+        ),
+        ("source_locator".to_string(), sloc_value),
+    ]);
+
+    cid_of_value(&header)
+}
+
+/// Compute the CID for a `CompoundContractMemento` per compound spec §3.1.
+///
+/// The CID is BLAKE3-512 of the JCS-canonical bytes of the header with
+/// the `cid` field elided.
+fn compound_cid(
+    aggregation_strategy: &AggregationStrategy,
+    composed_post: &IrFormula,
+    composed_pre: &IrFormula,
+    evidences: &[EvidenceRef],
+    function_term_cid: &str,
+) -> String {
+    let strategy_str: String = aggregation_strategy.clone().into();
+
+    // evidences array: sorted by evidence_cid ascending at JCS time.
+    // The JCS encoder sorts; we build the array as-is and rely on the
+    // canonicalizer's Value::object sort. For arrays, order is insertion
+    // order -- we sort here for determinism before passing to JCS.
+    let mut sorted_evidences: Vec<&EvidenceRef> = evidences.iter().collect();
+    sorted_evidences.sort_by(|a, b| a.evidence_cid.cmp(&b.evidence_cid));
+
+    let evidences_arr: Vec<Arc<Value>> = sorted_evidences
+        .iter()
+        .map(|er| {
+            // Locked JCS key order: evidence_cid, weight_basis_points.
+            Value::object(vec![
+                (
+                    "evidence_cid".to_string(),
+                    Value::string(er.evidence_cid.clone()),
+                ),
+                (
+                    "weight_basis_points".to_string(),
+                    Value::integer(i64::from(er.weight_basis_points)),
+                ),
+            ])
+        })
+        .collect();
+
+    // Locked JCS key order (alphabetical, cid elided):
+    //   aggregation_strategy, composed_post, composed_pre, evidences,
+    //   function_term_cid, kind, schemaVersion.
+    let header = Value::object(vec![
+        (
+            "aggregation_strategy".to_string(),
+            Value::string(strategy_str),
+        ),
+        (
+            "composed_post".to_string(),
+            formula_to_canonical(composed_post),
+        ),
+        (
+            "composed_pre".to_string(),
+            formula_to_canonical(composed_pre),
+        ),
+        ("evidences".to_string(), Value::array(evidences_arr)),
+        (
+            "function_term_cid".to_string(),
+            Value::string(function_term_cid.to_string()),
+        ),
+        (
+            "kind".to_string(),
+            Value::string("compound-contract".to_string()),
+        ),
+        (
+            "schemaVersion".to_string(),
+            Value::string("1".to_string()),
+        ),
+    ]);
+
+    cid_of_value(&header)
+}
+
+/// Auto-promote a bare `FunctionContractMemento` to a single-evidence
+/// `CompoundContractMemento` per compound spec §4.3.
+///
+/// Returns `(EvidenceMemento, CompoundContractMemento)`. Callers MUST
+/// store the `EvidenceMemento` in their pool so downstream verifiers can
+/// resolve the `EvidenceRef` in the compound's `evidences` list.
+///
+/// This is the canonical backward-compat path. Every call with the same
+/// FCM bytes produces the same output bytes and the same CIDs
+/// (mint-idempotency invariant, spec §4.4).
+///
+/// The promoted Compound has:
+/// - One `EvidenceMemento` with:
+///   - `source_kind = "annotation"`
+///   - `predicate = And { operands: [pre, post] }` (the FCM's pre /\ post)
+///   - `confidence_basis_points = 10000`
+///   - `lifter_cid` = `AUTO_PROMOTE_LIFTER_CID` (all-zeros sentinel)
+///   - `extension_fields = { "auto_promoted_from": <fcm.cid> }`
+///   - `source_locator` derived from the FCM's `locus` (see module comment)
+/// - `aggregation_strategy = "conjunction"`
+/// - `function_term_cid` = `fcm.cid`
+/// - `composed_pre = fcm.pre`, `composed_post = fcm.post`
+///   (single-evidence conjunction collapses to the evidence's separated
+///   pre/post, which are the FCM's own pre and post)
+pub fn promote_fcm_to_compound(
+    fcm: &FunctionContractMemento,
+) -> (EvidenceMemento, CompoundContractMemento) {
+    // Build the predicate: pre /\ post.
+    // Per spec §4.3, the evidence predicate is `pre /\ post` packaged per §6.
+    // §6.1 pre/post separation: the evidence holds both; when the compound
+    // aggregates under conjunction, composed_pre = conjunct of separated pres
+    // = fcm.pre (one evidence), composed_post = fcm.post.
+    //
+    // We represent `pre /\ post` as `And { operands: [pre, post] }`.
+    // Edge case: if both pre and post are trivially `And { operands: [] }`
+    // (i.e., `true`), the predicate collapses to `And { operands: [] }` as
+    // well, which is still the spec-correct encoding. We never emit an empty
+    // operand list for a degenerate conjunction -- the spec doesn't special-
+    // case this and neither do we.
+    let predicate = IrFormula::And {
+        operands: vec![fcm.pre.clone(), fcm.post.clone()],
+    };
+
+    // source_locator: deterministically derived from FCM locus.
+    // FCM locus has no source_cid; use the all-zeros sentinel.
+    // Span start == end == {line: locus.line, col: locus.col} (1-based line,
+    // 0-indexed col per compound spec §1.1.1).
+    let point = SourceLocatorPoint {
+        line: fcm.locus.line as u32,
+        col: fcm.locus.col as u32,
+    };
+    let source_locator = SourceLocator {
+        source_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+        span: SourceLocatorSpan {
+            start: point.clone(),
+            end: point,
+        },
+    };
+
+    let mut extension_fields = BTreeMap::new();
+    extension_fields.insert(
+        "auto_promoted_from".to_string(),
+        serde_json::Value::String(fcm.cid.clone()),
+    );
+
+    let evidence_cid_str = evidence_cid(
+        10000,
+        &extension_fields,
+        AUTO_PROMOTE_LIFTER_CID,
+        &predicate,
+        &SourceKind::Annotation,
+        &source_locator,
+    );
+
+    let evidence = EvidenceMemento {
+        cid: evidence_cid_str.clone(),
+        confidence_basis_points: 10000,
+        extension_fields,
+        kind: "evidence".to_string(),
+        lifter_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+        predicate,
+        schema_version: "1".to_string(),
+        source_kind: SourceKind::Annotation,
+        source_locator,
+    };
+
+    let evidence_ref = EvidenceRef {
+        evidence_cid: evidence_cid_str,
+        weight_basis_points: 10000,
+    };
+
+    let evidences = vec![evidence_ref];
+    let composed_pre = fcm.pre.clone();
+    let composed_post = fcm.post.clone();
+    let function_term_cid = fcm.cid.clone();
+
+    let cid_str = compound_cid(
+        &AggregationStrategy::Conjunction,
+        &composed_post,
+        &composed_pre,
+        &evidences,
+        &function_term_cid,
+    );
+
+    let compound = CompoundContractMemento {
+        aggregation_strategy: AggregationStrategy::Conjunction,
+        cid: cid_str,
+        composed_post,
+        composed_pre,
+        evidences,
+        function_term_cid,
+        kind: "compound-contract".to_string(),
+        schema_version: "1".to_string(),
+    };
+
+    (evidence, compound)
+}
+
+// Provide Into<CompoundContractMemento> for &FunctionContractMemento so
+// callers can use the ergonomic `.into()` syntax. The EvidenceMemento
+// is discarded; use promote_fcm_to_compound directly when pool storage
+// is required.
+impl From<&FunctionContractMemento> for CompoundContractMemento {
+    fn from(fcm: &FunctionContractMemento) -> CompoundContractMemento {
+        promote_fcm_to_compound(fcm).1
+    }
+}
+
+#[cfg(test)]
+mod fcm_auto_promote_tests {
+    use super::*;
+    use provekit_ir_types::{IrFormula, IrTerm, Sort};
+
+    /// Build a minimal FCM with non-trivial pre and post.
+    fn fcm_with_pre_post(
+        fn_name: &str,
+        pre: IrFormula,
+        post: IrFormula,
+        cid: &str,
+        line: usize,
+        col: usize,
+    ) -> FunctionContractMemento {
+        FunctionContractMemento {
+            fn_name: fn_name.to_string(),
+            formals: vec!["x".to_string()],
+            formal_sorts: vec![Sort::Primitive {
+                name: "Int".to_string(),
+            }],
+            formal_regions: vec![None],
+            return_sort: Sort::Primitive {
+                name: "Int".to_string(),
+            },
+            return_region: None,
+            pre,
+            post,
+            body_cid: None,
+            effects: EffectSet::default(),
+            locus: Locus {
+                file: Some("src/lib.rs".to_string()),
+                line,
+                col,
+            },
+            canonical_bytes: vec![],
+            cid: cid.to_string(),
+            auto_minted_mementos: vec![],
+            concept_hint: None,
+        }
+    }
+
+    fn trivial_formula() -> IrFormula {
+        IrFormula::And { operands: vec![] }
+    }
+
+    fn nontrivial_pre() -> IrFormula {
+        // x >= 0
+        IrFormula::Atomic {
+            name: ">=".to_string(),
+            args: vec![
+                IrTerm::Var { name: "x".to_string() },
+                IrTerm::Const {
+                    value: serde_json::Value::Number(serde_json::Number::from(0)),
+                    sort: Sort::Primitive { name: "Int".to_string() },
+                },
+            ],
+        }
+    }
+
+    fn nontrivial_post() -> IrFormula {
+        // result >= x
+        IrFormula::Atomic {
+            name: ">=".to_string(),
+            args: vec![
+                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Var { name: "x".to_string() },
+            ],
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // FCM with non-trivial pre + post → Compound with one evidence
+    // ----------------------------------------------------------------
+    #[test]
+    fn nontrivial_fcm_promotes_to_single_evidence_compound() {
+        let fcm = fcm_with_pre_post(
+            "add_one",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:aaaa",
+            10,
+            4,
+        );
+        let (_ev, compound) = promote_fcm_to_compound(&fcm);
+        assert_eq!(compound.evidences.len(), 1);
+        assert_eq!(compound.aggregation_strategy, AggregationStrategy::Conjunction);
+        assert_eq!(compound.kind, "compound-contract");
+        assert_eq!(compound.schema_version, "1");
+        assert_eq!(compound.function_term_cid, "blake3-512:aaaa");
+    }
+
+    #[test]
+    fn nontrivial_fcm_compound_composed_pre_post_match_fcm() {
+        let fcm = fcm_with_pre_post(
+            "add_one",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:aaaa",
+            10,
+            4,
+        );
+        let (_ev, compound) = promote_fcm_to_compound(&fcm);
+        assert_eq!(compound.composed_pre, nontrivial_pre());
+        assert_eq!(compound.composed_post, nontrivial_post());
+    }
+
+    // ----------------------------------------------------------------
+    // FCM with empty pre/post → Compound with one evidence whose
+    // predicate is And { operands: [true, true] }
+    //
+    // NOTE: spec §4.3 is unconditional ("Mint one EvidenceMemento");
+    // even a trivially-true FCM produces one evidence, not zero.
+    // The compound verdict is "exact" by §5.2 vacuous-all-exact rule
+    // only when evidences is EMPTY; with one evidence, the verdict
+    // follows that evidence's individual verdict.
+    // ----------------------------------------------------------------
+    #[test]
+    fn trivial_fcm_promotes_to_single_evidence_not_zero() {
+        let fcm = fcm_with_pre_post(
+            "noop",
+            trivial_formula(),
+            trivial_formula(),
+            "blake3-512:bbbb",
+            1,
+            0,
+        );
+        let (_ev, compound) = promote_fcm_to_compound(&fcm);
+        // §4.3 is unconditional: always one evidence, never empty.
+        assert_eq!(compound.evidences.len(), 1);
+    }
+
+    #[test]
+    fn trivial_fcm_compound_composed_pre_post_are_trivial() {
+        let fcm = fcm_with_pre_post(
+            "noop",
+            trivial_formula(),
+            trivial_formula(),
+            "blake3-512:bbbb",
+            1,
+            0,
+        );
+        let (_ev, compound) = promote_fcm_to_compound(&fcm);
+        assert_eq!(compound.composed_pre, trivial_formula());
+        assert_eq!(compound.composed_post, trivial_formula());
+    }
+
+    // ----------------------------------------------------------------
+    // Determinism: two FCMs with identical bytes → identical Compound CIDs
+    // ----------------------------------------------------------------
+    #[test]
+    fn identical_fcms_produce_identical_compound_cids() {
+        let fcm1 = fcm_with_pre_post(
+            "check_bound",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:cccc",
+            42,
+            8,
+        );
+        let fcm2 = fcm1.clone();
+        let (_ev1, c1) = promote_fcm_to_compound(&fcm1);
+        let (_ev2, c2) = promote_fcm_to_compound(&fcm2);
+        assert_eq!(c1.cid, c2.cid);
+        assert_eq!(c1.evidences[0].evidence_cid, c2.evidences[0].evidence_cid);
+    }
+
+    // ----------------------------------------------------------------
+    // lifter_cid sentinel: verify via EvidenceMemento (returned in tuple)
+    // ----------------------------------------------------------------
+    #[test]
+    fn auto_promotion_uses_all_zeros_sentinel_lifter_cid() {
+        let fcm = fcm_with_pre_post(
+            "sentinel_test",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:dddd",
+            5,
+            2,
+        );
+        let (ev, compound) = promote_fcm_to_compound(&fcm);
+
+        // The EvidenceMemento's lifter_cid must be the all-zeros sentinel.
+        assert_eq!(ev.lifter_cid, AUTO_PROMOTE_LIFTER_CID);
+
+        // The compound's evidence ref CID is a valid blake3-512 CID.
+        assert!(
+            compound.evidences[0].evidence_cid.starts_with("blake3-512:"),
+            "evidence CID should be a valid blake3-512 CID"
+        );
+
+        // Verify the sentinel constant itself is the spec-mandated form.
+        assert_eq!(
+            AUTO_PROMOTE_LIFTER_CID,
+            "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            AUTO_PROMOTE_LIFTER_CID.len(),
+            "blake3-512:".len() + 128,
+            "sentinel must be blake3-512: prefix + exactly 128 hex chars"
+        );
+        // All chars after prefix must be '0'.
+        let hex_part = &AUTO_PROMOTE_LIFTER_CID["blake3-512:".len()..];
+        assert!(hex_part.chars().all(|c| c == '0'));
+    }
+
+    // ----------------------------------------------------------------
+    // source_kind is "annotation" (verified via the returned EvidenceMemento)
+    // ----------------------------------------------------------------
+    #[test]
+    fn auto_promotion_source_kind_is_annotation() {
+        let fcm = fcm_with_pre_post(
+            "annotation_test",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:1234",
+            2,
+            0,
+        );
+        let (ev, _compound) = promote_fcm_to_compound(&fcm);
+        assert_eq!(ev.source_kind, SourceKind::Annotation);
+        // Also verify the wire form.
+        let wire: String = ev.source_kind.into();
+        assert_eq!(wire, "annotation");
+    }
+
+    // ----------------------------------------------------------------
+    // extension_fields contains auto_promoted_from = fcm.cid
+    // ----------------------------------------------------------------
+    #[test]
+    fn extension_fields_contain_auto_promoted_from() {
+        let fcm = fcm_with_pre_post(
+            "ext_fields_test",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:abcd",
+            1,
+            0,
+        );
+        let (ev, _compound) = promote_fcm_to_compound(&fcm);
+        let from = ev
+            .extension_fields
+            .get("auto_promoted_from")
+            .expect("auto_promoted_from must be present");
+        assert_eq!(from, &serde_json::Value::String("blake3-512:abcd".to_string()));
+    }
+
+    // ----------------------------------------------------------------
+    // Round-trip: serialize → deserialize → re-serialize bytes are identical
+    // ----------------------------------------------------------------
+    #[test]
+    fn compound_round_trips_via_json() {
+        let fcm = fcm_with_pre_post(
+            "round_trip",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:eeee",
+            3,
+            1,
+        );
+        let (_ev, compound) = promote_fcm_to_compound(&fcm);
+
+        let json1 = serde_json::to_string(&compound).expect("serialize");
+        let deser: CompoundContractMemento =
+            serde_json::from_str(&json1).expect("deserialize");
+        let json2 = serde_json::to_string(&deser).expect("re-serialize");
+
+        assert_eq!(json1, json2, "round-trip must produce identical bytes");
+    }
+
+    // ----------------------------------------------------------------
+    // Into ergonomics: From<&FCM> for CompoundContractMemento
+    // ----------------------------------------------------------------
+    #[test]
+    fn into_compound_matches_promote_fn() {
+        let fcm = fcm_with_pre_post(
+            "into_test",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:ffff",
+            7,
+            0,
+        );
+        let (_ev, via_fn) = promote_fcm_to_compound(&fcm);
+        let via_into: CompoundContractMemento = (&fcm).into();
+        assert_eq!(via_fn.cid, via_into.cid);
     }
 }
 
