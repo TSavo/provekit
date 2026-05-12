@@ -462,23 +462,30 @@ loss-record = LossRecord
 ;   PartialMorphismMemento   -- a morphism valid under a precondition (§1.2)
 ;   LossyMorphismMemento     -- a morphism with characterized loss (§1.4)
 ;
-; Amendment: `no-such-concept-op` added to gap-kind enum (this PR).
+; Amendment 1: `no-such-concept-op` added to gap-kind enum (this PR).
 ; This is the case where a source-language op has no matching concept:* hub op
 ; at all (target_op_cid is null). Distinct from missing-target-construct
 ; (the construct exists in the language but not the hub; this is: the hub
 ; does not even have a slot for it). The generator emits this when the
 ; language op is in a signature directory but has no matching OPS entry.
 ;
+; Amendment 2: `reason` is optional (`? reason`) in TransportGapMemento.
+; Rationale: for gap_kind "missing-source-op" and "no-such-concept-op",
+; there is no source-spec vs concept-spec comparison to perform, so no
+; structured diff can be computed. The mint script always populates `reason`
+; when a comparison is possible; it is absent only when neither an after_spec
+; nor a concept_spec is available at gap-emit time.
+;
 ; All three mementos are JCS-canonical (BTreeMap key order = alphabetical),
-; BLAKE3-512-hashed, and live in menagerie/concept-shapes/specs/.
+; BLAKE3-512-hashed, and live in menagerie/concept-shapes/gaps/.
 ;
 ; ----------------------------------------------------------------
 ; gap-kind and gap-reason (shared)
 ; ----------------------------------------------------------------
 ;
 ; Locked key order for gap-reason (alphabetical):
-;   ? effects_delta, ? formal_sorts_delta, ? post_delta, ? pre_delta,
-;   ? source_supported, ? divergent_tag, ? wp_rule_delta
+;   ? divergent_tag, ? effects_delta, ? formal_sorts_delta, ? post_delta,
+;   ? pre_delta, ? source_supported, ? wp_rule_delta
 
 gap-kind = "sort-mismatch"
          / "polymorphic-source-op"
@@ -499,12 +506,12 @@ divergent-semantics-tag = "integer-vs-true-division"
                         / tstr             ; open: a new tag is a new fact, recorded, not invented in code
 
 gap-reason = {
+  ? "divergent_tag":      divergent-semantics-tag, ; REQUIRED iff gap_kind == "divergent-semantics"
   ? "effects_delta":      { "got": any, "want": any },
   ? "formal_sorts_delta": { "got": [* ir-formula], "want": [* ir-formula] },
   ? "post_delta":         { "got": any, "want": any },   ; the operation-contract subtree that differs
   ? "pre_delta":          { "got": ir-formula, "want": ir-formula },
   ? "source_supported":   bool,            ; for missing-source-op / no-such-concept-op
-  ? "divergent_tag":      divergent-semantics-tag, ; REQUIRED iff gap_kind == "divergent-semantics"
   ? "wp_rule_delta":      { "got": ir-formula, "want": ir-formula }, ; post-WPF
 }
 
