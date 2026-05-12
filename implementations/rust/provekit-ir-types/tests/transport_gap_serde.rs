@@ -19,9 +19,9 @@
 use std::collections::BTreeMap;
 
 use provekit_ir_types::{
-    FieldDelta, GapKind, GapReason, IrFormula, IrTerm, LossRecord, LossSeverity,
-    LossSeverityLevel, LossyHomomorphismObligation, LossyMorphismMemento, OptionStatus,
-    PartialHomomorphismObligation, PartialMorphismMemento, ResolutionOption,
+    DivergentSemanticsTag, FieldDelta, GapKind, GapReason, IrFormula, IrTerm, LossRecord,
+    LossSeverity, LossSeverityLevel, LossyHomomorphismObligation, LossyMorphismMemento,
+    OptionStatus, PartialHomomorphismObligation, PartialMorphismMemento, ResolutionOption,
     ResolutionOptionKind, TransportGapMemento,
 };
 
@@ -365,4 +365,125 @@ fn gap_reason_source_supported_false_round_trips() {
     let r2: GapReason = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(r.source_supported, r2.source_supported);
     assert_eq!(r2.source_supported, Some(false));
+}
+
+// ================================================================
+// Regression: Blocker 1 — DivergentSemanticsTag named variants
+// Previously: #[serde(untagged)] + unit variants caused every named variant
+// to serialize as "null" and every spec string to deserialize as Other(...).
+// ================================================================
+
+#[test]
+fn divergent_tag_named_variant_serializes_to_spec_string() {
+    // Each named variant must serialize to its spec-defined kebab string, NOT "null".
+    let cases: &[(DivergentSemanticsTag, &str)] = &[
+        (DivergentSemanticsTag::TruncatedVsFlooredModulo, "\"truncated-vs-floored-modulo\""),
+        (DivergentSemanticsTag::BoundedVsUnboundedInteger, "\"bounded-vs-unbounded-integer\""),
+        (DivergentSemanticsTag::IntegerVsTrueDivision, "\"integer-vs-true-division\""),
+        (DivergentSemanticsTag::OverflowBehavior, "\"overflow-behavior\""),
+        (DivergentSemanticsTag::RoundingMode, "\"rounding-mode\""),
+        (DivergentSemanticsTag::ShortCircuitVsEager, "\"short-circuit-vs-eager\""),
+    ];
+    for (tag, expected) in cases {
+        let json = serde_json::to_string(tag).unwrap();
+        assert_eq!(
+            json, *expected,
+            "DivergentSemanticsTag::{:?} serialized to {} instead of {}",
+            tag, json, expected
+        );
+    }
+}
+
+#[test]
+fn divergent_tag_spec_string_deserializes_to_named_variant() {
+    // Each spec-defined string must deserialize to the named variant, NOT Other(...).
+    let tag: DivergentSemanticsTag =
+        serde_json::from_str("\"truncated-vs-floored-modulo\"").unwrap();
+    assert!(
+        matches!(tag, DivergentSemanticsTag::TruncatedVsFlooredModulo),
+        "expected TruncatedVsFlooredModulo, got {:?}",
+        tag
+    );
+
+    let tag2: DivergentSemanticsTag =
+        serde_json::from_str("\"bounded-vs-unbounded-integer\"").unwrap();
+    assert!(matches!(tag2, DivergentSemanticsTag::BoundedVsUnboundedInteger));
+
+    let tag3: DivergentSemanticsTag =
+        serde_json::from_str("\"integer-vs-true-division\"").unwrap();
+    assert!(matches!(tag3, DivergentSemanticsTag::IntegerVsTrueDivision));
+
+    let tag4: DivergentSemanticsTag = serde_json::from_str("\"overflow-behavior\"").unwrap();
+    assert!(matches!(tag4, DivergentSemanticsTag::OverflowBehavior));
+
+    let tag5: DivergentSemanticsTag = serde_json::from_str("\"rounding-mode\"").unwrap();
+    assert!(matches!(tag5, DivergentSemanticsTag::RoundingMode));
+
+    let tag6: DivergentSemanticsTag = serde_json::from_str("\"short-circuit-vs-eager\"").unwrap();
+    assert!(matches!(tag6, DivergentSemanticsTag::ShortCircuitVsEager));
+}
+
+#[test]
+fn divergent_tag_unknown_string_deserializes_to_other() {
+    let tag: DivergentSemanticsTag = serde_json::from_str("\"some-future-tag\"").unwrap();
+    assert!(
+        matches!(tag, DivergentSemanticsTag::Other(ref s) if s == "some-future-tag"),
+        "expected Other(\"some-future-tag\"), got {:?}",
+        tag
+    );
+}
+
+#[test]
+fn divergent_tag_round_trips_for_all_named_variants() {
+    let tags = vec![
+        DivergentSemanticsTag::TruncatedVsFlooredModulo,
+        DivergentSemanticsTag::BoundedVsUnboundedInteger,
+        DivergentSemanticsTag::IntegerVsTrueDivision,
+        DivergentSemanticsTag::OverflowBehavior,
+        DivergentSemanticsTag::RoundingMode,
+        DivergentSemanticsTag::ShortCircuitVsEager,
+        DivergentSemanticsTag::Other("novel-tag".to_string()),
+    ];
+    for tag in tags {
+        let json = serde_json::to_string(&tag).unwrap();
+        let back: DivergentSemanticsTag = serde_json::from_str(&json).unwrap();
+        assert_eq!(tag, back, "round-trip failed for {:?}", tag);
+    }
+}
+
+// ================================================================
+// Regression: Blocker 4 — GapReason field order must be alphabetical
+// `divergent_tag` must serialize FIRST (before `effects_delta`).
+// ================================================================
+
+#[test]
+fn gap_reason_field_order_is_alphabetical() {
+    let r = GapReason {
+        divergent_tag: Some(DivergentSemanticsTag::TruncatedVsFlooredModulo),
+        effects_delta: Some(FieldDelta {
+            got: serde_json::json!("a"),
+            want: serde_json::json!("b"),
+        }),
+        source_supported: Some(false),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&r).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    // Keys must appear in alphabetical order: divergent_tag < effects_delta < source_supported
+    assert_eq!(
+        keys,
+        vec!["divergent_tag", "effects_delta", "source_supported"],
+        "GapReason fields must serialize in alphabetical order; got: {:?}",
+        keys
+    );
+    // Confirm divergent_tag appears before effects_delta in raw JSON string
+    let dt_pos = json.find("divergent_tag").unwrap();
+    let ed_pos = json.find("effects_delta").unwrap();
+    assert!(
+        dt_pos < ed_pos,
+        "divergent_tag ({}) must appear before effects_delta ({}) in JSON",
+        dt_pos,
+        ed_pos
+    );
 }

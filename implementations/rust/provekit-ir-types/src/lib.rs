@@ -540,23 +540,55 @@ pub enum GapKind {
 
 /// The `divergent_tag` sub-discriminant for `gap_kind: "divergent-semantics"`.
 ///
+/// Wire format: a bare JSON string (e.g. `"truncated-vs-floored-modulo"`).
 /// Open extension: unknown tags deserialize as `Other(String)`.
+///
+/// Note: `#[serde(untagged)]` is intentionally NOT used here. With all-unit
+/// variants, `untagged` silently ignores `#[serde(rename)]` and serializes
+/// every unit variant as `null`. Instead we use `from`/`into` impls that
+/// convert through `String` so every variant maps to its spec-defined string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(from = "String", into = "String")]
 pub enum DivergentSemanticsTag {
-    #[serde(rename = "bounded-vs-unbounded-integer")]
     BoundedVsUnboundedInteger,
-    #[serde(rename = "integer-vs-true-division")]
     IntegerVsTrueDivision,
-    #[serde(rename = "overflow-behavior")]
     OverflowBehavior,
-    #[serde(rename = "rounding-mode")]
     RoundingMode,
-    #[serde(rename = "short-circuit-vs-eager")]
     ShortCircuitVsEager,
-    #[serde(rename = "truncated-vs-floored-modulo")]
     TruncatedVsFlooredModulo,
     Other(String),
+}
+
+impl From<String> for DivergentSemanticsTag {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "bounded-vs-unbounded-integer" => DivergentSemanticsTag::BoundedVsUnboundedInteger,
+            "integer-vs-true-division" => DivergentSemanticsTag::IntegerVsTrueDivision,
+            "overflow-behavior" => DivergentSemanticsTag::OverflowBehavior,
+            "rounding-mode" => DivergentSemanticsTag::RoundingMode,
+            "short-circuit-vs-eager" => DivergentSemanticsTag::ShortCircuitVsEager,
+            "truncated-vs-floored-modulo" => DivergentSemanticsTag::TruncatedVsFlooredModulo,
+            other => DivergentSemanticsTag::Other(other.to_string()),
+        }
+    }
+}
+
+impl From<DivergentSemanticsTag> for String {
+    fn from(tag: DivergentSemanticsTag) -> String {
+        match tag {
+            DivergentSemanticsTag::BoundedVsUnboundedInteger => {
+                "bounded-vs-unbounded-integer".to_string()
+            }
+            DivergentSemanticsTag::IntegerVsTrueDivision => "integer-vs-true-division".to_string(),
+            DivergentSemanticsTag::OverflowBehavior => "overflow-behavior".to_string(),
+            DivergentSemanticsTag::RoundingMode => "rounding-mode".to_string(),
+            DivergentSemanticsTag::ShortCircuitVsEager => "short-circuit-vs-eager".to_string(),
+            DivergentSemanticsTag::TruncatedVsFlooredModulo => {
+                "truncated-vs-floored-modulo".to_string()
+            }
+            DivergentSemanticsTag::Other(s) => s,
+        }
+    }
 }
 
 /// A structured delta for a field that differs between source and concept spec.
@@ -570,10 +602,13 @@ pub struct FieldDelta {
 ///
 /// All fields optional; at least one should be present in practice.
 /// Locked JCS key order (alphabetical):
-///   effects_delta, formal_sorts_delta, post_delta, pre_delta,
-///   source_supported, divergent_tag, wp_rule_delta
+///   divergent_tag, effects_delta, formal_sorts_delta, post_delta, pre_delta,
+///   source_supported, wp_rule_delta
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct GapReason {
+    #[serde(rename = "divergent_tag")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divergent_tag: Option<DivergentSemanticsTag>,
     #[serde(rename = "effects_delta")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effects_delta: Option<FieldDelta>,
@@ -589,9 +624,6 @@ pub struct GapReason {
     #[serde(rename = "source_supported")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_supported: Option<bool>,
-    #[serde(rename = "divergent_tag")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub divergent_tag: Option<DivergentSemanticsTag>,
     #[serde(rename = "wp_rule_delta")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wp_rule_delta: Option<FieldDelta>,
