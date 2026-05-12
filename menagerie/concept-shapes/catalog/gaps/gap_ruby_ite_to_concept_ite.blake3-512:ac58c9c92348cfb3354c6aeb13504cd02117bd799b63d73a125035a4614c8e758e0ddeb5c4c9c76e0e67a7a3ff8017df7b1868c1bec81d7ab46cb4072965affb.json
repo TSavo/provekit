@@ -1,0 +1,61 @@
+{
+  "cid": "blake3-512:ac58c9c92348cfb3354c6aeb13504cd02117bd799b63d73a125035a4614c8e758e0ddeb5c4c9c76e0e67a7a3ff8017df7b1868c1bec81d7ab46cb4072965affb",
+  "memento": {
+    "fn_name": "gap:ruby:ite:to:concept:ite",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:971865aa28cb5cf56101b38d833829124df1c8f37da5d643b2f9e5a7cb7377dcc73457c59e2cc57cda48f8308145cb73e4be5c85b479561151f6ed6541f107fc",
+    "target_concept_op": "concept:ite",
+    "target_op_cid": "blake3-512:7fc1f25b05c8459e5d5af900c8369ced389d1994185b94216a8dfba3499875714746d684595a27923ae59258bc87d641b4c378b2debf2addc926c26bab5e075c"
+  },
+  "signature": null
+}

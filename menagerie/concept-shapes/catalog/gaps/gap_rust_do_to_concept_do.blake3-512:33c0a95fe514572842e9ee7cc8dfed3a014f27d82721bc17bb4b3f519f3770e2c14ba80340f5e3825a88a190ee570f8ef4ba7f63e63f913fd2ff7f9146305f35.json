@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:33c0a95fe514572842e9ee7cc8dfed3a014f27d82721bc17bb4b3f519f3770e2c14ba80340f5e3825a88a190ee570f8ef4ba7f63e63f913fd2ff7f9146305f35",
+  "memento": {
+    "fn_name": "gap:rust:do:to:concept:do",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": null,
+    "target_concept_op": "concept:do",
+    "target_op_cid": "blake3-512:cc5bc589ca672e13a4b66e8fb95562658d4458225d3840b0474159f90293b5dc52d2bac4dd59c157fef582a81f8ffd0f755e8b0049ec9254e1d605c9f49fbfcb"
+  },
+  "signature": null
+}

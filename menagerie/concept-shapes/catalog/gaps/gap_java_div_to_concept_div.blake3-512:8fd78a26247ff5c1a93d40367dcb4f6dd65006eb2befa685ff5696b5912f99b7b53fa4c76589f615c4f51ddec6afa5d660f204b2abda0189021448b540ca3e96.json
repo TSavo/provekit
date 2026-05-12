@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:8fd78a26247ff5c1a93d40367dcb4f6dd65006eb2befa685ff5696b5912f99b7b53fa4c76589f615c4f51ddec6afa5d660f204b2abda0189021448b540ca3e96",
+  "memento": {
+    "fn_name": "gap:java:div:to:concept:div",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": "blake3-512:4b2d12483a22e472d8bc52d0e08e16a9fb0589dbb6252716c4f48697be0e5d448f4fd33ffd48d586f2bd998885436e1bbe9d4dcfa3cbe15892f8e4099545dfcb",
+    "target_concept_op": "concept:div",
+    "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+  },
+  "signature": null
+}

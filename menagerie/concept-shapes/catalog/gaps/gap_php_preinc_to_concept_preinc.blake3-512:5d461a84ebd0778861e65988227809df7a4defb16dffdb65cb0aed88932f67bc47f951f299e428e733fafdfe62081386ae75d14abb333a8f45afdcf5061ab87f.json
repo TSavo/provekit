@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:5d461a84ebd0778861e65988227809df7a4defb16dffdb65cb0aed88932f67bc47f951f299e428e733fafdfe62081386ae75d14abb333a8f45afdcf5061ab87f",
+  "memento": {
+    "fn_name": "gap:php:preinc:to:concept:preinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:preinc",
+    "target_op_cid": "blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8"
+  },
+  "signature": null
+}

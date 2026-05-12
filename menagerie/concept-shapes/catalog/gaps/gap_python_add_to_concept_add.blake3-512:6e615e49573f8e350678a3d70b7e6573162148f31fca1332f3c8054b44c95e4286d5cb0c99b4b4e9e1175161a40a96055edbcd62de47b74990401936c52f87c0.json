@@ -1,0 +1,38 @@
+{
+  "cid": "blake3-512:6e615e49573f8e350678a3d70b7e6573162148f31fca1332f3c8054b44c95e4286d5cb0c99b4b4e9e1175161a40a96055edbcd62de47b74990401936c52f87c0",
+  "memento": {
+    "fn_name": "gap:python:add:to:concept:add",
+    "gap_kind": "polymorphic-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {},
+    "reason_note": "python:add is polymorphic (dispatches on operand type: int, float, str, list); concept:add is integer-only",
+    "resolution_options": [
+      {
+        "option_kind": "partial-morphism",
+        "tradeoff": "Restrict to call-sites where operands are statically the integer sub-sort.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "split-target-op",
+        "split_targets": [
+          "concept:add-int",
+          "concept:add-str"
+        ],
+        "tradeoff": "Split the concept hub op into per-sort variants; morphisms discharge per variant.",
+        "status": "deferred"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "Polymorphic dispatch is not bridgeable to a monomorphic hub op.",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": "blake3-512:2818fd63a4fdcc4d6df720dc2b8b7bfc515b4ec4b49caacd0e089c40dece25c9941b602f5d7dd1cb5b3aee9d54d34a0aaeaf7510d148ec6d3a30fbff5a1e6407",
+    "target_concept_op": "concept:add",
+    "target_op_cid": "blake3-512:cf5c95b508cf6e35624c04aba468a74586e8a2e1f714931e54876de9ffde364a549031384e0291fd6615c391f53a6f2c9715fcf41cc995c0243c4cea9f3e00e2"
+  },
+  "signature": null
+}

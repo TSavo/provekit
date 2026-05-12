@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:40a2d83ea0c65f2d65b8d00e13e04f7ce4b03382d7420e0f41081f948c9a952b4a63cad6571241f5cf19498491fa18ce7c05bfffc5f8f10919ed33f544edc222",
+  "memento": {
+    "fn_name": "gap:ruby:le:to:concept:le",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:f025a1258c5ed5f726d7161d0b5d26b02aa0642b528ddc0b81d122bba62d62d31fbd006c59ccf18d1f772eeac90ba790ac2c317d0039fb87a024b25bfb0ae457",
+    "target_concept_op": "concept:le",
+    "target_op_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1"
+  },
+  "signature": null
+}

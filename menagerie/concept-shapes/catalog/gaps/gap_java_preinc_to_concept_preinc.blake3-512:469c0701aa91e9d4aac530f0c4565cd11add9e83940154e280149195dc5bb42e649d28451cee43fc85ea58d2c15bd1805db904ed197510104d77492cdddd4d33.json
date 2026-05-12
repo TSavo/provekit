@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:469c0701aa91e9d4aac530f0c4565cd11add9e83940154e280149195dc5bb42e649d28451cee43fc85ea58d2c15bd1805db904ed197510104d77492cdddd4d33",
+  "memento": {
+    "fn_name": "gap:java:preinc:to:concept:preinc",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "LValue",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": "blake3-512:e2b40b6ac24426cc028019070dbe4f29a020d67ffa2fefba5e3ff0056e356cc4bc365b94f25708ee2698ecb1cb92b826269114bc6ef0c7aa957805b2355786c5",
+    "target_concept_op": "concept:preinc",
+    "target_op_cid": "blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8"
+  },
+  "signature": null
+}

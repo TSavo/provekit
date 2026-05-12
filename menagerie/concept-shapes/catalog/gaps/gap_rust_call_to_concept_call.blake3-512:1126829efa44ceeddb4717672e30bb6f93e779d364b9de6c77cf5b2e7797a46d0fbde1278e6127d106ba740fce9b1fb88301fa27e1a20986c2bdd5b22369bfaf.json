@@ -1,0 +1,60 @@
+{
+  "cid": "blake3-512:1126829efa44ceeddb4717672e30bb6f93e779d364b9de6c77cf5b2e7797a46d0fbde1278e6127d106ba740fce9b1fb88301fa27e1a20986c2bdd5b22369bfaf",
+  "memento": {
+    "fn_name": "gap:rust:call:to:concept:call",
+    "gap_kind": "effect-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "effects_delta": {
+        "got": {
+          "effects": [
+            {
+              "kind": "effect-polymorphic",
+              "rule": "callee.effects"
+            }
+          ]
+        },
+        "want": {
+          "effects": [
+            {
+              "kind": "effect-polymorphic",
+              "rule": "callee.effects"
+            },
+            {
+              "kind": "effect-signature",
+              "name": "UnresolvedCall"
+            },
+            {
+              "kind": "effect-signature",
+              "name": "Call"
+            },
+            {
+              "kind": "effect-polymorphic",
+              "rule": "callee.effects or unresolved_call when unavailable"
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "effect signature mismatch: got `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects\"}]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects\"},{\"kind\":\"effect-signature\",\"name\":\"UnresolvedCall\"},{\"kind\":\"effect-signature\",\"name\":\"Call\"},{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects or unresolved_call when unavailable\"}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "re-spec-target-op",
+        "tradeoff": "Widen the concept op's effect set to include the language op's effects.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "effect signature mismatch: got `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects\"}]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects\"},{\"kind\":\"effect-signature\",\"name\":\"UnresolvedCall\"},{\"kind\":\"effect-signature\",\"name\":\"Call\"},{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects or unresolved_call when unavailable\"}]}`",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:56e4a97d26cfc9b948ac60b8452dd11c14425669150f1e9924677fbdf19c85f29a4b059907d99f22bf8d67dce128691705ead4287a967549124ffc18be1a2dd6",
+    "target_concept_op": "concept:call",
+    "target_op_cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c"
+  },
+  "signature": null
+}

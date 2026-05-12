@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:830609340dc01c43e78e6203a36b56c4e3d6b479d55b792ef6080a05cb3cc07429a6ef489ab264001b9616754095a0124c17c2180e42bab3a5b98528bee122e1",
+  "memento": {
+    "fn_name": "gap:ruby:call:to:concept:call",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "ListOfValue",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "FnContract",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "ListOfExpr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfValue\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfValue\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:b79e37706e03f4655a7976098b32657ce8028be1bd2b2e83a7bc3a5e14c40d586380865f968c4a61036e29810e6ae3845b5faabcb64af6d7596e85aa38d37352",
+    "target_concept_op": "concept:call",
+    "target_op_cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c"
+  },
+  "signature": null
+}

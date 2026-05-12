@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:3b4f66c7015ca592abb836216e42b90e9f7a29f01a508acdfaa37935141b94e99e8b2625d382fb93c225aa7f32fcc950581df53ca533fa8eaf255a02c0fca416",
+  "memento": {
+    "fn_name": "gap:php:postinc:to:concept:postinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postinc",
+    "target_op_cid": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
+  },
+  "signature": null
+}

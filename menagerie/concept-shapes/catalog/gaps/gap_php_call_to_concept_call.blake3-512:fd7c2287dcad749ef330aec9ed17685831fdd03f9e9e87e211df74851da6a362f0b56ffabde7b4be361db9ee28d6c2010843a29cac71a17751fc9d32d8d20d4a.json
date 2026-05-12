@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:fd7c2287dcad749ef330aec9ed17685831fdd03f9e9e87e211df74851da6a362f0b56ffabde7b4be361db9ee28d6c2010843a29cac71a17751fc9d32d8d20d4a",
+  "memento": {
+    "fn_name": "gap:php:call:to:concept:call",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "FnContract",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "ListOfExpr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": "blake3-512:1ce68510b4d3d1a7c28b51f7ddf1e97dc63e197edfa7db6bd516d4eda31a12931acaa3ef6992772df29194575011e54e11a71e0117aca1e69a41f9a071d26e1f",
+    "target_concept_op": "concept:call",
+    "target_op_cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c"
+  },
+  "signature": null
+}

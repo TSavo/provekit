@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:40f7d8ca06616cbdae8c005a95c4b7337e3dcedc8e288e339b71771c2e4b26f76d632d664ce978ae240fdd339ef0ebffd22afca3fdde08f7319beeae37ea3b4c",
+  "memento": {
+    "fn_name": "gap:zig:throw:to:concept:throw",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Reason",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Reason\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Reason\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "zig",
+    "source_op_cid": "blake3-512:3de01f87a37636103e33944957b3b0d355b1a2e071e58bbe378059b2ea3c48c98e361f73251e0b8ef603685788154bbaaecdf02afd0d693f09313c87abbce6c5",
+    "target_concept_op": "concept:throw",
+    "target_op_cid": "blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede"
+  },
+  "signature": null
+}

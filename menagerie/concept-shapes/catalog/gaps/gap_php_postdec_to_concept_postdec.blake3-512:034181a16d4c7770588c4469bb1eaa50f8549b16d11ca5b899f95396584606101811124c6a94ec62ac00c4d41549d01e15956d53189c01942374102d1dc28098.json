@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:034181a16d4c7770588c4469bb1eaa50f8549b16d11ca5b899f95396584606101811124c6a94ec62ac00c4d41549d01e15956d53189c01942374102d1dc28098",
+  "memento": {
+    "fn_name": "gap:php:postdec:to:concept:postdec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postdec",
+    "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+  },
+  "signature": null
+}

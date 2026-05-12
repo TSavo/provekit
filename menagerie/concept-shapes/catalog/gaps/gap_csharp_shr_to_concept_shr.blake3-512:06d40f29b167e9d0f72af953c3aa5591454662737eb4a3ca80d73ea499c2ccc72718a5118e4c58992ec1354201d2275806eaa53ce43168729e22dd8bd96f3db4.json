@@ -1,0 +1,43 @@
+{
+  "cid": "blake3-512:06d40f29b167e9d0f72af953c3aa5591454662737eb4a3ca80d73ea499c2ccc72718a5118e4c58992ec1354201d2275806eaa53ce43168729e22dd8bd96f3db4",
+  "memento": {
+    "fn_name": "gap:csharp:shr:to:concept:shr",
+    "gap_kind": "effect-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "effects_delta": {
+        "got": {
+          "effects": []
+        },
+        "want": {
+          "effects": [
+            {
+              "kind": "effect-signature",
+              "name": "Panic"
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Panic\"}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "re-spec-target-op",
+        "tradeoff": "Widen the concept op's effect set to include the language op's effects.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Panic\"}]}`",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:33f104f38b32b308ee5b5652f7bce36e3aafd3b76790cf4937e1fb65061e13d622cc69fd093ae975ea833e8178e0de8f760f41c0a9d9ff2c43d35eda2c2d4cb1",
+    "target_concept_op": "concept:shr",
+    "target_op_cid": "blake3-512:b78179f4f57c03c045c1acab65525331daca362ba63a643d863a10375bd8c0467f174c188fe9edc661d0ebba4f2ee673684fd73b8715cafe1c3cb5be6211e3a0"
+  },
+  "signature": null
+}

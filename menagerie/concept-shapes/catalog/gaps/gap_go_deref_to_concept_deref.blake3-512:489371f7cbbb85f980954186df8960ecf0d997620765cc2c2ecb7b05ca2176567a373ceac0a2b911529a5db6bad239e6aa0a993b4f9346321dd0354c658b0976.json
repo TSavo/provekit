@@ -1,0 +1,67 @@
+{
+  "cid": "blake3-512:489371f7cbbb85f980954186df8960ecf0d997620765cc2c2ecb7b05ca2176567a373ceac0a2b911529a5db6bad239e6aa0a993b4f9346321dd0354c658b0976",
+  "memento": {
+    "fn_name": "gap:go:deref:to:concept:deref",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        },
+        "want": {
+          "kind": "connective",
+          "op": "and",
+          "operands": [
+            {
+              "kind": "atomic",
+              "name": "!=",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "ptr"
+                },
+                {
+                  "kind": "const",
+                  "value": "NULL",
+                  "sort": {
+                    "kind": "ctor",
+                    "name": "Ptr",
+                    "args": []
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "atomic",
+              "name": "valid",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "ptr"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"connective\",\"op\":\"and\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"!=\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"},{\"kind\":\"const\",\"value\":\"NULL\",\"sort\":{\"kind\":\"ctor\",\"name\":\"Ptr\",\"args\":[]}}]},{\"kind\":\"atomic\",\"name\":\"valid\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"connective\",\"op\":\"and\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"!=\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"},{\"kind\":\"const\",\"value\":\"NULL\",\"sort\":{\"kind\":\"ctor\",\"name\":\"Ptr\",\"args\":[]}}]},{\"kind\":\"atomic\",\"name\":\"valid\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": "blake3-512:8482fcf3c91e931d4df2920fd6ce27d1c5d7186f751db475f8119ecacc556063b3852c0b59e68e0ed155251456f8e0d83f924986189ce288ef221663246d1fab",
+    "target_concept_op": "concept:deref",
+    "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  },
+  "signature": null
+}

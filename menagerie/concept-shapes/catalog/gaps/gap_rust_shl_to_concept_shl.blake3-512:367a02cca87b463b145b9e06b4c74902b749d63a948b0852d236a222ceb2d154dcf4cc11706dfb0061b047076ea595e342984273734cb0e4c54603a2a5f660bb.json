@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:367a02cca87b463b145b9e06b4c74902b749d63a948b0852d236a222ceb2d154dcf4cc11706dfb0061b047076ea595e342984273734cb0e4c54603a2a5f660bb",
+  "memento": {
+    "fn_name": "gap:rust:shl:to:concept:shl",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer shift left",
+        "want": "integer left shift expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer shift left\"` want `\"integer left shift expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer shift left\"` want `\"integer left shift expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:37af5330572cf08650e3b6d5fdfc2649d56c0bb2e019f9be3861082c9d1961c1808beca6f9dfc39742ade25f06bfb499da74c89d33f64decd0c70f0972d021e1",
+    "target_concept_op": "concept:shl",
+    "target_op_cid": "blake3-512:d5609e27e03c60f6d8405743da5a4fb5f0f4e6cd92390d18c69451925badd4a3a11ac8818f4934f8818b0a02c4c545372573951a0df3ddba77415db18d6cfa28"
+  },
+  "signature": null
+}

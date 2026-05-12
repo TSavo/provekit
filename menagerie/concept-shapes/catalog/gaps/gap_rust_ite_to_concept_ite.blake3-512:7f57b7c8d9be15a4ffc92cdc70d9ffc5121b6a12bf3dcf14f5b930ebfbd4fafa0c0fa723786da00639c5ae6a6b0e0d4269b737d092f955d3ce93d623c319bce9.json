@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:7f57b7c8d9be15a4ffc92cdc70d9ffc5121b6a12bf3dcf14f5b930ebfbd4fafa0c0fa723786da00639c5ae6a6b0e0d4269b737d092f955d3ce93d623c319bce9",
+  "memento": {
+    "fn_name": "gap:rust:ite:to:concept:ite",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "expression conditional used by WP contracts",
+        "want": "ternary expression selected by cond"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"expression conditional used by WP contracts\"` want `\"ternary expression selected by cond\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"expression conditional used by WP contracts\"` want `\"ternary expression selected by cond\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:da72fa3c4d74fd91551bdf03956e7f43fe0b8d3413176b773b4ae0888c093addfe1739de57dc6805611504972f815a064aabb884ad6cca408236adb4afc79a5a",
+    "target_concept_op": "concept:ite",
+    "target_op_cid": "blake3-512:7fc1f25b05c8459e5d5af900c8369ced389d1994185b94216a8dfba3499875714746d684595a27923ae59258bc87d641b4c378b2debf2addc926c26bab5e075c"
+  },
+  "signature": null
+}

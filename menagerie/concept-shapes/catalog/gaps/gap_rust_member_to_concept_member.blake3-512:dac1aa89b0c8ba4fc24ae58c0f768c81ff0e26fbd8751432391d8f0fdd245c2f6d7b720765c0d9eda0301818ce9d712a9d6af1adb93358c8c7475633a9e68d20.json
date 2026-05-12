@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:dac1aa89b0c8ba4fc24ae58c0f768c81ff0e26fbd8751432391d8f0fdd245c2f6d7b720765c0d9eda0301818ce9d712a9d6af1adb93358c8c7475633a9e68d20",
+  "memento": {
+    "fn_name": "gap:rust:member:to:concept:member",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "FieldName",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "LValue",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "FieldName",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"FieldName\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"FieldName\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"FieldName\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"FieldName\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:2c417eae7fbfcfaa10386bb33ea364eda1df3faa480b3d6b1125cb28052444efe83c5b6328e2cea044956fa4a360fad0c27e3569cddb67df6762809e0fabfeeb",
+    "target_concept_op": "concept:member",
+    "target_op_cid": "blake3-512:2d3b8518c51a93e8c42747b508b766134e14aeaa88327411b2bfb63da481aba27019d2f2613e85054c75d13e5b2f40efad4b9265b1148f1fcb13f4220b02fe2d"
+  },
+  "signature": null
+}

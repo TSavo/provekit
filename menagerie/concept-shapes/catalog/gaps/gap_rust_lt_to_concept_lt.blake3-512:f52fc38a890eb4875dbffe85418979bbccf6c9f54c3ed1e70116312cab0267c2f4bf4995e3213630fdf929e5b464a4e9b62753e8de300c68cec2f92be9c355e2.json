@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:f52fc38a890eb4875dbffe85418979bbccf6c9f54c3ed1e70116312cab0267c2f4bf4995e3213630fdf929e5b464a4e9b62753e8de300c68cec2f92be9c355e2",
+  "memento": {
+    "fn_name": "gap:rust:lt:to:concept:lt",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer less than comparison",
+        "want": "integer less-than comparison"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer less than comparison\"` want `\"integer less-than comparison\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer less than comparison\"` want `\"integer less-than comparison\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:1f601089c47ff4e0388fba2f087beeeb63fba12ddf3327e1b22223d458b3a05bbd6e19c2d68a23657b4bab09981a5d4c8c36428ad0eb1a999e7695af0b4ceaba",
+    "target_concept_op": "concept:lt",
+    "target_op_cid": "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
+  },
+  "signature": null
+}

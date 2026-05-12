@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:b221c785b7ad9a0eb7ebd73d2211a1406f4946701d97c3a4c37388e2c78e3124bc79af84c73119b81486e31264281bbc7f0e260adc5d386f7e00fcdf914a8ede",
+  "memento": {
+    "fn_name": "gap:java:not:to:concept:not",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": "blake3-512:83a3885d8c760a7b1fef6ddf19dba7310c4016e5eea5162e0501669d915f9e3c108aeb5e3a267a87575295f98cd53b534e3d36ca9e1f4ebb55561290b4bc2fea",
+    "target_concept_op": "concept:not",
+    "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+  },
+  "signature": null
+}

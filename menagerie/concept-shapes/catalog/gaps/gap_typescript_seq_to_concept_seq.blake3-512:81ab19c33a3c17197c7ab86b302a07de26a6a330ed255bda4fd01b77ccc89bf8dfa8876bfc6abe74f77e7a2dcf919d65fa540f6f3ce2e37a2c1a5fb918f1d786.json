@@ -1,0 +1,46 @@
+{
+  "cid": "blake3-512:81ab19c33a3c17197c7ab86b302a07de26a6a330ed255bda4fd01b77ccc89bf8dfa8876bfc6abe74f77e7a2dcf919d65fa540f6f3ce2e37a2c1a5fb918f1d786",
+  "memento": {
+    "fn_name": "gap:typescript:seq:to:concept:seq",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "typescript",
+    "source_op_cid": "blake3-512:1bb79da954fa298b7fbc7c1718d798e09f43705385ada04ad88aa231a53fadd9dddb70b1414731cd02fd836e35e5fd1107f68cc65ee85d24216d6427311fd77a",
+    "target_concept_op": "concept:seq",
+    "target_op_cid": "blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412"
+  },
+  "signature": null
+}

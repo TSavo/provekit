@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:014e4fd3b0649b5b519fefc0fb98b86941e4d1b41ceec9920eb33e3ea1614e14b242911dccbe79c159252fdb21d8b0348bb3ad0c500dff9b47c3966b16f2686b",
+  "memento": {
+    "fn_name": "gap:zig:preinc:to:concept:preinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "zig",
+    "source_op_cid": null,
+    "target_concept_op": "concept:preinc",
+    "target_op_cid": "blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8"
+  },
+  "signature": null
+}

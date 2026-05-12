@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:d613fe5a9dcc1a9ba80e4cf160ca7845a11d33703d25d024eeaaa589b3a5ed51d3cdbc3e6db37ae2f153e29ecd965b6144111ca7abe7715fbffd33a4abc24a7f",
+  "memento": {
+    "fn_name": "gap:go:continue:to:concept:continue",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": null,
+    "target_concept_op": "concept:continue",
+    "target_op_cid": "blake3-512:f4bb0e35cfaac91b064d68880930373bdea1f46fcf87081de1873edd3457a1d7a3ac95f9d42273ba7f686e523f9070b083eefbde0fe75e62760e59f2bb1d9f7a"
+  },
+  "signature": null
+}

@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:7601feb1a81ff1417cae20a0b0adc7f1843aadc5144da8d33daf2a7b597f30dff878f55a5480b3110f78645ee86c77603f5fc029511fcb39d58a0c640df85ce6",
+  "memento": {
+    "fn_name": "gap:go:call:to:concept:call",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Identifier",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "FnContract",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "ListOfExpr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": "blake3-512:3137f76279e614d0918d10c0fa6deddc86b51840a7a0eb8299203d43d6f3ef57f6af048934b64cd22904dea1d242088b094a4679a010a9bd535e35be6461743e",
+    "target_concept_op": "concept:call",
+    "target_op_cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c"
+  },
+  "signature": null
+}

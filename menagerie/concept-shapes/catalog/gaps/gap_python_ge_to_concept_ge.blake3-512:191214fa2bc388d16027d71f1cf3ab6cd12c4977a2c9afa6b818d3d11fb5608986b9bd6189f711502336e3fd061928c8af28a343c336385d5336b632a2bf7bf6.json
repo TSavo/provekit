@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:191214fa2bc388d16027d71f1cf3ab6cd12c4977a2c9afa6b818d3d11fb5608986b9bd6189f711502336e3fd061928c8af28a343c336385d5336b632a2bf7bf6",
+  "memento": {
+    "fn_name": "gap:python:ge:to:concept:ge",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:ge",
+    "target_op_cid": "blake3-512:f74a5228d58c870eb8277c723124af1a0bb6d9b30df92fa7ccb0ebb0fe63eddb7157ddcfa4ff8029a073eeb5c9e5ec3fe28beae69f88a298ae84b4990d3e152a"
+  },
+  "signature": null
+}

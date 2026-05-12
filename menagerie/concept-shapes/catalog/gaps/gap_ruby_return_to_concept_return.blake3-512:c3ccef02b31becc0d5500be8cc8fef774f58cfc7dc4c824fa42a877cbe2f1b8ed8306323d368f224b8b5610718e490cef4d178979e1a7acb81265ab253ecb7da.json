@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:c3ccef02b31becc0d5500be8cc8fef774f58cfc7dc4c824fa42a877cbe2f1b8ed8306323d368f224b8b5610718e490cef4d178979e1a7acb81265ab253ecb7da",
+  "memento": {
+    "fn_name": "gap:ruby:return:to:concept:return",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:7d02a2b5bad98d1e2ab56fbd5a7ec8849e2922cd3507e0ae365e9dc95d50cceb6ac7545ccd467d1cb9a428b495d5f7283a7f16f58c5100ed71816d4f38df886e",
+    "target_concept_op": "concept:return",
+    "target_op_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
+  },
+  "signature": null
+}

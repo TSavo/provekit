@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:180c7f15818501cce27645a3fa29597c17d46e5fba833bd46d5ccbcd68f5dacb4026a28d6f580f1d8045734d76bccb5c66f074ee9a8852bdae9c096e0c83b022",
+  "memento": {
+    "fn_name": "gap:go:postinc:to:concept:postinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postinc",
+    "target_op_cid": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
+  },
+  "signature": null
+}

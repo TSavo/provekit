@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:60f2554481e7cde6b3faffe085c44b8d3fadcb4adc4ba82f946e4866df178ad32c5adb392ccd44eb5dd12c5b3fa83915f4a094e4af375a3576b77c860c569940",
+  "memento": {
+    "fn_name": "gap:rust:gt:to:concept:gt",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer greater than comparison",
+        "want": "integer greater-than comparison"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer greater than comparison\"` want `\"integer greater-than comparison\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer greater than comparison\"` want `\"integer greater-than comparison\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:7593a5d7d8afb9d4e6531c384ac97e1309ace179c2d68daaa23112d1196371922872d60e9fa16c4079e8163f922789987b72acf3460795eb6bc2c286c8a53a28",
+    "target_concept_op": "concept:gt",
+    "target_op_cid": "blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6"
+  },
+  "signature": null
+}

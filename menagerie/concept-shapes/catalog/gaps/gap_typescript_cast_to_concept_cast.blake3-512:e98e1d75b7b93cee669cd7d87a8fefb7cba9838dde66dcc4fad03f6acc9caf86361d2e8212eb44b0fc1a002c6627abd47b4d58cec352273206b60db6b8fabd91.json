@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:e98e1d75b7b93cee669cd7d87a8fefb7cba9838dde66dcc4fad03f6acc9caf86361d2e8212eb44b0fc1a002c6627abd47b4d58cec352273206b60db6b8fabd91",
+  "memento": {
+    "fn_name": "gap:typescript:cast:to:concept:cast",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "typescript",
+    "source_op_cid": null,
+    "target_concept_op": "concept:cast",
+    "target_op_cid": "blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c"
+  },
+  "signature": null
+}

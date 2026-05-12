@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:aa413c19df19f3c204115ae9db7daac103f59cca6b6f347d8ec531c1861c8d9c2c7b33b16e9590d2f3c8743cb191cfac31e1d739a864cd247d5a9630d39142b4",
+  "memento": {
+    "fn_name": "gap:csharp:bitand:to:concept:bitand",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "lhs & rhs (bitwise AND)",
+        "want": "integer bitwise and expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"lhs & rhs (bitwise AND)\"` want `\"integer bitwise and expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"lhs & rhs (bitwise AND)\"` want `\"integer bitwise and expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:fc4dff723905f71b925b81b6fa3e60fd5085ce59d8071d9f2648c459dc46d17eb10065649a8c71b55ef9d2314cb7d87aa0f1b7b636c223b37fed4dab034e08a7",
+    "target_concept_op": "concept:bitand",
+    "target_op_cid": "blake3-512:a83de04ab992aad5eb9e1a1bb2b6706576e42d243464ad6d5aeb3a06283c6498d2325cdb3beeecae9fe1e82b684abc4c118092f6a9129281aeca5246433f4a6a"
+  },
+  "signature": null
+}

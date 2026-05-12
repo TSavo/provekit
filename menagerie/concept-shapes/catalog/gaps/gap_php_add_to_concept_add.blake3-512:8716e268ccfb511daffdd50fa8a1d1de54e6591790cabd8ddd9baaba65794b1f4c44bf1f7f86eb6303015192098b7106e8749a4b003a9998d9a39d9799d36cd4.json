@@ -1,0 +1,52 @@
+{
+  "cid": "blake3-512:8716e268ccfb511daffdd50fa8a1d1de54e6591790cabd8ddd9baaba65794b1f4c44bf1f7f86eb6303015192098b7106e8749a4b003a9998d9a39d9799d36cd4",
+  "memento": {
+    "fn_name": "gap:php:add:to:concept:add",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "no_signed_overflow",
+          "args": [
+            {
+              "kind": "op",
+              "name": "add",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "lhs"
+                },
+                {
+                  "kind": "var",
+                  "name": "rhs"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": "blake3-512:9adcaffdc389319c9a50208e798f7bc8d9e0b59563570a67400e22c1c978c060f6f2d59e2176c3a0fe245595ff24769c3617b41701e96851b0b7acdbbcab0f64",
+    "target_concept_op": "concept:add",
+    "target_op_cid": "blake3-512:cf5c95b508cf6e35624c04aba468a74586e8a2e1f714931e54876de9ffde364a549031384e0291fd6615c391f53a6f2c9715fcf41cc995c0243c4cea9f3e00e2"
+  },
+  "signature": null
+}

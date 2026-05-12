@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:87b267a1d08b0128204d496b1534604c0ea62930710e13b78323d8cdc5b59b6d21d90438ef5d92dcb97f35ed807a88c51f70b54a65ca31d518b1d3a49d260a4f",
+  "memento": {
+    "fn_name": "gap:python:decl:to:concept:decl",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:decl",
+    "target_op_cid": "blake3-512:43f5ee88b8df3515b3f8a679464191c0d2f1f59c1505e306050ad9bf9255bd30d792eff59e24e1237c7334eca33b57e2224615583fabc3c3847dee7b00a5e9ce"
+  },
+  "signature": null
+}

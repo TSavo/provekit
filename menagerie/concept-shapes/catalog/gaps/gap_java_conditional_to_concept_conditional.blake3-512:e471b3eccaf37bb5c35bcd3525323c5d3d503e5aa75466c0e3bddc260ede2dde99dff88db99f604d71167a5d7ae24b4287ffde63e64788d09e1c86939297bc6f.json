@@ -1,0 +1,43 @@
+{
+  "cid": "blake3-512:e471b3eccaf37bb5c35bcd3525323c5d3d503e5aa75466c0e3bddc260ede2dde99dff88db99f604d71167a5d7ae24b4287ffde63e64788d09e1c86939297bc6f",
+  "memento": {
+    "fn_name": "gap:java:conditional:to:concept:conditional",
+    "gap_kind": "effect-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "effects_delta": {
+        "got": {
+          "effects": []
+        },
+        "want": {
+          "effects": [
+            {
+              "kind": "effect-polymorphic",
+              "rule": "union(then_branch.effects, else_branch.effects)"
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"union(then_branch.effects, else_branch.effects)\"}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "re-spec-target-op",
+        "tradeoff": "Widen the concept op's effect set to include the language op's effects.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"union(then_branch.effects, else_branch.effects)\"}]}`",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": "blake3-512:5ee376a94e1fab707de0a4722c038bb5df720d6b8a014c6200cb607ba1b9373ee7217965c745bd97b71b1be6b12f89233b97de135f2d8b7afe4c7c9f12729f26",
+    "target_concept_op": "concept:conditional",
+    "target_op_cid": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd"
+  },
+  "signature": null
+}

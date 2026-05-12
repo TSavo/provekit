@@ -1,0 +1,61 @@
+{
+  "cid": "blake3-512:f00be2bffef601548de23c307f693abdfd462f7d06043d8f9ea05c13de869f8c9f9528bbc182f62c576c57ed1a0917c8b2e9900cbcd6f3e2191d3c62644ff8b9",
+  "memento": {
+    "fn_name": "gap:csharp:ite:to:concept:ite",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:a9940f225e12ccad73343382113c3d7533856a89739c41c67eb0b3442dd8f0b935d722e36c2ca8a6e3538f245b8a300402faf12d1ff646ea9c9e273aa35acae4",
+    "target_concept_op": "concept:ite",
+    "target_op_cid": "blake3-512:7fc1f25b05c8459e5d5af900c8369ced389d1994185b94216a8dfba3499875714746d684595a27923ae59258bc87d641b4c378b2debf2addc926c26bab5e075c"
+  },
+  "signature": null
+}

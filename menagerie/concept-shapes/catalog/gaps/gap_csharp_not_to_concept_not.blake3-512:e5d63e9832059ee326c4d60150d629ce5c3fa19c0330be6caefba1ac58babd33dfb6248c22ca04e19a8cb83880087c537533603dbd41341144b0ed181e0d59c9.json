@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:e5d63e9832059ee326c4d60150d629ce5c3fa19c0330be6caefba1ac58babd33dfb6248c22ca04e19a8cb83880087c537533603dbd41341144b0ed181e0d59c9",
+  "memento": {
+    "fn_name": "gap:csharp:not:to:concept:not",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "!value",
+        "want": "boolean negation"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"!value\"` want `\"boolean negation\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"!value\"` want `\"boolean negation\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:e301d32e139d652fc9f132caf64aab23bfa431775c4b2cc9175aec5ded50c14da28fffae46b187ac9b0e1995264ba9bb87cfaf1b8f7d5956df1f68f1bf80866e",
+    "target_concept_op": "concept:not",
+    "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+  },
+  "signature": null
+}

@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:a8c7db0b572e1dd7729e8b6dceff365f510a919c2bb41a8967841eb31ad3455825a9cfd767d9ca7efdba930064e40978c1b98e3d3ffc275c1bd57a98be8edbb8",
+  "memento": {
+    "fn_name": "gap:zig:postdec:to:concept:postdec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "zig",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postdec",
+    "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+  },
+  "signature": null
+}

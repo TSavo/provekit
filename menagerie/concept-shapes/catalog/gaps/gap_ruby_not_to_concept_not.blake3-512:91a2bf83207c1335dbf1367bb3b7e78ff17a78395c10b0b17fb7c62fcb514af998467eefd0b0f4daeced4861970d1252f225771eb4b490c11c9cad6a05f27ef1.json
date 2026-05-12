@@ -1,0 +1,61 @@
+{
+  "cid": "blake3-512:91a2bf83207c1335dbf1367bb3b7e78ff17a78395c10b0b17fb7c62fcb514af998467eefd0b0f4daeced4861970d1252f225771eb4b490c11c9cad6a05f27ef1",
+  "memento": {
+    "fn_name": "gap:ruby:not:to:concept:not",
+    "gap_kind": "arity-shape-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "post_delta": {
+        "got": {
+          "kind": "operation-contract",
+          "operator": "not",
+          "arity": [
+            "Bool"
+          ],
+          "result": "Bool",
+          "wp": "boolean negation",
+          "arity_shape": {
+            "kind": "named",
+            "slots": [
+              {
+                "name": "operand"
+              }
+            ]
+          }
+        },
+        "want": {
+          "kind": "operation-contract",
+          "operator": "not",
+          "arity": [
+            "Bool"
+          ],
+          "result": "Bool",
+          "wp": "boolean negation",
+          "arity_shape": {
+            "kind": "named",
+            "slots": [
+              {
+                "name": "value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "reason_note": "arity_shape or slot policy mismatch: got `{\"kind\":\"named\",\"slots\":[{\"name\":\"operand\"}]}` want `{\"kind\":\"named\",\"slots\":[{\"name\":\"value\"}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "arity_shape or slot policy mismatch: got `{\"kind\":\"named\",\"slots\":[{\"name\":\"operand\"}]}` want `{\"kind\":\"named\",\"slots\":[{\"name\":\"value\"}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:b8edcd8612530cdecf687a9574026e3c020cbab127481fd041711a9defe53e35de25ab6af33aeb6829868f0f5ab1cce2ab8e563458de51673a85a18ecbc89815",
+    "target_concept_op": "concept:not",
+    "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+  },
+  "signature": null
+}

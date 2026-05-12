@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:fc6e615c23449e7e9af8d436ceb7b55ac1ff27f34c9a1d147eedc059b25b9962fe492e653ff8e6c0bcafca8033534f7c6f0bb4bc0bd72f62079d15f69a98a937",
+  "memento": {
+    "fn_name": "gap:ruby:postinc:to:concept:postinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postinc",
+    "target_op_cid": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
+  },
+  "signature": null
+}

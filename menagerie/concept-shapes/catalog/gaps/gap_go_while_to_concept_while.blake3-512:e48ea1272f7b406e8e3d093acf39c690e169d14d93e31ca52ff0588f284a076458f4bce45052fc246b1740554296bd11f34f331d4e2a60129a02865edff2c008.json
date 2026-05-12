@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:e48ea1272f7b406e8e3d093acf39c690e169d14d93e31ca52ff0588f284a076458f4bce45052fc246b1740554296bd11f34f331d4e2a60129a02865edff2c008",
+  "memento": {
+    "fn_name": "gap:go:while:to:concept:while",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": null,
+    "target_concept_op": "concept:while",
+    "target_op_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+  },
+  "signature": null
+}

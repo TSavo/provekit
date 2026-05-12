@@ -1,0 +1,36 @@
+{
+  "cid": "blake3-512:661fc9eb02a12ea9a3b6a2e498d5e52d2ccf59857b3266dcebdd9e2ea6264611a6c9bd71312249f6ee3b3d86401220c1edca518ab3cdf1929e3507861964e816",
+  "memento": {
+    "fn_name": "gap:python:mod:to:concept:mod",
+    "gap_kind": "divergent-semantics",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "divergent_tag": "truncated-vs-floored-modulo"
+    },
+    "reason_note": "python:mod is floored remainder (follows sign of divisor); concept:mod is truncated-toward-zero remainder (follows sign of dividend)",
+    "resolution_options": [
+      {
+        "option_kind": "lossy-morphism",
+        "tradeoff": "Accept the semantic divergence recorded in reason; ship a characterizably lossy bridge.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "partial-morphism",
+        "tradeoff": "Restrict to the subdomain where the semantics agree.",
+        "status": "deferred"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "Decline any bridge for this op pair.",
+        "status": "rejected"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": "blake3-512:377cf94793191ab449c4e8dbe24aa3813b0dc6315dcea8c9312e078844519168e2689592cc24ef9ab3521f990084724423a8f98e14dae256443396194b8170d3",
+    "target_concept_op": "concept:mod",
+    "target_op_cid": "blake3-512:f58d7f26192a3e713bd97c59aec8039a8b7c9ddd39e469d36da3077fe03de76912b4621ae3f4bdbae7d000a79303507e5ce2b1887221511ab905b896f321ef44"
+  },
+  "signature": null
+}

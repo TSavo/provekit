@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:26c56adf1fcf5faba9668cb1690871a10b48901841279d5161dd4c1c18197ca68f16361ae7749f0f88d2bc63b2ac8550eced3ad125cde7082ef66b8a2558040d",
+  "memento": {
+    "fn_name": "gap:java:deref:to:concept:deref",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": null,
+    "target_concept_op": "concept:deref",
+    "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  },
+  "signature": null
+}

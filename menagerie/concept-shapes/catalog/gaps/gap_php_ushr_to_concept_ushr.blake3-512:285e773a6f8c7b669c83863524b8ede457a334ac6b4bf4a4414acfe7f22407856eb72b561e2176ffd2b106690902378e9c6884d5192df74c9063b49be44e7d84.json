@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:285e773a6f8c7b669c83863524b8ede457a334ac6b4bf4a4414acfe7f22407856eb72b561e2176ffd2b106690902378e9c6884d5192df74c9063b49be44e7d84",
+  "memento": {
+    "fn_name": "gap:php:ushr:to:concept:ushr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:ushr",
+    "target_op_cid": "blake3-512:6590e205dab22ec8b44783cb6ee32d588bf9d93a971eac38df1d87a260be41746b79538358d10e234554c5f1738732c341b1ce319beab9814de8cc10bf272ae5"
+  },
+  "signature": null
+}

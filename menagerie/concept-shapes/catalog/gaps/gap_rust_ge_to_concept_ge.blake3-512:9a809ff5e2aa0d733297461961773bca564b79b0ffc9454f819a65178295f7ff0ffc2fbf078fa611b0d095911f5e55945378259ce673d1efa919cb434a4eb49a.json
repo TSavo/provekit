@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:9a809ff5e2aa0d733297461961773bca564b79b0ffc9454f819a65178295f7ff0ffc2fbf078fa611b0d095911f5e55945378259ce673d1efa919cb434a4eb49a",
+  "memento": {
+    "fn_name": "gap:rust:ge:to:concept:ge",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer greater than or equal comparison",
+        "want": "integer greater-than-or-equal comparison"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer greater than or equal comparison\"` want `\"integer greater-than-or-equal comparison\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer greater than or equal comparison\"` want `\"integer greater-than-or-equal comparison\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:ca43840037f6d8be92a358b55e4ab08224b9d22593f7d1b8682ee22fa5d7fcc72533c8592f8ddf35ae85e40cc8ff237ab128d56e14256542084942097c820c3c",
+    "target_concept_op": "concept:ge",
+    "target_op_cid": "blake3-512:f74a5228d58c870eb8277c723124af1a0bb6d9b30df92fa7ccb0ebb0fe63eddb7157ddcfa4ff8029a073eeb5c9e5ec3fe28beae69f88a298ae84b4990d3e152a"
+  },
+  "signature": null
+}

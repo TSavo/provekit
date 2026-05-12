@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:c091ea66901eb2fd19f492f19c8e13ee88472058b6dfb8808d359d559f301b9a5c6bde2af7f06b74b8bcf091d720079e60f9b3ab61c1fad0c103228d141235a0",
+  "memento": {
+    "fn_name": "gap:python:postdec:to:concept:postdec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postdec",
+    "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+  },
+  "signature": null
+}

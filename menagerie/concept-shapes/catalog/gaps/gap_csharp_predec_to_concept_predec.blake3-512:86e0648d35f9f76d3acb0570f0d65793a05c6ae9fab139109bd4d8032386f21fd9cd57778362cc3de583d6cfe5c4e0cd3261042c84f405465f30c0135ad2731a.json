@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:86e0648d35f9f76d3acb0570f0d65793a05c6ae9fab139109bd4d8032386f21fd9cd57778362cc3de583d6cfe5c4e0cd3261042c84f405465f30c0135ad2731a",
+  "memento": {
+    "fn_name": "gap:csharp:predec:to:concept:predec",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "LValue",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:74f63b698454ef3b7de99db00806bbe5f85a4a98112f576d511e81cb7e2ca6464e437d984bf2e88186ec5f6189142d061e310296bd8a2387a8c6c8ed0f1bf8d3",
+    "target_concept_op": "concept:predec",
+    "target_op_cid": "blake3-512:7cfe3dd7f70149ec4e3625a92c3912e03fe3464ba648d052788b5eee54c552ee46a8bb4c34afcd32d6aae04cc9f2024a76ed271705da7a4ee573e04fc09f7852"
+  },
+  "signature": null
+}

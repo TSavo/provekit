@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:78d7ff60a2c193fed355d4c90486adee8fbc4c172325aa9f38000b44c6754e0dc3ee90e7430a970f5b1486ac01d90136b2aa5d0f1153d9e563a8f86684d159de",
+  "memento": {
+    "fn_name": "gap:ruby:div:to:concept:div",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:div",
+    "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+  },
+  "signature": null
+}

@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:9a0c246e22479b5b7a3ed05222c77861f60037ea4b0954b52a6ff686f89a8e25432593dd6973b715d9794ab83c0664071a3704c1c0baa3f65379ad900ba61b3c",
+  "memento": {
+    "fn_name": "gap:go:predec:to:concept:predec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": null,
+    "target_concept_op": "concept:predec",
+    "target_op_cid": "blake3-512:7cfe3dd7f70149ec4e3625a92c3912e03fe3464ba648d052788b5eee54c552ee46a8bb4c34afcd32d6aae04cc9f2024a76ed271705da7a4ee573e04fc09f7852"
+  },
+  "signature": null
+}

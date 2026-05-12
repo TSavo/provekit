@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:e4ac40cbc4d7f86cd54bee0e6e735543b06898e492eed8d5ef239412d62f6e5ff0f197794c6b52c4a5e67c9a8eeffd1f09c9c06a2cccd1f8536b72aee9c92403",
+  "memento": {
+    "fn_name": "gap:go:return:to:concept:return",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": "blake3-512:f42757fd7877cbb7b592e4763377443a710b42641a3baaf9811d598745bd786ad7c02f9573953d187016543ffa29c203e616e0510da0c467a94ce5d25a8d8a22",
+    "target_concept_op": "concept:return",
+    "target_op_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
+  },
+  "signature": null
+}

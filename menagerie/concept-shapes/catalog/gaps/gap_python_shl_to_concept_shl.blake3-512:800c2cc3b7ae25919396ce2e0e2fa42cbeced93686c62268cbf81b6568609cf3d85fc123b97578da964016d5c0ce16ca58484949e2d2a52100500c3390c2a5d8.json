@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:800c2cc3b7ae25919396ce2e0e2fa42cbeced93686c62268cbf81b6568609cf3d85fc123b97578da964016d5c0ce16ca58484949e2d2a52100500c3390c2a5d8",
+  "memento": {
+    "fn_name": "gap:python:shl:to:concept:shl",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:shl",
+    "target_op_cid": "blake3-512:d5609e27e03c60f6d8405743da5a4fb5f0f4e6cd92390d18c69451925badd4a3a11ac8818f4934f8818b0a02c4c545372573951a0df3ddba77415db18d6cfa28"
+  },
+  "signature": null
+}

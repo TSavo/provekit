@@ -1,0 +1,67 @@
+{
+  "cid": "blake3-512:1d70c8bbfbd0241baf674c0147abc3fdd0bbd49ac87d58b6a25f65529543426a48551afb6f3d92a02ff347206d70e31201b21af299d123cb7c049f7401287777",
+  "memento": {
+    "fn_name": "gap:rust:add:to:concept:add",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "no_signed_overflow_or_panic",
+          "args": [
+            {
+              "kind": "op",
+              "name": "add",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "lhs"
+                },
+                {
+                  "kind": "var",
+                  "name": "rhs"
+                }
+              ]
+            }
+          ]
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "no_signed_overflow",
+          "args": [
+            {
+              "kind": "op",
+              "name": "add",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "lhs"
+                },
+                {
+                  "kind": "var",
+                  "name": "rhs"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow_or_panic\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow_or_panic\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:398980644a46039b0c2875ab36ccb61f52f284ccad5481593305ed3f10efe91e7863c00a3f2d673644430f691e6b5354f5d65f9da4fa23acdb13dc58f5b438f9",
+    "target_concept_op": "concept:add",
+    "target_op_cid": "blake3-512:cf5c95b508cf6e35624c04aba468a74586e8a2e1f714931e54876de9ffde364a549031384e0291fd6615c391f53a6f2c9715fcf41cc995c0243c4cea9f3e00e2"
+  },
+  "signature": null
+}

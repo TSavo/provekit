@@ -1,0 +1,42 @@
+{
+  "cid": "blake3-512:2b145b2ded5e635334c72f40a0f71c1f643f1d98ce1adb732baaaf2e734be0f365ecae8f5eba0268d5fa5a4a34f54dddec096fb3593698582767e13855f2e1c8",
+  "memento": {
+    "fn_name": "gap:csharp:mod:to:concept:mod",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "not_zero",
+          "args": [
+            {
+              "kind": "var",
+              "name": "rhs"
+            }
+          ]
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"not_zero\",\"args\":[{\"kind\":\"var\",\"name\":\"rhs\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"not_zero\",\"args\":[{\"kind\":\"var\",\"name\":\"rhs\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:c05fe30fca5b0514eda2028164285cfb9f5a89977af19f822f0de5be66a45d6e7f57feaa2d4dd8a0e5596682ce4218f316dc12d19a7b3f48d4adbfbc8ac08fa8",
+    "target_concept_op": "concept:mod",
+    "target_op_cid": "blake3-512:f58d7f26192a3e713bd97c59aec8039a8b7c9ddd39e469d36da3077fe03de76912b4621ae3f4bdbae7d000a79303507e5ce2b1887221511ab905b896f321ef44"
+  },
+  "signature": null
+}

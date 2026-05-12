@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:887985696aa637964742ac78d5fa9fd333d8195a9d5091fd273bab222728cdfb151f8c187241417b8b421b847286bee5a5f92360d591d3f7c58b8cca1598aa8b",
+  "memento": {
+    "fn_name": "gap:php:do:to:concept:do",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:do",
+    "target_op_cid": "blake3-512:cc5bc589ca672e13a4b66e8fb95562658d4458225d3840b0474159f90293b5dc52d2bac4dd59c157fef582a81f8ffd0f755e8b0049ec9254e1d605c9f49fbfcb"
+  },
+  "signature": null
+}

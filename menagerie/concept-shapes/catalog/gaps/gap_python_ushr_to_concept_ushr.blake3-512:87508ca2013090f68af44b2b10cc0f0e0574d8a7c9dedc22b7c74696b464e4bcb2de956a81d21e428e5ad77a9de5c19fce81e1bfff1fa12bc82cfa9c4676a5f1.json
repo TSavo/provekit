@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:87508ca2013090f68af44b2b10cc0f0e0574d8a7c9dedc22b7c74696b464e4bcb2de956a81d21e428e5ad77a9de5c19fce81e1bfff1fa12bc82cfa9c4676a5f1",
+  "memento": {
+    "fn_name": "gap:python:ushr:to:concept:ushr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:ushr",
+    "target_op_cid": "blake3-512:6590e205dab22ec8b44783cb6ee32d588bf9d93a971eac38df1d87a260be41746b79538358d10e234554c5f1738732c341b1ce319beab9814de8cc10bf272ae5"
+  },
+  "signature": null
+}

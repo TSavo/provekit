@@ -1,0 +1,42 @@
+{
+  "cid": "blake3-512:a21fb1057d2d52d9b7a01db94546bd270003a70441926b467370bf8afa02796940d9ee2d3d9a783cdf22cf9e4f7201be155d6a434aa85a22d98f3547a90243bb",
+  "memento": {
+    "fn_name": "gap:rust:div:to:concept:div",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "nonzero",
+          "args": [
+            {
+              "kind": "var",
+              "name": "rhs"
+            }
+          ]
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"nonzero\",\"args\":[{\"kind\":\"var\",\"name\":\"rhs\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"nonzero\",\"args\":[{\"kind\":\"var\",\"name\":\"rhs\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:d7403da8d2a8921b71170b5fc34c12022118d0c545f25c7ff89fe77bbed02419e3528479ded0e746535ee92d0e1801bce46608c15c3d6d2a5567bec811cbc75a",
+    "target_concept_op": "concept:div",
+    "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+  },
+  "signature": null
+}

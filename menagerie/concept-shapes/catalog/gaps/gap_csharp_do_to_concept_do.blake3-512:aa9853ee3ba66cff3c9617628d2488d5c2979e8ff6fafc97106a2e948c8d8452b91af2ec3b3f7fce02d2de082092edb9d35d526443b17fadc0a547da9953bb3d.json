@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:aa9853ee3ba66cff3c9617628d2488d5c2979e8ff6fafc97106a2e948c8d8452b91af2ec3b3f7fce02d2de082092edb9d35d526443b17fadc0a547da9953bb3d",
+  "memento": {
+    "fn_name": "gap:csharp:do:to:concept:do",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": null,
+    "target_concept_op": "concept:do",
+    "target_op_cid": "blake3-512:cc5bc589ca672e13a4b66e8fb95562658d4458225d3840b0474159f90293b5dc52d2bac4dd59c157fef582a81f8ffd0f755e8b0049ec9254e1d605c9f49fbfcb"
+  },
+  "signature": null
+}

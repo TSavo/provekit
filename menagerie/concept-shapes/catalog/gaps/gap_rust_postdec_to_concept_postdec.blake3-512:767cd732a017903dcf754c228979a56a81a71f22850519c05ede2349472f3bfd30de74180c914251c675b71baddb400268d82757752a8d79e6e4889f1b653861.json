@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:767cd732a017903dcf754c228979a56a81a71f22850519c05ede2349472f3bfd30de74180c914251c675b71baddb400268d82757752a8d79e6e4889f1b653861",
+  "memento": {
+    "fn_name": "gap:rust:postdec:to:concept:postdec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postdec",
+    "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+  },
+  "signature": null
+}

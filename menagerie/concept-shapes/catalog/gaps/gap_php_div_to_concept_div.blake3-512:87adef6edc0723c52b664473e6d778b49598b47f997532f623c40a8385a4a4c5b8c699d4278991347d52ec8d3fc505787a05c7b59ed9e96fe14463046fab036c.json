@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:87adef6edc0723c52b664473e6d778b49598b47f997532f623c40a8385a4a4c5b8c699d4278991347d52ec8d3fc505787a05c7b59ed9e96fe14463046fab036c",
+  "memento": {
+    "fn_name": "gap:php:div:to:concept:div",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:div",
+    "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+  },
+  "signature": null
+}

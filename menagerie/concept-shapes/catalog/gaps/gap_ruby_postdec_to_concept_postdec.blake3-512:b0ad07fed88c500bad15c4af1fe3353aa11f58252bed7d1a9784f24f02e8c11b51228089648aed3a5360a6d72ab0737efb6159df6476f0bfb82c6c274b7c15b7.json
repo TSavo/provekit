@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:b0ad07fed88c500bad15c4af1fe3353aa11f58252bed7d1a9784f24f02e8c11b51228089648aed3a5360a6d72ab0737efb6159df6476f0bfb82c6c274b7c15b7",
+  "memento": {
+    "fn_name": "gap:ruby:postdec:to:concept:postdec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postdec",
+    "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+  },
+  "signature": null
+}

@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:401deba6c20e4fc1aaba6bb1e7debcf7bf2a58cc37dc52aa6d300993c270e32e1c1e8a9ffaf73b9a2cb74bf4a8cfb63e3751e0b2b87aebb75ce97734d57cb20c",
+  "memento": {
+    "fn_name": "gap:go:ushr:to:concept:ushr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": null,
+    "target_concept_op": "concept:ushr",
+    "target_op_cid": "blake3-512:6590e205dab22ec8b44783cb6ee32d588bf9d93a971eac38df1d87a260be41746b79538358d10e234554c5f1738732c341b1ce319beab9814de8cc10bf272ae5"
+  },
+  "signature": null
+}

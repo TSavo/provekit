@@ -1,0 +1,61 @@
+{
+  "cid": "blake3-512:b88e89481b9dac222dc4af5f6e10451ed26e725f146cbdbd50b888df11d6bce1c78e25fe5850a719634e33edb5407a188339d307120d2ba81a428030da71d734",
+  "memento": {
+    "fn_name": "gap:python:not:to:concept:not",
+    "gap_kind": "arity-shape-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "post_delta": {
+        "got": {
+          "kind": "operation-contract",
+          "operator": "not",
+          "arity": [
+            "Bool"
+          ],
+          "result": "Bool",
+          "wp": "boolean negation",
+          "arity_shape": {
+            "kind": "named",
+            "slots": [
+              {
+                "name": "operand"
+              }
+            ]
+          }
+        },
+        "want": {
+          "kind": "operation-contract",
+          "operator": "not",
+          "arity": [
+            "Bool"
+          ],
+          "result": "Bool",
+          "wp": "boolean negation",
+          "arity_shape": {
+            "kind": "named",
+            "slots": [
+              {
+                "name": "value"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "reason_note": "arity_shape or slot policy mismatch: got `{\"kind\":\"named\",\"slots\":[{\"name\":\"operand\"}]}` want `{\"kind\":\"named\",\"slots\":[{\"name\":\"value\"}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "arity_shape or slot policy mismatch: got `{\"kind\":\"named\",\"slots\":[{\"name\":\"operand\"}]}` want `{\"kind\":\"named\",\"slots\":[{\"name\":\"value\"}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": "blake3-512:b52c0375b6c182a8370a2e8de1a0d96257ccb31d8edf0a760016e23eed1f495a2e891ff450c87a80fc33a11f6fff9bf5edcac4243a40dfffd98bcd2f10532c90",
+    "target_concept_op": "concept:not",
+    "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+  },
+  "signature": null
+}

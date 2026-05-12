@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:fde7b7e2b3f96fac2b1f7276fe6dacfebddc569053aa748adf33ff00660dfc5924ec87e23bfd8e2f05a5afd04c0fc64d72d4edb04157070b0a3b9cb3fb04eb86",
+  "memento": {
+    "fn_name": "gap:typescript:while:to:concept:while",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "typescript",
+    "source_op_cid": "blake3-512:1f37d2da1d6601820caf3a91b79f305cbb6ae28d6d4f0714855ea658815a7288ecd6d00fb415b83107c43ddfbfbac468f2081306d993d1d121878fba7bd7e733",
+    "target_concept_op": "concept:while",
+    "target_op_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+  },
+  "signature": null
+}

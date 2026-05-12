@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:1bcc536c879d94d9eb930dec978739d26c7c90a36b8de5d13a73aa5741d20479da2f5f4adbf0ef833db57c79998e1e6a8e2007d44ca1eb674cf076ba77be4f3e",
+  "memento": {
+    "fn_name": "gap:zig:ite:to:concept:ite",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "zig",
+    "source_op_cid": null,
+    "target_concept_op": "concept:ite",
+    "target_op_cid": "blake3-512:7fc1f25b05c8459e5d5af900c8369ced389d1994185b94216a8dfba3499875714746d684595a27923ae59258bc87d641b4c378b2debf2addc926c26bab5e075c"
+  },
+  "signature": null
+}

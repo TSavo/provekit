@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:8f968dd59dee84a2e647b4e4b4d8bfa78613b8db6e2c50e067d2c2e26a81459235d8ecbc5393a10fd2a9a10ec2f967d749925d5663696e040a262e85ddd80b56",
+  "memento": {
+    "fn_name": "gap:ruby:addr:to:concept:addr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:addr",
+    "target_op_cid": "blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411"
+  },
+  "signature": null
+}

@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:6263d90970fadbf793aad297cb86fd02bef4eb697be48b0ae9bb979233b68be5dcb7c831e8cd1937158c6424be4a6dce5afa194ad19dc73aaa55072053253dde",
+  "memento": {
+    "fn_name": "gap:go:do:to:concept:do",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": null,
+    "target_concept_op": "concept:do",
+    "target_op_cid": "blake3-512:cc5bc589ca672e13a4b66e8fb95562658d4458225d3840b0474159f90293b5dc52d2bac4dd59c157fef582a81f8ffd0f755e8b0049ec9254e1d605c9f49fbfcb"
+  },
+  "signature": null
+}

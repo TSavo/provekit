@@ -1,0 +1,71 @@
+{
+  "cid": "blake3-512:35635fd6caf0f60224c2aea8e6b1ffc40debd80894934ea99264fed42047267484d5e54a026fb7cfbdbfa4c36c429f79cee4c4cd42650f52503bd30dd0e3897d",
+  "memento": {
+    "fn_name": "gap:go:for:to:concept:for",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Bool",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": "blake3-512:f73cd608b4b23f91b699a3e05f4df2e68f78eb305e082af120c97478ad281bcb2f8664a77c2dae8fea551dd8a6767ef7b905526f7d3706771626f4d7e0707e6e",
+    "target_concept_op": "concept:for",
+    "target_op_cid": "blake3-512:3595b8dd26613833f59c6d411823ecd93008c07797557120ac0949c0367bca89b9ae77c243cf7c09e8b4865156513d2faccb9b5acf6baf19057b0737b9c07fd3"
+  },
+  "signature": null
+}

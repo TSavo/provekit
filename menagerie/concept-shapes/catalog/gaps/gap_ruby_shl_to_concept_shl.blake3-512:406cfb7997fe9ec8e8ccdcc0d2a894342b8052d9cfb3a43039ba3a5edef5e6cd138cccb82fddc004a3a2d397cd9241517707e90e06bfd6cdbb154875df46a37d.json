@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:406cfb7997fe9ec8e8ccdcc0d2a894342b8052d9cfb3a43039ba3a5edef5e6cd138cccb82fddc004a3a2d397cd9241517707e90e06bfd6cdbb154875df46a37d",
+  "memento": {
+    "fn_name": "gap:ruby:shl:to:concept:shl",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:shl",
+    "target_op_cid": "blake3-512:d5609e27e03c60f6d8405743da5a4fb5f0f4e6cd92390d18c69451925badd4a3a11ac8818f4934f8818b0a02c4c545372573951a0df3ddba77415db18d6cfa28"
+  },
+  "signature": null
+}

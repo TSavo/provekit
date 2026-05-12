@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:28c90588655af7dac6379a1980f3f0d99d85f3f57f3f55d74cca87d62642c651f29117acc446f9fd7f1b2395b4a4fdd8613c343a11132e406236ab81bc789996",
+  "memento": {
+    "fn_name": "gap:java:postinc:to:concept:postinc",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "LValue",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": "blake3-512:fcf5b6683825471f256438560f87f8c31fb6febc6d101b291f852e81891da7c1ea87376fb51ea47081e8816d4df0e8f5444e32e696e59d4882b86b7980bef0a6",
+    "target_concept_op": "concept:postinc",
+    "target_op_cid": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
+  },
+  "signature": null
+}

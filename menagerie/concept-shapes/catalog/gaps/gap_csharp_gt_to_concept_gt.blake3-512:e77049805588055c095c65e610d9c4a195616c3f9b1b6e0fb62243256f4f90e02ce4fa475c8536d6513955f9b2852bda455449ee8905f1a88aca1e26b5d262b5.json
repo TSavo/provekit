@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:e77049805588055c095c65e610d9c4a195616c3f9b1b6e0fb62243256f4f90e02ce4fa475c8536d6513955f9b2852bda455449ee8905f1a88aca1e26b5d262b5",
+  "memento": {
+    "fn_name": "gap:csharp:gt:to:concept:gt",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "lhs > rhs",
+        "want": "integer greater-than comparison"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"lhs > rhs\"` want `\"integer greater-than comparison\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"lhs > rhs\"` want `\"integer greater-than comparison\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:906c4c7b52bb86424bc25d8ad2a373438925738eeefbb1a34d67fc2ae5976347679b68199783b3f79edf960d595dc569348bf9460b217d6eb9d287a9f52c8795",
+    "target_concept_op": "concept:gt",
+    "target_op_cid": "blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6"
+  },
+  "signature": null
+}

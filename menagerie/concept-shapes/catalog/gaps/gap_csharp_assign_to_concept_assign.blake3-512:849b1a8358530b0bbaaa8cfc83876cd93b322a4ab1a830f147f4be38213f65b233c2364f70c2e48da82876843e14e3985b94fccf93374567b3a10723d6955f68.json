@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:849b1a8358530b0bbaaa8cfc83876cd93b322a4ab1a830f147f4be38213f65b233c2364f70c2e48da82876843e14e3985b94fccf93374567b3a10723d6955f68",
+  "memento": {
+    "fn_name": "gap:csharp:assign:to:concept:assign",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "LValue",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:965669a4d96a6003df2316f94ac00ca97e0353d3c6efa30e15e02bbd4e66df1366d44ec9a4dcb55ea06d96cee7b7f96684bac90e2177f81682c840a68a205eac",
+    "target_concept_op": "concept:assign",
+    "target_op_cid": "blake3-512:f4eed0b80103afe69a9999a1ff6195e048d2bfb14e4318ace99e95054ca7ecc4938da79e9492a0caef954f4c64ce1640e58c111cb0753a6ec5c9dd5c091b9379"
+  },
+  "signature": null
+}

@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:32ac0645b2a66cc3877b61f83954b57819a095a82158b43156e49d0c8c305a770127f0582dac0154edb52e388da353eecba0178ba7a05850eb8be62894a154fd",
+  "memento": {
+    "fn_name": "gap:php:bitnot:to:concept:bitnot",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Value",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": "blake3-512:4d89375f3f2c4892cdcef33eb055b785ae4d090bedf585aa49dd6d4a832c7fd0a83f5b639e45777a97c0d1110922582f1315392ac311521e55492967cfff8478",
+    "target_concept_op": "concept:bitnot",
+    "target_op_cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431"
+  },
+  "signature": null
+}

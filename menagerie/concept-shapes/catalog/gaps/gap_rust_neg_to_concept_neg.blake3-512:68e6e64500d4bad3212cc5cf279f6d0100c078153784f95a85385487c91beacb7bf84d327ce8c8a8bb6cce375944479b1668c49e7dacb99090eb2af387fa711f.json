@@ -1,0 +1,59 @@
+{
+  "cid": "blake3-512:68e6e64500d4bad3212cc5cf279f6d0100c078153784f95a85385487c91beacb7bf84d327ce8c8a8bb6cce375944479b1668c49e7dacb99090eb2af387fa711f",
+  "memento": {
+    "fn_name": "gap:rust:neg:to:concept:neg",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "no_signed_overflow_or_panic",
+          "args": [
+            {
+              "kind": "op",
+              "name": "neg",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "value"
+                }
+              ]
+            }
+          ]
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "no_signed_overflow",
+          "args": [
+            {
+              "kind": "op",
+              "name": "neg",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "value"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow_or_panic\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow_or_panic\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:e0c3e13fd7e0d11fa3b78f4e083ab60b1166bdd905bc04e533e6dcc97d79330bd6a403caaf1265d8134ea3ccd5fe8cfd5a3e18f349ea7edcb6310c098e845c0f",
+    "target_concept_op": "concept:neg",
+    "target_op_cid": "blake3-512:206044a975f7f56eff3a9eb08b7dbfe402547f391c1d15f5d82011d297f71514e510a1c4d45bbc18f419f1e4e1362fa3f321aa16f6d5354856b33e2f30d2dad7"
+  },
+  "signature": null
+}

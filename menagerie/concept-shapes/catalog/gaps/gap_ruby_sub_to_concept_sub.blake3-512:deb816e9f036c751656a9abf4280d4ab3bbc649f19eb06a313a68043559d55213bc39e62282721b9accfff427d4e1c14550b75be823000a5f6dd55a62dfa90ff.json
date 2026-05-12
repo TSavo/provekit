@@ -1,0 +1,52 @@
+{
+  "cid": "blake3-512:deb816e9f036c751656a9abf4280d4ab3bbc649f19eb06a313a68043559d55213bc39e62282721b9accfff427d4e1c14550b75be823000a5f6dd55a62dfa90ff",
+  "memento": {
+    "fn_name": "gap:ruby:sub:to:concept:sub",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "no_signed_overflow",
+          "args": [
+            {
+              "kind": "op",
+              "name": "sub",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "lhs"
+                },
+                {
+                  "kind": "var",
+                  "name": "rhs"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"sub\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"sub\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:742ada0f0e692e1f59d06e33fb9fd6272bcafc82698061b5e815fd164f327ffc9a23c4a3bdf7996ad37d2bda58cdcab4ba3ec2a758e4e7aaac24933781964d2d",
+    "target_concept_op": "concept:sub",
+    "target_op_cid": "blake3-512:07e118ce1489414d5311dd4f3b4575d0ea718197da18f806b58624c58f18c33107dc2ba5e9aa49fdc3d3e3c721792837a11d7d4e4620d9912c4ee6db15dec50e"
+  },
+  "signature": null
+}

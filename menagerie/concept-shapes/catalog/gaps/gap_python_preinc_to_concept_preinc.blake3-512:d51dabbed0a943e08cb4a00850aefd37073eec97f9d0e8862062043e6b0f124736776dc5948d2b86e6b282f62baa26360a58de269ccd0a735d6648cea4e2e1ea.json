@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:d51dabbed0a943e08cb4a00850aefd37073eec97f9d0e8862062043e6b0f124736776dc5948d2b86e6b282f62baa26360a58de269ccd0a735d6648cea4e2e1ea",
+  "memento": {
+    "fn_name": "gap:python:preinc:to:concept:preinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:preinc",
+    "target_op_cid": "blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8"
+  },
+  "signature": null
+}

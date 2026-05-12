@@ -1,0 +1,41 @@
+{
+  "cid": "blake3-512:3dd1876e06b5c612bdc857123f9032462b2a8b390624a50153889d28cbea639b4af35d0cf8d9bbc23ac5e27d341daba95427a1816cfdff3d71f6939fe55f40ba",
+  "memento": {
+    "fn_name": "gap:typescript:bitnot:to:concept:bitnot",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "Int",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "typescript",
+    "source_op_cid": "blake3-512:99065e59ab89bba1441c02aa371ee61d26a6d919fd4eedbc502687631349a091568005e064ae0cf35eb7da9e8c08bef16225a3e1016975c854557d915c3c2bb0",
+    "target_concept_op": "concept:bitnot",
+    "target_op_cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431"
+  },
+  "signature": null
+}

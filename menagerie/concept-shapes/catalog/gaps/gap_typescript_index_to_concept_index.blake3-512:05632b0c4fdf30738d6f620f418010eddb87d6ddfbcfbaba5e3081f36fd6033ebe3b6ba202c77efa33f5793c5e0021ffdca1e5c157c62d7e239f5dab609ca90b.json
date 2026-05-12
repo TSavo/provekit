@@ -1,0 +1,55 @@
+{
+  "cid": "blake3-512:05632b0c4fdf30738d6f620f418010eddb87d6ddfbcfbaba5e3081f36fd6033ebe3b6ba202c77efa33f5793c5e0021ffdca1e5c157c62d7e239f5dab609ca90b",
+  "memento": {
+    "fn_name": "gap:typescript:index:to:concept:index",
+    "gap_kind": "effect-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "effects_delta": {
+        "got": {
+          "effects": []
+        },
+        "want": {
+          "effects": [
+            {
+              "kind": "effect-signature",
+              "name": "Read"
+            },
+            {
+              "kind": "effect-signature",
+              "name": "Reads"
+            },
+            {
+              "kind": "effect-signature",
+              "name": "Panic"
+            },
+            {
+              "kind": "effect-signature",
+              "name": "MemRead"
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Read\"},{\"kind\":\"effect-signature\",\"name\":\"Reads\"},{\"kind\":\"effect-signature\",\"name\":\"Panic\"},{\"kind\":\"effect-signature\",\"name\":\"MemRead\"}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "re-spec-target-op",
+        "tradeoff": "Widen the concept op's effect set to include the language op's effects.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Read\"},{\"kind\":\"effect-signature\",\"name\":\"Reads\"},{\"kind\":\"effect-signature\",\"name\":\"Panic\"},{\"kind\":\"effect-signature\",\"name\":\"MemRead\"}]}`",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "typescript",
+    "source_op_cid": "blake3-512:cb13e7e5c12451e35e81b83e4655b7de04c3e2a2f2a062b3e29461f3ce4c6b1317a78ac903d44904465355964ad93fb6b0e6097cf886026b1223f0b4adcbf37c",
+    "target_concept_op": "concept:index",
+    "target_op_cid": "blake3-512:2fbafb6e146d01cb5295bf4eb032f2707b85db318da3691339f0866d91c3d0359bc481f060556a97225ffdf74c9323f6f1e7ab762b355eff882d017e5992752e"
+  },
+  "signature": null
+}

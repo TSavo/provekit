@@ -1,0 +1,48 @@
+{
+  "cid": "blake3-512:3f4687cf83ed2c25ed3d0846224f8915cf5e3d11c363204f8a5b0f55decf5f3062d62448c3244daa2c5a809e25283f5dbdb41f8682e11fd78738fcb064490263",
+  "memento": {
+    "fn_name": "gap:ruby:neg:to:concept:neg",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "no_signed_overflow",
+          "args": [
+            {
+              "kind": "op",
+              "name": "neg",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "value"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": "blake3-512:3ce61d2b98776301c46a7f3d4a814d0915f781bd60e5d85c0e73d1d19f8b90a0741ce6dfeda1c2ed9d07924d21470466bd3a6084552a684a6b636f065122fed4",
+    "target_concept_op": "concept:neg",
+    "target_op_cid": "blake3-512:206044a975f7f56eff3a9eb08b7dbfe402547f391c1d15f5d82011d297f71514e510a1c4d45bbc18f419f1e4e1362fa3f321aa16f6d5354856b33e2f30d2dad7"
+  },
+  "signature": null
+}

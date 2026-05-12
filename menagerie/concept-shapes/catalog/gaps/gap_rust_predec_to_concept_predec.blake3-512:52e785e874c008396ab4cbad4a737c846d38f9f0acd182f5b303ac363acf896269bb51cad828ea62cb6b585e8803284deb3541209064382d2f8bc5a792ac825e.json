@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:52e785e874c008396ab4cbad4a737c846d38f9f0acd182f5b303ac363acf896269bb51cad828ea62cb6b585e8803284deb3541209064382d2f8bc5a792ac825e",
+  "memento": {
+    "fn_name": "gap:rust:predec:to:concept:predec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": null,
+    "target_concept_op": "concept:predec",
+    "target_op_cid": "blake3-512:7cfe3dd7f70149ec4e3625a92c3912e03fe3464ba648d052788b5eee54c552ee46a8bb4c34afcd32d6aae04cc9f2024a76ed271705da7a4ee573e04fc09f7852"
+  },
+  "signature": null
+}

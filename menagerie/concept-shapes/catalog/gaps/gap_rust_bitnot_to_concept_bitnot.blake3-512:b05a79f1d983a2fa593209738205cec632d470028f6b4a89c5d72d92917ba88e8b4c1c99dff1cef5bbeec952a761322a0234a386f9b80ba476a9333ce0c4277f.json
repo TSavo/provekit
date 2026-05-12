@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:b05a79f1d983a2fa593209738205cec632d470028f6b4a89c5d72d92917ba88e8b4c1c99dff1cef5bbeec952a761322a0234a386f9b80ba476a9333ce0c4277f",
+  "memento": {
+    "fn_name": "gap:rust:bitnot:to:concept:bitnot",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer bitwise not",
+        "want": "integer bitwise complement expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer bitwise not\"` want `\"integer bitwise complement expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer bitwise not\"` want `\"integer bitwise complement expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:eeaaf14737f661b6bce03f23d281974502182fea83909eeaade25e510887b26e80dac1b10af3b1f2f496b53898051d63e8d250e78cfa8e88380c84809e5eabe0",
+    "target_concept_op": "concept:bitnot",
+    "target_op_cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431"
+  },
+  "signature": null
+}

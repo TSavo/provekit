@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:5d9c6470d55c345804acc58d46c3c4dcb6d06727c22647c0879103f6b03bfa3fc2dd53d32e73ab06cc02ff83f9b54b79d92d055c8b0362b08118da47ce9f0ca7",
+  "memento": {
+    "fn_name": "gap:rust:shr:to:concept:shr",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer shift right",
+        "want": "integer right shift expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer shift right\"` want `\"integer right shift expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer shift right\"` want `\"integer right shift expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:cb23fbc9d05a19b353e1fe85c77e241fdc8c58cde5a7c5cad008b721a51eaf682284d8bfe3b383d751cb58833e94beb6bd0dd4d330f9619f095c8b4daa8298da",
+    "target_concept_op": "concept:shr",
+    "target_op_cid": "blake3-512:b78179f4f57c03c045c1acab65525331daca362ba63a643d863a10375bd8c0467f174c188fe9edc661d0ebba4f2ee673684fd73b8715cafe1c3cb5be6211e3a0"
+  },
+  "signature": null
+}

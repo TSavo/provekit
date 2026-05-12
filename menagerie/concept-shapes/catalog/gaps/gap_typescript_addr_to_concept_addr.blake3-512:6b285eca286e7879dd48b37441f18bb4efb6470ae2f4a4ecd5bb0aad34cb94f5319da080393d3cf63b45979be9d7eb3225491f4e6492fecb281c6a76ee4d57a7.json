@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:6b285eca286e7879dd48b37441f18bb4efb6470ae2f4a4ecd5bb0aad34cb94f5319da080393d3cf63b45979be9d7eb3225491f4e6492fecb281c6a76ee4d57a7",
+  "memento": {
+    "fn_name": "gap:typescript:addr:to:concept:addr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "typescript",
+    "source_op_cid": null,
+    "target_concept_op": "concept:addr",
+    "target_op_cid": "blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411"
+  },
+  "signature": null
+}

@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:5326932db7955dff7cee7982d766ceb5ec0c92118a0286e266cc74e31e29895cacfaaa65112a06750cf619afdcb487239a69d09ac250dba17f42c705c53b5c6a",
+  "memento": {
+    "fn_name": "gap:rust:bitor:to:concept:bitor",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer bitwise or",
+        "want": "integer bitwise or expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer bitwise or\"` want `\"integer bitwise or expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer bitwise or\"` want `\"integer bitwise or expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:5c455355a13fd97a872848613b34b2b56f9738c832f900558710af1cd053976157513f31a8feb123202557dc0a369b88bc7c946179fe817d6c2f80d4f318f824",
+    "target_concept_op": "concept:bitor",
+    "target_op_cid": "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654"
+  },
+  "signature": null
+}

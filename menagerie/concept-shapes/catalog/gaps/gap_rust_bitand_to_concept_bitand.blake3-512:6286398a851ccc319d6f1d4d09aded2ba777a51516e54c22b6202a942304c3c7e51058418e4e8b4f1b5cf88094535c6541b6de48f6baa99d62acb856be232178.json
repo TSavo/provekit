@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:6286398a851ccc319d6f1d4d09aded2ba777a51516e54c22b6202a942304c3c7e51058418e4e8b4f1b5cf88094535c6541b6de48f6baa99d62acb856be232178",
+  "memento": {
+    "fn_name": "gap:rust:bitand:to:concept:bitand",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "integer bitwise and",
+        "want": "integer bitwise and expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"integer bitwise and\"` want `\"integer bitwise and expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"integer bitwise and\"` want `\"integer bitwise and expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:fcc41d285a20dae6c2deb2a854665d5d43bc829a09a76107d929898b3b169d1abf53ed71f302b00ec2146bcec3b5fe732ca7ecd4354e7739e67feea3db9fd6a2",
+    "target_concept_op": "concept:bitand",
+    "target_op_cid": "blake3-512:a83de04ab992aad5eb9e1a1bb2b6706576e42d243464ad6d5aeb3a06283c6498d2325cdb3beeecae9fe1e82b684abc4c118092f6a9129281aeca5246433f4a6a"
+  },
+  "signature": null
+}

@@ -1,0 +1,24 @@
+{
+  "cid": "blake3-512:68f6d7570a64ff3f951a63266de5f229013648c66686acf99653eb6f0c0256d28044aa7af354b29ee8ca3ac2ad615e202b594cc2c0bd9e4eef53884f24daa5dc",
+  "memento": {
+    "fn_name": "gap:java:new:to:concept:new",
+    "gap_kind": "unspecified",
+    "kind": "TransportGapMemento",
+    "reason": {},
+    "reason_note": "return sort mismatch: got `{\"kind\":\"ctor\",\"name\":\"Ref\",\"args\":[]}` want `{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "return sort mismatch: got `{\"kind\":\"ctor\",\"name\":\"Ref\",\"args\":[]}` want `{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "java",
+    "source_op_cid": "blake3-512:0cd8b33bb66efdda837a872776bf2b48362ada0a2d432d8b8f55c229ba35606ca29ffd809cba53769e8823917cbf8df15cf5781503fb4b4a69595075a653762d",
+    "target_concept_op": "concept:new",
+    "target_op_cid": "blake3-512:37eca90a0c83eaceaa3ffcf8fe7b00ce539a75692f973cd76931ac10443d24053470830c63844551399a2953d3294744b59d083738d5d30e7591071edef384a2"
+  },
+  "signature": null
+}

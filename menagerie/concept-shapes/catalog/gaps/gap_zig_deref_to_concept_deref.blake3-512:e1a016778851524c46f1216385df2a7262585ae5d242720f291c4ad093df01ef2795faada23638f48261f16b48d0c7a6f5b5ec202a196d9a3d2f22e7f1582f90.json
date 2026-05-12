@@ -1,0 +1,67 @@
+{
+  "cid": "blake3-512:e1a016778851524c46f1216385df2a7262585ae5d242720f291c4ad093df01ef2795faada23638f48261f16b48d0c7a6f5b5ec202a196d9a3d2f22e7f1582f90",
+  "memento": {
+    "fn_name": "gap:zig:deref:to:concept:deref",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        },
+        "want": {
+          "kind": "connective",
+          "op": "and",
+          "operands": [
+            {
+              "kind": "atomic",
+              "name": "!=",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "ptr"
+                },
+                {
+                  "kind": "const",
+                  "value": "NULL",
+                  "sort": {
+                    "kind": "ctor",
+                    "name": "Ptr",
+                    "args": []
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "atomic",
+              "name": "valid",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "ptr"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"connective\",\"op\":\"and\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"!=\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"},{\"kind\":\"const\",\"value\":\"NULL\",\"sort\":{\"kind\":\"ctor\",\"name\":\"Ptr\",\"args\":[]}}]},{\"kind\":\"atomic\",\"name\":\"valid\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"connective\",\"op\":\"and\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"!=\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"},{\"kind\":\"const\",\"value\":\"NULL\",\"sort\":{\"kind\":\"ctor\",\"name\":\"Ptr\",\"args\":[]}}]},{\"kind\":\"atomic\",\"name\":\"valid\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "zig",
+    "source_op_cid": "blake3-512:8e0dd99d3425890284df5580bf29a7017f960bd9ddbe4900a793241cd7f1a227b35f1d264160010d2484e4a44e4c9d8f34d037a3fc9b5162120165cf5453a2b0",
+    "target_concept_op": "concept:deref",
+    "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  },
+  "signature": null
+}

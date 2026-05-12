@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:6099f4c5fcb551f45b13daecc863496adccef4fe31b3b89da57552c7d48d2b2948e2dd5648bdb7a744a2473b271c7c250d5874ec1f2f0bb8035c3eac3d28a632",
+  "memento": {
+    "fn_name": "gap:python:cast:to:concept:cast",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:cast",
+    "target_op_cid": "blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c"
+  },
+  "signature": null
+}

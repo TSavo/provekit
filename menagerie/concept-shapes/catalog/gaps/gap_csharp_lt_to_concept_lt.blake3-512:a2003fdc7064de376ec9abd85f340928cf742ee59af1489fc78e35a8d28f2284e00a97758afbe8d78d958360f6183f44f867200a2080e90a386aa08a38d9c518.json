@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:a2003fdc7064de376ec9abd85f340928cf742ee59af1489fc78e35a8d28f2284e00a97758afbe8d78d958360f6183f44f867200a2080e90a386aa08a38d9c518",
+  "memento": {
+    "fn_name": "gap:csharp:lt:to:concept:lt",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "lhs < rhs",
+        "want": "integer less-than comparison"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"lhs < rhs\"` want `\"integer less-than comparison\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"lhs < rhs\"` want `\"integer less-than comparison\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:03d26bafedd6908377c7fa507982bd9b1aaacc10a8095ad69be3da62134cf37e25ab28fc574b9449bd03b4e19bbda14922f1de96d8e114fbdb9978e3c53e3c3a",
+    "target_concept_op": "concept:lt",
+    "target_op_cid": "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
+  },
+  "signature": null
+}

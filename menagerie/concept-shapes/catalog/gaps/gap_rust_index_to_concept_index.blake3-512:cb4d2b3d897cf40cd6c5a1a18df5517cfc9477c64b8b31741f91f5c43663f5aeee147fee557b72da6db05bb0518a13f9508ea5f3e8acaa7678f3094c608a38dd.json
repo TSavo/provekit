@@ -1,0 +1,46 @@
+{
+  "cid": "blake3-512:cb4d2b3d897cf40cd6c5a1a18df5517cfc9477c64b8b31741f91f5c43663f5aeee147fee557b72da6db05bb0518a13f9508ea5f3e8acaa7678f3094c608a38dd",
+  "memento": {
+    "fn_name": "gap:rust:index:to:concept:index",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "in_bounds",
+          "args": [
+            {
+              "kind": "var",
+              "name": "slice"
+            },
+            {
+              "kind": "var",
+              "name": "idx"
+            }
+          ]
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"in_bounds\",\"args\":[{\"kind\":\"var\",\"name\":\"slice\"},{\"kind\":\"var\",\"name\":\"idx\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"in_bounds\",\"args\":[{\"kind\":\"var\",\"name\":\"slice\"},{\"kind\":\"var\",\"name\":\"idx\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": "blake3-512:0f5944b6825a537c7071937bf423d14cc0f8978dc6178b5110f4be7d963e2e128e12bfb49408896a356833c1afe69f075ad9f130f41eefeaf4a71e4181501029",
+    "target_concept_op": "concept:index",
+    "target_op_cid": "blake3-512:2fbafb6e146d01cb5295bf4eb032f2707b85db318da3691339f0866d91c3d0359bc481f060556a97225ffdf74c9323f6f1e7ab762b355eff882d017e5992752e"
+  },
+  "signature": null
+}

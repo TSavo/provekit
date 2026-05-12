@@ -1,0 +1,29 @@
+{
+  "cid": "blake3-512:b8a0eccd442de8d534f47acf459adc53eea63a0d8fbc9a7f56e9c3c968b4161d6066063aacd8b6c696fa3d23f142f47bedf1ffd5dbe98ed849ce0966b6e4f596",
+  "memento": {
+    "fn_name": "gap:csharp:bitor:to:concept:bitor",
+    "gap_kind": "wp-rule-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "wp_rule_delta": {
+        "got": "lhs | rhs (bitwise OR)",
+        "want": "integer bitwise or expression"
+      }
+    },
+    "reason_note": "wp mismatch: got `\"lhs | rhs (bitwise OR)\"` want `\"integer bitwise or expression\"`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "wp mismatch: got `\"lhs | rhs (bitwise OR)\"` want `\"integer bitwise or expression\"`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": "blake3-512:15e4f0ef4915190ebfa3cedd49b6cfed597025d68e871c53b21e13998b57538ffc8a5e45d78e4d421c0fa91b6bd4cf226a09b3b8d4e8d3a7be45b03b9aedadfb",
+    "target_concept_op": "concept:bitor",
+    "target_op_cid": "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654"
+  },
+  "signature": null
+}

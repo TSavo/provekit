@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:3bcb8af0a763580ed71fa1af3029f7c08e872f3db33798d0a4c36fbbd7a302789f4e94d8aa018f45cc240d24ec2f5db585398313ac4c04efc50426db7ef470e1",
+  "memento": {
+    "fn_name": "gap:python:addr:to:concept:addr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:addr",
+    "target_op_cid": "blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411"
+  },
+  "signature": null
+}

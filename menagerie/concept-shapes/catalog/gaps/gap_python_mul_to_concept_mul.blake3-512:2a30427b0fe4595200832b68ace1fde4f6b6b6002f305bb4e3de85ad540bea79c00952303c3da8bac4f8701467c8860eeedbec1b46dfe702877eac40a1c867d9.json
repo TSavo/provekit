@@ -1,0 +1,38 @@
+{
+  "cid": "blake3-512:2a30427b0fe4595200832b68ace1fde4f6b6b6002f305bb4e3de85ad540bea79c00952303c3da8bac4f8701467c8860eeedbec1b46dfe702877eac40a1c867d9",
+  "memento": {
+    "fn_name": "gap:python:mul:to:concept:mul",
+    "gap_kind": "polymorphic-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {},
+    "reason_note": "python:mul is polymorphic (int * str repeats, etc.); concept:mul is integer-only",
+    "resolution_options": [
+      {
+        "option_kind": "partial-morphism",
+        "tradeoff": "Restrict to call-sites where operands are statically the integer sub-sort.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "split-target-op",
+        "split_targets": [
+          "concept:mul-int",
+          "concept:mul-str"
+        ],
+        "tradeoff": "Split the concept hub op into per-sort variants; morphisms discharge per variant.",
+        "status": "deferred"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "Polymorphic dispatch is not bridgeable to a monomorphic hub op.",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": "blake3-512:8b23fdf31eff2f18042f7c426b632c5c3a439924c41e55cc31bc649a52569421cd9fd1f1b09dc162acd09efdbd7cf96e1209d710790fe21eb8b46c203c5d42c5",
+    "target_concept_op": "concept:mul",
+    "target_op_cid": "blake3-512:9c77e353a537b0cd2e67cc880bbf1e2937c1e2f26c0af2b8be1a2741f3521d9be07cd2ab2886d54c425e6fed3dd161636a5f430bf2e8874ec1ddac6326ac3d7f"
+  },
+  "signature": null
+}

@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:4755e19aaec5e684ad4349780951d92c3e37c9d2d3a16fb830991cbab29d32fcefd4493a70871fd7acedb436ca931ca3c7bbdc6ddc86ef8bd84be784fc61cf5b",
+  "memento": {
+    "fn_name": "gap:rust:source-unit:to:concept:source-unit",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "rust",
+    "source_op_cid": null,
+    "target_concept_op": "concept:source-unit",
+    "target_op_cid": "blake3-512:eb0385be264da92eb526401a968564f6eda9017bc4dc31069aaf8070aee7f1b22da2c680ba312ad2e3a29cf0ba881e13f7411ed082645ffe37d1605ea29db4b5"
+  },
+  "signature": null
+}

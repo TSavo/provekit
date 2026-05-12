@@ -1,0 +1,36 @@
+{
+  "cid": "blake3-512:b53fd4c2e368f7b83fa0521dde68ab0d3752c37427e547c36849035244d83293f4ed2764d70ce97b7f50cb176fbede32486fc8253fff2c266c59f3ccbc7c5d39",
+  "memento": {
+    "fn_name": "gap:python:div:to:concept:div",
+    "gap_kind": "divergent-semantics",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "divergent_tag": "integer-vs-true-division"
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "lossy-morphism",
+        "tradeoff": "Accept the semantic divergence recorded in reason; ship a characterizably lossy bridge.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "partial-morphism",
+        "tradeoff": "Restrict to the subdomain where the semantics agree.",
+        "status": "deferred"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "Decline any bridge for this op pair.",
+        "status": "rejected"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:div",
+    "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+  },
+  "signature": null
+}

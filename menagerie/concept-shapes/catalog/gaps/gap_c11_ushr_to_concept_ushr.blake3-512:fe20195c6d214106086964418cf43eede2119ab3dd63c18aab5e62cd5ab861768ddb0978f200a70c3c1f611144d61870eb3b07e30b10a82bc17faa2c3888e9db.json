@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:fe20195c6d214106086964418cf43eede2119ab3dd63c18aab5e62cd5ab861768ddb0978f200a70c3c1f611144d61870eb3b07e30b10a82bc17faa2c3888e9db",
+  "memento": {
+    "fn_name": "gap:c11:ushr:to:concept:ushr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "c11",
+    "source_op_cid": null,
+    "target_concept_op": "concept:ushr",
+    "target_op_cid": "blake3-512:6590e205dab22ec8b44783cb6ee32d588bf9d93a971eac38df1d87a260be41746b79538358d10e234554c5f1738732c341b1ce319beab9814de8cc10bf272ae5"
+  },
+  "signature": null
+}

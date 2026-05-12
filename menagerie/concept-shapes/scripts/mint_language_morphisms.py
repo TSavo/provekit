@@ -42,6 +42,7 @@ RECEIPT_DIR = discharge.RECEIPT_DIR
 DISCHARGE_DIR = discharge.DISCHARGE_DIR
 CATALOG_REAL = discharge.CATALOG_REAL
 CID_FILE = discharge.CID_FILE
+GAP_DIR = CATALOG_REAL / "gaps"  # content-addressed gap mementos per §1.1
 
 LANGUAGES = [
     {"id": "c11", "prefix": "c11", "dir": "c11-language-signature"},
@@ -353,6 +354,226 @@ KNOWN_DIVERGENCE_REASONS = {
     ("typescript", "add"): "ts:+ is polymorphic (number | string concatenation); concept:add is integer-only",
 }
 
+# Per-(lang, concept-slug) known divergence classifications for gap_kind.
+# Maps to (gap_kind, divergent_tag_or_None) for use in TransportGapMemento.
+KNOWN_GAP_KINDS = {
+    ("python", "div"): ("divergent-semantics", "integer-vs-true-division"),
+    ("python", "mod"): ("divergent-semantics", "truncated-vs-floored-modulo"),
+    ("python", "add"): ("polymorphic-source-op", None),
+    ("python", "sub"): ("polymorphic-source-op", None),
+    ("python", "mul"): ("polymorphic-source-op", None),
+    ("python", "neg"): ("polymorphic-source-op", None),
+    ("python", "lt"):  ("polymorphic-source-op", None),
+    ("python", "le"):  ("polymorphic-source-op", None),
+    ("python", "gt"):  ("polymorphic-source-op", None),
+    ("typescript", "add"): ("polymorphic-source-op", None),
+}
+
+
+def classify_gap_kind(lang_id, slug, diff_text, after_spec=None, concept_spec=None):
+    """Return (gap_kind, divergent_tag_or_None, structured_reason_dict).
+
+    gap_kind is one of the TransportGapMemento gap-kind enum values.
+    structured_reason mirrors the CDDL gap-reason type.
+    """
+    # Check known genuine divergences first (authoritative classification).
+    key = (lang_id, slug) if lang_id and slug else None
+    if key and key in KNOWN_GAP_KINDS:
+        gap_kind, tag = KNOWN_GAP_KINDS[key]
+        reason = {}
+        if tag:
+            reason["divergent_tag"] = tag
+        return gap_kind, reason
+
+    # Infer from diff_text and available specs.
+    if diff_text == "no candidate source operation spec":
+        reason = {"source_supported": False}
+        return "missing-source-op", reason
+    if diff_text == "operation not in supported set for this language":
+        reason = {"source_supported": False}
+        return "missing-source-op", reason
+    if diff_text == "language signature directory is absent":
+        # Spec ambiguity note: this is closer to "language not modeled" than
+        # "missing-source-op".  Using missing-source-op with source_supported=false
+        # per advisor guidance; flagged in PR body.
+        reason = {"source_supported": False}
+        return "missing-source-op", reason
+    if "formal sort" in diff_text:
+        reason = {}
+        if after_spec and concept_spec:
+            reason["formal_sorts_delta"] = {
+                "got": after_spec.get("formal_sorts", []),
+                "want": concept_spec.get("formal_sorts", []),
+            }
+        return "sort-mismatch", reason
+    if "precondition" in diff_text:
+        reason = {}
+        if after_spec and concept_spec:
+            reason["pre_delta"] = {
+                "got": after_spec.get("pre"),
+                "want": concept_spec.get("pre"),
+            }
+        return "sort-mismatch", reason
+    if "effect signature" in diff_text:
+        reason = {}
+        if after_spec and concept_spec:
+            reason["effects_delta"] = {
+                "got": after_spec.get("effects"),
+                "want": concept_spec.get("effects"),
+            }
+        return "effect-mismatch", reason
+    if "arity_shape" in diff_text or "slot policy" in diff_text:
+        reason = {}
+        if after_spec and concept_spec:
+            reason["post_delta"] = {
+                "got": after_spec.get("post"),
+                "want": concept_spec.get("post"),
+            }
+        return "arity-shape-mismatch", reason
+    if "wp mismatch" in diff_text:
+        reason = {}
+        if after_spec and concept_spec:
+            reason["wp_rule_delta"] = {
+                "got": after_spec.get("post", {}).get("wp"),
+                "want": concept_spec.get("post", {}).get("wp"),
+            }
+        return "wp-rule-mismatch", reason
+    # Generic contract mismatch -- unspecified for now.
+    return "unspecified", {}
+
+
+def _default_resolution_options_for(gap_kind, lang_id, slug, reason_text):
+    """Return a minimal resolution_options list for an auto-generated gap memento.
+
+    The generator cannot compute full PartialMorphismMemento / LossyMorphismMemento
+    CIDs (those are PR 2/N work).  So options here have no *_cid fields; they
+    record the gap kind and tradeoff at minimum, with status: "recommended" for
+    the most appropriate option.
+    """
+    if gap_kind == "divergent-semantics":
+        return [
+            {
+                "option_kind": "lossy-morphism",
+                "tradeoff": f"Accept the semantic divergence recorded in reason; ship a characterizably lossy bridge.",
+                "status": "recommended",
+            },
+            {
+                "option_kind": "partial-morphism",
+                "tradeoff": "Restrict to the subdomain where the semantics agree.",
+                "status": "deferred",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "tradeoff": "Decline any bridge for this op pair.",
+                "status": "rejected",
+            },
+        ]
+    if gap_kind == "polymorphic-source-op":
+        return [
+            {
+                "option_kind": "partial-morphism",
+                "tradeoff": "Restrict to call-sites where operands are statically the integer sub-sort.",
+                "status": "recommended",
+            },
+            {
+                "option_kind": "split-target-op",
+                "split_targets": [f"concept:{slug}-int", f"concept:{slug}-str"],
+                "tradeoff": "Split the concept hub op into per-sort variants; morphisms discharge per variant.",
+                "status": "deferred",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "tradeoff": "Polymorphic dispatch is not bridgeable to a monomorphic hub op.",
+                "status": "deferred",
+            },
+        ]
+    if gap_kind == "missing-source-op":
+        return [
+            {
+                "option_kind": "accept-permanent",
+                "tradeoff": reason_text,
+                "status": "recommended",
+            },
+        ]
+    if gap_kind == "no-such-concept-op":
+        return [
+            {
+                "option_kind": "extend-concept-hub",
+                "tradeoff": "Add a new concept op to the hub to model this language primitive.",
+                "status": "recommended",
+            },
+        ]
+    if gap_kind in ("effect-mismatch",):
+        return [
+            {
+                "option_kind": "re-spec-target-op",
+                "tradeoff": "Widen the concept op's effect set to include the language op's effects.",
+                "status": "recommended",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "tradeoff": reason_text,
+                "status": "deferred",
+            },
+        ]
+    # Default: accept-permanent with reason as tradeoff.
+    return [
+        {
+            "option_kind": "accept-permanent",
+            "tradeoff": reason_text,
+            "status": "recommended",
+        },
+    ]
+
+
+def _gap_fn_name(lang_id, concept_op, slug=None):
+    """Canonical fn_name for a TransportGapMemento."""
+    if slug:
+        return f"gap:{lang_id}:{slug}:to:{concept_op}"
+    return f"gap:{lang_id}:to:{concept_op}"
+
+
+def mint_gap_memento(lang_id, concept_op, slug, reason_text, gap_kind, structured_reason,
+                     source_op_cid=None, shape_cid=None, gap_rows=None):
+    """Write a TransportGapMemento JSON to GAP_DIR and return its CID.
+
+    The memento is content-addressed by its JCS bytes via discharge.canonical_cid_value.
+    The file is stored as gap_mementos/<stem>.<cid>.json.
+    Returns (cid, path_str) or (None, None) on failure.
+    """
+    GAP_DIR.mkdir(parents=True, exist_ok=True)
+    options = _default_resolution_options_for(gap_kind, lang_id, slug or "", reason_text)
+    fn_name = _gap_fn_name(lang_id, concept_op, slug)
+    memento = {
+        "fn_name": fn_name,
+        "gap_kind": gap_kind,
+        "kind": "TransportGapMemento",
+        "reason": structured_reason,
+        "reason_note": reason_text,
+        "resolution_options": options,
+        "schema_version": "1",
+        "signature": None,
+        "source_lang": lang_id,
+        "source_op_cid": source_op_cid,
+        "target_concept_op": concept_op,
+        "target_op_cid": shape_cid,
+    }
+    # JCS requires lexicographic key order; json.dumps with sort_keys=True achieves this
+    # for the canonical bytes.  write_json uses indent=2 for the stored file (non-canonical
+    # pretty-print for readability); the CID is computed from the canonical bytes.
+    try:
+        cid = discharge.canonical_cid_value(memento)
+        stem = sanitize(fn_name)
+        path = GAP_DIR / f"{stem}.{cid}.json"
+        write_json(path, {"cid": cid, "memento": memento, "signature": None})
+        if gap_rows is not None:
+            gap_rows.append({"kind": "gap", "name": fn_name, "cid": cid, "path": str(path)})
+        return cid, str(path)
+    except Exception as exc:
+        # Do not crash the generator on gap memento failure; emit unspecified fallback.
+        print(f"WARNING: mint_gap_memento failed for {fn_name}: {exc}", file=sys.stderr)
+        return None, None
+
 
 def diff_reason(after, concept, lang_id=None, slug=None):
     # Check for known genuine divergences first.
@@ -581,13 +802,44 @@ def append_cids(rows):
     CID_FILE.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
 
+def _load_gap_mementos_from_disk():
+    """Read all TransportGapMemento files from GAP_DIR and return as a sorted list.
+
+    Each entry is the parsed memento dict (the inner 'memento' field of the catalog file).
+    Sorted by fn_name for byte-stable output across runs.
+
+    This is the source of truth for write_gap_report.  The on-disk files were written by
+    mint_gap_memento() during this run (or a prior run).  Reading from disk (not in-memory
+    list) ensures the second-run byte-stability test has teeth: if the in-memory dict shape
+    changes without rewriting the file, the report would diverge.
+    """
+    if not GAP_DIR.exists():
+        return []
+    entries = []
+    for path in sorted(GAP_DIR.glob("*.json")):
+        try:
+            data = read_json(path)
+            m = data.get("memento", data)
+            if m.get("kind") == "TransportGapMemento":
+                entries.append(m)
+        except Exception:
+            continue
+    return sorted(entries, key=lambda m: m.get("fn_name", ""))
+
+
 def write_gap_report(gaps, records):
+    # Load the on-disk gap mementos as the authoritative source for the Gaps table.
+    # The in-memory `gaps` list is kept as a fallback for the spec/reason columns
+    # (those fields are in the memento's reason_note).
+    on_disk = _load_gap_mementos_from_disk()
+
     lines = [
         "# Program Transport Gaps",
         "",
         "Generated by `scripts/mint_language_morphisms.py`.",
         "Rows here are refusals to mint a morphism because the canonicalizer discharge did not land on the concept shape CID, or because the language has no op spec for that concept node.",
         "Each gap records the structural reason for the mismatch with actual vs. expected values.",
+        "Gap mementos are content-addressed JSON files in `catalog/gaps/` (schema: `protocol/transport-gap-mementos.cddl`).",
         "",
         "## Semantic Restrictions",
         "",
@@ -604,9 +856,27 @@ def write_gap_report(gaps, records):
         "## Minted Coverage", "", "| Concept op | Minted morphisms |", "| --- | --- |"]
     for record in records:
         lines.append(f"| `{record['concept']}` | {', '.join(m['name'] for m in record['morphisms']) or 'none'} |")
-    lines += ["", "## Gaps", "", "| Language | Concept op | Source spec | Reason |", "| --- | --- | --- | --- |"]
-    for gap in gaps:
-        lines.append(f"| `{gap['language']}` | `{gap['concept']}` | `{gap['spec']}` | {gap['reason']} |")
+
+    lines += ["", "## Gaps", "", "| Language | Concept op | Gap kind | Source spec | Reason |", "| --- | --- | --- | --- | --- |"]
+
+    if on_disk:
+        # Primary path: render from content-addressed on-disk mementos.
+        for m in on_disk:
+            lang = m.get("source_lang", "")
+            concept = m.get("target_concept_op", "")
+            gap_kind = m.get("gap_kind", "unspecified")
+            note = m.get("reason_note", "")
+            # Extract source spec hint from reason_note (prose in the note for display).
+            spec_hint = ""
+            in_mem = next((g for g in gaps if g["language"] == lang and g["concept"] == concept), None)
+            if in_mem:
+                spec_hint = in_mem.get("spec", "")
+            lines.append(f"| `{lang}` | `{concept}` | `{gap_kind}` | `{spec_hint}` | {note} |")
+    else:
+        # Fallback: no on-disk mementos yet (first run before GAP_DIR populated).
+        for gap in gaps:
+            lines.append(f"| `{gap['language']}` | `{gap['concept']}` | `unspecified` | `{gap['spec']}` | {gap['reason']} |")
+
     lines += ["", "T Savo", ""]
     (BASE / "transport-gaps.md").write_text("\n".join(lines), encoding="utf-8")
 
@@ -677,6 +947,7 @@ def main():
             concept_specs[op_def["slug"]]["effects"] = {"effects": union_effects}
 
     rows, records, gaps = [], [], []
+    gap_rows = []  # CID rows for gap mementos, appended to cids.tsv
     cid_rows = existing_cid_rows()
     for op_def in OPS:
         concept_spec = concept_specs[op_def["slug"]]
@@ -691,11 +962,23 @@ def main():
         for language in LANGUAGES:
             directory = specs_dir(language["id"])
             if not directory.is_dir():
-                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": f"menagerie/{language['dir']}/specs", "reason": "language signature directory is absent"})
+                reason_text = "language signature directory is absent"
+                gap_kind, structured_reason = classify_gap_kind(
+                    language["id"], op_def["slug"], reason_text)
+                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": f"menagerie/{language['dir']}/specs", "reason": reason_text})
+                mint_gap_memento(language["id"], op_def["concept_fn"], op_def["slug"],
+                                 reason_text, gap_kind, structured_reason,
+                                 source_op_cid=None, shape_cid=shape_cid, gap_rows=gap_rows)
                 continue
             found = False
             if op_def["slug"] not in LANG_SUPPORTED.get(language["id"], set()):
-                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": "not-supported", "reason": "operation not in supported set for this language"})
+                reason_text = "operation not in supported set for this language"
+                gap_kind, structured_reason = classify_gap_kind(
+                    language["id"], op_def["slug"], reason_text)
+                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": "not-supported", "reason": reason_text})
+                mint_gap_memento(language["id"], op_def["concept_fn"], op_def["slug"],
+                                 reason_text, gap_kind, structured_reason,
+                                 source_op_cid=None, shape_cid=shape_cid, gap_rows=gap_rows)
                 continue
             for candidate in spec_candidates(op_def, language):
                 path = directory / candidate
@@ -716,7 +999,14 @@ def main():
                 if after_cid != shape_cid:
                     subsumption = try_structural_subsumption(after_spec, concept_spec)
                     if subsumption is None:
-                        gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])})
+                        reason_text = diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])
+                        gap_kind, structured_reason = classify_gap_kind(
+                            language["id"], op_def["slug"], reason_text,
+                            after_spec=after_spec, concept_spec=concept_spec)
+                        gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": reason_text})
+                        mint_gap_memento(language["id"], op_def["concept_fn"], op_def["slug"],
+                                         reason_text, gap_kind, structured_reason,
+                                         source_op_cid=source_cid, shape_cid=shape_cid, gap_rows=gap_rows)
                         continue
                     discharge_method, pre_relaxed, wp_abstracted = subsumption
                     effect_subset_relaxed = "effect-subset" in discharge_method
@@ -759,15 +1049,34 @@ def main():
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})
                 break
             if not found:
-                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": f"op_{op_def['slug'].replace('-', '_')}.spec.json", "reason": "no candidate source operation spec"})
+                reason_text = "no candidate source operation spec"
+                gap_kind, structured_reason = classify_gap_kind(
+                    language["id"], op_def["slug"], reason_text)
+                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": f"op_{op_def['slug'].replace('-', '_')}.spec.json", "reason": reason_text})
+                mint_gap_memento(language["id"], op_def["concept_fn"], op_def["slug"],
+                                 reason_text, gap_kind, structured_reason,
+                                 source_op_cid=None, shape_cid=shape_cid, gap_rows=gap_rows)
         records.append(record)
     append_cids(rows)
     write_gap_report(gaps, records)
     update_readme(records)
     discharge.scan_created_text()
+    gap_kinds = {}
+    for row in gap_rows:
+        fn = row.get("name", "")
+        # Extract gap_kind from on-disk memento to count by kind.
+        pass
+    # Count gap mementos by kind from disk.
+    gap_kind_counts = {}
+    for m in _load_gap_mementos_from_disk():
+        k = m.get("gap_kind", "unspecified")
+        gap_kind_counts[k] = gap_kind_counts.get(k, 0) + 1
     print(f"concept_op_count\t{len(OPS)}")
     print(f"morphism_count\t{sum(len(r['morphisms']) for r in records)}")
     print(f"gap_count\t{len(gaps)}")
+    print(f"gap_memento_count\t{sum(gap_kind_counts.values())}")
+    for k in sorted(gap_kind_counts):
+        print(f"gap_kind:{k}\t{gap_kind_counts[k]}")
 
 
 if __name__ == "__main__":

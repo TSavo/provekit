@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:469ea86fb35faf97c72587ae1f40d40b810dc364f9dcd29b5903ead89822b6e6e02712e60898e67521c9f78afb906e0ec8db86fca2f5101ed5e37e679b889fbf",
+  "memento": {
+    "fn_name": "gap:python:eq:to:concept:eq",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:eq",
+    "target_op_cid": "blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4"
+  },
+  "signature": null
+}

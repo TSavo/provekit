@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:3a5355bf30bad484c5fdcdd832cca58476ebb1d20b4fd9878ab986d850cb0f9e963cbe51eec9359f8155c073020ab51ed194d294c9832bac8d83868367c59fd2",
+  "memento": {
+    "fn_name": "gap:c11:throw:to:concept:throw",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "c11",
+    "source_op_cid": null,
+    "target_concept_op": "concept:throw",
+    "target_op_cid": "blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede"
+  },
+  "signature": null
+}

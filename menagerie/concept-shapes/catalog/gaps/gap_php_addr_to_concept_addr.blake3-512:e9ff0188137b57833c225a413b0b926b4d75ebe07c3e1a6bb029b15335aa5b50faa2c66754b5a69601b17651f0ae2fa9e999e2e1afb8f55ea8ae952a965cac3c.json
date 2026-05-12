@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:e9ff0188137b57833c225a413b0b926b4d75ebe07c3e1a6bb029b15335aa5b50faa2c66754b5a69601b17651f0ae2fa9e999e2e1afb8f55ea8ae952a965cac3c",
+  "memento": {
+    "fn_name": "gap:php:addr:to:concept:addr",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:addr",
+    "target_op_cid": "blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411"
+  },
+  "signature": null
+}

@@ -1,0 +1,38 @@
+{
+  "cid": "blake3-512:4088b1e8b7cd3ee1097d86e96f767101120bca8338bf11e27e9fc141c3103b77b0929e1ae7301b20e91823aa05254b5bb5ba152e57e71a934e946e200a6484de",
+  "memento": {
+    "fn_name": "gap:python:gt:to:concept:gt",
+    "gap_kind": "polymorphic-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {},
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "partial-morphism",
+        "tradeoff": "Restrict to call-sites where operands are statically the integer sub-sort.",
+        "status": "recommended"
+      },
+      {
+        "option_kind": "split-target-op",
+        "split_targets": [
+          "concept:gt-int",
+          "concept:gt-str"
+        ],
+        "tradeoff": "Split the concept hub op into per-sort variants; morphisms discharge per variant.",
+        "status": "deferred"
+      },
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "Polymorphic dispatch is not bridgeable to a monomorphic hub op.",
+        "status": "deferred"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:gt",
+    "target_op_cid": "blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6"
+  },
+  "signature": null
+}

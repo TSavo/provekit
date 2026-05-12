@@ -1,0 +1,52 @@
+{
+  "cid": "blake3-512:164a3b9ff51628a0287043667bf0192f376236a8483f1708aaeb5c487d7e15ebea245a51e9593f7bac8c1f101dc58e4158be28562c7728405d447693b65d9533",
+  "memento": {
+    "fn_name": "gap:php:sub:to:concept:sub",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "pre_delta": {
+        "got": {
+          "kind": "atomic",
+          "name": "true",
+          "args": []
+        },
+        "want": {
+          "kind": "atomic",
+          "name": "no_signed_overflow",
+          "args": [
+            {
+              "kind": "op",
+              "name": "sub",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "lhs"
+                },
+                {
+                  "kind": "var",
+                  "name": "rhs"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"sub\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"sub\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": "blake3-512:7d5b6f8a51ee66cc9c840b18f3dbe0702e8c3157f5312215c224bb87357bfbc1ac1157073e1e0cc55483da9119e0f6101019d3dbb34d3cbc37308a9957fe9714",
+    "target_concept_op": "concept:sub",
+    "target_op_cid": "blake3-512:07e118ce1489414d5311dd4f3b4575d0ea718197da18f806b58624c58f18c33107dc2ba5e9aa49fdc3d3e3c721792837a11d7d4e4620d9912c4ee6db15dec50e"
+  },
+  "signature": null
+}

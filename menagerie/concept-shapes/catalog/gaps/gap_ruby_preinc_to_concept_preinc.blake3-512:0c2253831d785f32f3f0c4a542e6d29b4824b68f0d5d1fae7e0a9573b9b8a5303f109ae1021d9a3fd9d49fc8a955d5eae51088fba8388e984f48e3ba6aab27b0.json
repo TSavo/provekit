@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:0c2253831d785f32f3f0c4a542e6d29b4824b68f0d5d1fae7e0a9573b9b8a5303f109ae1021d9a3fd9d49fc8a955d5eae51088fba8388e984f48e3ba6aab27b0",
+  "memento": {
+    "fn_name": "gap:ruby:preinc:to:concept:preinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:preinc",
+    "target_op_cid": "blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8"
+  },
+  "signature": null
+}

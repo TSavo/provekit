@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:3aac652048b31a131d3e42d41e943222bc8ed5616dd7f170298d317be3f746df02ddeca9ea0afd0a5138d2dec87ef4d47d39898adca76754c1d202ca60431307",
+  "memento": {
+    "fn_name": "gap:python:postinc:to:concept:postinc",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:postinc",
+    "target_op_cid": "blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523"
+  },
+  "signature": null
+}

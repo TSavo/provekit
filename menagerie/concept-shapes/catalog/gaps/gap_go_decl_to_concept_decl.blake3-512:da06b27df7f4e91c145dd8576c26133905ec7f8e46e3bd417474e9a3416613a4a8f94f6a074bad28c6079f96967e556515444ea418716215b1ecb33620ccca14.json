@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:da06b27df7f4e91c145dd8576c26133905ec7f8e46e3bd417474e9a3416613a4a8f94f6a074bad28c6079f96967e556515444ea418716215b1ecb33620ccca14",
+  "memento": {
+    "fn_name": "gap:go:decl:to:concept:decl",
+    "gap_kind": "sort-mismatch",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "formal_sorts_delta": {
+        "got": [
+          {
+            "kind": "ctor",
+            "name": "Identifier",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Term",
+            "args": []
+          }
+        ],
+        "want": [
+          {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+          },
+          {
+            "kind": "ctor",
+            "name": "Expr",
+            "args": []
+          }
+        ]
+      }
+    },
+    "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "go",
+    "source_op_cid": "blake3-512:1a59ddf758213560d63dbb81f6a32bfd0642b5d3a23777f72acebc0c6f16a5e20d357aeacd117126fc6abcc3819dc2d46b626ef12c267ad7d5a427a5f2ef7762",
+    "target_concept_op": "concept:decl",
+    "target_op_cid": "blake3-512:43f5ee88b8df3515b3f8a679464191c0d2f1f59c1505e306050ad9bf9255bd30d792eff59e24e1237c7334eca33b57e2224615583fabc3c3847dee7b00a5e9ce"
+  },
+  "signature": null
+}

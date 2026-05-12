@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:944f4959deca1019b08a077f3ee75a357f896a7642df9870244c02616e23502db842da82343bd367fd7d7f16d4edd5b0ca28a31270fc937cf847719073fe33c2",
+  "memento": {
+    "fn_name": "gap:csharp:deref:to:concept:deref",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "csharp",
+    "source_op_cid": null,
+    "target_concept_op": "concept:deref",
+    "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  },
+  "signature": null
+}

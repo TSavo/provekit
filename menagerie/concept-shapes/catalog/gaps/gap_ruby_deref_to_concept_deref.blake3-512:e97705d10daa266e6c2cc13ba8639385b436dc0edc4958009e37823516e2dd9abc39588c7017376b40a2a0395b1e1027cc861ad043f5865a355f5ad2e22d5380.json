@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:e97705d10daa266e6c2cc13ba8639385b436dc0edc4958009e37823516e2dd9abc39588c7017376b40a2a0395b1e1027cc861ad043f5865a355f5ad2e22d5380",
+  "memento": {
+    "fn_name": "gap:ruby:deref:to:concept:deref",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "ruby",
+    "source_op_cid": null,
+    "target_concept_op": "concept:deref",
+    "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  },
+  "signature": null
+}

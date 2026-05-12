@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:12b118d0c0ff776e17a9f355c461811cc24a73fda73da2df44a7faa083c30394c181bbd2d6aadced30bf218a6ecc6df03e20f3cb0bd26c7c776ab3a791d26ef4",
+  "memento": {
+    "fn_name": "gap:python:predec:to:concept:predec",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "operation not in supported set for this language",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "operation not in supported set for this language",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "python",
+    "source_op_cid": null,
+    "target_concept_op": "concept:predec",
+    "target_op_cid": "blake3-512:7cfe3dd7f70149ec4e3625a92c3912e03fe3464ba648d052788b5eee54c552ee46a8bb4c34afcd32d6aae04cc9f2024a76ed271705da7a4ee573e04fc09f7852"
+  },
+  "signature": null
+}

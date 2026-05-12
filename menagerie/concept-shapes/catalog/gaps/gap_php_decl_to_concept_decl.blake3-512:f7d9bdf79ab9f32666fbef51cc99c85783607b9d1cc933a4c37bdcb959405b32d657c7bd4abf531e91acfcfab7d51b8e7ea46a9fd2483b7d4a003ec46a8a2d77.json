@@ -1,0 +1,26 @@
+{
+  "cid": "blake3-512:f7d9bdf79ab9f32666fbef51cc99c85783607b9d1cc933a4c37bdcb959405b32d657c7bd4abf531e91acfcfab7d51b8e7ea46a9fd2483b7d4a003ec46a8a2d77",
+  "memento": {
+    "fn_name": "gap:php:decl:to:concept:decl",
+    "gap_kind": "missing-source-op",
+    "kind": "TransportGapMemento",
+    "reason": {
+      "source_supported": false
+    },
+    "reason_note": "no candidate source operation spec",
+    "resolution_options": [
+      {
+        "option_kind": "accept-permanent",
+        "tradeoff": "no candidate source operation spec",
+        "status": "recommended"
+      }
+    ],
+    "schema_version": "1",
+    "signature": null,
+    "source_lang": "php",
+    "source_op_cid": null,
+    "target_concept_op": "concept:decl",
+    "target_op_cid": "blake3-512:43f5ee88b8df3515b3f8a679464191c0d2f1f59c1505e306050ad9bf9255bd30d792eff59e24e1237c7334eca33b57e2224615583fabc3c3847dee7b00a5e9ce"
+  },
+  "signature": null
+}
