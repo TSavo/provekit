@@ -1,41 +1,30 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:ge",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
   "formals": [
     "lhs",
     "rhs"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Bool",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "ge",
     "arity": [
       "Int",
       "Int"
     ],
-    "result": "Bool",
-    "wp": "lhs >= rhs",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -46,9 +35,20 @@
           "name": "rhs"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "ge",
+    "result": "Bool",
+    "wp": "lhs >= rhs"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Bool"
   }
 }

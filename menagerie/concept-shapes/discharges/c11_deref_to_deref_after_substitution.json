@@ -1,73 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:deref",
-  "formals": [
-    "ptr"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Ptr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "LValue",
-    "args": []
-  },
-  "pre": {
-    "kind": "connective",
-    "op": "and",
-    "operands": [
-      {
-        "kind": "atomic",
-        "name": "!=",
-        "args": [
-          {
-            "kind": "var",
-            "name": "ptr"
-          },
-          {
-            "kind": "const",
-            "value": "NULL",
-            "sort": {
-              "kind": "ctor",
-              "name": "Ptr",
-              "args": []
-            }
-          }
-        ]
-      },
-      {
-        "kind": "atomic",
-        "name": "valid",
-        "args": [
-          {
-            "kind": "var",
-            "name": "ptr"
-          }
-        ]
-      }
-    ]
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "deref",
-    "arity": [
-      "Ptr"
-    ],
-    "result": "LValue",
-    "wp": "lvalue at ptr",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "ptr"
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -75,5 +6,74 @@
         "name": "MemRead"
       }
     ]
+  },
+  "fn_name": "concept:deref",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Ptr"
+    }
+  ],
+  "formals": [
+    "ptr"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Ptr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "ptr"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "deref",
+    "result": "LValue",
+    "wp": "lvalue at ptr"
+  },
+  "pre": {
+    "kind": "connective",
+    "op": "and",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "ptr"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "args": [],
+              "kind": "ctor",
+              "name": "Ptr"
+            },
+            "value": "NULL"
+          }
+        ],
+        "kind": "atomic",
+        "name": "!="
+      },
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "ptr"
+          }
+        ],
+        "kind": "atomic",
+        "name": "valid"
+      }
+    ]
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "LValue"
   }
 }

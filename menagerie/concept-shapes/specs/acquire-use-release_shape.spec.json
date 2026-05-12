@@ -1,10 +1,25 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": [
+      {
+        "balanced": true,
+        "body_effects": "body_effects",
+        "guard": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "m"
+            }
+          ],
+          "kind": "ctor",
+          "name": "holds_lock"
+        },
+        "kind": "CriticalSection",
+        "lock": "m"
+      }
+    ]
+  },
   "fn_name": "shape:acquire-use-release",
-  "formals": [
-    "m",
-    "body_ret"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -15,26 +30,15 @@
       "name": "CriticalValue"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "CriticalValue"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "lock_available",
-    "args": [
-      {
-        "kind": "var",
-        "name": "m"
-      }
-    ]
-  },
+  "formals": [
+    "m",
+    "body_ret"
+  ],
+  "kind": "algorithm",
   "post": {
     "kind": "and",
     "operands": [
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
             "kind": "var",
@@ -44,89 +48,85 @@
             "kind": "var",
             "name": "body_ret"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
-            "kind": "ctor",
-            "name": "lock_state_after",
             "args": [
               {
                 "kind": "var",
                 "name": "m"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "lock_state_after"
           },
           {
-            "kind": "ctor",
-            "name": "lock_state_before",
             "args": [
               {
                 "kind": "var",
                 "name": "m"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "lock_state_before"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
-        "kind": "atomic",
-        "name": "balanced_lock_pair",
         "args": [
           {
             "kind": "var",
             "name": "m"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "balanced_lock_pair"
       },
       {
         "kind": "implies",
         "operands": [
           {
-            "kind": "atomic",
-            "name": "holds_lock",
             "args": [
               {
                 "kind": "var",
                 "name": "m"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "holds_lock"
           },
           {
-            "kind": "atomic",
-            "name": "body_effects_done",
             "args": [
               {
                 "kind": "var",
                 "name": "m"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "body_effects_done"
           }
         ]
       }
     ]
   },
-  "effects": {
-    "effects": [
+  "pre": {
+    "args": [
       {
-        "kind": "CriticalSection",
-        "lock": "m",
-        "guard": {
-          "kind": "ctor",
-          "name": "holds_lock",
-          "args": [
-            {
-              "kind": "var",
-              "name": "m"
-            }
-          ]
-        },
-        "body_effects": "body_effects",
-        "balanced": true
+        "kind": "var",
+        "name": "m"
       }
-    ]
+    ],
+    "kind": "atomic",
+    "name": "lock_available"
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "CriticalValue"
   }
 }

@@ -1,0 +1,100 @@
+{
+  "fn_name": "gap:csharp:return:to:concept:return",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Return"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "early-return"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Return"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "return",
+        "result": "Stmt",
+        "wp": "post[return_value/value] (function result = value)"
+      },
+      "want": {
+        "arity": [
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "return",
+        "result": "Stmt",
+        "wp": "bind function out value and exit current body"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:8c1950a193c88dbd6fc5a0a9a1efe408404cbaaba3d33b352d4aa7b9533cbc1d064d8d68e498e68b5ae17e668c8398de9d83e4b460b43886d5eaef759cf44aed",
+  "target_concept_op": "concept:return",
+  "target_op_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
+}

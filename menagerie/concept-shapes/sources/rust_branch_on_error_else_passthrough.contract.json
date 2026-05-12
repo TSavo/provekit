@@ -1,10 +1,9 @@
 {
-  "kind": "function-contract",
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": []
+  },
   "fn_name": "rust:branch_on_error_else_passthrough",
-  "formals": [
-    "value",
-    "error_value"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -15,36 +14,28 @@
       "name": "ResultValue"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "ResultValue"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "formals": [
+    "value",
+    "error_value"
+  ],
+  "kind": "function-contract",
   "post": {
-    "kind": "atomic",
-    "name": "=",
     "args": [
       {
         "kind": "var",
         "name": "retv"
       },
       {
-        "kind": "ctor",
-        "name": "ite",
         "args": [
           {
-            "kind": "ctor",
-            "name": "rust_result_is_error",
             "args": [
               {
                 "kind": "var",
                 "name": "value"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "rust_result_is_error"
           },
           {
             "kind": "var",
@@ -54,12 +45,21 @@
             "kind": "var",
             "name": "value"
           }
-        ]
+        ],
+        "kind": "ctor",
+        "name": "ite"
       }
-    ]
+    ],
+    "kind": "atomic",
+    "name": "="
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "auto_minted_mementos": []
+  "return_sort": {
+    "kind": "primitive",
+    "name": "ResultValue"
+  }
 }

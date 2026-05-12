@@ -1,0 +1,133 @@
+{
+  "fn_name": "gap:python:call:to:concept:call",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "UnresolvedCall"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "UnresolvedCall"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Call"
+          },
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects or unresolved_call when unavailable"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "String"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "ListOfValue"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "FnContract"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "ListOfExpr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "String",
+          "ListOfValue"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "callee"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "notes": "The term encoding stores callee followed by positional actual arguments.",
+        "operator": "call",
+        "result": "Value",
+        "wp": "call callee with actual arguments"
+      },
+      "want": {
+        "arity": [
+          "FnContract",
+          "ListOf<Expr>"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "callee"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "call",
+        "result": "Stmt",
+        "wp": "callee pre under bound args implies callee post under caller state"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfValue\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:d09a9cf449707c85e2d1dab7ca36ccba1946f85ebb95f48a8ab43accd977675a28a6632ccb092686b9bd450c6a32e518e796b65d21711d533c259ac78426fba1",
+  "target_concept_op": "concept:call",
+  "target_op_cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c"
+}

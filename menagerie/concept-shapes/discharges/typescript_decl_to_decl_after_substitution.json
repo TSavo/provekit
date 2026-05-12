@@ -1,41 +1,30 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:decl",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    }
+  ],
   "formals": [
     "name",
     "initializer"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "String",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "decl",
     "arity": [
       "String",
       "Expr"
     ],
-    "result": "Stmt",
-    "wp": "introduce a local binding with initializer",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -46,9 +35,20 @@
           "name": "initializer"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "decl",
+    "result": "Stmt",
+    "wp": "introduce a local binding with initializer"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

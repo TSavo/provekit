@@ -1,56 +1,35 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Trap"
+      }
+    ]
+  },
   "fn_name": "concept:mul",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
   "formals": [
     "lhs",
     "rhs"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Int",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "no_signed_overflow",
-    "args": [
-      {
-        "kind": "op",
-        "name": "mul",
-        "args": [
-          {
-            "kind": "var",
-            "name": "lhs"
-          },
-          {
-            "kind": "var",
-            "name": "rhs"
-          }
-        ]
-      }
-    ]
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "mul",
     "arity": [
       "Int",
       "Int"
     ],
-    "result": "Int",
-    "wp": "mathematical integer multiplication when no overflow holds",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -61,14 +40,35 @@
           "name": "rhs"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "mul",
+    "result": "Int",
+    "wp": "mathematical integer multiplication when no overflow holds"
   },
-  "effects": {
-    "effects": [
+  "pre": {
+    "args": [
       {
-        "kind": "effect-signature",
-        "name": "Trap"
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ],
+        "kind": "op",
+        "name": "mul"
       }
-    ]
+    ],
+    "kind": "atomic",
+    "name": "no_signed_overflow"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
   }
 }

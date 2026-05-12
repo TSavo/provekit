@@ -9,9 +9,9 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Ptr",
-        "args": []
+        "name": "Ptr"
       }
     ],
     "pre": {
@@ -19,8 +19,6 @@
       "op": "and",
       "operands": [
         {
-          "kind": "atomic",
-          "name": "!=",
           "args": [
             {
               "kind": "var",
@@ -28,35 +26,33 @@
             },
             {
               "kind": "const",
-              "value": "NULL",
               "sort": {
+                "args": [],
                 "kind": "ctor",
-                "name": "Ptr",
-                "args": []
-              }
+                "name": "Ptr"
+              },
+              "value": "NULL"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "!="
         },
         {
-          "kind": "atomic",
-          "name": "valid",
           "args": [
             {
               "kind": "var",
               "name": "ptr"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "valid"
         }
       ]
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "deref",
       "arity": [
         "Ptr"
       ],
-      "result": "LValue",
-      "wp": "lvalue at ptr",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -64,7 +60,11 @@
             "name": "ptr"
           }
         ]
-      }
+      },
+      "kind": "operation-contract",
+      "operator": "deref",
+      "result": "LValue",
+      "wp": "lvalue at ptr"
     },
     "effects": {
       "effects": [
@@ -76,9 +76,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "LValue",
-      "args": []
+      "name": "LValue"
     }
   },
   "cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe",

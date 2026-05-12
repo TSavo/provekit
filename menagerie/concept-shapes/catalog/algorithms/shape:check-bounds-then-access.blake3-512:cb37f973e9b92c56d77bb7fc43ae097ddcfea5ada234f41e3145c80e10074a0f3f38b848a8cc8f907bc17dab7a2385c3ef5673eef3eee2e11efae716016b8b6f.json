@@ -29,28 +29,22 @@
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
       "kind": "and",
       "operands": [
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
               "kind": "var",
               "name": "ret"
             },
             {
-              "kind": "ctor",
-              "name": "ite",
               "args": [
                 {
-                  "kind": "ctor",
-                  "name": "<",
                   "args": [
                     {
                       "kind": "var",
@@ -60,11 +54,11 @@
                       "kind": "var",
                       "name": "len"
                     }
-                  ]
+                  ],
+                  "kind": "ctor",
+                  "name": "<"
                 },
                 {
-                  "kind": "ctor",
-                  "name": "read",
                   "args": [
                     {
                       "kind": "var",
@@ -74,22 +68,26 @@
                       "kind": "var",
                       "name": "i"
                     }
-                  ]
+                  ],
+                  "kind": "ctor",
+                  "name": "read"
                 },
                 {
                   "kind": "var",
                   "name": "err"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "ite"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
           "kind": "implies",
           "operands": [
             {
-              "kind": "atomic",
-              "name": "<",
               "args": [
                 {
                   "kind": "var",
@@ -99,11 +97,11 @@
                   "kind": "var",
                   "name": "len"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "<"
             },
             {
-              "kind": "atomic",
-              "name": "accessible",
               "args": [
                 {
                   "kind": "var",
@@ -113,7 +111,9 @@
                   "kind": "var",
                   "name": "i"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "accessible"
             }
           ]
         }
@@ -122,12 +122,7 @@
     "effects": {
       "effects": [
         {
-          "kind": "MemRead",
-          "target": "buf",
-          "index": "i",
           "guard": {
-            "kind": "ctor",
-            "name": "<",
             "args": [
               {
                 "kind": "var",
@@ -137,8 +132,13 @@
                 "kind": "var",
                 "name": "len"
               }
-            ]
-          }
+            ],
+            "kind": "ctor",
+            "name": "<"
+          },
+          "index": "i",
+          "kind": "MemRead",
+          "target": "buf"
         }
       ]
     },

@@ -1,0 +1,92 @@
+{
+  "fn_name": "gap:rust:throw:to:concept:throw",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panics"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Reason"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Reason"
+        ],
+        "kind": "operation-contract",
+        "operator": "throw",
+        "result": "Bottom",
+        "wp": "controlled divergence through Rust panic"
+      },
+      "want": {
+        "arity": [
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "throw",
+        "result": "Stmt",
+        "wp": "throw exception or value"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Reason\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:25747b5fe6c1cb3e36fda23cbc1fcb4dfdbf81a4e7ee1c5344aa02b5979e9d7f881f41627bca2205fda786ca9213723a114d35b6840a5d4f0c24e9193013ab45",
+  "target_concept_op": "concept:throw",
+  "target_op_cid": "blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede"
+}

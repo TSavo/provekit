@@ -1,35 +1,26 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:source-unit",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
   "formals": [
     "bytes",
     "operational_term"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "String",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "source-unit",
     "arity": [
       "String",
       "Stmt"
@@ -38,8 +29,8 @@
       "kind": "named",
       "slots": [
         {
-          "name": "bytes",
           "evaluation": "unevaluated",
+          "name": "bytes",
           "slot_sort": "literal"
         },
         {
@@ -47,20 +38,29 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "source-unit",
     "result": "Stmt",
     "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
     "wp_rule": {
-      "kind": "apply",
-      "fn": "wp_operational_term",
       "args": [
         {
           "kind": "var",
           "name": "Q"
         }
-      ]
+      ],
+      "fn": "wp_operational_term",
+      "kind": "apply"
     }
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

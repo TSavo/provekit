@@ -1,73 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:for",
-  "formals": [
-    "init",
-    "cond",
-    "step",
-    "body"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Bool",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "for",
-    "arity": [
-      "Stmt",
-      "Bool",
-      "Stmt",
-      "Stmt"
-    ],
-    "result": "Stmt",
-    "wp": "seq(init, while(cond, seq(body, step)))",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "init"
-        },
-        {
-          "name": "cond"
-        },
-        {
-          "name": "step"
-        },
-        {
-          "name": "body"
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -87,5 +18,74 @@
         "name": "Loop"
       }
     ]
+  },
+  "fn_name": "concept:for",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
+  "formals": [
+    "init",
+    "cond",
+    "step",
+    "body"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Stmt",
+      "Bool",
+      "Stmt",
+      "Stmt"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "init"
+        },
+        {
+          "name": "cond"
+        },
+        {
+          "name": "step"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "for",
+    "result": "Stmt",
+    "wp": "seq(init, while(cond, seq(body, step)))"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

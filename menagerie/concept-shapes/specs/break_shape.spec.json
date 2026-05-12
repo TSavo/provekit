@@ -1,43 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:break",
-  "formals": [
-    "unit"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Unit",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "break",
-    "arity": [
-      "Unit"
-    ],
-    "result": "Stmt",
-    "wp": "exit nearest enclosing switch or loop",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "unit"
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -49,5 +10,44 @@
         "name": "Break"
       }
     ]
+  },
+  "fn_name": "concept:break",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Unit"
+    }
+  ],
+  "formals": [
+    "unit"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Unit"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "break",
+    "result": "Stmt",
+    "wp": "exit nearest enclosing switch or loop"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

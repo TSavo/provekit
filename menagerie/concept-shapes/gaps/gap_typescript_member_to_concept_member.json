@@ -1,0 +1,97 @@
+{
+  "fn_name": "gap:typescript:member:to:concept:member",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "String"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "LValue"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "FieldName"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Expr",
+          "String"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "object"
+            },
+            {
+              "name": "property"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "member",
+        "result": "LValue",
+        "wp": "property/member access x.f"
+      },
+      "want": {
+        "arity": [
+          "LValue",
+          "FieldName"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "base"
+            },
+            {
+              "name": "field",
+              "slot_sort": "identifier"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "member",
+        "result": "LValue",
+        "wp": "field lvalue projection"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"FieldName\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "typescript",
+  "source_op_cid": "blake3-512:53d2d28a073ad9581c05acf761eadd07922d922576f771f7fd9c1ce8db0042bc340811d6c01cdd92b2aa8b313c22a2f7008bd3f7eb7f4e4064dc2737b23e847d",
+  "target_concept_op": "concept:member",
+  "target_op_cid": "blake3-512:2d3b8518c51a93e8c42747b508b766134e14aeaa88327411b2bfb63da481aba27019d2f2613e85054c75d13e5b2f40efad4b9265b1148f1fcb13f4220b02fe2d"
+}

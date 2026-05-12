@@ -1,0 +1,97 @@
+{
+  "fn_name": "gap:csharp:cast:to:concept:cast",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "String"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "String",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target_type"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "cast",
+        "result": "Expr",
+        "wp": "(target_type)value (explicit cast)"
+      },
+      "want": {
+        "arity": [
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target_type",
+              "slot_sort": "type"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "cast",
+        "result": "Expr",
+        "wp": "C cast expression preserving explicit target type and lifted child value"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:5eea838a239b85bd449e6c2ea79839737427f635be7dc39db7ad9b1810984e47cde04785282c01c81f9ce5ef50bbe6fe8da9b35d886759f0af9756f107d4bdb4",
+  "target_concept_op": "concept:cast",
+  "target_op_cid": "blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c"
+}

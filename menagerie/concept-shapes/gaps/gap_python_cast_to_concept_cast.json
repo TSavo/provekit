@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:python:cast:to:concept:cast",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "operation not in supported set for this language",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:gap-no-source-cid-python-cast",
+  "target_concept_op": "concept:cast",
+  "target_op_cid": "blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c"
+}

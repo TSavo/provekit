@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:go:preinc:to:concept:preinc",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "operation not in supported set for this language",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:gap-no-source-cid-go-preinc",
+  "target_concept_op": "concept:preinc",
+  "target_op_cid": "blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8"
+}

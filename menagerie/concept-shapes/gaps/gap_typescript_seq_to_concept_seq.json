@@ -1,0 +1,89 @@
+{
+  "fn_name": "gap:typescript:seq:to:concept:seq",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union(first.effects, second.effects)"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Stmt"
+        ],
+        "arity_shape": {
+          "kind": "positional",
+          "variadic": true
+        },
+        "kind": "operation-contract",
+        "operator": "seq",
+        "result": "Stmt",
+        "wp": "ordered statement sequence; variadic positional term args are evaluated in order"
+      },
+      "want": {
+        "arity": [
+          "Stmt",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "arity": 2,
+          "kind": "positional"
+        },
+        "kind": "operation-contract",
+        "operator": "seq",
+        "result": "Stmt",
+        "wp": "wp(first, wp(second, post))"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "typescript",
+  "source_op_cid": "blake3-512:1bb79da954fa298b7fbc7c1718d798e09f43705385ada04ad88aa231a53fadd9dddb70b1414731cd02fd836e35e5fd1107f68cc65ee85d24216d6427311fd77a",
+  "target_concept_op": "concept:seq",
+  "target_op_cid": "blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412"
+}

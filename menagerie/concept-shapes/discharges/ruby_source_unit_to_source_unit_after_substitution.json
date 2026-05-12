@@ -1,47 +1,36 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:source-unit",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
   "formals": [
     "bytes",
     "operational_term"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "String",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "source-unit",
     "arity": [
       "String",
       "Stmt"
     ],
-    "result": "Stmt",
-    "wp": "lossless Ruby source wrapper; project_effects descends to operational_term",
     "arity_shape": {
       "kind": "named",
       "slots": [
         {
-          "name": "bytes",
           "evaluation": "unevaluated",
+          "name": "bytes",
           "slot_sort": "literal"
         },
         {
@@ -49,9 +38,20 @@
         }
       ]
     },
-    "notes": "The bytes slot carries the original UTF-8 Ruby source as a string."
+    "kind": "operation-contract",
+    "notes": "The bytes slot carries the original UTF-8 Ruby source as a string.",
+    "operator": "source-unit",
+    "result": "Stmt",
+    "wp": "lossless Ruby source wrapper; project_effects descends to operational_term"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

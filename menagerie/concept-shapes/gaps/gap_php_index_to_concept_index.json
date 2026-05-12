@@ -1,0 +1,121 @@
+{
+  "fn_name": "gap:php:index:to:concept:index",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Read"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Reads"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "MemRead"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "base"
+            },
+            {
+              "name": "index"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "index",
+        "result": "Value",
+        "wp": "array offset fetch"
+      },
+      "want": {
+        "arity": [
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "base"
+            },
+            {
+              "name": "index"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "index",
+        "result": "LValue",
+        "wp": "array element lvalue projection"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "php",
+  "source_op_cid": "blake3-512:3c494370d0071a9aa09d56974d89edc1f5af96400c610a1c133db36fa80e961f8b2d0e7f9fa085cfcb2c9a66f4340a3eb47148a57ac8a7d11b88659079b4dc45",
+  "target_concept_op": "concept:index",
+  "target_op_cid": "blake3-512:2fbafb6e146d01cb5295bf4eb032f2707b85db318da3691339f0866d91c3d0359bc481f060556a97225ffdf74c9323f6f1e7ab762b355eff882d017e5992752e"
+}

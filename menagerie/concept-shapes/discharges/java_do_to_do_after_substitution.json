@@ -1,41 +1,30 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:do",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    }
+  ],
   "formals": [
     "body",
     "cond"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Bool",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "do",
     "arity": [
       "Stmt",
       "Bool"
     ],
-    "result": "Stmt",
-    "wp": "do body while cond; opaque until invariant memento is supplied",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -46,9 +35,20 @@
           "name": "cond"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "do",
+    "result": "Stmt",
+    "wp": "do body while cond; opaque until invariant memento is supplied"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

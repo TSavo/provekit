@@ -1,57 +1,57 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "validate-then-commit:rust:to-shape",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
   "formals": [
     "source_contract"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
-    }
+  "input_cids": [
+    "blake3-512:6fe082243005cf1b42dee0e38c8ec07d761fc60b8e7887abfe8e4002f2d4dfca655fd6f9d0fbaab172a75fea5d21beb7a1f03918611ec81481a70a6dc5e329cc",
+    "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae"
   ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "FunctionContractMemento",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "contract-renaming-morphism",
-    "source_contract_cid": "blake3-512:6fe082243005cf1b42dee0e38c8ec07d761fc60b8e7887abfe8e4002f2d4dfca655fd6f9d0fbaab172a75fea5d21beb7a1f03918611ec81481a70a6dc5e329cc",
-    "target_shape_cid": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae",
-    "renaming_map": {
-      "item": "x",
-      "err_value": "err",
-      "committed": "committed_state",
-      "outcome": "ret",
-      "store": "state"
-    },
-    "representation_map": {
-      "Item": "Candidate",
-      "CommitOutcome": "Outcome"
-    },
-    "operator_map": {
-      "rust_valid_item": "valid",
-      "rust_commit_applied": "commit_applied"
-    },
-    "literal_map": {},
     "homomorphism_obligation": {
       "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
       "source": "blake3-512:6fe082243005cf1b42dee0e38c8ec07d761fc60b8e7887abfe8e4002f2d4dfca655fd6f9d0fbaab172a75fea5d21beb7a1f03918611ec81481a70a6dc5e329cc",
       "target": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae"
-    }
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {
+      "rust_commit_applied": "commit_applied",
+      "rust_valid_item": "valid"
+    },
+    "renaming_map": {
+      "committed": "committed_state",
+      "err_value": "err",
+      "item": "x",
+      "outcome": "ret",
+      "store": "state"
+    },
+    "representation_map": {
+      "CommitOutcome": "Outcome",
+      "Item": "Candidate"
+    },
+    "source_contract_cid": "blake3-512:6fe082243005cf1b42dee0e38c8ec07d761fc60b8e7887abfe8e4002f2d4dfca655fd6f9d0fbaab172a75fea5d21beb7a1f03918611ec81481a70a6dc5e329cc",
+    "target_shape_cid": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "input_cids": [
-    "blake3-512:6fe082243005cf1b42dee0e38c8ec07d761fc60b8e7887abfe8e4002f2d4dfca655fd6f9d0fbaab172a75fea5d21beb7a1f03918611ec81481a70a6dc5e329cc",
-    "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae"
-  ]
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
 }

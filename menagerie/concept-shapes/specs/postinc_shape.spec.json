@@ -1,29 +1,25 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemWrite"
+      }
+    ]
+  },
   "fn_name": "concept:postinc",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "LValue"
+    }
+  ],
   "formals": [
     "target"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "LValue",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Expr",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "postinc",
     "arity": [
       "LValue"
     ],
@@ -35,15 +31,19 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "postinc",
     "result": "Expr",
     "wp": "postfix increment expression yielding the previous value"
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "effect-signature",
-        "name": "MemWrite"
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Expr"
   }
 }

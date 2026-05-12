@@ -1,0 +1,96 @@
+{
+  "fn_name": "gap:php:le:to:concept:le",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "le",
+        "result": "Value",
+        "wp": "PHP <= operator"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "le",
+        "result": "Bool",
+        "wp": "integer less-than-or-equal comparison"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "php",
+  "source_op_cid": "blake3-512:24df5fce5edf59898118b93f69ab1379a28eb1f111a00857aa1a9be9b0be413c228b0a4934faeec7401b3a776133b9859774981122ad41f3f2204f7ff2ba8547",
+  "target_concept_op": "concept:le",
+  "target_op_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1"
+}

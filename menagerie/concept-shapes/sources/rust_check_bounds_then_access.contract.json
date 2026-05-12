@@ -1,12 +1,29 @@
 {
-  "kind": "function-contract",
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "guard": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "pos"
+            },
+            {
+              "kind": "var",
+              "name": "length"
+            }
+          ],
+          "kind": "ctor",
+          "name": "usize_lt"
+        },
+        "index": "pos",
+        "kind": "MemRead",
+        "target": "slice"
+      }
+    ]
+  },
   "fn_name": "rust:check_bounds_then_access",
-  "formals": [
-    "slice",
-    "pos",
-    "length",
-    "fallback"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -25,33 +42,25 @@
       "name": "Elem"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "Elem"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "formals": [
+    "slice",
+    "pos",
+    "length",
+    "fallback"
+  ],
+  "kind": "function-contract",
   "post": {
     "kind": "and",
     "operands": [
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
             "kind": "var",
             "name": "retv"
           },
           {
-            "kind": "ctor",
-            "name": "ite",
             "args": [
               {
-                "kind": "ctor",
-                "name": "usize_lt",
                 "args": [
                   {
                     "kind": "var",
@@ -61,11 +70,11 @@
                     "kind": "var",
                     "name": "length"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "usize_lt"
               },
               {
-                "kind": "ctor",
-                "name": "slice_get",
                 "args": [
                   {
                     "kind": "var",
@@ -75,22 +84,26 @@
                     "kind": "var",
                     "name": "pos"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "slice_get"
               },
               {
                 "kind": "var",
                 "name": "fallback"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "ite"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
         "kind": "implies",
         "operands": [
           {
-            "kind": "atomic",
-            "name": "usize_lt",
             "args": [
               {
                 "kind": "var",
@@ -100,11 +113,11 @@
                 "kind": "var",
                 "name": "length"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "usize_lt"
           },
           {
-            "kind": "atomic",
-            "name": "slice_accessible",
             "args": [
               {
                 "kind": "var",
@@ -114,34 +127,21 @@
                 "kind": "var",
                 "name": "pos"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "slice_accessible"
           }
         ]
       }
     ]
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "MemRead",
-        "target": "slice",
-        "index": "pos",
-        "guard": {
-          "kind": "ctor",
-          "name": "usize_lt",
-          "args": [
-            {
-              "kind": "var",
-              "name": "pos"
-            },
-            {
-              "kind": "var",
-              "name": "length"
-            }
-          ]
-        }
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "auto_minted_mementos": []
+  "return_sort": {
+    "kind": "primitive",
+    "name": "Elem"
+  }
 }

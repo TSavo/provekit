@@ -1,0 +1,129 @@
+{
+  "fn_name": "gap:php:ite:to:concept:ite",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union branch value effects"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "evaluation": "unevaluated",
+              "name": "then_expr"
+            },
+            {
+              "evaluation": "unevaluated",
+              "name": "else_expr"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ite",
+        "result": "Value",
+        "wp": "PHP ternary expression"
+      },
+      "want": {
+        "arity": [
+          "Bool",
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "name": "then_expr"
+            },
+            {
+              "name": "else_expr"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ite",
+        "result": "Expr",
+        "wp": "ternary expression selected by cond"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "php",
+  "source_op_cid": "blake3-512:e3d0ab08cbb8994dc677c1334eb83cfc7134140d2332c56d06afa740f318cfbf2656d9117241f410c012e8e9bc2f2673790430571f4a5ecdd21a08f6aa7fef49",
+  "target_concept_op": "concept:ite",
+  "target_op_cid": "blake3-512:7fc1f25b05c8459e5d5af900c8369ced389d1994185b94216a8dfba3499875714746d684595a27923ae59258bc87d641b4c378b2debf2addc926c26bab5e075c"
+}

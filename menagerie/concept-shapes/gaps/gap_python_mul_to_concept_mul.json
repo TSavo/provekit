@@ -1,0 +1,140 @@
+{
+  "fn_name": "gap:python:mul:to:concept:mul",
+  "gap_kind": "polymorphic-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Trap"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "mul",
+        "result": "Value",
+        "wp": "Python mul expression"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "mul",
+        "result": "Int",
+        "wp": "mathematical integer multiplication when no overflow holds"
+      }
+    },
+    "pre_delta": {
+      "got": {
+        "args": [],
+        "kind": "atomic",
+        "name": "true"
+      },
+      "want": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "lhs"
+              },
+              {
+                "kind": "var",
+                "name": "rhs"
+              }
+            ],
+            "kind": "op",
+            "name": "mul"
+          }
+        ],
+        "kind": "atomic",
+        "name": "no_signed_overflow"
+      }
+    }
+  },
+  "reason_note": "python:mul is polymorphic (int * str repeats, etc.); concept:mul is integer-only",
+  "resolution_options": [
+    {
+      "option_kind": "partial-morphism",
+      "status": "recommended",
+      "tradeoff": "requires the lift to establish operands_statically_int at every use-site; dynamic languages rarely carry enough static sort info"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for the polymorphic case; gap is permanent unless the hub op is split or the lift learns sort-resolution"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:8b23fdf31eff2f18042f7c426b632c5c3a439924c41e55cc31bc649a52569421cd9fd1f1b09dc162acd09efdbd7cf96e1209d710790fe21eb8b46c203c5d42c5",
+  "target_concept_op": "concept:mul",
+  "target_op_cid": "blake3-512:9c77e353a537b0cd2e67cc880bbf1e2937c1e2f26c0af2b8be1a2741f3521d9be07cd2ab2886d54c425e6fed3dd161636a5f430bf2e8874ec1ddac6326ac3d7f"
+}

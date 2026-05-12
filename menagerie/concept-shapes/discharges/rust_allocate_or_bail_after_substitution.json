@@ -1,14 +1,25 @@
 {
-  "schema_version": "1",
-  "protocol": "AMP",
-  "kind": "AlgorithmMemento",
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "failure_condition": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "n"
+            }
+          ],
+          "kind": "ctor",
+          "name": "alloc_failed"
+        },
+        "kind": "Alloc",
+        "result": "p",
+        "size": "n"
+      }
+    ]
+  },
   "fn_name": "shape:allocate-or-bail",
-  "formals": [
-    "n",
-    "err",
-    "continuation_value",
-    "p"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -27,39 +38,33 @@
       "name": "Buffer"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "ReturnValue"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "formals": [
+    "n",
+    "err",
+    "continuation_value",
+    "p"
+  ],
+  "kind": "AlgorithmMemento",
   "post": {
     "kind": "and",
     "operands": [
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
             "kind": "var",
             "name": "ret"
           },
           {
-            "kind": "ctor",
-            "name": "ite",
             "args": [
               {
-                "kind": "ctor",
-                "name": "alloc_failed",
                 "args": [
                   {
                     "kind": "var",
                     "name": "n"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "alloc_failed"
               },
               {
                 "kind": "var",
@@ -69,26 +74,28 @@
                 "kind": "var",
                 "name": "continuation_value"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "ite"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
         "kind": "implies",
         "operands": [
           {
-            "kind": "atomic",
-            "name": "alloc_failed",
             "args": [
               {
                 "kind": "var",
                 "name": "n"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "alloc_failed"
           },
           {
-            "kind": "atomic",
-            "name": "=",
             "args": [
               {
                 "kind": "var",
@@ -96,13 +103,15 @@
               },
               {
                 "kind": "const",
-                "value": "null",
                 "sort": {
                   "kind": "primitive",
                   "name": "Buffer"
-                }
+                },
+                "value": "null"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "="
           }
         ]
       },
@@ -113,20 +122,18 @@
             "kind": "not",
             "operands": [
               {
-                "kind": "atomic",
-                "name": "alloc_failed",
                 "args": [
                   {
                     "kind": "var",
                     "name": "n"
                   }
-                ]
+                ],
+                "kind": "atomic",
+                "name": "alloc_failed"
               }
             ]
           },
           {
-            "kind": "atomic",
-            "name": "valid_buffer",
             "args": [
               {
                 "kind": "var",
@@ -136,30 +143,23 @@
                 "kind": "var",
                 "name": "n"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "valid_buffer"
           }
         ]
       }
     ]
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "Alloc",
-        "result": "p",
-        "size": "n",
-        "failure_condition": {
-          "kind": "ctor",
-          "name": "alloc_failed",
-          "args": [
-            {
-              "kind": "var",
-              "name": "n"
-            }
-          ]
-        }
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "auto_minted_mementos": []
+  "protocol": "AMP",
+  "return_sort": {
+    "kind": "primitive",
+    "name": "ReturnValue"
+  },
+  "schema_version": "1"
 }

@@ -1,46 +1,58 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "union(then_branch.effects, else_branch.effects)"
+      }
+    ]
+  },
   "fn_name": "concept:conditional",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
   "formals": [
     "cond",
     "then_branch",
     "else_branch"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Bool",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "conditional",
     "arity": [
       "Bool",
       "Stmt",
       "Stmt"
     ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_branch"
+        },
+        {
+          "name": "else_branch"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "conditional",
     "result": "Stmt",
     "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)",
     "wp_rule": {
@@ -54,14 +66,14 @@
               "name": "cond"
             },
             {
-              "kind": "apply",
-              "fn": "wp_then_branch",
               "args": [
                 {
                   "kind": "var",
                   "name": "Q"
                 }
-              ]
+              ],
+              "fn": "wp_then_branch",
+              "kind": "apply"
             }
           ]
         },
@@ -78,40 +90,28 @@
               ]
             },
             {
-              "kind": "apply",
-              "fn": "wp_else_branch",
               "args": [
                 {
                   "kind": "var",
                   "name": "Q"
                 }
-              ]
+              ],
+              "fn": "wp_else_branch",
+              "kind": "apply"
             }
           ]
         }
       ]
-    },
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "cond"
-        },
-        {
-          "name": "then_branch"
-        },
-        {
-          "name": "else_branch"
-        }
-      ]
     }
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "effect-polymorphic",
-        "rule": "union(then_branch.effects, else_branch.effects)"
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

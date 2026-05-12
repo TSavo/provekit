@@ -19,35 +19,33 @@
       }
     ],
     "pre": {
-      "kind": "atomic",
-      "name": ">=",
       "args": [
         {
-          "kind": "ctor",
-          "name": "refcount_before",
           "args": [
             {
               "kind": "var",
               "name": "o"
             }
-          ]
+          ],
+          "kind": "ctor",
+          "name": "refcount_before"
         },
         {
           "kind": "const",
-          "value": 0,
           "sort": {
             "kind": "primitive",
             "name": "Int"
-          }
+          },
+          "value": 0
         }
-      ]
+      ],
+      "kind": "atomic",
+      "name": ">="
     },
     "post": {
       "kind": "and",
       "operands": [
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
               "kind": "var",
@@ -57,80 +55,82 @@
               "kind": "var",
               "name": "use_ret"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
-              "kind": "ctor",
-              "name": "refcount_after",
               "args": [
                 {
                   "kind": "var",
                   "name": "o"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "refcount_after"
             },
             {
-              "kind": "ctor",
-              "name": "refcount_before",
               "args": [
                 {
                   "kind": "var",
                   "name": "o"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "refcount_before"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
-          "kind": "atomic",
-          "name": "balanced_refcount_pair",
           "args": [
             {
               "kind": "var",
               "name": "o"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "balanced_refcount_pair"
         },
         {
           "kind": "implies",
           "operands": [
             {
-              "kind": "atomic",
-              "name": ">",
               "args": [
                 {
-                  "kind": "ctor",
-                  "name": "refcount_after_inc",
                   "args": [
                     {
                       "kind": "var",
                       "name": "o"
                     }
-                  ]
+                  ],
+                  "kind": "ctor",
+                  "name": "refcount_after_inc"
                 },
                 {
                   "kind": "const",
-                  "value": 0,
                   "sort": {
                     "kind": "primitive",
                     "name": "Int"
-                  }
+                  },
+                  "value": 0
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": ">"
             },
             {
-              "kind": "atomic",
-              "name": "use_guarded",
               "args": [
                 {
                   "kind": "var",
                   "name": "o"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "use_guarded"
             }
           ]
         }
@@ -143,32 +143,32 @@
           "object": "o"
         },
         {
-          "kind": "Use",
-          "object": "o",
           "guard": {
-            "kind": "ctor",
-            "name": ">",
             "args": [
               {
-                "kind": "ctor",
-                "name": "refcount_after_inc",
                 "args": [
                   {
                     "kind": "var",
                     "name": "o"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "refcount_after_inc"
               },
               {
                 "kind": "const",
-                "value": 0,
                 "sort": {
                   "kind": "primitive",
                   "name": "Int"
-                }
+                },
+                "value": 0
               }
-            ]
-          }
+            ],
+            "kind": "ctor",
+            "name": ">"
+          },
+          "kind": "Use",
+          "object": "o"
         },
         {
           "kind": "RefDec",

@@ -1,55 +1,44 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:for",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
   "formals": [
     "init",
     "cond",
     "step",
     "body"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Bool",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "for",
     "arity": [
       "Stmt",
       "Bool",
       "Stmt",
       "Stmt"
     ],
-    "result": "Stmt",
-    "wp": "wp(init, while(cond, seq(body, step))) subject to loop invariant",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -66,9 +55,20 @@
           "name": "body"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "for",
+    "result": "Stmt",
+    "wp": "wp(init, while(cond, seq(body, step))) subject to loop invariant"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

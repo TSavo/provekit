@@ -1,0 +1,54 @@
+{
+  "fn_name": "gap:rust:not:to:concept:not",
+  "gap_kind": "arity-shape-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Bool"
+        ],
+        "kind": "operation-contract",
+        "operator": "not",
+        "result": "Bool",
+        "wp": "boolean negation"
+      },
+      "want": {
+        "arity": [
+          "Bool"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "not",
+        "result": "Bool",
+        "wp": "boolean negation"
+      }
+    }
+  },
+  "reason_note": "arity_shape or slot policy mismatch: got `null` want `{\"kind\":\"named\",\"slots\":[{\"name\":\"value\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "re-spec-target-op",
+      "status": "recommended",
+      "tradeoff": "the hub op's arity_shape does not match; re-spec the hub op or the language spec"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for mismatched arity shapes"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:b1918406c64c20d960881b79daadd495f6e7f6900f0f72c884bfb1acc886b8ca3c096e91c3e30ed911fd995e71549f8484458b6aa7d3182c329d6df5075dff79",
+  "target_concept_op": "concept:not",
+  "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+}

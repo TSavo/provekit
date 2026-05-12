@@ -1,0 +1,96 @@
+{
+  "fn_name": "gap:php:bitxor:to:concept:bitxor",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "bitxor",
+        "result": "Value",
+        "wp": "PHP ^ operator"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "bitxor",
+        "result": "Int",
+        "wp": "integer bitwise xor expression"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "php",
+  "source_op_cid": "blake3-512:843e25b7a5d849fc0755cacd72b5f7a7e55e369c9e1c639cb3a1016adbdd8ce868eb9fee73f2b4e4eb557382f6da51c35d67743a535fa84487da2ce99209b5db",
+  "target_concept_op": "concept:bitxor",
+  "target_op_cid": "blake3-512:5f899196e7889f14cbe25ea373dd776a161f9c9f00502ca94782b5253ae2cd3d4af1785cf7364e62b4204157f38088be0671691a1b5ab84e2de348f9fca14506"
+}

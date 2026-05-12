@@ -169,5 +169,63 @@ class WriteJsonCanonicalTests(unittest.TestCase):
             tmp_path.unlink(missing_ok=True)
 
 
+class SiblingWriteJsonDelegationTests(unittest.TestCase):
+    """Regression: sibling mint scripts must delegate write_json to discharge.write_json.
+
+    Issue 1 from the Opus round-2 review: mint_pair/option/result/tagged_union each had a
+    local write_json that called json.dump WITHOUT sort_keys=True.  Fix: each now imports
+    discharge as _discharge and delegates.  This test verifies the behaviour is byte-identical
+    to discharge.write_json (sorted keys, indent=2, ensure_ascii=True, trailing newline).
+    """
+
+    SIBLING_MODULES = [
+        "mint_pair",
+        "mint_option",
+        "mint_result",
+        "mint_tagged_union",
+    ]
+
+    def _import_sibling(self, name):
+        import importlib
+        scripts_dir = str(Path(__file__).resolve().parent)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        return importlib.import_module(name)
+
+    def _run_write_json_test(self, module_name):
+        import json
+        import tempfile
+
+        mod = self._import_sibling(module_name)
+        obj = {"z_key": 1, "a_key": 2, "m_key": 3}
+        with tempfile.NamedTemporaryFile(mode="r", suffix=".json", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            mod.write_json(tmp_path, obj)
+            on_disk = tmp_path.read_text(encoding="utf-8")
+            parsed = json.loads(on_disk)
+            canonical = json.dumps(parsed, sort_keys=True, indent=2, ensure_ascii=True) + "\n"
+            self.assertEqual(
+                on_disk,
+                canonical,
+                f"{module_name}.write_json must produce sort_keys=True output; "
+                f"got:\n{on_disk!r}\nwant:\n{canonical!r}",
+            )
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def test_mint_pair_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_pair")
+
+    def test_mint_option_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_option")
+
+    def test_mint_result_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_result")
+
+    def test_mint_tagged_union_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_tagged_union")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,76 @@
+{
+  "fn_name": "gap:rust:div:to:concept:div",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "div",
+        "result": "Int",
+        "wp": "integer division, divisor zero panics"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "div",
+        "result": "Int",
+        "wp": "integer division expression"
+      }
+    },
+    "pre_delta": {
+      "got": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ],
+        "kind": "atomic",
+        "name": "nonzero"
+      },
+      "want": {
+        "args": [],
+        "kind": "atomic",
+        "name": "true"
+      }
+    }
+  },
+  "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"nonzero\",\"args\":[{\"kind\":\"var\",\"name\":\"rhs\"}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:d7403da8d2a8921b71170b5fc34c12022118d0c545f25c7ff89fe77bbed02419e3528479ded0e746535ee92d0e1801bce46608c15c3d6d2a5567bec811cbc75a",
+  "target_concept_op": "concept:div",
+  "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+}

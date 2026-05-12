@@ -1,0 +1,59 @@
+{
+  "fn_name": "gap:csharp:bitand:to:concept:bitand",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "bitand",
+        "result": "Int",
+        "wp": "lhs & rhs (bitwise AND)"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "bitand",
+        "result": "Int",
+        "wp": "integer bitwise and expression"
+      }
+    }
+  },
+  "reason_note": "wp mismatch: got `\"lhs & rhs (bitwise AND)\"` want `\"integer bitwise and expression\"`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:fc4dff723905f71b925b81b6fa3e60fd5085ce59d8071d9f2648c459dc46d17eb10065649a8c71b55ef9d2314cb7d87aa0f1b7b636c223b37fed4dab034e08a7",
+  "target_concept_op": "concept:bitand",
+  "target_op_cid": "blake3-512:a83de04ab992aad5eb9e1a1bb2b6706576e42d243464ad6d5aeb3a06283c6498d2325cdb3beeecae9fe1e82b684abc4c118092f6a9129281aeca5246433f4a6a"
+}

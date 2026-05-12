@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:python:bitnot:to:concept:bitnot",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "operation not in supported set for this language",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:gap-no-source-cid-python-bitnot",
+  "target_concept_op": "concept:bitnot",
+  "target_op_cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431"
+}
