@@ -355,6 +355,17 @@ pub struct FunctionContractMemento {
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
     pub auto_minted_mementos: Vec<AliasingMemento>,
+    /// Human-supplied concept name extracted from a `// concept: <name>` (or
+    /// `/// concept: <name>`) annotation immediately preceding the function.
+    ///
+    /// - `None`  -- no annotation found
+    /// - `Some("UNNAMED-CONCEPT-N")` -- placeholder emitted by the substrate
+    /// - `Some("<real-name>")` -- human-supplied name ready for catalog binding
+    ///
+    /// METADATA ONLY: this field does NOT participate in `canonical_bytes`
+    /// or `cid` derivation.  The shape identity is stable regardless of
+    /// annotation changes.
+    pub concept_hint: Option<String>,
 }
 
 impl FunctionContractMemento {

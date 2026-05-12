@@ -358,6 +358,17 @@ pub struct ContractDecl {
     pub inv: Option<Rc<Formula>>,
     pub out_binding: String,
     pub evidence: Option<EvidenceTerm>,
+    /// Human-supplied concept name extracted from a `// concept: <name>` (or
+    /// `/// concept: <name>`) annotation immediately preceding the function.
+    ///
+    /// - `None`  -- no annotation found
+    /// - `Some("UNNAMED-CONCEPT-N")` -- placeholder emitted by the substrate
+    /// - `Some("<real-name>")` -- human-supplied name ready for catalog binding
+    ///
+    /// This field is METADATA ONLY.  It does NOT participate in the
+    /// canonical-bytes / CID derivation.  Changing the annotation never
+    /// rewrites the shape identity.
+    pub concept_hint: Option<String>,
 }
 
 thread_local! {
@@ -384,6 +395,7 @@ pub fn contract<S: Into<String>>(name: S, args: ContractArgs) {
             inv: args.inv,
             out_binding: args.out_binding.unwrap_or_else(|| "out".into()),
             evidence: args.evidence,
+            concept_hint: None,
         });
     });
 }

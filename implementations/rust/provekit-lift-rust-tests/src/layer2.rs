@@ -423,6 +423,7 @@ fn classify_for_loop(
             inv: Some(quantified),
             out_binding: "out".into(),
             evidence: None,
+            concept_hint: None,
         });
         out.lifted += 1;
         out.bounded_loop_lifted += 1;
@@ -604,6 +605,7 @@ fn classify_helper_inlining(
             inv: Some(inlined),
             out_binding: "out".into(),
             evidence: None,
+            concept_hint: None,
         });
         out.lifted += 1;
         out.helper_inlined_lifted += 1;
@@ -775,6 +777,7 @@ fn classify_characterization(
             inv: Some(part.formula),
             out_binding: "out".into(),
             evidence: None,
+            concept_hint: None,
         });
         out.lifted += 1;
         out.characterization_lifted += 1;

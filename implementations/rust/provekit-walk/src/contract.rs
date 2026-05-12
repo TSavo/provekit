@@ -88,6 +88,7 @@ pub fn build_function_contract_with_file(
         canonical_bytes,
         cid,
         auto_minted_mementos: vec![],
+        concept_hint: None,
     }
 }
 
