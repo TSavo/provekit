@@ -1,0 +1,109 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:generic-instantiation->c11:macro-expansion",
+    "formals": [
+      "parametric_def",
+      "type_args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "GenericDef",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfType",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:generic-instantiation",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c11:macro-expansion",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:macro-expansion",
+            "args": [
+              {
+                "kind": "var",
+                "name": "parametric_def"
+              },
+              {
+                "kind": "var",
+                "name": "type_args"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "c_generic_macro_expansion_code_duplication_no_native_instantiation"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ],
+        "kind": "atomic",
+        "name": "type_args_must_be_c_types_known_at_preprocessing"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ],
+        "kind": "atomic",
+        "name": "textual_macro_expansion_ill_typed_expansions_ub"
+      }
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:aafa628899a375fce6c01d97bf55ae9fa5050c9e473fbc0734c94fc1f3b39c28c0df2b4393cb3d7f031012b065b4c533366229105ca7bfc58f842cf7567d5d85",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

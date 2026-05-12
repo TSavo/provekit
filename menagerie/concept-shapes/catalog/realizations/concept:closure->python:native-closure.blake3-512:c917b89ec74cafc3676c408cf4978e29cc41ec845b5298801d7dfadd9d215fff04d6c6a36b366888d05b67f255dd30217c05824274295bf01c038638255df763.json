@@ -1,0 +1,103 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:closure->python:native-closure",
+    "formals": [
+      "captured_env",
+      "params",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Env",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfName",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:closure",
+        "args": [
+          {
+            "kind": "var",
+            "name": "captured_env"
+          },
+          {
+            "kind": "var",
+            "name": "params"
+          },
+          {
+            "kind": "var",
+            "name": "body"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:lambda-or-def",
+        "args": [
+          {
+            "kind": "var",
+            "name": "params"
+          },
+          {
+            "kind": "var",
+            "name": "body"
+          },
+          {
+            "kind": "var",
+            "name": "captured_env"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:lambda-or-def",
+            "args": [
+              {
+                "kind": "var",
+                "name": "params"
+              },
+              {
+                "kind": "var",
+                "name": "body"
+              },
+              {
+                "kind": "var",
+                "name": "captured_env"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "python_lambda_or_def_is_identity_map"
+      }
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:c917b89ec74cafc3676c408cf4978e29cc41ec845b5298801d7dfadd9d215fff04d6c6a36b366888d05b67f255dd30217c05824274295bf01c038638255df763",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

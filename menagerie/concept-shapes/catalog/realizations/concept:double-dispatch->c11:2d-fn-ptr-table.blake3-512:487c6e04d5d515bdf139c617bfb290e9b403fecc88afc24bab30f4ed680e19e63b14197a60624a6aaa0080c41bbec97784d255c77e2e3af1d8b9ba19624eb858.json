@@ -1,0 +1,253 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:double-dispatch->c11:2d-fn-ptr-table",
+    "formals": [
+      "receiver",
+      "secondary",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:double-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:cast-fn-ptr",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:index",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "concept:index",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "dispatch_table_2d"
+                      },
+                      {
+                        "kind": "op",
+                        "name": "c11:type-tag",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "receiver"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "op",
+                    "name": "c11:type-tag",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "secondary"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "const",
+                "value": "void (*)(void*, void*, ...)",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "TypeExpr"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:cons",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "op",
+                "name": "concept:cons",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:index",
+            "args": [
+              {
+                "kind": "var",
+                "name": "dispatch_table_2d"
+              },
+              {
+                "kind": "op",
+                "name": "c11:type-tag",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:index",
+            "args": [
+              {
+                "kind": "var",
+                "name": "dispatch_table_2d"
+              },
+              {
+                "kind": "op",
+                "name": "c11:type-tag",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "c11:cast-fn-ptr",
+            "args": [
+              {
+                "kind": "var",
+                "name": "dispatch_table_2d"
+              },
+              {
+                "kind": "const",
+                "value": "void (*)(void*, void*, ...)",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "TypeExpr"
+                }
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "open_coded_2d_fn_ptr_table_replaces_double_dispatch"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "tag_spaces_closed_at_table_construction"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "out_of_range_type_tag_index_is_ub"
+      }
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "dispatch_table_2d_constructed",
+      "args": [
+        {
+          "kind": "var",
+          "name": "dispatch_table_2d"
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:487c6e04d5d515bdf139c617bfb290e9b403fecc88afc24bab30f4ed680e19e63b14197a60624a6aaa0080c41bbec97784d255c77e2e3af1d8b9ba19624eb858",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

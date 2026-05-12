@@ -1,0 +1,95 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:exception->python:try-except",
+    "formals": [
+      "try_body",
+      "handlers",
+      "throw_payload"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfHandler",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:exception",
+        "args": [
+          {
+            "kind": "var",
+            "name": "try_body"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          },
+          {
+            "kind": "var",
+            "name": "throw_payload"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:try-except",
+        "args": [
+          {
+            "kind": "var",
+            "name": "try_body"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:try-except",
+            "args": [
+              {
+                "kind": "var",
+                "name": "try_body"
+              },
+              {
+                "kind": "var",
+                "name": "handlers"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "python_try_except_is_identity_map"
+      }
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:76f8c10a3e6a51eacec08aa86c1e2a3a6c7280e5929849e12d18cd6053de4340609de9b4a80de4c92c9a5e1cb88ebdfda9df47ff16f2470c7ea9ead15607947d",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

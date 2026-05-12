@@ -1,0 +1,106 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:itab-method",
+  "formals": [
+    "itab_ptr",
+    "method_name",
+    "receiver",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "ITabPtr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Name",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "ListOfExpr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FnContract",
+    "args": []
+  },
+  "pre": {
+    "kind": "connective",
+    "op": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "valid_itab",
+        "args": [
+          {
+            "kind": "var",
+            "name": "itab_ptr"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "has_method",
+        "args": [
+          {
+            "kind": "var",
+            "name": "itab_ptr"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "itab-method",
+    "arity": [
+      "ITabPtr",
+      "Name",
+      "Expr",
+      "ListOf<Expr>"
+    ],
+    "result": "FnContract",
+    "wp_note": "the method at method_name in the JVM itable / Go interface itab; Java realization target for concept:dynamic-dispatch and concept:double-dispatch",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "itab_ptr"
+        },
+        {
+          "name": "method_name"
+        },
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "args",
+          "variadic": true
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
+  },
+  "locus": "protocol/specs/2026-05-15-concept-hub-abstraction-layer.md#s1.4"
+}

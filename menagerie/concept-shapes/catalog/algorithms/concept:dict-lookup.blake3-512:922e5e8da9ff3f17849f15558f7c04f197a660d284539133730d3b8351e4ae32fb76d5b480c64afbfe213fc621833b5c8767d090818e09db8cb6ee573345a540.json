@@ -1,0 +1,79 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:dict-lookup",
+    "formals": [
+      "dict",
+      "key"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Dict",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "defined",
+      "args": [
+        {
+          "kind": "var",
+          "name": "dict"
+        },
+        {
+          "kind": "var",
+          "name": "key"
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "dict-lookup",
+      "arity": [
+        "Dict",
+        "Name"
+      ],
+      "result": "Option<Value>",
+      "wp_note": "returns Some(v) where v is the value stored at key in dict; requires the key is present",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "dict"
+          },
+          {
+            "name": "key"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Read"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Option<Value>",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:922e5e8da9ff3f17849f15558f7c04f197a660d284539133730d3b8351e4ae32fb76d5b480c64afbfe213fc621833b5c8767d090818e09db8cb6ee573345a540",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

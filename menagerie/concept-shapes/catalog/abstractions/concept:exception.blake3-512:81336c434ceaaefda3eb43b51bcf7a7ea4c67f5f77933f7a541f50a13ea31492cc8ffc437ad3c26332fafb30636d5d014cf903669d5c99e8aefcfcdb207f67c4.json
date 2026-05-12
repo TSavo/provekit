@@ -1,0 +1,68 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:exception",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "try_body"
+      },
+      {
+        "name": "handlers"
+      },
+      {
+        "name": "throw_payload"
+      }
+    ],
+    "formal_sorts": [
+      "Stmt",
+      "ListOfHandler",
+      "Value"
+    ],
+    "result_sort": "Stmt",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "try_body",
+        "handlers",
+        "throw_payload"
+      ],
+      "body": {
+        "kind": "or",
+        "operands": [
+          {
+            "kind": "apply",
+            "fn": "wp_try_body",
+            "args": []
+          },
+          {
+            "kind": "atomic",
+            "name": "handler_matches",
+            "args": [
+              {
+                "kind": "var",
+                "name": "throw_payload"
+              },
+              {
+                "kind": "var",
+                "name": "handlers"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "contract_note": "throw(payload) inside try_body transfers control to the first handler matching type(payload); if no handler matches, propagates to the dynamically enclosing exception frame",
+    "realizations": [
+      "blake3-512:f26536e90aa4f648c5e85395cd42676afa46d854748176ede335e3494671a6dc327457c47a6e0d089878c71de938143d3692ffa17ad44921a121c6f1476b0443",
+      "blake3-512:a60d0ca74d7d3c9e0636c2c0dd538f3bb598f96c0060dae870d068969476c14e9882f81e54d2313ac260e7f74b1a1a4bc1a4d94288da3486a2b1a097f020f6e0",
+      "blake3-512:76f8c10a3e6a51eacec08aa86c1e2a3a6c7280e5929849e12d18cd6053de4340609de9b4a80de4c92c9a5e1cb88ebdfda9df47ff16f2470c7ea9ead15607947d"
+    ]
+  },
+  "cid": "blake3-512:81336c434ceaaefda3eb43b51bcf7a7ea4c67f5f77933f7a541f50a13ea31492cc8ffc437ad3c26332fafb30636d5d014cf903669d5c99e8aefcfcdb207f67c4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:iterator",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "collection"
+      },
+      {
+        "name": "state"
+      }
+    ],
+    "formal_sorts": [
+      "Collection",
+      "IterState"
+    ],
+    "result_sort": "Iterator",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "collection",
+        "state"
+      ],
+      "body": {
+        "kind": "connective",
+        "op": "and",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "yields_each_once",
+            "args": [
+              {
+                "kind": "var",
+                "name": "collection"
+              },
+              {
+                "kind": "var",
+                "name": "state"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "preserves_order",
+            "args": [
+              {
+                "kind": "var",
+                "name": "collection"
+              },
+              {
+                "kind": "var",
+                "name": "state"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "contract_note": "the iterator yields each element of collection exactly once via next() calls, in collection order; no element is observed out of order or after exhaustion",
+    "realizations": [
+      "blake3-512:29f47a66d483fb7d62a9fb500d820f0326fd1ab943fc3b733af8b1070f79d60eac7d10d1b3b9367d8a209e42aec9c30507f2e72f920751be4d86a97fad686536",
+      "blake3-512:687f081096b2741f83b7ce06e4940779c94599873354f4306f5028066200cc33ff5274eccc661f23c9af670ee608b8b609c5849b6fde3a4a06861d0579f671e0",
+      "blake3-512:fc2f1a9fd664d934754d336d9c505394e0d2841b9f65cc271143d653d9c6c0f782996c5fe0b1ea62021b4396f406e83fe869e6706ff312c99bff601112e54bf8"
+    ]
+  },
+  "cid": "blake3-512:2e8117c5989abf4ac26a0221596144235bf834fc66e88219f0549690497d5f4edd6d1f90a1abe1f8fd6ab2ab4dd60cf510db080e115c6db8d666498b3735f95b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

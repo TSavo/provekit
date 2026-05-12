@@ -1,0 +1,74 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:closure",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "captured_env"
+      },
+      {
+        "name": "params"
+      },
+      {
+        "name": "body"
+      }
+    ],
+    "formal_sorts": [
+      "Env",
+      "ListOfName",
+      "Stmt"
+    ],
+    "result_sort": "FnContract",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "captured_env",
+        "params",
+        "body"
+      ],
+      "body": {
+        "kind": "apply",
+        "fn": "wp_body",
+        "args": [
+          {
+            "kind": "op",
+            "name": "extend_env",
+            "args": [
+              {
+                "kind": "var",
+                "name": "captured_env"
+              },
+              {
+                "kind": "op",
+                "name": "bind_params",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "params"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "call_args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "contract_note": "applying the closure to call_args equals evaluating body in an environment that extends captured_env with params bound to call_args",
+    "realizations": [
+      "blake3-512:e2b76987c5ebbe1ca340bccd6f261ccac1569396e3c609748118fce34b68b36c5d30da38ab60a87baa68c5bd703d961dba3291208cc1fb45491962b566c8771e",
+      "blake3-512:d9c0359ab18d4969d3057e62afc0d3cce7bda7401712f5ca8d04e1be6127cc9ce3189350a1f02e62a61621cf1e21a1eea2c2809ede326fbbbf727b5dfdb80228",
+      "blake3-512:c917b89ec74cafc3676c408cf4978e29cc41ec845b5298801d7dfadd9d215fff04d6c6a36b366888d05b67f255dd30217c05824274295bf01c038638255df763"
+    ]
+  },
+  "cid": "blake3-512:fbf7616076af1d062f9b2e395d8c489cf04e63fbf8a581c6c58d0ea53a4fd16a7ea8c77132743660565e4c5e67b8e1a2514627a709cf8707b0daad7856156bc0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
