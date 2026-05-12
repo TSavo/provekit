@@ -869,3 +869,149 @@ pub struct LossyMorphismMemento {
 // ============================================================
 // End manual extension block -- transport gap mementos (issue #66)
 // ============================================================
+
+// ============================================================
+// MANUAL EXTENSION BLOCK -- concept-site layer (PR-A of multi-PR landing)
+// Source of truth:
+//   protocol/specs/2026-05-12-concept-site-memento.md §1
+//   protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.4 (loss-record)
+//
+// This block adds the ConceptSiteMemento substrate primitive: the
+// content-addressed binding between a user code-site and a catalog concept,
+// carrying a verdict in the trichotomy {exact, loudly-bounded-lossy, refuse}
+// and a per-dimension loss_record characterizing any non-empty loss.
+//
+// Per JCS canonicalization (2026-04-30-canonicalization-grammar.md), serde
+// field order MUST equal the locked alphabetical order from the spec §3.1
+// inside each object. Optional fields are omitted from the serialized JSON
+// when None.
+//
+// The CID-determining bytes for a ConceptSiteMemento are JCS(header) with
+// `cid` elided; that JCS encoding lives in provekit-claim-envelope
+// (provekit-ir-types has no JCS encoder). Byte-pin tests for the CID
+// belong in that crate; this crate carries serde round-trip tests only.
+// ============================================================
+
+/// The byte span inside a canonical source artifact identifying the code-site.
+///
+/// Locked JCS key order: end, start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeSiteSpan {
+    pub end: u64,
+    pub start: u64,
+}
+
+/// A user code-site: which function it lives in, which source it lives in,
+/// and where inside that source.
+///
+/// Source of truth: 2026-05-12-concept-site-memento.md §1 `code-site`.
+///
+/// Locked JCS key order: function_term_cid, source_cid, span.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeSite {
+    #[serde(rename = "function_term_cid")]
+    pub function_term_cid: String,
+    #[serde(rename = "source_cid")]
+    pub source_cid: String,
+    pub span: CodeSiteSpan,
+}
+
+/// A pointer to a `WitnessMemento` with a per-site confidence interval.
+///
+/// `ci_basis_points` is an integer in [0, 10000]; 9500 means 95.00%
+/// confidence at this site under the recorded witness policy. Witness
+/// propagation per the spec §0.3: tests attached to ONE site become
+/// witnesses at the concept level and propagate by reference through
+/// `concept_cid` to every binding citing the concept.
+///
+/// Locked JCS key order: ci_basis_points, witness_cid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WitnessRef {
+    #[serde(rename = "ci_basis_points")]
+    pub ci_basis_points: u16,
+    #[serde(rename = "witness_cid")]
+    pub witness_cid: String,
+}
+
+/// The discharge verdict for a binding. Exactly one of three.
+///
+/// Per the spec §2 trichotomy and §1.2 verdict-consistency table.
+/// Silent contract-dropping is NOT in the substrate's vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Discharge {
+    /// The discharge method: "wp" | "witness" | "wp+witness".
+    pub method: String,
+    /// Required iff verdict == "refuse"; OMITTED otherwise.
+    #[serde(rename = "refusal_reason")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal_reason: Option<String>,
+    /// "exact" | "loudly-bounded-lossy" | "refuse".
+    pub verdict: String,
+    /// CID of a MorphismDischargeReceipt. OMITTED iff verdict == "refuse".
+    #[serde(rename = "discharge_receipt_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discharge_receipt_cid: Option<String>,
+    /// Per the 2026-05-15 §2.4 five-dimension loss-record. An empty map
+    /// is valid (means "no loss in any dimension"; required for `exact`).
+    #[serde(rename = "loss_record")]
+    pub loss_record: LossRecord,
+}
+
+/// The three producer CIDs for a `ConceptSiteMemento`.
+///
+/// Locked JCS key order: clusterer_cid, discharger_cid, lifter_cid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConceptSiteProvenance {
+    #[serde(rename = "clusterer_cid")]
+    pub clusterer_cid: String,
+    #[serde(rename = "discharger_cid")]
+    pub discharger_cid: String,
+    #[serde(rename = "lifter_cid")]
+    pub lifter_cid: String,
+}
+
+/// The content-addressed binding between a user code-site and a catalog
+/// concept, carrying a discharge verdict in the trichotomy.
+///
+/// Source of truth: protocol/specs/2026-05-12-concept-site-memento.md §1
+///
+/// Locked JCS key order (header fields, alphabetical):
+///   cid, code_site, concept_cid, discharge, kind, local_contract_cid,
+///   provenance, realization_mode_hint (omitted when absent),
+///   schemaVersion, witnesses.
+///
+/// This struct represents the `header` layer per
+/// 2026-05-03-substrate-layers-envelope-header-body.md; envelope + metadata
+/// layers are carried by the wrapping envelope structures defined in
+/// provekit-claim-envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConceptSiteMemento {
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    #[serde(rename = "code_site")]
+    pub code_site: CodeSite,
+    /// The `ConceptAbstractionMemento.cid` this site binds to.
+    #[serde(rename = "concept_cid")]
+    pub concept_cid: String,
+    pub discharge: Discharge,
+    /// MUST be "concept-site".
+    pub kind: String,
+    /// The `FunctionContractMemento.cid` for the user-lifted contract.
+    #[serde(rename = "local_contract_cid")]
+    pub local_contract_cid: String,
+    pub provenance: ConceptSiteProvenance,
+    /// Non-normative deployment-policy hint: "witness" | "emitter" | "monitor".
+    /// OMITTED when the discharger does not opinion.
+    #[serde(rename = "realization_mode_hint")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub realization_mode_hint: Option<String>,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    /// Per-site witness samples with confidence intervals. MAY be empty.
+    pub witnesses: Vec<WitnessRef>,
+}
+
+// ============================================================
+// End manual extension block -- concept-site layer (PR-A)
+// ============================================================
