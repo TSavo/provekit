@@ -1,34 +1,23 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:addr",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "LValue"
+    }
+  ],
   "formals": [
     "target"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "LValue",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Ptr",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "addr",
     "arity": [
       "LValue"
     ],
-    "result": "Ptr",
-    "wp": "address-of &target",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -36,9 +25,20 @@
           "name": "target"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "addr",
+    "result": "Ptr",
+    "wp": "address-of &target"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Ptr"
   }
 }

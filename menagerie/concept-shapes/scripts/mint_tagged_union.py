@@ -22,6 +22,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import discharge as _discharge
+
 BASE = Path(__file__).resolve().parents[1]
 CATALOG_REAL = BASE / "catalog"
 ABST_DIR = CATALOG_REAL / "abstractions"
@@ -76,10 +79,7 @@ def compute_cid(memento):
 
 
 def write_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(value, f, indent=2, ensure_ascii=True)
-        f.write("\n")
+    _discharge.write_json(path, value)
 
 
 def catalog_entry(memento):

@@ -10,30 +10,26 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "FnContract",
-        "args": []
+        "name": "FnContract"
       },
       {
+        "args": [],
         "kind": "ctor",
-        "name": "ListOfExpr",
-        "args": []
+        "name": "ListOfExpr"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "call",
       "arity": [
         "FnContract",
         "ListOf<Expr>"
       ],
-      "result": "Stmt",
-      "wp": "callee pre under bound args implies callee post under caller state",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -47,7 +43,11 @@
             }
           }
         ]
-      }
+      },
+      "kind": "operation-contract",
+      "operator": "call",
+      "result": "Stmt",
+      "wp": "callee pre under bound args implies callee post under caller state"
     },
     "effects": {
       "effects": [
@@ -71,9 +71,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Stmt",
-      "args": []
+      "name": "Stmt"
     }
   },
   "cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c",

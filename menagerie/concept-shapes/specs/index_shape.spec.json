@@ -1,53 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:index",
-  "formals": [
-    "base",
-    "index"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "LValue",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "index",
-    "arity": [
-      "Expr",
-      "Expr"
-    ],
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "base"
-        },
-        {
-          "name": "index"
-        }
-      ]
-    },
-    "result": "LValue",
-    "wp": "array element lvalue projection"
-  },
   "effects": {
     "effects": [
       {
@@ -67,5 +18,54 @@
         "name": "MemRead"
       }
     ]
+  },
+  "fn_name": "concept:index",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    }
+  ],
+  "formals": [
+    "base",
+    "index"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "index"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "index",
+    "result": "LValue",
+    "wp": "array element lvalue projection"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "LValue"
   }
 }

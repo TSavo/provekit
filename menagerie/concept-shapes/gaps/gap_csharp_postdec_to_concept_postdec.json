@@ -1,0 +1,70 @@
+{
+  "fn_name": "gap:csharp:postdec:to:concept:postdec",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "LValue"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "postdec",
+        "result": "Int",
+        "wp": "target-- (read then decrement)"
+      },
+      "want": {
+        "arity": [
+          "LValue"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "postdec",
+        "result": "Expr",
+        "wp": "postfix decrement expression yielding the previous value"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:9493bc603a57d078f1edcb770a8da50c81446146e00bc00548ca53154dd18c272a43a49daf06b96705e5625703c12521c1a46d5c82113f93c6980aa0f8ecbedd",
+  "target_concept_op": "concept:postdec",
+  "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+}

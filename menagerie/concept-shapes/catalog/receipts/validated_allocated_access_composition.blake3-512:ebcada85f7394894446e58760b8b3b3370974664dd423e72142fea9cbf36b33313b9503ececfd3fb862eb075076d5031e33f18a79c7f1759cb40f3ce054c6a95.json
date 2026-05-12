@@ -1,80 +1,78 @@
 {
   "cid": "blake3-512:ebcada85f7394894446e58760b8b3b3370974664dd423e72142fea9cbf36b33313b9503ececfd3fb862eb075076d5031e33f18a79c7f1759cb40f3ce054c6a95",
   "memento": {
-    "schema_version": "1",
-    "kind": "ShapeCompositionReceipt",
-    "composed_shape_cid": "blake3-512:bbb9e01a79af15d27da8772bf27d822e161defe17672c37b793c2200ebe85e2452e8ab5595e8e825589d9f1cf27fed560c0dde8d43496598145ad3d9478e9152",
     "component_shape_cids": [
       "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c",
       "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f"
     ],
-    "rule": "ccp-conjoin",
+    "composed_shape_cid": "blake3-512:bbb9e01a79af15d27da8772bf27d822e161defe17672c37b793c2200ebe85e2452e8ab5595e8e825589d9f1cf27fed560c0dde8d43496598145ad3d9478e9152",
+    "discharged": true,
+    "kind": "ShapeCompositionReceipt",
     "libprovekit_compose_probe": {
-      "status": "composed",
-      "composed_cid": "blake3-512:46459256c7797f637370eee21ff1efdf4799b4ba72a0c3c63756c9f951ecfb54674d4ff5d118cef039d1c74d377a04e41c5b696a4a54bd9c1cc362455c83a351",
-      "body_jcs": "{\"components\":[\"blake3-512:30f4c0a7d8f12e3b8b1260bed142524f4bfc1796782163cd300ba69dc60d8e72fe98c7d0e5a8b4464333e622a1e13fc8486190b55fff20fab7995ea541ffc1ad\",\"blake3-512:43c1cf06472f02e6e46f87d7f0023f20a4a383a1eacd39c23f4697655480b10b5cace3d233e9690b91d6322d0afc7cc33f91f4ad37c6a54ad5d3ea7b50167d35\"],\"formalIdx\":0,\"kind\":\"composed-function-contract\",\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"args\":[{\"args\":[{\"kind\":\"var\",\"name\":\"n\"}],\"kind\":\"ctor\",\"name\":\"allocated_buffer\"},{\"kind\":\"var\",\"name\":\"i\"}],\"kind\":\"ctor\",\"name\":\"read\"}],\"kind\":\"atomic\",\"name\":\"=\"},\"pre\":{\"kind\":\"and\",\"operands\":[{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},{\"kind\":\"implies\",\"operands\":[{\"args\":[{\"kind\":\"var\",\"name\":\"result__ea7b50167d35\"},{\"args\":[{\"kind\":\"var\",\"name\":\"n\"}],\"kind\":\"ctor\",\"name\":\"allocated_buffer\"}],\"kind\":\"atomic\",\"name\":\"=\"},{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"}]}]},\"schemaVersion\":\"1\"}",
       "atoms": [
         {
+          "auto_minted_mementos": [],
+          "body_cid": null,
+          "effects": {
+            "effects": []
+          },
           "fn_name": "shape:allocate-or-bail:pure-projection",
-          "formals": [
-            "n"
-          ],
+          "formal_idx": 0,
+          "formal_regions": [],
           "formal_sorts": [
             {
               "kind": "primitive",
               "name": "Size"
             }
           ],
-          "formal_regions": [],
-          "return_sort": {
-            "kind": "primitive",
-            "name": "Buffer"
-          },
-          "return_region": null,
-          "pre": {
-            "kind": "atomic",
-            "name": "true",
-            "args": []
+          "formals": [
+            "n"
+          ],
+          "locus": {
+            "col": 0,
+            "file": null,
+            "line": 0
           },
           "post": {
-            "kind": "atomic",
-            "name": "=",
             "args": [
               {
                 "kind": "var",
                 "name": "result"
               },
               {
-                "kind": "ctor",
-                "name": "allocated_buffer",
                 "args": [
                   {
                     "kind": "var",
                     "name": "n"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "allocated_buffer"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "="
           },
+          "pre": {
+            "args": [],
+            "kind": "atomic",
+            "name": "true"
+          },
+          "return_region": null,
+          "return_sort": {
+            "kind": "primitive",
+            "name": "Buffer"
+          }
+        },
+        {
+          "auto_minted_mementos": [],
           "body_cid": null,
           "effects": {
             "effects": []
           },
-          "locus": {
-            "file": null,
-            "line": 0,
-            "col": 0
-          },
-          "auto_minted_mementos": [],
-          "formal_idx": 0
-        },
-        {
           "fn_name": "shape:check-bounds-then-access:pure-projection",
-          "formals": [
-            "p",
-            "i",
-            "len"
-          ],
+          "formal_idx": 0,
+          "formal_regions": [],
           "formal_sorts": [
             {
               "kind": "primitive",
@@ -89,28 +87,23 @@
               "name": "Size"
             }
           ],
-          "formal_regions": [],
-          "return_sort": {
-            "kind": "primitive",
-            "name": "Value"
-          },
-          "return_region": null,
-          "pre": {
-            "kind": "atomic",
-            "name": "true",
-            "args": []
+          "formals": [
+            "p",
+            "i",
+            "len"
+          ],
+          "locus": {
+            "col": 0,
+            "file": null,
+            "line": 0
           },
           "post": {
-            "kind": "atomic",
-            "name": "=",
             "args": [
               {
                 "kind": "var",
                 "name": "result"
               },
               {
-                "kind": "ctor",
-                "name": "read",
                 "args": [
                   {
                     "kind": "var",
@@ -120,26 +113,33 @@
                     "kind": "var",
                     "name": "i"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "read"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "="
           },
-          "body_cid": null,
-          "effects": {
-            "effects": []
+          "pre": {
+            "args": [],
+            "kind": "atomic",
+            "name": "true"
           },
-          "locus": {
-            "file": null,
-            "line": 0,
-            "col": 0
-          },
-          "auto_minted_mementos": [],
-          "formal_idx": 0
+          "return_region": null,
+          "return_sort": {
+            "kind": "primitive",
+            "name": "Value"
+          }
         }
-      ]
+      ],
+      "body_jcs": "{\"components\":[\"blake3-512:30f4c0a7d8f12e3b8b1260bed142524f4bfc1796782163cd300ba69dc60d8e72fe98c7d0e5a8b4464333e622a1e13fc8486190b55fff20fab7995ea541ffc1ad\",\"blake3-512:43c1cf06472f02e6e46f87d7f0023f20a4a383a1eacd39c23f4697655480b10b5cace3d233e9690b91d6322d0afc7cc33f91f4ad37c6a54ad5d3ea7b50167d35\"],\"formalIdx\":0,\"kind\":\"composed-function-contract\",\"post\":{\"args\":[{\"kind\":\"var\",\"name\":\"result\"},{\"args\":[{\"args\":[{\"kind\":\"var\",\"name\":\"n\"}],\"kind\":\"ctor\",\"name\":\"allocated_buffer\"},{\"kind\":\"var\",\"name\":\"i\"}],\"kind\":\"ctor\",\"name\":\"read\"}],\"kind\":\"atomic\",\"name\":\"=\"},\"pre\":{\"kind\":\"and\",\"operands\":[{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"},{\"kind\":\"implies\",\"operands\":[{\"args\":[{\"kind\":\"var\",\"name\":\"result__ea7b50167d35\"},{\"args\":[{\"kind\":\"var\",\"name\":\"n\"}],\"kind\":\"ctor\",\"name\":\"allocated_buffer\"}],\"kind\":\"atomic\",\"name\":\"=\"},{\"args\":[],\"kind\":\"atomic\",\"name\":\"true\"}]}]},\"schemaVersion\":\"1\"}",
+      "composed_cid": "blake3-512:46459256c7797f637370eee21ff1efdf4799b4ba72a0c3c63756c9f951ecfb54674d4ff5d118cef039d1c74d377a04e41c5b696a4a54bd9c1cc362455c83a351",
+      "status": "composed"
     },
-    "discharged": true,
-    "method": "ccp-compose-probe-plus-minted-conjoined-shape"
+    "method": "ccp-compose-probe-plus-minted-conjoined-shape",
+    "rule": "ccp-conjoin",
+    "schema_version": "1"
   },
   "signature": null
 }

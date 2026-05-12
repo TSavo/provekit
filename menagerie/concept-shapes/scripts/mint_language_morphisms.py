@@ -1113,6 +1113,11 @@ def main():
                 gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
                 rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
                 continue
+            # Defer gap emission until all candidates are exhausted (defer-and-collapse).
+            # Emitting inside the loop for each failed candidate causes duplicate gap stems with
+            # different source_op_cids when multiple candidate files exist (e.g. rust member/field),
+            # triggering the one-name-one-CID invariant in append_cids.
+            first_failure: dict | None = None
             for candidate in spec_candidates(op_def, language):
                 path = directory / candidate
                 if not path.exists():
@@ -1125,6 +1130,7 @@ def main():
                     morphism_row = cid_rows.get(("morphism", stem), {"cid": "already-minted", "path": f"specs/{stem}.spec.json"})
                     receipt_row = cid_rows.get(("receipt", stem), {"cid": "already-minted", "path": f"receipts/{stem}.receipt.json"})
                     record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_row["cid"], "receipt_cid": receipt_row["cid"]})
+                    first_failure = None  # success -- clear any pending deferred gap
                     break
                 source_cid = canonical_cid_spec(source_spec)
                 after_spec, operator_map = transformed_source_spec(op_def, source_spec, language)
@@ -1132,11 +1138,14 @@ def main():
                 if after_cid != shape_cid:
                     subsumption = try_structural_subsumption(after_spec, concept_spec)
                     if subsumption is None:
-                        reason_str = diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])
-                        gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": reason_str, "lang_id": language["id"], "slug": op_def["slug"]}
-                        gaps.append(gap_entry)
-                        gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, after_spec=after_spec, concept_spec=concept_spec, source_op_cid=source_cid, shape_cid=shape_cid)
-                        rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
+                        if first_failure is None:
+                            # Record the first failure; do NOT emit yet -- a later candidate may succeed.
+                            reason_str = diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])
+                            first_failure = {
+                                "gap_entry": {"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": reason_str, "lang_id": language["id"], "slug": op_def["slug"]},
+                                "after_spec": after_spec,
+                                "source_cid": source_cid,
+                            }
                         continue
                     discharge_method, pre_relaxed, wp_abstracted = subsumption
                     effect_subset_relaxed = "effect-subset" in discharge_method
@@ -1180,6 +1189,18 @@ def main():
                 rows.append({"kind": "receipt", "name": stem, "cid": receipt_cid, "path": receipt_path})
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})
                 break
+            # Emit the deferred gap if every candidate failed discharge (defer-and-collapse).
+            if first_failure is not None:
+                gap_entry = first_failure["gap_entry"]
+                gaps.append(gap_entry)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(
+                    gap_entry,
+                    after_spec=first_failure["after_spec"],
+                    concept_spec=concept_spec,
+                    source_op_cid=first_failure["source_cid"],
+                    shape_cid=shape_cid,
+                )
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
             if not found:
                 gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": f"op_{op_def['slug'].replace('-', '_')}.spec.json", "reason": "no candidate source operation spec", "lang_id": language["id"], "slug": op_def["slug"]}
                 gaps.append(gap_entry)

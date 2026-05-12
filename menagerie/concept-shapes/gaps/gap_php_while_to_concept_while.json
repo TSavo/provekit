@@ -1,0 +1,121 @@
+{
+  "fn_name": "gap:php:while:to:concept:while",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "body.effects plus loop invariant obligations"
+          },
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union(body.effects, {Loop})"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "OpaqueLoop"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Loop"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "name": "body"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "while",
+        "result": "Stmt",
+        "wp": "while loop"
+      },
+      "want": {
+        "arity": [
+          "Bool",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "name": "body"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "while",
+        "result": "Stmt",
+        "wp": "loop invariant holds and cond is false at exit"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "php",
+  "source_op_cid": "blake3-512:a8d8dba24a640652690aebad6a26f733abc258cead83abd1d974616fdb6a01328f020957f778f0e511acb75e7ed3ee5fa3cf8f20487fe0ed65c10a49ab438d2b",
+  "target_concept_op": "concept:while",
+  "target_op_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+}

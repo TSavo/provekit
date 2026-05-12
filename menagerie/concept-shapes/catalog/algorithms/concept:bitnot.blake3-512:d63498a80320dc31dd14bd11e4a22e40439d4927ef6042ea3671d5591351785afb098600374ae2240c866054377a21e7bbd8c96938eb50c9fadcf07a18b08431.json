@@ -9,19 +9,17 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Int",
-        "args": []
+        "name": "Int"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "bitnot",
       "arity": [
         "Int"
       ],
@@ -33,6 +31,8 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "bitnot",
       "result": "Int",
       "wp": "integer bitwise complement expression"
     },
@@ -41,9 +41,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Int",
-      "args": []
+      "name": "Int"
     }
   },
   "cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431",

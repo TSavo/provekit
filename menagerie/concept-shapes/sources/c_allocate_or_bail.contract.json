@@ -1,12 +1,25 @@
 {
-  "kind": "function-contract",
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "failure_condition": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "count"
+            }
+          ],
+          "kind": "ctor",
+          "name": "malloc_failed"
+        },
+        "kind": "Alloc",
+        "result": "ptr",
+        "size": "count"
+      }
+    ]
+  },
   "fn_name": "c:allocate_or_bail",
-  "formals": [
-    "count",
-    "failure",
-    "next_value",
-    "ptr"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -25,39 +38,33 @@
       "name": "void_ptr"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "int"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "formals": [
+    "count",
+    "failure",
+    "next_value",
+    "ptr"
+  ],
+  "kind": "function-contract",
   "post": {
     "kind": "and",
     "operands": [
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
             "kind": "var",
             "name": "result"
           },
           {
-            "kind": "ctor",
-            "name": "ite",
             "args": [
               {
-                "kind": "ctor",
-                "name": "malloc_failed",
                 "args": [
                   {
                     "kind": "var",
                     "name": "count"
                   }
-                ]
+                ],
+                "kind": "ctor",
+                "name": "malloc_failed"
               },
               {
                 "kind": "var",
@@ -67,26 +74,28 @@
                 "kind": "var",
                 "name": "next_value"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "ite"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
         "kind": "implies",
         "operands": [
           {
-            "kind": "atomic",
-            "name": "malloc_failed",
             "args": [
               {
                 "kind": "var",
                 "name": "count"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "malloc_failed"
           },
           {
-            "kind": "atomic",
-            "name": "=",
             "args": [
               {
                 "kind": "var",
@@ -94,13 +103,15 @@
               },
               {
                 "kind": "const",
-                "value": "null",
                 "sort": {
                   "kind": "primitive",
                   "name": "void_ptr"
-                }
+                },
+                "value": "null"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "="
           }
         ]
       },
@@ -111,20 +122,18 @@
             "kind": "not",
             "operands": [
               {
-                "kind": "atomic",
-                "name": "malloc_failed",
                 "args": [
                   {
                     "kind": "var",
                     "name": "count"
                   }
-                ]
+                ],
+                "kind": "atomic",
+                "name": "malloc_failed"
               }
             ]
           },
           {
-            "kind": "atomic",
-            "name": "non_null_sized",
             "args": [
               {
                 "kind": "var",
@@ -134,30 +143,21 @@
                 "kind": "var",
                 "name": "count"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "non_null_sized"
           }
         ]
       }
     ]
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "Alloc",
-        "result": "ptr",
-        "size": "count",
-        "failure_condition": {
-          "kind": "ctor",
-          "name": "malloc_failed",
-          "args": [
-            {
-              "kind": "var",
-              "name": "count"
-            }
-          ]
-        }
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "auto_minted_mementos": []
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  }
 }

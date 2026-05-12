@@ -10,24 +10,22 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Int",
-        "args": []
+        "name": "Int"
       },
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Int",
-        "args": []
+        "name": "Int"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "bitor",
       "arity": [
         "Int",
         "Int"
@@ -43,6 +41,8 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "bitor",
       "result": "Int",
       "wp": "integer bitwise or expression"
     },
@@ -51,9 +51,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Int",
-      "args": []
+      "name": "Int"
     }
   },
   "cid": "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654",

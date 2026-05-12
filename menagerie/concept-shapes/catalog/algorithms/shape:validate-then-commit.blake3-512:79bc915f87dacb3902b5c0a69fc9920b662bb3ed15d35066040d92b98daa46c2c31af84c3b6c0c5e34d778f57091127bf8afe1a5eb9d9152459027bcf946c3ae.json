@@ -24,34 +24,30 @@
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
       "kind": "and",
       "operands": [
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
               "kind": "var",
               "name": "ret"
             },
             {
-              "kind": "ctor",
-              "name": "ite",
               "args": [
                 {
-                  "kind": "ctor",
-                  "name": "valid",
                   "args": [
                     {
                       "kind": "var",
                       "name": "x"
                     }
-                  ]
+                  ],
+                  "kind": "ctor",
+                  "name": "valid"
                 },
                 {
                   "kind": "var",
@@ -61,32 +57,36 @@
                   "kind": "var",
                   "name": "err"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "ite"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
           "kind": "implies",
           "operands": [
             {
-              "kind": "atomic",
-              "name": "valid",
               "args": [
                 {
                   "kind": "var",
                   "name": "x"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "valid"
             },
             {
-              "kind": "atomic",
-              "name": "commit_applied",
               "args": [
                 {
                   "kind": "var",
                   "name": "x"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "commit_applied"
             }
           ]
         }
@@ -95,19 +95,19 @@
     "effects": {
       "effects": [
         {
-          "kind": "MemWrite",
-          "target": "state",
-          "value": "x",
           "guard": {
-            "kind": "ctor",
-            "name": "valid",
             "args": [
               {
                 "kind": "var",
                 "name": "x"
               }
-            ]
-          }
+            ],
+            "kind": "ctor",
+            "name": "valid"
+          },
+          "kind": "MemWrite",
+          "target": "state",
+          "value": "x"
         }
       ]
     },

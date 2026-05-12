@@ -1,0 +1,63 @@
+{
+  "fn_name": "gap:go:not:to:concept:not",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Bool"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value",
+              "slot_sort": "Bool"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "not",
+        "result": "Bool",
+        "wp": "logical negation"
+      },
+      "want": {
+        "arity": [
+          "Bool"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "not",
+        "result": "Bool",
+        "wp": "boolean negation"
+      }
+    }
+  },
+  "reason_note": "wp mismatch: got `\"logical negation\"` want `\"boolean negation\"`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:e834787d6b8ad2a762559284d79b48914742c46c53a4e111c2c8aa186ad229e956322bf317aaf9e44b868888a96096ea5a7df6518f37faa02d09c9e67b3fec9d",
+  "target_concept_op": "concept:not",
+  "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+}

@@ -1,30 +1,8 @@
 {
+  "cid": "blake3-512:8e6429feab0ca0b075ec3d286aa1cb48689f2af913d70ba641d2fa4de797863fa05e1b325221cc21259d9d27cbc86c88741d57d9364ec5b40a6fa2175f6e97e6",
   "memento": {
-    "kind": "concept-abstraction",
-    "operator": "concept:pair",
-    "tier": "abstraction",
-    "slots": [
-      {
-        "name": "first"
-      },
-      {
-        "name": "second"
-      }
-    ],
-    "formal_sorts": [
-      "T1",
-      "T2"
-    ],
-    "result_sort": "PairOfT1T2",
     "contract": {
-      "kind": "wp-rule",
-      "formals": [
-        "first",
-        "second"
-      ],
       "body": {
-        "kind": "skolem",
-        "predicate": "pair_inhabitant",
         "args": [
           {
             "kind": "var",
@@ -38,15 +16,37 @@
             "kind": "var",
             "name": "T2"
           }
-        ]
-      }
+        ],
+        "kind": "skolem",
+        "predicate": "pair_inhabitant"
+      },
+      "formals": [
+        "first",
+        "second"
+      ],
+      "kind": "wp-rule"
     },
     "contract_note": "pair_inhabitant(self, T1, T2) holds iff self is a pair with first slot carrying a term of sort T1 and second slot carrying a term of sort T2. Both slots are always occupied; there is no absence case. The pair structure is always fully inhabited.",
+    "formal_sorts": [
+      "T1",
+      "T2"
+    ],
+    "kind": "concept-abstraction",
+    "operator": "concept:pair",
     "realizations": [
       "blake3-512:789ab75ea7b537708ac56b3f9a19dc6f353fdaa4b35e757e04a597aec6ee0f2bf9ddfaff99d6d9aea3a51333a5810e01bb5e2d48274ead5e9bde91431396c7e1"
-    ]
+    ],
+    "result_sort": "PairOfT1T2",
+    "slots": [
+      {
+        "name": "first"
+      },
+      {
+        "name": "second"
+      }
+    ],
+    "tier": "abstraction"
   },
-  "cid": "blake3-512:8e6429feab0ca0b075ec3d286aa1cb48689f2af913d70ba641d2fa4de797863fa05e1b325221cc21259d9d27cbc86c88741d57d9364ec5b40a6fa2175f6e97e6",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

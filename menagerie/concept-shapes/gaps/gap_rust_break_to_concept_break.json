@@ -1,0 +1,71 @@
+{
+  "fn_name": "gap:rust:break:to:concept:break",
+  "gap_kind": "effect-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "control-transfer"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "control-transfer"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Break"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Unit"
+        ],
+        "kind": "operation-contract",
+        "operator": "break",
+        "result": "Stmt",
+        "wp": "exit nearest enclosing match or loop"
+      },
+      "want": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "unit"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "break",
+        "result": "Stmt",
+        "wp": "exit nearest enclosing switch or loop"
+      }
+    }
+  },
+  "reason_note": "effect signature mismatch: got `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"control-transfer\"}]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"control-transfer\"},{\"kind\":\"effect-signature\",\"name\":\"Break\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "effect sets differ; transport would silently misrepresent the effect contract"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:392e6139a9ac4e2c96f8dbaf96a3396bb6b315face6cddd425f483f481a99cfe7a735d38cc4d06e859b5b01f6abb423a7b8d1c23223f4a1828ff05649a8e5b8a",
+  "target_concept_op": "concept:break",
+  "target_op_cid": "blake3-512:127ec9349328d7fa702a5b63fd35724d73be3e0b37c7e29c2453aa558202c6c88d989da72999867e5109ef16d856f208fdb7086935c6ff9d2e9ed4dc48ace718"
+}

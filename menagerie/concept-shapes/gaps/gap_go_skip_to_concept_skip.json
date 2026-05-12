@@ -1,0 +1,63 @@
+{
+  "fn_name": "gap:go:skip:to:concept:skip",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "unit",
+              "slot_sort": "Unit"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "skip",
+        "result": "Unit",
+        "wp": "empty statement"
+      },
+      "want": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "unit"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "skip",
+        "result": "Stmt",
+        "wp": "state unchanged"
+      }
+    }
+  },
+  "reason_note": "return sort mismatch: got `{\"kind\":\"ctor\",\"name\":\"Unit\",\"args\":[]}` want `{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:7fb4d0a88552579710ba2b9e7302981537fca6d599eca4c9f681b59f40adbb1ead9b3bb5851896aa683f9ab82b9e6a91e8d465db0b3332245bd00cd6a8d4b8f4",
+  "target_concept_op": "concept:skip",
+  "target_op_cid": "blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c"
+}

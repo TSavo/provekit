@@ -1,43 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:continue",
-  "formals": [
-    "unit"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Unit",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "continue",
-    "arity": [
-      "Unit"
-    ],
-    "result": "Stmt",
-    "wp": "jump to next loop iteration",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "unit"
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -45,5 +6,44 @@
         "rule": "control-transfer"
       }
     ]
+  },
+  "fn_name": "concept:continue",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Unit"
+    }
+  ],
+  "formals": [
+    "unit"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Unit"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "continue",
+    "result": "Stmt",
+    "wp": "jump to next loop iteration"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

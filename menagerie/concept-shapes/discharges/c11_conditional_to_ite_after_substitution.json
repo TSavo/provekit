@@ -1,41 +1,32 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:ite",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    }
+  ],
   "formals": [
     "cond",
     "then_expr",
     "else_expr"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Bool",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Expr",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "ite",
     "arity": [
       "Bool",
       "Expr",
@@ -55,10 +46,19 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "ite",
     "result": "Expr",
     "wp": "ternary expression selected by cond"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Expr"
   }
 }

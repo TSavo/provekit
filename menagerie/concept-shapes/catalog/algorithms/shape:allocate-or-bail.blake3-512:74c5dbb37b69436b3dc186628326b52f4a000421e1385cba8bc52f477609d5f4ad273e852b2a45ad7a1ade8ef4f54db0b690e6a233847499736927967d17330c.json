@@ -29,34 +29,30 @@
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
       "kind": "and",
       "operands": [
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
               "kind": "var",
               "name": "ret"
             },
             {
-              "kind": "ctor",
-              "name": "ite",
               "args": [
                 {
-                  "kind": "ctor",
-                  "name": "alloc_failed",
                   "args": [
                     {
                       "kind": "var",
                       "name": "n"
                     }
-                  ]
+                  ],
+                  "kind": "ctor",
+                  "name": "alloc_failed"
                 },
                 {
                   "kind": "var",
@@ -66,26 +62,28 @@
                   "kind": "var",
                   "name": "continuation_value"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "ite"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
           "kind": "implies",
           "operands": [
             {
-              "kind": "atomic",
-              "name": "alloc_failed",
               "args": [
                 {
                   "kind": "var",
                   "name": "n"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "alloc_failed"
             },
             {
-              "kind": "atomic",
-              "name": "=",
               "args": [
                 {
                   "kind": "var",
@@ -93,13 +91,15 @@
                 },
                 {
                   "kind": "const",
-                  "value": "null",
                   "sort": {
                     "kind": "primitive",
                     "name": "Buffer"
-                  }
+                  },
+                  "value": "null"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "="
             }
           ]
         },
@@ -110,20 +110,18 @@
               "kind": "not",
               "operands": [
                 {
-                  "kind": "atomic",
-                  "name": "alloc_failed",
                   "args": [
                     {
                       "kind": "var",
                       "name": "n"
                     }
-                  ]
+                  ],
+                  "kind": "atomic",
+                  "name": "alloc_failed"
                 }
               ]
             },
             {
-              "kind": "atomic",
-              "name": "valid_buffer",
               "args": [
                 {
                   "kind": "var",
@@ -133,7 +131,9 @@
                   "kind": "var",
                   "name": "n"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "valid_buffer"
             }
           ]
         }
@@ -142,19 +142,19 @@
     "effects": {
       "effects": [
         {
-          "kind": "Alloc",
-          "result": "p",
-          "size": "n",
           "failure_condition": {
-            "kind": "ctor",
-            "name": "alloc_failed",
             "args": [
               {
                 "kind": "var",
                 "name": "n"
               }
-            ]
-          }
+            ],
+            "kind": "ctor",
+            "name": "alloc_failed"
+          },
+          "kind": "Alloc",
+          "result": "p",
+          "size": "n"
         }
       ]
     },

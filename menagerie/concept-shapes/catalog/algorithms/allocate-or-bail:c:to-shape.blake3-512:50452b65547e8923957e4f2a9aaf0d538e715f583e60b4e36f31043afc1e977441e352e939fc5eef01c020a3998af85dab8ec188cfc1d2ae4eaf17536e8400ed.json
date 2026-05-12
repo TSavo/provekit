@@ -9,20 +9,28 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "FunctionContractMemento",
-        "args": []
+        "name": "FunctionContractMemento"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
+      "homomorphism_obligation": {
+        "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+        "source": "blake3-512:1e148e4f3e5fcb5014cb127a58160efe0002c29bdb6963ddbc22ae56347137d6d544d8bffd9c9dbccb9b8a84a7094645d8bb8dbe5880bb8afbd5e71e7f520df8",
+        "target": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c"
+      },
       "kind": "contract-renaming-morphism",
-      "source_contract_cid": "blake3-512:1e148e4f3e5fcb5014cb127a58160efe0002c29bdb6963ddbc22ae56347137d6d544d8bffd9c9dbccb9b8a84a7094645d8bb8dbe5880bb8afbd5e71e7f520df8",
-      "target_shape_cid": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c",
+      "literal_map": {},
+      "operator_map": {
+        "malloc_failed": "alloc_failed",
+        "non_null_sized": "valid_buffer"
+      },
       "renaming_map": {
         "count": "n",
         "failure": "err",
@@ -31,29 +39,21 @@
         "result": "ret"
       },
       "representation_map": {
-        "size_t": "Size",
         "int": "ReturnValue",
+        "size_t": "Size",
         "void_ptr": "Buffer"
       },
-      "operator_map": {
-        "malloc_failed": "alloc_failed",
-        "non_null_sized": "valid_buffer"
-      },
-      "literal_map": {},
-      "homomorphism_obligation": {
-        "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
-        "source": "blake3-512:1e148e4f3e5fcb5014cb127a58160efe0002c29bdb6963ddbc22ae56347137d6d544d8bffd9c9dbccb9b8a84a7094645d8bb8dbe5880bb8afbd5e71e7f520df8",
-        "target": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c"
-      }
+      "source_contract_cid": "blake3-512:1e148e4f3e5fcb5014cb127a58160efe0002c29bdb6963ddbc22ae56347137d6d544d8bffd9c9dbccb9b8a84a7094645d8bb8dbe5880bb8afbd5e71e7f520df8",
+      "target_shape_cid": "blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c"
     },
     "effects": {
       "effects": []
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
+      "name": "FunctionContractMemento"
     },
     "input_cids": [
       "blake3-512:1e148e4f3e5fcb5014cb127a58160efe0002c29bdb6963ddbc22ae56347137d6d544d8bffd9c9dbccb9b8a84a7094645d8bb8dbe5880bb8afbd5e71e7f520df8",

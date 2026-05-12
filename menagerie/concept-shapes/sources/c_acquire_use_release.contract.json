@@ -1,10 +1,26 @@
 {
-  "kind": "function-contract",
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "balanced": true,
+        "body_effects": "body_effects",
+        "guard": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "mutex"
+            }
+          ],
+          "kind": "ctor",
+          "name": "pthread_mutex_held"
+        },
+        "kind": "CriticalSection",
+        "lock": "mutex"
+      }
+    ]
+  },
   "fn_name": "c:acquire_use_release",
-  "formals": [
-    "mutex",
-    "body_result"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -15,26 +31,15 @@
       "name": "int"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "int"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "pthread_mutex_available",
-    "args": [
-      {
-        "kind": "var",
-        "name": "mutex"
-      }
-    ]
-  },
+  "formals": [
+    "mutex",
+    "body_result"
+  ],
+  "kind": "function-contract",
   "post": {
     "kind": "and",
     "operands": [
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
             "kind": "var",
@@ -44,90 +49,85 @@
             "kind": "var",
             "name": "body_result"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
-        "kind": "atomic",
-        "name": "=",
         "args": [
           {
-            "kind": "ctor",
-            "name": "pthread_state_after",
             "args": [
               {
                 "kind": "var",
                 "name": "mutex"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "pthread_state_after"
           },
           {
-            "kind": "ctor",
-            "name": "pthread_state_before",
             "args": [
               {
                 "kind": "var",
                 "name": "mutex"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "pthread_state_before"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "="
       },
       {
-        "kind": "atomic",
-        "name": "pthread_balanced",
         "args": [
           {
             "kind": "var",
             "name": "mutex"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "pthread_balanced"
       },
       {
         "kind": "implies",
         "operands": [
           {
-            "kind": "atomic",
-            "name": "pthread_mutex_held",
             "args": [
               {
                 "kind": "var",
                 "name": "mutex"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "pthread_mutex_held"
           },
           {
-            "kind": "atomic",
-            "name": "critical_body_done",
             "args": [
               {
                 "kind": "var",
                 "name": "mutex"
               }
-            ]
+            ],
+            "kind": "atomic",
+            "name": "critical_body_done"
           }
         ]
       }
     ]
   },
-  "effects": {
-    "effects": [
+  "pre": {
+    "args": [
       {
-        "kind": "CriticalSection",
-        "lock": "mutex",
-        "guard": {
-          "kind": "ctor",
-          "name": "pthread_mutex_held",
-          "args": [
-            {
-              "kind": "var",
-              "name": "mutex"
-            }
-          ]
-        },
-        "body_effects": "body_effects",
-        "balanced": true
+        "kind": "var",
+        "name": "mutex"
       }
-    ]
+    ],
+    "kind": "atomic",
+    "name": "pthread_mutex_available"
   },
-  "auto_minted_mementos": []
+  "return_sort": {
+    "kind": "primitive",
+    "name": "int"
+  }
 }

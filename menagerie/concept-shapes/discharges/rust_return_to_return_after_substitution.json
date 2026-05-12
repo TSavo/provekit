@@ -1,43 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:return",
-  "formals": [
-    "value"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "return",
-    "arity": [
-      "Expr"
-    ],
-    "result": "Stmt",
-    "wp": "bind function out value and exit current body",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "value"
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -45,5 +6,44 @@
         "rule": "early-return"
       }
     ]
+  },
+  "fn_name": "concept:return",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    }
+  ],
+  "formals": [
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "return",
+    "result": "Stmt",
+    "wp": "bind function out value and exit current body"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

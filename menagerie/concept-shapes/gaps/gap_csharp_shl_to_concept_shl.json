@@ -1,0 +1,67 @@
+{
+  "fn_name": "gap:csharp:shl:to:concept:shl",
+  "gap_kind": "effect-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "shl",
+        "result": "Int",
+        "wp": "lhs << rhs (left shift)"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "shl",
+        "result": "Int",
+        "wp": "integer left shift expression"
+      }
+    }
+  },
+  "reason_note": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Panic\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "effect sets differ; transport would silently misrepresent the effect contract"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:3cd90da1a37e4fa3c1fe917a6a55bdf44d7a64187e1138f3635f994ac5b500744ee58fe48cdc76a48fedcf33c5bbf512f7737c0e4f9447d7516db7a521df9887",
+  "target_concept_op": "concept:shl",
+  "target_op_cid": "blake3-512:d5609e27e03c60f6d8405743da5a4fb5f0f4e6cd92390d18c69451925badd4a3a11ac8818f4934f8818b0a02c4c545372573951a0df3ddba77415db18d6cfa28"
+}

@@ -1,54 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:neg",
-  "formals": [
-    "value"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Int",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "no_signed_overflow",
-    "args": [
-      {
-        "kind": "op",
-        "name": "neg",
-        "args": [
-          {
-            "kind": "var",
-            "name": "value"
-          }
-        ]
-      }
-    ]
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "neg",
-    "arity": [
-      "Int"
-    ],
-    "result": "Int",
-    "wp": "integer arithmetic negation when no overflow holds",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "value"
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -60,5 +10,55 @@
         "name": "Panic"
       }
     ]
+  },
+  "fn_name": "concept:neg",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
+  "formals": [
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Int"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "neg",
+    "result": "Int",
+    "wp": "integer arithmetic negation when no overflow holds"
+  },
+  "pre": {
+    "args": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ],
+        "kind": "op",
+        "name": "neg"
+      }
+    ],
+    "kind": "atomic",
+    "name": "no_signed_overflow"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
   }
 }

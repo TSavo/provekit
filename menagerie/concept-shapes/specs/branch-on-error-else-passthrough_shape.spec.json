@@ -1,10 +1,8 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "shape:branch-on-error-else-passthrough",
-  "formals": [
-    "x",
-    "err_val"
-  ],
   "formal_sorts": [
     {
       "kind": "primitive",
@@ -15,36 +13,28 @@
       "name": "Value"
     }
   ],
-  "return_sort": {
-    "kind": "primitive",
-    "name": "Value"
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "formals": [
+    "x",
+    "err_val"
+  ],
+  "kind": "algorithm",
   "post": {
-    "kind": "atomic",
-    "name": "=",
     "args": [
       {
         "kind": "var",
         "name": "ret"
       },
       {
-        "kind": "ctor",
-        "name": "ite",
         "args": [
           {
-            "kind": "ctor",
-            "name": "err_cond",
             "args": [
               {
                 "kind": "var",
                 "name": "x"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "err_cond"
           },
           {
             "kind": "var",
@@ -54,11 +44,21 @@
             "kind": "var",
             "name": "x"
           }
-        ]
+        ],
+        "kind": "ctor",
+        "name": "ite"
       }
-    ]
+    ],
+    "kind": "atomic",
+    "name": "="
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "Value"
   }
 }

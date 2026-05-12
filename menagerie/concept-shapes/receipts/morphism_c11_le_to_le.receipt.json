@@ -1,15 +1,15 @@
 {
-  "schema_version": "1",
+  "after_substitution_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1",
+  "discharged": true,
   "kind": "MorphismDischargeReceipt",
+  "literal_map": {},
+  "method": "canonicalizer-alpha-equivalence-plus-representation-map",
   "morphism_cid": "blake3-512:831ac670137606a8f8428235cb4251e41280064e52df1bbd7578276c47741499bd6418ee46b87e9a173ae94aabbb32e8935f42036e96ecdf471df04784cf1fa2",
-  "source_contract_cid": "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae",
+  "operator_map": {},
   "renaming_map": {},
   "representation_map": {},
-  "operator_map": {},
-  "literal_map": {},
-  "after_substitution_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1",
+  "schema_version": "1",
   "shape_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1",
-  "discharged": true,
-  "method": "canonicalizer-alpha-equivalence-plus-representation-map",
-  "signature": null
+  "signature": null,
+  "source_contract_cid": "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae"
 }
