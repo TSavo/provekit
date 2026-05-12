@@ -223,12 +223,18 @@ const DD_TO_C_JSON: &str = r#"{
       "kind": "atomic",
       "name": "concept:call",
       "args": [
-        {"kind": "ctor", "name": "concept:index", "args": [
+        {"kind": "ctor", "name": "concept:cast", "args": [
           {"kind": "ctor", "name": "concept:index", "args": [
-            {"kind": "ctor", "name": "concept:member", "args": [{"kind": "var", "name": "receiver"}, {"kind": "const", "value": "dispatch_tbl", "sort": {"kind": "primitive", "name": "String"}}]},
-            {"kind": "ctor", "name": "concept:tag-of", "args": [{"kind": "var", "name": "receiver"}]}
+            {"kind": "ctor", "name": "concept:index", "args": [
+              {"kind": "ctor", "name": "concept:member", "args": [
+                {"kind": "var", "name": "receiver"},
+                {"kind": "const", "sort": {"kind": "primitive", "name": "String"}, "value": "dispatch_tbl"}
+              ]},
+              {"kind": "ctor", "name": "concept:tag-of", "args": [{"kind": "var", "name": "receiver"}]}
+            ]},
+            {"kind": "ctor", "name": "concept:tag-of", "args": [{"kind": "var", "name": "secondary"}]}
           ]},
-          {"kind": "ctor", "name": "concept:tag-of", "args": [{"kind": "var", "name": "secondary"}]}
+          {"kind": "const", "sort": {"kind": "primitive", "name": "String"}, "value": "fn_ptr_2d"}
         ]},
         {"kind": "var", "name": "receiver"},
         {"kind": "var", "name": "secondary"},
@@ -240,14 +246,23 @@ const DD_TO_C_JSON: &str = r#"{
   "direction": "left-to-right",
   "target_lang": "c11",
   "loss_record": {
-    "structural_divergence": {
-      "kind": "atomic",
-      "name": "true",
-      "args": []
-    },
     "domain_narrowing": {
       "kind": "atomic",
       "name": "requires_static_2d_dispatch_table",
+      "args": [{"kind": "var", "name": "receiver"}, {"kind": "var", "name": "secondary"}]
+    },
+    "structural_divergence": {
+      "kind": "atomic",
+      "name": "open_coded_vtable_replaces_single_op",
+      "args": [
+        {"kind": "ctor", "name": "concept:index", "args": [{"kind": "var", "name": "receiver"}]},
+        {"kind": "ctor", "name": "concept:index", "args": [{"kind": "var", "name": "secondary"}]},
+        {"kind": "ctor", "name": "concept:cast", "args": []}
+      ]
+    },
+    "ub_introduction": {
+      "kind": "atomic",
+      "name": "out_of_range_tag_is_ub",
       "args": [{"kind": "var", "name": "receiver"}, {"kind": "var", "name": "secondary"}]
     }
   },
@@ -277,12 +292,19 @@ const DD_TO_JAVA_JSON: &str = r#"{
     },
     "rhs": {
       "kind": "atomic",
-      "name": "jvm:invokeinterface",
+      "name": "concept:seq",
       "args": [
-        {"kind": "var", "name": "receiver"},
-        {"kind": "var", "name": "method_name"},
-        {"kind": "var", "name": "secondary"},
-        {"kind": "var", "name": "args"}
+        {"kind": "ctor", "name": "concept:itab-method", "args": [
+          {"kind": "var", "name": "receiver"},
+          {"kind": "const", "sort": {"kind": "primitive", "name": "String"}, "value": "accept"},
+          {"kind": "var", "name": "secondary"}
+        ]},
+        {"kind": "ctor", "name": "concept:itab-method", "args": [
+          {"kind": "var", "name": "secondary"},
+          {"kind": "const", "sort": {"kind": "primitive", "name": "String"}, "value": "visit_receiver_type"},
+          {"kind": "var", "name": "receiver"},
+          {"kind": "var", "name": "args"}
+        ]}
       ]
     }
   },
@@ -290,10 +312,18 @@ const DD_TO_JAVA_JSON: &str = r#"{
   "direction": "left-to-right",
   "target_lang": "java",
   "loss_record": {
+    "domain_narrowing": {
+      "kind": "atomic",
+      "name": "visitable_set_fixed_at_declaration",
+      "args": [{"kind": "var", "name": "receiver"}, {"kind": "var", "name": "secondary"}]
+    },
     "structural_divergence": {
       "kind": "atomic",
-      "name": "visitor_pattern_indirection",
-      "args": []
+      "name": "visitor_accept_visit_indirection",
+      "args": [
+        {"kind": "ctor", "name": "concept:itab-method", "args": [{"kind": "var", "name": "receiver"}]},
+        {"kind": "ctor", "name": "concept:itab-method", "args": [{"kind": "var", "name": "secondary"}]}
+      ]
     }
   },
   "effects": []
@@ -301,7 +331,7 @@ const DD_TO_JAVA_JSON: &str = r#"{
 
 const DD_TO_RUBY_JSON: &str = r#"{
   "kind": "equation",
-  "fn_name": "concept:double-dispatch->ruby:case-respond_to",
+  "fn_name": "concept:double-dispatch->ruby:case-type-tuple",
   "formals": ["receiver", "secondary", "method_name", "args"],
   "formal_sorts": [
     "blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -322,12 +352,27 @@ const DD_TO_RUBY_JSON: &str = r#"{
     },
     "rhs": {
       "kind": "atomic",
-      "name": "ruby:public_send",
+      "name": "concept:match",
       "args": [
-        {"kind": "var", "name": "receiver"},
-        {"kind": "var", "name": "method_name"},
-        {"kind": "var", "name": "secondary"},
-        {"kind": "var", "name": "args"}
+        {"kind": "ctor", "name": "concept:pair", "args": [
+          {"kind": "ctor", "name": "concept:type-of", "args": [{"kind": "var", "name": "receiver"}]},
+          {"kind": "ctor", "name": "concept:type-of", "args": [{"kind": "var", "name": "secondary"}]}
+        ]},
+        {"kind": "ctor", "name": "concept:match-arm", "args": [
+          {"kind": "ctor", "name": "concept:pair", "args": [
+            {"kind": "ctor", "name": "concept:tag-of", "args": [{"kind": "var", "name": "receiver"}]},
+            {"kind": "ctor", "name": "concept:tag-of", "args": [{"kind": "var", "name": "secondary"}]}
+          ]},
+          {"kind": "ctor", "name": "concept:call", "args": [
+            {"kind": "var", "name": "method_name"},
+            {"kind": "var", "name": "receiver"},
+            {"kind": "var", "name": "secondary"},
+            {"kind": "var", "name": "args"}
+          ]}
+        ]},
+        {"kind": "ctor", "name": "concept:raise", "args": [
+          {"kind": "const", "sort": {"kind": "primitive", "name": "String"}, "value": "TypeError"}
+        ]}
       ]
     }
   },
@@ -337,8 +382,10 @@ const DD_TO_RUBY_JSON: &str = r#"{
   "loss_record": {
     "structural_divergence": {
       "kind": "atomic",
-      "name": "guarded_case_chain",
-      "args": []
+      "name": "case_fallthrough_narrows_open_dispatch",
+      "args": [
+        {"kind": "ctor", "name": "concept:raise", "args": []}
+      ]
     }
   },
   "effects": []
@@ -358,7 +405,7 @@ fn realization_c_deserializes_and_round_trips() {
     assert!(m.discharge_receipt.is_none(), "discharge_receipt absent in PR1");
     assert_eq!(m.effects, Vec::<String>::new(), "effects must be empty slice");
 
-    // structural_divergence and domain_narrowing both set for C
+    // structural_divergence, domain_narrowing AND ub_introduction all set for C (heaviest end)
     assert!(
         m.loss_record.0.contains_key("structural_divergence"),
         "C realization must have structural_divergence"
@@ -366,6 +413,10 @@ fn realization_c_deserializes_and_round_trips() {
     assert!(
         m.loss_record.0.contains_key("domain_narrowing"),
         "C realization must have domain_narrowing"
+    );
+    assert!(
+        m.loss_record.0.contains_key("ub_introduction"),
+        "C realization must have ub_introduction (out-of-range tag -> UB)"
     );
 
     // Round-trip
@@ -384,12 +435,21 @@ fn realization_java_deserializes_and_round_trips() {
     assert_eq!(m.target_lang, "java");
     assert!(m.pre.is_none(), "java realization has no pre-condition");
 
-    // structural_divergence set; domain_narrowing absent (near-zero)
+    // structural_divergence AND domain_narrowing set for Java (mid: visitor adds accept/visit
+    // indirection; visitable-set is fixed at interface declaration time)
     assert!(
         m.loss_record.0.contains_key("structural_divergence"),
         "Java realization must have structural_divergence"
     );
-    // Java may or may not have domain_narrowing -- do not assert either way
+    assert!(
+        m.loss_record.0.contains_key("domain_narrowing"),
+        "Java realization must have domain_narrowing (visitable-set fixed at declaration)"
+    );
+    // Java must NOT have ub_introduction (that's the heavy C end only)
+    assert!(
+        !m.loss_record.0.contains_key("ub_introduction"),
+        "Java realization must NOT have ub_introduction"
+    );
 
     let s = serde_json::to_string(&m).expect("serialize");
     let m2: RealizationDesugaringMemento = serde_json::from_str(&s).expect("re-parse");
@@ -402,13 +462,24 @@ fn realization_ruby_deserializes_and_round_trips() {
         serde_json::from_str(DD_TO_RUBY_JSON).expect("parse dd->ruby");
 
     assert_eq!(m.kind, "equation");
-    assert_eq!(m.fn_name, "concept:double-dispatch->ruby:case-respond_to");
+    assert_eq!(m.fn_name, "concept:double-dispatch->ruby:case-type-tuple");
     assert_eq!(m.target_lang, "ruby");
     assert!(m.pre.is_none(), "ruby realization has no pre-condition");
 
+    // structural_divergence only, near-zero (Ruby writes the implication structure directly
+    // via a case-match over the type tuple -- the realization ≈ the contract)
     assert!(
         m.loss_record.0.contains_key("structural_divergence"),
         "Ruby realization must have structural_divergence"
+    );
+    // Ruby must NOT have domain_narrowing (no fixed interface required) or ub_introduction
+    assert!(
+        !m.loss_record.0.contains_key("domain_narrowing"),
+        "Ruby realization must NOT have domain_narrowing"
+    );
+    assert!(
+        !m.loss_record.0.contains_key("ub_introduction"),
+        "Ruby realization must NOT have ub_introduction"
     );
 
     let s = serde_json::to_string(&m).expect("serialize");

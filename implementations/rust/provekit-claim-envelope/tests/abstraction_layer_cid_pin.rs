@@ -16,14 +16,14 @@
 //     (B) concept:double-dispatch   -- ConceptAbstractionMemento
 //     (C) concept:double-dispatch->c11:2d-fn-ptr-table   -- RealizationDesugaringMemento
 //     (D) concept:double-dispatch->jvm:visitor-pattern   -- RealizationDesugaringMemento
-//     (E) concept:double-dispatch->ruby:case-respond_to  -- RealizationDesugaringMemento
+//     (E) concept:double-dispatch->ruby:case-type-tuple  -- RealizationDesugaringMemento
 //
 //   2. Round-trip parity: emit -> re-parse -> re-emit -> byte-identical JCS.
 //
 //   3. Projection-distance law held by the three RealizationDesugaringMementos:
-//      C (c11) carries both structural_divergence AND domain_narrowing (heavy).
-//      D (java) carries structural_divergence, less domain_narrowing (mid).
-//      E (ruby) carries only structural_divergence (near-zero).
+//      C (c11) carries structural_divergence + domain_narrowing + ub_introduction (heavy).
+//      D (java) carries structural_divergence + domain_narrowing (mid; visitor accept/visit).
+//      E (ruby) carries only structural_divergence (near-zero; case-match ≈ contract).
 //
 // To update pinned CIDs after a deliberate schema change:
 //   1. Remove the assertion and run the test to see the printed CID.
@@ -143,12 +143,26 @@ fn double_dispatch_jcs_round_trip() {
 // (C) RealizationDesugaringMemento: double-dispatch -> c11
 // ================================================================
 //
-// Heavy structural_divergence + domain_narrowing (C is the unforgiving end).
+// Heavy structural_divergence + domain_narrowing + ub_introduction (C is the unforgiving end).
+//
+// The rhs encodes the full 2D void*-table dispatch:
+//   ((fn_ptr)table[tag(receiver)][tag(secondary)])(receiver, secondary, args)
+// Steps: concept:member -> concept:index (dim 1) -> concept:index (dim 2)
+//        -> concept:cast (void* -> fn-ptr) -> concept:call
+//
+// Loss-record (3 distinct atomic claims, heaviest end of the bracket):
+//   structural_divergence: open_coded_vtable_replaces_single_op (2 index + 1 cast)
+//   domain_narrowing:      requires_static_2d_dispatch_table
+//   ub_introduction:       out_of_range_tag_is_ub
+//
+// JCS key order is alphabetical within each object (RFC 8785 §3.2.3).
+// TODO: re-sort the "Locked JCS key order" CDDL comments to match actual
+// canonicalizer output (alphabetical), not struct declaration order.
 
-const DD_C11_CANONICAL: &str = r#"{"direction":"left-to-right","effects":[],"fn_name":"concept:double-dispatch->c11:2d-fn-ptr-table","formal_sorts":["blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","blake3-512:sort2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"],"formals":["receiver","secondary","method_name","args"],"kind":"equation","loss_record":{"domain_narrowing":{"args":[{"name":"receiver","kind":"var"},{"name":"secondary","kind":"var"}],"kind":"atomic","name":"requires_static_2d_dispatch_table"},"structural_divergence":{"args":[],"kind":"atomic","name":"true"}},"post":{"lhs":{"args":[{"name":"receiver","kind":"var"},{"name":"secondary","kind":"var"},{"name":"method_name","kind":"var"},{"name":"args","kind":"var"}],"kind":"atomic","name":"concept:double-dispatch"},"rhs":{"args":[{"args":[{"args":[{"args":[{"kind":"ctor","name":"concept:member","args":[{"name":"receiver","kind":"var"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"dispatch_tbl"}]}],"kind":"ctor","name":"concept:index","args":[{"kind":"ctor","name":"concept:tag-of","args":[{"name":"receiver","kind":"var"}]}]}],"kind":"ctor","name":"concept:index","args":[{"kind":"ctor","name":"concept:tag-of","args":[{"name":"secondary","kind":"var"}]}]}],"kind":"atomic","name":"concept:call"}],"kind":"atomic","name":"concept:call"}},"pre":{"args":[{"name":"receiver","kind":"var"},{"name":"secondary","kind":"var"}],"kind":"atomic","name":"static_dispatch_table"},"role":"abstraction-realization","target_lang":"c11"}"#;
+const DD_C11_CANONICAL: &str = r#"{"direction":"left-to-right","effects":[],"fn_name":"concept:double-dispatch->c11:2d-fn-ptr-table","formal_sorts":["blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","blake3-512:sort2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"],"formals":["receiver","secondary","method_name","args"],"kind":"equation","loss_record":{"domain_narrowing":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"}],"kind":"atomic","name":"requires_static_2d_dispatch_table"},"structural_divergence":{"args":[{"args":[{"kind":"var","name":"receiver"}],"kind":"ctor","name":"concept:index"},{"args":[{"kind":"var","name":"secondary"}],"kind":"ctor","name":"concept:index"},{"args":[],"kind":"ctor","name":"concept:cast"}],"kind":"atomic","name":"open_coded_vtable_replaces_single_op"},"ub_introduction":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"}],"kind":"atomic","name":"out_of_range_tag_is_ub"}},"post":{"lhs":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"},{"kind":"var","name":"method_name"},{"kind":"var","name":"args"}],"kind":"atomic","name":"concept:double-dispatch"},"rhs":{"args":[{"args":[{"args":[{"args":[{"args":[{"kind":"var","name":"receiver"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"dispatch_tbl"}],"kind":"ctor","name":"concept:member"},{"args":[{"kind":"var","name":"receiver"}],"kind":"ctor","name":"concept:tag-of"}],"kind":"ctor","name":"concept:index"},{"args":[{"kind":"var","name":"secondary"}],"kind":"ctor","name":"concept:tag-of"}],"kind":"ctor","name":"concept:index"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"fn_ptr_2d"}],"kind":"ctor","name":"concept:cast"},{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"},{"kind":"var","name":"args"}],"kind":"atomic","name":"concept:call"}},"pre":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"}],"kind":"atomic","name":"static_dispatch_table"},"role":"abstraction-realization","target_lang":"c11"}"#;
 
 const DD_C11_CID: &str =
-    "blake3-512:081b7f07196d75c4a3796953113d73b3d8b4603ab3ffe1993015bb5cd09a33727122567876855875e62f4196d8c28e997e295bfc96f6b7a37462df4782bbb8a0";
+    "blake3-512:35932da2302a9ca08c4c1ccadc1ee04995b91a0ce005977a2804181a59c786fe90794bf0e2de561a871d8d40e1da6c525b1cf0a3b8517dd8dafc92227e6796f0";
 
 #[test]
 fn dd_c11_cid_stable() {
@@ -166,12 +180,21 @@ fn dd_c11_jcs_round_trip() {
 // (D) RealizationDesugaringMemento: double-dispatch -> java
 // ================================================================
 //
-// Mid structural_divergence, minimal domain_narrowing (Java is the middle).
+// Mid structural_divergence + domain_narrowing (Java is the middle of the bracket).
+//
+// The rhs encodes the visitor pattern: two sequential itab-method calls.
+//   receiver.accept(secondary)     -- dispatches on receiver's type
+//   secondary.visit_receiver_type(receiver, args)  -- dispatches on secondary's type
+// This is a concept:seq of TWO concept:itab-method ctors, not a single invokeinterface.
+//
+// Loss-record (2 distinct atomic claims, mid bracket):
+//   structural_divergence: visitor_accept_visit_indirection (2 itab-method nodes)
+//   domain_narrowing:      visitable_set_fixed_at_declaration
 
-const DD_JAVA_CANONICAL: &str = r#"{"direction":"left-to-right","effects":[],"fn_name":"concept:double-dispatch->jvm:visitor-pattern","formal_sorts":["blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","blake3-512:sort2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"],"formals":["receiver","secondary","method_name","args"],"kind":"equation","loss_record":{"structural_divergence":{"args":[],"kind":"atomic","name":"visitor_pattern_indirection"}},"post":{"lhs":{"args":[{"name":"receiver","kind":"var"},{"name":"secondary","kind":"var"},{"name":"method_name","kind":"var"},{"name":"args","kind":"var"}],"kind":"atomic","name":"concept:double-dispatch"},"rhs":{"args":[{"name":"receiver","kind":"var"},{"name":"method_name","kind":"var"},{"name":"secondary","kind":"var"},{"name":"args","kind":"var"}],"kind":"atomic","name":"jvm:invokeinterface"}},"role":"abstraction-realization","target_lang":"java"}"#;
+const DD_JAVA_CANONICAL: &str = r#"{"direction":"left-to-right","effects":[],"fn_name":"concept:double-dispatch->jvm:visitor-pattern","formal_sorts":["blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","blake3-512:sort2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"],"formals":["receiver","secondary","method_name","args"],"kind":"equation","loss_record":{"domain_narrowing":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"}],"kind":"atomic","name":"visitable_set_fixed_at_declaration"},"structural_divergence":{"args":[{"args":[{"kind":"var","name":"receiver"}],"kind":"ctor","name":"concept:itab-method"},{"args":[{"kind":"var","name":"secondary"}],"kind":"ctor","name":"concept:itab-method"}],"kind":"atomic","name":"visitor_accept_visit_indirection"}},"post":{"lhs":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"},{"kind":"var","name":"method_name"},{"kind":"var","name":"args"}],"kind":"atomic","name":"concept:double-dispatch"},"rhs":{"args":[{"args":[{"kind":"var","name":"receiver"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"accept"},{"kind":"var","name":"secondary"}],"kind":"ctor","name":"concept:itab-method"},{"args":[{"kind":"var","name":"secondary"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"visit_receiver_type"},{"kind":"var","name":"receiver"},{"kind":"var","name":"args"}],"kind":"ctor","name":"concept:itab-method"}],"kind":"atomic","name":"concept:seq"}},"role":"abstraction-realization","target_lang":"java"}"#;
 
 const DD_JAVA_CID: &str =
-    "blake3-512:8ea85ecdc492a2c31a9fc2f36626935eb0cf1f7290c1f16c999ba23b2a802e68278c5aa8f019fc56f2ea7e3ab0dcfc3b96c85d9e794d1c77f107c1d8713b0b5c";
+    "blake3-512:a024327ba96392f6b070b3e88b8638cc8318e98c946c46cbaca5a849359a0e9eeffd4e3d81f307e4d1f613f076a903211945226db3bed499b12a7da07ccedf1f";
 
 #[test]
 fn dd_java_cid_stable() {
@@ -189,12 +212,26 @@ fn dd_java_jcs_round_trip() {
 // (E) RealizationDesugaringMemento: double-dispatch -> ruby
 // ================================================================
 //
-// Near-zero structural_divergence only (Ruby is the loose end).
+// Near-zero structural_divergence only (Ruby is the loose end of the bracket).
+//
+// The rhs encodes a case-match over the type tuple, preserving the
+// implication structure of the abstraction's contract:
+//   case [type(receiver), type(secondary)]
+//   when [X, Y] then method_name(receiver, secondary, args)
+//   else raise TypeError
+//
+// This is a concept:match over concept:pair(type-of(receiver), type-of(secondary))
+// with a concept:match-arm and a concept:raise fallthrough.
+// The realization ≈ the contract -- Ruby just writes out the guarded dispatch directly.
+//
+// Loss-record (1 atomic claim, loosest end):
+//   structural_divergence: case_fallthrough_narrows_open_dispatch
+//     (Ruby's open dispatch domain is narrowed by the case fallthrough to TypeError)
 
-const DD_RUBY_CANONICAL: &str = r#"{"direction":"left-to-right","effects":[],"fn_name":"concept:double-dispatch->ruby:case-respond_to","formal_sorts":["blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","blake3-512:sort2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"],"formals":["receiver","secondary","method_name","args"],"kind":"equation","loss_record":{"structural_divergence":{"args":[],"kind":"atomic","name":"guarded_case_chain"}},"post":{"lhs":{"args":[{"name":"receiver","kind":"var"},{"name":"secondary","kind":"var"},{"name":"method_name","kind":"var"},{"name":"args","kind":"var"}],"kind":"atomic","name":"concept:double-dispatch"},"rhs":{"args":[{"name":"receiver","kind":"var"},{"name":"method_name","kind":"var"},{"name":"secondary","kind":"var"},{"name":"args","kind":"var"}],"kind":"atomic","name":"ruby:public_send"}},"role":"abstraction-realization","target_lang":"ruby"}"#;
+const DD_RUBY_CANONICAL: &str = r#"{"direction":"left-to-right","effects":[],"fn_name":"concept:double-dispatch->ruby:case-type-tuple","formal_sorts":["blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","blake3-512:sort1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","blake3-512:sort2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"],"formals":["receiver","secondary","method_name","args"],"kind":"equation","loss_record":{"structural_divergence":{"args":[{"args":[],"kind":"ctor","name":"concept:raise"}],"kind":"atomic","name":"case_fallthrough_narrows_open_dispatch"}},"post":{"lhs":{"args":[{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"},{"kind":"var","name":"method_name"},{"kind":"var","name":"args"}],"kind":"atomic","name":"concept:double-dispatch"},"rhs":{"args":[{"args":[{"args":[{"kind":"var","name":"receiver"}],"kind":"ctor","name":"concept:type-of"},{"args":[{"kind":"var","name":"secondary"}],"kind":"ctor","name":"concept:type-of"}],"kind":"ctor","name":"concept:pair"},{"args":[{"args":[{"args":[{"kind":"var","name":"receiver"}],"kind":"ctor","name":"concept:tag-of"},{"args":[{"kind":"var","name":"secondary"}],"kind":"ctor","name":"concept:tag-of"}],"kind":"ctor","name":"concept:pair"},{"args":[{"kind":"var","name":"method_name"},{"kind":"var","name":"receiver"},{"kind":"var","name":"secondary"},{"kind":"var","name":"args"}],"kind":"ctor","name":"concept:call"}],"kind":"ctor","name":"concept:match-arm"},{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"TypeError"}],"kind":"ctor","name":"concept:raise"}],"kind":"atomic","name":"concept:match"}},"role":"abstraction-realization","target_lang":"ruby"}"#;
 
 const DD_RUBY_CID: &str =
-    "blake3-512:730a633f0e59e0393261ac911be375821cf86a1c49a61fc3135a1cf01720d2e9ba1e339beca4dac2c67e04a3ffc5695305291b8f101c0b7484178e2a0a66b81c";
+    "blake3-512:5f6e90c1f3a832ddd97ad624522a001d0a90091ca796d75cf7a1dccd819a5b12ec0181bf8297653204ed226259ba6acaf48633586dd403ce30ae258260af319f";
 
 #[test]
 fn dd_ruby_cid_stable() {
@@ -213,65 +250,112 @@ fn dd_ruby_jcs_round_trip() {
 // ================================================================
 //
 // The three double-dispatch realizations demonstrate the C-far/Java-mid/Ruby-near
-// projection-distance law from spec §3.0:
+// projection-distance law from spec §3.0. This is a NON-TRIVIAL assertion:
+// the test compares real structural content (loss-record dimension count and
+// structural_divergence formula complexity), not merely presence/absence.
 //
-//   C:    structural_divergence + domain_narrowing  (heavy)
-//   Java: structural_divergence only                (mid; visitor pattern indirection)
-//   Ruby: structural_divergence only, lighter       (near-zero; native send)
+// Law:
+//   C:    3 loss dimensions (structural_divergence + domain_narrowing + ub_introduction)
+//         structural_divergence has 3 args (open_coded_vtable: 2 index + 1 cast nodes)
+//   Java: 2 loss dimensions (structural_divergence + domain_narrowing)
+//         structural_divergence has 2 args (2 itab-method nodes for accept/visit)
+//   Ruby: 1 loss dimension (structural_divergence only)
+//         structural_divergence has 1 arg (1 raise node for fallthrough)
 //
-// This test reads the canonical JSON for each and asserts the expected
-// loss-record shape matches the spec's characterization.
+// Strict ordering: C-dims > Java-dims > Ruby-dims and C-sd-args > Java-sd-args > Ruby-sd-args
+
+/// Count the elements of a JSON array (returns 0 for non-arrays).
+fn array_len(v: &Json) -> usize {
+    v.as_array().map(|a| a.len()).unwrap_or(0)
+}
+
+/// Count loss-record dimensions (number of top-level keys in loss_record object).
+fn loss_record_dim_count(canonical: &str) -> usize {
+    let j: Json = serde_json::from_str(canonical).expect("parse");
+    let lr = j.pointer("/loss_record").expect("loss_record present");
+    lr.as_object().map(|m| m.len()).unwrap_or(0)
+}
+
+/// Count the args array of the structural_divergence formula.
+fn sd_arg_count(canonical: &str) -> usize {
+    let j: Json = serde_json::from_str(canonical).expect("parse");
+    let sd = j.pointer("/loss_record/structural_divergence").expect("structural_divergence present");
+    array_len(sd.pointer("/args").unwrap_or(&Json::Null))
+}
 
 #[test]
-fn projection_distance_law_c_has_structural_and_domain_narrowing() {
-    let j: Json = serde_json::from_str(DD_C11_CANONICAL).expect("parse dd->c11");
-    let lr = j.pointer("/loss_record").expect("loss_record present");
+fn projection_distance_law_dimension_counts_strict_ordering() {
+    let c_dims  = loss_record_dim_count(DD_C11_CANONICAL);
+    let j_dims  = loss_record_dim_count(DD_JAVA_CANONICAL);
+    let rb_dims = loss_record_dim_count(DD_RUBY_CANONICAL);
+
+    assert_eq!(c_dims, 3, "C MUST have 3 loss dimensions (structural + domain + ub)");
+    assert_eq!(j_dims, 2, "Java MUST have 2 loss dimensions (structural + domain)");
+    assert_eq!(rb_dims, 1, "Ruby MUST have 1 loss dimension (structural only)");
+
     assert!(
-        lr.pointer("/structural_divergence").is_some(),
-        "C realization MUST have structural_divergence"
+        c_dims > j_dims,
+        "Projection-distance law: C loss dims ({c_dims}) MUST exceed Java ({j_dims})"
     );
     assert!(
-        lr.pointer("/domain_narrowing").is_some(),
-        "C realization MUST have domain_narrowing (heavy end)"
+        j_dims > rb_dims,
+        "Projection-distance law: Java loss dims ({j_dims}) MUST exceed Ruby ({rb_dims})"
     );
 }
 
 #[test]
-fn projection_distance_law_java_has_structural_no_domain_narrowing() {
-    let j: Json = serde_json::from_str(DD_JAVA_CANONICAL).expect("parse dd->java");
-    let lr = j.pointer("/loss_record").expect("loss_record present");
+fn projection_distance_law_structural_divergence_complexity_strict_ordering() {
+    let c_args  = sd_arg_count(DD_C11_CANONICAL);
+    let j_args  = sd_arg_count(DD_JAVA_CANONICAL);
+    let rb_args = sd_arg_count(DD_RUBY_CANONICAL);
+
+    assert_eq!(c_args,  3, "C structural_divergence MUST have 3 args (2 index + 1 cast)");
+    assert_eq!(j_args,  2, "Java structural_divergence MUST have 2 args (2 itab-method)");
+    assert_eq!(rb_args, 1, "Ruby structural_divergence MUST have 1 arg (1 raise)");
+
     assert!(
-        lr.pointer("/structural_divergence").is_some(),
-        "Java realization MUST have structural_divergence"
+        c_args > j_args,
+        "C sd complexity ({c_args}) MUST exceed Java ({j_args})"
     );
     assert!(
-        lr.pointer("/domain_narrowing").is_none(),
-        "Java realization MUST NOT have domain_narrowing in this fixture (mid)"
+        j_args > rb_args,
+        "Java sd complexity ({j_args}) MUST exceed Ruby ({rb_args})"
     );
 }
 
 #[test]
-fn projection_distance_law_ruby_has_structural_only() {
-    let j: Json = serde_json::from_str(DD_RUBY_CANONICAL).expect("parse dd->ruby");
-    let lr = j.pointer("/loss_record").expect("loss_record present");
+fn projection_distance_law_c_has_ub_introduction_others_do_not() {
+    let c_j: Json  = serde_json::from_str(DD_C11_CANONICAL).expect("parse c11");
+    let j_j: Json  = serde_json::from_str(DD_JAVA_CANONICAL).expect("parse java");
+    let rb_j: Json = serde_json::from_str(DD_RUBY_CANONICAL).expect("parse ruby");
+
     assert!(
-        lr.pointer("/structural_divergence").is_some(),
-        "Ruby realization MUST have structural_divergence"
+        c_j.pointer("/loss_record/ub_introduction").is_some(),
+        "C MUST have ub_introduction (out-of-range tag = UB)"
     );
     assert!(
-        lr.pointer("/domain_narrowing").is_none(),
-        "Ruby realization MUST NOT have domain_narrowing (near-zero end)"
+        j_j.pointer("/loss_record/ub_introduction").is_none(),
+        "Java MUST NOT have ub_introduction"
     );
     assert!(
-        lr.pointer("/ub_introduction").is_none(),
-        "Ruby realization MUST NOT have ub_introduction"
+        rb_j.pointer("/loss_record/ub_introduction").is_none(),
+        "Ruby MUST NOT have ub_introduction"
+    );
+}
+
+#[test]
+fn projection_distance_law_ruby_has_no_domain_narrowing() {
+    let rb_j: Json = serde_json::from_str(DD_RUBY_CANONICAL).expect("parse ruby");
+    assert!(
+        rb_j.pointer("/loss_record/domain_narrowing").is_none(),
+        "Ruby MUST NOT have domain_narrowing (near-zero end: no fixed interface required)"
     );
     assert!(
-        lr.pointer("/value_divergence").is_none(),
-        "Ruby realization MUST NOT have value_divergence"
+        rb_j.pointer("/loss_record/value_divergence").is_none(),
+        "Ruby MUST NOT have value_divergence"
     );
     assert!(
-        lr.pointer("/effect_divergence").is_none(),
-        "Ruby realization MUST NOT have effect_divergence"
+        rb_j.pointer("/loss_record/effect_divergence").is_none(),
+        "Ruby MUST NOT have effect_divergence"
     );
 }
