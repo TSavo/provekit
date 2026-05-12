@@ -1942,10 +1942,13 @@ name = "provekit-lift-rust-tests"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "provekit-canonicalizer",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "provekit-lift",
  "provekit-verifier",
  "quote",
+ "serde_json",
  "syn",
 ]
 
