@@ -1,0 +1,52 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:identity",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "x"
+      }
+    ],
+    "formal_sorts": [
+      "T"
+    ],
+    "result_sort": "T",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "x"
+      ],
+      "body": {
+        "kind": "op",
+        "name": "eq",
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:identity",
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "x"
+          }
+        ]
+      }
+    },
+    "contract_note": "concept:identity(x) == x holds for all x of sort T. The identity function introduces no structural transformation, no domain narrowing, and no undefined behaviour. This is the zero-loss cell: the projection distance from concept:identity to any faithful realization is exactly 0.",
+    "realizations": [
+      "blake3-512:3ef11eb4c271d5108e0c610e0042b7ab76b70ba3ebbc7f33aa6501273617534b0af728aa6830887e7f1b064b876d4cbc2e33b975ea713bea66e836ec85c4c329"
+    ]
+  },
+  "cid": "blake3-512:6920f6e26184ca316f3dce6c02690b515c11b3d96d3b476bb5abe67cb55e1885031484c3add8a5f26b630e305ad3fe41eed10acca2e141898f9d6629c278867f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

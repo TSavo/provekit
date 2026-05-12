@@ -1,0 +1,50 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "rust:identity->concept:identity",
+    "formals": [
+      "x"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "rust:identity",
+        "args": [
+          {
+            "kind": "var",
+            "name": "x"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:identity",
+        "args": [
+          {
+            "kind": "var",
+            "name": "x"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-lift",
+    "direction": "left-to-right",
+    "source_lang": "rust",
+    "loss_record": {},
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:53cbd9eca65246aa689f89a64c54782988464027b3f63cd86f6b340b1b3848e146524e33ef838f58673d9d61d53de8e7a86aafc8a6848edcc7e0a9f4f6c6cb50",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
