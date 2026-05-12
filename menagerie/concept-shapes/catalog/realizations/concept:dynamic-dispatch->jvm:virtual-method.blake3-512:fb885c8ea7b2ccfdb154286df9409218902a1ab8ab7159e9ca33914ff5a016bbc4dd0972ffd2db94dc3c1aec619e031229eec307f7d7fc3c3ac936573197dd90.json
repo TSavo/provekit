@@ -53,7 +53,7 @@
             "args": [
               {
                 "kind": "op",
-                "name": "concept:type-of",
+                "name": "concept:itab-of",
                 "args": [
                   {
                     "kind": "var",
@@ -104,7 +104,7 @@
             "args": [
               {
                 "kind": "op",
-                "name": "concept:type-of",
+                "name": "concept:itab-of",
                 "args": [
                   {
                     "kind": "var",
@@ -154,7 +154,7 @@
       ]
     }
   },
-  "cid": "blake3-512:466f323b264218db49c505339201f2cd96203483bbda6fa4ccd143cd2b92bbf78521c735da19130b9e00a67f663447956fcf8ae8e568badf0af4bd541e565f69",
+  "cid": "blake3-512:fb885c8ea7b2ccfdb154286df9409218902a1ab8ab7159e9ca33914ff5a016bbc4dd0972ffd2db94dc3c1aec619e031229eec307f7d7fc3c3ac936573197dd90",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
