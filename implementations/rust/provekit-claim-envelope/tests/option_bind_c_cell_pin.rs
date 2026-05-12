@@ -13,7 +13,9 @@
 // running against the BLAKE3-512 canonicalizer build at
 //   implementations/rust/target/debug/compute_fixture_cid
 //
-// Pinned 2026-05-11.  Re-pin only when a deliberate schema change is made;
+// Pinned 2026-05-11; re-pinned 2026-05-11 (fix #676 kind-taxonomy drift:
+// "abstraction"->"concept-abstraction", "operation"->"op", "constructor"->"ctor").
+// Re-pin only when a deliberate schema change is made;
 // document the reason in the PR that changes this file.
 //
 // This cell depends on concept:option from PR #641 being in the catalog.
@@ -34,16 +36,16 @@ use std::path::PathBuf;
 // ---------------------------------------------------------------------------
 
 const ABSTRACTION_CID: &str =
-    "blake3-512:f8988d83ddf06694b1c9fa97e5a2ff8ab3be7c5ebe9dd34dc260e7ca15a7e8f8\
-     fe731f870976813391812dbadfa173746d6e7e7a3feb6c3a8dc62eb4ef2ec051";
+    "blake3-512:dba4b83cb31576a5f505da52ea45f455ff1af2fe488886af05dc4cb5e09968e2\
+     99deae726e42a754f012aab920cb264c504447e6614804c98598df92aa9d25d1";
 
 const LIFT_CID: &str =
-    "blake3-512:0e6a7e307963314e9d13fe9d50c74728be867cfb61082134c04ccbdd534aee2\
-     45d0d367c484e9a3733f541dba9298548435c6daabeea2d5d20ab51fc22aa6cd5";
+    "blake3-512:0c2f37c6613c7a8cb8c0a62d7d83d57c70e4c20ac1160cb2737c9c8c0f63d212\
+     66eec6aad3e7273d1ff140567da86dc94bc27a04baec99cb460e94fc6fe38b09";
 
 const REALIZE_CID: &str =
-    "blake3-512:64bb53691dbcf43055113a458322d656b1240418fc0a089bc42cbe33230d2c46\
-     5f4a06a3e93e69972b01b9758ec2713c725591174eee3b2a18b755c8c23aa768";
+    "blake3-512:924ccd4ce73de6981e9f04ea384a09bda3b6dacfb524a090b6b94c8511424687\
+     a28a6e60b650ad40b9b72e100a35b2bb84a14ea7be1d541bce12358e1246b831";
 
 // ---------------------------------------------------------------------------
 // Helpers

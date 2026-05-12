@@ -8,17 +8,19 @@
     ],
     "formal_sorts": [
       {
-        "kind": "constructor",
-        "name": "T"
+        "kind": "ctor",
+        "name": "T",
+        "args": []
       },
       {
-        "kind": "constructor",
-        "name": "U"
+        "kind": "ctor",
+        "name": "U",
+        "args": []
       }
     ],
     "post": {
       "lhs": {
-        "kind": "operation",
+        "kind": "op",
         "name": "concept:option-bind",
         "args": [
           {
@@ -32,19 +34,20 @@
         ]
       },
       "rhs": {
-        "kind": "operation",
+        "kind": "op",
         "name": "c:macro-composition",
         "args": [
           {
-            "kind": "operation",
+            "kind": "op",
             "name": "c:macro-expand",
             "args": [
               {
                 "kind": "const",
                 "value": "OPTION_BIND(name, opt, var, body)",
                 "sort": {
-                  "kind": "constructor",
-                  "name": "MacroName"
+                  "kind": "ctor",
+                  "name": "MacroName",
+                  "args": []
                 }
               },
               {
@@ -58,15 +61,16 @@
             ]
           },
           {
-            "kind": "operation",
+            "kind": "op",
             "name": "c:compose-on-cell",
             "args": [
               {
                 "kind": "const",
                 "value": "concept:option",
                 "sort": {
-                  "kind": "constructor",
-                  "name": "CellRef"
+                  "kind": "ctor",
+                  "name": "CellRef",
+                  "args": []
                 }
               }
             ]
@@ -85,7 +89,7 @@
     "discharge_receipt": "deferred:pending-642-PR5",
     "effects": []
   },
-  "cid": "blake3-512:64bb53691dbcf43055113a458322d656b1240418fc0a089bc42cbe33230d2c465f4a06a3e93e69972b01b9758ec2713c725591174eee3b2a18b755c8c23aa768",
+  "cid": "blake3-512:924ccd4ce73de6981e9f04ea384a09bda3b6dacfb524a090b6b94c8511424687a28a6e60b650ad40b9b72e100a35b2bb84a14ea7be1d541bce12358e1246b831",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

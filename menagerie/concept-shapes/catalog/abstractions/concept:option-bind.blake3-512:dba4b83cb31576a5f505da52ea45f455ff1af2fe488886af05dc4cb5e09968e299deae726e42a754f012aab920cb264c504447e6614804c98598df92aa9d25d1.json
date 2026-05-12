@@ -1,6 +1,6 @@
 {
   "memento": {
-    "kind": "abstraction",
+    "kind": "concept-abstraction",
     "name": "concept:option-bind",
     "formals": [
       "T",
@@ -8,19 +8,21 @@
     ],
     "formal_sorts": [
       {
-        "kind": "constructor",
-        "name": "T"
+        "kind": "ctor",
+        "name": "T",
+        "args": []
       },
       {
-        "kind": "constructor",
-        "name": "U"
+        "kind": "ctor",
+        "name": "U",
+        "args": []
       }
     ],
     "type": {
       "kind": "function",
       "formal_sorts": [
         {
-          "kind": "operation",
+          "kind": "op",
           "name": "concept:option",
           "args": [
             {
@@ -30,7 +32,7 @@
           ]
         },
         {
-          "kind": "operation",
+          "kind": "op",
           "name": "fn",
           "args": [
             {
@@ -38,7 +40,7 @@
               "name": "T"
             },
             {
-              "kind": "operation",
+              "kind": "op",
               "name": "concept:option",
               "args": [
                 {
@@ -51,7 +53,7 @@
         }
       ],
       "return_sort": {
-        "kind": "operation",
+        "kind": "op",
         "name": "concept:option",
         "args": [
           {
@@ -68,11 +70,11 @@
       "concept:option"
     ],
     "realizations": [
-      "blake3-512:64bb53691dbcf43055113a458322d656b1240418fc0a089bc42cbe33230d2c465f4a06a3e93e69972b01b9758ec2713c725591174eee3b2a18b755c8c23aa768"
+      "blake3-512:924ccd4ce73de6981e9f04ea384a09bda3b6dacfb524a090b6b94c8511424687a28a6e60b650ad40b9b72e100a35b2bb84a14ea7be1d541bce12358e1246b831"
     ],
     "discharge_receipt": "deferred:pending-642-PR5"
   },
-  "cid": "blake3-512:f8988d83ddf06694b1c9fa97e5a2ff8ab3be7c5ebe9dd34dc260e7ca15a7e8f8fe731f870976813391812dbadfa173746d6e7e7a3feb6c3a8dc62eb4ef2ec051",
+  "cid": "blake3-512:dba4b83cb31576a5f505da52ea45f455ff1af2fe488886af05dc4cb5e09968e299deae726e42a754f012aab920cb264c504447e6614804c98598df92aa9d25d1",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

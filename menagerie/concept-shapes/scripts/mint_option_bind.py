@@ -105,11 +105,11 @@ def var(name):
 
 
 def ctor(name):
-    return {"kind": "constructor", "name": name}
+    return {"kind": "ctor", "name": name, "args": []}
 
 
 def op(name, args):
-    return {"kind": "operation", "name": name, "args": args}
+    return {"kind": "op", "name": name, "args": args}
 
 
 def fn_type(formal_sorts, return_sort):
@@ -137,7 +137,7 @@ def build_abstraction_option_bind():
     This abstraction depends on concept:option being catalogued.
     """
     return {
-        "kind": "abstraction",
+        "kind": "concept-abstraction",
         "name": "concept:option-bind",
         "formals": ["T", "U"],
         "formal_sorts": [ctor("T"), ctor("U")],

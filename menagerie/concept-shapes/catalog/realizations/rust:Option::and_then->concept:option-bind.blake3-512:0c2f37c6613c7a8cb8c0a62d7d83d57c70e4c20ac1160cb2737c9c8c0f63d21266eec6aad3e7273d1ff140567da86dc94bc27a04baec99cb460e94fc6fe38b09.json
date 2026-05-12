@@ -8,17 +8,19 @@
     ],
     "formal_sorts": [
       {
-        "kind": "constructor",
-        "name": "T"
+        "kind": "ctor",
+        "name": "T",
+        "args": []
       },
       {
-        "kind": "constructor",
-        "name": "U"
+        "kind": "ctor",
+        "name": "U",
+        "args": []
       }
     ],
     "post": {
       "lhs": {
-        "kind": "operation",
+        "kind": "op",
         "name": "rust:Option::and_then",
         "args": [
           {
@@ -32,7 +34,7 @@
         ]
       },
       "rhs": {
-        "kind": "operation",
+        "kind": "op",
         "name": "concept:option-bind",
         "args": [
           {
@@ -55,7 +57,7 @@
     "discharge_receipt": "deferred:pending-642-PR5",
     "effects": []
   },
-  "cid": "blake3-512:0e6a7e307963314e9d13fe9d50c74728be867cfb61082134c04ccbdd534aee245d0d367c484e9a3733f541dba9298548435c6daabeea2d5d20ab51fc22aa6cd5",
+  "cid": "blake3-512:0c2f37c6613c7a8cb8c0a62d7d83d57c70e4c20ac1160cb2737c9c8c0f63d21266eec6aad3e7273d1ff140567da86dc94bc27a04baec99cb460e94fc6fe38b09",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
