@@ -651,43 +651,93 @@ fn run_pass(
             let header_v = Value::object(header_kv);
             let computed_cid = blake3_512_of(encode_jcs(&header_v).as_bytes());
 
-            // Inline §5.1-§5.3 validator.
-            validate_concept_site_memento(
-                &computed_cid,
-                "concept-site",
-                "1",
-                &discharge.verdict,
-                &discharge.loss_record,
-                &discharge.discharge_receipt_cid,
-                &discharge.refusal_reason,
-                &computed_cid, // header cid = computed_cid, derived check is trivially true
-                &lift.fn_name,
-            );
-
             // Build the full ConceptSiteMemento struct for artifact serialization.
             let memento = ConceptSiteMemento {
                 cid: computed_cid.clone(),
                 code_site: CodeSite {
-                    function_term_cid: fn_term_cid,
-                    source_cid,
+                    function_term_cid: fn_term_cid.clone(),
+                    source_cid: source_cid.clone(),
                     span: CodeSiteSpan {
                         end: span_end,
                         start: span_start,
                     },
                 },
-                concept_cid: abstraction_cid,
+                concept_cid: abstraction_cid.clone(),
                 discharge,
                 kind: "concept-site".to_string(),
-                local_contract_cid: local_cid,
+                local_contract_cid: local_cid.clone(),
                 provenance: ConceptSiteProvenance {
-                    clusterer_cid,
-                    discharger_cid,
-                    lifter_cid,
+                    clusterer_cid: clusterer_cid.clone(),
+                    discharger_cid: discharger_cid.clone(),
+                    lifter_cid: lifter_cid.clone(),
                 },
                 realization_mode_hint: None,
                 schema_version: "1".to_string(),
                 witnesses: vec![],
             };
+
+            // §5.3 derived-CID round-trip check (real, not self-comparison).
+            // Re-derive the CID from the assembled struct fields independently
+            // to confirm the pre-stamp header_v hash equals the struct's own cid.
+            let rederived_cid = {
+                let cs_v = Value::object([
+                    ("function_term_cid", Value::string(memento.code_site.function_term_cid.clone())),
+                    ("source_cid", Value::string(memento.code_site.source_cid.clone())),
+                    (
+                        "span",
+                        Value::object([
+                            ("end", Value::integer(memento.code_site.span.end as i64)),
+                            ("start", Value::integer(memento.code_site.span.start as i64)),
+                        ]),
+                    ),
+                ]);
+                let mut rd_discharge_kv: Vec<(&str, Arc<Value>)> = Vec::new();
+                rd_discharge_kv.push(("method", Value::string(memento.discharge.method.clone())));
+                if let Some(ref rr) = memento.discharge.refusal_reason {
+                    rd_discharge_kv.push(("refusal_reason", Value::string(rr.clone())));
+                }
+                rd_discharge_kv.push(("verdict", Value::string(memento.discharge.verdict.clone())));
+                if let Some(ref drc) = memento.discharge.discharge_receipt_cid {
+                    rd_discharge_kv.push(("discharge_receipt_cid", Value::string(drc.clone())));
+                }
+                let rd_loss_json = serde_json::to_string(&memento.discharge.loss_record)
+                    .expect("rederive LossRecord");
+                let rd_loss_v = json_to_value(
+                    &serde_json::from_str(&rd_loss_json).expect("rederive parse"),
+                );
+                rd_discharge_kv.push(("loss_record", rd_loss_v));
+                let rd_discharge_v = Value::object(rd_discharge_kv);
+                let rd_prov_v = Value::object([
+                    ("clusterer_cid", Value::string(memento.provenance.clusterer_cid.clone())),
+                    ("discharger_cid", Value::string(memento.provenance.discharger_cid.clone())),
+                    ("lifter_cid", Value::string(memento.provenance.lifter_cid.clone())),
+                ]);
+                let mut rd_kv: Vec<(&str, Arc<Value>)> = Vec::new();
+                rd_kv.push(("code_site", cs_v));
+                rd_kv.push(("concept_cid", Value::string(memento.concept_cid.clone())));
+                rd_kv.push(("discharge", rd_discharge_v));
+                rd_kv.push(("kind", Value::string(memento.kind.clone())));
+                rd_kv.push(("local_contract_cid", Value::string(memento.local_contract_cid.clone())));
+                rd_kv.push(("provenance", rd_prov_v));
+                rd_kv.push(("schemaVersion", Value::string(memento.schema_version.clone())));
+                rd_kv.push(("witnesses", Value::array(vec![])));
+                let rd_header_v = Value::object(rd_kv);
+                blake3_512_of(encode_jcs(&rd_header_v).as_bytes())
+            };
+
+            // Inline §5.1-§5.3 validator.
+            validate_concept_site_memento(
+                &computed_cid,
+                "concept-site",
+                "1",
+                &memento.discharge.verdict,
+                &memento.discharge.loss_record,
+                &memento.discharge.discharge_receipt_cid,
+                &memento.discharge.refusal_reason,
+                &rederived_cid, // §5.3: re-derived from struct fields, not a self-comparison
+                &lift.fn_name,
+            );
+
             let memento_json = serde_json::to_string_pretty(&memento)
                 .expect("ConceptSiteMemento serialization");
             let _ = fs::write(
