@@ -49,6 +49,11 @@
     "wp": "integer remainder expression"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
   }
 }

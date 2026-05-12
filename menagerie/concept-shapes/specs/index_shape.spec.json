@@ -49,6 +49,23 @@
     "wp": "array element lvalue projection"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Read"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Reads"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
   }
 }

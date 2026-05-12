@@ -3,7 +3,7 @@
 
 The generator builds the concept hub from existing operation contracts, then
 attempts to mint a refinement morphism from each real lifter-emitted op to the
-corresponding concept hub op.  Two discharge strategies are attempted in order:
+corresponding concept hub op.  Three discharge strategies are attempted in order:
 
 1. canonicalizer-alpha-equivalence-plus-representation-map: the canonicalizer
    image of the transformed source contract lands exactly on the concept shape CID.
@@ -15,6 +15,14 @@ corresponding concept hub op.  Two discharge strategies are attempted in order:
       {pre, post.wp}, the morphism is discharged.  Soundness: concept_pre → true
       is a tautology, so in every calling context where concept:op is valid, the
       lang:op (which accepts all inputs) is also valid.
+   c. effect-subset relaxation: if lang.effects (as a set) ⊆ concept.effects (as
+      a set), the morphism is discharged.  Soundness: a consumer prepared for the
+      concept op's full effect set is not surprised if the actual lang op does
+      fewer effects.  The reverse (lang does MORE than concept promised) is never
+      discharged.  Composes with wp-abstraction and pre-weakening.
+
+Concept ops declare the UNION of all language effects for the same op, so the
+effect-⊆ relaxation discharges language ops that do a proper subset of those effects.
 
 Ops that do not discharge under either strategy are recorded in transport-gaps.md
 with the structural reason for the mismatch.
@@ -64,7 +72,7 @@ PRIMITIVE_STEMS = {
 
 COMMON_ALIASES = {
     "conditional": {lang: ["op_if.spec.json"] for lang in ["c11", "csharp", "go", "python", "typescript", "zig", "ruby", "php", "rust", "java"]},
-    "ite": {"c11": ["op_conditional.spec.json"], "csharp": ["op_ite.spec.json"], "python": ["op_ite-bool.spec.json"], "typescript": ["op_ite.spec.json"], "php": ["op_ternary.spec.json"], "ruby": ["op_ternary.spec.json"], "rust": ["op_ite.spec.json"], "java": ["op_ternary.spec.json"]},
+    "ite": {"c11": ["op_conditional.spec.json"], "csharp": ["op_ite.spec.json"], "python": ["op_ite-bool.spec.json"], "typescript": ["op_ite.spec.json"], "php": ["op_ternary.spec.json"], "ruby": ["op_ternary.spec.json"], "rust": ["op_ite.spec.json"], "java": ["op_ite.spec.json"]},
     "mod": {"rust": ["op_rem.spec.json"]},
     "bitand": {"c11": ["op_bit_and.spec.json"], "rust": ["op_bit_and.spec.json"]},
     "bitor": {"c11": ["op_bit_or.spec.json"], "rust": ["op_bit_or.spec.json"]},
@@ -118,19 +126,16 @@ OPS = [
     op("le", ("c11", "op_le.spec.json")),
     op("gt", ("c11", "op_gt.spec.json")),
     op("ge", ("c11", "op_ge.spec.json")),
-    op("and", ("c11", "op_and.spec.json"), patches={"unevaluated_slots": ["right"]}),
-    op("or", ("c11", "op_or.spec.json"), patches={"unevaluated_slots": ["right"]}),
     op("not", ("c11", "op_not.spec.json")),
     op("assign", ("c11", "op_assign.spec.json"), renaming={"lvalue": "target", "rvalue": "value"}),
     op("decl", ("c11", "op_decl.spec.json")),
     op("seq", ("c11", "op_seq.spec.json")),
     op("skip", ("c11", "op_skip.spec.json")),
     op("conditional", ("c11", "op_if.spec.json"), concept_operator="conditional", base_operator="if"),
-    op("ite", ("c11", "op_conditional.spec.json"), base_operator="conditional", patches={"unevaluated_slots": ["then_expr", "else_expr"]}),
+    op("ite", ("c11", "op_conditional.spec.json"), base_operator="conditional", renaming={"when_true": "then_expr", "when_false": "else_expr"}),
     op("while", ("c11", "op_while.spec.json")),
     op("do", ("c11", "op_do.spec.json")),
     op("for", ("c11", "op_for.spec.json")),
-    op("foreach", ("csharp", "op_foreach.spec.json"), patches={"arity_shape": {"kind": "named", "slots": [{"name": "var_name", "slot_sort": "identifier"}, {"name": "collection"}, {"name": "body", "evaluation": "unevaluated"}]}}),
     op("break", ("c11", "op_break.spec.json")),
     op("continue", ("c11", "op_continue.spec.json")),
     op("return", ("c11", "op_return.spec.json")),
@@ -151,20 +156,23 @@ OPS = [
 
 PORTABLE_ALL = {
     "add", "sub", "mul", "mod", "neg", "bitand", "bitor", "bitxor", "bitnot", "shl", "shr",
-    "eq", "ne", "lt", "le", "gt", "ge", "and", "or", "not", "assign", "decl", "seq", "skip",
+    "eq", "ne", "lt", "le", "gt", "ge", "not", "assign", "decl", "seq", "skip",
     "conditional", "ite", "while", "for", "break", "continue", "return", "call", "index", "member",
     "cast", "postinc", "postdec", "preinc", "predec", "source-unit",
 }
+# concept:and and concept:or are demoted: they are McCarthy desugarings of concept:ite
+# (a && b = ite(a, b, false); a || b = ite(a, true, b)), not independent primitives.
+# concept:foreach is demoted: no common iterator protocol across the 10 languages.
 LANG_SUPPORTED = {
     "c11": PORTABLE_ALL | {"div", "do", "deref", "addr"},
-    "csharp": PORTABLE_ALL | {"div", "do", "foreach", "new", "throw", "ushr"},
+    "csharp": PORTABLE_ALL | {"div", "do", "new", "throw", "ushr"},
     "go": (PORTABLE_ALL | {"div", "deref", "addr", "new"}) - {"postinc", "postdec", "preinc", "predec", "ite"},
-    "python": (PORTABLE_ALL | {"div", "foreach", "throw"}) - {"div", "bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
-    "typescript": (PORTABLE_ALL | {"foreach", "new", "throw", "ushr"}) - {"div", "deref", "addr"},
-    "zig": PORTABLE_ALL | {"div", "do", "foreach", "deref", "addr", "new", "throw"},
-    "ruby": (PORTABLE_ALL | {"foreach", "throw"}) - {"bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
-    "php": (PORTABLE_ALL | {"foreach", "new", "throw"}) - {"deref", "addr"},
-    "java": (PORTABLE_ALL | {"div", "do", "foreach", "new", "throw", "ushr"}) - {"deref", "addr"},
+    "python": (PORTABLE_ALL | {"div", "throw"}) - {"div", "bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
+    "typescript": (PORTABLE_ALL | {"new", "throw", "ushr"}) - {"div", "deref", "addr"},
+    "zig": PORTABLE_ALL | {"div", "do", "deref", "addr", "new", "throw"},
+    "ruby": (PORTABLE_ALL | {"throw"}) - {"bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
+    "php": (PORTABLE_ALL | {"new", "throw"}) - {"deref", "addr"},
+    "java": (PORTABLE_ALL | {"div", "do", "new", "throw", "ushr"}) - {"deref", "addr"},
     "rust": PORTABLE_ALL | {"div", "deref", "addr", "new", "throw"},
 }
 
@@ -329,7 +337,29 @@ def transformed_source_spec(op_def, source_spec, language):
     return data, operators
 
 
-def diff_reason(after, concept):
+# Per-(lang, concept-slug) override reasons for known genuine semantic divergences.
+# These are cases where transport will never discharge because the semantics differ,
+# not just the encoding.
+KNOWN_DIVERGENCE_REASONS = {
+    ("python", "div"): "python:div is true division (5/2==2.5); concept:div is integer division (5/2==2)",
+    ("python", "mod"): "python:mod is floored remainder (follows sign of divisor); concept:mod is truncated-toward-zero remainder (follows sign of dividend)",
+    ("python", "add"): "python:add is polymorphic (dispatches on operand type: int, float, str, list); concept:add is integer-only",
+    ("python", "sub"): "python:sub is polymorphic (dispatches on operand type); concept:sub is integer-only",
+    ("python", "mul"): "python:mul is polymorphic (int * str repeats, etc.); concept:mul is integer-only",
+    ("python", "neg"): "python:neg is polymorphic (dispatches on operand type); concept:neg is integer-only",
+    ("python", "lt"): "python:lt is polymorphic (dispatches on operand type); concept:lt is integer-only",
+    ("python", "le"): "python:le is polymorphic (dispatches on operand type); concept:le is integer-only",
+    ("python", "gt"): "python:gt is polymorphic (dispatches on operand type); concept:gt is integer-only",
+    ("typescript", "add"): "ts:+ is polymorphic (number | string concatenation); concept:add is integer-only",
+}
+
+
+def diff_reason(after, concept, lang_id=None, slug=None):
+    # Check for known genuine divergences first.
+    if lang_id and slug:
+        known = KNOWN_DIVERGENCE_REASONS.get((lang_id, slug))
+        if known:
+            return known
     for key, label in [("pre", "precondition"), ("formal_sorts", "formal sort"), ("return_sort", "return sort"), ("effects", "effect signature")]:
         if after.get(key) != concept.get(key):
             got = json.dumps(after.get(key), separators=(",", ":"))
@@ -360,10 +390,30 @@ def _is_true_pre(pre):
     )
 
 
-def try_structural_subsumption(after_spec, concept_spec):
-    """Sound structural ⊑ discharge when byte-equality fails on documentation fields only.
+def _effect_key(effect):
+    """Canonical JSON key for an effect entry (for set-membership comparison)."""
+    return json.dumps(effect, sort_keys=True, separators=(",", ":"))
 
-    Two relaxations, both sound under the morphism contract:
+
+def _effect_set(spec):
+    """Return the set of canonical JSON keys for all effects in a spec."""
+    return {_effect_key(e) for e in spec.get("effects", {}).get("effects", [])}
+
+
+def _effects_subset(lang_effects_set, concept_effects_set):
+    """Return True iff lang_effects_set ⊆ concept_effects_set.
+
+    Sound direction: concept declares 'may do at most these effects'; lang does
+    a subset, so a consumer prepared for the concept's worst case is fine.
+    Never discharges the reverse (lang does MORE than concept promised).
+    """
+    return lang_effects_set <= concept_effects_set
+
+
+def try_structural_subsumption(after_spec, concept_spec):
+    """Sound structural ⊑ discharge when byte-equality fails on relaxable fields only.
+
+    Three relaxations, all sound under the morphism contract:
 
     1. wp-text abstraction: the wp field is human-readable documentation; it carries
        no semantic weight in the discharge obligation.  If after_spec matches
@@ -378,6 +428,16 @@ def try_structural_subsumption(after_spec, concept_spec):
        and after_spec.pre == true, the morphism is discharged.
        Discharge method: "structural-pre-weakening-and-wp-abstraction".
 
+    3. effect-subset relaxation: if lang.effects (as a set) ⊆ concept.effects (as a
+       set), the morphism is discharged.  Soundness: the concept op promises 'may do
+       at most these effects'; a lang op with fewer (or equal) effects refines it.
+       A consumer prepared for the worst case is fine if actual does less.
+       NEVER discharges if lang.effects ⊄ concept.effects (lang does more than promised).
+       Composes with wp-abstraction (and pre-weakening).
+       Discharge methods: "structural-effect-subset",
+                          "structural-wp-abstraction-and-effect-subset",
+                          "structural-pre-weakening-and-wp-abstraction-and-effect-subset".
+
     Returns (method_string, pre_relaxed, wp_abstracted) on success, or None on failure.
     Sound: false-negatives (remaining gaps) are acceptable; false-positives are not
     emitted because every structural claim has a verified implication.
@@ -388,36 +448,82 @@ def try_structural_subsumption(after_spec, concept_spec):
     concept_pre = concept_spec.get("pre")
     after_wp = after_spec.get("post", {}).get("wp")
     concept_wp = concept_spec.get("post", {}).get("wp")
+    after_effects = _effect_set(after_spec)
+    concept_effects = _effect_set(concept_spec)
 
     pre_matches = after_pre == concept_pre
     wp_matches = after_wp == concept_wp
+    effects_match = after_effects == concept_effects
+    effects_ok = _effects_subset(after_effects, concept_effects)
 
-    if pre_matches and wp_matches:
+    if pre_matches and wp_matches and effects_match:
         # Byte-equality should have caught this already; shouldn't reach here.
         return None
 
-    # Try wp-only relaxation first (no pre change needed).
-    if pre_matches and not wp_matches:
+    # Build a relaxed copy replacing just the fields we're allowed to relax.
+    def _make_relaxed(relax_pre, relax_wp, relax_effects):
         relaxed = _copy.deepcopy(after_spec)
-        if "post" in relaxed and "wp" in relaxed["post"]:
-            relaxed["post"]["wp"] = concept_wp
-        elif "post" in relaxed:
-            relaxed["post"]["wp"] = concept_wp
-        if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
-            return ("structural-wp-abstraction", False, True)
+        if relax_pre:
+            relaxed["pre"] = concept_pre
+        if relax_wp:
+            if "post" in relaxed:
+                relaxed["post"]["wp"] = concept_wp
+        if relax_effects:
+            relaxed["effects"] = _copy.deepcopy(concept_spec.get("effects", empty_effects()))
+        return relaxed
+
+    # Helper: determine discharge method name from what was relaxed.
+    def _method(relax_pre, relax_wp, relax_effects):
+        parts = []
+        if relax_pre:
+            parts.append("pre-weakening")
+        if relax_wp:
+            parts.append("wp-abstraction")
+        if relax_effects:
+            parts.append("effect-subset")
+        return "structural-" + "-and-".join(parts)
+
+    # Only attempt discharge if effect direction is sound (lang ⊆ concept).
+    if not effects_ok:
         return None
 
-    # Try pre-weakening (lang pre must be true; also relax wp).
-    if not pre_matches and _is_true_pre(after_pre):
-        relaxed = _copy.deepcopy(after_spec)
-        relaxed["pre"] = concept_pre
-        if "post" in relaxed:
-            relaxed["post"]["wp"] = concept_wp
+    # Try all useful combinations of relaxations.
+    # Order: tightest first (fewest relaxations), then broader.
+    for relax_pre, relax_wp, relax_effects in [
+        # wp-only
+        (False, True, False),
+        # effects-only
+        (False, False, True),
+        # wp + effects
+        (False, True, True),
+        # pre + wp (lang pre must be true)
+        (True, True, False),
+        # pre + effects (lang pre must be true)
+        (True, False, True),
+        # pre + wp + effects (lang pre must be true)
+        (True, True, True),
+    ]:
+        # pre-weakening requires lang pre to be the trivially-true formula.
+        if relax_pre and not _is_true_pre(after_pre):
+            continue
+        # Skip if we're not actually relaxing anything.
+        if not relax_pre and not relax_wp and not relax_effects:
+            continue
+        # Skip if the fields we'd relax already match (no benefit, and the
+        # byte-equal fast-path should have caught full-match already).
+        needs = (
+            (relax_pre and not pre_matches)
+            or (relax_wp and not wp_matches)
+            or (relax_effects and not effects_match)
+        )
+        if not needs:
+            continue
+        relaxed = _make_relaxed(relax_pre, relax_wp, relax_effects)
         if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
-            return ("structural-pre-weakening-and-wp-abstraction", True, True)
-        return None
+            method = _method(relax_pre, relax_wp, relax_effects)
+            return (method, relax_pre, relax_wp)
 
-    # Non-true lang pre that doesn't match concept pre: unsound to relax without SMT.
+    # No combination worked.
     return None
 
 
@@ -485,10 +591,15 @@ def write_gap_report(gaps, records):
         "",
         "## Semantic Restrictions",
         "",
-        "- `concept:div` is integer division only. Floating division is out of scope for this node.",
+        "- `concept:div` is integer division only. Floating-point division is out of scope for this node. `python:div` (true division, 5/2==2.5) and `js:`-style polymorphic division do not transport to `concept:div`.",
+        "- `concept:mod` is truncated-toward-zero remainder. `python:%` / `python:mod` is floored remainder (follows sign of divisor, not dividend) and does not transport to `concept:mod`.",
+        "- `concept:Int` is a fixed-width integer type. Languages with arbitrary-precision integers (`python:Int`, JS-style BigInt) do not transport to the fixed-width concept ops.",
+        "- Polymorphic `python:add` / `js:+` dispatch on operand type (integer, float, string); `concept:add` is integer-only. These do not transport.",
+        "- `concept:and` and `concept:or` are demoted from the hub: they are McCarthy desugarings of `concept:ite`, not independent primitives (`a && b = ite(a, b, false)`; `a || b = ite(a, true, b)`). Per-language `eq_and_to_ite_desugar` / `eq_or_to_ite_desugar` mementos record this. Languages with a boolean ternary transport `and`/`or` at the `ite` level after desugaring.",
+        "- `concept:foreach` is demoted: no common iterator protocol across the 10 languages; cross-language `foreach` transport requires per-language iterator-op morphisms (`<lang>:iter` / `has_next` / `next`) that lifters do not currently emit. `foreach`-using programs correctly produce transport refusals.",
         "- `concept:ushr` is the logical zero-fill shift. It is separate from arithmetic `concept:shr`.",
-        "- Short-circuit `concept:and`, `concept:or`, and `concept:ite` require explicit unevaluated slot policy on the short-circuited argument.",
         "- `concept:source-unit` is a lossless source-bytes plus operational-term wrapper.",
+        "- Effect-subset relaxation: if `lang.effects` (as a set) is a subset of `concept.effects`, the morphism is discharged. Concept ops declare the union of all language effects for the same op. The reverse (lang does more than concept promised) is never discharged.",
         "",
         "## Minted Coverage", "", "| Concept op | Minted morphisms |", "| --- | --- |"]
     for record in records:
@@ -520,12 +631,50 @@ def update_readme(records):
     readme.write_text(text, encoding="utf-8")
 
 
+def _collect_union_effects(op_def):
+    """Return the union of effects.effects lists across all language specs for this op.
+
+    Concept ops declare the UNION of all language effects for the same op so that the
+    effect-subset relaxation can discharge language ops that do a proper subset.
+    An effect entry is a dict; we dedup by canonical JSON (sort_keys=True).
+    """
+    seen_keys = {}
+    for language in LANGUAGES:
+        directory = specs_dir(language["id"])
+        if not directory.is_dir():
+            continue
+        if op_def["slug"] not in LANG_SUPPORTED.get(language["id"], set()):
+            continue
+        for candidate in spec_candidates(op_def, language):
+            path = directory / candidate
+            if not path.exists():
+                continue
+            try:
+                source_spec = read_json(path)
+            except Exception:
+                continue
+            for effect in source_spec.get("effects", {}).get("effects", []):
+                key = json.dumps(effect, sort_keys=True, separators=(",", ":"))
+                if key not in seen_keys:
+                    seen_keys[key] = effect
+            break  # First candidate found is enough.
+    return list(seen_keys.values())
+
+
 def main():
     discharge.build_tools()
     for path in [SPEC_DIR, RECEIPT_DIR, DISCHARGE_DIR, CATALOG_REAL]:
         path.mkdir(parents=True, exist_ok=True)
 
     concept_specs = {op_def["slug"]: concept_spec_from_base(op_def) for op_def in OPS}
+
+    # Task C: set each concept op's effects to the UNION of all language effects for
+    # that op.  This ensures the effect-subset relaxation can discharge language ops
+    # whose effect sets are proper subsets of the concept op's declared effects.
+    for op_def in OPS:
+        union_effects = _collect_union_effects(op_def)
+        if union_effects:
+            concept_specs[op_def["slug"]]["effects"] = {"effects": union_effects}
 
     rows, records, gaps = [], [], []
     cid_rows = existing_cid_rows()
@@ -567,13 +716,15 @@ def main():
                 if after_cid != shape_cid:
                     subsumption = try_structural_subsumption(after_spec, concept_spec)
                     if subsumption is None:
-                        gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": diff_reason(after_spec, concept_spec)})
+                        gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])})
                         continue
                     discharge_method, pre_relaxed, wp_abstracted = subsumption
+                    effect_subset_relaxed = "effect-subset" in discharge_method
                 else:
                     discharge_method = "canonicalizer-alpha-equivalence-plus-representation-map"
                     pre_relaxed = False
                     wp_abstracted = False
+                    effect_subset_relaxed = False
                 after_name = f"{sanitize(language['id'])}_{sanitize(source_name.split(':', 1)[-1])}_to_{sanitize(op_def['slug'])}_after_substitution.json"
                 write_json(DISCHARGE_DIR / after_name, after_spec)
                 m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map, discharge_method)
@@ -601,6 +752,8 @@ def main():
                     receipt["pre_relaxed"] = True
                 if wp_abstracted:
                     receipt["wp_abstracted"] = True
+                if effect_subset_relaxed:
+                    receipt["effect_subset_relaxed"] = True
                 receipt_cid, receipt_path = discharge.store_receipt(stem, receipt)
                 rows.append({"kind": "receipt", "name": stem, "cid": receipt_cid, "path": receipt_path})
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})

@@ -39,6 +39,11 @@
     "wp": "postfix increment expression yielding the previous value"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemWrite"
+      }
+    ]
   }
 }

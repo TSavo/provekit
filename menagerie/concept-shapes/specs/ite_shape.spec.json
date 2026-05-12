@@ -48,12 +48,10 @@
           "name": "cond"
         },
         {
-          "name": "then_expr",
-          "evaluation": "unevaluated"
+          "name": "then_expr"
         },
         {
-          "name": "else_expr",
-          "evaluation": "unevaluated"
+          "name": "else_expr"
         }
       ]
     },
@@ -61,6 +59,11 @@
     "wp": "ternary expression selected by cond"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "union branch value effects"
+      }
+    ]
   }
 }

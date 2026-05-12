@@ -56,6 +56,18 @@
       {
         "kind": "effect-polymorphic",
         "rule": "callee.effects"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "UnresolvedCall"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Call"
+      },
+      {
+        "kind": "effect-polymorphic",
+        "rule": "callee.effects or unresolved_call when unavailable"
       }
     ]
   }

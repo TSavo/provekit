@@ -73,6 +73,18 @@
       {
         "kind": "effect-polymorphic",
         "rule": "union(init.effects, body.effects, step.effects)"
+      },
+      {
+        "kind": "effect-polymorphic",
+        "rule": "union(init.effects, body.effects, {Loop})"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "OpaqueLoop"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Loop"
       }
     ]
   }

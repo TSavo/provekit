@@ -1,0 +1,47 @@
+{
+  "kind": "algorithm",
+  "fn_name": "morphism:go:neg:to:concept:neg",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:49e4debbebb082e97bd18efd7718af89d6106002606211895b8977b9ae3e24616408957a3ed660722f3686546cdd59ec0ae070106686135233689b59bfafcc22",
+    "target_shape_cid": "blake3-512:206044a975f7f56eff3a9eb08b7dbfe402547f391c1d15f5d82011d297f71514e510a1c4d45bbc18f419f1e4e1362fa3f321aa16f6d5354856b33e2f30d2dad7",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {
+      "go:neg": "neg"
+    },
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
+      "source": "blake3-512:49e4debbebb082e97bd18efd7718af89d6106002606211895b8977b9ae3e24616408957a3ed660722f3686546cdd59ec0ae070106686135233689b59bfafcc22",
+      "target": "blake3-512:206044a975f7f56eff3a9eb08b7dbfe402547f391c1d15f5d82011d297f71514e510a1c4d45bbc18f419f1e4e1362fa3f321aa16f6d5354856b33e2f30d2dad7"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:49e4debbebb082e97bd18efd7718af89d6106002606211895b8977b9ae3e24616408957a3ed660722f3686546cdd59ec0ae070106686135233689b59bfafcc22",
+    "blake3-512:206044a975f7f56eff3a9eb08b7dbfe402547f391c1d15f5d82011d297f71514e510a1c4d45bbc18f419f1e4e1362fa3f321aa16f6d5354856b33e2f30d2dad7"
+  ]
+}

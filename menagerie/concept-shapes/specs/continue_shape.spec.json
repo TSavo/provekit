@@ -43,6 +43,10 @@
       {
         "kind": "effect-polymorphic",
         "rule": "control-transfer"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Continue"
       }
     ]
   }

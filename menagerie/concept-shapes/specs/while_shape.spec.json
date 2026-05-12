@@ -54,6 +54,18 @@
       {
         "kind": "effect-polymorphic",
         "rule": "body.effects plus loop invariant obligations"
+      },
+      {
+        "kind": "effect-polymorphic",
+        "rule": "union(body.effects, {Loop})"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "OpaqueLoop"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "Loop"
       }
     ]
   }

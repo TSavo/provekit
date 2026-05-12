@@ -49,6 +49,11 @@
     "wp": "integer division expression"
   },
   "effects": {
-    "effects": []
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
   }
 }

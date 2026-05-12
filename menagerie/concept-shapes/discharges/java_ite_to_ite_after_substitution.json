@@ -1,0 +1,64 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:ite",
+  "formals": [
+    "cond",
+    "then_expr",
+    "else_expr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "ite",
+    "arity": [
+      "Bool",
+      "Expr",
+      "Expr"
+    ],
+    "result": "Expr",
+    "wp": "cond ? when_true : when_false",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_expr"
+        },
+        {
+          "name": "else_expr"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  }
+}
