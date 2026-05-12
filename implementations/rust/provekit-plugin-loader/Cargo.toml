@@ -1,0 +1,25 @@
+[package]
+name = "provekit-plugin-loader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt PEP 1.7.0: plugin loader -- file interface (§3), JSON-RPC interface (§4), content-addressing (§6), error model (§8), registry semantics (§9)."
+
+[lib]
+name = "provekit_plugin_loader"
+path = "src/lib.rs"
+
+[[bin]]
+name = "provekit-plugin-loader-stub-rpc"
+path = "src/bin/stub_rpc_server.rs"
+
+[dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 # Workspace-internal libs.
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-plugin-loader = { path = "../provekit-plugin-loader" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }

@@ -1645,6 +1645,7 @@ dependencies = [
  "provekit-lift-contracts",
  "provekit-linker",
  "provekit-mint-amp",
+ "provekit-plugin-loader",
  "provekit-proof-envelope",
  "provekit-self-contracts",
  "provekit-verifier",
@@ -2063,6 +2064,18 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "libprovekit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "provekit-plugin-loader"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-proof-envelope",
  "serde",
  "serde_json",
  "tempfile",
