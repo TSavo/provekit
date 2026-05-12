@@ -1194,9 +1194,14 @@ fn emit_annotation_prefix(
         // are already in scope from the function signature.
         let body = peel_quantifiers(pre);
         let expr = formula_to_syntax(body, style);
+        // F3: Zig does NOT support Rust `#[requires(...)]` attribute syntax.
+        // Give Zig a `// @requires:` comment annotation instead.
         match style {
-            TargetStyle::Rust | TargetStyle::Zig => {
+            TargetStyle::Rust => {
                 out.push_str(&format!("{indent}#[requires({expr})]\n"));
+            }
+            TargetStyle::Zig => {
+                out.push_str(&format!("{indent}// @requires: {expr}\n"));
             }
             TargetStyle::Python | TargetStyle::Ruby => {
                 out.push_str(&format!("{indent}# requires: {expr}\n"));
@@ -1217,8 +1222,11 @@ fn emit_annotation_prefix(
         let body = peel_quantifiers(post);
         let expr = formula_to_syntax(body, style);
         match style {
-            TargetStyle::Rust | TargetStyle::Zig => {
+            TargetStyle::Rust => {
                 out.push_str(&format!("{indent}#[ensures({expr})]\n"));
+            }
+            TargetStyle::Zig => {
+                out.push_str(&format!("{indent}// @ensures: {expr}\n"));
             }
             TargetStyle::Python | TargetStyle::Ruby => {
                 out.push_str(&format!("{indent}# ensures: {expr}\n"));
@@ -1385,7 +1393,9 @@ fn realize_function(
             } else {
                 emit_stmt(body, style, 1)?
             };
-            // Go: package header first, then annotations above the function.
+            // Go: annotations above the function, NO package declaration here.
+            // File-level header (`package main`) is emitted once per file by the
+            // caller via `realize_file_header`.
             // When return type is empty (void/unit), omit it from signature.
             let go_ret = if mapped_return.is_empty() {
                 String::new()
@@ -1393,7 +1403,7 @@ fn realize_function(
                 format!(" {mapped_return}")
             };
             format!(
-                "package main\n\n{annotation_prefix}func {function}({typed_param_list}){go_ret} {{\n{body_str}}}\n"
+                "{annotation_prefix}func {function}({typed_param_list}){go_ret} {{\n{body_str}}}\n"
             )
         }
         TargetStyle::CSharp => {
@@ -1443,8 +1453,11 @@ fn realize_function(
             } else {
                 emit_stmt(body, style, 1)?
             };
+            // PHP: NO `<?php` open tag here; emitted once per file by the caller
+            // via `realize_file_header`. Multiple `<?php` tags in one file is a
+            // parse error.
             format!(
-                "<?php\n{annotation_prefix}function {function}({}) {{\n{body_str}}}\n",
+                "{annotation_prefix}function {function}({}) {{\n{body_str}}}\n",
                 params
                     .iter()
                     .map(|param| format!("${param}"))
@@ -1475,6 +1488,29 @@ fn realize_function(
         TargetStyle::Java => "java",
     };
     Ok(RealizedSource { extension, source })
+}
+
+/// Emit the file-level header for a given target language.
+///
+/// Languages like Go (`package main`) and PHP (`<?php`) require exactly one
+/// file-level declaration per output file; emitting it once here and omitting
+/// it from per-function snippets prevents duplicate-declaration parse errors.
+///
+/// Most languages (Rust, Python, TypeScript, Java, C#, Zig, Ruby) need no
+/// file-level preamble, so this returns an empty string for them.
+pub(crate) fn realize_file_header(language: &str) -> String {
+    match language {
+        "go" => "package main\n\n".to_string(),
+        "php" => "<?php\n".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Emit the file-level footer for a given target language.
+///
+/// Currently no supported language needs a file footer; reserved for future use.
+pub(crate) fn realize_file_footer(_language: &str) -> String {
+    String::new()
 }
 
 /// Emit a language-idiomatic compilable stub body string.

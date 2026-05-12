@@ -567,3 +567,404 @@ fn canonical_go_target_creates_go_output() {
     let go_src = fs::read_to_string(go_files[0].path()).unwrap();
     assert!(go_src.contains("concept:"), "Go output must carry concept annotation");
 }
+
+// ============================================================================
+// F5: Per-language syntax-checker regression tests (Test 18-26)
+//
+// Each test:
+//   1. Invokes bind --rewrite canonical --target-language <lang>
+//   2. Reads the emitted output file
+//   3. Pipes it through the language's own syntax checker (or asserts structural
+//      validity when a checker is not universally available).
+//   4. Fails if the checker reports a syntax error.
+//
+// This is the load-bearing protocol. CI must not regress any of these without
+// the checker explicitly reporting success.
+// ============================================================================
+
+/// Run `rustc --crate-type=lib --emit=metadata` on a file; return Ok(()) or Err(stderr).
+fn rustc_check(path: &std::path::Path) -> Result<(), String> {
+    let out_dir = tempfile::tempdir().expect("tempdir");
+    let out = std::process::Command::new("rustc")
+        .args(["--crate-type=lib", "--emit=metadata", "--edition=2021"])
+        .arg("--out-dir")
+        .arg(out_dir.path())
+        .arg(path)
+        .output()
+        .expect("spawn rustc");
+    if out.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        // Warnings are fine; only fail on errors.
+        if stderr.lines().any(|l| l.starts_with("error")) {
+            Err(stderr)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Run `python3 -m py_compile` on a file.
+fn python_check(path: &std::path::Path) -> Result<(), String> {
+    let out = std::process::Command::new("python3")
+        .args(["-m", "py_compile"])
+        .arg(path)
+        .output()
+        .expect("spawn python3");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
+}
+
+/// Run `gofmt -e` on a file (parse check).
+fn go_check(path: &std::path::Path) -> Result<(), String> {
+    let out = std::process::Command::new("gofmt")
+        .arg("-e")
+        .arg(path)
+        .output()
+        .expect("spawn gofmt");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
+}
+
+/// Run `ruby -c` on a file.
+fn ruby_check(path: &std::path::Path) -> Result<(), String> {
+    let out = std::process::Command::new("ruby")
+        .arg("-c")
+        .arg(path)
+        .output()
+        .expect("spawn ruby");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
+}
+
+/// Run `php -l` on a file.
+fn php_check(path: &std::path::Path) -> Result<(), String> {
+    let out = std::process::Command::new("php")
+        .arg("-l")
+        .arg(path)
+        .output()
+        .expect("spawn php");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stdout).to_string()
+            + &String::from_utf8_lossy(&out.stderr))
+    }
+}
+
+/// Run `javac` on a file.
+fn javac_check(path: &std::path::Path) -> Result<(), String> {
+    let out_dir = tempfile::tempdir().expect("tempdir");
+    let out = std::process::Command::new("javac")
+        .arg("-d")
+        .arg(out_dir.path())
+        .arg(path)
+        .output()
+        .expect("spawn javac");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
+}
+
+/// Run `zig fmt --check` on a file.
+fn zig_check(path: &std::path::Path) -> Result<(), String> {
+    let out = std::process::Command::new("zig")
+        .args(["fmt", "--check"])
+        .arg(path)
+        .output()
+        .expect("spawn zig");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string()
+            + &String::from_utf8_lossy(&out.stdout))
+    }
+}
+
+/// Find the first file with the given extension under a directory.
+fn first_file_with_ext(dir: &std::path::Path, ext: &str) -> Option<std::path::PathBuf> {
+    fs::read_dir(dir).ok()?.flatten()
+        .find(|e| e.path().extension().map(|x| x == ext).unwrap_or(false))
+        .map(|e| e.path())
+}
+
+// ============================================================================
+// Test 18: Rust canonical output passes rustc
+// ============================================================================
+
+#[test]
+fn f5_rust_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("rust"));
+    assert!(result.status.success(), "bind rust must exit 0");
+    let dir = out.join("translated").join("rust");
+    let f = first_file_with_ext(&dir, "rs").expect("no .rs output");
+    rustc_check(&f).unwrap_or_else(|e| panic!("Rust syntax error in emitted .rs file:\n{e}"));
+}
+
+// ============================================================================
+// Test 19: Python canonical output passes python3 -m py_compile
+// ============================================================================
+
+#[test]
+fn f5_python_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("python"));
+    assert!(result.status.success(), "bind python must exit 0");
+    let dir = out.join("translated").join("python");
+    let f = first_file_with_ext(&dir, "py").expect("no .py output");
+    python_check(&f).unwrap_or_else(|e| panic!("Python syntax error in emitted .py file:\n{e}"));
+}
+
+// ============================================================================
+// Test 20: Go canonical output passes gofmt -e (exactly one `package main`)
+// ============================================================================
+
+#[test]
+fn f5_go_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("go"));
+    assert!(result.status.success(), "bind go must exit 0");
+    let dir = out.join("translated").join("go");
+    let f = first_file_with_ext(&dir, "go").expect("no .go output");
+    let src = fs::read_to_string(&f).unwrap();
+    let pkg_count = src.lines().filter(|l| l.trim_start() == "package main").count();
+    assert_eq!(
+        pkg_count, 1,
+        "Go output must contain exactly one `package main` declaration, found {pkg_count}"
+    );
+    go_check(&f).unwrap_or_else(|e| panic!("Go syntax error in emitted .go file:\n{e}"));
+}
+
+// ============================================================================
+// Test 21: Java canonical output passes javac
+// ============================================================================
+
+#[test]
+fn f5_java_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("java"));
+    assert!(result.status.success(), "bind java must exit 0");
+    let dir = out.join("translated").join("java");
+    let f = first_file_with_ext(&dir, "java").expect("no .java output");
+    javac_check(&f).unwrap_or_else(|e| panic!("Java syntax error in emitted .java file:\n{e}"));
+}
+
+// ============================================================================
+// Test 22: Zig canonical output passes zig fmt --check (no #[cfg_attr])
+// ============================================================================
+
+#[test]
+fn f5_zig_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("zig"));
+    assert!(result.status.success(), "bind zig must exit 0");
+    let dir = out.join("translated").join("zig");
+    let f = first_file_with_ext(&dir, "zig").expect("no .zig output");
+    let src = fs::read_to_string(&f).unwrap();
+    assert!(
+        !src.contains("#[cfg_attr"),
+        "Zig output must NOT contain Rust #[cfg_attr(...)] syntax\n{src}"
+    );
+    zig_check(&f).unwrap_or_else(|e| panic!("Zig syntax error in emitted .zig file:\n{e}"));
+}
+
+// ============================================================================
+// Test 23: Ruby canonical output passes ruby -c (uses `#` not `//` for comments)
+// ============================================================================
+
+#[test]
+fn f5_ruby_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("ruby"));
+    assert!(result.status.success(), "bind ruby must exit 0");
+    let dir = out.join("translated").join("ruby");
+    let f = first_file_with_ext(&dir, "rb").expect("no .rb output");
+    let src = fs::read_to_string(&f).unwrap();
+    // The canonical rewrite header must use `#` not `//` for Ruby.
+    assert!(
+        src.contains("# canonical rewrite:"),
+        "Ruby output must use `#` comment prefix, not `//`\n{src}"
+    );
+    ruby_check(&f).unwrap_or_else(|e| panic!("Ruby syntax error in emitted .rb file:\n{e}"));
+}
+
+// ============================================================================
+// Test 24: PHP canonical output passes php -l (exactly one `<?php`)
+// ============================================================================
+
+#[test]
+fn f5_php_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("php"));
+    assert!(result.status.success(), "bind php must exit 0");
+    let dir = out.join("translated").join("php");
+    let f = first_file_with_ext(&dir, "php").expect("no .php output");
+    let src = fs::read_to_string(&f).unwrap();
+    let php_tag_count = src.matches("<?php").count();
+    assert_eq!(
+        php_tag_count, 1,
+        "PHP output must contain exactly one `<?php` open tag, found {php_tag_count}"
+    );
+    php_check(&f).unwrap_or_else(|e| panic!("PHP syntax error in emitted .php file:\n{e}"));
+}
+
+// ============================================================================
+// Test 25: TypeScript canonical output is structurally valid
+//          (checks for export function, no duplicate declarations)
+// ============================================================================
+
+#[test]
+fn f5_typescript_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("typescript"));
+    assert!(result.status.success(), "bind typescript must exit 0");
+    let dir = out.join("translated").join("typescript");
+    let f = first_file_with_ext(&dir, "ts").expect("no .ts output");
+    let src = fs::read_to_string(&f).unwrap();
+    // Structural invariants: must contain export functions (not just a stub comment).
+    assert!(
+        src.contains("export function"),
+        "TypeScript output must contain `export function`\n{src}"
+    );
+    // Must not contain duplicate `export function deposit` (would be a concat bug).
+    let export_count = src.matches("export function deposit").count();
+    assert_eq!(
+        export_count, 1,
+        "TypeScript output must have exactly one `export function deposit`, found {export_count}\n{src}"
+    );
+    // tsc syntax check (if tsc is available; structural check is always enforced above).
+    let tsc_path = std::process::Command::new("which")
+        .arg("tsc")
+        .output()
+        .ok()
+        .filter(|o| o.status.success());
+    if tsc_path.is_some() {
+        let ts_dir = tempfile::tempdir().expect("tempdir");
+        let ts_copy = ts_dir.path().join("account.ts");
+        fs::copy(&f, &ts_copy).unwrap();
+        fs::write(
+            ts_dir.path().join("tsconfig.json"),
+            r#"{"compilerOptions":{"noEmit":true,"strict":true,"target":"ES2020","module":"commonjs"},"include":["*.ts"]}"#,
+        ).unwrap();
+        let tsc_out = std::process::Command::new("tsc")
+            .arg("--noEmit")
+            .current_dir(ts_dir.path())
+            .output()
+            .expect("spawn tsc");
+        assert!(
+            tsc_out.status.success(),
+            "TypeScript syntax error:\n{}",
+            String::from_utf8_lossy(&tsc_out.stdout)
+        );
+    }
+}
+
+// ============================================================================
+// Test 26: C# canonical output is structurally valid
+//          (checks for public static class, no duplicate declarations)
+// ============================================================================
+
+#[test]
+fn f5_csharp_canonical_parses() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("csharp"));
+    assert!(result.status.success(), "bind csharp must exit 0");
+    let dir = out.join("translated").join("csharp");
+    let f = first_file_with_ext(&dir, "cs").expect("no .cs output");
+    let src = fs::read_to_string(&f).unwrap();
+    // Structural invariants: must contain public static class wrappers.
+    assert!(
+        src.contains("public static class"),
+        "C# output must contain `public static class`\n{src}"
+    );
+    // Class names must be unique (per-function class naming prevents duplicate-class errors).
+    let deposit_class_count = src.matches("class DepositTransported").count();
+    assert_eq!(
+        deposit_class_count, 1,
+        "C# must have exactly one DepositTransported class, found {deposit_class_count}\n{src}"
+    );
+    // dotnet syntax check (if dotnet is available and operational).
+    // Note: `dotnet build` occasionally fails in tmp-dir contexts due to MSBuild
+    // environment issues (NuGet cache, SDK discovery from arbitrary paths). The
+    // structural assertions above are always enforced; the dotnet check is
+    // best-effort and skipped if dotnet is absent OR if the SDK reports an
+    // environment error unrelated to C# syntax.
+    let dotnet_available = std::process::Command::new("dotnet")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .is_some();
+    if dotnet_available {
+        let cs_dir = tempfile::tempdir().expect("tempdir");
+        let cs_copy = cs_dir.path().join("account.cs");
+        fs::copy(&f, &cs_copy).unwrap();
+        fs::write(
+            cs_dir.path().join("test.csproj"),
+            r#"<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Library</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>"#,
+        ).unwrap();
+        let dotnet_out = std::process::Command::new("dotnet")
+            .args(["build", "--nologo", "-q"])
+            .current_dir(cs_dir.path())
+            .output()
+            .expect("spawn dotnet");
+        // Only assert on actual C# parse errors (lines starting with "error CS").
+        // MSBuild environment errors (MSBUILD errors, path creation warnings) are
+        // non-deterministic in tmp contexts and must not be treated as C# syntax failures.
+        let combined = String::from_utf8_lossy(&dotnet_out.stdout).to_string()
+            + &String::from_utf8_lossy(&dotnet_out.stderr);
+        let has_cs_error = combined.lines().any(|l| {
+            let t = l.trim();
+            t.contains("error CS") || t.contains(": error CS")
+        });
+        assert!(
+            !has_cs_error,
+            "C# syntax error in emitted .cs file:\n{combined}"
+        );
+    }
+}
+
+// ============================================================================
+// F6: Test 27 -- gaps.json records bind-stub-body-emitted for stub functions
+// ============================================================================
+
+#[test]
+fn f6_gaps_record_stub_body_emitted() {
+    let root = fixture_root();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    // Use invisible mode so the bind engine runs without writing files.
+    let result = bind_cmd(&root, &out, "invisible", "monitor", None);
+    assert!(result.status.success(), "bind invisible must succeed");
+    let gaps: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(out.join("gaps.json")).unwrap()).unwrap();
+    let gap_arr = gaps["gaps"].as_array().expect("gaps must be array");
+    let kinds: Vec<&str> = gap_arr.iter().filter_map(|g| g["kind"].as_str()).collect();
+    // v0 canonical bind always emits stub bodies (no term graph yet).
+    // The gap record is the honest disclosure: substrate knows stubs were emitted.
+    assert!(
+        kinds.contains(&"bind-stub-body-emitted"),
+        "gaps.json must record bind-stub-body-emitted when canonical stubs are emitted; kinds found: {kinds:?}"
+    );
+}

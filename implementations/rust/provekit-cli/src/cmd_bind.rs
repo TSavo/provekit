@@ -763,6 +763,25 @@ fn run_bind_engine(
         kind: "v0-capability-gap".into(),
         detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
     });
+    // F6: Record stub-body gap when bindings exist.
+    //
+    // In v0 the canonical-rewrite path has no full term graph; it delegates to
+    // `realize_for_bind` which always emits idiomatic stub bodies (panic/raise/todo).
+    // This gap record is the honest substrate disclosure: real lifted source bodies
+    // are NOT present in these outputs.  A future PR that wires the term graph to the
+    // canonical path should remove this gap kind and replace it with a "term-body-realized"
+    // kind.
+    if !bindings.is_empty() {
+        gaps.push(GapRecord {
+            kind: "bind-stub-body-emitted".into(),
+            detail: format!(
+                "canonical-rewrite emitted stub bodies for {n} binding(s): no real lifted term \
+                 graph available in v0; bodies are idiomatic language stubs \
+                 (panic/raise/todo/throw). Real bodies deferred to v1.",
+                n = bindings.len()
+            ),
+        });
+    }
     Ok(EngineResult {
         bindings,
         concepts,
@@ -1018,8 +1037,19 @@ fn apply_canonical_rewrite(
             by_fn.insert(b.site_fn.clone(), b);
         }
 
+        // F2: use target-language comment prefix (not always `//`).
+        let cmt = comment_prefix_for(target_lang);
+
+        // F1: emit file-level header exactly once per output file.
+        // Go needs `package main`, PHP needs `<?php`, others need nothing.
+        let file_header = crate::cmd_transport::realize_file_header(target_lang);
+
         let mut chunks: Vec<String> = Vec::new();
-        chunks.push(format!("// canonical rewrite: {rel_file} -> {target_lang}\n"));
+        // File-level header (may be empty) comes first.
+        if !file_header.is_empty() {
+            chunks.push(file_header);
+        }
+        chunks.push(format!("{cmt} canonical rewrite: {rel_file} -> {target_lang}\n"));
 
         for item in &file.items {
             if let syn::Item::Fn(item_fn) = item {
@@ -1067,10 +1097,16 @@ fn apply_canonical_rewrite(
                 } else {
                     // Coverage gap: no binding for this function.
                     chunks.push(format!(
-                        "// bind:canonical:gap: fn {fn_name} has no concept binding for {target_lang}\n"
+                        "{cmt} bind:canonical:gap: fn {fn_name} has no concept binding for {target_lang}\n"
                     ));
                 }
             }
+        }
+
+        // F1: emit file-level footer exactly once per output file (currently empty for all langs).
+        let file_footer = crate::cmd_transport::realize_file_footer(target_lang);
+        if !file_footer.is_empty() {
+            chunks.push(file_footer);
         }
 
         let output_src = chunks.join("\n");
@@ -1097,8 +1133,20 @@ fn apply_canonical_rewrite(
     for path in src_files {
         let rel = path.strip_prefix(root).unwrap_or(path).display().to_string();
         if !by_file.contains_key(&rel) && !to_disk {
-            println!("// bind:canonical:no-bindings:{rel}");
+            let cmt = comment_prefix_for(target_lang);
+            println!("{cmt} bind:canonical:no-bindings:{rel}");
         }
+    }
+}
+
+/// Return the line-comment prefix for the target language.
+///
+/// Python and Ruby use `#` for comments; `//` is the floor-division operator
+/// and would produce a syntax error. All other supported languages use `//`.
+fn comment_prefix_for(target_lang: &str) -> &'static str {
+    match target_lang {
+        "python" | "ruby" => "#",
+        _ => "//",
     }
 }
 
@@ -1148,9 +1196,11 @@ fn build_target_annotations(
     }
 
     // Contract attributes in target-language syntax.
+    // F3: Zig does NOT use Rust `#[cfg_attr(...)]` syntax; give it `// @provekit:` comments.
     if let Some(pre) = &binding.pretty_pre {
         match target_lang {
-            "rust" | "zig" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
+            "rust" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
+            "zig" => lines.push(format!("// @requires: {pre}")),
             "java" | "csharp" => lines.push(format!("/* @requires: {pre} */")),
             "python" | "ruby" => lines.push(format!("# @requires: {pre}")),
             _ => lines.push(format!("// @requires: {pre}")),
@@ -1158,7 +1208,8 @@ fn build_target_annotations(
     }
     if let Some(post) = &binding.pretty_post {
         match target_lang {
-            "rust" | "zig" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
+            "rust" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
+            "zig" => lines.push(format!("// @ensures: {post}")),
             "java" | "csharp" => lines.push(format!("/* @ensures: {post} */")),
             "python" | "ruby" => lines.push(format!("# @ensures: {post}")),
             _ => lines.push(format!("// @ensures: {post}")),
@@ -1172,6 +1223,7 @@ fn build_target_annotations(
                 "rust" => lines.push(format!(
                     "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
                 )),
+                "zig" => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
                 "java" => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
                 "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
                 _ => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
@@ -1182,6 +1234,7 @@ fn build_target_annotations(
                 "rust" => lines.push(format!(
                     "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
                 )),
+                "zig" => lines.push(format!("// @provekit_emitter(concept = \"{concept_name}\")")),
                 _ => lines.push(format!("// @provekit_emitter(concept = \"{concept_name}\")")),
             }
         }
@@ -1190,6 +1243,7 @@ fn build_target_annotations(
                 "rust" => lines.push(format!(
                     "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
                 )),
+                "zig" => lines.push(format!("// @provekit_witness(concept = \"{concept_name}\")")),
                 _ => lines.push(format!("// @provekit_witness(concept = \"{concept_name}\")")),
             }
         }
@@ -1228,9 +1282,11 @@ fn build_bind_meta_comment(
     // These come from the bind engine's own lift pass, which is authoritative for the
     // source language. ORP may also emit contract lines in its prefix; these ensure
     // they are always present.
+    // F3: Zig does NOT use Rust `#[cfg_attr(...)]` syntax.
     if let Some(pre) = &binding.pretty_pre {
         match target_lang {
-            "rust" | "zig" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
+            "rust" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
+            "zig" => lines.push(format!("// @requires: {pre}")),
             "java" | "csharp" => lines.push(format!("/* @requires: {pre} */")),
             "python" | "ruby" => lines.push(format!("# @requires: {pre}")),
             _ => lines.push(format!("// @requires: {pre}")),
@@ -1238,7 +1294,8 @@ fn build_bind_meta_comment(
     }
     if let Some(post) = &binding.pretty_post {
         match target_lang {
-            "rust" | "zig" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
+            "rust" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
+            "zig" => lines.push(format!("// @ensures: {post}")),
             "java" | "csharp" => lines.push(format!("/* @ensures: {post} */")),
             "python" | "ruby" => lines.push(format!("# @ensures: {post}")),
             _ => lines.push(format!("// @ensures: {post}")),
