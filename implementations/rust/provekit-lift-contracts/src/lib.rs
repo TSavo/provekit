@@ -42,12 +42,26 @@
 // `canonical_bytes` / CID derivation.  Changing or removing the
 // annotation never rewrites the shape identity.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Int,
-    Sort, Term,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, or_, serialize::formula_to_value,
+    str_const, ContractDecl, Formula, Int, Sort, Term,
 };
+use provekit_ir_types::{
+    EvidenceMemento, IrFormula, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
+};
+
+/// The auto-promote sentinel lifter CID (128 hex zeros after the prefix).
+/// Used until PR-F wires the real lifter CID (compound spec §4.4).
+pub const AUTO_PROMOTE_LIFTER_CID: &str = concat!(
+    "blake3-512:",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+);
 
 #[derive(Debug, Clone)]
 pub struct LiftWarning {
@@ -59,6 +73,10 @@ pub struct LiftWarning {
 #[derive(Debug, Default)]
 pub struct AdapterOutput {
     pub decls: Vec<ContractDecl>,
+    /// One `EvidenceMemento` per lifted type-signature site.
+    /// Populated only when `lift_file_with_sig_evidence` is called; empty
+    /// when using the basic `lift_file` / `lift_file_with_source` API.
+    pub evidences: Vec<EvidenceMemento>,
     pub warnings: Vec<LiftWarning>,
     pub seen: usize,
     pub lifted: usize,
@@ -83,6 +101,705 @@ pub fn lift_file_with_source(
     let mut out = AdapterOutput::default();
     walk_items(&file.items, source_path, source_lines.as_deref(), &mut out);
     out
+}
+
+/// Walk every function in `file` and emit one `EvidenceMemento` per
+/// type-derived contract site (return type, receiver, typed parameters).
+///
+/// Unlike `lift_file` / `lift_file_with_source`, this function does NOT
+/// require contract annotations — it visits ALL functions. The caller
+/// supplies the raw source bytes so the evidence's `source_locator.source_cid`
+/// can be BLAKE3-512(source_bytes) per spec §1.1.
+///
+/// The returned `AdapterOutput.decls` is always empty: this path emits
+/// evidences only, not ContractDecls.  Callers that want both should call
+/// `lift_file_with_source` and `lift_file_with_sig_evidence` separately
+/// and merge the outputs.
+pub fn lift_file_with_sig_evidence(
+    file: &syn::File,
+    source_path: &str,
+    source_bytes: &[u8],
+) -> AdapterOutput {
+    let source_cid = blake3_512_of(source_bytes);
+    let mut out = AdapterOutput::default();
+    walk_items_for_sig(&file.items, source_path, &source_cid, &mut out);
+    out
+}
+
+fn walk_items_for_sig(
+    items: &[syn::Item],
+    source_path: &str,
+    source_cid: &str,
+    out: &mut AdapterOutput,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(f) => visit_fn_sig(f, source_path, source_cid, out),
+            syn::Item::Mod(m) => {
+                if let Some((_, items)) = &m.content {
+                    walk_items_for_sig(items, source_path, source_cid, out);
+                }
+            }
+            syn::Item::Impl(i) => {
+                for it in &i.items {
+                    if let syn::ImplItem::Fn(f) = it {
+                        visit_impl_fn_sig(f, source_path, source_cid, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn visit_fn_sig(
+    f: &syn::ItemFn,
+    source_path: &str,
+    source_cid: &str,
+    out: &mut AdapterOutput,
+) {
+    emit_sig_evidences(&f.sig, source_path, source_cid, out);
+}
+
+fn visit_impl_fn_sig(
+    f: &syn::ImplItemFn,
+    source_path: &str,
+    source_cid: &str,
+    out: &mut AdapterOutput,
+) {
+    emit_sig_evidences(&f.sig, source_path, source_cid, out);
+}
+
+// ---------------------------------------------------------------------------
+// Type-signature evidence emission
+// ---------------------------------------------------------------------------
+
+/// Emit zero or more `EvidenceMemento`s for a function signature:
+///   - one per typed parameter with a derivable domain constraint
+///   - one for the return type (unless trivially opaque / bare generic)
+fn emit_sig_evidences(
+    sig: &syn::Signature,
+    source_path: &str,
+    source_cid: &str,
+    out: &mut AdapterOutput,
+) {
+    let fn_name = sig.ident.to_string();
+    let fn_span = sig.ident.span();
+    let fn_span_start = fn_span.start();
+    let fn_span_end = fn_span.end();
+
+    // The written return type string — required in every type-signature evidence
+    // per spec §10: `{ "return_type": <type_string> }`.
+    let fn_return_type_str = return_type_to_string(&sig.output);
+
+    // Build the signature-span locator (covers the function name token).
+    // col is 0-indexed per spec §1.1 — proc_macro2 Span::start().column is
+    // already 0-indexed, so no +1.
+    let sig_locator = SourceLocator {
+        source_cid: source_cid.to_string(),
+        span: SourceLocatorSpan {
+            start: SourceLocatorPoint {
+                line: fn_span_start.line as u32,
+                col: fn_span_start.column as u32,
+            },
+            end: SourceLocatorPoint {
+                line: fn_span_end.line as u32,
+                col: fn_span_end.column as u32,
+            },
+        },
+    };
+
+    // --- Parameters ---
+    for (param_idx, arg) in sig.inputs.iter().enumerate() {
+        match arg {
+            syn::FnArg::Receiver(recv) => {
+                // &self or &mut self
+                let type_shape = if recv.mutability.is_some() {
+                    "receiver-exclusive"
+                } else if recv.reference.is_some() {
+                    "receiver-shared"
+                } else {
+                    "receiver-owned"
+                };
+                let position = format!("param:{param_idx}");
+                let mut ext = BTreeMap::new();
+                ext.insert(
+                    "function_symbol".to_string(),
+                    serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
+                );
+                // Required per spec §10: return_type is the function's written
+                // return type string for every type-signature evidence.
+                ext.insert(
+                    "return_type".to_string(),
+                    serde_json::Value::String(fn_return_type_str.clone()),
+                );
+                ext.insert(
+                    "signature_position".to_string(),
+                    serde_json::Value::String(position),
+                );
+                ext.insert(
+                    "type_shape".to_string(),
+                    serde_json::Value::String(type_shape.to_string()),
+                );
+                // Predicate: atomic true — the ownership mode IS the contract.
+                let formula = atomic_("true", vec![]);
+                let ir_formula = formula_to_ir_formula(&formula);
+                let cid = evidence_memento_cid(
+                    10000,
+                    &ext,
+                    AUTO_PROMOTE_LIFTER_CID,
+                    &ir_formula,
+                    &SourceKind::TypeSignature,
+                    &sig_locator,
+                );
+                out.evidences.push(EvidenceMemento {
+                    cid,
+                    confidence_basis_points: 10000,
+                    extension_fields: ext,
+                    kind: "evidence".to_string(),
+                    lifter_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+                    predicate: ir_formula,
+                    schema_version: "1".to_string(),
+                    source_kind: SourceKind::TypeSignature,
+                    source_locator: sig_locator.clone(),
+                });
+            }
+            syn::FnArg::Typed(pt) => {
+                let param_name = match &*pt.pat {
+                    syn::Pat::Ident(pi) => pi.ident.to_string(),
+                    _ => continue, // destructured pattern — skip
+                };
+                let (formula, type_shape, extra_fields) =
+                    match classify_param_type(&*pt.ty, &param_name) {
+                        Some(r) => r,
+                        None => continue, // bare generic or opaque type — skip
+                    };
+                let position = format!("param:{param_idx}");
+                let mut ext = BTreeMap::new();
+                ext.insert(
+                    "function_symbol".to_string(),
+                    serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
+                );
+                // Required per spec §10: return_type is the function's written
+                // return type string for every type-signature evidence.
+                ext.insert(
+                    "return_type".to_string(),
+                    serde_json::Value::String(fn_return_type_str.clone()),
+                );
+                ext.insert(
+                    "signature_position".to_string(),
+                    serde_json::Value::String(position),
+                );
+                ext.insert(
+                    "type_shape".to_string(),
+                    serde_json::Value::String(type_shape),
+                );
+                for (k, v) in extra_fields {
+                    ext.insert(k, v);
+                }
+                let ir_formula = formula_to_ir_formula(&formula);
+                let cid = evidence_memento_cid(
+                    10000,
+                    &ext,
+                    AUTO_PROMOTE_LIFTER_CID,
+                    &ir_formula,
+                    &SourceKind::TypeSignature,
+                    &sig_locator,
+                );
+                out.evidences.push(EvidenceMemento {
+                    cid,
+                    confidence_basis_points: 10000,
+                    extension_fields: ext,
+                    kind: "evidence".to_string(),
+                    lifter_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+                    predicate: ir_formula,
+                    schema_version: "1".to_string(),
+                    source_kind: SourceKind::TypeSignature,
+                    source_locator: sig_locator.clone(),
+                });
+            }
+        }
+    }
+
+    // --- Return type ---
+    if let Some((formula, type_shape, extra_fields)) = classify_return_type(&sig.output) {
+        let mut ext = BTreeMap::new();
+        ext.insert(
+            "function_symbol".to_string(),
+            serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
+        );
+        // Required per spec §10: return_type is the function's written
+        // return type string for every type-signature evidence.
+        ext.insert(
+            "return_type".to_string(),
+            serde_json::Value::String(fn_return_type_str.clone()),
+        );
+        ext.insert(
+            "signature_position".to_string(),
+            serde_json::Value::String("return".to_string()),
+        );
+        ext.insert(
+            "type_shape".to_string(),
+            serde_json::Value::String(type_shape),
+        );
+        for (k, v) in extra_fields {
+            ext.insert(k, v);
+        }
+        let ir_formula = formula_to_ir_formula(&formula);
+        let cid = evidence_memento_cid(
+            10000,
+            &ext,
+            AUTO_PROMOTE_LIFTER_CID,
+            &ir_formula,
+            &SourceKind::TypeSignature,
+            &sig_locator,
+        );
+        out.evidences.push(EvidenceMemento {
+            cid,
+            confidence_basis_points: 10000,
+            extension_fields: ext,
+            kind: "evidence".to_string(),
+            lifter_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+            predicate: ir_formula,
+            schema_version: "1".to_string(),
+            source_kind: SourceKind::TypeSignature,
+            source_locator: sig_locator,
+        });
+    }
+}
+
+/// Classify a return type into a (predicate, type_shape, extra_fields) triple.
+/// Returns `None` for opaque / bare-generic types where no contract is derivable.
+fn classify_return_type(
+    output: &syn::ReturnType,
+) -> Option<(Rc<Formula>, String, Vec<(String, serde_json::Value)>)> {
+    match output {
+        syn::ReturnType::Default => {
+            // `fn foo()` — implicit `()` return.
+            Some((
+                atomic_("true", vec![]),
+                "unit".to_string(),
+                vec![],
+            ))
+        }
+        syn::ReturnType::Type(_, ty) => classify_type(ty),
+    }
+}
+
+/// Classify a parameter type into a (predicate, type_shape, extra_fields) triple.
+/// Returns `None` for bare-generic / opaque types.
+///
+/// `param_name` is used to build the predicate variable (e.g. `ne(x, 0)` for NonZero types).
+fn classify_param_type(
+    ty: &syn::Type,
+    param_name: &str,
+) -> Option<(Rc<Formula>, String, Vec<(String, serde_json::Value)>)> {
+    let type_str = type_to_string(ty);
+    // Receiver / reference types as params.
+    if let syn::Type::Reference(r) = ty {
+        let inner_str = type_to_string(&r.elem);
+        let type_shape = if r.mutability.is_some() {
+            "borrow-mut"
+        } else {
+            "borrow"
+        };
+        let lifetime = r
+            .lifetime
+            .as_ref()
+            .map(|lt| lt.ident.to_string())
+            .unwrap_or_else(|| "_".to_string());
+        return Some((
+            atomic_("true", vec![]),
+            type_shape.to_string(),
+            vec![
+                (
+                    "inner_type".to_string(),
+                    serde_json::Value::String(inner_str),
+                ),
+                (
+                    "lifetime".to_string(),
+                    serde_json::Value::String(lifetime),
+                ),
+            ],
+        ));
+    }
+    // Concrete named types.
+    let base = strip_path_prefix(&type_str);
+    // NonZero family: emit `ne(param, 0)`.
+    if is_non_zero_type(base) {
+        return Some((
+            ne(make_var(param_name), num(0)),
+            "non-zero".to_string(),
+            vec![(
+                "inner_type".to_string(),
+                serde_json::Value::String(base.to_string()),
+            )],
+        ));
+    }
+    // Bounded primitives: emit `atomic_("true", [])` tagged with the type.
+    if is_bounded_primitive(base) {
+        return Some((
+            atomic_("true", vec![]),
+            "bounded-primitive".to_string(),
+            vec![(
+                "inner_type".to_string(),
+                serde_json::Value::String(base.to_string()),
+            )],
+        ));
+    }
+    // Bare single-segment type param (like `T`, `V`, `Item`) — no contract derivable.
+    if is_bare_generic(base) {
+        return None;
+    }
+    // Other named types: skip — conservative.
+    None
+}
+
+/// Classify a `syn::Type` into a (predicate, type_shape, extra_fields) triple.
+/// Used for return-type classification.
+fn classify_type(
+    ty: &syn::Type,
+) -> Option<(Rc<Formula>, String, Vec<(String, serde_json::Value)>)> {
+    match ty {
+        syn::Type::Tuple(t) if t.elems.is_empty() => {
+            // Explicit `()` return.
+            Some((atomic_("true", vec![]), "unit".to_string(), vec![]))
+        }
+        syn::Type::Reference(r) => {
+            let inner_str = type_to_string(&r.elem);
+            let type_shape = if r.mutability.is_some() {
+                "borrow-mut"
+            } else {
+                "borrow"
+            };
+            let lifetime = r
+                .lifetime
+                .as_ref()
+                .map(|lt| lt.ident.to_string())
+                .unwrap_or_else(|| "_".to_string());
+            Some((
+                atomic_("true", vec![]),
+                type_shape.to_string(),
+                vec![
+                    (
+                        "inner_type".to_string(),
+                        serde_json::Value::String(inner_str),
+                    ),
+                    (
+                        "lifetime".to_string(),
+                        serde_json::Value::String(lifetime),
+                    ),
+                ],
+            ))
+        }
+        syn::Type::Path(tp) => {
+            // Extract the outermost type name and optional single generic arg.
+            let last = tp.path.segments.last()?;
+            let name = last.ident.to_string();
+            let inner_arg: Option<String> = match &last.arguments {
+                syn::PathArguments::AngleBracketed(ab) => {
+                    ab.args.iter().find_map(|a| match a {
+                        syn::GenericArgument::Type(t) => Some(type_to_string(t)),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            };
+            // Two-arg generic for Result.
+            let (ok_type, err_type): (Option<String>, Option<String>) =
+                match &last.arguments {
+                    syn::PathArguments::AngleBracketed(ab) => {
+                        let types: Vec<String> = ab
+                            .args
+                            .iter()
+                            .filter_map(|a| match a {
+                                syn::GenericArgument::Type(t) => Some(type_to_string(t)),
+                                _ => None,
+                            })
+                            .collect();
+                        (types.get(0).cloned(), types.get(1).cloned())
+                    }
+                    _ => (None, None),
+                };
+
+            match name.as_str() {
+                "Option" => {
+                    let mut extra = vec![];
+                    if let Some(inner) = &inner_arg {
+                        // Skip bare generics as inner type (no useful claim).
+                        if !is_bare_generic(inner.as_str()) {
+                            extra.push((
+                                "inner_type".to_string(),
+                                serde_json::Value::String(inner.clone()),
+                            ));
+                        }
+                    }
+                    // Spec §1.1.1: predicate = result.is_some() ∨ result.is_none()
+                    let predicate = or_(vec![
+                        atomic_("is_some", vec![make_var("result")]),
+                        atomic_("is_none", vec![make_var("result")]),
+                    ]);
+                    Some((predicate, "option".to_string(), extra))
+                }
+                "Result" => {
+                    let mut extra = vec![];
+                    if let Some(ok) = &ok_type {
+                        if !is_bare_generic(ok.as_str()) {
+                            extra.push((
+                                "ok_type".to_string(),
+                                serde_json::Value::String(ok.clone()),
+                            ));
+                        }
+                    }
+                    if let Some(err) = &err_type {
+                        if !is_bare_generic(err.as_str()) {
+                            extra.push((
+                                "err_type".to_string(),
+                                serde_json::Value::String(err.clone()),
+                            ));
+                        }
+                    }
+                    // Spec §1.1.1: predicate = result.is_ok() ∨ result.is_err()
+                    let predicate = or_(vec![
+                        atomic_("is_ok", vec![make_var("result")]),
+                        atomic_("is_err", vec![make_var("result")]),
+                    ]);
+                    Some((predicate, "result".to_string(), extra))
+                }
+                "Vec" => {
+                    let mut extra = vec![];
+                    if let Some(elem) = &inner_arg {
+                        if !is_bare_generic(elem.as_str()) {
+                            extra.push((
+                                "element_type".to_string(),
+                                serde_json::Value::String(elem.clone()),
+                            ));
+                        }
+                    }
+                    // Spec §1.1.1: predicate = is_finite_list(result)
+                    let predicate = atomic_("is_finite_list", vec![make_var("result")]);
+                    Some((predicate, "vec".to_string(), extra))
+                }
+                _ => {
+                    // Bare generic single-char names (T, V, E, etc.): skip.
+                    if is_bare_generic(&name) {
+                        return None;
+                    }
+                    // Bounded primitive return.
+                    if is_bounded_primitive(&name) {
+                        return Some((
+                            atomic_("true", vec![]),
+                            "bounded-primitive".to_string(),
+                            vec![(
+                                "inner_type".to_string(),
+                                serde_json::Value::String(name),
+                            )],
+                        ));
+                    }
+                    // Everything else: skip (conservative).
+                    None
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Returns true for primitive Rust integer/float/bool types that carry
+/// a bounded domain.
+fn is_bounded_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "bool"
+            | "char"
+    )
+}
+
+/// Returns true for NonZero* family types.
+fn is_non_zero_type(name: &str) -> bool {
+    matches!(
+        name,
+        "NonZeroU8"
+            | "NonZeroU16"
+            | "NonZeroU32"
+            | "NonZeroU64"
+            | "NonZeroU128"
+            | "NonZeroUsize"
+            | "NonZeroI8"
+            | "NonZeroI16"
+            | "NonZeroI32"
+            | "NonZeroI64"
+            | "NonZeroI128"
+            | "NonZeroIsize"
+    )
+}
+
+/// Returns true for a bare single-uppercase-char or short generic name
+/// (e.g. `T`, `V`, `E`, `K`, `F`, `Fut`, `Item`) where no domain
+/// constraint is derivable without bounds.
+fn is_bare_generic(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
+    }
+    // Single uppercase letter (T, V, E, etc.).
+    if name.len() == 1 {
+        return name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+    }
+    // Short common generic names used idiomatically.
+    matches!(
+        name,
+        "Fut" | "Item" | "Output" | "Err" | "Ok" | "Key" | "Value" | "Iter"
+    )
+}
+
+/// Strip a leading `std::num::` / `core::num::` path prefix, returning
+/// just the leaf name. Returns the original if no prefix is present.
+fn strip_path_prefix(s: &str) -> &str {
+    if let Some(leaf) = s.rfind("::") {
+        &s[leaf + 2..]
+    } else {
+        s
+    }
+}
+
+/// Render a `syn::ReturnType` to the written type string for `return_type`
+/// extension field per spec §10.  `fn foo()` → `"()"`;
+/// `fn foo() -> Option<i32>` → `"Option<i32>"`.
+fn return_type_to_string(output: &syn::ReturnType) -> String {
+    match output {
+        syn::ReturnType::Default => "()".to_string(),
+        syn::ReturnType::Type(_, ty) => type_to_string(ty),
+    }
+}
+
+/// Render a `syn::Type` to a stable string for use in `extension_fields`.
+fn type_to_string(ty: &syn::Type) -> String {
+    use quote::ToTokens;
+    let mut ts = proc_macro2::TokenStream::new();
+    ty.to_tokens(&mut ts);
+    ts.to_string()
+        .replace(" :: ", "::")
+        .replace(" <", "<")
+        .replace("< ", "<")
+        .replace(" >", ">")
+        .replace(" ,", ",")
+}
+
+// ---------------------------------------------------------------------------
+// Helpers: formula-to-IrFormula round-trip, CID mint, serde_json<->CValue
+// (Mirror of the same helpers in provekit-lift-rust-tests PR-C, so the
+// two lifters produce byte-identical CID-derivation logic.)
+// ---------------------------------------------------------------------------
+
+/// Convert a `provekit_ir_symbolic::Formula` to `provekit_ir_types::IrFormula`
+/// by round-tripping through JCS.
+fn formula_to_ir_formula(f: &Rc<Formula>) -> IrFormula {
+    let cv = formula_to_value(f);
+    let json_str = encode_jcs(&cv);
+    serde_json::from_str::<IrFormula>(&json_str)
+        .expect("formula_to_ir_formula: round-trip through JCS should always succeed")
+}
+
+/// Convert a `serde_json::Value` to a `canonicalizer::Value`.
+fn serde_json_to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
+    match v {
+        serde_json::Value::Null => CValue::null(),
+        serde_json::Value::Bool(b) => CValue::boolean(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else {
+                CValue::string(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => CValue::string(s.clone()),
+        serde_json::Value::Array(items) => {
+            let cv: Vec<Arc<CValue>> = items.iter().map(serde_json_to_cvalue).collect();
+            CValue::array(cv)
+        }
+        serde_json::Value::Object(map) => {
+            let entries: Vec<(String, Arc<CValue>)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), serde_json_to_cvalue(v)))
+                .collect();
+            Arc::new(CValue::Object(entries))
+        }
+    }
+}
+
+/// Compute the JCS-canonical CID for an `EvidenceMemento`.
+/// Mirrors the `evidence_memento_cid` helper in `provekit-lift-rust-tests`.
+///
+/// JCS key order (alphabetical):
+///   confidence_basis_points, extension_fields, kind, lifter_cid,
+///   predicate, schemaVersion, source_kind, source_locator
+fn evidence_memento_cid(
+    confidence_basis_points: u16,
+    extension_fields: &BTreeMap<String, serde_json::Value>,
+    lifter_cid: &str,
+    predicate: &IrFormula,
+    source_kind: &SourceKind,
+    source_locator: &SourceLocator,
+) -> String {
+    let pred_json = serde_json::to_value(predicate)
+        .expect("IrFormula must be serializable");
+    let pred_cv = serde_json_to_cvalue(&pred_json);
+
+    let ext_entries: Vec<(String, Arc<CValue>)> = extension_fields
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json_to_cvalue(v)))
+        .collect();
+    let ext_cv = Arc::new(CValue::Object(ext_entries));
+
+    let kind_str: String = source_kind.clone().into();
+
+    fn make_point(p: &SourceLocatorPoint) -> Arc<CValue> {
+        Arc::new(CValue::Object(vec![
+            ("col".to_string(), CValue::integer(p.col as i64)),
+            ("line".to_string(), CValue::integer(p.line as i64)),
+        ]))
+    }
+    let span_cv = Arc::new(CValue::Object(vec![
+        ("end".to_string(), make_point(&source_locator.span.end)),
+        ("start".to_string(), make_point(&source_locator.span.start)),
+    ]));
+    let locator_cv = Arc::new(CValue::Object(vec![
+        (
+            "source_cid".to_string(),
+            CValue::string(source_locator.source_cid.clone()),
+        ),
+        ("span".to_string(), span_cv),
+    ]));
+
+    let header = CValue::object([
+        (
+            "confidence_basis_points",
+            CValue::integer(confidence_basis_points as i64),
+        ),
+        ("extension_fields", ext_cv),
+        ("kind", CValue::string("evidence")),
+        ("lifter_cid", CValue::string(lifter_cid.to_string())),
+        ("predicate", pred_cv),
+        ("schemaVersion", CValue::string("1")),
+        ("source_kind", CValue::string(kind_str)),
+        ("source_locator", locator_cv),
+    ]);
+
+    let canonical_bytes = encode_jcs(&header);
+    blake3_512_of(canonical_bytes.as_bytes())
 }
 
 fn walk_items(
@@ -723,5 +1440,468 @@ mod tests {
             Some("retry-with-jitter"),
             "doc attr above #[requires] must be found despite non-doc attr in reverse iter"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Type-signature evidence lifter (PR-D of #716)
+    // ------------------------------------------------------------------
+
+    fn parse_bytes(src: &str) -> (syn::File, Vec<u8>) {
+        (syn::parse_file(src).unwrap(), src.as_bytes().to_vec())
+    }
+
+    /// `-> Option<i32>` produces one return evidence with type_shape "option".
+    #[test]
+    fn sig_option_return_produces_option_shape_evidence() {
+        let src = "fn foo() -> Option<i32> { None }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        assert!(ret_ev.is_some(), "expected a return evidence");
+        let ev = ret_ev.unwrap();
+        assert_eq!(
+            ev.extension_fields["type_shape"].as_str(),
+            Some("option"),
+            "type_shape must be 'option'"
+        );
+        assert_eq!(
+            ev.extension_fields.get("inner_type").and_then(|v| v.as_str()),
+            Some("i32"),
+            "inner_type must be 'i32'"
+        );
+    }
+
+    /// `-> Result<T, E>` produces one return evidence with type_shape "result".
+    #[test]
+    fn sig_result_return_produces_alt_shape_evidence() {
+        let src = "fn bar() -> Result<i32, String> { Ok(0) }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        assert!(ret_ev.is_some(), "expected a return evidence for Result");
+        let ev = ret_ev.unwrap();
+        assert_eq!(ev.extension_fields["type_shape"].as_str(), Some("result"));
+        assert_eq!(
+            ev.extension_fields.get("ok_type").and_then(|v| v.as_str()),
+            Some("i32")
+        );
+        assert_eq!(
+            ev.extension_fields.get("err_type").and_then(|v| v.as_str()),
+            Some("String")
+        );
+    }
+
+    /// `-> Vec<T>` produces a return evidence with type_shape "vec".
+    #[test]
+    fn sig_vec_return_produces_finite_list_evidence() {
+        let src = "fn items() -> Vec<u8> { vec![] }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        assert!(ret_ev.is_some(), "expected a return evidence for Vec");
+        let ev = ret_ev.unwrap();
+        assert_eq!(ev.extension_fields["type_shape"].as_str(), Some("vec"));
+        assert_eq!(
+            ev.extension_fields.get("element_type").and_then(|v| v.as_str()),
+            Some("u8")
+        );
+    }
+
+    /// `-> ()` (explicit unit) produces a trivial-result evidence.
+    #[test]
+    fn sig_unit_return_produces_trivial_result_evidence() {
+        let src = "fn noop() -> () {}";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        assert!(ret_ev.is_some(), "expected evidence for unit return");
+        assert_eq!(
+            ret_ev.unwrap().extension_fields["type_shape"].as_str(),
+            Some("unit")
+        );
+    }
+
+    /// `&self` and `&mut self` produce ownership-mode evidences.
+    #[test]
+    fn sig_self_mut_self_produce_ownership_evidences() {
+        let src = r#"
+            struct S;
+            impl S {
+                fn shared(&self) {}
+                fn exclusive(&mut self) {}
+            }
+        "#;
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        // Find receiver evidences.
+        let shared = out.evidences.iter().find(|e| {
+            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+                == Some("receiver-shared")
+        });
+        let exclusive = out.evidences.iter().find(|e| {
+            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+                == Some("receiver-exclusive")
+        });
+        assert!(shared.is_some(), "expected receiver-shared evidence for &self");
+        assert!(
+            exclusive.is_some(),
+            "expected receiver-exclusive evidence for &mut self"
+        );
+    }
+
+    /// `x: NonZeroU32` produces a refined-domain evidence with `ne(x, 0)` predicate.
+    #[test]
+    fn sig_non_zero_param_produces_refined_domain_evidence() {
+        let src = "fn f(x: NonZeroU32) -> u32 { x.get() }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let nz_ev = out.evidences.iter().find(|e| {
+            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+                == Some("non-zero")
+                && e.extension_fields
+                    .get("signature_position")
+                    .and_then(|v| v.as_str())
+                    .map(|p| p.starts_with("param:"))
+                    .unwrap_or(false)
+        });
+        assert!(nz_ev.is_some(), "expected non-zero evidence for NonZeroU32");
+        let ev = nz_ev.unwrap();
+        assert_eq!(
+            ev.extension_fields.get("inner_type").and_then(|v| v.as_str()),
+            Some("NonZeroU32")
+        );
+        // source_kind must be TypeSignature.
+        assert_eq!(
+            ev.source_kind,
+            provekit_ir_types::SourceKind::TypeSignature,
+            "source_kind must be TypeSignature"
+        );
+        // confidence must be 10000 (static).
+        assert_eq!(ev.confidence_basis_points, 10000);
+    }
+
+    /// A function with mixed signature emits all expected evidence types.
+    #[test]
+    fn sig_mixed_fn_produces_all_evidence_kinds() {
+        // &self, x: NonZeroU32, y: i32, -> Option<u64>
+        let src = r#"
+            struct S;
+            impl S {
+                fn compute(&self, x: NonZeroU32, y: i32) -> Option<u64> { None }
+            }
+        "#;
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        // Should have: receiver-shared, non-zero (x), bounded-primitive (y), option (return).
+        let shapes: Vec<&str> = out
+            .evidences
+            .iter()
+            .filter_map(|e| e.extension_fields.get("type_shape").and_then(|v| v.as_str()))
+            .collect();
+        assert!(shapes.contains(&"receiver-shared"), "missing receiver-shared");
+        assert!(shapes.contains(&"non-zero"), "missing non-zero for NonZeroU32");
+        assert!(shapes.contains(&"bounded-primitive"), "missing bounded-primitive for i32");
+        assert!(shapes.contains(&"option"), "missing option return evidence");
+    }
+
+    /// A function with only bare-generic params and no return type emits
+    /// no evidence (conservative: bare `T` has no derivable constraint).
+    #[test]
+    fn sig_bare_generic_only_emits_no_evidence() {
+        let src = "fn identity<T>(x: T) -> T { x }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        assert!(
+            out.evidences.is_empty(),
+            "bare generic T must produce no evidence; got: {:?}",
+            out
+                .evidences
+                .iter()
+                .map(|e| &e.extension_fields)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// `fn f(x: i32)` (bare primitive param, implicit unit return) emits
+    /// two evidences: one bounded-primitive for the param, one unit for the return.
+    #[test]
+    fn sig_primitive_param_and_implicit_unit_return() {
+        let src = "fn sink(x: i32) {}";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let prim_ev = out.evidences.iter().find(|e| {
+            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+                == Some("bounded-primitive")
+        });
+        let unit_ev = out.evidences.iter().find(|e| {
+            e.extension_fields.get("type_shape").and_then(|v| v.as_str()) == Some("unit")
+        });
+        assert!(prim_ev.is_some(), "expected bounded-primitive evidence for i32 param");
+        assert!(unit_ev.is_some(), "expected unit evidence for implicit () return");
+    }
+
+    /// Evidence CIDs are deterministic: same source bytes = same CIDs.
+    #[test]
+    fn sig_evidence_cid_is_deterministic() {
+        let src = "fn foo(x: u32) -> Option<i64> { None }";
+        let (f, bytes) = parse_bytes(src);
+        let out1 = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let out2 = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out1.evidences.len(), out2.evidences.len());
+        for (a, b) in out1.evidences.iter().zip(out2.evidences.iter()) {
+            assert_eq!(a.cid, b.cid, "CIDs must be deterministic");
+        }
+    }
+
+    /// `lift_file` leaves `evidences` empty (backward-compat: existing API
+    /// is annotation-only, no type-sig evidences).
+    #[test]
+    fn basic_lift_file_does_not_populate_evidences() {
+        let src = r#"
+            #[requires(x > 0)]
+            fn f(x: i64) -> i64 { x }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "test.rs");
+        assert!(out.evidences.is_empty(), "lift_file must not populate evidences");
+    }
+
+    /// Every evidence carries `function_symbol` (not `function_term_cid`) as a
+    /// plain `name@path` identifier string.  No evidence should have a key
+    /// named `function_term_cid`.
+    #[test]
+    fn sig_evidence_carries_function_symbol_not_cid() {
+        let src = "fn greet(x: u32) -> Option<String> { None }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "src/lib.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected at least one evidence");
+        for ev in &out.evidences {
+            // Must have function_symbol.
+            let sym = ev
+                .extension_fields
+                .get("function_symbol")
+                .and_then(|v| v.as_str())
+                .expect("evidence must carry function_symbol");
+            assert_eq!(sym, "greet@src/lib.rs", "function_symbol must be name@path");
+            // Must NOT have function_term_cid.
+            assert!(
+                !ev.extension_fields.contains_key("function_term_cid"),
+                "function_term_cid must not appear; use function_symbol"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Spec violation fixes: B1 (return_type), B2 (0-indexed col), B3
+    // ------------------------------------------------------------------
+
+    /// B1 — every type-signature evidence carries `return_type` in
+    /// `extension_fields` set to the function's written return type string
+    /// (spec §10: required field for `source_kind: "type-signature"`).
+    #[test]
+    fn spec_b1_every_type_sig_evidence_has_return_type_field() {
+        // Mixed signature: receiver + primitive param + Option return.
+        let src = r#"
+            struct S;
+            impl S {
+                fn compute(&self, x: i32) -> Option<i32> { None }
+            }
+        "#;
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected evidences");
+        for ev in &out.evidences {
+            let rt = ev
+                .extension_fields
+                .get("return_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!(
+                    "evidence missing return_type field; extension_fields = {:?}",
+                    ev.extension_fields
+                ));
+            assert_eq!(
+                rt, "Option<i32>",
+                "return_type must be the function's written return type"
+            );
+        }
+    }
+
+    /// B1 corollary — implicit unit return `fn f()` renders as `"()"`.
+    #[test]
+    fn spec_b1_implicit_unit_return_type_string_is_parens() {
+        let src = "fn sink(x: i32) {}";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected evidences");
+        for ev in &out.evidences {
+            let rt = ev
+                .extension_fields
+                .get("return_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!(
+                    "evidence missing return_type; fields = {:?}",
+                    ev.extension_fields
+                ));
+            assert_eq!(rt, "()", "implicit unit must render as '()'");
+        }
+    }
+
+    /// B2 — `col` in `source_locator` is 0-indexed (spec §1.1).
+    ///
+    /// Source layout (no leading spaces):
+    ///   line 1: `fn precise(x: u32) { }`
+    ///
+    /// `fn` starts at col 0 and `precise` starts at col 3 (0-indexed).
+    /// proc_macro2 Span::start().column is also 0-indexed, so no +1 must
+    /// be added.  If this test fails with col=4 the +1 bug was re-introduced.
+    #[test]
+    fn spec_b2_source_locator_col_is_0indexed() {
+        let src = "fn precise(x: u32) { }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "t.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected at least one evidence");
+        let ev = &out.evidences[0];
+        // "fn " is 3 bytes; `precise` identifier starts at col 3 (0-indexed).
+        assert_eq!(
+            ev.source_locator.span.start.col, 3,
+            "col must be 0-indexed per spec §1.1; got {}. \
+             If this is 4, the +1 bug was re-introduced.",
+            ev.source_locator.span.start.col
+        );
+        assert_eq!(
+            ev.source_locator.span.start.line, 1,
+            "line must be 1-indexed; got {}",
+            ev.source_locator.span.start.line
+        );
+    }
+
+    /// B3 — `-> Option<T>` emits predicate `is_some(result) ∨ is_none(result)`,
+    /// not `Atomic("true")` (spec §1.1.1).
+    #[test]
+    fn spec_b3_option_return_emits_is_some_or_is_none_predicate() {
+        let src = "fn maybe(x: i32) -> Option<i32> { None }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        let ev = ret_ev.expect("expected a return evidence for Option<i32>");
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Or { operands } => {
+                assert_eq!(operands.len(), 2, "Or must have 2 operands");
+                let names: Vec<&str> = operands
+                    .iter()
+                    .filter_map(|o| match o {
+                        provekit_ir_types::IrFormula::Atomic { name, .. } => Some(name.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                assert!(
+                    names.contains(&"is_some"),
+                    "predicate must contain is_some; got {:?}",
+                    names
+                );
+                assert!(
+                    names.contains(&"is_none"),
+                    "predicate must contain is_none; got {:?}",
+                    names
+                );
+            }
+            other => panic!(
+                "Option return predicate must be Or{{is_some,is_none}}; got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// B3 — `-> Result<T, E>` emits predicate `is_ok(result) ∨ is_err(result)`.
+    #[test]
+    fn spec_b3_result_return_emits_is_ok_or_is_err_predicate() {
+        let src = "fn fallible(x: i32) -> Result<i32, String> { Ok(x) }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        let ev = ret_ev.expect("expected a return evidence for Result");
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Or { operands } => {
+                assert_eq!(operands.len(), 2, "Or must have 2 operands");
+                let names: Vec<&str> = operands
+                    .iter()
+                    .filter_map(|o| match o {
+                        provekit_ir_types::IrFormula::Atomic { name, .. } => Some(name.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                assert!(names.contains(&"is_ok"), "predicate must contain is_ok; got {:?}", names);
+                assert!(
+                    names.contains(&"is_err"),
+                    "predicate must contain is_err; got {:?}",
+                    names
+                );
+            }
+            other => panic!(
+                "Result return predicate must be Or{{is_ok,is_err}}; got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// B3 — `-> Vec<T>` emits predicate `is_finite_list(result)`.
+    #[test]
+    fn spec_b3_vec_return_emits_is_finite_list_predicate() {
+        let src = "fn collect(x: i32) -> Vec<u8> { vec![] }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        let ev = ret_ev.expect("expected a return evidence for Vec<u8>");
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Atomic { name, args } => {
+                assert_eq!(name, "is_finite_list", "Vec predicate must be is_finite_list; got {name}");
+                assert_eq!(args.len(), 1, "is_finite_list must have 1 arg");
+                match &args[0] {
+                    provekit_ir_types::IrTerm::Var { name: var_name } => {
+                        assert_eq!(var_name, "result", "arg must be Var(result); got {var_name}");
+                    }
+                    other => panic!("expected Var(result); got {:?}", other),
+                }
+            }
+            other => panic!(
+                "Vec return predicate must be Atomic(is_finite_list); got {:?}",
+                other
+            ),
+        }
     }
 }

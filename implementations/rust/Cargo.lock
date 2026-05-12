@@ -1836,8 +1836,11 @@ name = "provekit-lift-contracts"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "provekit-canonicalizer",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "quote",
+ "serde_json",
  "syn",
 ]
 
