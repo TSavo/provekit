@@ -791,10 +791,17 @@ def append_cids(rows):
     seen = set()
     for line in existing[1:]:
         parts = line.split("\t")
-        if len(parts) >= 2:
-            seen.add((parts[0], parts[1]))
+        if len(parts) >= 3:
+            # Deduplicate by (kind, name, cid): distinct-CID entries with the same name
+            # are kept.  This handles cases like SPEC_CANDIDATES["member"]["rust"] which
+            # has two candidates (op_field, op_member) producing two gap mementos that
+            # share the same fn_name but have different CIDs (different source specs).
+            seen.add((parts[0], parts[1], parts[2]))
+        elif len(parts) >= 2:
+            # Legacy lines missing cid column: treat cid as empty string.
+            seen.add((parts[0], parts[1], ""))
     for row in rows:
-        key = (row["kind"], row["name"])
+        key = (row["kind"], row["name"], row["cid"])
         if key in seen:
             continue
         existing.append(f"{row['kind']}\t{row['name']}\t{row['cid']}\t{row['path']}")

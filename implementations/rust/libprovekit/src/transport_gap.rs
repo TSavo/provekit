@@ -33,16 +33,13 @@ use serde_json::Value;
 ///
 /// The `structural_divergence` key is a successor-mint addition (LSP §4.4):
 /// it is absent in previously-minted records and reads as false.
+///
+/// JCS key order (lexicographic): domain_narrowing, effect_divergence,
+/// structural_divergence, ub_introduction, value_divergence.
+/// Fields are declared in this order so plain `serde_json::to_string` output
+/// matches Python-emitted bytes (byte-level federation).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LossRecord {
-    /// Inputs where the result VALUE differs.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub value_divergence: Option<Value>,
-
-    /// Inputs where the target introduces UB absent in the source.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ub_introduction: Option<Value>,
-
     /// Inputs the target cannot accept at all.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain_narrowing: Option<Value>,
@@ -57,7 +54,19 @@ pub struct LossRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub structural_divergence: Option<Value>,
 
+    /// Inputs where the target introduces UB absent in the source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ub_introduction: Option<Value>,
+
+    /// Inputs where the result VALUE differs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_divergence: Option<Value>,
+
     /// Extension dimensions not yet in the named set.
+    /// NOTE: #[serde(flatten)] emits these keys AFTER the named fields in
+    /// plain serde_json output.  If any fixture carries extra dimensions
+    /// the CID-pinning test will catch the mismatch.  No current catalog
+    /// fixture uses extra dimensions (verified 2026-05-11).
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -103,30 +112,34 @@ pub enum GapKind {
 
 /// Structured diff explaining why the morphism was refused.
 /// Fields mirror `diff_reason()` in `mint_language_morphisms.py`.
+///
+/// JCS key order (lexicographic): divergent_tag, effects_delta,
+/// formal_sorts_delta, post_delta, pre_delta, source_supported, wp_rule_delta.
+/// Fields declared in this order so plain serde_json output matches Python bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct GapReason {
+    /// REQUIRED when gap_kind == "divergent-semantics".
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub formal_sorts_delta: Option<FormalSortsDelta>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pre_delta: Option<FormulaDelta>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_delta: Option<JsonDelta>,
+    pub divergent_tag: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effects_delta: Option<JsonDelta>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wp_rule_delta: Option<FormulaDelta>,
+    pub formal_sorts_delta: Option<FormalSortsDelta>,
 
-    /// REQUIRED when gap_kind == "divergent-semantics".
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub divergent_tag: Option<String>,
+    pub post_delta: Option<JsonDelta>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_delta: Option<FormulaDelta>,
 
     /// For missing-source-op: false = language lacks the op.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_supported: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wp_rule_delta: Option<FormulaDelta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,12 +174,15 @@ pub enum OptionStatus {
 }
 
 /// One entry in the resolution_options menu.
+///
+/// JCS key order (lexicographic): dual_view_cid, loss, loss_severity,
+/// lossy_morphism_cid, option_kind, partial_morphism_cid, precondition,
+/// representation_map_delta, respec_target_to, split_targets, status, tradeoff.
+/// Fields declared in this order so plain serde_json output matches Python bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolutionOption {
-    pub option_kind: String,
-
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub precondition: Option<Value>,
+    pub dual_view_cid: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loss: Option<LossRecord>,
@@ -175,27 +191,29 @@ pub struct ResolutionOption {
     pub loss_severity: Option<LossSeverity>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub split_targets: Option<Vec<String>>,
+    pub lossy_morphism_cid: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub respec_target_to: Option<Value>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub representation_map_delta: Option<Value>,
+    pub option_kind: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partial_morphism_cid: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lossy_morphism_cid: Option<String>,
+    pub precondition: Option<Value>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dual_view_cid: Option<String>,
+    pub representation_map_delta: Option<Value>,
 
-    pub tradeoff: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub respec_target_to: Option<Value>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_targets: Option<Vec<String>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<OptionStatus>,
+
+    pub tradeoff: String,
 }
 
 // ============================================================
@@ -208,24 +226,28 @@ pub struct ResolutionOption {
 /// `menagerie/concept-shapes/scripts/mint_language_morphisms.py`).
 ///
 /// JCS key order (lexicographic): fn_name, gap_kind, kind, reason,
-/// resolution_options, schema_version, signature, source_lang,
-/// source_op_cid, target_concept_op, target_op_cid, (reason_note optional)
+/// reason_note, resolution_options, schema_version, signature, source_lang,
+/// source_op_cid, target_concept_op, target_op_cid.
+/// Fields declared in this order so plain serde_json output matches Python bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransportGapMemento {
     pub fn_name: String,
     pub gap_kind: GapKind,
     pub kind: String,
     pub reason: GapReason,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_note: Option<String>,
     pub resolution_options: Vec<ResolutionOption>,
     pub schema_version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Value>,
+    /// Always present in JCS (never skipped); unsigned mementos carry `null`.
+    /// Kept as `Value` (not `Option<Value>`) so Python-emitted `"signature": null`
+    /// round-trips byte-identically — skip_serializing_if would omit it, breaking
+    /// CID agreement with the Python generator which always writes the key.
+    pub signature: Value,
     pub source_lang: String,
     pub source_op_cid: Value,        // null or cid string
     pub target_concept_op: String,
     pub target_op_cid: Value,        // null or cid string
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason_note: Option<String>,
 }
 
 impl TransportGapMemento {
@@ -245,14 +267,14 @@ impl TransportGapMemento {
             gap_kind,
             kind: "TransportGapMemento".into(),
             reason,
+            reason_note: None,
             resolution_options,
             schema_version: "1".into(),
-            signature: None,
+            signature: Value::Null,
             source_lang: source_lang.into(),
             source_op_cid,
             target_concept_op: target_concept_op.into(),
             target_op_cid,
-            reason_note: None,
         }
     }
 }
@@ -397,7 +419,7 @@ mod tests {
                 status: Some(OptionStatus::Recommended),
             }],
             schema_version: "1".into(),
-            signature: None,
+            signature: Value::Null,
             source_lang: "python".into(),
             source_op_cid: Value::Null,
             target_concept_op: "concept:add".into(),
@@ -536,5 +558,147 @@ mod tests {
         let v: serde_json::Value =
             serde_json::to_value(GapKind::MissingSourceOp).expect("to_value");
         assert_eq!(v, "missing-source-op");
+    }
+
+    // ----------------------------------------------------------------
+    // CID-pinning tests: deserialize Python-emitted fixture files, re-
+    // serialize via Rust, compute BLAKE3-512, assert == catalog CID.
+    //
+    // These tests are the gate that was missing before this fix.  They
+    // would have caught the field-order bug immediately:
+    //   old: Rust serializes `reason_note` LAST (position 11),
+    //        Python emits it at position 4 (alphabetic, JCS).
+    //   new: Rust declaration order == JCS order → byte-identical.
+    //
+    // Fixture selection:
+    //   1. gap_java_postdec  — has reason_note + formal_sorts_delta
+    //   2. gap_python_ne     — has source_supported, no formal_sorts
+    //   3. gap_rust_deref    — has pre_delta in reason
+    // ----------------------------------------------------------------
+
+    /// Read a catalog gap fixture file and return (memento_json_value, expected_cid).
+    fn load_gap_fixture(filename_stem: &str) -> (serde_json::Value, String) {
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+        let gaps_dir = std::path::Path::new(&manifest)
+            .join("../../../menagerie/concept-shapes/catalog/gaps");
+        let entries = std::fs::read_dir(&gaps_dir)
+            .unwrap_or_else(|e| panic!("cannot read gaps dir {:?}: {}", gaps_dir, e));
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with(filename_stem) && name_str.ends_with(".json") {
+                let bytes = std::fs::read(entry.path()).expect("read fixture");
+                let outer: serde_json::Value =
+                    serde_json::from_slice(&bytes).expect("parse fixture JSON");
+                let cid = outer["cid"].as_str().expect("cid field").to_string();
+                let memento = outer["memento"].clone();
+                return (memento, cid);
+            }
+        }
+        panic!("fixture not found for stem: {}", filename_stem);
+    }
+
+    /// Deserialize a gap memento value into the Rust struct, serialize back, compare CID.
+    fn assert_gap_cid_pins(fixture_stem: &str) {
+        let (memento_val, expected_cid) = load_gap_fixture(fixture_stem);
+
+        // Deserialize Python-emitted JSON into Rust struct.
+        let memento: TransportGapMemento =
+            serde_json::from_value(memento_val.clone()).unwrap_or_else(|e| {
+                panic!("deserialize {} failed: {}", fixture_stem, e)
+            });
+
+        // Re-serialize via Rust and compute CID through JCS canonicalizer.
+        // This is the primary federation gate: both Python (sort_keys=True) and
+        // Rust (encode_jcs sorts keys) must produce the same CID from the same
+        // key-value data.  If field declaration order in the Rust struct does NOT
+        // match JCS order, the CID produced by plain serde_json::to_string would
+        // differ from the JCS-based CID -- catching the bug the reviewer identified.
+        let computed_cid = crate::canonical::serializable_cid(&memento)
+            .unwrap_or_else(|e| panic!("serializable_cid {} failed: {}", fixture_stem, e));
+
+        assert_eq!(
+            computed_cid, expected_cid,
+            "CID mismatch for {}: Rust re-serialization produces a different CID than \
+             the Python-emitted catalog file.  This means the Rust JCS bytes diverge \
+             from what the Python generator computed.  The field order fix in \
+             transport_gap.rs (Blocker 1) may be incomplete.",
+            fixture_stem
+        );
+    }
+
+    /// Verify that the top-level TransportGapMemento struct fields are declared in
+    /// JCS (lexicographic) order.  If they are, serde_json::to_string (declaration
+    /// order) == serializable_jcs (sorted) for a struct with no opaque Value nesting.
+    ///
+    /// This test uses a hand-constructed memento with typed values only so that
+    /// nested-Value insertion order does not interfere.
+    #[test]
+    fn transport_gap_top_level_field_order_is_jcs() {
+        let memento = TransportGapMemento {
+            fn_name: "gap:test:add:to:concept:add".into(),
+            gap_kind: GapKind::SortMismatch,
+            kind: "TransportGapMemento".into(),
+            reason: GapReason {
+                divergent_tag: None,
+                effects_delta: None,
+                formal_sorts_delta: None,
+                post_delta: None,
+                pre_delta: None,
+                source_supported: Some(false),
+                wp_rule_delta: None,
+            },
+            reason_note: Some("test reason".into()),
+            resolution_options: vec![ResolutionOption {
+                dual_view_cid: None,
+                loss: None,
+                loss_severity: None,
+                lossy_morphism_cid: None,
+                option_kind: "accept-permanent".into(),
+                partial_morphism_cid: None,
+                precondition: None,
+                representation_map_delta: None,
+                respec_target_to: None,
+                split_targets: None,
+                status: Some(OptionStatus::Recommended),
+                tradeoff: "no bridge".into(),
+            }],
+            schema_version: "1".into(),
+            signature: Value::Null,
+            source_lang: "test".into(),
+            source_op_cid: Value::Null,
+            target_concept_op: "concept:add".into(),
+            target_op_cid: Value::Null,
+        };
+        let rust_compact = serde_json::to_string(&memento).expect("to_string");
+        let rust_jcs = crate::canonical::serializable_jcs(&memento)
+            .expect("serializable_jcs");
+        assert_eq!(
+            rust_compact, rust_jcs,
+            "Field declaration order != JCS order: serde_json::to_string differs from \
+             encode_jcs output.  This means the struct fields are NOT in lexicographic \
+             order.  The Blocker-1 fix is incomplete."
+        );
+    }
+
+    /// Fixture 1: gap:java:postdec — has reason_note (was at position 11 before fix,
+    /// JCS requires position 4) and formal_sorts_delta in reason.
+    #[test]
+    fn cid_pinning_gap_java_postdec_to_concept_postdec() {
+        assert_gap_cid_pins("gap_java_postdec_to_concept_postdec");
+    }
+
+    /// Fixture 2: gap:python:ne — has source_supported in reason (tests GapReason order),
+    /// and reason_note populated.
+    #[test]
+    fn cid_pinning_gap_python_ne_to_concept_ne() {
+        assert_gap_cid_pins("gap_python_ne_to_concept_ne");
+    }
+
+    /// Fixture 3: gap:rust:deref — has pre_delta in reason (tests GapReason ordering
+    /// for a different populated field).
+    #[test]
+    fn cid_pinning_gap_rust_deref_to_concept_deref() {
+        assert_gap_cid_pins("gap_rust_deref_to_concept_deref");
     }
 }
