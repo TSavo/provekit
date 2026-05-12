@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:result-bind",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "result"
+      },
+      {
+        "name": "f"
+      }
+    ],
+    "formal_sorts": [
+      "T",
+      "E",
+      "U"
+    ],
+    "result_sort": "ResultBindOfTUE",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "result",
+        "f"
+      ],
+      "body": {
+        "kind": "skolem",
+        "predicate": "result_bind_inhabitant",
+        "args": [
+          {
+            "kind": "var",
+            "name": "self"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "E"
+          },
+          {
+            "kind": "var",
+            "name": "U"
+          }
+        ]
+      }
+    },
+    "contract_note": "result_bind_inhabitant(self, T, E, U) holds iff the monadic-bind laws hold: (1) bind(Ok(v), f) = f(v) for all v : T; (2) bind(Err(e), f) = Err(e) for all e : E; (3) bind(bind(m, f), g) = bind(m, x -> bind(f(x), g)) for all m, f, g. The f slot must produce a Result<U,E>; the error type is preserved across bind. Depends on concept:result -> c (PR #668) for the underlying Ok/Err constructors.",
+    "realizations": [
+      "blake3-512:5252dfc6ef0aa7a7e706e4ee8270f54a2fdc218aace42e9dff793de1e88c5ed566aaa9e8c886b7f908e9f744a7bf6862b349406b0891bf484152eae77ee4655e"
+    ]
+  },
+  "cid": "blake3-512:489453d5c40f7099e3a01b02c5ceaec8bb9f1c10966247a634d59502af9e7eccbce2f4b2a8b1fe04150381031aebf3c50f236d9ca8d7c2ac653cecd406b7adac",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
