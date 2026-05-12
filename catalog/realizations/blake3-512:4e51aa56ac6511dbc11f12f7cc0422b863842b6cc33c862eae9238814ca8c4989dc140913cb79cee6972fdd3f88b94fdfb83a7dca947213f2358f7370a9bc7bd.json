@@ -1,0 +1,30 @@
+{
+  "memento": {
+    "kind": "realization-desugaring",
+    "operator": "concept:result-bind",
+    "target_lang": "c",
+    "tier": "realization",
+    "realizer_role": "macro-composition",
+    "realization_memento": {
+      "macro_name": "RESULT_BIND",
+      "macro_signature": "(name, r, var, body)",
+      "macro_body": "((r).tag == name##_OK ? ({ T var = (r).v.ok; (body); }) : RESULT_ERR(name, (r).v.err))",
+      "desugaring_note": "Maps concept:result-bind to C macro composition. Uses GNU statement-expression for block semantics. Requires: -std=gnu99 or later; tag-based result representation with .tag, .v.ok, .v.err fields."
+    },
+    "loss_record": {
+      "structural_divergence": "macro_composition_replaces_native_monad_op",
+      "domain_narrowing_1": "T_must_be_block_expression_compatible",
+      "domain_narrowing_2": "E_must_be_uniform_through_chain",
+      "ub_introduction": "none",
+      "effect_divergence": "none"
+    },
+    "discharge_receipt": "deferred:pending-result-bind-impl",
+    "discharge_note": "Discharge deferred pending concept:result minting (feat/cell-result-c)."
+  },
+  "cid": "blake3-512:4e51aa56ac6511dbc11f12f7cc0422b863842b6cc33c862eae9238814ca8c4989dc140913cb79cee6972fdd3f88b94fdfb83a7dca947213f2358f7370a9bc7bd",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

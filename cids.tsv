@@ -1,0 +1,6 @@
+# Result-bind minting CIDs
+# Commit: feat/cell-result-bind-c
+# Dependency: feat/cell-result-c (parallel)
+
+concept:result-bind (abstraction)	blake3-512:1df86897ea772f8e23eb48d4a5892e55946b0694d193a65c50807110059c21cce52dfa4bc754bfec356550c1ff041189c37afcf18cefa03c428f2de81b8bb7a6
+concept:result-bind → c (realization)	blake3-512:4e51aa56ac6511dbc11f12f7cc0422b863842b6cc33c862eae9238814ca8c4989dc140913cb79cee6972fdd3f88b94fdfb83a7dca947213f2358f7370a9bc7bd
