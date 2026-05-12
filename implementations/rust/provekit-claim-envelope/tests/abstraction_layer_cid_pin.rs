@@ -359,3 +359,108 @@ fn projection_distance_law_ruby_has_no_domain_narrowing() {
         "Ruby MUST NOT have effect_divergence"
     );
 }
+
+// ================================================================
+// Permanent duplicate-key audit guard (reviewer required action 1)
+// ================================================================
+//
+// serde_json silently deduplicates duplicate object keys (last-key-wins).
+// This means a hand-authored canonical string with duplicate keys can
+// pass a round-trip test while encoding a corrupted structure -- exactly
+// the bug that caused DD_C11's original CID (081b7f07) to be wrong.
+//
+// This test audits all five canonical fixture strings by scanning the
+// raw JSON bytes for duplicate keys within any object at any nesting
+// depth, using a custom recursive walk that processes the token stream
+// before serde deduplication occurs.
+//
+// If this test fails, a hand-authored fixture has duplicate keys and
+// the CID is pinned to a corrupted (serde-deduped) structure.
+
+/// Scan a JSON string recursively for duplicate keys in any object at any
+/// nesting depth. Returns `Err(description)` on the first duplicate found.
+///
+/// Uses `serde_json::Deserializer` with a custom `serde::de::Visitor` that
+/// processes keys BEFORE serde_json's BTreeMap/IndexMap deduplication step.
+/// Both objects and arrays are walked recursively so nested objects are
+/// fully audited.
+fn scan_for_dup_keys(json_str: &str) -> Result<(), String> {
+    struct AnyChecker;
+
+    impl<'de> serde::de::Deserialize<'de> for AnyChecker {
+        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            d.deserialize_any(AnyVisitor)?;
+            Ok(AnyChecker)
+        }
+    }
+
+    struct AnyVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for AnyVisitor {
+        type Value = ();
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "any JSON value")
+        }
+
+        fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> { Ok(()) }
+        fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> { Ok(()) }
+        fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> { Ok(()) }
+        fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<(), E> { Ok(()) }
+        fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> { Ok(()) }
+        fn visit_none<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
+
+        fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
+            d.deserialize_any(AnyVisitor)
+        }
+
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+            while seq.next_element::<AnyChecker>()?.is_some() {}
+            Ok(())
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+            let mut seen: Vec<String> = Vec::new();
+            while let Some(key) = map.next_key::<String>()? {
+                if seen.contains(&key) {
+                    return Err(serde::de::Error::custom(format!(
+                        "duplicate JSON object key: '{key}'"
+                    )));
+                }
+                seen.push(key);
+                map.next_value::<AnyChecker>()?;
+            }
+            Ok(())
+        }
+    }
+
+    use serde::Deserializer as _;
+    let mut de = serde_json::Deserializer::from_str(json_str);
+    de.deserialize_any(AnyVisitor)
+        .map_err(|e| format!("duplicate key detected: {e}"))
+}
+
+/// Assert that a canonical JSON string contains no duplicate object keys
+/// at any nesting depth. Panics with a descriptive message on failure.
+fn assert_no_duplicate_keys(json_str: &str, label: &str) {
+    if let Err(msg) = scan_for_dup_keys(json_str) {
+        panic!(
+            "{label}: canonical fixture has duplicate JSON keys (CID is pinned to corrupted structure)\n  {msg}"
+        );
+    }
+}
+
+#[test]
+fn all_five_fixtures_have_no_duplicate_keys() {
+    // This test permanently guards against the class of bug that caused
+    // DD_C11's original CID (081b7f07) to be wrong: hand-authored JSON
+    // with duplicate "args" keys inside nested concept:index ctors.
+    // serde_json silently last-key-wins deduplicates, so the round-trip
+    // test passed while the CID was pinned to a corrupted structure.
+    assert_no_duplicate_keys(DYNAMIC_DISPATCH_CANONICAL, "concept:dynamic-dispatch");
+    assert_no_duplicate_keys(DOUBLE_DISPATCH_CANONICAL, "concept:double-dispatch");
+    assert_no_duplicate_keys(DD_C11_CANONICAL, "dd->c11:2d-fn-ptr-table");
+    assert_no_duplicate_keys(DD_JAVA_CANONICAL, "dd->jvm:visitor-pattern");
+    assert_no_duplicate_keys(DD_RUBY_CANONICAL, "dd->ruby:case-type-tuple");
+}

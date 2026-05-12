@@ -1619,6 +1619,7 @@ dependencies = [
  "hex",
  "provekit-canonicalizer",
  "provekit-proof-envelope",
+ "serde",
  "serde_json",
  "thiserror",
 ]
