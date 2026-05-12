@@ -508,7 +508,7 @@ module Provekit
         end
       end
 
-      METAPROGRAMMING_CALLS = Set.new(%w[define_method method_missing send __send__ public_send eval instance_eval class_eval module_eval]).freeze
+      METAPROGRAMMING_CALLS = Set.new(%w[define_method method_missing send __send__ public_send eval instance_eval class_eval module_eval instance_variable_get instance_variable_set const_get const_set]).freeze
 
       BINOPS = {
         :+ => "ruby:add",
