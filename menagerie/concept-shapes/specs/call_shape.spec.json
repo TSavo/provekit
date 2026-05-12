@@ -59,7 +59,7 @@
     "kind": "operation-contract",
     "operator": "call",
     "result": "Stmt",
-    "wp": "callee pre under bound args implies callee post under caller state"
+    "wp_note": "callee pre under bound args implies callee post under caller state"
   },
   "pre": {
     "args": [],

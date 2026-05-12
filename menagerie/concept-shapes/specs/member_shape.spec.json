@@ -40,7 +40,7 @@
     "kind": "operation-contract",
     "operator": "member",
     "result": "LValue",
-    "wp": "field lvalue projection"
+    "wp_note": "field lvalue projection"
   },
   "pre": {
     "args": [],

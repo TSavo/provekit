@@ -29,7 +29,7 @@
     "kind": "operation-contract",
     "operator": "not",
     "result": "Bool",
-    "wp": "boolean negation"
+    "wp_note": "boolean negation"
   },
   "pre": {
     "args": [],

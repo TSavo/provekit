@@ -97,7 +97,7 @@
         "kind": "operation-contract",
         "operator": "index",
         "result": "LValue",
-        "wp": "array element lvalue projection"
+        "wp_note": "array element lvalue projection"
       }
     }
   },
@@ -119,5 +119,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:67a8cd49e8a44dbaae14ba25b90c35b70c86a2fa713295501e167a3dba3d8a4cc6a3b171b778cae6b097663ee5f59d94af337a6d303a853279e17c723019feec",
   "target_concept_op": "concept:index",
-  "target_op_cid": "blake3-512:2fbafb6e146d01cb5295bf4eb032f2707b85db318da3691339f0866d91c3d0359bc481f060556a97225ffdf74c9323f6f1e7ab762b355eff882d017e5992752e"
+  "target_op_cid": "blake3-512:18e36040cd6ef5f32811245338ab550147d76a5a1a3e525e6bdba05a492460b3d68d00c49abd9b9e4369698228780d0907b2ca367b783ef045859f8d7ed4cc12"
 }

@@ -38,7 +38,7 @@
     "kind": "operation-contract",
     "operator": "return",
     "result": "Stmt",
-    "wp": "bind function out value and exit current body"
+    "wp_note": "bind function out value and exit current body"
   },
   "pre": {
     "args": [],

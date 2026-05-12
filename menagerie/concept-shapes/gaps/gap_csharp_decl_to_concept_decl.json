@@ -70,7 +70,7 @@
         "kind": "operation-contract",
         "operator": "decl",
         "result": "Stmt",
-        "wp": "bind local name to initializer before continuing"
+        "wp_note": "bind local name to initializer before continuing"
       }
     }
   },
@@ -92,5 +92,5 @@
   "source_lang": "csharp",
   "source_op_cid": "blake3-512:7ac9ced58c2556671ffe5626cb30e31f4b85ff5e813e467d5a341812c5c094a3a6b51c04f5720ef37dcb53faf3df5e5e3b4f0fd8348c7e29048625b5fde797fe",
   "target_concept_op": "concept:decl",
-  "target_op_cid": "blake3-512:43f5ee88b8df3515b3f8a679464191c0d2f1f59c1505e306050ad9bf9255bd30d792eff59e24e1237c7334eca33b57e2224615583fabc3c3847dee7b00a5e9ce"
+  "target_op_cid": "blake3-512:8fa95384a32b13dc6589299f30fcf78e2a1b8dc3be188a04ce7edfaf988b3c7aae3420447e2bb1ebee1a635e1d51df2f807bf159d1ca35e77741aee131faba84"
 }

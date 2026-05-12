@@ -87,7 +87,7 @@
         "kind": "operation-contract",
         "operator": "add",
         "result": "Int",
-        "wp": "mathematical integer addition when no overflow holds"
+        "wp_note": "mathematical integer addition when no overflow holds"
       }
     },
     "pre_delta": {
@@ -136,5 +136,5 @@
   "source_lang": "python",
   "source_op_cid": "blake3-512:2818fd63a4fdcc4d6df720dc2b8b7bfc515b4ec4b49caacd0e089c40dece25c9941b602f5d7dd1cb5b3aee9d54d34a0aaeaf7510d148ec6d3a30fbff5a1e6407",
   "target_concept_op": "concept:add",
-  "target_op_cid": "blake3-512:cf5c95b508cf6e35624c04aba468a74586e8a2e1f714931e54876de9ffde364a549031384e0291fd6615c391f53a6f2c9715fcf41cc995c0243c4cea9f3e00e2"
+  "target_op_cid": "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
 }

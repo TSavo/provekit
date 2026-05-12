@@ -70,7 +70,7 @@
         "kind": "operation-contract",
         "operator": "bitxor",
         "result": "Int",
-        "wp": "integer bitwise xor expression"
+        "wp_note": "integer bitwise xor expression"
       }
     }
   },
@@ -92,5 +92,5 @@
   "source_lang": "python",
   "source_op_cid": "blake3-512:caac28c16336aed11dbca6935fd97f68429fa503c9c800af55d90b72652bb1b05274835101e959eccee998b61d41e6945a36bfeb9e26549e1374e696d0370ca7",
   "target_concept_op": "concept:bitxor",
-  "target_op_cid": "blake3-512:5f899196e7889f14cbe25ea373dd776a161f9c9f00502ca94782b5253ae2cd3d4af1785cf7364e62b4204157f38088be0671691a1b5ab84e2de348f9fca14506"
+  "target_op_cid": "blake3-512:343b1f9faa98218467d810e0a2bb1b1eebeaf921c71a1bc52141f885220afff482c631c52e2157a6067640f4830f928add53ef7aa0386c6a27ee3c8bab6dc353"
 }

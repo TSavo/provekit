@@ -52,7 +52,7 @@
         "kind": "operation-contract",
         "operator": "bitnot",
         "result": "Int",
-        "wp": "integer bitwise complement expression"
+        "wp_note": "integer bitwise complement expression"
       }
     }
   },
@@ -74,5 +74,5 @@
   "source_lang": "typescript",
   "source_op_cid": "blake3-512:99065e59ab89bba1441c02aa371ee61d26a6d919fd4eedbc502687631349a091568005e064ae0cf35eb7da9e8c08bef16225a3e1016975c854557d915c3c2bb0",
   "target_concept_op": "concept:bitnot",
-  "target_op_cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431"
+  "target_op_cid": "blake3-512:5e788f0d551081f4e709e4418e01017fa9ae1c04963e7be2862fadad8a8434fafa204629fbec53e2e44624c195ac2e32c0410df25cf8ff3a4be672582f89109f"
 }

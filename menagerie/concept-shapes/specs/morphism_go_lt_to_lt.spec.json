@@ -15,14 +15,14 @@
   ],
   "input_cids": [
     "blake3-512:b05a53f06b8c066c44b54a7b4648c882fbe72fddbf1ee64aa2684626d0c53aea54517c675e3979a1362195758edda19672f7bb3c2bfed74bb34ea4d9903477c3",
-    "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
+    "blake3-512:3a4a311ed57e6cf96508cfb5b9e4456716bab5a6eaa4ef43ee5163e5592b28b6da1844d64da78cf36bdcf90eaaf07de82ed51851d9668cb9dafe0cfe2a52a20b"
   ],
   "kind": "algorithm",
   "post": {
     "homomorphism_obligation": {
-      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "kind": "structural-wp-abstraction",
       "source": "blake3-512:b05a53f06b8c066c44b54a7b4648c882fbe72fddbf1ee64aa2684626d0c53aea54517c675e3979a1362195758edda19672f7bb3c2bfed74bb34ea4d9903477c3",
-      "target": "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
+      "target": "blake3-512:3a4a311ed57e6cf96508cfb5b9e4456716bab5a6eaa4ef43ee5163e5592b28b6da1844d64da78cf36bdcf90eaaf07de82ed51851d9668cb9dafe0cfe2a52a20b"
     },
     "kind": "contract-renaming-morphism",
     "literal_map": {},
@@ -32,7 +32,7 @@
     "renaming_map": {},
     "representation_map": {},
     "source_contract_cid": "blake3-512:b05a53f06b8c066c44b54a7b4648c882fbe72fddbf1ee64aa2684626d0c53aea54517c675e3979a1362195758edda19672f7bb3c2bfed74bb34ea4d9903477c3",
-    "target_shape_cid": "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
+    "target_shape_cid": "blake3-512:3a4a311ed57e6cf96508cfb5b9e4456716bab5a6eaa4ef43ee5163e5592b28b6da1844d64da78cf36bdcf90eaaf07de82ed51851d9668cb9dafe0cfe2a52a20b"
   },
   "pre": {
     "args": [],

@@ -33,7 +33,7 @@
         "kind": "operation-contract",
         "operator": "le",
         "result": "Bool",
-        "wp": "integer less-than-or-equal comparison"
+        "wp_note": "integer less-than-or-equal comparison"
       }
     }
   },
@@ -55,5 +55,5 @@
   "source_lang": "rust",
   "source_op_cid": "blake3-512:a1e6c93d90bfc818a725fa64db396c73f6756999ea39c9e662e2093db5740347ddad60381e3ed2acd1cea78690efd631a9f15179769eb51ae196deebd4b651de",
   "target_concept_op": "concept:le",
-  "target_op_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1"
+  "target_op_cid": "blake3-512:456f76c76a128069bd4970d4009e5f7e0d8938e009c2b096cd9612a6b50e2b4eac33d4c09d36e31bd7925c2ba8c3bf152b80ed559100740ceafeb8dad8be0985"
 }

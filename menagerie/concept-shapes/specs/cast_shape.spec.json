@@ -40,7 +40,7 @@
     "kind": "operation-contract",
     "operator": "cast",
     "result": "Expr",
-    "wp": "C cast expression preserving explicit target type and lifted child value"
+    "wp_note": "C cast expression preserving explicit target type and lifted child value"
   },
   "pre": {
     "args": [],

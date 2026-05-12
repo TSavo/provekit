@@ -1,0 +1,102 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:for",
+    "formals": [
+      "init",
+      "cond",
+      "step",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Stmt"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Bool"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Stmt"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Stmt"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "Stmt",
+        "Bool",
+        "Stmt",
+        "Stmt"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "init"
+          },
+          {
+            "name": "cond"
+          },
+          {
+            "name": "step"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "for",
+      "result": "Stmt",
+      "wp_note": "seq(init, while(cond, seq(body, step)))"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-polymorphic",
+          "rule": "union(init.effects, body.effects, step.effects)"
+        },
+        {
+          "kind": "effect-polymorphic",
+          "rule": "union(init.effects, body.effects, {Loop})"
+        },
+        {
+          "kind": "effect-signature",
+          "name": "OpaqueLoop"
+        },
+        {
+          "kind": "effect-signature",
+          "name": "Loop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  },
+  "cid": "blake3-512:5efdbe33b64f902d53f221eb98e33511b98766333bc10042982a0f943faf1cb300bc5a0b6018af296c37f32fd0eb11a170bae1d06e42a604f85475c0f98eb16f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "rZQdG4DzuppcAzoU7Op+YQDbJ5NMMXWgXIVAvNnBtj2iJSiI4gx6W4+eG1JTmO5BtU2D1SaFD1V17g0j1wcgAQ=="
+  }
+}

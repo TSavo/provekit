@@ -44,7 +44,7 @@
     "kind": "operation-contract",
     "operator": "div",
     "result": "Int",
-    "wp": "integer division expression"
+    "wp_note": "integer division expression"
   },
   "pre": {
     "args": [],

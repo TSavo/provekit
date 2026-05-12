@@ -29,7 +29,7 @@
     "kind": "operation-contract",
     "operator": "postdec",
     "result": "Expr",
-    "wp": "postfix decrement expression yielding the previous value"
+    "wp_note": "postfix decrement expression yielding the previous value"
   },
   "pre": {
     "args": [],

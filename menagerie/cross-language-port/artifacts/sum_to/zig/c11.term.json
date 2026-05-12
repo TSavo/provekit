@@ -1,21 +1,21 @@
 {
   "kind": "op",
-  "opCid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+  "opCid": "blake3-512:6c476a5d6b7c4eaf832ec897b1b518364b049578764a37183a109a2ae86942e3699cc27e9ef8d6a059b095a8807a0054a7492ecb57c9c9895562a7b659f5dacb",
   "name": "c11:seq",
   "args": [
     {
       "kind": "op",
-      "opCid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+      "opCid": "blake3-512:6c476a5d6b7c4eaf832ec897b1b518364b049578764a37183a109a2ae86942e3699cc27e9ef8d6a059b095a8807a0054a7492ecb57c9c9895562a7b659f5dacb",
       "name": "c11:seq",
       "args": [
         {
           "kind": "op",
-          "opCid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+          "opCid": "blake3-512:6c476a5d6b7c4eaf832ec897b1b518364b049578764a37183a109a2ae86942e3699cc27e9ef8d6a059b095a8807a0054a7492ecb57c9c9895562a7b659f5dacb",
           "name": "c11:seq",
           "args": [
             {
               "kind": "op",
-              "opCid": "blake3-512:13efa70ee9189131b71206f83c8f9747d668ae46e63c3c7312afa98a1a0c429a8e44049439ee1f4980fa89353e53b24b95eea75e54bf4885b7f86ebe764e804e",
+              "opCid": "blake3-512:3ff181ea4b9fa837e54f3f5248a2527b10d7410418a09e61e61a015cbb023d5bbacc1ecf59653b3437a25b1a12313fbc8abc573f290ea2a891bbc748745b5bb1",
               "name": "c11:decl",
               "args": [
                 {
@@ -34,7 +34,7 @@
             },
             {
               "kind": "op",
-              "opCid": "blake3-512:13efa70ee9189131b71206f83c8f9747d668ae46e63c3c7312afa98a1a0c429a8e44049439ee1f4980fa89353e53b24b95eea75e54bf4885b7f86ebe764e804e",
+              "opCid": "blake3-512:3ff181ea4b9fa837e54f3f5248a2527b10d7410418a09e61e61a015cbb023d5bbacc1ecf59653b3437a25b1a12313fbc8abc573f290ea2a891bbc748745b5bb1",
               "name": "c11:decl",
               "args": [
                 {
@@ -55,12 +55,12 @@
         },
         {
           "kind": "op",
-          "opCid": "blake3-512:80af434acaedcb699a72c5036bcfd594a4a5ff98cb0135fcee6e49ac7e2af42ed9a6c5ee8bc7c051cc7ae3550c4948d69aefe79d31594dc54872d36478564cc5",
+          "opCid": "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
           "name": "c11:while",
           "args": [
             {
               "kind": "op",
-              "opCid": "blake3-512:12800b28b3cbe629a72632d9fe40778a9ac2fcd4db92eb269866af421b75796c3605dc2586c422ea9480eaa1fe526185599d375fced24a8808ec32fbf40273f0",
+              "opCid": "blake3-512:aa2766dbdd90afedf636628099033576a1406263e72b0c7e0ec350d5a274055bd596ceceb3664fedbad3b46d651b33567b1ee3244b2551646ad36cf67d1a13b7",
               "name": "c11:lt",
               "args": [
                 {
@@ -75,12 +75,12 @@
             },
             {
               "kind": "op",
-              "opCid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+              "opCid": "blake3-512:6c476a5d6b7c4eaf832ec897b1b518364b049578764a37183a109a2ae86942e3699cc27e9ef8d6a059b095a8807a0054a7492ecb57c9c9895562a7b659f5dacb",
               "name": "c11:seq",
               "args": [
                 {
                   "kind": "op",
-                  "opCid": "blake3-512:977a6b693219ac8fde65e09bbad9bca433a08dbe9aacf670d0e8b33606776b4a90b3b694bc7bc73ea427a72bcbf24ae7871d7cfdb891859858bc696a6a67d36b",
+                  "opCid": "blake3-512:b1da209232583dfd8d69b1f169700f996d7bdf712841c9d74e0136df0527ac2f3eb0c28f98a1b58505877b7a732d9a2376a8502a594ced342b1e10d3673409e0",
                   "name": "c11:assign",
                   "args": [
                     {
@@ -89,7 +89,7 @@
                     },
                     {
                       "kind": "op",
-                      "opCid": "blake3-512:ed4ecc6469ee72a8f09c95554083a3ed8dfe7e15ce5954f9f522b5b9131c826376350146d42ab138f396b77cdbebdb9ab5917dd9ebf0791d2cf75af046eac526",
+                      "opCid": "blake3-512:423be59ab82079cf2f8fa5263463bbb3cf1ce9320e5e57c65a29d3b0612a30f9dac405526b729f28e3524f5f620544e79ca0c0b9b27e9b2ce35e50ca58ba128d",
                       "name": "c11:add",
                       "args": [
                         {
@@ -106,7 +106,7 @@
                 },
                 {
                   "kind": "op",
-                  "opCid": "blake3-512:977a6b693219ac8fde65e09bbad9bca433a08dbe9aacf670d0e8b33606776b4a90b3b694bc7bc73ea427a72bcbf24ae7871d7cfdb891859858bc696a6a67d36b",
+                  "opCid": "blake3-512:b1da209232583dfd8d69b1f169700f996d7bdf712841c9d74e0136df0527ac2f3eb0c28f98a1b58505877b7a732d9a2376a8502a594ced342b1e10d3673409e0",
                   "name": "c11:assign",
                   "args": [
                     {
@@ -115,7 +115,7 @@
                     },
                     {
                       "kind": "op",
-                      "opCid": "blake3-512:ed4ecc6469ee72a8f09c95554083a3ed8dfe7e15ce5954f9f522b5b9131c826376350146d42ab138f396b77cdbebdb9ab5917dd9ebf0791d2cf75af046eac526",
+                      "opCid": "blake3-512:423be59ab82079cf2f8fa5263463bbb3cf1ce9320e5e57c65a29d3b0612a30f9dac405526b729f28e3524f5f620544e79ca0c0b9b27e9b2ce35e50ca58ba128d",
                       "name": "c11:add",
                       "args": [
                         {

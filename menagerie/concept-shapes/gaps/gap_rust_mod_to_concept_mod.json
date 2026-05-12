@@ -33,7 +33,7 @@
         "kind": "operation-contract",
         "operator": "mod",
         "result": "Int",
-        "wp": "integer remainder expression"
+        "wp_note": "integer remainder expression"
       }
     },
     "pre_delta": {
@@ -72,5 +72,5 @@
   "source_lang": "rust",
   "source_op_cid": "blake3-512:235c6177611c2753a1c0d07d44391f5465ab50dc585372df52220118cb103ef19502192a07148bd2969d7f6f7ed0d134714d7745825f486768d0b0de8ac0b6dc",
   "target_concept_op": "concept:mod",
-  "target_op_cid": "blake3-512:f58d7f26192a3e713bd97c59aec8039a8b7c9ddd39e469d36da3077fe03de76912b4621ae3f4bdbae7d000a79303507e5ce2b1887221511ab905b896f321ef44"
+  "target_op_cid": "blake3-512:92340897b43965e01454b00a6a43ec54b2bf0e01213a45fa2311f730dde18adf8da97a22458c1a2a0fb23ce85ef3ad9b22e704804c74f41997aba3ba02cefe0d"
 }

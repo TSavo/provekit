@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:member",
+    "formals": [
+      "base",
+      "field"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "LValue"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "FieldName"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "LValue",
+        "FieldName"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "base"
+          },
+          {
+            "name": "field",
+            "slot_sort": "identifier"
+          }
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "member",
+      "result": "LValue",
+      "wp_note": "field lvalue projection"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "LValue"
+    }
+  },
+  "cid": "blake3-512:8c9f60571f0b644a09ef99ae2779927221cd61a7ba20000c0c933ac01b3fa4b1c41658df47404b49a0ef50006fd04139e7dd90f6352d3fc1aeb9b1c6c3677271",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "PkGMLGcuRQ+oGOaVeYFQyVWjag5p5XSKWCMmmw9aObCuqgeTIwMo9Ys4W9MyEO4COmouqTxFHmNyri5A36d/Ag=="
+  }
+}

@@ -48,7 +48,7 @@
     "kind": "operation-contract",
     "operator": "sub",
     "result": "Int",
-    "wp": "mathematical integer subtraction when no overflow holds"
+    "wp_note": "mathematical integer subtraction when no overflow holds"
   },
   "pre": {
     "args": [

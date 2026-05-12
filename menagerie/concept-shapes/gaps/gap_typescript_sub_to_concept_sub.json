@@ -87,7 +87,7 @@
         "kind": "operation-contract",
         "operator": "sub",
         "result": "Int",
-        "wp": "mathematical integer subtraction when no overflow holds"
+        "wp_note": "mathematical integer subtraction when no overflow holds"
       }
     },
     "pre_delta": {
@@ -136,5 +136,5 @@
   "source_lang": "typescript",
   "source_op_cid": "blake3-512:30f7e9f25b036a1c80782e8132e5dd00150685cb83ed46da960bbd229a30661557bdd65786314c03db5b68f24258c3bbf6fc26a0ee73bd90fe955c10722eb479",
   "target_concept_op": "concept:sub",
-  "target_op_cid": "blake3-512:07e118ce1489414d5311dd4f3b4575d0ea718197da18f806b58624c58f18c33107dc2ba5e9aa49fdc3d3e3c721792837a11d7d4e4620d9912c4ee6db15dec50e"
+  "target_op_cid": "blake3-512:b7c54558573348bb3a9297732547a8e6e9d152403d292df7426b6bb8a248f705b4b030bf2a22ba547a17d6f1bfaf8e75a6843e02e8f23a8226ebc09e2a8622af"
 }

@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "eq",
     "result": "Bool",
-    "wp": "integer equality comparison"
+    "wp_note": "integer equality comparison"
   },
   "pre": {
     "args": [],

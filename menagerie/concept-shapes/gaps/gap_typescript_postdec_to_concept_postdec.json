@@ -52,7 +52,7 @@
         "kind": "operation-contract",
         "operator": "postdec",
         "result": "Expr",
-        "wp": "postfix decrement expression yielding the previous value"
+        "wp_note": "postfix decrement expression yielding the previous value"
       }
     }
   },
@@ -74,5 +74,5 @@
   "source_lang": "typescript",
   "source_op_cid": "blake3-512:f6ed33eeceda21c53e1d054568e7343b55e868c6f7be1c8f81ac70994605875a3460f417d94d63e1501419d9226accaa0bbe69435b47e5f73a2b237ac6382ef3",
   "target_concept_op": "concept:postdec",
-  "target_op_cid": "blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908"
+  "target_op_cid": "blake3-512:cac33b2bef01e38d327440e7bfecebf3e7540d463a02e68dd047e47d0c9cca45f94181ce773fb389671a960cc957760b540b2927afd6d2c624cf9ddaca225f1a"
 }

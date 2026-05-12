@@ -18,5 +18,5 @@
   "source_lang": "typescript",
   "source_op_cid": "blake3-512:gap-no-source-cid-typescript-deref",
   "target_concept_op": "concept:deref",
-  "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  "target_op_cid": "blake3-512:93ff252a879bc061949fecdb9710a0a927b47f5104f5e628c7e0bd2477e3ea3515ebb2bc2794d9cc7c11c6ea16db511ff20a18c699bb94f7854e79b5e195f717"
 }

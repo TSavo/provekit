@@ -54,7 +54,7 @@
     "kind": "operation-contract",
     "operator": "ite",
     "result": "Expr",
-    "wp": "ternary expression selected by cond"
+    "wp_note": "ternary expression selected by cond"
   },
   "pre": {
     "args": [],

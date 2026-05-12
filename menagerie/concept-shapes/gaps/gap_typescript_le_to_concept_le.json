@@ -70,7 +70,7 @@
         "kind": "operation-contract",
         "operator": "le",
         "result": "Bool",
-        "wp": "integer less-than-or-equal comparison"
+        "wp_note": "integer less-than-or-equal comparison"
       }
     }
   },
@@ -92,5 +92,5 @@
   "source_lang": "typescript",
   "source_op_cid": "blake3-512:926347bb38d711b8a4dbb38f0cc1adbbd639086ef91d82a87fe564a1b91b57d1705b3e66dad2075ede4dfd9e01c7a935b2f1e1dc7fc027ccc81ba961a87db7b4",
   "target_concept_op": "concept:le",
-  "target_op_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1"
+  "target_op_cid": "blake3-512:456f76c76a128069bd4970d4009e5f7e0d8938e009c2b096cd9612a6b50e2b4eac33d4c09d36e31bd7925c2ba8c3bf152b80ed559100740ceafeb8dad8be0985"
 }

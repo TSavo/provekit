@@ -36,7 +36,7 @@
         "kind": "operation-contract",
         "operator": "deref",
         "result": "LValue",
-        "wp": "lvalue at ptr"
+        "wp_note": "lvalue at ptr"
       }
     },
     "pre_delta": {
@@ -100,5 +100,5 @@
   "source_lang": "zig",
   "source_op_cid": "blake3-512:8e0dd99d3425890284df5580bf29a7017f960bd9ddbe4900a793241cd7f1a227b35f1d264160010d2484e4a44e4c9d8f34d037a3fc9b5162120165cf5453a2b0",
   "target_concept_op": "concept:deref",
-  "target_op_cid": "blake3-512:8499dd78d9aee0c85b19ba404ea5cb8eb7b6e9ac00fe2da2dcef52b877adaccbc1d00240e4baf7ced77888df2e321fa4076f43520f3f2fb78c865300ab33a6fe"
+  "target_op_cid": "blake3-512:93ff252a879bc061949fecdb9710a0a927b47f5104f5e628c7e0bd2477e3ea3515ebb2bc2794d9cc7c11c6ea16db511ff20a18c699bb94f7854e79b5e195f717"
 }

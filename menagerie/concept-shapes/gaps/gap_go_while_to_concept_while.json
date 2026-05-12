@@ -18,5 +18,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:gap-no-source-cid-go-while",
   "target_concept_op": "concept:while",
-  "target_op_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+  "target_op_cid": "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
 }

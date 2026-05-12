@@ -44,7 +44,7 @@
     "kind": "operation-contract",
     "operator": "mod",
     "result": "Int",
-    "wp": "integer remainder expression"
+    "wp_note": "integer remainder expression"
   },
   "pre": {
     "args": [],

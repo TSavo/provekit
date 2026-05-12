@@ -38,7 +38,7 @@
     "kind": "operation-contract",
     "operator": "continue",
     "result": "Stmt",
-    "wp": "jump to next loop iteration"
+    "wp_note": "jump to next loop iteration"
   },
   "pre": {
     "args": [],

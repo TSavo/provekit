@@ -48,7 +48,7 @@
     "kind": "operation-contract",
     "operator": "mul",
     "result": "Int",
-    "wp": "mathematical integer multiplication when no overflow holds"
+    "wp_note": "mathematical integer multiplication when no overflow holds"
   },
   "pre": {
     "args": [

@@ -69,7 +69,7 @@
         "kind": "operation-contract",
         "operator": "return",
         "result": "Stmt",
-        "wp": "bind function out value and exit current body"
+        "wp_note": "bind function out value and exit current body"
       }
     }
   },
@@ -91,5 +91,5 @@
   "source_lang": "php",
   "source_op_cid": "blake3-512:d2027ebbc0a379b976e5723c135a0d1d19f48900c58f806ca0ab102d3a2e8b00a6a307a4dccc6777af2ff5411915a53a06e3227157cb1903db178e168e987701",
   "target_concept_op": "concept:return",
-  "target_op_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
+  "target_op_cid": "blake3-512:29e5e9e537f55d701ce6d342fde2c39a4b7158655c77ee08788fac213cbd866cb308f283e0852fccecdc21f0bfdf533fa0592008d80449a5db1a2c265d362f9f"
 }

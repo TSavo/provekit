@@ -38,7 +38,7 @@
     "kind": "operation-contract",
     "operator": "neg",
     "result": "Int",
-    "wp": "integer arithmetic negation when no overflow holds"
+    "wp_note": "integer arithmetic negation when no overflow holds"
   },
   "pre": {
     "args": [

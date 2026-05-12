@@ -29,7 +29,11 @@
     "kind": "operation-contract",
     "operator": "skip",
     "result": "Stmt",
-    "wp": "state unchanged"
+    "wp_note": "state unchanged",
+    "wp_rule": {
+      "kind": "var",
+      "name": "Q"
+    }
   },
   "pre": {
     "args": [],

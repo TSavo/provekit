@@ -83,7 +83,7 @@
         "kind": "operation-contract",
         "operator": "shr",
         "result": "Int",
-        "wp": "integer right shift expression"
+        "wp_note": "integer right shift expression"
       }
     }
   },
@@ -105,5 +105,5 @@
   "source_lang": "php",
   "source_op_cid": "blake3-512:65616a45e941510a14969690944b0e247558d5014fd309a8b5cf19cdbd962fc1900053c0c07c0ab5a5bcee1509ed101a517d0247852451e8c4a270a567eaebc6",
   "target_concept_op": "concept:shr",
-  "target_op_cid": "blake3-512:b78179f4f57c03c045c1acab65525331daca362ba63a643d863a10375bd8c0467f174c188fe9edc661d0ebba4f2ee673684fd73b8715cafe1c3cb5be6211e3a0"
+  "target_op_cid": "blake3-512:c90e3c159b25e4c4c7f9c899da5aa3ee048a548719ced7360f3e514450811096b21cd5473f22d7a05df088f92210bbc916e65970b9fa1e1511c193ed969f112b"
 }

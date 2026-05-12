@@ -52,7 +52,7 @@
     "kind": "operation-contract",
     "operator": "assign",
     "result": "Stmt",
-    "wp": "store value into target and update state"
+    "wp_note": "store value into target and update state"
   },
   "pre": {
     "args": [],

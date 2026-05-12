@@ -33,7 +33,7 @@
         "kind": "operation-contract",
         "operator": "bitand",
         "result": "Int",
-        "wp": "integer bitwise and expression"
+        "wp_note": "integer bitwise and expression"
       }
     }
   },
@@ -55,5 +55,5 @@
   "source_lang": "csharp",
   "source_op_cid": "blake3-512:fc4dff723905f71b925b81b6fa3e60fd5085ce59d8071d9f2648c459dc46d17eb10065649a8c71b55ef9d2314cb7d87aa0f1b7b636c223b37fed4dab034e08a7",
   "target_concept_op": "concept:bitand",
-  "target_op_cid": "blake3-512:a83de04ab992aad5eb9e1a1bb2b6706576e42d243464ad6d5aeb3a06283c6498d2325cdb3beeecae9fe1e82b684abc4c118092f6a9129281aeca5246433f4a6a"
+  "target_op_cid": "blake3-512:9e96c2445bad6bb1e5a6f902ad7f733e3f4619829b9c0e232361fbf50b978c8332029212ed895762e604d1df009fce58848cda33524a697df798233eae30a14b"
 }

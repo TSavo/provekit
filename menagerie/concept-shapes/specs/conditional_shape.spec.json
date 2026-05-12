@@ -54,7 +54,55 @@
     "kind": "operation-contract",
     "operator": "conditional",
     "result": "Stmt",
-    "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)"
+    "wp_note": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+    "wp_rule": {
+      "kind": "and",
+      "operands": [
+        {
+          "kind": "implies",
+          "operands": [
+            {
+              "kind": "var",
+              "name": "cond"
+            },
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "Q"
+                }
+              ],
+              "fn": "wp_then_branch",
+              "kind": "apply"
+            }
+          ]
+        },
+        {
+          "kind": "implies",
+          "operands": [
+            {
+              "kind": "not",
+              "operands": [
+                {
+                  "kind": "var",
+                  "name": "cond"
+                }
+              ]
+            },
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "Q"
+                }
+              ],
+              "fn": "wp_else_branch",
+              "kind": "apply"
+            }
+          ]
+        }
+      ]
+    }
   },
   "pre": {
     "args": [],

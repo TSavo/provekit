@@ -56,7 +56,7 @@
     "kind": "operation-contract",
     "operator": "index",
     "result": "LValue",
-    "wp": "array element lvalue projection"
+    "wp_note": "array element lvalue projection"
   },
   "pre": {
     "args": [],

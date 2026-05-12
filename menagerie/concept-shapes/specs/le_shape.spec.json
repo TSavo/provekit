@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "le",
     "result": "Bool",
-    "wp": "integer less-than-or-equal comparison"
+    "wp_note": "integer less-than-or-equal comparison"
   },
   "pre": {
     "args": [],

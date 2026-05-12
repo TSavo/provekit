@@ -55,7 +55,7 @@
         "kind": "operation-contract",
         "operator": "sub",
         "result": "Int",
-        "wp": "mathematical integer subtraction when no overflow holds"
+        "wp_note": "mathematical integer subtraction when no overflow holds"
       }
     },
     "pre_delta": {
@@ -119,5 +119,5 @@
   "source_lang": "rust",
   "source_op_cid": "blake3-512:b6c62a64669ff12d0af45d9932c1ab5e08576f1cac97b4abe60392a9f02393dac9765514b024b1481ddc829d4b7fb97950ad648a9944dceafa194b8423923533",
   "target_concept_op": "concept:sub",
-  "target_op_cid": "blake3-512:07e118ce1489414d5311dd4f3b4575d0ea718197da18f806b58624c58f18c33107dc2ba5e9aa49fdc3d3e3c721792837a11d7d4e4620d9912c4ee6db15dec50e"
+  "target_op_cid": "blake3-512:b7c54558573348bb3a9297732547a8e6e9d152403d292df7426b6bb8a248f705b4b030bf2a22ba547a17d6f1bfaf8e75a6843e02e8f23a8226ebc09e2a8622af"
 }

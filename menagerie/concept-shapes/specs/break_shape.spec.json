@@ -38,7 +38,7 @@
     "kind": "operation-contract",
     "operator": "break",
     "result": "Stmt",
-    "wp": "exit nearest enclosing switch or loop"
+    "wp_note": "exit nearest enclosing switch or loop"
   },
   "pre": {
     "args": [],

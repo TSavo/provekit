@@ -34,7 +34,7 @@
     "kind": "operation-contract",
     "operator": "deref",
     "result": "LValue",
-    "wp": "lvalue at ptr"
+    "wp_note": "lvalue at ptr"
   },
   "pre": {
     "kind": "connective",

@@ -47,7 +47,7 @@
     "kind": "operation-contract",
     "operator": "new",
     "result": "Expr",
-    "wp": "new object of type type_name constructed with args"
+    "wp_note": "new object of type type_name constructed with args"
   },
   "pre": {
     "args": [],

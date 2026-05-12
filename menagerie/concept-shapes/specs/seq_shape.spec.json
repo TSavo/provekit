@@ -37,7 +37,23 @@
     "kind": "operation-contract",
     "operator": "seq",
     "result": "Stmt",
-    "wp": "wp(first, wp(second, post))"
+    "wp_note": "wp(first, wp(second, post))",
+    "wp_rule": {
+      "args": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "Q"
+            }
+          ],
+          "fn": "wp_second",
+          "kind": "apply"
+        }
+      ],
+      "fn": "wp_first",
+      "kind": "apply"
+    }
   },
   "pre": {
     "args": [],

@@ -1,16 +1,16 @@
 {
   "kind": "op",
-  "opCid": "blake3-512:6cdb1de2fdf11c63f205f4f3628d2414a2d72be3d5c16fb8ee0741381722b18923ef9e0dd12d44a613a0383def034a691147804b2300fa297723a445608a8a87",
+  "opCid": "blake3-512:4f5b9e39745851d397f3aa8db4a9d662cbcf642d6c25f638376646b177f7e153f1cd387b83357b7a8c2ac40004668288db6a093e0950a9cb8d5aaa6c507dbffc",
   "name": "zig:seq",
   "args": [
     {
       "kind": "op",
-      "opCid": "blake3-512:3845abf77d11fbc11e2e86327769925f3de948c454c704d2882aea2207abb2fd652235154cf1fa36670305a2cd8e2ccf97796ea07b3e4a4ab4547e60731afe26",
+      "opCid": "blake3-512:dd37023ebf6436a3dc4c777be751ef0e9b688718f34fe0d3a2ca47092a009406c42395939e3bd06428c2c94f0340e1d169c364f9b08e1a5636b42c312fafeabb",
       "name": "zig:if",
       "args": [
         {
           "kind": "op",
-          "opCid": "blake3-512:58db0ff89aedff73c03b00e553d6806702a34d3c09f5a2d876e8b65c7c5aa49d832e80adad92452378340984138cd6ec7cb3974f9303a15aa87876803d7e18be",
+          "opCid": "blake3-512:116cc4407d0495b16b8401d99ce86e3431cc00be1e8aeae06ec5195d2604adc6e14bedeebedcd58f8882fd32d93a370e84b6d43244129877b0a1cbd43609a1de",
           "name": "zig:eq",
           "args": [
             {
@@ -29,7 +29,7 @@
         },
         {
           "kind": "op",
-          "opCid": "blake3-512:66f37523e649c458025715ad80af10093a538dfc7ab79a10c069837bb95c3771f1c038070e52661f79db2a32fb40f5c6abd205af84f27455c064bc35d6c43e67",
+          "opCid": "blake3-512:9161a9c0a56c7aa3ff6fd51f7f2ea15129db3c4ac62ee1cbe15b45b0e80d24e41977440d2d2e8f3253fc2b57c29993a90c94c81724ca8230d163788682e967d5",
           "name": "zig:return",
           "args": [
             {
@@ -44,7 +44,7 @@
         },
         {
           "kind": "op",
-          "opCid": "blake3-512:583f5dc017cbcc09ce8967e4799d75693bfd814e380fbef6c169c737029696ae13c951ba250a8402e2e03bfd5603e1321780a0e14fca23ce5bdd0eaa6460191e",
+          "opCid": "blake3-512:5327af625cd7de8e42521d0f9f0143b859451157ae9d74ecb37b3b4a1eb3a89820c290d185a569658335df9b33b2cd96e9f92b23270b116a5ebff0fcd4fdd1d8",
           "name": "zig:skip",
           "args": [
             {
@@ -56,7 +56,7 @@
     },
     {
       "kind": "op",
-      "opCid": "blake3-512:66f37523e649c458025715ad80af10093a538dfc7ab79a10c069837bb95c3771f1c038070e52661f79db2a32fb40f5c6abd205af84f27455c064bc35d6c43e67",
+      "opCid": "blake3-512:9161a9c0a56c7aa3ff6fd51f7f2ea15129db3c4ac62ee1cbe15b45b0e80d24e41977440d2d2e8f3253fc2b57c29993a90c94c81724ca8230d163788682e967d5",
       "name": "zig:return",
       "args": [
         {

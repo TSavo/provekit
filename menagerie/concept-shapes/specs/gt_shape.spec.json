@@ -39,7 +39,7 @@
     "kind": "operation-contract",
     "operator": "gt",
     "result": "Bool",
-    "wp": "integer greater-than comparison"
+    "wp_note": "integer greater-than comparison"
   },
   "pre": {
     "args": [],

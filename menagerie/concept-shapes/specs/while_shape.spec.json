@@ -56,7 +56,7 @@
     "kind": "operation-contract",
     "operator": "while",
     "result": "Stmt",
-    "wp": "loop invariant holds and cond is false at exit"
+    "wp_note": "loop invariant holds and cond is false at exit"
   },
   "pre": {
     "args": [],

@@ -70,7 +70,7 @@
         "kind": "operation-contract",
         "operator": "bitor",
         "result": "Int",
-        "wp": "integer bitwise or expression"
+        "wp_note": "integer bitwise or expression"
       }
     }
   },
@@ -92,5 +92,5 @@
   "source_lang": "php",
   "source_op_cid": "blake3-512:7fd165246392bab75e123dd4780accc9858e79ac03bf76f94c0b1b20a182c3bb83f40ccb345f053531070bbf1ec20cbf3983070e45d80712a2f18099968b64f4",
   "target_concept_op": "concept:bitor",
-  "target_op_cid": "blake3-512:3418dde0858af56d7d9a9c5d59b2c51460b3541ca94e35459204e392604a93d095e7cdb86f3c2ce6551ba1aa36b9827a02cf9baac6f58f3521e5ecef63534654"
+  "target_op_cid": "blake3-512:d57b54bffe698ed804a4a49486b73a1a8a3e7bd84fb12babaad01ce22d8b7bcb5a35f3476324063f8de9f8090846d0d4fbeb48d78475d07e16f7925b4f264de3"
 }

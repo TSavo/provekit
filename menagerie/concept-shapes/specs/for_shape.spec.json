@@ -76,7 +76,7 @@
     "kind": "operation-contract",
     "operator": "for",
     "result": "Stmt",
-    "wp": "seq(init, while(cond, seq(body, step)))"
+    "wp_note": "seq(init, while(cond, seq(body, step)))"
   },
   "pre": {
     "args": [],

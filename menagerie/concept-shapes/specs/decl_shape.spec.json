@@ -44,7 +44,7 @@
     "kind": "operation-contract",
     "operator": "decl",
     "result": "Stmt",
-    "wp": "bind local name to initializer before continuing"
+    "wp_note": "bind local name to initializer before continuing"
   },
   "pre": {
     "args": [],

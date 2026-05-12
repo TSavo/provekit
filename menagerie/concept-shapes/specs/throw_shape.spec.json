@@ -38,7 +38,7 @@
     "kind": "operation-contract",
     "operator": "throw",
     "result": "Stmt",
-    "wp": "throw exception or value"
+    "wp_note": "throw exception or value"
   },
   "pre": {
     "args": [],

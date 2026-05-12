@@ -48,7 +48,7 @@
     "kind": "operation-contract",
     "operator": "add",
     "result": "Int",
-    "wp": "mathematical integer addition when no overflow holds"
+    "wp_note": "mathematical integer addition when no overflow holds"
   },
   "pre": {
     "args": [
