@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "rust:Option::and_then->concept:option-bind",
+    "formals": [
+      "T",
+      "U"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "U",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "rust:Option::and_then",
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "U"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:option-bind",
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "U"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-lift",
+    "direction": "left-to-right",
+    "source_lang": "rust",
+    "loss_record": {
+      "structural_divergence": "none; Rust Option<T>::and_then is the canonical monadic bind, no encoding gap between source and hub concept"
+    },
+    "discharge_receipt": "deferred:pending-642-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:0c2f37c6613c7a8cb8c0a62d7d83d57c70e4c20ac1160cb2737c9c8c0f63d21266eec6aad3e7273d1ff140567da86dc94bc27a04baec99cb460e94fc6fe38b09",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
