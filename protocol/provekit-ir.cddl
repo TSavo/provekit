@@ -350,3 +350,127 @@ PinInvariantMemento = {
   ? note: tstr,
 }
 
+; ================================================================
+; Abstraction layer -- concept:* hub tier 2
+; ================================================================
+; Source of truth:
+;   protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1, §2.2, §2.4
+; Implements: issue #71, PR feat/abstraction-layer-1-schemas
+;
+; Two new memento types:
+;   ConceptAbstractionMemento   -- a hub node at the abstraction tier (§2.1)
+;   RealizationDesugaringMemento -- a DesugaringEquationMemento in
+;                                   role "abstraction-realization" (§2.2)
+;
+; One extended loss-record dimension:
+;   structural_divergence        -- new fifth dimension (§2.4); successor mint
+;                                   of the #616 schema per LSP §4.4
+;
+; NOTE: `realizations` is `[* cid]` (zero-or-more) in this PR1 schema.
+; PR2 will tighten it to `[+ cid]` (one-or-more) per spec §2.1 by minting
+; a successor schema with `refines = <PR1 CID>` per LSP §4.4.
+;
+; NOTE: `discharge_receipt` is optional in this PR1 schema. PR2 tightens.
+
+; ----------------------------------------------------------------
+; Shared primitive
+; ----------------------------------------------------------------
+
+; A CID is a blake3-512: prefixed 128-hex-char string.
+; This alias is used throughout.
+; (Also used by PinInvariantMemento above via the same convention.)
+
+; sort-ref is a SortMemento CID (a blake3-512: string)
+sort-ref = tstr
+
+; ----------------------------------------------------------------
+; Loss record (extended with structural_divergence -- §2.4)
+; ----------------------------------------------------------------
+;
+; SUCCESSOR MINT NOTE (structural_divergence):
+;   This dimension is a successor-mint addition per LSP §4.4 relative to
+;   the #616 schema (2026-05-14-transport-gap-and-partial-morphism-protocol.md).
+;   Existing #616 loss-records that omit it read as structural_divergence = ∅.
+;   CIDs of previously-minted mementos are NOT affected.
+;
+; An absent dimension key means "no loss in that dimension" (formula = ∅).
+; The open-map syntax allows forward-compatible dimension additions.
+;
+; Locked key order (alphabetical per JCS):
+;   domain_narrowing, effect_divergence, structural_divergence,
+;   ub_introduction, value_divergence
+
+LossRecord = {
+  ? "domain_narrowing":     ir-formula,   ; inputs target realization cannot accept
+  ? "effect_divergence":    ir-formula,   ; inputs where observable effect set differs
+  ? "structural_divergence": ir-formula,  ; always non-empty for abstraction realizations
+                                          ;   (§2.4): measures how far surface form of the
+                                          ;   realization diverges from the abstraction
+  ? "ub_introduction":      ir-formula,   ; inputs where target introduces UB absent in source
+  ? "value_divergence":     ir-formula,   ; inputs where result VALUE differs
+}
+
+; Convenience alias matching spec §2.4 dimension names
+loss-record = LossRecord
+
+; ----------------------------------------------------------------
+; ConceptAbstractionMemento (§2.1)
+; ----------------------------------------------------------------
+;
+; Locked key order:
+;   kind, operator, tier, slots, formal_sorts, result_sort, contract,
+;   ? contract_note, realizations, ? superseded_by, ? refines
+
+ConceptAbstractionMemento = {
+  kind:              "concept-abstraction",
+  operator:          tstr,               ; e.g. "concept:dynamic-dispatch"
+  tier:              "abstraction",      ; pins the layer
+  slots:             [+ AbstractionSlot],
+  formal_sorts:      [+ sort-ref],       ; one per slot, same order
+  result_sort:       sort-ref,
+  contract:          ir-formula,         ; the wp_rule of the abstraction; see §2.3
+  ? contract_note:   tstr,              ; human-readable; non-load-bearing; OMIT when absent
+  realizations:      [* cid],            ; CIDs of RealizationDesugaringMemento (>= 0 in PR1;
+                                         ;   PR2 tightens to >= 1 per spec §2.1)
+  ? superseded_by:   cid,               ; successor abstraction node CID
+  ? refines:         cid,               ; LSP §4.4 successor-mint chain
+}
+
+; Locked key order: name, ? variadic
+AbstractionSlot = {
+  name:          tstr,                   ; e.g. "receiver", "method_name", "args"
+  ? variadic:    bool,                   ; default false; marks variadic (e.g. "args")
+}
+
+; ----------------------------------------------------------------
+; RealizationDesugaringMemento (§2.2)
+; ----------------------------------------------------------------
+;
+; A DesugaringEquationMemento (2026-05-11) elected into the
+; "abstraction-realization" role with three additive fields:
+;   role, direction, target_lang, loss_record, discharge_receipt.
+;
+; Locked key order:
+;   kind, fn_name, formals, formal_sorts, ? pre, post,
+;   role, direction, target_lang, loss_record, discharge_receipt, effects, ? refines
+
+RealizationDesugaringMemento = {
+  kind:              "equation",               ; unchanged: it IS a desugaring equation
+  fn_name:           tstr,                     ; e.g. "concept:dynamic-dispatch->c11:vtable-indirection"
+  formals:           [+ tstr],                 ; the abstraction's slot variable names
+  formal_sorts:      [+ sort-ref],
+  ? pre:             ir-formula,               ; side condition: WHEN this realization is admissible
+  post: {                                      ; the equation lhs = rhs
+    lhs: ir-formula,                           ; concept:<abstraction>(<slots>)
+    rhs: ir-formula,                           ; per-language operation-layer expansion
+  },
+  role:              "abstraction-realization",
+  direction:         "left-to-right",          ; lhs is abstraction, rhs is lang term
+  target_lang:       tstr,                     ; LSP language id ("c11", "java", "ruby", ...)
+  loss_record:       loss-record,
+  ? discharge_receipt: cid,                    ; CID of a MorphismDischargeReceipt (optional in PR1;
+                                               ;   PR2 tightens to required per spec §2.2)
+  effects:           [* tstr],                 ; always [] for the equation itself; rhs term carries effects
+  ? refines:         cid,
+}
+

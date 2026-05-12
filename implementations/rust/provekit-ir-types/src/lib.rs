@@ -322,3 +322,137 @@ pub type ConnectiveKind = String;
 
 pub type Term = IrTerm;
 pub type Formula = IrFormula;
+
+// ============================================================
+// NOTE: Manual extension block -- abstraction layer (issue #71)
+// ============================================================
+//
+// The types below are manually added per the convention established in
+// the Sort enum above. They implement the CDDL defined in
+// protocol/provekit-ir.cddl §"Abstraction layer" and are sourced from
+// protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1-§2.4.
+//
+// DO NOT regenerate this file via `cargo run -p provekit-ir-codegen`
+// without re-applying this block. See the Sort enum NOTE above.
+//
+// Key-order rule: struct field names mirror the CDDL key names exactly.
+// serde_json with the default BTreeMap representation emits keys in
+// lexicographic order (JCS canonical order). Fields that are
+// `skip_serializing_if = "Option::is_none"` are OMITTED when None;
+// the JCS bytes must match `serde_json::to_value` output exactly.
+//
+// "effects" is ALWAYS serialized (never skipped) even when empty,
+// because it is a required field in the CDDL schema.
+
+use std::collections::BTreeMap;
+
+/// A map from loss-dimension name to an `ir-formula` characterizing that
+/// dimension's divergence. An absent key means "no loss in that dimension."
+///
+/// Dimension names (§2.4 of the spec):
+///   - "domain_narrowing"    -- inputs the realization cannot accept
+///   - "effect_divergence"   -- inputs where observable effect set differs
+///   - "structural_divergence" -- how far surface form diverges from the abstraction
+///                               (always non-empty for abstraction realizations)
+///   - "ub_introduction"     -- inputs where UB is introduced
+///   - "value_divergence"    -- inputs where result VALUE differs
+///
+/// `structural_divergence` is a successor-mint addition per LSP §4.4 relative
+/// to the #616 schema. Existing #616 loss-records without it read as
+/// structural_divergence = None (formula = ∅). CIDs of previously-minted
+/// mementos are NOT affected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct LossRecord(pub BTreeMap<String, IrFormula>);
+
+/// A single named slot in a `ConceptAbstractionMemento`.
+///
+/// Locked JCS key order: `name`, `variadic` (variadic omitted when absent).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AbstractionSlot {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variadic: Option<bool>,
+}
+
+/// A hub node at the abstraction tier of the `concept:*` hub.
+///
+/// Source of truth: protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.1
+/// CDDL: protocol/provekit-ir.cddl `ConceptAbstractionMemento`
+///
+/// Locked JCS key order:
+///   kind, operator, tier, slots, formal_sorts, result_sort, contract,
+///   contract_note (omitted when absent), realizations,
+///   superseded_by (omitted when absent), refines (omitted when absent)
+///
+/// NOTE: `realizations` is Vec (zero-or-more) in PR1. PR2 tightens to
+/// one-or-more via a successor mint with `refines = <PR1 schema CID>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConceptAbstractionMemento {
+    pub kind: String,      // must be "concept-abstraction"
+    pub operator: String,
+    pub tier: String,      // must be "abstraction"
+    pub slots: Vec<AbstractionSlot>,
+    #[serde(rename = "formal_sorts")]
+    pub formal_sorts: Vec<String>,
+    #[serde(rename = "result_sort")]
+    pub result_sort: String,
+    pub contract: IrFormula,
+    #[serde(rename = "contract_note")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_note: Option<String>,
+    pub realizations: Vec<String>,
+    #[serde(rename = "superseded_by")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refines: Option<String>,
+}
+
+/// The post-condition equation in a `RealizationDesugaringMemento`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RealizationPost {
+    pub lhs: IrFormula,
+    pub rhs: IrFormula,
+}
+
+/// A `DesugaringEquationMemento` (2026-05-11) elected into the
+/// "abstraction-realization" role.
+///
+/// Source of truth: protocol/specs/2026-05-15-concept-hub-abstraction-layer.md §2.2
+/// CDDL: protocol/provekit-ir.cddl `RealizationDesugaringMemento`
+///
+/// Locked JCS key order:
+///   kind, fn_name, formals, formal_sorts, pre (omitted when absent),
+///   post, role, direction, target_lang, loss_record,
+///   discharge_receipt (omitted when absent), effects,
+///   refines (omitted when absent)
+///
+/// NOTE: `discharge_receipt` is optional in PR1. PR2 tightens to required.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RealizationDesugaringMemento {
+    pub kind: String,            // must be "equation"
+    #[serde(rename = "fn_name")]
+    pub fn_name: String,
+    pub formals: Vec<String>,
+    #[serde(rename = "formal_sorts")]
+    pub formal_sorts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre: Option<IrFormula>,
+    pub post: RealizationPost,
+    pub role: String,            // must be "abstraction-realization"
+    pub direction: String,       // must be "left-to-right"
+    #[serde(rename = "target_lang")]
+    pub target_lang: String,
+    #[serde(rename = "loss_record")]
+    pub loss_record: LossRecord,
+    #[serde(rename = "discharge_receipt")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discharge_receipt: Option<String>,
+    pub effects: Vec<String>,    // always [] for the equation itself; never skip
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refines: Option<String>,
+}
+
+// ============================================================
+// End manual extension block -- abstraction layer (issue #71)
+// ============================================================
