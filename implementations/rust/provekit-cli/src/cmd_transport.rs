@@ -60,7 +60,7 @@ struct StageReport {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum TransportCliError {
+pub(crate) enum TransportCliError {
     #[error("Refusal: {0}")]
     Refusal(String),
     #[error("{0}")]
@@ -227,6 +227,13 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
         ContractAnnotations::default()
     };
 
+    // Extract source-language type information for signature threading.
+    let (param_types, return_type) = if source_language == "rust" {
+        parse_rust_fn_types(&source_text, &args.function)
+    } else {
+        (Vec::new(), "i64".to_string())
+    };
+
     // Derive a stable concept binding for the `// concept: ...` comment.
     // The name is deterministic from the target term's JSON serialization so
     // every distinct function shape gets a unique, stable, per-function name.
@@ -236,6 +243,8 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
         &target_language,
         &args.function,
         &params,
+        &param_types,
+        &return_type,
         &target_term,
         &annotations,
         &concept_name,
@@ -874,6 +883,60 @@ fn parse_int_params(source: &str, function: &str) -> Option<Vec<String>> {
     }
 }
 
+/// Parse param types and return type for a named function from Rust source.
+/// Returns (param_types, return_type) where param_types are per-parameter type
+/// strings (as written in the source) and return_type is the return type
+/// string.  Falls back to ("i64", "i64") defaults if syn parsing fails or the
+/// function cannot be found.
+fn parse_rust_fn_types(source: &str, function: &str) -> (Vec<String>, String) {
+    let Ok(file) = syn::parse_file(source) else {
+        return (Vec::new(), "i64".to_string());
+    };
+    for item in &file.items {
+        if let syn::Item::Fn(item_fn) = item {
+            if item_fn.sig.ident == function {
+                let param_types: Vec<String> = item_fn
+                    .sig
+                    .inputs
+                    .iter()
+                    .filter_map(|arg| match arg {
+                        syn::FnArg::Typed(pt) => {
+                            Some(type_to_str(pt.ty.as_ref()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                let return_type = match &item_fn.sig.output {
+                    syn::ReturnType::Default => "()".to_string(),
+                    syn::ReturnType::Type(_, ty) => type_to_str(ty.as_ref()),
+                };
+                return (param_types, return_type);
+            }
+        }
+    }
+    (Vec::new(), "i64".to_string())
+}
+
+/// Convert a syn Type to a compact string representation.
+fn type_to_str(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Path(tp) => {
+            let seg = tp.path.segments.last();
+            seg.map(|s| s.ident.to_string()).unwrap_or_else(|| "i64".to_string())
+        }
+        syn::Type::Reference(r) => {
+            let inner = type_to_str(r.elem.as_ref());
+            if r.mutability.is_some() {
+                format!("&mut {inner}")
+            } else {
+                format!("&{inner}")
+            }
+        }
+        syn::Type::Tuple(tt) if tt.elems.is_empty() => "()".to_string(),
+        _ => "i64".to_string(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Contract annotation loading and formatting
 // ---------------------------------------------------------------------------
@@ -1131,9 +1194,14 @@ fn emit_annotation_prefix(
         // are already in scope from the function signature.
         let body = peel_quantifiers(pre);
         let expr = formula_to_syntax(body, style);
+        // F3: Zig does NOT support Rust `#[requires(...)]` attribute syntax.
+        // Give Zig a `// @requires:` comment annotation instead.
         match style {
-            TargetStyle::Rust | TargetStyle::Zig => {
+            TargetStyle::Rust => {
                 out.push_str(&format!("{indent}#[requires({expr})]\n"));
+            }
+            TargetStyle::Zig => {
+                out.push_str(&format!("{indent}// @requires: {expr}\n"));
             }
             TargetStyle::Python | TargetStyle::Ruby => {
                 out.push_str(&format!("{indent}# requires: {expr}\n"));
@@ -1154,8 +1222,11 @@ fn emit_annotation_prefix(
         let body = peel_quantifiers(post);
         let expr = formula_to_syntax(body, style);
         match style {
-            TargetStyle::Rust | TargetStyle::Zig => {
+            TargetStyle::Rust => {
                 out.push_str(&format!("{indent}#[ensures({expr})]\n"));
+            }
+            TargetStyle::Zig => {
+                out.push_str(&format!("{indent}// @ensures: {expr}\n"));
             }
             TargetStyle::Python | TargetStyle::Ruby => {
                 out.push_str(&format!("{indent}# ensures: {expr}\n"));
@@ -1176,9 +1247,44 @@ fn emit_annotation_prefix(
 }
 
 #[derive(Debug)]
-struct RealizedSource {
-    extension: &'static str,
-    source: String,
+pub(crate) struct RealizedSource {
+    pub(crate) extension: &'static str,
+    pub(crate) source: String,
+}
+
+/// Public-crate bridge for `cmd_bind`'s canonical-mode path.
+///
+/// Lifts contract annotations from `source_text` (Rust source of the origin
+/// file) for the named function, then calls `realize_function` with a stub
+/// body appropriate for each target language.  Source types (param types and
+/// return type as target-language strings) are threaded through so that the
+/// emitted signature matches the origin — e.g. an `i64` source param emits
+/// `i64` in Rust/Zig, `long` in Java/C#, `int64` in Go, `number` in
+/// TypeScript, and untyped in Python/Ruby.
+///
+/// Returns a `RealizedSource` on success. The `source` field carries the
+/// full target-language snippet including the ORP annotation prefix.
+pub(crate) fn realize_for_bind(
+    language: &str,
+    function: &str,
+    params: &[String],
+    source_text: &str,
+    concept_name: &str,
+) -> Result<RealizedSource, TransportCliError> {
+    let annotations = lift_rust_contracts(source_text, function);
+    let (param_types, return_type) = parse_rust_fn_types(source_text, function);
+    // Pass Term::Unit as body: the bind path has no term graph yet.
+    // realize_function detects Unit and emits a compilable idiomatic stub.
+    realize_function(
+        language,
+        function,
+        params,
+        &param_types,
+        &return_type,
+        &Term::Unit,
+        &annotations,
+        concept_name,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1213,6 +1319,8 @@ fn realize_function(
     language: &str,
     function: &str,
     params: &[String],
+    param_types: &[String],
+    return_type: &str,
     body: &Term,
     annotations: &ContractAnnotations,
     concept_name: &str,
@@ -1233,83 +1341,140 @@ fn realize_function(
 
     let annotation_prefix = emit_annotation_prefix(concept_name, annotations, style, top_indent);
 
+    // When body is Term::Unit it signals "no term graph available" (the bind path).
+    // Emit a language-idiomatic compilable stub rather than `();` which is not
+    // a valid expression in a typed return position.
+    let is_stub = matches!(body, Term::Unit);
+
+    // Translate source-language type name to target-language type name.
+    let map_type = |src: &str| map_source_type(src, style);
+
+    // Build typed param list for languages that need explicit types.
+    let typed_params: Vec<String> = params
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let t = param_types.get(i).map(String::as_str).unwrap_or("i64");
+            let mapped = map_type(t);
+            typed_param(name, &mapped, style)
+        })
+        .collect();
+    let typed_param_list = typed_params.join(", ");
+
+    let mapped_return = map_type(return_type);
+
+    // Per-function class name for languages that require top-level class wrappers
+    // (Java, C#).  Using function name prevents duplicate-class errors when
+    // multiple functions are emitted into one output file.
+    let class_name = snake_to_pascal_local(function) + "Transported";
+
     let source = match style {
-        TargetStyle::Rust => format!(
-            "{annotation_prefix}pub fn {function}({}) -> i32 {{\n{}}}\n",
-            params
-                .iter()
-                .map(|param| format!("{param}: i32"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 1)?
-        ),
-        TargetStyle::Python => format!(
-            "{annotation_prefix}def {function}({}):\n{}",
-            params.join(", "),
-            emit_block(body, style, 1)?
-        ),
-        TargetStyle::Go => {
-            // Go: package header first, then annotations above the function.
-            format!(
-                "package main\n\n{annotation_prefix}func {function}({}) int {{\n{}}}\n",
-                params
-                    .iter()
-                    .map(|param| format!("{param} int"))
-                    .collect::<Vec<_>>()
-                    .join(", "),
+        TargetStyle::Rust => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
                 emit_stmt(body, style, 1)?
+            };
+            format!(
+                "{annotation_prefix}pub fn {function}({typed_param_list}) -> {mapped_return} {{\n{body_str}}}\n"
             )
         }
-        TargetStyle::CSharp => format!(
-            "public static class Transported {{\n{annotation_prefix}    public static int {function}({}) {{\n{}    }}\n}}\n",
-            params
-                .iter()
-                .map(|param| format!("int {param}"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 2)?
-        ),
-        TargetStyle::TypeScript => format!(
-            "{annotation_prefix}export function {function}({}): number {{\n{}}}\n",
-            params
-                .iter()
-                .map(|param| format!("{param}: number"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 1)?
-        ),
-        TargetStyle::Zig => format!(
-            "{annotation_prefix}pub fn {function}({}) i32 {{\n{}}}\n",
-            params
-                .iter()
-                .map(|param| format!("{param}: i32"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 1)?
-        ),
-        TargetStyle::Ruby => format!(
-            "{annotation_prefix}def {function}({})\n{}end\n",
-            params.join(", "),
-            emit_block(body, style, 1)?
-        ),
-        TargetStyle::Php => format!(
-            "<?php\n{annotation_prefix}function {function}({}) {{\n{}}}\n",
-            params
-                .iter()
-                .map(|param| format!("${param}"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 1)?
-        ),
-        TargetStyle::Java => format!(
-            "final class Transported {{\n{annotation_prefix}    public static int {function}({}) {{\n{}    }}\n}}\n",
-            params
-                .iter()
-                .map(|param| format!("int {param}"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 2)?
-        ),
+        TargetStyle::Python => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_block(body, style, 1)?
+            };
+            format!("{annotation_prefix}def {function}({}):\n{body_str}", params.join(", "))
+        }
+        TargetStyle::Go => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_stmt(body, style, 1)?
+            };
+            // Go: annotations above the function, NO package declaration here.
+            // File-level header (`package main`) is emitted once per file by the
+            // caller via `realize_file_header`.
+            // When return type is empty (void/unit), omit it from signature.
+            let go_ret = if mapped_return.is_empty() {
+                String::new()
+            } else {
+                format!(" {mapped_return}")
+            };
+            format!(
+                "{annotation_prefix}func {function}({typed_param_list}){go_ret} {{\n{body_str}}}\n"
+            )
+        }
+        TargetStyle::CSharp => {
+            let body_str = if is_stub {
+                format!("        {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_stmt(body, style, 2)?
+            };
+            format!(
+                "public static class {class_name} {{\n{annotation_prefix}    public static {mapped_return} {function}({typed_param_list}) {{\n{body_str}    }}\n}}\n"
+            )
+        }
+        TargetStyle::TypeScript => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_stmt(body, style, 1)?
+            };
+            format!(
+                "{annotation_prefix}export function {function}({typed_param_list}): {mapped_return} {{\n{body_str}}}\n"
+            )
+        }
+        TargetStyle::Zig => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_stmt(body, style, 1)?
+            };
+            format!(
+                "{annotation_prefix}pub fn {function}({typed_param_list}) {mapped_return} {{\n{body_str}}}\n"
+            )
+        }
+        TargetStyle::Ruby => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_block(body, style, 1)?
+            };
+            format!(
+                "{annotation_prefix}def {function}({})\n{body_str}end\n",
+                params.join(", ")
+            )
+        }
+        TargetStyle::Php => {
+            let body_str = if is_stub {
+                format!("    {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_stmt(body, style, 1)?
+            };
+            // PHP: NO `<?php` open tag here; emitted once per file by the caller
+            // via `realize_file_header`. Multiple `<?php` tags in one file is a
+            // parse error.
+            format!(
+                "{annotation_prefix}function {function}({}) {{\n{body_str}}}\n",
+                params
+                    .iter()
+                    .map(|param| format!("${param}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        TargetStyle::Java => {
+            let body_str = if is_stub {
+                format!("        {}\n", stub_body_for(style, concept_name))
+            } else {
+                emit_stmt(body, style, 2)?
+            };
+            format!(
+                "final class {class_name} {{\n{annotation_prefix}    public static {mapped_return} {function}({typed_param_list}) {{\n{body_str}    }}\n}}\n"
+            )
+        }
     };
     let extension = match style {
         TargetStyle::Rust => "rs",
@@ -1323,6 +1488,135 @@ fn realize_function(
         TargetStyle::Java => "java",
     };
     Ok(RealizedSource { extension, source })
+}
+
+/// Emit the file-level header for a given target language.
+///
+/// Languages like Go (`package main`) and PHP (`<?php`) require exactly one
+/// file-level declaration per output file; emitting it once here and omitting
+/// it from per-function snippets prevents duplicate-declaration parse errors.
+///
+/// Most languages (Rust, Python, TypeScript, Java, C#, Zig, Ruby) need no
+/// file-level preamble, so this returns an empty string for them.
+pub(crate) fn realize_file_header(language: &str) -> String {
+    match language {
+        "go" => "package main\n\n".to_string(),
+        "php" => "<?php\n".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Emit the file-level footer for a given target language.
+///
+/// Currently no supported language needs a file footer; reserved for future use.
+pub(crate) fn realize_file_footer(_language: &str) -> String {
+    String::new()
+}
+
+/// Emit a language-idiomatic compilable stub body string.
+/// Used when `cmd_bind` delegates to ORP but no term graph is available yet.
+fn stub_body_for(style: TargetStyle, concept_name: &str) -> String {
+    match style {
+        TargetStyle::Rust => format!("todo!(\"provekit-bind canonical: {concept_name}\")"),
+        TargetStyle::Python => format!("raise NotImplementedError(\"provekit-bind canonical: {concept_name}\")"),
+        TargetStyle::Go => format!("panic(\"provekit-bind canonical: {concept_name}\")"),
+        TargetStyle::Java => format!("throw new UnsupportedOperationException(\"provekit-bind canonical: {concept_name}\");"),
+        TargetStyle::CSharp => format!("throw new System.NotImplementedException(\"provekit-bind canonical: {concept_name}\");"),
+        TargetStyle::TypeScript => format!("throw new Error(\"provekit-bind canonical: {concept_name}\");"),
+        TargetStyle::Zig => format!("@panic(\"provekit-bind canonical: {concept_name}\");"),
+        TargetStyle::Ruby => format!("raise NotImplementedError, \"provekit-bind canonical: {concept_name}\""),
+        TargetStyle::Php => format!("throw new \\RuntimeException(\"provekit-bind canonical: {concept_name}\");"),
+    }
+}
+
+/// Map a Rust/source-language type name to the idiomatic name for the target style.
+fn map_source_type(src: &str, style: TargetStyle) -> String {
+    match style {
+        TargetStyle::Rust | TargetStyle::Zig => src.to_string(),
+        TargetStyle::Python | TargetStyle::Ruby => String::new(), // untyped
+        TargetStyle::Go => match src {
+            "()" => "".to_string(),
+            "i64" | "u64" => "int64".to_string(),
+            "i32" | "u32" => "int32".to_string(),
+            "i16" | "u16" => "int16".to_string(),
+            "i8" | "u8" => "int8".to_string(),
+            "f64" => "float64".to_string(),
+            "f32" => "float32".to_string(),
+            "bool" => "bool".to_string(),
+            "String" | "&str" | "&String" => "string".to_string(),
+            other => other.to_string(),
+        },
+        TargetStyle::Java => match src {
+            "()" => "void".to_string(),
+            "i64" | "u64" => "long".to_string(),
+            "i32" | "u32" => "int".to_string(),
+            "i16" | "u16" => "short".to_string(),
+            "i8" | "u8" => "byte".to_string(),
+            "f64" => "double".to_string(),
+            "f32" => "float".to_string(),
+            "bool" => "boolean".to_string(),
+            "String" | "&str" | "&String" => "String".to_string(),
+            other => other.to_string(),
+        },
+        TargetStyle::CSharp => match src {
+            "()" => "void".to_string(),
+            "i64" | "u64" => "long".to_string(),
+            "i32" | "u32" => "int".to_string(),
+            "i16" | "u16" => "short".to_string(),
+            "i8" | "u8" => "byte".to_string(),
+            "f64" => "double".to_string(),
+            "f32" => "float".to_string(),
+            "bool" => "bool".to_string(),
+            "String" | "&str" | "&String" => "string".to_string(),
+            other => other.to_string(),
+        },
+        TargetStyle::TypeScript => match src {
+            "()" => "void".to_string(),
+            "i64" | "u64" | "i32" | "u32" | "i16" | "u16" | "i8" | "u8"
+            | "f64" | "f32" => "number".to_string(),
+            "bool" => "boolean".to_string(),
+            "String" | "&str" | "&String" => "string".to_string(),
+            other => other.to_string(),
+        },
+        TargetStyle::Php => match src {
+            "()" => "void".to_string(),
+            "i64" | "u64" | "i32" | "u32" | "i16" | "u16" | "i8" | "u8" => "int".to_string(),
+            "f64" | "f32" => "float".to_string(),
+            "bool" => "bool".to_string(),
+            "String" | "&str" | "&String" => "string".to_string(),
+            other => other.to_string(),
+        },
+    }
+}
+
+/// Format a typed parameter for the target language.
+fn typed_param(name: &str, mapped_type: &str, style: TargetStyle) -> String {
+    match style {
+        // untyped — Python and Ruby don't annotate params in signatures
+        TargetStyle::Python | TargetStyle::Ruby => name.to_string(),
+        // type-after-name
+        TargetStyle::Rust | TargetStyle::Zig => format!("{name}: {mapped_type}"),
+        TargetStyle::TypeScript => format!("{name}: {mapped_type}"),
+        TargetStyle::Go => format!("{name} {mapped_type}"),
+        // type-before-name
+        TargetStyle::Java | TargetStyle::CSharp => format!("{mapped_type} {name}"),
+        TargetStyle::Php => format!("${name}"),
+    }
+}
+
+/// Convert snake_case to PascalCase for class name construction.
+/// Duplicated here from cmd_bind to avoid cross-module coupling.
+fn snake_to_pascal_local(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect()
 }
 
 fn emit_block(term: &Term, style: TargetStyle, indent: usize) -> Result<String, TransportCliError> {
@@ -1920,10 +2214,10 @@ pub fn bar(x: i32) -> i32 { x + 1 }
 
     #[test]
     fn test_realize_function_emits_concept_comment_rust() {
-        // Use Term::Unit as a minimal valid body (emit_stmt handles it).
+        // Term::Unit signals "no body available yet" -- should emit a compilable todo!() stub.
         let body = Term::Unit;
         let anns = ContractAnnotations::default();
-        let result = realize_function("rust", "foo", &[], &body, &anns, "seq");
+        let result = realize_function("rust", "foo", &[], &[], "()", &body, &anns, "seq");
         assert!(result.is_ok());
         let src = result.unwrap().source;
         assert!(
@@ -1934,6 +2228,15 @@ pub fn bar(x: i32) -> i32 { x + 1 }
             src.contains("pub fn foo()"),
             "function def missing in: {src}"
         );
+        assert!(
+            src.contains("todo!("),
+            "compilable stub body missing in: {src}"
+        );
+        // Must NOT emit `();` as a statement (uncompilable when return type != ())
+        assert!(
+            !src.contains("();\n"),
+            "unit expression as statement found (uncompilable): {src}"
+        );
     }
 
     #[test]
@@ -1943,12 +2246,14 @@ pub fn bar(x: i32) -> i32 { x + 1 }
             pre: Some(gt(var("x"), num(0))),
             post: None,
         };
-        let result = realize_function("rust", "foo", &["x".to_string()], &body, &anns, "my-concept");
+        let result = realize_function("rust", "foo", &["x".to_string()], &["i64".to_string()], "i64", &body, &anns, "my-concept");
         assert!(result.is_ok());
         let src = result.unwrap().source;
         assert!(src.contains("// concept: my-concept"), "concept comment missing in: {src}");
         assert!(src.contains("#[requires(x > 0)]"), "#[requires] missing in: {src}");
-        assert!(src.contains("pub fn foo(x: i32)"), "function def missing in: {src}");
+        // Type is threaded from source: i64 -> i64 in Rust
+        assert!(src.contains("pub fn foo(x: i64)"), "function def with i64 missing in: {src}");
+        assert!(src.contains("-> i64"), "return type i64 missing in: {src}");
     }
 
     #[test]
@@ -1958,25 +2263,36 @@ pub fn bar(x: i32) -> i32 { x + 1 }
             pre: Some(gt(var("n"), num(0))),
             post: None,
         };
-        let result = realize_function("python", "compute", &["n".to_string()], &body, &anns, "seq");
+        let result = realize_function("python", "compute", &["n".to_string()], &["i64".to_string()], "i64", &body, &anns, "seq");
         assert!(result.is_ok());
         let src = result.unwrap().source;
         // Python: concept comment uses `#`, not `//` (which is floor-division).
         assert!(src.contains("# concept: seq"), "concept comment missing in: {src}");
         assert!(src.contains("# requires: n > 0"), "python requires comment missing in: {src}");
         assert!(src.contains("def compute(n):"), "def missing in: {src}");
+        assert!(
+            src.contains("raise NotImplementedError"),
+            "compilable stub body missing in: {src}"
+        );
     }
 
     #[test]
     fn test_realize_function_emits_concept_comment_java() {
         let body = Term::Unit;
         let anns = ContractAnnotations::default();
-        let result = realize_function("java", "compute", &["n".to_string()], &body, &anns, "seq");
+        let result = realize_function("java", "compute", &["n".to_string()], &["i64".to_string()], "i64", &body, &anns, "seq");
         assert!(result.is_ok());
         let src = result.unwrap().source;
         // Java: concept comment is indented inside the class wrapper
         assert!(src.contains("// concept: seq"), "concept comment missing in: {src}");
-        assert!(src.contains("public static int compute(int n)"), "method sig missing in: {src}");
+        // Type is threaded: i64 -> long in Java
+        assert!(src.contains("public static long compute(long n)"), "method sig with long missing in: {src}");
+        // Per-function class name avoids duplicate-class errors
+        assert!(src.contains("final class ComputeTransported"), "per-function class name missing in: {src}");
+        assert!(
+            src.contains("throw new UnsupportedOperationException"),
+            "compilable stub body missing in: {src}"
+        );
     }
 
     // ------------------------------------------------------------------
