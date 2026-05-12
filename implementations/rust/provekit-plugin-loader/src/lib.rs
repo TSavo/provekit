@@ -24,5 +24,6 @@ pub use error::LoadError;
 pub use loader::{load_plugin_from_file, load_plugin_from_rpc};
 pub use registry::{PluginRegistry, PluginRegistryMemento};
 pub use types::{
-    PluginEnvelope, PluginHeader, PluginLoadFailureMemento, PluginMemento, PluginMetadata,
+    LoadOrderEntry, LoadedEntry, PluginEnvelope, PluginHeader, PluginLoadFailureMemento,
+    PluginMemento, PluginMetadata,
 };

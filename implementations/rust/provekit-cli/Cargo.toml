@@ -33,6 +33,7 @@ syn = { workspace = true }
 
 # External.
 clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["clock"] }
 anyhow = "1"
 owo-colors = "4"
 serde = { workspace = true }

@@ -15,6 +15,30 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 // ---------------------------------------------------------------------------
+// §9.1 load_order and loaded entry types (B1 + B2 wire shape fix)
+// ---------------------------------------------------------------------------
+
+/// One entry in PluginRegistryMemento.load_order (§9.1).
+/// Wire shape: `{ kind: plugin-kind, cid: cid, source: tstr }`
+/// `source` is the verbatim CLI flag value (e.g. `"/path/to/spring.json"`)
+/// for §9.4 audit-replay.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LoadOrderEntry {
+    pub cid: String,
+    pub kind: String,
+    pub source: String,
+}
+
+/// One entry in PluginRegistryMemento.loaded (§9.1).
+/// Wire shape: `{ kind: plugin-kind, cid: cid }`
+/// The `loaded` array is sorted by cid ascending per §9.1.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LoadedEntry {
+    pub cid: String,
+    pub kind: String,
+}
+
+// ---------------------------------------------------------------------------
 // §1 Plugin memento
 // ---------------------------------------------------------------------------
 

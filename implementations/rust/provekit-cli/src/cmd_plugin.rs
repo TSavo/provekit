@@ -7,7 +7,8 @@
 // Flag dispatch (§7):
 //   --plugin <kind>:<source>     canonical form; multi-load via repeated flags.
 //   --sugar <source>             ≡ --plugin sugar:<source>
-//   --loss-fn <source>           ≡ --plugin loss-function:<source>
+//   --loss-function <source>     ≡ --plugin loss-function:<source>  (§3.1 spec-canonical alias)
+//   --loss-fn <source>           alias for --loss-function (ergonomic short form)
 //   --lifter <source>            ≡ --plugin lift:<source>   (wire kind = "lift")
 //   --no-default-plugins         suppress ALL built-in registration.
 //   --no-default-plugin <kind>   suppress built-ins for one kind.
@@ -19,10 +20,14 @@
 //
 // Flag order is the tie-break order preserved in PluginRegistryMemento.load_order
 // (§9.1).  Built-ins are appended AFTER user flags (§7).
+//
+// B4: CLI flag ORDER is recovered via clap ArgMatches::indices_of so that
+// interleaved --plugin / --sugar / --loss-function / --lifter flags appear in
+// their true argv order, not two-pass (--plugin first, aliases second).
 
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Args, FromArgMatches};
 
 use provekit_plugin_loader::{
     error::LoadError,
@@ -37,7 +42,7 @@ use provekit_plugin_loader::{
 ///   #[command(flatten)]
 ///   pub plugins: PluginFlags,
 ///   ```
-#[derive(Parser, Debug, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PluginFlags {
     /// Canonical plugin flag.  Loads one plugin of the declared kind from the
     /// source.  Repeat for multiple plugins; flag order is preserved in the
@@ -50,75 +55,223 @@ pub struct PluginFlags {
     ///
     /// Example: `--plugin sugar:/path/to/spring.json`
     ///          `--plugin sugar:rpc://localhost:8765`
-    #[arg(long = "plugin", value_name = "KIND:SOURCE", action = clap::ArgAction::Append)]
     pub plugins: Vec<String>,
 
     /// Alias: `--sugar <source>` ≡ `--plugin sugar:<source>`.
-    #[arg(long = "sugar", value_name = "SOURCE", action = clap::ArgAction::Append)]
     pub sugar: Vec<String>,
 
-    /// Alias: `--loss-fn <source>` ≡ `--plugin loss-function:<source>`.
-    #[arg(long = "loss-fn", value_name = "SOURCE", action = clap::ArgAction::Append)]
+    /// Alias: `--loss-function <source>` ≡ `--plugin loss-function:<source>`.
+    /// `--loss-fn` is a second alias (ergonomic short form).
     pub loss_fn: Vec<String>,
 
     /// Alias: `--lifter <source>` ≡ `--plugin lift:<source>`.
     /// Note: the wire `kind` value is `"lift"`, not `"lifter"` (§2.1).
-    #[arg(long = "lifter", value_name = "SOURCE", action = clap::ArgAction::Append)]
     pub lifter: Vec<String>,
 
     /// Suppress ALL built-in plugin registration (§7).
-    #[arg(long = "no-default-plugins")]
     pub no_default_plugins: bool,
 
     /// Suppress built-ins for one kind only (§7).  Repeat for multiple kinds.
-    #[arg(long = "no-default-plugin", value_name = "KIND", action = clap::ArgAction::Append)]
     pub no_default_plugin: Vec<String>,
 
     /// Promote EVERY plugin load failure to a refuse (overrides individual
     /// `critical = false` declarations) (§7).
-    #[arg(long = "strict-plugins")]
     pub strict_plugins: bool,
 
     /// After the registry seals (§9), write the PluginRegistryMemento JSON to
     /// this path.
-    #[arg(long = "plugin-registry-out", value_name = "PATH")]
     pub plugin_registry_out: Option<PathBuf>,
+
+    /// B4: interleaved ordered list of `(kind, source, verbatim)` reflecting
+    /// true argv insertion order across all alias flags.
+    /// Populated by `from_arg_matches_ref`; not serialized or parsed by clap
+    /// as a flag (it's a derived field reconstructed from arg indices).
+    ordered: Vec<(String, String, String)>,
+}
+
+// ---------------------------------------------------------------------------
+// B4: Manual Args + FromArgMatches impl to recover interleaved flag order
+// ---------------------------------------------------------------------------
+//
+// We cannot use `#[derive(Parser)]` for PluginFlags because derive does not
+// expose the ArgMatches to the struct after parsing, so we cannot call
+// `indices_of` to reconstruct interleaved order.  Instead we implement
+// `clap::Args` and `clap::FromArgMatches` manually.  The `augment_args` and
+// `augment_args_for_update` methods register the flags with clap.  The
+// `from_arg_matches_ref` method reads them back in argv index order.
+
+impl clap::Args for PluginFlags {
+    fn augment_args(cmd: clap::Command) -> clap::Command {
+        Self::augment_args_for_update(cmd)
+    }
+
+    fn augment_args_for_update(cmd: clap::Command) -> clap::Command {
+        use clap::{Arg, ArgAction};
+        cmd
+            .arg(Arg::new("plugin")
+                .long("plugin")
+                .value_name("KIND:SOURCE")
+                .action(ArgAction::Append)
+                .help("Canonical plugin flag: --plugin <kind>:<source>"))
+            .arg(Arg::new("sugar")
+                .long("sugar")
+                .value_name("SOURCE")
+                .action(ArgAction::Append)
+                .help("Alias: --sugar <source> ≡ --plugin sugar:<source>"))
+            .arg(Arg::new("loss_fn")
+                .long("loss-function")
+                .alias("loss-fn")
+                .value_name("SOURCE")
+                .action(ArgAction::Append)
+                .help("Alias: --loss-function <source> ≡ --plugin loss-function:<source>; --loss-fn is a short alias"))
+            .arg(Arg::new("lifter")
+                .long("lifter")
+                .value_name("SOURCE")
+                .action(ArgAction::Append)
+                .help("Alias: --lifter <source> ≡ --plugin lift:<source>"))
+            .arg(Arg::new("no_default_plugins")
+                .long("no-default-plugins")
+                .action(ArgAction::SetTrue)
+                .help("Suppress ALL built-in plugin registration (§7)"))
+            .arg(Arg::new("no_default_plugin")
+                .long("no-default-plugin")
+                .value_name("KIND")
+                .action(ArgAction::Append)
+                .help("Suppress built-ins for one kind only (§7)"))
+            .arg(Arg::new("strict_plugins")
+                .long("strict-plugins")
+                .action(ArgAction::SetTrue)
+                .help("Promote EVERY plugin load failure to a refuse"))
+            .arg(Arg::new("plugin_registry_out")
+                .long("plugin-registry-out")
+                .value_name("PATH")
+                .help("Write PluginRegistryMemento JSON to this path after sealing"))
+    }
+}
+
+impl clap::FromArgMatches for PluginFlags {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let mut s = Self::default();
+        s.update_from_arg_matches(matches)?;
+        Ok(s)
+    }
+
+    fn update_from_arg_matches(
+        &mut self,
+        matches: &clap::ArgMatches,
+    ) -> Result<(), clap::Error> {
+        // Scalar flags.
+        self.no_default_plugins = matches.get_flag("no_default_plugins");
+        self.strict_plugins = matches.get_flag("strict_plugins");
+        self.plugin_registry_out = matches.get_one::<String>("plugin_registry_out").map(PathBuf::from);
+        self.no_default_plugin = matches
+            .get_many::<String>("no_default_plugin")
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+
+        // B4: reconstruct interleaved order via indices_of.
+        // Each flag kind has its own index-space entry in ArgMatches.
+        // We collect (argv_index, kind, source, verbatim) across all four
+        // flag names, then sort by argv_index to recover true flag order.
+        let mut ordered_raw: Vec<(usize, String, String, String)> = Vec::new();
+
+        // --plugin KIND:SOURCE
+        if let Some(indices) = matches.indices_of("plugin") {
+            let values: Vec<_> = matches
+                .get_many::<String>("plugin")
+                .into_iter()
+                .flatten()
+                .collect();
+            for (idx, raw) in indices.zip(values) {
+                if let Some((kind, source)) = raw.split_once(':') {
+                    ordered_raw.push((idx, kind.to_string(), source.to_string(), raw.to_string()));
+                }
+            }
+        }
+
+        // --sugar SOURCE  (kind = "sugar"; verbatim = "sugar:<source>")
+        if let Some(indices) = matches.indices_of("sugar") {
+            let values: Vec<_> = matches
+                .get_many::<String>("sugar")
+                .into_iter()
+                .flatten()
+                .collect();
+            for (idx, src) in indices.zip(values) {
+                ordered_raw.push((
+                    idx,
+                    "sugar".to_string(),
+                    src.to_string(),
+                    format!("sugar:{src}"),
+                ));
+            }
+        }
+
+        // --loss-function / --loss-fn SOURCE  (kind = "loss-function")
+        if let Some(indices) = matches.indices_of("loss_fn") {
+            let values: Vec<_> = matches
+                .get_many::<String>("loss_fn")
+                .into_iter()
+                .flatten()
+                .collect();
+            for (idx, src) in indices.zip(values) {
+                ordered_raw.push((
+                    idx,
+                    "loss-function".to_string(),
+                    src.to_string(),
+                    format!("loss-function:{src}"),
+                ));
+            }
+        }
+
+        // --lifter SOURCE  (kind = "lift")
+        if let Some(indices) = matches.indices_of("lifter") {
+            let values: Vec<_> = matches
+                .get_many::<String>("lifter")
+                .into_iter()
+                .flatten()
+                .collect();
+            for (idx, src) in indices.zip(values) {
+                // wire kind = "lift" (§2.1)
+                ordered_raw.push((
+                    idx,
+                    "lift".to_string(),
+                    src.to_string(),
+                    format!("lift:{src}"),
+                ));
+            }
+        }
+
+        // Sort by argv_index to recover true interleaved order (§3.2 + §9.1).
+        ordered_raw.sort_by_key(|(idx, _, _, _)| *idx);
+
+        // Populate individual vecs for API compatibility and the ordered vec.
+        self.plugins.clear();
+        self.sugar.clear();
+        self.loss_fn.clear();
+        self.lifter.clear();
+        self.ordered.clear();
+
+        for (_, kind, source, verbatim) in ordered_raw {
+            match kind.as_str() {
+                "sugar" => self.sugar.push(source.clone()),
+                "loss-function" => self.loss_fn.push(source.clone()),
+                "lift" => self.lifter.push(source.clone()),
+                _ => self.plugins.push(verbatim.clone()),
+            }
+            self.ordered.push((kind, source, verbatim));
+        }
+
+        Ok(())
+    }
 }
 
 impl PluginFlags {
-    /// Expand alias flags into canonical `(kind, source)` pairs, preserving
-    /// flag order.  Built-ins are NOT included here; they are appended by
-    /// `build_registry` after user plugins.
-    ///
-    /// Returns tuples of `(kind, source, cli_flag_verbatim)`.
-    fn expanded_plugins(&self) -> Vec<(String, String, String)> {
-        let mut out: Vec<(String, String, String)> = Vec::new();
-
-        // Process --plugin flags first (canonical form).
-        for raw in &self.plugins {
-            if let Some((kind, source)) = raw.split_once(':') {
-                out.push((kind.to_string(), source.to_string(), raw.clone()));
-            }
-            // If no ':' found, treat as parse error at load time.
-        }
-
-        // Per-kind aliases desugar AFTER canonical flags so that canonical form
-        // flags precede aliases in load_order when both appear.
-        for source in &self.sugar {
-            let verbatim = format!("sugar:{source}");
-            out.push(("sugar".to_string(), source.clone(), verbatim));
-        }
-        for source in &self.loss_fn {
-            let verbatim = format!("loss-function:{source}");
-            out.push(("loss-function".to_string(), source.clone(), verbatim));
-        }
-        for source in &self.lifter {
-            // wire kind = "lift" (§2.1)
-            let verbatim = format!("lift:{source}");
-            out.push(("lift".to_string(), source.clone(), verbatim));
-        }
-
-        out
+    /// Return the plugins in their true argv insertion order (§3.2 + §9.1).
+    /// Built-ins are NOT included here; `build_registry` appends them after.
+    fn ordered_plugins(&self) -> &[(String, String, String)] {
+        &self.ordered
     }
 
     /// Load all plugins declared via flags, register them, seal the registry,
@@ -128,14 +281,20 @@ impl PluginFlags {
     /// Otherwise, failures are recorded in the registry and the run continues.
     ///
     /// `sealed_at` should be an ISO-8601 UTC timestamp.
+    ///
+    /// N2: `--no-default-plugins` and `--no-default-plugin <kind>` are
+    /// consulted before any default plugin registration. In v0, the substrate
+    /// ships zero default plugins, so these flags are parsed without error but
+    /// are no-ops until default plugins exist.
     pub fn build_registry(
         &self,
         sealed_at: &str,
     ) -> Result<PluginRegistryMemento, PluginLoadRefusal> {
         let mut registry = PluginRegistry::new();
 
-        for (kind, source, verbatim) in self.expanded_plugins() {
-            let result = load_one(&source);
+        // Walk flags in true argv order (B4: insertion order, not type-grouped).
+        for (kind, source, verbatim) in self.ordered_plugins() {
+            let result = load_one(source);
             match result {
                 Ok(plugin) => {
                     // Validate: plugin's declared kind matches the CLI flag kind.
@@ -146,42 +305,51 @@ impl PluginFlags {
                                 plugin.kind()
                             ),
                         };
-                        let f = mint_failure_memento(&verbatim, &kind, &err, sealed_at);
+                        let f = mint_failure_memento(verbatim, kind, &err, sealed_at);
                         if plugin.is_critical() || self.strict_plugins {
                             return Err(PluginLoadRefusal {
                                 failure: f,
-                                source: verbatim,
+                                source: verbatim.clone(),
                             });
                         }
                         registry.record_failure(f);
                         continue;
                     }
                     let critical = plugin.is_critical();
-                    if let Err(dup_err) = registry.register(plugin) {
-                        let f = mint_failure_memento(&verbatim, &kind, &dup_err, sealed_at);
+                    // B1: pass verbatim source for audit-replay (§9.4).
+                    if let Err(dup_err) = registry.register(plugin, source) {
+                        let f = mint_failure_memento(verbatim, kind, &dup_err, sealed_at);
                         if critical || self.strict_plugins {
                             return Err(PluginLoadRefusal {
                                 failure: f,
-                                source: verbatim,
+                                source: verbatim.clone(),
                             });
                         }
                         registry.record_failure(f);
                     }
                 }
                 Err(err) => {
-                    // Determine critical: we don't have the plugin in hand, so treat
-                    // any strict-plugins setting or if the source started with kind
-                    // (caller's responsibility).  For now: strict_plugins overrides.
-                    let f = mint_failure_memento(&verbatim, &kind, &err, sealed_at);
+                    let f = mint_failure_memento(verbatim, kind, &err, sealed_at);
                     if self.strict_plugins {
                         return Err(PluginLoadRefusal {
                             failure: f,
-                            source: verbatim,
+                            source: verbatim.clone(),
                         });
                     }
                     registry.record_failure(f);
                 }
             }
+        }
+
+        // N2: default plugin registration goes here in future versions.
+        // --no-default-plugins: skip ALL defaults.
+        // --no-default-plugin <kind>: skip defaults for a specific kind.
+        // v0 ships zero default plugins; the flags are parsed but are no-ops.
+        if !self.no_default_plugins {
+            for _suppressed_kind in &self.no_default_plugin {
+                // No-op in v0: no defaults to suppress.
+            }
+            // Register any default plugins here once the substrate ships them.
         }
 
         let memento = registry.emit_registry_memento(sealed_at);

@@ -23,8 +23,8 @@ use serde::{Deserialize, Serialize};
 use crate::cid::compute_registry_cid;
 use crate::error::LoadError;
 use crate::types::{
-    PluginEnvelope, PluginLoadFailureMemento, PluginLoadFailureMementoHeader,
-    PluginMemento,
+    LoadOrderEntry, LoadedEntry, PluginEnvelope, PluginLoadFailureMemento,
+    PluginLoadFailureMementoHeader, PluginMemento,
 };
 
 // ---------------------------------------------------------------------------
@@ -42,10 +42,12 @@ pub struct PluginRegistryMementoHeader {
     /// CIDs of PluginLoadFailureMementos minted during this run.
     pub failures: Vec<String>,
     pub kind: String,
-    /// Load order: CIDs in flag-order (user flags first, built-ins last per §7).
-    pub load_order: Vec<String>,
-    /// CIDs of successfully loaded plugins.
-    pub loaded: Vec<String>,
+    /// Load order: {kind, cid, source} in flag-order (user flags first, built-ins last per §7).
+    /// §9.1 wire shape: `[* { kind: plugin-kind, cid: cid, source: tstr }]`
+    pub load_order: Vec<LoadOrderEntry>,
+    /// Successfully loaded plugins as {kind, cid} sorted by cid ascending (§9.1).
+    /// §9.1 wire shape: `[* { kind: plugin-kind, cid: cid }]`
+    pub loaded: Vec<LoadedEntry>,
     pub runtime_protocol_versions: Vec<String>,
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
@@ -81,8 +83,9 @@ type RegistryKey = (String, String);
 pub struct PluginRegistry {
     /// Indexed by (kind, cid).
     plugins: BTreeMap<RegistryKey, PluginMemento>,
-    /// Load order: (kind, cid) pairs in the order they were registered.
-    load_order: Vec<RegistryKey>,
+    /// Load order: (kind, cid, source) triples in the order they were registered.
+    /// `source` is the verbatim CLI flag value for §9.4 audit-replay.
+    load_order: Vec<(String, String, String)>,
     /// Failures minted during this run.
     failures: Vec<PluginLoadFailureMemento>,
     /// How many plugins were registered as built-ins.
@@ -105,13 +108,17 @@ impl PluginRegistry {
     /// implies byte-identical content, so deduplication is safe).
     /// Returns `Ok(true)` if the plugin was newly registered, `Ok(false)` if
     /// it was already present (deduplicated).
-    pub fn register(&mut self, p: PluginMemento) -> Result<bool, LoadError> {
+    ///
+    /// `source` is the verbatim CLI flag value (e.g. `"/path/to/spring.json"`)
+    /// for §9.4 audit-replay.  Pass empty string for built-ins without a CLI source.
+    pub fn register(&mut self, p: PluginMemento, source: &str) -> Result<bool, LoadError> {
         let key: RegistryKey = (p.kind().to_string(), p.cid().to_string());
         if self.plugins.contains_key(&key) {
             // Deduplicated — same content, no error.
             return Ok(false);
         }
-        self.load_order.push(key.clone());
+        self.load_order
+            .push((key.0.clone(), key.1.clone(), source.to_string()));
         self.plugins.insert(key, p);
         Ok(true)
     }
@@ -121,8 +128,8 @@ impl PluginRegistry {
     /// them at the end of `load_order` per §7.
     ///
     /// Must be called AFTER all user `register` calls.
-    pub fn register_builtin(&mut self, p: PluginMemento) -> Result<bool, LoadError> {
-        let inserted = self.register(p)?;
+    pub fn register_builtin(&mut self, p: PluginMemento, source: &str) -> Result<bool, LoadError> {
+        let inserted = self.register(p, source)?;
         if inserted {
             self.builtin_count += 1;
         }
@@ -143,8 +150,8 @@ impl PluginRegistry {
     pub fn by_kind(&self, kind: &str) -> Vec<&PluginMemento> {
         self.load_order
             .iter()
-            .filter(|(k, _)| k == kind)
-            .filter_map(|key| self.plugins.get(key))
+            .filter(|(k, _, _)| k == kind)
+            .filter_map(|(k, cid, _)| self.plugins.get(&(k.clone(), cid.clone())))
             .collect()
     }
 
@@ -152,7 +159,7 @@ impl PluginRegistry {
     pub fn all_in_order(&self) -> Vec<&PluginMemento> {
         self.load_order
             .iter()
-            .filter_map(|key| self.plugins.get(key))
+            .filter_map(|(k, cid, _)| self.plugins.get(&(k.clone(), cid.clone())))
             .collect()
     }
 
@@ -164,20 +171,32 @@ impl PluginRegistry {
     pub fn emit_registry_memento(&self, sealed_at: &str) -> PluginRegistryMemento {
         use crate::loader::RUNTIME_PROTOCOL_VERSIONS;
 
-        let loaded: Vec<String> = self
+        let failure_cids: Vec<String> =
+            self.failures.iter().map(|f| f.header.cid.clone()).collect();
+
+        // Build load_order as {kind, cid, source} objects per §9.1.
+        // Preserves CLI insertion order (B4 correctness depends on caller
+        // passing plugins in input order — see build_registry in cmd_plugin.rs).
+        let load_order: Vec<LoadOrderEntry> = self
             .load_order
             .iter()
-            .filter_map(|key| self.plugins.get(key).map(|p| p.cid().to_string()))
+            .map(|(kind, cid, source)| LoadOrderEntry {
+                kind: kind.clone(),
+                cid: cid.clone(),
+                source: source.clone(),
+            })
             .collect();
 
-        let failure_cids: Vec<String> = self.failures.iter().map(|f| f.header.cid.clone()).collect();
-
-        // Build load_order as CIDs.
-        let load_order: Vec<String> = self
+        // Build loaded as {kind, cid} objects sorted by cid ascending (§9.1 + B2).
+        let mut loaded: Vec<LoadedEntry> = self
             .load_order
             .iter()
-            .filter_map(|key| self.plugins.get(key).map(|p| p.cid().to_string()))
+            .map(|(kind, cid, _)| LoadedEntry {
+                kind: kind.clone(),
+                cid: cid.clone(),
+            })
             .collect();
+        loaded.sort();
 
         let runtime_versions: Vec<String> = RUNTIME_PROTOCOL_VERSIONS
             .iter()
@@ -285,7 +304,7 @@ mod tests {
     fn register_and_lookup() {
         let mut reg = PluginRegistry::new();
         let p = dummy_memento("sugar", "blake3-512:aaa");
-        reg.register(p.clone()).unwrap();
+        reg.register(p.clone(), "./test.json").unwrap();
         let found = reg.lookup("sugar", "blake3-512:aaa");
         assert!(found.is_some());
         assert_eq!(found.unwrap().cid(), "blake3-512:aaa");
@@ -300,9 +319,9 @@ mod tests {
     #[test]
     fn by_kind_returns_all_of_kind() {
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa")).unwrap();
-        reg.register(dummy_memento("sugar", "blake3-512:bbb")).unwrap();
-        reg.register(dummy_memento("loss-function", "blake3-512:ccc")).unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./a.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:bbb"), "./b.json").unwrap();
+        reg.register(dummy_memento("loss-function", "blake3-512:ccc"), "./c.json").unwrap();
         assert_eq!(reg.by_kind("sugar").len(), 2);
         assert_eq!(reg.by_kind("loss-function").len(), 1);
         assert_eq!(reg.by_kind("lifter").len(), 0);
@@ -312,8 +331,8 @@ mod tests {
     fn duplicate_cid_deduplication() {
         let mut reg = PluginRegistry::new();
         let p = dummy_memento("sugar", "blake3-512:aaa");
-        let r1 = reg.register(p.clone()).unwrap();
-        let r2 = reg.register(p.clone()).unwrap();
+        let r1 = reg.register(p.clone(), "./test.json").unwrap();
+        let r2 = reg.register(p.clone(), "./test.json").unwrap();
         assert!(r1);  // first registration
         assert!(!r2); // deduplicated
         assert_eq!(reg.all_in_order().len(), 1);
@@ -321,23 +340,50 @@ mod tests {
 
     #[test]
     fn emit_registry_memento_round_trip() {
+        use crate::types::LoadOrderEntry;
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa")).unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json").unwrap();
         let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert!(!m.header.cid.is_empty());
         assert!(m.header.cid.starts_with("blake3-512:"));
-        assert_eq!(m.header.loaded, vec!["blake3-512:aaa".to_string()]);
-        assert_eq!(m.header.load_order, vec!["blake3-512:aaa".to_string()]);
+        // loaded: [{kind, cid}] sorted by cid
+        assert_eq!(m.header.loaded, vec![LoadedEntry {
+            kind: "sugar".to_string(),
+            cid: "blake3-512:aaa".to_string(),
+        }]);
+        // load_order: [{kind, cid, source}] in insertion order
+        assert_eq!(m.header.load_order, vec![LoadOrderEntry {
+            kind: "sugar".to_string(),
+            cid: "blake3-512:aaa".to_string(),
+            source: "./test.json".to_string(),
+        }]);
         assert_eq!(m.header.built_in_count, 0);
     }
 
     #[test]
     fn registry_cid_is_stable_across_calls() {
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa")).unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json").unwrap();
         let m1 = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         let m2 = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert_eq!(m1.header.cid, m2.header.cid);
+    }
+
+    #[test]
+    fn loaded_is_sorted_by_cid() {
+        // B2: loaded must be sorted by cid ascending, regardless of insertion order.
+        use crate::types::LoadedEntry;
+        let mut reg = PluginRegistry::new();
+        reg.register(dummy_memento("sugar", "blake3-512:zzz"), "./z.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./a.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:mmm"), "./m.json").unwrap();
+        let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
+        // loaded must be sorted ascending
+        let cids: Vec<&str> = m.header.loaded.iter().map(|e| e.cid.as_str()).collect();
+        assert_eq!(cids, vec!["blake3-512:aaa", "blake3-512:mmm", "blake3-512:zzz"]);
+        // load_order must preserve insertion order
+        let lo_cids: Vec<&str> = m.header.load_order.iter().map(|e| e.cid.as_str()).collect();
+        assert_eq!(lo_cids, vec!["blake3-512:zzz", "blake3-512:aaa", "blake3-512:mmm"]);
     }
 
     #[test]
@@ -362,8 +408,8 @@ mod tests {
     #[test]
     fn builtin_count_tracks_register_builtin() {
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:user")).unwrap();
-        reg.register_builtin(dummy_memento("loss-function", "blake3-512:builtin")).unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:user"), "./user.json").unwrap();
+        reg.register_builtin(dummy_memento("loss-function", "blake3-512:builtin"), "").unwrap();
         let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert_eq!(m.header.built_in_count, 1);
     }

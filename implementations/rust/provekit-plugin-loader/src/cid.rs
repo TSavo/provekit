@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 
-use crate::types::{PluginHeader, PluginLoadFailureMementoHeader};
+use crate::types::{LoadOrderEntry, LoadedEntry, PluginHeader, PluginLoadFailureMementoHeader};
 
 /// Compute the content CID for a plugin header per §6.1.
 ///
@@ -92,22 +92,41 @@ pub fn serde_json_to_value(v: &serde_json::Value) -> Arc<Value> {
 use crate::registry::PluginRegistryMementoHeader;
 
 /// Compute the CID for a PluginRegistryMemento per §9.3.
+///
+/// `load_order` encodes `{kind, cid, source}` objects per §9.1 B1.
+/// `loaded` encodes `{kind, cid}` objects sorted by cid ascending per §9.1 B2.
 pub fn compute_registry_cid(header: &PluginRegistryMementoHeader) -> String {
+    // loaded: array of {kind, cid} objects already sorted by cid ascending.
     let loaded_v: Vec<Arc<Value>> = header
         .loaded
         .iter()
-        .map(|cid| Value::string(cid.clone()))
+        .map(|e: &LoadedEntry| {
+            Value::object([
+                ("cid", Value::string(e.cid.clone())),
+                ("kind", Value::string(e.kind.clone())),
+            ])
+        })
         .collect();
+
     let failures_v: Vec<Arc<Value>> = header
         .failures
         .iter()
         .map(|cid| Value::string(cid.clone()))
         .collect();
+
+    // load_order: array of {kind, cid, source} objects in insertion order.
     let load_order_v: Vec<Arc<Value>> = header
         .load_order
         .iter()
-        .map(|cid| Value::string(cid.clone()))
+        .map(|e: &LoadOrderEntry| {
+            Value::object([
+                ("cid", Value::string(e.cid.clone())),
+                ("kind", Value::string(e.kind.clone())),
+                ("source", Value::string(e.source.clone())),
+            ])
+        })
         .collect();
+
     let rpv_v: Vec<Arc<Value>> = header
         .runtime_protocol_versions
         .iter()

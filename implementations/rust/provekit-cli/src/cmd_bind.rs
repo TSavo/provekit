@@ -33,6 +33,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chrono;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -144,8 +145,8 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
 pub fn run(args: BindArgs) -> u8 {
     // PEP 1.7.0: seal the plugin registry before running any pipeline work (§9).
     // The registry CID must appear in every output's provenance (§9.4).
-    let sealed_at = "2026-05-12T00:00:00.000Z"; // TODO: use chrono::Utc::now()
-    let plugin_registry = match args.plugins.build_registry(sealed_at) {
+    let sealed_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let plugin_registry = match args.plugins.build_registry(&sealed_at) {
         Ok(r) => {
             if !args.quiet {
                 eprintln!(

@@ -113,7 +113,7 @@ fn registry_lookup_by_kind_cid() {
     let kind = plugin.kind().to_string();
 
     let mut reg = PluginRegistry::new();
-    reg.register(plugin).unwrap();
+    reg.register(plugin, "tests/fixtures/dummy-sugar.json").unwrap();
 
     let found = reg.lookup(&kind, &cid);
     assert!(found.is_some(), "lookup({kind}, {cid}) should find the plugin");
@@ -127,17 +127,17 @@ fn registry_memento_includes_loaded_cid() {
     let expected_cid = plugin.cid().to_string();
 
     let mut reg = PluginRegistry::new();
-    reg.register(plugin).unwrap();
+    reg.register(plugin, "tests/fixtures/dummy-sugar.json").unwrap();
 
     let memento = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
-    // §9.1: loaded must contain the plugin CID.
+    // §9.1: loaded must contain the plugin as a {kind, cid} entry.
     assert!(
-        memento.header.loaded.contains(&expected_cid),
+        memento.header.loaded.iter().any(|e| e.cid == expected_cid),
         "loaded must include the plugin CID"
     );
-    // §9.1: load_order must contain the plugin CID.
+    // §9.1: load_order must contain the plugin as a {kind, cid, source} entry.
     assert!(
-        memento.header.load_order.contains(&expected_cid),
+        memento.header.load_order.iter().any(|e| e.cid == expected_cid),
         "load_order must include the plugin CID"
     );
     // §9.3: registry CID must be non-empty and well-formed.
@@ -176,13 +176,24 @@ fn rpc_stdio_load_valid() {
 #[test]
 fn rpc_stdio_registry_cid_matches_file_load_when_payload_identical() {
     // §6.2: CID is delivery-independent.
-    // The stub server emits the same content as the fixture file
-    // ONLY IF the payloads match.  This test documents the invariant;
-    // the actual byte-equality is payload-specific.
+    // N1 fix: the stub server now emits byte-identical JCS content to the
+    // fixture file, so file-loaded CID MUST equal RPC-loaded CID.
+    // This test now exercises the real invariant.
     let bin = env!("CARGO_BIN_EXE_provekit-plugin-loader-stub-rpc");
     let endpoint = format!("stdio:{bin}");
     let rpc_plugin = load_plugin_from_rpc(&endpoint).expect("rpc load");
-    // The stub emits a different content payload from the file fixture,
-    // so CIDs differ — but both must be well-formed blake3-512 strings.
-    assert!(rpc_plugin.cid().starts_with("blake3-512:"));
+
+    let path = fixtures_dir().join("dummy-sugar.json");
+    let file_plugin = load_plugin_from_file(&path).expect("file load");
+
+    assert_eq!(
+        rpc_plugin.cid(),
+        file_plugin.cid(),
+        "§6.2 delivery-independence: CID(file) MUST equal CID(rpc) for identical content"
+    );
+    assert_eq!(
+        rpc_plugin.cid(),
+        "blake3-512:ad148c5f529aab7b019c8980ffa2b2f0d982fd43799a4ee87a01e3e3d5da6cd414beac89adddbad09c03d398b77ec2cda74bc04fe63b1494e6d1bed8880fd7ea",
+        "CID must match the pinned value from the fixture file"
+    );
 }
