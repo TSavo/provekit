@@ -1,0 +1,46 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:option",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "value"
+      }
+    ],
+    "formal_sorts": [
+      "T"
+    ],
+    "result_sort": "OptionOfT",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "value"
+      ],
+      "body": {
+        "kind": "skolem",
+        "predicate": "option_inhabitant",
+        "args": [
+          {
+            "kind": "var",
+            "name": "self"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ]
+      }
+    },
+    "contract_note": "option_inhabitant(self, T) holds iff self is either Some(v) with v : T, or None; the two arms are disjoint and exhaustive. When Some, the value slot carries a term of sort T. When None, accessing the value slot is undefined.",
+    "realizations": [
+      "blake3-512:c550fb759564433d1ec92f9ca402dc4007c150b46e63385f9298eb836e6cc0a636f65dddaede1325852925bb72d8d570ae309e11281a3075f17749e9bc753807"
+    ]
+  },
+  "cid": "blake3-512:eae65d6f156fbd1dd194df1b37f2f059ceb40bd8e75dd94e582c2e8508d0f759285721c8484cfba3c2435f451f8441ef83c6a6102203518ef478707b149a64a5",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
