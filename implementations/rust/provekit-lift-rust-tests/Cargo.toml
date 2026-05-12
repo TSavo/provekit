@@ -10,6 +10,7 @@ description = "ProvekIt lift adapter: walk #[test] / #[tokio::test] functions an
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-walk = { path = "../provekit-walk" }
 syn = { workspace = true }
 proc-macro2 = { workspace = true, features = ["span-locations"] }
 quote = { workspace = true }

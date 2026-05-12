@@ -156,6 +156,8 @@ fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
             formula_contains_guard_for(body, var_name)
         }
         IrFormula::Choice { body, .. } => formula_contains_guard_for(body, var_name),
+        // Substitute and Apply are meta-level; guard detection does not descend into them.
+        IrFormula::Substitute { .. } | IrFormula::Apply { .. } => false,
     }
 }
 

@@ -73,6 +73,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use std::collections::HashMap;
+
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
     eq, gt, gte, lt, lte, make_var, ne, num, serialize::formula_to_value, str_const, ContractDecl,
@@ -81,6 +83,7 @@ use provekit_ir_symbolic::{
 use provekit_ir_types::{
     EvidenceMemento, IrFormula, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
 };
+use provekit_walk::emit::rust_function_term_json_cid;
 use syn::spanned::Spanned;
 
 /// The auto-promote sentinel lifter CID (128 hex zeros after the prefix).
@@ -148,12 +151,17 @@ pub(crate) struct LiftedCallsiteAssertion {
 }
 
 /// Extended version of `LiftedCallsiteAssertion` that also carries the
-/// callsite span -- needed for `SourceLocatorSpan` in `EvidenceMemento`.
+/// callsite span and raw callee name -- needed for `SourceLocatorSpan` and
+/// `test_target_function_cid` in `EvidenceMemento`.
 #[derive(Debug, Clone)]
 struct LiftedCallsiteAssertionWithSpan {
     name: String,
     formula: Rc<Formula>,
     callsite_span: proc_macro2::Span,
+    /// Raw callee name (e.g. `"deposit"` or `"Account::deposit"`). Used to
+    /// look up the target function in the same lift pass for Option A CID
+    /// computation (spec §10 `test_target_function_cid`).
+    callee: String,
 }
 
 #[derive(Debug, Clone)]
@@ -221,9 +229,36 @@ pub fn lift_file_with_evidence_and_skip(
     skip: &BTreeSet<String>,
 ) -> AdapterOutput {
     let source_cid = blake3_512_of(source_bytes);
+    // Build a map from bare function name to &syn::ItemFn for all non-test top-level
+    // functions in this file. Used by `visit_test_fn_with_evidence` to compute
+    // `test_target_function_cid` (spec §10) via Option A: same-lift-pass CID
+    // for free-fn callees whose definition is visible in this syn::File.
+    let fn_map: HashMap<String, &syn::ItemFn> = collect_non_test_fns(&file.items);
     let mut out = AdapterOutput::default();
-    walk_items_with_evidence(&file.items, source_path, &source_cid, skip, &mut out);
+    walk_items_with_evidence(&file.items, source_path, &source_cid, skip, &fn_map, &mut out);
     out
+}
+
+/// Collect all non-test `fn` items reachable from `items` (top-level and inside
+/// `mod` blocks) by bare name. Only free functions are included; method calls
+/// on `self` / receiver types cannot be resolved by name alone and fall through
+/// to the pending path.
+fn collect_non_test_fns<'a>(items: &'a [syn::Item]) -> HashMap<String, &'a syn::ItemFn> {
+    let mut map = HashMap::new();
+    for item in items {
+        match item {
+            syn::Item::Fn(f) if !has_test_attr(&f.attrs) => {
+                map.insert(f.sig.ident.to_string(), f);
+            }
+            syn::Item::Mod(m) => {
+                if let Some((_, inner)) = &m.content {
+                    map.extend(collect_non_test_fns(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    map
 }
 
 fn walk_items(
@@ -265,25 +300,34 @@ fn walk_block_for_items(
 }
 
 /// Evidence-emitting variant of `walk_items`. Mirrors `walk_items` but passes
-/// `source_cid` down so `visit_test_fn_with_evidence` can populate `evidences`.
-fn walk_items_with_evidence(
-    items: &[syn::Item],
+/// `source_cid` and `fn_map` down so `visit_test_fn_with_evidence` can populate
+/// `evidences` including `test_target_function_cid` (spec §10).
+fn walk_items_with_evidence<'a>(
+    items: &'a [syn::Item],
     source_path: &str,
     source_cid: &str,
     skip: &BTreeSet<String>,
+    fn_map: &HashMap<String, &'a syn::ItemFn>,
     out: &mut AdapterOutput,
 ) {
     for item in items {
         match item {
             syn::Item::Fn(f) => {
                 if has_test_attr(&f.attrs) && !skip.contains(&f.sig.ident.to_string()) {
-                    visit_test_fn_with_evidence(f, source_path, source_cid, out);
+                    visit_test_fn_with_evidence(f, source_path, source_cid, fn_map, out);
                 }
-                walk_block_for_items_with_evidence(&f.block, source_path, source_cid, skip, out);
+                walk_block_for_items_with_evidence(
+                    &f.block,
+                    source_path,
+                    source_cid,
+                    skip,
+                    fn_map,
+                    out,
+                );
             }
             syn::Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
-                    walk_items_with_evidence(items, source_path, source_cid, skip, out);
+                    walk_items_with_evidence(items, source_path, source_cid, skip, fn_map, out);
                 }
             }
             _ => {}
@@ -291,11 +335,12 @@ fn walk_items_with_evidence(
     }
 }
 
-fn walk_block_for_items_with_evidence(
-    block: &syn::Block,
+fn walk_block_for_items_with_evidence<'a>(
+    block: &'a syn::Block,
     source_path: &str,
     source_cid: &str,
     skip: &BTreeSet<String>,
+    fn_map: &HashMap<String, &'a syn::ItemFn>,
     out: &mut AdapterOutput,
 ) {
     for stmt in &block.stmts {
@@ -305,6 +350,7 @@ fn walk_block_for_items_with_evidence(
                 source_path,
                 source_cid,
                 skip,
+                fn_map,
                 out,
             );
         }
@@ -366,10 +412,17 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
 /// Evidence-emitting variant of `visit_test_fn`. Emits both a `ContractDecl`
 /// (via the same path as `visit_test_fn`) and an `EvidenceMemento` per
 /// lifted callsite.
+///
+/// `fn_map` maps bare function names to their `syn::ItemFn` for non-test
+/// functions in the same lift pass. Used to compute `test_target_function_cid`
+/// (spec §10) via Option A when the callee is visible in this syn::File.
+/// When the callee is not in the map (cross-crate or method call on a receiver
+/// type), emits `"pending:<symbol>"` as a clearly-non-CID placeholder.
 fn visit_test_fn_with_evidence(
     f: &syn::ItemFn,
     source_path: &str,
     source_cid: &str,
+    fn_map: &HashMap<String, &syn::ItemFn>,
     out: &mut AdapterOutput,
 ) {
     let test_name = f.sig.ident.to_string();
@@ -408,20 +461,49 @@ fn visit_test_fn_with_evidence(
                     let source_locator = SourceLocator {
                         source_cid: source_cid.to_string(),
                         span: SourceLocatorSpan {
-                            // proc_macro2 col is 0-indexed; SourceLocatorPoint is 1-based.
+                            // proc_macro2 col is 0-indexed; spec §1.1 mandates 0-indexed col.
                             start: SourceLocatorPoint {
                                 line: span_start.line as u32,
-                                col: (span_start.column + 1) as u32,
+                                col: span_start.column as u32,
                             },
                             end: SourceLocatorPoint {
                                 line: span_end.line as u32,
-                                col: (span_end.column + 1) as u32,
+                                col: span_end.column as u32,
                             },
                         },
                     };
 
                     // Build extension_fields.
                     let mut ext = BTreeMap::new();
+
+                    // Compute test_target_function_cid (spec §10 REQUIRED for
+                    // source_kind "test-assertion").
+                    // Option A: if the bare callee name resolves to a fn in the
+                    // same syn::File, compute the rust-algebra-term CID directly.
+                    // Restriction: only free-fn callees (Expr::Call with Expr::Path)
+                    // have a resolvable bare name; method calls on receivers fall
+                    // through to Option B.
+                    // Option B: emit "pending:<symbol>" -- a clearly-non-CID marker
+                    // that is NOT a blake3-512: prefixed string, so downstream tools
+                    // know this binding needs post-lift resolution.
+                    let bare_callee = part.callee.split("::").last().unwrap_or(&part.callee);
+                    let target_function_cid = match fn_map.get(bare_callee) {
+                        Some(item_fn) => {
+                            // Option A: same-file function -- compute CID via walk.
+                            match rust_function_term_json_cid(item_fn, source_path) {
+                                Ok(cid) => cid,
+                                Err(_) => format!("pending:{}", part.callee),
+                            }
+                        }
+                        None => {
+                            // Option B: cross-crate or unresolvable -- pending marker.
+                            format!("pending:{}", part.callee)
+                        }
+                    };
+                    ext.insert(
+                        "test_target_function_cid".to_string(),
+                        serde_json::Value::String(target_function_cid),
+                    );
                     ext.insert(
                         "test_function_name".to_string(),
                         serde_json::Value::String(test_name.clone()),
@@ -693,6 +775,7 @@ fn lift_assertion_macro_at_callsites_with_span(
                 name,
                 formula: formula.clone(),
                 callsite_span: callsite.span,
+                callee: callsite.callee.clone(),
             });
         }
     }
@@ -1800,28 +1883,112 @@ mod tests {
     }
 
     #[test]
-    fn evidence_source_locator_has_1based_col() {
-        // The callsite span's column from proc_macro2 is 0-indexed; the
-        // SourceLocatorPoint must be 1-based (spec §1.1 rationale).
-        let src = r#"
-            #[test]
-            fn col_check() {
-                assert_eq!(f(1), 1);
-            }
-        "#;
-        let f = parse(src);
-        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
-        assert_eq!(out.evidences.len(), 1);
+    fn evidence_test_target_function_cid_present_and_valid_spec_b2() {
+        // Spec §10: `test_target_function_cid` is REQUIRED in extension_fields
+        // for source_kind "test-assertion". When the callee is in the same
+        // syn::File (Option A), the CID must be a valid blake3-512:... string
+        // matching the independently-computed function-term CID of the callee.
+        //
+        // Source has both the production fn `double` and a test that calls it,
+        // mirroring the common `mod tests { use super::*; }` inline pattern.
+        let src = "fn double(x: i32) -> i32 { x * 2 }\n\
+                   #[test]\nfn test_double() {\nassert_eq!(double(3), 6);\n}\n";
+        let parsed = parse(src);
+        let out = lift_file_with_evidence(&parsed, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
         let ev = &out.evidences[0];
-        // Column must be >= 1 (1-based).
+
+        // Field must be present.
+        let cid_val = ev.extension_fields.get("test_target_function_cid")
+            .and_then(|v| v.as_str())
+            .expect("test_target_function_cid must be present in extension_fields");
+
+        // Must be a valid blake3-512: CID (Option A resolved), not a pending marker.
         assert!(
-            ev.source_locator.span.start.col >= 1,
-            "col should be 1-based, got: {}",
-            ev.source_locator.span.start.col
+            cid_val.starts_with("blake3-512:"),
+            "test_target_function_cid should be a blake3-512 CID when callee is \
+             in the same file; got: {cid_val}"
+        );
+        assert_eq!(
+            cid_val.len(),
+            11 + 128,
+            "blake3-512 CID should be prefix (11) + 128 hex chars; got len {}",
+            cid_val.len()
+        );
+
+        // CID must match the independently-computed function-term CID for `double`.
+        let double_fn = parsed
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "double" => Some(f),
+                _ => None,
+            })
+            .expect("double fn must be in parsed items");
+        let expected_cid = provekit_walk::emit::rust_function_term_json_cid(double_fn, "t.rs")
+            .expect("rust_function_term_json_cid must succeed for simple fn");
+        assert_eq!(
+            cid_val, expected_cid,
+            "test_target_function_cid must match the lifted CID of the target function"
+        );
+    }
+
+    #[test]
+    fn evidence_test_target_function_cid_pending_when_cross_crate_spec_b2() {
+        // When the callee is NOT in the same syn::File (cross-crate call),
+        // the lifter must emit a "pending:<symbol>" marker rather than a
+        // fabricated CID. This is the Option B path.
+        let src = "#[test]\nfn test_external() {\nassert_eq!(external_fn(1), 2);\n}\n";
+        let parsed = parse(src);
+        let out = lift_file_with_evidence(&parsed, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
+        let ev = &out.evidences[0];
+
+        let cid_val = ev.extension_fields.get("test_target_function_cid")
+            .and_then(|v| v.as_str())
+            .expect("test_target_function_cid must be present even for cross-crate callees");
+
+        assert!(
+            cid_val.starts_with("pending:"),
+            "cross-crate callee should emit pending:<symbol>; got: {cid_val}"
         );
         assert!(
-            ev.source_locator.span.start.line >= 1,
-            "line should be 1-based, got: {}",
+            !cid_val.starts_with("blake3-512:"),
+            "pending marker must NOT look like a real CID; got: {cid_val}"
+        );
+    }
+
+    #[test]
+    fn evidence_source_locator_col_is_0indexed_spec_b1() {
+        // Spec §1.1 normative: col counts UTF-8 BYTES within the line, 0-indexed.
+        // proc_macro2 with span-locations also uses 0-indexed columns, so the
+        // raw column value must be used WITHOUT adding 1.
+        //
+        // Source layout (line numbers are 1-based per spec):
+        //   line 1: ""  (raw string starts with newline)
+        //   line 2: "#[test]"
+        //   line 3: "fn span_pin() {"
+        //   line 4: "assert_eq!(f(0), 0);"  -- f is at byte 11 (0-indexed) on this line
+        //   line 5: "}"
+        //
+        // In the raw string below the indentation is 0 (no leading spaces) so
+        // the column is unambiguous and cross-platform stable.
+        let src = "#[test]\nfn span_pin() {\nassert_eq!(f(0), 0);\n}\n";
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
+        let ev = &out.evidences[0];
+        // "assert_eq!(" is 11 bytes; f is at col 11 (0-indexed).
+        assert_eq!(
+            ev.source_locator.span.start.col, 11,
+            "col should be 0-indexed (spec §1.1); got {}. \
+             If this is 12, the +1 bug was re-introduced.",
+            ev.source_locator.span.start.col
+        );
+        // Line 3 (1-indexed) is where assert_eq!(f(0), ...) lives.
+        assert_eq!(
+            ev.source_locator.span.start.line, 3,
+            "line should be 1-indexed; got {}",
             ev.source_locator.span.start.line
         );
     }

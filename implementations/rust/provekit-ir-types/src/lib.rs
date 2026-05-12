@@ -1047,7 +1047,7 @@ pub struct ConceptSiteMemento {
 // round-trip tests only.
 // ============================================================
 
-/// One point inside a source span: 1-based line / col.
+/// One point inside a source span: 1-based line, 0-indexed col (UTF-8 bytes; spec §1.1).
 ///
 /// Locked JCS key order: col, line.
 ///
