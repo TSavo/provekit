@@ -493,12 +493,44 @@ const Lifter = struct {
     }
 
     fn emitString(self: *Lifter, node: Node.Index) !provekit.Term {
-        const raw = self.tree.getNodeSource(node);
-        if (std.mem.indexOfScalar(u8, raw, '\\') != null) {
-            return self.refuse(node, "unsupported-string-escape", "string literal with escape sequences not yet decoded on lift");
+        switch (self.tree.nodeTag(node)) {
+            .string_literal => {
+                const raw = self.tree.getNodeSource(node);
+                // raw includes the surrounding double-quotes; parseAlloc decodes all Zig escapes.
+                const decoded = std.zig.string_literal.parseAlloc(self.alloc, raw) catch |err| switch (err) {
+                    error.InvalidLiteral => return self.refuse(node, "invalid-string-literal", "string literal contains an invalid escape sequence"),
+                    error.OutOfMemory => return error.OutOfMemory,
+                };
+                return provekit.Str(decoded);
+            },
+            .multiline_string_literal => {
+                // A multiline string is a sequence of `.multiline_string_literal_line` tokens.
+                // Each token's slice includes the `\\` prefix and a trailing newline.
+                // Decoded value: strip `\\ ` (or just `\\` when line is empty), join lines.
+                // No escape sequences exist inside multiline strings; they are raw bytes.
+                const first_tok = self.tree.nodeData(node).token_and_token[0];
+                const last_tok = self.tree.nodeData(node).token_and_token[1];
+                var out = std.ArrayList(u8).empty;
+                var tok = first_tok;
+                while (tok <= last_tok) : (tok += 1) {
+                    const line = self.tree.tokenSlice(tok);
+                    // Each line token starts with `\\` (two bytes). Strip them.
+                    // The token may or may not include a trailing newline depending on whether
+                    // it's the last line. To be safe, strip a leading `\\` then any space char,
+                    // then strip a trailing `\n` only between lines (not after the last).
+                    const content = if (line.len >= 2) line[2..] else line;
+                    // Strip trailing newline that the tokenizer includes.
+                    const trimmed = if (content.len > 0 and content[content.len - 1] == '\n')
+                        content[0 .. content.len - 1]
+                    else
+                        content;
+                    if (tok > first_tok) try out.append(self.alloc, '\n');
+                    try out.appendSlice(self.alloc, trimmed);
+                }
+                return provekit.Str(try out.toOwnedSlice(self.alloc));
+            },
+            else => unreachable,
         }
-        if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return provekit.Str(raw[1 .. raw.len - 1]);
-        return provekit.Str(raw);
     }
 
     fn emitUnreachable(self: *Lifter, node: Node.Index) !provekit.Term {
@@ -970,7 +1002,15 @@ fn appendEscapedString(alloc: std.mem.Allocator, out: *std.ArrayList(u8), value:
         '\\' => try out.appendSlice(alloc, "\\\\"),
         '"' => try out.appendSlice(alloc, "\\\""),
         '\n' => try out.appendSlice(alloc, "\\n"),
-        else => try out.append(alloc, c),
+        '\r' => try out.appendSlice(alloc, "\\r"),
+        '\t' => try out.appendSlice(alloc, "\\t"),
+        0x20...0x21, 0x23...0x5B, 0x5D...0x7E => try out.append(alloc, c), // printable, not \ or "
+        else => {
+            // Emit as \xNN for any other byte (control chars, high bytes).
+            var buf: [4]u8 = undefined;
+            const s = std.fmt.bufPrint(&buf, "\\x{X:0>2}", .{c}) catch unreachable;
+            try out.appendSlice(alloc, s);
+        },
     };
 }
 
@@ -1093,7 +1133,7 @@ test "refuses unhandled switch without emitting unknown operation" {
     try std.testing.expectEqualStrings("switch.zig.f", out.refusals[0].function.?);
 }
 
-test "refuses string literal escape sequences instead of lifting literal backslashes" {
+test "decodes \\n escape in string literal to newline byte in IR term" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1106,12 +1146,140 @@ test "refuses string literal escape sequences instead of lifting literal backsla
     ;
 
     const out = try liftSource(alloc, src, "strings.zig");
-    try std.testing.expectEqual(@as(usize, 0), out.declarations.len);
-    try std.testing.expectEqual(@as(usize, 1), out.refusals.len);
-    try std.testing.expectEqualStrings("unsupported-string-escape", out.refusals[0].kind);
-    try std.testing.expectEqualStrings("strings.zig.label", out.refusals[0].function.?);
-    try std.testing.expectEqual(@as(usize, 2), out.refusals[0].line);
-    try std.testing.expectEqualStrings("string literal with escape sequences not yet decoded on lift", out.refusals[0].reason);
+    try std.testing.expectEqual(@as(usize, 0), out.refusals.len);
+    // declarations[0] is <source-unit>, declarations[1] is the function
+    try std.testing.expectEqual(@as(usize, 2), out.declarations.len);
+    // The body term of the function should be a zig:return containing a Str with decoded bytes.
+    const json = try provekit.jcsStringify(alloc, out.declarations[1].body_term);
+    // The JSON encoding of the decoded string "a\nb" (newline byte) must appear, not "a\\nb".
+    // In JCS/JSON a newline byte inside a string is encoded as \n (the two-char sequence).
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"a\\nb\"") != null);
+}
+
+test "decodes \\t and \\r escape sequences in string literals to correct bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn tab() []const u8 {
+        \\    return "a\tb";
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "escapes.zig");
+    try std.testing.expectEqual(@as(usize, 0), out.refusals.len);
+    try std.testing.expectEqual(@as(usize, 2), out.declarations.len);
+    const json = try provekit.jcsStringify(alloc, out.declarations[1].body_term);
+    // tab byte encoded as \t in JSON
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"a\\tb\"") != null);
+}
+
+test "decodes \\x hex escape in string literal to raw byte" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn hex() []const u8 {
+        \\    return "\x41bc";
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "hex.zig");
+    try std.testing.expectEqual(@as(usize, 0), out.refusals.len);
+    try std.testing.expectEqual(@as(usize, 2), out.declarations.len);
+    const json = try provekit.jcsStringify(alloc, out.declarations[1].body_term);
+    // \x41 == 'A', so decoded bytes are "Abc"
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"Abc\"") != null);
+}
+
+test "decodes \\u{NNNN} unicode escape in string literal to UTF-8 bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn uni() []const u8 {
+        \\    return "\u{263A}";
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "unicode.zig");
+    try std.testing.expectEqual(@as(usize, 0), out.refusals.len);
+    try std.testing.expectEqual(@as(usize, 2), out.declarations.len);
+    const json = try provekit.jcsStringify(alloc, out.declarations[1].body_term);
+    // U+263A is ☺, UTF-8: E2 98 BA
+    try std.testing.expect(std.mem.indexOf(u8, json, "\u{263A}") != null);
+}
+
+test "decodes \\\\ escaped backslash in string literal to single backslash byte" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn bs() []const u8 {
+        \\    return "a\\b";
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "backslash.zig");
+    try std.testing.expectEqual(@as(usize, 0), out.refusals.len);
+    try std.testing.expectEqual(@as(usize, 2), out.declarations.len);
+    const json = try provekit.jcsStringify(alloc, out.declarations[1].body_term);
+    // single backslash encoded in JSON as \\
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"a\\\\b\"") != null);
+}
+
+test "lifts multiline string literal as raw decoded bytes without escape processing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn multi() []const u8 {
+        \\    return
+        \\        \\hello
+        \\        \\world
+        \\    ;
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "multi.zig");
+    try std.testing.expectEqual(@as(usize, 0), out.refusals.len);
+    try std.testing.expectEqual(@as(usize, 2), out.declarations.len);
+    const json = try provekit.jcsStringify(alloc, out.declarations[1].body_term);
+    // multiline string "hello\nworld" -- newline between lines encoded as \n in JSON
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"hello\\nworld\"") != null);
+}
+
+test "round trip string literal with escape sequences preserves decoded bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn label() []const u8 {
+        \\    return "a\nb";
+        \\}
+        \\
+    ;
+
+    const first = try liftSource(alloc, src, "rt_escape.zig");
+    try std.testing.expectEqual(@as(usize, 0), first.refusals.len);
+    const compiled = try compileContract(alloc, first.declarations[1]);
+    const second = try liftSource(alloc, compiled, "rt_escape.zig");
+    try std.testing.expectEqual(@as(usize, 0), second.refusals.len);
+
+    const first_bytes = try canonicalTermBytes(alloc, first.declarations[1].bodyTerm());
+    const second_bytes = try canonicalTermBytes(alloc, second.declarations[1].bodyTerm());
+    try std.testing.expectEqualStrings(first_bytes, second_bytes);
 }
 
 test "sorts canonical effects and hashes opaque loop term" {
