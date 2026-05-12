@@ -1,0 +1,33 @@
+{
+  "concept": {
+    "cid": "320a2baaa8b70dd445ad80eff4050ab55e363d80b481136c991097a913e65ab0",
+    "payload": {
+      "name": "concept:identity",
+      "category": "function",
+      "signature": "T \u2192 T",
+      "description": "Identity function returning its input unchanged",
+      "polymorphic": true,
+      "type_parameter": "T",
+      "postcondition": "forall x: T. identity(x) == x"
+    }
+  },
+  "realization_c": {
+    "cid": "e33031c9f97b2ae01bbcdd9bff32facb209cc87c04cd1826604f78adf404af7e",
+    "payload": {
+      "abstraction": "concept:identity",
+      "target_language": "c",
+      "form": "macro",
+      "macro_definition": "#define IDENTITY(x) (x)",
+      "zero_overhead": true,
+      "description": "Trivial macro expansion \u2014 compiles away completely"
+    }
+  },
+  "loss_record": {
+    "cid": "59b1865e1919fcddc871f1a50442557c1ff0105df6804e0990ae76046042b483",
+    "payload": {
+      "projection": "concept:identity \u2192 c",
+      "structural_divergence": null,
+      "rationale": "Identity function compiles away in C; no semantic loss"
+    }
+  }
+}
