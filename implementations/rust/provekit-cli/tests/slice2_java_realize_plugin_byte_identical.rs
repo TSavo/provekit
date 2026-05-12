@@ -24,6 +24,7 @@
 use std::io::{BufRead, BufReader, Write as IoWrite};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 
 use provekit_cli::cmd_transport::realize_for_bind;
 
@@ -43,15 +44,52 @@ fn java_jar() -> PathBuf {
         .join("../../java/provekit-realize-java-core/target/provekit-realize-java.jar")
 }
 
-/// Send one provekit.plugin.invoke RPC to the Java plugin and return the source string.
-fn java_invoke(function: &str, params: &[&str], param_types: &[&str], return_type: &str, concept_name: &str) -> String {
+/// Serializes the one-time Maven build across parallel test threads.
+/// The `OnceLock` holds a `Mutex<()>` so that the first thread to arrive
+/// grabs the lock, runs `mvn package`, and releases it. Every subsequent
+/// thread acquires and immediately releases (jar already present).
+static JAR_BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+/// Build the Java realize jar via Maven if it is not already present.
+/// Thread-safe: concurrent callers block until the single build finishes.
+/// Panics only if the jar is still missing after the build attempt.
+fn ensure_jar_built() {
+    let mtx = JAR_BUILD_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = mtx.lock().unwrap_or_else(|p| p.into_inner());
+
     let jar = java_jar();
+    if jar.exists() {
+        return;
+    }
+
+    let java_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../java");
+
+    let status = Command::new("mvn")
+        .args(["package", "-pl", "provekit-realize-java-core", "-am", "-DskipTests"])
+        .current_dir(&java_dir)
+        .status()
+        .unwrap_or_else(|e| panic!("failed to spawn mvn: {e}"));
+
+    if !status.success() {
+        panic!(
+            "mvn package failed (exit {status}); cannot build {jar}",
+            jar = jar.display()
+        );
+    }
+
     if !jar.exists() {
         panic!(
-            "java jar not found at {}; build with: mvn package -pl provekit-realize-java-core -am",
+            "java jar still not found at {} after mvn package",
             jar.display()
         );
     }
+}
+
+/// Send one provekit.plugin.invoke RPC to the Java plugin and return the source string.
+fn java_invoke(function: &str, params: &[&str], param_types: &[&str], return_type: &str, concept_name: &str) -> String {
+    ensure_jar_built();
+    let jar = java_jar();
 
     let params_json: String = params
         .iter()
@@ -222,13 +260,8 @@ fn trinity_retry_until_success_byte_identical() {
 #[test]
 fn pep_describe_returns_valid_sugar_plugin() {
     use provekit_plugin_loader::load_plugin_from_rpc;
+    ensure_jar_built();
     let jar = java_jar();
-    if !jar.exists() {
-        panic!(
-            "java jar not found at {}; build with: mvn package -pl provekit-realize-java-core -am",
-            jar.display()
-        );
-    }
     let endpoint = format!("stdio:java -jar {} --rpc", jar.display());
     let plugin = load_plugin_from_rpc(&endpoint)
         .unwrap_or_else(|e| panic!("load_plugin_from_rpc failed: {e}"));
