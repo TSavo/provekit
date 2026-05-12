@@ -1,0 +1,54 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "rust:Vec->concept:list",
+    "formals": [
+      "elements"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "rust:Vec",
+        "args": [
+          {
+            "kind": "var",
+            "name": "elements"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:list",
+        "args": [
+          {
+            "kind": "var",
+            "name": "elements"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-lift",
+    "direction": "left-to-right",
+    "source_lang": "rust",
+    "loss_record": {
+      "structural_divergence": "Vec is indexed sequence; list is singly-linked Cons/Nil structure; Vec offers O(1) random access; list offers O(n) sequential traversal; no structural encoding bridges the indexing gap",
+      "domain_narrowing": "Vec operations assume indexed access is available; list forbids indexing; programs relying on Vec[i] are in the narrowed-out domain",
+      "effect_divergence": "Vec append may reallocate memory (heap effect); list Cons is pure (functional); reallocation semantics diverge"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:af0f7cf78880c0b77e9155a4885e73c8887949e8ab5bee925266ca620f82503b5b71210cf153a93cebaa08f7a31dab76d0131812ce14898e757bc8dc31eedec6",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
