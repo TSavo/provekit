@@ -1057,15 +1057,10 @@ def main():
                                  reason_text, gap_kind, structured_reason,
                                  source_op_cid=None, shape_cid=shape_cid, gap_rows=gap_rows)
         records.append(record)
-    append_cids(rows)
+    append_cids(rows + gap_rows)
     write_gap_report(gaps, records)
     update_readme(records)
     discharge.scan_created_text()
-    gap_kinds = {}
-    for row in gap_rows:
-        fn = row.get("name", "")
-        # Extract gap_kind from on-disk memento to count by kind.
-        pass
     # Count gap mementos by kind from disk.
     gap_kind_counts = {}
     for m in _load_gap_mementos_from_disk():

@@ -507,4 +507,34 @@ mod tests {
         let v: serde_json::Value = serde_json::to_value(status).expect("to_value");
         assert_eq!(v, "recommended");
     }
+
+    #[test]
+    fn gap_kind_polymorphic_source_op_serializes() {
+        let v: serde_json::Value =
+            serde_json::to_value(GapKind::PolymorphicSourceOp).expect("to_value");
+        assert_eq!(v, "polymorphic-source-op");
+    }
+
+    #[test]
+    fn gap_kind_wp_rule_mismatch_serializes() {
+        let v: serde_json::Value =
+            serde_json::to_value(GapKind::WpRuleMismatch).expect("to_value");
+        assert_eq!(v, "wp-rule-mismatch");
+    }
+
+    #[test]
+    fn gap_kind_sort_mismatch_roundtrip() {
+        let kind = GapKind::SortMismatch;
+        let s = serde_json::to_string(&kind).expect("to_string");
+        let back: GapKind = serde_json::from_str(&s).expect("from_str");
+        assert_eq!(back, GapKind::SortMismatch);
+        assert_eq!(s, "\"sort-mismatch\"");
+    }
+
+    #[test]
+    fn gap_kind_missing_source_op_serializes() {
+        let v: serde_json::Value =
+            serde_json::to_value(GapKind::MissingSourceOp).expect("to_value");
+        assert_eq!(v, "missing-source-op");
+    }
 }
