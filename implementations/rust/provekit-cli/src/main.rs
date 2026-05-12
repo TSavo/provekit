@@ -20,6 +20,7 @@ use clap::{Parser, Subcommand};
 
 mod cmd_agent;
 mod cmd_ask;
+mod cmd_bind;
 mod cmd_ci;
 mod cmd_compose;
 mod cmd_dump;
@@ -139,6 +140,10 @@ enum Cmd {
     /// Per spec protocol/specs/2026-05-09-contract-composition-protocol.md §6.3.
     /// Reads JSON-RPC requests on stdin, writes responses on stdout.
     Compose(ComposeArgs),
+    /// Bind concept contracts to source code: lift, cluster, name, scope, identify, realize, witness.
+    /// Implements the eight-verb pipeline (paper 20 §9) against arbitrary user code.
+    /// --rewrite={annotate,canonical,invisible} --mode={witness,emitter,monitor} --target-language=<lang>
+    Bind(cmd_bind::BindArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -353,6 +358,7 @@ fn main() -> ExitCode {
         Cmd::Link(a) => cmd_link::run(a),
         Cmd::Transport(a) | Cmd::Migrate(a) => cmd_transport::run(a),
         Cmd::Compose(a) => cmd_compose::run(a),
+        Cmd::Bind(a) => cmd_bind::run(a),
     };
     ExitCode::from(code)
 }
