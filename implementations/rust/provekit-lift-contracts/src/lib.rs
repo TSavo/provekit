@@ -48,7 +48,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, serialize::formula_to_value,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, or_, serialize::formula_to_value,
     str_const, ContractDecl, Formula, Int, Sort, Term,
 };
 use provekit_ir_types::{
@@ -188,17 +188,23 @@ fn emit_sig_evidences(
     let fn_span_start = fn_span.start();
     let fn_span_end = fn_span.end();
 
+    // The written return type string — required in every type-signature evidence
+    // per spec §10: `{ "return_type": <type_string> }`.
+    let fn_return_type_str = return_type_to_string(&sig.output);
+
     // Build the signature-span locator (covers the function name token).
+    // col is 0-indexed per spec §1.1 — proc_macro2 Span::start().column is
+    // already 0-indexed, so no +1.
     let sig_locator = SourceLocator {
         source_cid: source_cid.to_string(),
         span: SourceLocatorSpan {
             start: SourceLocatorPoint {
                 line: fn_span_start.line as u32,
-                col: (fn_span_start.column + 1) as u32,
+                col: fn_span_start.column as u32,
             },
             end: SourceLocatorPoint {
                 line: fn_span_end.line as u32,
-                col: (fn_span_end.column + 1) as u32,
+                col: fn_span_end.column as u32,
             },
         },
     };
@@ -220,6 +226,12 @@ fn emit_sig_evidences(
                 ext.insert(
                     "function_symbol".to_string(),
                     serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
+                );
+                // Required per spec §10: return_type is the function's written
+                // return type string for every type-signature evidence.
+                ext.insert(
+                    "return_type".to_string(),
+                    serde_json::Value::String(fn_return_type_str.clone()),
                 );
                 ext.insert(
                     "signature_position".to_string(),
@@ -268,6 +280,12 @@ fn emit_sig_evidences(
                     "function_symbol".to_string(),
                     serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
                 );
+                // Required per spec §10: return_type is the function's written
+                // return type string for every type-signature evidence.
+                ext.insert(
+                    "return_type".to_string(),
+                    serde_json::Value::String(fn_return_type_str.clone()),
+                );
                 ext.insert(
                     "signature_position".to_string(),
                     serde_json::Value::String(position),
@@ -309,6 +327,12 @@ fn emit_sig_evidences(
         ext.insert(
             "function_symbol".to_string(),
             serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
+        );
+        // Required per spec §10: return_type is the function's written
+        // return type string for every type-signature evidence.
+        ext.insert(
+            "return_type".to_string(),
+            serde_json::Value::String(fn_return_type_str.clone()),
         );
         ext.insert(
             "signature_position".to_string(),
@@ -510,7 +534,12 @@ fn classify_type(
                             ));
                         }
                     }
-                    Some((atomic_("true", vec![]), "option".to_string(), extra))
+                    // Spec §1.1.1: predicate = result.is_some() ∨ result.is_none()
+                    let predicate = or_(vec![
+                        atomic_("is_some", vec![make_var("result")]),
+                        atomic_("is_none", vec![make_var("result")]),
+                    ]);
+                    Some((predicate, "option".to_string(), extra))
                 }
                 "Result" => {
                     let mut extra = vec![];
@@ -530,7 +559,12 @@ fn classify_type(
                             ));
                         }
                     }
-                    Some((atomic_("true", vec![]), "result".to_string(), extra))
+                    // Spec §1.1.1: predicate = result.is_ok() ∨ result.is_err()
+                    let predicate = or_(vec![
+                        atomic_("is_ok", vec![make_var("result")]),
+                        atomic_("is_err", vec![make_var("result")]),
+                    ]);
+                    Some((predicate, "result".to_string(), extra))
                 }
                 "Vec" => {
                     let mut extra = vec![];
@@ -542,7 +576,9 @@ fn classify_type(
                             ));
                         }
                     }
-                    Some((atomic_("true", vec![]), "vec".to_string(), extra))
+                    // Spec §1.1.1: predicate = is_finite_list(result)
+                    let predicate = atomic_("is_finite_list", vec![make_var("result")]);
+                    Some((predicate, "vec".to_string(), extra))
                 }
                 _ => {
                     // Bare generic single-char names (T, V, E, etc.): skip.
@@ -639,6 +675,16 @@ fn strip_path_prefix(s: &str) -> &str {
     }
 }
 
+/// Render a `syn::ReturnType` to the written type string for `return_type`
+/// extension field per spec §10.  `fn foo()` → `"()"`;
+/// `fn foo() -> Option<i32>` → `"Option<i32>"`.
+fn return_type_to_string(output: &syn::ReturnType) -> String {
+    match output {
+        syn::ReturnType::Default => "()".to_string(),
+        syn::ReturnType::Type(_, ty) => type_to_string(ty),
+    }
+}
+
 /// Render a `syn::Type` to a stable string for use in `extension_fields`.
 fn type_to_string(ty: &syn::Type) -> String {
     use quote::ToTokens;
@@ -646,6 +692,7 @@ fn type_to_string(ty: &syn::Type) -> String {
     ty.to_tokens(&mut ts);
     ts.to_string()
         .replace(" :: ", "::")
+        .replace(" <", "<")
         .replace("< ", "<")
         .replace(" >", ">")
         .replace(" ,", ",")
@@ -1661,6 +1708,200 @@ mod tests {
                 !ev.extension_fields.contains_key("function_term_cid"),
                 "function_term_cid must not appear; use function_symbol"
             );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Spec violation fixes: B1 (return_type), B2 (0-indexed col), B3
+    // ------------------------------------------------------------------
+
+    /// B1 — every type-signature evidence carries `return_type` in
+    /// `extension_fields` set to the function's written return type string
+    /// (spec §10: required field for `source_kind: "type-signature"`).
+    #[test]
+    fn spec_b1_every_type_sig_evidence_has_return_type_field() {
+        // Mixed signature: receiver + primitive param + Option return.
+        let src = r#"
+            struct S;
+            impl S {
+                fn compute(&self, x: i32) -> Option<i32> { None }
+            }
+        "#;
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected evidences");
+        for ev in &out.evidences {
+            let rt = ev
+                .extension_fields
+                .get("return_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!(
+                    "evidence missing return_type field; extension_fields = {:?}",
+                    ev.extension_fields
+                ));
+            assert_eq!(
+                rt, "Option<i32>",
+                "return_type must be the function's written return type"
+            );
+        }
+    }
+
+    /// B1 corollary — implicit unit return `fn f()` renders as `"()"`.
+    #[test]
+    fn spec_b1_implicit_unit_return_type_string_is_parens() {
+        let src = "fn sink(x: i32) {}";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected evidences");
+        for ev in &out.evidences {
+            let rt = ev
+                .extension_fields
+                .get("return_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!(
+                    "evidence missing return_type; fields = {:?}",
+                    ev.extension_fields
+                ));
+            assert_eq!(rt, "()", "implicit unit must render as '()'");
+        }
+    }
+
+    /// B2 — `col` in `source_locator` is 0-indexed (spec §1.1).
+    ///
+    /// Source layout (no leading spaces):
+    ///   line 1: `fn precise(x: u32) { }`
+    ///
+    /// `fn` starts at col 0 and `precise` starts at col 3 (0-indexed).
+    /// proc_macro2 Span::start().column is also 0-indexed, so no +1 must
+    /// be added.  If this test fails with col=4 the +1 bug was re-introduced.
+    #[test]
+    fn spec_b2_source_locator_col_is_0indexed() {
+        let src = "fn precise(x: u32) { }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "t.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected at least one evidence");
+        let ev = &out.evidences[0];
+        // "fn " is 3 bytes; `precise` identifier starts at col 3 (0-indexed).
+        assert_eq!(
+            ev.source_locator.span.start.col, 3,
+            "col must be 0-indexed per spec §1.1; got {}. \
+             If this is 4, the +1 bug was re-introduced.",
+            ev.source_locator.span.start.col
+        );
+        assert_eq!(
+            ev.source_locator.span.start.line, 1,
+            "line must be 1-indexed; got {}",
+            ev.source_locator.span.start.line
+        );
+    }
+
+    /// B3 — `-> Option<T>` emits predicate `is_some(result) ∨ is_none(result)`,
+    /// not `Atomic("true")` (spec §1.1.1).
+    #[test]
+    fn spec_b3_option_return_emits_is_some_or_is_none_predicate() {
+        let src = "fn maybe(x: i32) -> Option<i32> { None }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        let ev = ret_ev.expect("expected a return evidence for Option<i32>");
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Or { operands } => {
+                assert_eq!(operands.len(), 2, "Or must have 2 operands");
+                let names: Vec<&str> = operands
+                    .iter()
+                    .filter_map(|o| match o {
+                        provekit_ir_types::IrFormula::Atomic { name, .. } => Some(name.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                assert!(
+                    names.contains(&"is_some"),
+                    "predicate must contain is_some; got {:?}",
+                    names
+                );
+                assert!(
+                    names.contains(&"is_none"),
+                    "predicate must contain is_none; got {:?}",
+                    names
+                );
+            }
+            other => panic!(
+                "Option return predicate must be Or{{is_some,is_none}}; got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// B3 — `-> Result<T, E>` emits predicate `is_ok(result) ∨ is_err(result)`.
+    #[test]
+    fn spec_b3_result_return_emits_is_ok_or_is_err_predicate() {
+        let src = "fn fallible(x: i32) -> Result<i32, String> { Ok(x) }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        let ev = ret_ev.expect("expected a return evidence for Result");
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Or { operands } => {
+                assert_eq!(operands.len(), 2, "Or must have 2 operands");
+                let names: Vec<&str> = operands
+                    .iter()
+                    .filter_map(|o| match o {
+                        provekit_ir_types::IrFormula::Atomic { name, .. } => Some(name.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                assert!(names.contains(&"is_ok"), "predicate must contain is_ok; got {:?}", names);
+                assert!(
+                    names.contains(&"is_err"),
+                    "predicate must contain is_err; got {:?}",
+                    names
+                );
+            }
+            other => panic!(
+                "Result return predicate must be Or{{is_ok,is_err}}; got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// B3 — `-> Vec<T>` emits predicate `is_finite_list(result)`.
+    #[test]
+    fn spec_b3_vec_return_emits_is_finite_list_predicate() {
+        let src = "fn collect(x: i32) -> Vec<u8> { vec![] }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
+        let ret_ev = out.evidences.iter().find(|e| {
+            e.extension_fields
+                .get("signature_position")
+                .and_then(|v| v.as_str())
+                == Some("return")
+        });
+        let ev = ret_ev.expect("expected a return evidence for Vec<u8>");
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Atomic { name, args } => {
+                assert_eq!(name, "is_finite_list", "Vec predicate must be is_finite_list; got {name}");
+                assert_eq!(args.len(), 1, "is_finite_list must have 1 arg");
+                match &args[0] {
+                    provekit_ir_types::IrTerm::Var { name: var_name } => {
+                        assert_eq!(var_name, "result", "arg must be Var(result); got {var_name}");
+                    }
+                    other => panic!("expected Var(result); got {:?}", other),
+                }
+            }
+            other => panic!(
+                "Vec return predicate must be Atomic(is_finite_list); got {:?}",
+                other
+            ),
         }
     }
 }
