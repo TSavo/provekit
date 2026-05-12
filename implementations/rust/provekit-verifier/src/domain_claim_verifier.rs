@@ -10,10 +10,10 @@
 //   protocol/specs/2026-05-13-domain-claim-normalization.md §1.2, §4, §5
 //
 // This module does NOT run SMT or touch the MementoPool. The verdict is
-// already on the wire-form claim; verification is shape-validation + CID
-// re-check + aggregation. Signature verification requires the JCS encoder
-// in `provekit-claim-envelope` and is out of scope here (tracked as
-// follow-up on the same spec, §3.1).
+// already on the wire-form claim; verification here is shape-validation +
+// aggregation only. Signature verification and CID recomputation require
+// the JCS encoder in `provekit-claim-envelope`; both are out of scope for
+// this PR and tracked as follow-ups per spec §3.1.
 //
 // Trichotomy invariants (spec §1.2):
 //
@@ -90,6 +90,11 @@ pub enum TrichotomyError {
         input_cid: String,
         truth_cid: String,
     },
+    /// Source memento could not be converted to a `DomainClaim`.
+    ///
+    /// Used exclusively by `#[deprecated]` shims that convert legacy mementos.
+    /// The inner string is the `Display` form of the `DomainClaimConversionError`.
+    SourceConversion(String),
 }
 
 impl std::fmt::Display for TrichotomyError {
@@ -142,6 +147,10 @@ impl std::fmt::Display for TrichotomyError {
                 "trichotomy violation: k(I)=t claim has kind=refuse but \
                  refusal_reason is absent (spec §1.2 requires it present for refuse). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
+            ),
+            Self::SourceConversion(msg) => write!(
+                f,
+                "source memento could not be converted to DomainClaim: {msg}"
             ),
         }
     }
@@ -423,9 +432,9 @@ pub fn verify_claims(claims: &[DomainClaim]) -> ClaimReport {
 // `Invalid(TrichotomyError::RefuseMissingReason)` -- but only if the
 // conversion error is itself a substrate invariant violation.
 //
-// NOTE: the FCM shim intentionally returns `Invalid` rather than panicking
-// on bare contracts; callers that pass bare FCMs need to be migrated to
-// wrap them in a ConceptSiteMemento or CompoundContractMemento first.
+// NOTE: the FCM shim intentionally returns `Invalid(SourceConversion)` rather
+// than panicking on bare contracts; callers that pass bare FCMs need to be
+// migrated to wrap them in a ConceptSiteMemento or CompoundContractMemento first.
 
 use provekit_ir_types::ConceptSiteMemento;
 
@@ -442,11 +451,7 @@ use provekit_ir_types::ConceptSiteMemento;
 pub fn verify_concept_site_memento(m: &ConceptSiteMemento) -> ClaimOutcome {
     match DomainClaim::try_from(m) {
         Ok(claim) => verify_claim(&claim),
-        Err(e) => ClaimOutcome::Invalid(TrichotomyError::ExactMissingReceipt {
-            kit_cid: format!("(shim-error: {e})"),
-            input_cid: String::new(),
-            truth_cid: String::new(),
-        }),
+        Err(e) => ClaimOutcome::Invalid(TrichotomyError::SourceConversion(e.to_string())),
     }
 }
 
