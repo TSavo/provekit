@@ -1,0 +1,48 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:skip",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "skip",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Stmt",
+    "wp": "state unchanged",
+    "wp_rule": {
+      "kind": "var",
+      "name": "Q"
+    },
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  }
+}

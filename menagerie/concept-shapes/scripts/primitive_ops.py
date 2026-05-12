@@ -21,51 +21,13 @@ C11_SPECS = ROOT / "menagerie" / "c11-language-signature" / "specs"
 RUST_SPECS = ROOT / "menagerie" / "rust-language-signature" / "specs"
 
 OPS = [
-    {
-        "slug": "conditional",
-        "concept_fn": "concept:conditional",
-        "concept_operator": "conditional",
-        "sources": {
-            "c11": {"spec": "op_if.spec.json", "source_name": "c11:if", "operator_map": {"if": "conditional"}},
-            "rust": {"spec": "op_if.spec.json", "source_name": "rust:if", "operator_map": {"if": "conditional"}},
-        },
-    },
-    {
-        "slug": "seq",
-        "concept_fn": "concept:seq",
-        "concept_operator": "seq",
-        "sources": {
-            "c11": {"spec": "op_seq.spec.json", "source_name": "c11:seq", "operator_map": {"seq": "seq"}},
-            "rust": {"spec": "op_seq.spec.json", "source_name": "rust:seq", "operator_map": {"seq": "seq"}},
-        },
-    },
-    {
-        "slug": "return",
-        "concept_fn": "concept:return",
-        "concept_operator": "return",
-        "sources": {
-            "c11": {"spec": "op_return.spec.json", "source_name": "c11:return", "operator_map": {"return": "return"}},
-            "rust": {"spec": "op_return.spec.json", "source_name": "rust:return", "operator_map": {"return": "return"}},
-        },
-    },
-    {
-        "slug": "eq",
-        "concept_fn": "concept:eq",
-        "concept_operator": "eq",
-        "sources": {
-            "c11": {"spec": "op_eq.spec.json", "source_name": "c11:eq", "operator_map": {"eq": "eq"}},
-            "rust": {"spec": "op_eq.spec.json", "source_name": "rust:eq", "operator_map": {"eq": "eq"}},
-        },
-    },
-    {
-        "slug": "skip",
-        "concept_fn": "concept:skip",
-        "concept_operator": "skip",
-        "sources": {
-            "c11": {"spec": "op_skip.spec.json", "source_name": "c11:skip", "operator_map": {"skip": "skip"}},
-            "rust": {"spec": "op_skip.spec.json", "source_name": "rust:skip", "operator_map": {"skip": "skip"}},
-        },
-    },
+    # All five primitive ops (conditional, seq, skip, return, eq) removed from this list.
+    # Removed conditional/seq/skip (PR3): their c11/rust source specs gained wp_rule,
+    # making component-cids.json CIDs stale.
+    # Removed return/eq: concept_spec_from_source here uses simpler effect handling
+    # than mint_language_morphisms.py (which computes union effects across all languages),
+    # causing concept shape CID divergence.
+    # All are now exclusively handled by mint_language_morphisms.py.
 ]
 
 

@@ -20,6 +20,10 @@ corresponding concept hub op.  Three discharge strategies are attempted in order
       concept op's full effect set is not surprised if the actual lang op does
       fewer effects.  The reverse (lang does MORE than concept promised) is never
       discharged.  Composes with wp-abstraction and pre-weakening.
+   d. wp_rule abstraction: if the lang spec carries post.wp_rule but the concept
+      spec does not (hub ops do not yet carry wp_rule; deferred to #633 per spec
+      §1.4), strip wp_rule from the comparison and attempt byte-equality discharge.
+      Discharge method: "structural-wp-rule-abstraction".
 
 Concept ops declare the UNION of all language effects for the same op, so the
 effect-⊆ relaxation discharges language ops that do a proper subset of those effects.
@@ -57,18 +61,11 @@ LANGUAGES = [
 ]
 LANG_BY_ID = {item["id"]: item for item in LANGUAGES}
 
-PRIMITIVE_STEMS = {
-    "morphism_c11_if_to_conditional",
-    "morphism_rust_if_to_conditional",
-    "morphism_c11_seq_to_seq",
-    "morphism_rust_seq_to_seq",
-    "morphism_c11_return_to_return",
-    "morphism_rust_return_to_return",
-    "morphism_c11_eq_to_eq",
-    "morphism_rust_eq_to_eq",
-    "morphism_c11_skip_to_skip",
-    "morphism_rust_skip_to_skip",
-}
+PRIMITIVE_STEMS: set[str] = set()
+# All five primitive ops (conditional/seq/skip/return/eq) are now minted exclusively here.
+# primitive_ops.py OPS list is empty; this script is the single source of truth for every
+# language morphism.  If a stem is added to PRIMITIVE_STEMS it must have already been
+# minted to SPEC_DIR + RECEIPT_DIR by a prior stage (currently no such stage exists).
 
 COMMON_ALIASES = {
     "conditional": {lang: ["op_if.spec.json"] for lang in ["c11", "csharp", "go", "python", "typescript", "zig", "ruby", "php", "rust", "java"]},
@@ -292,6 +289,10 @@ def concept_spec_from_base(op_def):
     data = normalize_node(strip_locus(source), op_def["renaming"], {}, operators, {})
     data["fn_name"] = op_def["concept_fn"]
     data["post"]["operator"] = op_def["concept_operator"]
+    # Strip wp_rule from the concept spec: language-spec wp_rules are per-language
+    # annotations, not canonical fields of the concept-shape hub op.  The hub
+    # op's CID must not change when a language spec adds wp_rule (PR3+).
+    data["post"].pop("wp_rule", None)
     apply_patches(data, op_def["patches"])
     return data
 
@@ -443,7 +444,7 @@ def _effects_subset(lang_effects_set, concept_effects_set):
 def try_structural_subsumption(after_spec, concept_spec):
     """Sound structural ⊑ discharge when byte-equality fails on relaxable fields only.
 
-    Three relaxations, all sound under the morphism contract:
+    Four relaxations, all sound under the morphism contract:
 
     1. wp-text abstraction: the wp field is human-readable documentation; it carries
        no semantic weight in the discharge obligation.  If after_spec matches
@@ -472,6 +473,16 @@ def try_structural_subsumption(after_spec, concept_spec):
                           "structural-wp-abstraction-and-effect-subset",
                           "structural-pre-weakening-and-wp-abstraction-and-effect-subset".
 
+    4. wp_rule abstraction: if after_spec carries a wp_rule field in post that
+       concept_spec does not (because concept hub ops do not yet carry wp_rule; see
+       PR3 note in concept_spec_from_base), strip it from the comparison and attempt
+       byte-equality discharge.  Soundness: concept_spec_from_base explicitly omits
+       wp_rule from hub op specs (it is a per-language annotation until #633 lands);
+       a language spec's wp_rule is therefore not a semantic gap vs the concept shape.
+       Discharge method: "structural-wp-rule-abstraction".
+       Fast path: tried before the general relaxation loop, so it takes priority over
+       relaxations 1-3 when wp_rule is the *only* difference.
+
     Returns (method_string, pre_relaxed, wp_abstracted) on success, or None on failure.
     Sound: false-negatives (remaining gaps) are acceptable; false-positives are not
     emitted because every structural claim has a verified implication.
@@ -489,6 +500,9 @@ def try_structural_subsumption(after_spec, concept_spec):
     concept_wp = concept_spec.get("post", {}).get("wp")
     after_effects = _effect_set(after_spec)
     concept_effects = _effect_set(concept_spec)
+    # wp_rule is a per-language annotation; concept specs never include it (stripped
+    # in concept_spec_from_base).  It is always treated as abstract for discharge.
+    after_has_wp_rule = "wp_rule" in after_spec.get("post", {})
 
     # notes_match: True if the post.notes field (or its absence) is identical
     # on both sides.  A language spec may carry notes that the concept hub lacks;
@@ -502,7 +516,7 @@ def try_structural_subsumption(after_spec, concept_spec):
     effects_match = after_effects == concept_effects
     effects_ok = _effects_subset(after_effects, concept_effects)
 
-    if pre_matches and wp_matches and notes_match and effects_match:
+    if pre_matches and wp_matches and notes_match and effects_match and not after_has_wp_rule:
         # Byte-equality should have caught this already; shouldn't reach here.
         return None
 
@@ -522,6 +536,10 @@ def try_structural_subsumption(after_spec, concept_spec):
                 for doc_key in _DOC_ONLY_KEYS - {"wp"}:
                     if doc_key in relaxed["post"] and doc_key not in concept_post:
                         del relaxed["post"][doc_key]
+        # wp_rule is always stripped: it is a language-spec annotation and concept
+        # specs do not include it, so a relaxed copy must omit it to match CIDs.
+        if "post" in relaxed:
+            relaxed["post"].pop("wp_rule", None)
         if relax_effects:
             relaxed["effects"] = _copy.deepcopy(concept_spec.get("effects", empty_effects()))
         return relaxed
@@ -540,6 +558,13 @@ def try_structural_subsumption(after_spec, concept_spec):
     # Only attempt discharge if effect direction is sound (lang ⊆ concept).
     if not effects_ok:
         return None
+
+    # Fast path: if the only difference is a wp_rule annotation in the language spec
+    # (which concept specs never carry), strip it and attempt byte-equality discharge.
+    if after_has_wp_rule and pre_matches and wp_matches and effects_match:
+        relaxed = _make_relaxed(False, False, False)
+        if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
+            return ("structural-wp-rule-abstraction", False, False)
 
     # Try all useful combinations of relaxations.
     # Order: tightest first (fewest relaxations), then broader.
@@ -623,17 +648,24 @@ def existing_cid_rows():
 
 def append_cids(rows):
     existing = CID_FILE.read_text(encoding="utf-8").splitlines() if CID_FILE.exists() else ["kind\tname\tcid\tpath"]
-    seen = set()
+    seen = {}  # (kind, name) -> cid
     for line in existing[1:]:
         parts = line.split("\t")
-        if len(parts) >= 2:
-            seen.add((parts[0], parts[1]))
+        if len(parts) >= 3:
+            seen[(parts[0], parts[1])] = parts[2]
     for row in rows:
         key = (row["kind"], row["name"])
         if key in seen:
+            if seen[key] != row["cid"]:
+                raise SystemExit(
+                    f"one-name-one-CID violation: {row['kind']} {row['name']} "
+                    f"already registered as {seen[key]!r} but new mint produced {row['cid']!r}. "
+                    f"A stale cids.tsv row is hiding the fresh mint. "
+                    f"Re-run mint.sh from a clean state."
+                )
             continue
         existing.append(f"{row['kind']}\t{row['name']}\t{row['cid']}\t{row['path']}")
-        seen.add(key)
+        seen[key] = row["cid"]
     CID_FILE.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
 
@@ -717,6 +749,39 @@ def _collect_union_effects(op_def):
     return list(seen_keys.values())
 
 
+def sweep_stale_catalog_files(catalog_path_str, current_cid):
+    """Remove stale CID-named files for the same logical stem.
+
+    The content-addressed catalog never deletes files on its own, so when a
+    morphism spec changes (e.g. its source CID changes after a lifter update),
+    the old CID-named file is left beside the new one.  Two files for the same
+    logical stem with different CIDs breaks one-name-one-CID invariant.
+
+    Given the path of the CURRENT file (just written by provekit mint or
+    store_receipt), delete any sibling files in the same directory that share
+    the same stem prefix but have a different CID suffix.
+
+    The stem prefix is everything before ".{cid}.json" in the filename.
+    """
+    current_path = Path(catalog_path_str)
+    parent = current_path.parent
+    # The stem prefix: everything before the CID hash portion.
+    # Filename pattern: "<stem>.<cid>.json" where cid = "blake3-512:XXXX".
+    name = current_path.name
+    # Split on ".blake3-512:" to get the prefix.
+    if ".blake3-512:" not in name:
+        return
+    stem_prefix = name.split(".blake3-512:")[0] + ".blake3-512:"
+    current_cid_suffix = current_cid.split("blake3-512:", 1)[-1]
+    for sibling in parent.iterdir():
+        sname = sibling.name
+        if not sname.startswith(stem_prefix):
+            continue
+        sibling_cid_suffix = sname[len(stem_prefix):].removesuffix(".json")
+        if sibling_cid_suffix != current_cid_suffix:
+            sibling.unlink()
+
+
 def main():
     discharge.build_tools()
     for path in [SPEC_DIR, RECEIPT_DIR, DISCHARGE_DIR, CATALOG_REAL]:
@@ -739,6 +804,7 @@ def main():
         spec_name = f"{op_def['slug']}_shape.spec.json"
         write_json(SPEC_DIR / spec_name, concept_spec)
         shape_cid, shape_path = discharge.mint("algorithm", spec_name)
+        sweep_stale_catalog_files(shape_path, shape_cid)
         expected = canonical_cid_spec(concept_spec)
         if shape_cid != expected:
             raise SystemExit(f"{op_def['slug']} shape CID mismatch: {shape_cid} != {expected}")
@@ -786,6 +852,7 @@ def main():
                 m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map, discharge_method)
                 write_json(SPEC_DIR / f"{stem}.spec.json", m_spec)
                 morphism_cid, morphism_path = discharge.mint("algorithm", f"{stem}.spec.json")
+                sweep_stale_catalog_files(morphism_path, morphism_cid)
                 rows.append({"kind": "morphism", "name": stem, "cid": morphism_cid, "path": morphism_path})
                 receipt = {
                     "schema_version": "1",
@@ -811,6 +878,7 @@ def main():
                 if effect_subset_relaxed:
                     receipt["effect_subset_relaxed"] = True
                 receipt_cid, receipt_path = discharge.store_receipt(stem, receipt)
+                sweep_stale_catalog_files(receipt_path, receipt_cid)
                 rows.append({"kind": "receipt", "name": stem, "cid": receipt_cid, "path": receipt_path})
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})
                 break

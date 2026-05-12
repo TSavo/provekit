@@ -29,6 +29,10 @@
     ],
     "result": "Stmt",
     "wp": "state unchanged",
+    "wp_rule": {
+      "kind": "var",
+      "name": "Q"
+    },
     "arity_shape": {
       "kind": "named",
       "slots": [

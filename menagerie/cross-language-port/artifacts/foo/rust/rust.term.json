@@ -1,11 +1,11 @@
 {
   "kind": "op",
-  "opCid": "blake3-512:099002d6533397f360ed84d85778b3b4a18a577f54b43309f74949cacc8e9734cef6531e3829297e99bb89a3a4b1e1751997891fe9857dba2b4048d92945218b",
+  "opCid": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
   "name": "rust:seq",
   "args": [
     {
       "kind": "op",
-      "opCid": "blake3-512:62b88c3ee489b75f1bd75e96cab3be2954ad89f8f88e1543e569fe00a5ddf49bfef0491982aa33882549700eecc67a82d334e96268a9b06cfdf880c7d6d2fede",
+      "opCid": "blake3-512:bafb1c10f92c43607c474ee960a32e2309cb8fdbca7a1013f74076eabfd73716d814fd2070a602d3aafeaf231dab81075de42d2b817d6038b5c212d1b96ab409",
       "name": "rust:if",
       "args": [
         {
@@ -44,7 +44,7 @@
         },
         {
           "kind": "op",
-          "opCid": "blake3-512:7f1447f3e05432d938a51328fb74a7bb1dd3e664f1acb451b7d037798e435637f4c3ce7ff99bbc38d1e02b208f39200922f3ed03ba5bbffb00b9c9d201d91a89",
+          "opCid": "blake3-512:5b88331d8ccee4b9024885c841b8c66123378ed50a7c49430f2b24ad0e4d22670e0ba4f42e2335fb07dec1edf2fbb20e7d97b518217be5c18d6805a240afe4ca",
           "name": "rust:skip",
           "args": [
             {
