@@ -34,7 +34,7 @@ printf '%s\n' "$RESPONSES" | grep -q '"name":"c-kernel-doc"' || {
     exit 1
 }
 
-printf '%s\n' "$RESPONSES" | grep -q '"protocol_version":"provekit-lift/1"' || {
+printf '%s\n' "$RESPONSES" | grep -q '"protocol_version":"pep/1.7.0"' || {
     echo "FAIL: initialize missing protocol version" >&2
     echo "$RESPONSES" >&2
     exit 1

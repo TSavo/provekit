@@ -1,6 +1,6 @@
 # provekit-lift-asm-x86-64
 
-`provekit-lift-asm-x86-64` is the machine-code rung of the ProvekIt lifter family. It speaks the `provekit-lift/1` JSON-RPC protocol on stdin and stdout, accepts `.s` assembly files and ELF `.o` object files, disassembles x86-64, recovers a small structured control-flow term, propagates weakest-precondition style path facts, and emits `FunctionContractMemento` declarations.
+`provekit-lift-asm-x86-64` is the machine-code rung of the ProvekIt lifter family. It speaks the `pep/1.7.0` JSON-RPC protocol on stdin and stdout, accepts `.s` assembly files and ELF `.o` object files, disassembles x86-64, recovers a small structured control-flow term, propagates weakest-precondition style path facts, and emits `FunctionContractMemento` declarations.
 
 The C lifters work over typed lvalues and AST nodes. This lifter works one level lower: the AST is a flat instruction stream plus a CFG, and the carrier is registers, RFLAGS, and memory.
 

@@ -10,7 +10,7 @@
 //      Prints a human-readable banner.
 //
 //   2. RPC:   `mint-zig-self-contracts --rpc`
-//      Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on
+//      Speaks the lift-plugin protocol (pep/1.7.0) over NDJSON on
 //      stdin/stdout. Supported methods:
 //        - initialize   -> {name, version, capabilities}
 //        - lift         -> {kind:"proof-envelope", filename_cid,
@@ -130,7 +130,7 @@ fn handleInitialize(w: *std.Io.Writer, id_raw: []const u8) !void {
         "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{" ++
             "\"name\":\"zig-self-contracts\"," ++
             "\"version\":\"1.0.0\"," ++
-            "\"protocol_version\":\"provekit-lift/1\"," ++
+            "\"protocol_version\":\"pep/1.7.0\"," ++
             "\"capabilities\":{{" ++
             "\"authoring_surfaces\":[\"zig-self-contracts\"]," ++
             "\"ir_version\":\"v1.1.0\"," ++

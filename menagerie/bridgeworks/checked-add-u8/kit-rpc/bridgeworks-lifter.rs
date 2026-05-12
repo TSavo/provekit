@@ -118,7 +118,7 @@ fn run_rpc() {
                 json!({
                     "name": "bridgeworks-checked-add",
                     "version": "0.1.0",
-                    "protocol_version": "provekit-lift/1",
+                    "protocol_version": "pep/1.7.0",
                     "capabilities": {
                         "authoring_surfaces": ["bridgeworks-checked-add"],
                         "ir_version": "v1.1.0",

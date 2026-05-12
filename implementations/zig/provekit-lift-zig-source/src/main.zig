@@ -54,7 +54,7 @@ fn handleLine(alloc: std.mem.Allocator, io: Io, line: []const u8, writer: *Io.Wr
     const id = extractId(line);
     if (std.mem.indexOf(u8, line, "\"initialize\"") != null) {
         try writer.print(
-            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig-source\",\"version\":\"" ++ lift.VERSION ++ "\",\"protocol_version\":\"provekit-lift/1\",\"capabilities\":{{\"authoring_surfaces\":[\"" ++ lift.DIALECT ++ "\"],\"emits_signed_mementos\":false,\"ir_version\":\"v1.1.0\"}}}}}}\n",
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig-source\",\"version\":\"" ++ lift.VERSION ++ "\",\"protocol_version\":\"pep/1.7.0\",\"capabilities\":{{\"authoring_surfaces\":[\"" ++ lift.DIALECT ++ "\"],\"emits_signed_mementos\":false,\"ir_version\":\"v1.1.0\"}}}}}}\n",
             .{id},
         );
         return true;

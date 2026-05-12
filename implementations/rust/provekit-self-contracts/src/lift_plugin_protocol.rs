@@ -3,11 +3,20 @@
 // lift_plugin_protocol.rs
 //
 // Encodes the rules of `protocol/specs/2026-04-30-lift-plugin-protocol.md`
-// (the "lift-plugin-protocol spec", v1.2.0 normative) as machine-enforceable
-// contract mementos. These contracts are the source-of-truth that each kit's
-// lift-plugin implementation will bridge to: the Rust CLI dispatches to
-// per-language lift plugins via JSON-RPC over stdio (LSP shape), and every
-// peer plugin must satisfy these protocol-level invariants.
+// (the "lift-plugin-protocol spec", v1.2.0 normative, LEGACY-RETAINED for
+// `content`-payload shape under `kind = "lift"`) as machine-enforceable
+// contract mementos. These contracts are the source-of-truth that each
+// kit's lift-plugin implementation will bridge to: the Rust CLI dispatches
+// to per-language lift plugins via JSON-RPC over stdio (LSP shape), and
+// every peer plugin must satisfy these protocol-level invariants.
+//
+// Wire protocol-version token: as of `pep/1.7.0` (the Plugin Extension
+// Protocol rename, `protocol/specs/2026-05-12-plugin-protocol.md` §0.4),
+// the canonical EMIT value for the `protocol_version` field is `pep/1.7.0`.
+// During the migration minor version, the legacy token `provekit-lift/1`
+// is ACCEPTED on read with a loud deprecation notice; the NEXT minor
+// version will refuse it. The verifier below implements the accept-set
+// {"provekit-lift/1", "pep/1.7.0"} per plugin-protocol §0.4.
 //
 // Two layers, mirroring the catalog_format.rs convention:
 //
@@ -31,9 +40,12 @@
 // `2026-04-30-lift-plugin-protocol.md`):
 //
 //   C1 lift_plugin_initialize_protocol_version_match
-//        request.protocol_version == "provekit-lift/1" and response
-//        confirms the same value, OR responds PROTOCOL_VERSION_MISMATCH.
-//        Spec lines 64-88.
+//        request.protocol_version is in the accept-set
+//        {"provekit-lift/1", "pep/1.7.0"} and response confirms the same
+//        value, OR responds PROTOCOL_VERSION_MISMATCH. The canonical EMIT
+//        value under pep/1.7.0 is "pep/1.7.0"; the legacy token is
+//        accepted on read during the migration minor version per
+//        2026-05-12-plugin-protocol.md §0.4. Spec lines 64-88.
 //
 //   C2 lift_plugin_initialize_capabilities_populated
 //        response.capabilities.authoring_surfaces is a non-empty array of
@@ -137,7 +149,7 @@ pub fn invariants() {
         ContractArgs {
             pre: Some(eq(
                 ctor1("request_protocol_version", str_const("req")),
-                str_const("provekit-lift/1"),
+                str_const("pep/1.7.0"),
             )),
             post: Some(eq(
                 ctor1(
@@ -334,9 +346,24 @@ pub fn invariants() {
 pub const PROTOCOL_VERSION_MISMATCH_NAME: &str = "PROTOCOL_VERSION_MISMATCH";
 pub const PROTOCOL_VERSION_MISMATCH_CODE: i64 = 1001;
 
-/// The string the spec mandates for the `protocol_version` field of
-/// both the manifest and the `initialize` request/response (line 40, 79).
-pub const PROTOCOL_VERSION_LITERAL: &str = "provekit-lift/1";
+/// The canonical EMIT value for the `protocol_version` field under
+/// `pep/1.7.0` (Plugin Extension Protocol, `2026-05-12-plugin-protocol.md`
+/// §0.4). Producers MUST emit this token; consumers accept this token
+/// PLUS the legacy tokens in `LEGACY_ACCEPTED_PROTOCOL_VERSIONS` for the
+/// migration minor version.
+pub const PROTOCOL_VERSION_LITERAL: &str = "pep/1.7.0";
+
+/// Legacy protocol-version tokens accepted on READ during the migration
+/// minor version per `2026-05-12-plugin-protocol.md` §0.4. The NEXT
+/// minor version of the runtime MUST drop these and accept only
+/// `PROTOCOL_VERSION_LITERAL`.
+pub const LEGACY_ACCEPTED_PROTOCOL_VERSIONS: &[&str] = &["provekit-lift/1"];
+
+/// The full accept-set under the current migration minor version: the
+/// canonical token plus the legacy tokens.
+pub fn is_accepted_protocol_version(v: &str) -> bool {
+    v == PROTOCOL_VERSION_LITERAL || LEGACY_ACCEPTED_PROTOCOL_VERSIONS.contains(&v)
+}
 
 /// Allowed proof-producing `lift` response `kind` values when
 /// `options.layer == "all"`.
@@ -373,10 +400,12 @@ pub fn verify_c1_initialize_protocol_version_match(
         .get("protocol_version")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "request.protocol_version missing or not a string".to_string())?;
-    if req_v != PROTOCOL_VERSION_LITERAL {
+    if !is_accepted_protocol_version(req_v) {
         return Err(format!(
-            "C1 precondition: request.protocol_version is `{}`, expected `{}`",
-            req_v, PROTOCOL_VERSION_LITERAL
+            "C1 precondition: request.protocol_version is `{}`, expected one of {{`{}`}} \
+             (canonical) or {:?} (legacy, accepted during migration window per \
+             2026-05-12-plugin-protocol.md §0.4)",
+            req_v, PROTOCOL_VERSION_LITERAL, LEGACY_ACCEPTED_PROTOCOL_VERSIONS
         ));
     }
 
@@ -758,7 +787,7 @@ mod tests {
     fn good_init_request() -> JsonValue {
         json!({
             "client": {"name": "provekit-cli", "version": "v1.1.0"},
-            "protocol_version": "provekit-lift/1",
+            "protocol_version": "pep/1.7.0",
             "workspace_root": "/abs/path/to/workspace",
             "config_path": ".provekit/config.toml",
         })
@@ -771,7 +800,7 @@ mod tests {
             "result": {
                 "name": "rust-self-contracts",
                 "version": "1.0.0",
-                "protocol_version": "provekit-lift/1",
+                "protocol_version": "pep/1.7.0",
                 "capabilities": {
                     "authoring_surfaces": ["rust-self-contracts", "kani"],
                     "ir_version": "v1.1.0",
@@ -847,6 +876,36 @@ mod tests {
             "error": {
                 "code": PROTOCOL_VERSION_MISMATCH_CODE,
                 "message": "PROTOCOL_VERSION_MISMATCH: client wants provekit-lift/1, plugin has provekit-lift/2",
+            },
+        });
+        verify_c1_initialize_protocol_version_match(&req, &resp).unwrap();
+    }
+
+    #[test]
+    fn c1_holds_on_legacy_protocol_version_in_migration_window() {
+        // The migration minor version accepts both `provekit-lift/1` (legacy)
+        // and `pep/1.7.0` (canonical). A request bearing the legacy token
+        // paired with a response confirming the same legacy token MUST
+        // satisfy C1; the deprecation notice is a sibling memento per
+        // 2026-05-12-plugin-protocol.md §0.4, not a verifier-level reject.
+        let req = json!({
+            "client": {"name": "provekit-cli", "version": "v1.1.0"},
+            "protocol_version": "provekit-lift/1",
+            "workspace_root": "/abs/path/to/workspace",
+            "config_path": ".provekit/config.toml",
+        });
+        let resp = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "name": "rust-self-contracts",
+                "version": "1.0.0",
+                "protocol_version": "provekit-lift/1",
+                "capabilities": {
+                    "authoring_surfaces": ["rust-self-contracts", "kani"],
+                    "ir_version": "v1.1.0",
+                    "emits_signed_mementos": true,
+                },
             },
         });
         verify_c1_initialize_protocol_version_match(&req, &resp).unwrap();

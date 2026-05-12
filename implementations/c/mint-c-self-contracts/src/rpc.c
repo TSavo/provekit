@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * lift-plugin protocol RPC handler. Speaks provekit-lift/1 over NDJSON
+ * lift-plugin protocol RPC handler. Speaks pep/1.7.0 over NDJSON
  * on stdio. Persistent daemon: stays up across multiple lift calls,
  * exits on `shutdown` or stdin EOF.
  *
@@ -199,7 +199,7 @@ static void write_initialize_response(const char *id) {
         "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{"
         "\"name\":\"c-self-contracts\","
         "\"version\":\"1.0.0\","
-        "\"protocol_version\":\"provekit-lift/1\","
+        "\"protocol_version\":\"pep/1.7.0\","
         "\"capabilities\":{"
         "\"authoring_surfaces\":[\"c-self-contracts\"],"
         "\"ir_version\":\"v1.1.0\","

@@ -33,7 +33,7 @@ function runRpc(): void
                     'result' => [
                         'name' => 'php-self-contracts',
                         'version' => '1.0.0',
-                        'protocol_version' => 'provekit-lift/1',
+                        'protocol_version' => 'pep/1.7.0',
                         'capabilities' => [
                             'authoring_surfaces' => ['php-self-contracts'],
                             'ir_version' => 'v1.1.0',

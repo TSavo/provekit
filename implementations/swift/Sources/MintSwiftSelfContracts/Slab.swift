@@ -51,7 +51,7 @@ func swiftSelfContracts() -> [Declaration] {
         outBinding: "out",
         pre: Formula.eq(
             ctor1("request_protocol_version", Term.str("req")),
-            Term.str("provekit-lift/1")
+            Term.str("pep/1.7.0")
         ),
         post: Formula.eq(
             ctor1("response_confirms_protocol_or_errors_mismatch", Term.str("req")),

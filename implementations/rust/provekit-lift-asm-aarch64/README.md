@@ -1,6 +1,6 @@
 # provekit-lift-asm-aarch64
 
-`provekit-lift-asm-aarch64` is the machine-code rung of the ProvekIt lifter family. It speaks the `provekit-lift/1` JSON-RPC protocol over stdin and stdout with `--rpc`, reads AArch64 assembly or object files, recovers a small control-flow term, propagates path weakest preconditions, and emits `FunctionContractMemento` bodies.
+`provekit-lift-asm-aarch64` is the machine-code rung of the ProvekIt lifter family. It speaks the `pep/1.7.0` JSON-RPC protocol over stdin and stdout with `--rpc`, reads AArch64 assembly or object files, recovers a small control-flow term, propagates path weakest preconditions, and emits `FunctionContractMemento` bodies.
 
 The C lifter family works over typed C lvalues and AST walkers. This lifter is one level lower: the input is a flat instruction stream plus labels and branch edges, and the semantic carrier is registers, NZCV flags, and memory.
 

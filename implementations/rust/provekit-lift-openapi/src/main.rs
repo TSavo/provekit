@@ -109,7 +109,7 @@ fn handle_initialize(id: Value, _params: Value) -> Value {
         "result": {
             "name": "openapi",
             "version": "1.0.0",
-            "protocol_version": "provekit-lift/1",
+            "protocol_version": "pep/1.7.0",
             "capabilities": {
                 "authoring_surfaces": ["openapi", "swagger", "protobuf"],
                 "ir_version": "v1.1.0",

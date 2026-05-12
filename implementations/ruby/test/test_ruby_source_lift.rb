@@ -132,7 +132,7 @@ class TestRubySourceLift < Minitest::Test
     result = RubySource.initialize_result
 
     assert_equal "0.1.0-draft", result["version"]
-    assert_equal "provekit-lift/1", result["protocol_version"]
+    assert_equal "pep/1.7.0", result["protocol_version"]
     assert_equal "ruby-source", result["dialect"]
     assert_equal ["ruby-source"], result["capabilities"]["authoring_surfaces"]
     assert_equal false, result["capabilities"]["emits_signed_mementos"]

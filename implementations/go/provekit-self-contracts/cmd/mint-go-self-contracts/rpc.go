@@ -68,7 +68,7 @@ func runRPCMode() {
 				Result: map[string]interface{}{
 					"name":             "go-self-contracts",
 					"version":          "1.0.0",
-					"protocol_version": "provekit-lift/1",
+					"protocol_version": "pep/1.7.0",
 					"capabilities": map[string]interface{}{
 						"authoring_surfaces":    []string{"go-self-contracts"},
 						"ir_version":            "v1.1.0",

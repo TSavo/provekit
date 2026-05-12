@@ -11,7 +11,7 @@ public enum SwiftSourceRPC {
         [
             "name": "provekit-lift-swift-source",
             "version": version,
-            "protocol_version": "provekit-lift/1",
+            "protocol_version": "pep/1.7.0",
             "dialect": surface,
             "capabilities": [
                 "authoring_surfaces": [surface],

@@ -7,7 +7,7 @@
 # (libprovekit-self-contracts.a). Two modes:
 #
 #   ./mint-c-self-contracts [outDir]    standalone CLI
-#   ./mint-c-self-contracts --rpc       provekit-lift/1 daemon over stdio
+#   ./mint-c-self-contracts --rpc       pep/1.7.0 daemon over stdio
 #
 # System dep: libsodium (transitively, via Side B). Hermetic on a C11
 # toolchain + libsodium. BLAKE3 is vendored under tools/blake3-vendored.

@@ -1143,7 +1143,7 @@ static void handle_initialize(const char *id) {
     send_response(id,
         "{\"capabilities\":{\"authoring_surfaces\":[\"c-collectors-defensive\"],"
         "\"emits_signed_mementos\":false,\"ir_version\":\"v1.1.0\"},"
-        "\"name\":\"c-collectors-defensive\",\"protocol_version\":\"provekit-lift/1\","
+        "\"name\":\"c-collectors-defensive\",\"protocol_version\":\"pep/1.7.0\","
         "\"version\":\"0.1.0\"}");
 }
 

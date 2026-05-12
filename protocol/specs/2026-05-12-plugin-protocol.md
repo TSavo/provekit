@@ -56,7 +56,8 @@ A plugin manipulates {terms, contracts, implications}. Sugar dicts render `contr
 
 **Deprecation timeline.** The migration window spans one provekit binary minor version:
 
-- The CURRENT minor version of the provekit binary (the version that ships with this spec) MUST accept both legacy protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`) and `pep/1.7.0` as valid `protocol_versions` values. When a legacy token is accepted, the binary MUST emit a `PluginLoadFailureMemento` with `reason_kind = "deprecated-protocol-identifier"` and `critical = false`, recording the legacy token and the `pep/1.7.0` equivalent. The run proceeds; the failure is a loud deprecation notice, not a refusal.
+- **Acceptance (read side).** The CURRENT minor version of the provekit binary (the version that ships with this spec) MUST accept both legacy protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`) and `pep/1.7.0` as valid `protocol_versions` values. When a legacy token is accepted, the binary MUST emit a `PluginLoadFailureMemento` with `reason_kind = "deprecated-protocol-identifier"` and `critical = false`, recording the legacy token and the `pep/1.7.0` equivalent. The run proceeds; the failure is a loud deprecation notice, not a refusal.
+- **Emission (write side).** The CURRENT minor version of the provekit binary, and EVERY in-tree plugin implementation that emits a `protocol_version` field (manifest TOML, JSON-RPC `describe` response, embedded self-contract literal), MUST emit the single canonical token `pep/1.7.0`. Concretely: emit `"protocol_version": "pep/1.7.0"` for legacy single-token fields, and `"protocol_versions": ["pep/1.7.0"]` for the §1.1 plugin-memento array form. Emitting a legacy token from an in-tree implementation under this spec is a producer-side defect. This keeps the byte-stability invariant (§14) crisp: the single-element array is what consumers content-address against.
 - The NEXT minor version of the provekit binary MUST refuse to load any plugin whose `protocol_versions` array does not contain `pep/1.7.0`. Legacy tokens MUST NOT be accepted. Refusal MUST emit `reason_kind = "refused-legacy-protocol-identifier"`. Producers MUST re-mint mementos against `pep/1.7.0` before the next minor version ships.
 
 Version-bump mechanics for the protocol catalog entry follow `2026-04-30-protocol-versioning.md`.
@@ -140,15 +141,19 @@ Open enum. The following labels are reserved by v1.0.0 of this protocol; their c
 
 | `kind`                | Consumer spec                                                                 | What it carries                                                                                  |
 |-----------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| `agent`               | `2026-04-30-agent-plugin-protocol.md` (content-payload shape; legacy `provekit-agent/1`) | Agent proposals and verification invocations; first legacy kind absorbed into this protocol. |
-| `lift`                | `2026-04-30-lift-plugin-protocol.md` (content-payload shape; legacy `provekit-lift/1`)   | Source-to-IR mint procedures via JSON-RPC over stdio; second legacy kind absorbed into this protocol. |
+| `agent`               | `2026-04-30-agent-plugin-protocol.md` (LEGACY-RETAINED content-payload shape; legacy protocol identifier `provekit-agent/1`) | Agent proposals and verification invocations; first legacy kind absorbed into this protocol. |
+| `lift`                | `2026-04-30-lift-plugin-protocol.md` (LEGACY-RETAINED content-payload shape; legacy protocol identifier `provekit-lift/1`)   | Source-to-IR mint procedures via JSON-RPC over stdio. `lift` is the canonical kind name for source-to-IR plugins under `pep/1.7.0`. The name `lifter` is a DEPRECATED ALIAS retained ONLY for human-readable CLI ergonomics (per §3.1 alias `--lifter <source>` desugars to `--plugin lift:<source>`); the wire `kind` value MUST be `"lift"`. |
 | `sugar`               | `2026-05-12-sugar-dict-memento.md`                                            | Canonical-clause-to-surface-syntax rendering rules; the first consumer of this protocol.         |
 | `loss-function`       | `2026-05-12-loss-function-memento.md`                                         | Scoring algorithms over `loss-record` candidates; the second consumer of this protocol.          |
 | `discharge-backend`   | DEFERRED to follow-up; precedent `2026-04-30-multi-solver-protocol.md`        | Z3 / cvc5 / Vampire / Maude / CeTA / others; one plugin per backend.                             |
-| `lifter`              | DEFERRED; precedent `2026-04-30-lift-plugin-protocol.md`                      | Source-to-IR mint procedure per language or per surface (annotations, docstrings, tests).        |
-| `realizer`            | DEFERRED; precedent `2026-05-06-obligation-realizer-protocol.md`              | Contract-to-discharge-obligation lowering rule.                                                  |
+| `realizer`            | DEFERRED; precedent `2026-05-06-obligation-realizer-protocol.md`              | Per-language contract-to-discharge-obligation lowering rule.                                     |
 | `effect-signature`    | DEFERRED                                                                      | New effect-signature mints; consumed by the algebraic-effects layer.                             |
-| `concept-extension`   | DEFERRED                                                                      | New `concept:*` hub op mints (consumed by `2026-05-15-concept-hub-abstraction-layer.md`).        |
+| `concept-extension`   | DEFERRED; precedent `2026-05-15-concept-hub-abstraction-layer.md`             | New `concept:*` hub op mints.                                                                    |
+| `pattern-predicate`   | DEFERRED; precedent `2026-05-09-pattern-predicate-protocol.md`                | Editorial pattern -> predicate -> witness pipeline registrations (PPP).                          |
+| `bundle-attestation`  | DEFERRED; precedent `2026-05-02-bundle-attestation-protocol.md`               | Signed-bundle attestations for binaries, self-contracts, and catalogs (the kind-literal path).   |
+| `ir-extension`        | DEFERRED; precedent `2026-04-30-ir-extension-protocol.md`                     | IR-name extensions mounted at content-addressed extension points.                                |
+
+The kind enum is OPEN. A `kind` not in this table is an extension label; validators MUST accept it at shape level. The DEFERRED rows reserve the canonical labels under `pep/1.7.0`; their consumer specs MAY be minted under `pep/1.7.x` patch releases (definitional clarifications only) or under `pep/1.8.0` (new normative requirements per §13).
 
 ### §2.2 Kind discipline
 
@@ -473,5 +478,151 @@ A federated discovery service (e.g., a content-addressed plugin index) is antici
 - Cross-runtime portability beyond byte-identical CIDs.
 - Sandboxing of RPC plugin processes.
 - A federated discovery service.
-- Consumer specs for `discharge-backend`, `lifter`, `realizer`, `effect-signature`, and `concept-extension` (deferred follow-ups).
+- Consumer specs for `discharge-backend`, `realizer`, `effect-signature`, `concept-extension`, `pattern-predicate`, `bundle-attestation`, and `ir-extension` (deferred follow-ups; see §13 for the cadence under which they may be minted).
 - An edit to `2026-04-30-protocol-catalog.json` registering this spec's catalog entry (CI mint follow-up).
+
+## §13. Versioning cadence (the "until 1.8" gate)
+
+`pep/1.7.0` is the BLESSED baseline (§14). No additional structural changes ride along with this version. The cadence under which future revisions are permitted is normative:
+
+1. **`pep/1.7.x` patch releases (x >= 1).** Bug fixes only. NO new kinds, NO new normative requirements, NO new sections, NO changes to the wire shape, NO changes to JCS key order, NO changes to the CID construction. A patch release MAY clarify ambiguous prose, fix cross-references, correct typos, or strengthen non-normative examples. A patch release MUST NOT roll the CID of any in-spec example shown in §1.1, §8.1, §9.1, or §14.
+2. **`pep/1.8.0` next minor.** New kinds (graduating any DEFERRED row of §2.1; adding new rows), new sections, new normative requirements all queue here. Consumer specs for `discharge-backend`, `realizer`, `effect-signature`, `concept-extension`, `pattern-predicate`, `bundle-attestation`, and `ir-extension` SHOULD be minted under `pep/1.8.0`. New `kind` labels MUST be added as ordinary §2.1 rows; the kind enum remains open at shape level.
+3. **Backward compatibility (1.8.x reads 1.7.x).** A `pep/1.8.x` runtime MUST load any well-formed `pep/1.7.x` memento. The `pep/1.7.x` -> `pep/1.8.x` upgrade is a non-breaking minor bump.
+4. **Forward compatibility (1.7.x reads 1.8.x) is NOT required.** A `pep/1.7.x` runtime MAY refuse to load a `pep/1.8.x` memento whose `protocol_versions` array does not contain a token the runtime accepts (§5). Producers SHOULD include `pep/1.7.0` in `protocol_versions` for 1.8.x mementos that do not exercise any 1.8.0-introduced field; a 1.8.x memento that exercises a 1.8.0-introduced field MUST omit `pep/1.7.0` so that 1.7.x runtimes refuse rather than silently misparse.
+5. **Major version bumps (`pep/2.0.0` and later).** Mint a new spec at a new file path. CID changes at the spec level; protocol-catalog entry is a new property key, not an in-place edit of `plugin-protocol`'s entry.
+
+This section is the explicit scope-creep gate for v1.7.0. If a substrate-wide audit discovers a missing kind or a missing surface during the 1.7.0 rename, the discovery is FLAGGED for 1.8.0; it is NOT folded into 1.7.0 unless its absence makes the 1.7.0 surface internally incoherent.
+
+## §14. Blessing
+
+### §14.1 The blessing claim
+
+`pep/1.7.0` is the substrate's officially blessed protocol identifier for plugin-protocol mementos AS OF the date in the header of this spec. Blessing is itself a first-class memento per Supra omnia, rectum: a blessed protocol that is not itself a signed content-addressed declaration is just an opinion.
+
+The blessing memento is a `ProtocolBlessingMemento` (CDDL below) signed by the substrate maintainer key (the same Ed25519 provenance key used for `2026-05-06-provenance-memento.md` envelopes; see `reference_provekit_provenance_keys` in the substrate notes for key material location).
+
+### §14.2 `ProtocolBlessingMemento` wire shape (CDDL)
+
+```cddl
+; Locked JCS key order: blessed_at, blessed_protocol_id, blessing_authority,
+; cid, kind, schemaVersion, spec_cid, supersedes
+protocol-blessing-memento = {
+  envelope: {
+    declaredAt: iso8601,
+    signature:  signature,           ; over JCS(header ++ metadata)
+    signer:     pubkey               ; ed25519:<base64> of the blessing authority
+  },
+  header: {
+    blessed_at:           iso8601,   ; when the blessing was issued
+    blessed_protocol_id:  tstr,      ; the canonical protocol-version token being blessed (e.g., "pep/1.7.0")
+    blessing_authority:   tstr,      ; human-readable maintainer identity (e.g., "T Savo / nefariousplan.com")
+    cid:                  cid,       ; DERIVED -- see §14.3
+    kind:                 "protocol-blessing",
+    schemaVersion:        "1",
+    spec_cid:             cid,       ; CID of the spec file this blessing applies to
+    supersedes:           [* tstr]   ; legacy protocol-version tokens this blessing retires
+                                      ; (e.g., ["provekit-agent/1", "provekit-lift/1"])
+  },
+  metadata: {
+    ? note: tstr,                    ; free-form maintainer note, e.g., the cadence statement
+    ? cadence_section_cid: cid       ; CID of the §13 cadence section at blessing time, OMITTED when absent
+  }
+}
+```
+
+### §14.3 Blessing-memento CID
+
+```
+cid_input = JCS({
+  "blessed_at":          <blessed_at>,
+  "blessed_protocol_id": <blessed_protocol_id>,
+  "blessing_authority":  <blessing_authority>,
+  "kind":                "protocol-blessing",
+  "schemaVersion":       "1",
+  "spec_cid":            <spec_cid>,
+  "supersedes":          <supersedes sorted ascending>
+})
+cid = "blake3-512:" ++ hex(BLAKE3-512(cid_input))
+```
+
+### §14.4 Where the blessing memento lives
+
+This spec defines the SHAPE of the blessing memento. The actual signed instance for `pep/1.7.0` is minted in a follow-up CI step and stored at `protocol/blessings/pep-1.7.0.json`. This spec MUST NOT pin a specific hex CID for the blessing memento; the CID is computed from the bytes of the minted instance per §14.3. Verifiers MUST:
+
+1. Locate the blessing memento at the conventional path (`protocol/blessings/<protocol-id>.json` with `/` mapped to `-`).
+2. Verify the Ed25519 signature over `JCS(header ++ metadata)`.
+3. Recompute the CID per §14.3 and compare to the asserted `header.cid`.
+4. Confirm `header.spec_cid` equals the CID of THIS spec file (raw-bytes BLAKE3-512 over the file contents).
+5. Confirm `header.blessed_protocol_id` equals the token the verifier is being asked to bless.
+
+A failed blessing verification is a refuse: the runtime MUST NOT proceed to load plugins under an unverified protocol identifier in strict-mode operations. Non-strict-mode operations MAY warn and proceed.
+
+### §14.5 Blessing scope
+
+The blessing covers the plugin-protocol identifier `pep/1.7.0` and its §13 cadence. Subsequent patch releases (`pep/1.7.x`) inherit the blessing automatically. The next minor release (`pep/1.8.0`) requires a NEW `ProtocolBlessingMemento` minted at the time `pep/1.8.0`'s spec lands; the 1.8.0 blessing memento's `supersedes` array MUST include `pep/1.7.0` (signaling the cadence promotion) but the `pep/1.7.x` mementos MUST remain loadable by 1.8.x runtimes per §13.3.
+
+## §15. Migration trinity-convergence invariant
+
+The 1.7.0 cut is a substrate transformation that MUST preserve convergence on THREE axes simultaneously: bytes, address-space (CIDs of content-addressed artifacts), and concept-space (concept-hub identifiers). Each axis is a separate normative invariant. The three together compose the trinity-convergence guarantee that downstream substrate (FunctionContractMementos, EvidenceMementos, SugarEntries, ConceptSiteMementos, and every other memento that references an identifier rather than carrying inline bytes) MAY depend on across the rename.
+
+### §15.1 Byte-stability invariant (axis 1: bytes)
+
+Across the substrate-wide rename from `provekit-{agent,lift}/1` to `pep/1.7.0` (the 1.7.0 cut), every byte of every plugin memento's `content` payload EXCEPT the protocol-identifier field is preserved exactly. Concretely, for any legacy memento M_legacy with header fields `{content, critical, kind, protocol_versions = ["provekit-agent/1"] | ["provekit-lift/1"], provenance_cid, schemaVersion, version}` and its re-mint M_pep with header fields `{content, critical, kind, protocol_versions = ["pep/1.7.0"], provenance_cid, schemaVersion, version}`:
+
+- `M_legacy.content` is byte-identical to `M_pep.content`.
+- `M_legacy.critical` is byte-identical to `M_pep.critical`.
+- `M_legacy.kind` is byte-identical to `M_pep.kind` (the kind label is unchanged; the kind enum simply gained `agent` and `lift` as canonical first-class entries under `pep/1.7.0`).
+- `M_legacy.provenance_cid` is byte-identical to `M_pep.provenance_cid`.
+- `M_legacy.schemaVersion` is byte-identical to `M_pep.schemaVersion`.
+- `M_legacy.version` is byte-identical to `M_pep.version`.
+
+ONLY `protocol_versions` changes shape (its single element is renamed from the legacy token to `pep/1.7.0`). CID changes are the consequence of that one-field change; no other bytes shift. This is the precise content-addressable claim the rename makes.
+
+### §15.2 Why this matters
+
+The byte-stability invariant is what lets a verifier audit the rename mechanically. The pair `(M_legacy.cid, M_pep.cid)` can be related by a one-field substitution; an attacker cannot smuggle a different content payload through the renaming gate, because the JCS-canonical bytes of every other field are pinned by the legacy CID's content-addressing.
+
+### §15.3 Verification procedure
+
+For any pair `(M_legacy, M_pep)` claimed to be a rename pair:
+
+1. Recompute `M_legacy.cid` from `M_legacy`'s JCS-canonical bytes; confirm equality with the asserted `M_legacy.cid`.
+2. Recompute `M_pep.cid` from `M_pep`'s JCS-canonical bytes; confirm equality with the asserted `M_pep.cid`.
+3. Confirm that the JCS-canonical bytes of `M_legacy` differ from those of `M_pep` ONLY in the `protocol_versions` value position.
+4. Confirm `M_pep.protocol_versions == ["pep/1.7.0"]` exactly.
+5. Confirm `M_legacy.protocol_versions` is a single-element array containing one of `{"provekit-agent/1", "provekit-lift/1"}`.
+
+A pair that fails any check is NOT a valid rename pair; both mementos remain valid content-addresses of their respective bytes, but the "byte-stability rename" claim is REFUTED.
+
+### §15.4 Address-space-stability invariant (axis 2: CIDs)
+
+Across the 1.7.0 cut, all content-addressed identifiers in the substrate that are NOT plugin-protocol mementos MUST retain their existing CIDs. Concretely:
+
+- Every memento under `menagerie/concept-shapes/` (the canonical content-addresses of concept-hub shape mementos) retains its CID. The 1.7.0 cut MUST NOT edit any file in `menagerie/concept-shapes/`.
+- Every `ProvenanceMemento` CID referenced by `header.provenance_cid` is unchanged; the rename does NOT re-mint any provenance memento.
+- Every `EvidenceMemento`, `FunctionContractMemento`, `SugarEntry`, `ConceptSiteMemento`, `LossFunctionMemento`, or other substrate memento outside the plugin-protocol layer retains its CID across the rename.
+- The set of mementos whose CIDs are PERMITTED to change under the 1.7.0 cut is exactly the set of plugin-protocol mementos that flip their `protocol_versions` field; the magnitude of that change is governed by §15.1. No other CID in the substrate may roll as a consequence of this rename.
+
+A verifier auditing the rename MUST be able to confirm that any CID referenced in any non-plugin-protocol memento before the PR merges resolves to byte-identical content after the PR merges.
+
+### §15.5 Concept-space-stability invariant (axis 3: concept hub)
+
+Across the 1.7.0 cut, all `concept:*` hub identifiers in the substrate MUST remain at their existing CIDs. Concretely:
+
+- `concept:option`, `concept:result`, `concept:throw`, `concept:async`, `concept:result-bind`, `concept:option-bind`, and every other published `concept:*` op retain their CIDs.
+- Where a memento payload REFERENCES a concept-CID (e.g., a `FunctionContractMemento.concept` field, an `EvidenceMemento` referencing a `concept:throw` hub op, a `SugarEntry.predicate_pattern` that names `concept:option`, a `ConceptSiteMemento.concept_cid` pointer), that reference's BYTES MUST be byte-identical before and after the rename. The substrate's address-space and concept-space are invariants of this rename; only the protocol-identifier field at the plugin-memento header is permitted to change.
+- Implementers MUST verify, before merging the PR that performs the 1.7.0 cut, that the concept-shape mementos' CIDs are unchanged and that no concept-reference bytes have shifted anywhere in the substrate. The audit is a `git diff menagerie/concept-shapes/` returning empty, plus a substrate-wide `rg 'concept:[a-z][a-z0-9-]+' --type-not binary` whose pre-PR and post-PR outputs differ only in newly-added prose that NAMES concepts (e.g., this spec's §2.1 row for `concept-extension`) and never in concept-CID-bearing bytes inside any memento payload.
+
+### §15.6 Trinity-convergence audit
+
+For the 1.7.0 cut PR, the merge gate is the conjunction of all three axes:
+
+1. **Bytes (§15.1).** Every non-protocol-identifier byte of every plugin memento's `content` payload is preserved exactly; `M_legacy.content == M_pep.content` bit-for-bit, and the same for `critical`, `kind`, `provenance_cid`, `schemaVersion`, `version`.
+2. **Address-space (§15.4).** Every non-plugin-protocol CID in the substrate resolves to byte-identical content before and after the rename; the set of changed CIDs is exactly the set of re-minted plugin-protocol mementos.
+3. **Concept-space (§15.5).** Every `concept:*` hub identifier and every reference-to-concept inside every memento payload is byte-identical before and after.
+
+A PR that fails any of the three is NOT a valid 1.7.0 cut. The rename is irreversible (once mementos ship under `pep/1.7.0`, those CIDs are forever), so the audit is the gate: a failing trinity-convergence check requires the PR to be reworked before merge, not patched after.
+
+### §15.7 Scope of the invariants
+
+The trinity-convergence invariants apply to the v1.7.0 substrate-wide rename ONLY. Subsequent kind-payload shape changes (under `pep/1.8.0` or later) are NOT covered by these invariants; they may legitimately shift bytes of `content`, may re-mint substrate mementos, may roll concept-CIDs per their own normative procedures (and per §13). The invariants exist to bless the 1.7.0 cut precisely because the 1.7.0 cut is structurally trivial on all three axes: the only intended change is a single string-rename at the protocol-identifier field of plugin-protocol mementos.

@@ -17,7 +17,7 @@ def initialize_result() -> dict[str, Any]:
     return {
         "name": "provekit-lift-python-source",
         "version": VERSION,
-        "protocol_version": "provekit-lift/1",
+        "protocol_version": "pep/1.7.0",
         "dialect": SURFACE,
         "capabilities": {
             "authoring_surfaces": [SURFACE],

@@ -328,7 +328,7 @@ fn buildProofEnvelopeSlab(a: std.mem.Allocator) !AuthoredSlab {
 fn buildLiftPluginProtocolSlab(a: std.mem.Allocator) !AuthoredSlab {
     var contracts: std.ArrayList(Decl) = .empty;
 
-    // Protocol-version literal length sanity ("provekit-lift/1" = 15 chars).
+    // Protocol-version literal length sanity ("pep/1.7.0" = 15 chars).
     try contracts.append(a, try constLenGteContract(a, "liftProtocolVersion_min_length", "liftProtocolVersion", 10));
     // The kit's `name` advertised in `initialize` is non-empty.
     try contracts.append(a, try constLenGteContract(a, "kitInitializeName_nonempty", "kitInitializeName", 1));

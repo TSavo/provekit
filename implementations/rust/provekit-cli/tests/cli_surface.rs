@@ -258,7 +258,7 @@ fn lift_identify_only_rejects_non_identity_response() {
 set -euo pipefail
 while IFS= read -r line; do
   if [[ "$line" == *'"method":"initialize"'* ]]; then
-    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"bad-identify","protocol_version":"provekit-lift/1","capabilities":{}}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"bad-identify","protocol_version":"pep/1.7.0","capabilities":{}}}'
   elif [[ "$line" == *'"method":"lift"'* ]]; then
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[],"diagnostics":[]}}'
   elif [[ "$line" == *'"method":"shutdown"'* ]]; then
@@ -317,7 +317,7 @@ fn mint_uses_lift_surface_from_project_config() {
 set -euo pipefail
 while IFS= read -r line; do
   if [[ "$line" == *'"method":"initialize"'* ]]; then
-    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"mint-lift","protocol_version":"provekit-lift/1","capabilities":{}}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"mint-lift","protocol_version":"pep/1.7.0","capabilities":{}}}'
   elif [[ "$line" == *'"method":"lift"'* ]]; then
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"demo.contract","outBinding":"out","post":{"kind":"atomic","name":"demo_true","args":[]}}],"diagnostics":[]}}'
   elif [[ "$line" == *'"method":"shutdown"'* ]]; then
@@ -380,7 +380,7 @@ fn mint_uses_path_document_from_project_config() {
 set -euo pipefail
 while IFS= read -r line; do
   if [[ "$line" == *'"method":"initialize"'* ]]; then
-    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"path-lift","protocol_version":"provekit-lift/1","capabilities":{}}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"path-lift","protocol_version":"pep/1.7.0","capabilities":{}}}'
   elif [[ "$line" == *'"method":"lift"'* ]]; then
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"path.config.contract","outBinding":"out","post":{"kind":"atomic","name":"path_config_true","args":[]}}],"diagnostics":[]}}'
   elif [[ "$line" == *'"method":"shutdown"'* ]]; then

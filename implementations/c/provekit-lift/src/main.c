@@ -202,7 +202,7 @@ static void handle_initialize(const char *id) {
         "\"deprecated\":true,\"emits_signed_mementos\":false,"
         "\"ir_version\":\"v1.1.0\","
         "\"replacement_surfaces\":[\"c-sparse\",\"c-kernel-doc\",\"c-assertions\"]},"
-        "\"name\":\"c-lift-compat\",\"protocol_version\":\"provekit-lift/1\","
+        "\"name\":\"c-lift-compat\",\"protocol_version\":\"pep/1.7.0\","
         "\"version\":\"0.1.0\"}");
 }
 

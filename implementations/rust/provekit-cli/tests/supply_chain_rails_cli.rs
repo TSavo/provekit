@@ -99,7 +99,7 @@ fn package_inspect_reports_npm_identity_and_binary_cid() {
 set -euo pipefail
 while IFS= read -r line; do
   if [[ "$line" == *'"method":"initialize"'* ]]; then
-    printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"name":"npm-test-inspector","version":"0.1.0","protocol_version":"provekit-lift/1","capabilities":{{"authoring_surfaces":["npm-test-inspector"],"ir_version":"v1.1.0","emits_signed_mementos":false,"identify_result_kinds":["package-inspection-document"]}}}}}}'
+    printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"name":"npm-test-inspector","version":"0.1.0","protocol_version":"pep/1.7.0","capabilities":{{"authoring_surfaces":["npm-test-inspector"],"ir_version":"v1.1.0","emits_signed_mementos":false,"identify_result_kinds":["package-inspection-document"]}}}}}}'
   elif [[ "$line" == *'"method":"lift"'* ]]; then
     printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"kind":"package-inspection-document","ecosystem":"npm","package":{{"name":"safe-json","version":"1.4.2"}},"artifact":{{"path":"package.tgz","binaryCid":"{binary_cid}","bytes":18}},"conventionalReceipts":{{"packageIdentity":"green"}},"admission":{{"status":"not-decided","reason":"package identity is not contract admission"}},"diagnostics":[]}}}}'
   elif [[ "$line" == *'"method":"shutdown"'* ]]; then
@@ -157,7 +157,7 @@ fn package_inspect_delegates_to_configured_lifter() {
 set -euo pipefail
 while IFS= read -r line; do
   if [[ "$line" == *'"method":"initialize"'* ]]; then
-    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"custom-supply","version":"0.1.0","protocol_version":"provekit-lift/1","capabilities":{"authoring_surfaces":["custom-supply"],"ir_version":"v1.1.0","emits_signed_mementos":false,"identify_result_kinds":["package-inspection-document"]}}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"custom-supply","version":"0.1.0","protocol_version":"pep/1.7.0","capabilities":{"authoring_surfaces":["custom-supply"],"ir_version":"v1.1.0","emits_signed_mementos":false,"identify_result_kinds":["package-inspection-document"]}}}'
   elif [[ "$line" == *'"method":"lift"'* ]]; then
     if [[ "$line" != *'"layer":"identify-only"'* ]]; then
       printf '%s\n' '{"jsonrpc":"2.0","id":2,"error":{"code":1006,"message":"expected identify-only package inspection"}}'

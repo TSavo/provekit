@@ -368,7 +368,7 @@ module Provekit
           write_rpc(stdout, jsonrpc: "2.0", id: id, result: {
             name: "ruby-self-contracts",
             version: "1.0.0",
-            protocol_version: "provekit-lift/1",
+            protocol_version: "pep/1.7.0",
             capabilities: {
               authoring_surfaces: ["ruby-self-contracts"],
               ir_version: "v1.1.0",
