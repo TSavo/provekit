@@ -1,0 +1,125 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:result->java:sealed-interface",
+    "formals": [
+      "value",
+      "error"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "E",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:result",
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          },
+          {
+            "kind": "var",
+            "name": "error"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "java:sealed-interface",
+        "args": [
+          {
+            "kind": "op",
+            "name": "java:interface-def",
+            "args": [
+              {
+                "kind": "const",
+                "value": "Result<T, E>",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "InterfaceName",
+                  "args": []
+                }
+              },
+              {
+                "kind": "op",
+                "name": "java:permits-clause",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "Success",
+                    "sort": {
+                      "kind": "ctor",
+                      "name": "ClassName",
+                      "args": []
+                    }
+                  },
+                  {
+                    "kind": "const",
+                    "value": "Failure",
+                    "sort": {
+                      "kind": "ctor",
+                      "name": "ClassName",
+                      "args": []
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "op",
+                "name": "java:record-family",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "Success<T, E>(T value)",
+                    "sort": {
+                      "kind": "ctor",
+                      "name": "RecordDef",
+                      "args": []
+                    }
+                  },
+                  {
+                    "kind": "const",
+                    "value": "Failure<T, E>(E error)",
+                    "sort": {
+                      "kind": "ctor",
+                      "name": "RecordDef",
+                      "args": []
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "sealed interface + records replace native sum type: interface declaration with two record implementations replace a single ADT constructor; arms encoded as separate record classes (Success, Failure) instead of named constructors; pattern matching via switch on sealed type (Java 21+) or instanceof + casting (pre-21); exhaustiveness checking is static in Java 21+ but manual in earlier versions; instantiation requires explicit record constructors",
+      "domain_narrowing": "Java 21+ provides static exhaustiveness on sealed types via pattern matching; pre-Java 21 exhaustiveness is not statically enforced; the realization narrows the domain to programs where either (a) target is Java 21+ with pattern matching, or (b) programmer manually checks both arms; programs that omit the check (pre-21) are in the narrowed-out domain",
+      "ub_introduction": "none: records are immutable and enforce initialization of all fields; field access (value() or error()) is always valid; no undefined behaviour",
+      "effect_divergence": "none: records and sealed interfaces introduce no effects",
+      "value_divergence": "Java has no native Result type; the realization introduces a library shape (sealed interface + records); Rust Result<T,E> is language-native; Java programs depend on this library definition; Rust programs depend on built-in type"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:7c0fcb5a3082750ad94ea81f21ece1b3c581fafe165261e2fbf42c9248df054a6d89588670cf38f3d9720f736d81e61399984445f6ecee31c7a100a13b0fe1db",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
