@@ -1899,6 +1899,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-native-surfaces"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-types",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-lift-openapi"
 version = "0.1.0"
 dependencies = [

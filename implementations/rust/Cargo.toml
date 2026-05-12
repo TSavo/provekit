@@ -40,6 +40,7 @@ members = [
     "provekit-lift-evm-bytecode",
     "provekit-lift-openapi",
     "provekit-lift-asm-aarch64",
+    "provekit-lift-native-surfaces",
     "provekit-linker",
     "provekit-lsp",
     "provekit-lsp-rust",
