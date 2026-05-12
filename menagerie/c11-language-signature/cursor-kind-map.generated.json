@@ -1,7 +1,7 @@
 {
   "generated_by": "tools/generate-c11-from-cursorkind.py",
   "source": "tools/c11gen/cxcursorkind-snapshot.h",
-  "signature_cid": "blake3-512:b5ad11779fe86ac7600fd3c4efad91c668505c92e0838d66c581fe52de08057e29b7a1e21885cbb1da695019066d3b0939ccd64ba5ea3de4dd40559d6f3fc801",
+  "signature_cid": "blake3-512:ad093bee1f2ad3ad15fe9e793efcc6ce9dc58138a31502af969bac79a8c81b1066abef449414c78867104188e9177dd51de88ccc2f192013f5c82fe69c1a0066",
   "serializers": [
     {
       "op_name": "c11:skip",
@@ -355,7 +355,7 @@
     },
     {
       "op_name": "c11:source-unit",
-      "op_cid": "blake3-512:be6d948884eb22631fa2d760e04c0ed9170c60d76d3c85dd7fc0e4a67f42c690afda90983cb132ed1aa8e0e399ac22a6bd8c112bc25834b4133879b70088ec2f",
+      "op_cid": "blake3-512:cb52bf6ef47c56b2dffe320ac655a429655336f64177ba62e0437abf92e0528fcd64485378c8a4d920a48b24663ab94a1670bfe19adb8c978199881ac70f7f63",
       "render_template": "<source_bytes_hex>"
     },
     {
