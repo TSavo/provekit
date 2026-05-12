@@ -1,0 +1,107 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:result-bind->java:result-bind-switch",
+    "formals": [
+      "result",
+      "f"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "E",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "U",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:result-bind",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "var",
+            "name": "f"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "java:result-bind-switch",
+        "args": [
+          {
+            "kind": "op",
+            "name": "java:sealed-switch",
+            "args": [
+              {
+                "kind": "var",
+                "name": "result"
+              },
+              {
+                "kind": "op",
+                "name": "java:switch-arm",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "case Result.Success<T,E>(T v) -> f.apply(v)",
+                    "sort": {
+                      "kind": "ctor",
+                      "name": "OkArm",
+                      "args": []
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "op",
+                "name": "java:switch-arm",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "case Result.Failure<T,E>(E e) -> new Result.Failure<>(e)",
+                    "sort": {
+                      "kind": "ctor",
+                      "name": "ErrArm",
+                      "args": []
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "Java has no native monadic bind operator; bind is user-defined; requires Java 21+ sealed-type pattern matching for exhaustiveness; pre-Java-21 requires instanceof checking; bind is a standalone function, not a method on Result type",
+      "domain_narrowing": "realization depends on the sealed-interface Result from PR #694; other Result shapes (Optional-based, exception-based) are narrowed-out; sealed switch requires Java 21+ for static exhaustiveness checking; pre-21 code lacks exhaustiveness enforcement",
+      "ub_introduction": "none: Java has no undefined behavior; sealed switch is exhaustive (compiler-enforced in Java 21+); no memory corruption or undefined state",
+      "effect_divergence": "none: bind is a pure function; f is called at most once (Success branch); no resource acquisition or I/O introduced by bind itself",
+      "value_divergence": "none: bind(Success(v), f) == f.apply(v) and bind(Failure(e), f) == Failure(e) hold exactly; error type E preserved on Failure branch; monadic associativity satisfied"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:982fc28f35b49fd47fece71ae3b9374ccbbfec947802c42182b7b2244b939947f4f5387d9581601b73909d3b5544890c3214d17106d240e3c44756806be5f4dd",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
