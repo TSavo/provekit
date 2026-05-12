@@ -60,7 +60,7 @@ struct StageReport {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum TransportCliError {
+pub enum TransportCliError {
     #[error("Refusal: {0}")]
     Refusal(String),
     #[error("{0}")]
@@ -888,7 +888,7 @@ fn parse_int_params(source: &str, function: &str) -> Option<Vec<String>> {
 /// strings (as written in the source) and return_type is the return type
 /// string.  Falls back to ("i64", "i64") defaults if syn parsing fails or the
 /// function cannot be found.
-fn parse_rust_fn_types(source: &str, function: &str) -> (Vec<String>, String) {
+pub fn parse_rust_fn_types(source: &str, function: &str) -> (Vec<String>, String) {
     let Ok(file) = syn::parse_file(source) else {
         return (Vec::new(), "i64".to_string());
     };
@@ -1247,9 +1247,9 @@ fn emit_annotation_prefix(
 }
 
 #[derive(Debug)]
-pub(crate) struct RealizedSource {
-    pub(crate) extension: &'static str,
-    pub(crate) source: String,
+pub struct RealizedSource {
+    pub extension: &'static str,
+    pub source: String,
 }
 
 /// Public-crate bridge for `cmd_bind`'s canonical-mode path.
@@ -1264,7 +1264,7 @@ pub(crate) struct RealizedSource {
 ///
 /// Returns a `RealizedSource` on success. The `source` field carries the
 /// full target-language snippet including the ORP annotation prefix.
-pub(crate) fn realize_for_bind(
+pub fn realize_for_bind(
     language: &str,
     function: &str,
     params: &[String],
