@@ -218,12 +218,8 @@ fn emit_sig_evidences(
                 let position = format!("param:{param_idx}");
                 let mut ext = BTreeMap::new();
                 ext.insert(
-                    "function_term_cid".to_string(),
-                    serde_json::Value::String(format!(
-                        "{}@{}",
-                        fn_name,
-                        source_path
-                    )),
+                    "function_symbol".to_string(),
+                    serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
                 );
                 ext.insert(
                     "signature_position".to_string(),
@@ -269,12 +265,8 @@ fn emit_sig_evidences(
                 let position = format!("param:{param_idx}");
                 let mut ext = BTreeMap::new();
                 ext.insert(
-                    "function_term_cid".to_string(),
-                    serde_json::Value::String(format!(
-                        "{}@{}",
-                        fn_name,
-                        source_path
-                    )),
+                    "function_symbol".to_string(),
+                    serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
                 );
                 ext.insert(
                     "signature_position".to_string(),
@@ -315,7 +307,7 @@ fn emit_sig_evidences(
     if let Some((formula, type_shape, extra_fields)) = classify_return_type(&sig.output) {
         let mut ext = BTreeMap::new();
         ext.insert(
-            "function_term_cid".to_string(),
+            "function_symbol".to_string(),
             serde_json::Value::String(format!("{}@{}", fn_name, source_path)),
         );
         ext.insert(
@@ -1645,5 +1637,30 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "test.rs");
         assert!(out.evidences.is_empty(), "lift_file must not populate evidences");
+    }
+
+    /// Every evidence carries `function_symbol` (not `function_term_cid`) as a
+    /// plain `name@path` identifier string.  No evidence should have a key
+    /// named `function_term_cid`.
+    #[test]
+    fn sig_evidence_carries_function_symbol_not_cid() {
+        let src = "fn greet(x: u32) -> Option<String> { None }";
+        let (f, bytes) = parse_bytes(src);
+        let out = lift_file_with_sig_evidence(&f, "src/lib.rs", &bytes);
+        assert!(!out.evidences.is_empty(), "expected at least one evidence");
+        for ev in &out.evidences {
+            // Must have function_symbol.
+            let sym = ev
+                .extension_fields
+                .get("function_symbol")
+                .and_then(|v| v.as_str())
+                .expect("evidence must carry function_symbol");
+            assert_eq!(sym, "greet@src/lib.rs", "function_symbol must be name@path");
+            // Must NOT have function_term_cid.
+            assert!(
+                !ev.extension_fields.contains_key("function_term_cid"),
+                "function_term_cid must not appear; use function_symbol"
+            );
+        }
     }
 }
