@@ -786,14 +786,14 @@ fn go_kit_pins_expected_contract_set_cid() {
 /// kit surface, including but not limited to protocol contracts.
 #[cfg(target_os = "linux")]
 const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
-    "blake3-512:eb9979cc46b716217ece7340696ba2d0a97fac61a39f9673a1dfa8e38441737ca6e4dd307e2e1fb404093b98b6b412d1bd51a515e7405282bdd5ad32dff02dc0";
+    "blake3-512:3b41145bf3516b8dd901012a95ceca18f0198eef778ac024ad368a7b856f8f0832791032344ceb588fa65ce80cff942e1ec9c2e354d9b1e5dd6d59d81c524ee6";
 
 /// macOS currently emits the same full Rust self-contract surface CID as Linux.
 /// The pin remains explicit so host drift stays loud instead of silently
 /// weakening the canonical Linux gate.
 #[cfg(not(target_os = "linux"))]
 const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
-    "blake3-512:eb9979cc46b716217ece7340696ba2d0a97fac61a39f9673a1dfa8e38441737ca6e4dd307e2e1fb404093b98b6b412d1bd51a515e7405282bdd5ad32dff02dc0";
+    "blake3-512:3b41145bf3516b8dd901012a95ceca18f0198eef778ac024ad368a7b856f8f0832791032344ceb588fa65ce80cff942e1ec9c2e354d9b1e5dd6d59d81c524ee6";
 
 /// Pinned contractSetCid produced by `--kit=cpp` after routing to the
 /// `cpp-self-contracts` surface (mint_cpp_self_contracts binary, canonical
