@@ -1,6 +1,7 @@
 {
   "kind": "equation",
   "fn_name": "ts:and-to-ite-desugar",
+  "version": "0.1.0-draft",
   "formals": [
     "lhs",
     "rhs"
@@ -49,7 +50,7 @@
           "value": false,
           "sort": {
             "kind": "ctor",
-            "name": "Expr",
+            "name": "Boolean",
             "args": []
           }
         }
@@ -63,5 +64,6 @@
       "status": "discharged",
       "method": "McCarthy short-circuit boolean identity"
     }
-  }
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#equations"
 }

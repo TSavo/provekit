@@ -3,7 +3,7 @@
     "schema_version": "1",
     "protocol": "LSP",
     "kind": "EquationMemento",
-    "fn_name": "ts:or-to-ite-desugar",
+    "fn_name": "ts:and-to-ite-desugar",
     "formals": [
       "lhs",
       "rhs"
@@ -21,7 +21,7 @@
       "kind": "equation",
       "lhs": {
         "kind": "op",
-        "name": "ts:or",
+        "name": "ts:and",
         "args": [
           {
             "kind": "var",
@@ -42,17 +42,17 @@
             "name": "lhs"
           },
           {
-            "kind": "const",
-            "value": true,
-            "sort": {
-              "kind": "ctor",
-              "name": "Expr",
-              "args": []
-            }
-          },
-          {
             "kind": "var",
             "name": "rhs"
+          },
+          {
+            "kind": "const",
+            "value": false,
+            "sort": {
+              "kind": "ctor",
+              "name": "Boolean",
+              "args": []
+            }
           }
         ]
       }
@@ -64,12 +64,13 @@
     "return_sort": {
       "kind": "primitive",
       "name": "Bool"
-    }
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#equations"
   },
-  "cid": "blake3-512:779661d0c76db88bc7bacb26bad9aeff8380c16d43b733aaa2e036311c99b9d84fd3d786021b7ec1d24461081c72410236ddffbf4270cb905cfce10936bced95",
+  "cid": "blake3-512:25deb33508cee2ebdb55467a23ec7efb57c83e8b3ae8a8dd999e954a568e7970d552ee1c6f4ff97e519e8542b2512958242f6cc87cdf48c2f05b67a6de7ac156",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "d1sVY8pgSfwbeU8nnE+0iMBIOF6zCNq+1Qe7uwmyZBFkdGSePTWQjD+F8WDi61Ljgab+40Hl6izHrKvml/+TBg=="
+    "sig_b64": "7Cavy8Fa7AKzQGEFgk5mkCFoWuolVT0a/UIy+vF5HQAaveRtog1e2HmZEWP6w0BC+jKCfRZTCFYK8t2teQHHCA=="
   }
 }

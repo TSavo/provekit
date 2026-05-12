@@ -3,14 +3,14 @@
     "schema_version": "1",
     "protocol": "LSP",
     "kind": "EquationMemento",
-    "fn_name": "ts:and-to-ite-desugar",
+    "fn_name": "c11:or-to-ite-desugar",
     "formals": [
       "lhs",
       "rhs"
     ],
     "formal_sorts": [
-      "blake3-512:779e84f80157e68de7d50854a881a5eb9407d40eb0ded41b42d2b5f810cb8d54c9688272a8f7ea177dc17dfaaeaa81bf88daec963ab634ede71153dd8bca42b0",
-      "blake3-512:779e84f80157e68de7d50854a881a5eb9407d40eb0ded41b42d2b5f810cb8d54c9688272a8f7ea177dc17dfaaeaa81bf88daec963ab634ede71153dd8bca42b0"
+      "blake3-512:42861c5bfe321de3b9635e981bcf05318dfc872419761202b49b7746843924a9061945087b89b5bbac0b03ffbf8199fec7d49c77f95404e93eae138557f1d026",
+      "blake3-512:42861c5bfe321de3b9635e981bcf05318dfc872419761202b49b7746843924a9061945087b89b5bbac0b03ffbf8199fec7d49c77f95404e93eae138557f1d026"
     ],
     "pre": {
       "kind": "atomic",
@@ -21,7 +21,7 @@
       "kind": "equation",
       "lhs": {
         "kind": "op",
-        "name": "ts:and",
+        "name": "c11:or",
         "args": [
           {
             "kind": "var",
@@ -35,24 +35,24 @@
       },
       "rhs": {
         "kind": "op",
-        "name": "ts:ite",
+        "name": "c11:conditional",
         "args": [
           {
             "kind": "var",
             "name": "lhs"
           },
           {
-            "kind": "var",
-            "name": "rhs"
-          },
-          {
             "kind": "const",
-            "value": false,
+            "value": true,
             "sort": {
               "kind": "ctor",
-              "name": "Expr",
+              "name": "Bool",
               "args": []
             }
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
           }
         ]
       }
@@ -66,10 +66,10 @@
       "name": "Bool"
     }
   },
-  "cid": "blake3-512:673fe02c3e31c42a3273fe88787ce2ef3d16f1a5d67f6d5a4a921d47b57f4fdb1fb8b68ddb01f110473bba5a4dd7b62b50258761081ec8315a1f11c67b5d73f7",
+  "cid": "blake3-512:d3c7e8da5d039a3e153262efdcbfd38649618180899ea84a8ded05e453b026b41676600b2e49b2b77f955d0b73247f6b508f60e9fccaa923a069bec8a8638d5b",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "AVQRSSbnYVN+uynQ88/HYUx75Yj3EKAqkyOfNLaX5Rlh7wkX2QHm8vdWbjEE/q9uPftaUuw8539SMI3r3KGXCw=="
+    "sig_b64": "Ddg8KU3qfzJELLupyqVcBnmVIJe6gL66yYLVR3bJ9L2tM8J01W/sOrUb+WLV/Mb9uugunfBoGNQwQLpEQ7QwDQ=="
   }
 }
