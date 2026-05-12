@@ -1,0 +1,67 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:generic-instantiation->python:duck-typing",
+    "formals": [
+      "parametric_def",
+      "type_args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "GenericDef",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfType",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:generic-instantiation",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:duck-typed-call",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "the realization IS the absence of an instantiation: the parametric_def works on any type_args via duck typing; no instantiation site is generated; the type_args annotation (if any, via type hints) is erased at runtime",
+      "domain_narrowing": "type checking occurs at runtime, not at the instantiation site; violations of the type parameter bounds are caught as AttributeError or TypeError at use time, not at the instantiation call"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:a3b0ce27a2775d168b36d1b8d77239989b6e840c2cc2b3eea348d943a64ff467bc2fed39660f2af787f42bdc1be8a004891a8227a4ca0ec9b4e2574ac5caacc8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

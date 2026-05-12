@@ -1,0 +1,58 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:generic-instantiation",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "parametric_def"
+      },
+      {
+        "name": "type_args",
+        "variadic": true
+      }
+    ],
+    "formal_sorts": [
+      "GenericDef",
+      "ListOfType"
+    ],
+    "result_sort": "FnContract",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "parametric_def",
+        "type_args"
+      ],
+      "body": {
+        "kind": "substitute",
+        "target": {
+          "kind": "apply",
+          "fn": "wp_parametric_def",
+          "args": [
+            {
+              "kind": "var",
+              "name": "Q"
+            }
+          ]
+        },
+        "var": "type_params",
+        "term": {
+          "kind": "var",
+          "name": "type_args"
+        }
+      }
+    },
+    "contract_note": "the instantiation has the same operational semantics as parametric_def with type_args substituted for its type parameters, on inputs satisfying the parameters' bounds",
+    "realizations": [
+      "blake3-512:986a78a70e235baa34f03386bf16b5793db024558f5865f2f31cb54854640b103107fc8df11fb47f383f191db9a90905d86d6330b9d22ad31a324afab8156384",
+      "blake3-512:0f095e1f4de6a772d86d5865cc0fd68fd80ccf5502a3eee913a518b2785a1e9abaa1d71e86927889a0da652312289747a4cb0bd131bd3e6efddd451aca0260c7",
+      "blake3-512:a3b0ce27a2775d168b36d1b8d77239989b6e840c2cc2b3eea348d943a64ff467bc2fed39660f2af787f42bdc1be8a004891a8227a4ca0ec9b4e2574ac5caacc8"
+    ]
+  },
+  "cid": "blake3-512:79cf59cd8254794b76fd756da7908315a4e4e0cf3a7fd7ce09b05c1e619e9380c7b7ba78bca06cf5b4deb25197c8f9623c4900feb8dd42306a512a4858463cde",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

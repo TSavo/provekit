@@ -1,0 +1,60 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:dict-lookup-over-mro",
+  "formals": [
+    "type_tag",
+    "method_name"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Type",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Name",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Option<FnContract>",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "dict-lookup-over-mro",
+    "arity": [
+      "Type",
+      "Name"
+    ],
+    "result": "Option<FnContract>",
+    "wp_note": "scan type_tag.__mro__ in order; return the first match for method_name or None; Python MRO resolution = lookup(runtime_type(receiver), method_name) under the MRO axiom",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "type_tag"
+        },
+        {
+          "name": "method_name"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Read"
+      }
+    ]
+  },
+  "locus": "protocol/specs/2026-05-15-concept-hub-abstraction-layer.md#s1.4"
+}

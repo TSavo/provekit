@@ -1,0 +1,164 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:double-dispatch->c11:2d-fn-ptr-table",
+    "formals": [
+      "receiver",
+      "secondary",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:double-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:cast-fn-ptr",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:index",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "concept:index",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "dispatch_table_2d"
+                      },
+                      {
+                        "kind": "op",
+                        "name": "c11:type-tag",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "receiver"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "op",
+                    "name": "c11:type-tag",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "secondary"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "const",
+                "value": "void (*)(void*, void*, ...)",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "TypeExpr"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:cons",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "op",
+                "name": "concept:cons",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": "2D array of void function pointers; table[type_tag(receiver)][type_tag(secondary)] cast to (void (*)(receiver_type, secondary_type, args*)); two indirections plus cast; no source-language equivalent to the double-index-and-cast",
+      "domain_narrowing": "both tag spaces (receiver types and secondary types) are closed at table construction; any type added after construction is out of range",
+      "ub_introduction": "out-of-range type_tag index into either dimension is undefined behavior in C; no bounds check in the generated dispatch"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "dispatch_table_2d_constructed",
+      "args": [
+        {
+          "kind": "var",
+          "name": "dispatch_table_2d"
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:f8ade70d354207e0614c6ac07a6085131db155003bbdb5681c229e96315e79a490348b87348fbfa1e84953cdd4c59c3ba6b6057e6114cd586976dbc9dcde6df0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

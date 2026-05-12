@@ -1,0 +1,68 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:generic-instantiation->c11:macro-expansion",
+    "formals": [
+      "parametric_def",
+      "type_args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "GenericDef",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfType",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:generic-instantiation",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c11:macro-expansion",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": "C has no generic types; the realization is either _Generic macro expansion or X-macro code duplication; neither is a native instantiation; each instantiation is a distinct copy of the code",
+      "domain_narrowing": "type arguments must be expressible as C types known at preprocessing time; type constraints cannot be expressed or checked",
+      "ub_introduction": "macro expansion is textual; ill-typed expansions produce code that compiles but has undefined behavior at runtime if type assumptions are violated"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:986a78a70e235baa34f03386bf16b5793db024558f5865f2f31cb54854640b103107fc8df11fb47f383f191db9a90905d86d6330b9d22ad31a324afab8156384",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

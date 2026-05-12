@@ -1,0 +1,62 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:iterator->python:iter-next-protocol",
+    "formals": [
+      "collection",
+      "state"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Collection",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "IterState",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:iterator",
+        "args": [
+          {
+            "kind": "var",
+            "name": "collection"
+          },
+          {
+            "kind": "var",
+            "name": "state"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:iter-call",
+        "args": [
+          {
+            "kind": "var",
+            "name": "collection"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "near-zero: iter(collection) returns an iterator object implementing __next__(); StopIteration signals exhaustion; the for loop desugars to this; the abstraction IS Python iterator protocol"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:502fb4f7f84133d0bfbf2f82c72532fd31eb7c42f5772057c8a40986d4dea8459c5b5df727cd7197b53d0567ed7edb125147e107a7b3e53b76944da7e6fcad12",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:dynamic-dispatch->python:mro-dict-lookup",
+    "formals": [
+      "receiver",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:dynamic-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:bound-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "op",
+                "name": "concept:dict-lookup-over-mro",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "concept:type-of",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "var",
+                    "name": "method_name"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "name-lookup protocol over a linked list of dicts (__mro__ scan); not a primitive; structurally identical to the abstraction lookup under the MRO-axiom",
+      "domain_narrowing": "outbound only: Python over-delivers runtime mutability of the dispatch table (setattr/delattr/__class__-reassignment); transporting OUT of Python to a vtable-family language narrows to states where the dispatched-upon type is not mutated after construction"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:4218af2e6627d242c10a4764c85c2774ec1e45e2b4b1bba55c54195e9087eac187538df86e289e9712d4ff3583d717d0186f6baf7d04451529eba3b1356b904c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

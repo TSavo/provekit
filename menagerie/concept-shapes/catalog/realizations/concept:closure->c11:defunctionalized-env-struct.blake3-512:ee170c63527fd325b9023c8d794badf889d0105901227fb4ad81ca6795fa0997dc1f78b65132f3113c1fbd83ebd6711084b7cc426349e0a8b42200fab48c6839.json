@@ -1,0 +1,110 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:closure->c11:defunctionalized-env-struct",
+    "formals": [
+      "captured_env",
+      "params",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Env",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfName",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:closure",
+        "args": [
+          {
+            "kind": "var",
+            "name": "captured_env"
+          },
+          {
+            "kind": "var",
+            "name": "params"
+          },
+          {
+            "kind": "var",
+            "name": "body"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c11:struct-literal",
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:addr-of",
+            "args": [
+              {
+                "kind": "op",
+                "name": "c11:function-pointer",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "body_as_fn"
+                  },
+                  {
+                    "kind": "op",
+                    "name": "concept:cons",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "env_ptr"
+                      },
+                      {
+                        "kind": "var",
+                        "name": "params"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "c11:heap-alloc",
+            "args": [
+              {
+                "kind": "var",
+                "name": "captured_env"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": "defunctionalization: body becomes a named function with an explicit env-struct pointer as extra first argument; captured_env becomes a malloc'd struct; calling the closure = calling the function with the env pointer prepended; no first-class function type in C",
+      "ub_introduction": "use-after-free if the env-struct pointer outlives the heap allocation; aliasing through the env pointer introduces C11 aliasing hazards if captured vars are also accessible by name in the caller scope",
+      "effect_divergence": "heap allocation for the environment struct when the closure outlives the stack frame; absent when proven stack-lifetime (the stack-env sub-realization)"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:ee170c63527fd325b9023c8d794badf889d0105901227fb4ad81ca6795fa0997dc1f78b65132f3113c1fbd83ebd6711084b7cc426349e0a8b42200fab48c6839",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

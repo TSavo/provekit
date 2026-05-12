@@ -1,0 +1,88 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:iterator->c11:hand-rolled-cursor",
+    "formals": [
+      "collection",
+      "state"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Collection",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "IterState",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:iterator",
+        "args": [
+          {
+            "kind": "var",
+            "name": "collection"
+          },
+          {
+            "kind": "var",
+            "name": "state"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c11:struct-literal",
+        "args": [
+          {
+            "kind": "const",
+            "value": "0",
+            "sort": {
+              "kind": "primitive",
+              "name": "Int"
+            }
+          },
+          {
+            "kind": "op",
+            "name": "c11:array-length",
+            "args": [
+              {
+                "kind": "var",
+                "name": "collection"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "c11:addr-of",
+            "args": [
+              {
+                "kind": "var",
+                "name": "collection"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": "hand-rolled struct { int index; int length; T* data }; next() is index++; exhausted() is index >= length; no protocol; each collection type needs its own cursor type",
+      "domain_narrowing": "infinite or lazy collections cannot be represented; the length must be known at iteration start; linked lists and tree structures require different cursor implementations",
+      "ub_introduction": "advancing the cursor past the length and dereferencing is undefined behavior; no bounds check unless explicitly written"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:48ada45a626fa3a702d1d16f5cdb7b5c328a5a5e82deb2df61bc1f7f9e4cdfdb38fbd604208df3a1ad3aef187d6eba1a1124ab865b84f8199ad2130486416a05",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

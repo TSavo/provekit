@@ -1,0 +1,171 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:double-dispatch->jvm:visitor-itab-pair",
+    "formals": [
+      "receiver",
+      "secondary",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:double-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "secondary"
+              },
+              {
+                "kind": "op",
+                "name": "c11:concat-name",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "visit_",
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "Name"
+                    }
+                  },
+                  {
+                    "kind": "op",
+                    "name": "concept:type-of",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "secondary"
+              },
+              {
+                "kind": "var",
+                "name": "args"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:cons",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "op",
+                "name": "concept:cons",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "fresh Visitable interface + fresh Visitor interface with one visit_T method per concrete receiver type; two invokeinterface (itab) dispatches in sequence (accept then visit_T); the visitor pattern is the Java idiom for double dispatch",
+      "domain_narrowing": "the visitable and visitor type sets are fixed at interface declaration; open extensibility of either type set requires re-opening the interface"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "connective",
+      "op": "and",
+      "operands": [
+        {
+          "kind": "atomic",
+          "name": "implements_visitable",
+          "args": [
+            {
+              "kind": "var",
+              "name": "receiver"
+            }
+          ]
+        },
+        {
+          "kind": "atomic",
+          "name": "implements_visitor",
+          "args": [
+            {
+              "kind": "var",
+              "name": "secondary"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:14a6a938cdab1efebf55cd4c9aa913cd559bd7f8788cada93aa1ac89828f77a7ada02ebeea5bd6534d1c81c51b234a5fc032abc0bc8dc1355eb5151d9f0a994c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

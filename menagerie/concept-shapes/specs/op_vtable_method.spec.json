@@ -1,0 +1,106 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:vtable-method",
+  "formals": [
+    "vtable_ptr",
+    "method_index",
+    "receiver",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "VTablePtr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "ListOfExpr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FnContract",
+    "args": []
+  },
+  "pre": {
+    "kind": "connective",
+    "op": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "valid_vtable",
+        "args": [
+          {
+            "kind": "var",
+            "name": "vtable_ptr"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "in_range",
+        "args": [
+          {
+            "kind": "var",
+            "name": "method_index"
+          },
+          {
+            "kind": "var",
+            "name": "vtable_ptr"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "vtable-method",
+    "arity": [
+      "VTablePtr",
+      "Int",
+      "Expr",
+      "ListOf<Expr>"
+    ],
+    "result": "FnContract",
+    "wp_note": "the method at compile-time-fixed offset method_index in the vtable; C realization target for concept:dynamic-dispatch",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "vtable_ptr"
+        },
+        {
+          "name": "method_index"
+        },
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "args",
+          "variadic": true
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
+  },
+  "locus": "protocol/specs/2026-05-15-concept-hub-abstraction-layer.md#s1.4"
+}

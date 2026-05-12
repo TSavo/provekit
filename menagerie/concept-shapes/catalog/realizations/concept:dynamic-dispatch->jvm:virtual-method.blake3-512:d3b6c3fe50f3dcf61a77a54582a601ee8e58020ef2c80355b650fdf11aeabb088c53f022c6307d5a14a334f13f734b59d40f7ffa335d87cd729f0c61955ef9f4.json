@@ -1,0 +1,119 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:dynamic-dispatch->jvm:virtual-method",
+    "formals": [
+      "receiver",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:dynamic-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "var",
+                "name": "method_name"
+              },
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "var",
+                "name": "args"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:cons",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "var",
+                "name": "args"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "near-first-class: invokevirtual / invokeinterface; barely a desugaring; the JVM dispatch IS the lookup",
+      "domain_narrowing": "method_name must resolve to a non-final, non-static, non-private method on the receiver class hierarchy; final/sealed/static/private methods are statically bound and require a different realization"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "virtually_dispatched",
+      "args": [
+        {
+          "kind": "var",
+          "name": "method_name"
+        },
+        {
+          "kind": "var",
+          "name": "receiver"
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:d3b6c3fe50f3dcf61a77a54582a601ee8e58020ef2c80355b650fdf11aeabb088c53f022c6307d5a14a334f13f734b59d40f7ffa335d87cd729f0c61955ef9f4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

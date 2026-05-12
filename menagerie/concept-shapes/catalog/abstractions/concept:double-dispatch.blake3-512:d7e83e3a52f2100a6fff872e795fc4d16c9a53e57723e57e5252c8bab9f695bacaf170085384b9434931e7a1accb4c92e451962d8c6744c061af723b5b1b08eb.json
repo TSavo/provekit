@@ -1,0 +1,85 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:double-dispatch",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "receiver"
+      },
+      {
+        "name": "secondary"
+      },
+      {
+        "name": "method_name"
+      },
+      {
+        "name": "args",
+        "variadic": true
+      }
+    ],
+    "formal_sorts": [
+      "Value",
+      "Value",
+      "Name",
+      "ListOfValue"
+    ],
+    "result_sort": "Value",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "receiver",
+        "secondary",
+        "method_name",
+        "args"
+      ],
+      "body": {
+        "kind": "skolem",
+        "predicate": "double_dispatch",
+        "args": [
+          {
+            "kind": "op",
+            "name": "runtime_type",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "runtime_type",
+            "args": [
+              {
+                "kind": "var",
+                "name": "secondary"
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ],
+        "note": "conjunction-of-guarded-clauses: type(receiver)=X and type(secondary)=Y implies result = f_XY(receiver, secondary, args)"
+      }
+    },
+    "contract_note": "for each (X,Y) pair in the dispatch table: if type(receiver)=X and type(secondary)=Y then the result equals f_XY(receiver, secondary, args)",
+    "realizations": [
+      "blake3-512:f8ade70d354207e0614c6ac07a6085131db155003bbdb5681c229e96315e79a490348b87348fbfa1e84953cdd4c59c3ba6b6057e6114cd586976dbc9dcde6df0",
+      "blake3-512:14a6a938cdab1efebf55cd4c9aa913cd559bd7f8788cada93aa1ac89828f77a7ada02ebeea5bd6534d1c81c51b234a5fc032abc0bc8dc1355eb5151d9f0a994c",
+      "blake3-512:489a9e69cf7c91027a66ef081d480827a1f087c5f31318b28560e28ef80a215bce4d65f1ea5e177607b3efd5d04375f991e57b595926aec0161e21cc510b9fa1"
+    ]
+  },
+  "cid": "blake3-512:d7e83e3a52f2100a6fff872e795fc4d16c9a53e57723e57e5252c8bab9f695bacaf170085384b9434931e7a1accb4c92e451962d8c6744c061af723b5b1b08eb",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

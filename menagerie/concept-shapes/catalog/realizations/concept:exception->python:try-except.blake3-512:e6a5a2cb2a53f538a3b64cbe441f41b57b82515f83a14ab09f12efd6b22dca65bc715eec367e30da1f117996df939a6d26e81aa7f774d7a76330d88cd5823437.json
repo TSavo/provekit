@@ -1,0 +1,76 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:exception->python:try-except",
+    "formals": [
+      "try_body",
+      "handlers",
+      "throw_payload"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfHandler",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:exception",
+        "args": [
+          {
+            "kind": "var",
+            "name": "try_body"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          },
+          {
+            "kind": "var",
+            "name": "throw_payload"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:try-except",
+        "args": [
+          {
+            "kind": "var",
+            "name": "try_body"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "near-zero: python:try/except IS the concept; the realization is the identity map"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:e6a5a2cb2a53f538a3b64cbe441f41b57b82515f83a14ab09f12efd6b22dca65bc715eec367e30da1f117996df939a6d26e81aa7f774d7a76330d88cd5823437",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

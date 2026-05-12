@@ -1,0 +1,80 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:closure->python:native-closure",
+    "formals": [
+      "captured_env",
+      "params",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Env",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfName",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:closure",
+        "args": [
+          {
+            "kind": "var",
+            "name": "captured_env"
+          },
+          {
+            "kind": "var",
+            "name": "params"
+          },
+          {
+            "kind": "var",
+            "name": "body"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:lambda-or-def",
+        "args": [
+          {
+            "kind": "var",
+            "name": "params"
+          },
+          {
+            "kind": "var",
+            "name": "body"
+          },
+          {
+            "kind": "var",
+            "name": "captured_env"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "near-zero: a Python lambda or nested def IS the concept:closure; the realization is the identity map for captured_env (Python cell objects handle capture automatically)"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:dfeef82ba1f4cd3d9e87de7767cccb805ad9aca81099a6ba7090c001cdd7e700786746dd17718db9cb75402cf1e096edc91ecb1f2b248aa3bd7164b74120ba1c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

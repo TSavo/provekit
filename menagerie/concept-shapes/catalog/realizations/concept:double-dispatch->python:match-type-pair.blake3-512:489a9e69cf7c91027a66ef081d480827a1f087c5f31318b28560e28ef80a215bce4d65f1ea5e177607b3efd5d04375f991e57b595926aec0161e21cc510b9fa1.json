@@ -1,0 +1,113 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:double-dispatch->python:match-type-pair",
+    "formals": [
+      "receiver",
+      "secondary",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:double-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:match",
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:tuple",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  }
+                ]
+              },
+              {
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "const",
+            "value": "guarded_clauses_from_contract",
+            "sort": {
+              "kind": "primitive",
+              "name": "MatchArms"
+            }
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "match (type(receiver), type(secondary)) with one case arm per (X,Y) pair from the contract guarded clauses; method_name string becomes case arm selection; near-identity to the contract",
+      "domain_narrowing": "fallthrough to TypeError for unmatched (X,Y) pair; narrows the open Python dispatch domain to the explicitly enumerated pairs in the match"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:489a9e69cf7c91027a66ef081d480827a1f087c5f31318b28560e28ef80a215bce4d65f1ea5e177607b3efd5d04375f991e57b595926aec0161e21cc510b9fa1",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

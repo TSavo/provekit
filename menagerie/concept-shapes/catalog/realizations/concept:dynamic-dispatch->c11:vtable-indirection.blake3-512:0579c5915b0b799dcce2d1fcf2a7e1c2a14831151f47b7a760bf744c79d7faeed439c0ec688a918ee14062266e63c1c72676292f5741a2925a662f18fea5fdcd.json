@@ -1,0 +1,133 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:dynamic-dispatch->c11:vtable-indirection",
+    "formals": [
+      "receiver",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:dynamic-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:member",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:deref",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "concept:member",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      },
+                      {
+                        "kind": "const",
+                        "value": "vtbl",
+                        "sort": {
+                          "kind": "primitive",
+                          "name": "FieldName"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "method_name"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:cons",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "var",
+                "name": "args"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c11",
+    "loss_record": {
+      "structural_divergence": "open-coded pointer chain (deref vtbl field, index by compile-time-fixed offset, fn-ptr call); not a dispatch primitive; the abstraction lookup is by name, the realization offset is fixed at link time",
+      "domain_narrowing": "dispatch table for runtime_type(receiver) must be fixed at compile or link time; runtime table mutation is not supportable in this realization"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "dispatch_table_fixed_at_compile_time",
+      "args": [
+        {
+          "kind": "op",
+          "name": "runtime_type",
+          "args": [
+            {
+              "kind": "var",
+              "name": "receiver"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:0579c5915b0b799dcce2d1fcf2a7e1c2a14831151f47b7a760bf744c79d7faeed439c0ec688a918ee14062266e63c1c72676292f5741a2925a662f18fea5fdcd",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

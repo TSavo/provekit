@@ -1,0 +1,73 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:generic-instantiation->jvm:type-erasure",
+    "formals": [
+      "parametric_def",
+      "type_args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "GenericDef",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfType",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:generic-instantiation",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "jvm:type-erasure-with-casts",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "op",
+            "name": "jvm:erase-to-bounds",
+            "args": [
+              {
+                "kind": "var",
+                "name": "type_args"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "type parameters are erased to their bounds (Object by default) at bytecode level; casts inserted at use sites by the compiler; no runtime type information for type parameters",
+      "domain_narrowing": "cannot create arrays of a generic type; cannot use instanceof with a type parameter; reified generics require a Class<T> token workaround; two instantiations of the same generic produce identical bytecode"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:0f095e1f4de6a772d86d5865cc0fd68fd80ccf5502a3eee913a518b2785a1e9abaa1d71e86927889a0da652312289747a4cb0bd131bd3e6efddd451aca0260c7",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:reference->python:name-binding",
+    "formals": [
+      "referent_var"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "LValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:reference",
+        "args": [
+          {
+            "kind": "var",
+            "name": "referent_var"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:name-binding",
+        "args": [
+          {
+            "kind": "var",
+            "name": "referent_var"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "near-zero: Python names are references to objects; assigning one name to another makes both reference the same object; the abstraction IS Python default semantics",
+      "domain_narrowing": "immutable objects (int, str, tuple, frozenset) cannot be mutated through the reference; concept:reference over an immutable type narrows to read-only aliasing"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:b291a6706a68db96e3e8696fa95def89b4da29617d1aa3a92ddcbeebd6d3a17adcfeeb3a053272acb116f3cccd0830c27adb6e2f1af06e1b52c50819b556338f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

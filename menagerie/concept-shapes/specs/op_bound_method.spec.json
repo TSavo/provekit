@@ -1,0 +1,55 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:bound-method",
+  "formals": [
+    "receiver",
+    "method"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "FnContract",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FnContract",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "bound-method",
+    "arity": [
+      "Expr",
+      "FnContract"
+    ],
+    "result": "FnContract",
+    "wp_note": "bind receiver as the first argument of method; calling the result equals calling method with receiver prepended",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "method"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "protocol/specs/2026-05-15-concept-hub-abstraction-layer.md#s1.4"
+}

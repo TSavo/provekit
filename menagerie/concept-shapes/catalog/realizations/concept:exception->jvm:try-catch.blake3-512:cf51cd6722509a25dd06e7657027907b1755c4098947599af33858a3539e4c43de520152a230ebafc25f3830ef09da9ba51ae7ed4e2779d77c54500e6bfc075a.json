@@ -1,0 +1,77 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:exception->jvm:try-catch",
+    "formals": [
+      "try_body",
+      "handlers",
+      "throw_payload"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfHandler",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:exception",
+        "args": [
+          {
+            "kind": "var",
+            "name": "try_body"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          },
+          {
+            "kind": "var",
+            "name": "throw_payload"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "jvm:try-catch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "try_body"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "near-first-class: jvm:try-catch / throw; the realization IS the abstraction",
+      "domain_narrowing": "checked exceptions (throws declarations on methods): a source program that throws an exception not declared in the method signature requires either declaring it or wrapping in RuntimeException"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:cf51cd6722509a25dd06e7657027907b1755c4098947599af33858a3539e4c43de520152a230ebafc25f3830ef09da9ba51ae7ed4e2779d77c54500e6bfc075a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

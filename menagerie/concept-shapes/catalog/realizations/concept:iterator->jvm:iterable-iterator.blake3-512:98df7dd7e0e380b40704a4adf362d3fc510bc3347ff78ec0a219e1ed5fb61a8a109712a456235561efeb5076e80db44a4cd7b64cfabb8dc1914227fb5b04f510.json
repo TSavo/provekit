@@ -1,0 +1,81 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:iterator->jvm:iterable-iterator",
+    "formals": [
+      "collection",
+      "state"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Collection",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "IterState",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:iterator",
+        "args": [
+          {
+            "kind": "var",
+            "name": "collection"
+          },
+          {
+            "kind": "var",
+            "name": "state"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "jvm:invoke-interface",
+        "args": [
+          {
+            "kind": "const",
+            "value": "java.lang.Iterable.iterator",
+            "sort": {
+              "kind": "primitive",
+              "name": "MethodRef"
+            }
+          },
+          {
+            "kind": "var",
+            "name": "collection"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "near-first-class: java.lang.Iterable/Iterator with hasNext()/next(); the for-each loop desugars to this; structural_divergence low",
+      "domain_narrowing": "the collection type must implement java.lang.Iterable; primitive arrays use a special index-loop realization; the Iterator protocol is stateful and not re-entrant"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "implements_iterable",
+      "args": [
+        {
+          "kind": "var",
+          "name": "collection"
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:98df7dd7e0e380b40704a4adf362d3fc510bc3347ff78ec0a219e1ed5fb61a8a109712a456235561efeb5076e80db44a4cd7b64cfabb8dc1914227fb5b04f510",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
