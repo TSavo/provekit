@@ -1,0 +1,36 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:unit->c:void",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:unit",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c:void",
+        "args": []
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c",
+    "loss_record": {
+      "structural_divergence": "void replaces native unit type: C void is a no-type fiction that cannot be instantiated as a value; the abstraction permits unit as a first-class type; C forbids void by-value semantics; workaround: wrapper struct or sentinel-based convention",
+      "domain_narrowing": "C cannot pass or return void by value; programs must wrap the realization in struct or use function-call convention; the abstraction's direct unit values narrow to wrapped or indirect patterns in C",
+      "ub_introduction": "none; void is not UB, only semantically empty"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:81a0768500e90ab20804296d5ab7b91d70c7378840fd949552c7b0f964a168e7c1594b2f88a06c9cf8b029b6fb6de517c886345019941c3a16067397a725a182",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

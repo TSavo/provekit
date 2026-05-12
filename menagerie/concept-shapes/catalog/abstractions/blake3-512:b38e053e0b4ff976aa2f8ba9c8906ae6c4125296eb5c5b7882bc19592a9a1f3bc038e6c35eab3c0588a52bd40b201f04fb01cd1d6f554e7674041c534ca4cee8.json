@@ -1,0 +1,29 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:unit",
+    "tier": "abstraction",
+    "slots": [],
+    "formal_sorts": [],
+    "result_sort": "Unit",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [],
+      "body": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    },
+    "contract_note": "unit_inhabitant holds unconditionally; the unit type has exactly one inhabitant. All values of type unit are identical by construction.",
+    "realizations": [
+      "blake3-512:81a0768500e90ab20804296d5ab7b91d70c7378840fd949552c7b0f964a168e7c1594b2f88a06c9cf8b029b6fb6de517c886345019941c3a16067397a725a182"
+    ]
+  },
+  "cid": "blake3-512:b38e053e0b4ff976aa2f8ba9c8906ae6c4125296eb5c5b7882bc19592a9a1f3bc038e6c35eab3c0588a52bd40b201f04fb01cd1d6f554e7674041c534ca4cee8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
