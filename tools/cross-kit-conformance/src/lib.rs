@@ -1792,6 +1792,10 @@ default:
 fn java_classpath() -> Result<String> {
     let root = repo_root();
     let java_root = root.join("implementations/java");
+    // Use `install` (not `package`) so provekit-ir lands in ~/.m2 before the
+    // dependency:build-classpath step resolves provekit-claim-envelope's deps.
+    // `package` only writes to target/; Maven Central lookup then fails with a
+    // cached-resolution error because provekit-ir is not published there.
     let package_cmd = vec![
         "mvn".to_string(),
         "-q".to_string(),
@@ -1800,7 +1804,7 @@ fn java_classpath() -> Result<String> {
         "-pl".to_string(),
         "provekit-ir,provekit-claim-envelope".to_string(),
         "-am".to_string(),
-        "package".to_string(),
+        "install".to_string(),
         "-DskipTests".to_string(),
     ];
     let p = run_cmd(&package_cmd, &root, Duration::from_secs(180));
