@@ -23,14 +23,9 @@
       "kind": "contract-renaming-morphism",
       "source_contract_cid": "blake3-512:b9d9027b698b8dfd4dd405df747cb891594bcb78d5c8529259bc5026eade633e962003c2b340caf0194296e893953c8eaa805de5146e2ff229e7adc1ac1c540f",
       "target_shape_cid": "blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4",
-      "renaming_map": {
-        "lhs": "lhs",
-        "rhs": "rhs"
-      },
+      "renaming_map": {},
       "representation_map": {},
-      "operator_map": {
-        "eq": "eq"
-      },
+      "operator_map": {},
       "literal_map": {},
       "homomorphism_obligation": {
         "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
@@ -52,10 +47,10 @@
       "blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4"
     ]
   },
-  "cid": "blake3-512:9fc82534d0412744f4f03bd619d8ed26206a016eccf20129f94fec2b11b57e2f5e264c7633659532601cdd1fcac169d9098bf86d5edaf3fa71bff19d416b3bb1",
+  "cid": "blake3-512:95fc6d03c219e551b323768ce0ab6da82cf715df2e24fb6cfe4614d6d731c73d71c0b05b6fc743ae09555eb7059a897ee24789e5835cc5c888581efb76308fdc",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "6weUuX1cCd0gsGbmsXykF0Smc6ev8AJ4f4r0lUAvTWkq+wtJbRNeUvUSPAMAy4h+UaLDy01eU+3xMy41H8qnCQ=="
+    "sig_b64": "d44oENGR4s4QSoIXKwqO64cGqgt5rS+93ggxVuqsYjNnvRcmPMIOtoYSu+EylV9et36kKdYjqyBWc7S34SzNCA=="
   }
 }

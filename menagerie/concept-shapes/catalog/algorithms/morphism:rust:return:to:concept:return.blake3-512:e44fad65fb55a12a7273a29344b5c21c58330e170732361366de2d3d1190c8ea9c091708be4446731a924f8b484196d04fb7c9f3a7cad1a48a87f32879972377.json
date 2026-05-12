@@ -22,19 +22,15 @@
     "post": {
       "kind": "contract-renaming-morphism",
       "source_contract_cid": "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6",
-      "target_shape_cid": "blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607",
-      "renaming_map": {
-        "value": "value"
-      },
+      "target_shape_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db",
+      "renaming_map": {},
       "representation_map": {},
-      "operator_map": {
-        "return": "return"
-      },
+      "operator_map": {},
       "literal_map": {},
       "homomorphism_obligation": {
-        "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+        "kind": "structural-effect-subset",
         "source": "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6",
-        "target": "blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607"
+        "target": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
       }
     },
     "effects": {
@@ -48,13 +44,13 @@
     },
     "input_cids": [
       "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6",
-      "blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607"
+      "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
     ]
   },
-  "cid": "blake3-512:c8cf99d11d38f448eb9446b796169595f0f6cc16b5299b511eac9d17e36c6297ae56cc5ab6861bfd93535daf16444e55dabbc07467e3a9f91b6874da437de3f2",
+  "cid": "blake3-512:e44fad65fb55a12a7273a29344b5c21c58330e170732361366de2d3d1190c8ea9c091708be4446731a924f8b484196d04fb7c9f3a7cad1a48a87f32879972377",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "87HNFu4gl9tgCQ8HX/YoO1+GXyxjX1s3I95DIB2C7x5IHqpyo92kYvT7UNznoPypG/iC3J9Onc4KNTfbIn54BA=="
+    "sig_b64": "h/94l9HnPv8FoK2cAmcp1FYz+yCg1l5lR5/tDZ7inwUdu8AsVVoFL2f96XNj+McBjPtQsFo58vdOOW1pkPhdDA=="
   }
 }

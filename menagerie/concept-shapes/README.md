@@ -12,11 +12,7 @@ The CID space is treated as a self-organizing map, a Kohonen map without loss. T
 
 | Concept | Shape CID | Realizations | Discharged Morphisms |
 | --- | --- | --- | --- |
-| `concept:conditional` | `blake3-512:ac86327e234d9790de2715e212b12aeb0af6e7a0a83c1db0611d14d1bd0bff5acf0ee5a29c04ead1220ed1e938ae9b04aa57139771828e3ade83b6c39a1cf7ba` | C11, Rust | morphism_c11_if_to_conditional, morphism_rust_if_to_conditional |
-| `concept:seq` | `blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3` | C11, Rust | morphism_c11_seq_to_seq, morphism_rust_seq_to_seq |
-| `concept:return` | `blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607` | C11, Rust | morphism_c11_return_to_return, morphism_rust_return_to_return |
-| `concept:eq` | `blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4` | C11, Rust | morphism_c11_eq_to_eq, morphism_rust_eq_to_eq |
-| `concept:skip` | `blake3-512:919a20906437f5ac7d4b389a8ddb22ac69112f4ba0aa2ae396ee41e591f3518aae4d4d2dbb4008e183b665e3d0f23ebfdce650ec15b9b0568532d6376757e1e5` | C11, Rust | morphism_c11_skip_to_skip, morphism_rust_skip_to_skip |
+
 | `allocate-or-bail` | `blake3-512:74c5dbb37b69436b3dc186628326b52f4a000421e1385cba8bc52f477609d5f4ad273e852b2a45ad7a1ade8ef4f54db0b690e6a233847499736927967d17330c` | C, Rust | morphism_c_allocate_or_bail_to_shape, morphism_rust_allocate_or_bail_to_shape |
 | `check-bounds-then-access` | `blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f` | C, Rust | morphism_c_check_bounds_then_access_to_shape, morphism_rust_check_bounds_then_access_to_shape |
 | `acquire-use-release` | `blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4` | C, Rust | morphism_c_acquire_use_release_to_shape, morphism_rust_acquire_use_release_to_shape |
@@ -27,46 +23,6 @@ The CID space is treated as a self-organizing map, a Kohonen map without loss. T
 ## Primitive Operation Hubs
 
 These are primitive operation concept nodes, not idiom shapes. They are the minimal hub used by `provekit transport` for the C-to-Rust `foo` path.
-
-### concept:conditional
-
-- Shape: `blake3-512:ac86327e234d9790de2715e212b12aeb0af6e7a0a83c1db0611d14d1bd0bff5acf0ee5a29c04ead1220ed1e938ae9b04aa57139771828e3ade83b6c39a1cf7ba`
-- C11 morphism: `blake3-512:4066b9e065db4afb25b66d966cde8fe522698117950c76f460213fe80ee3609f7bb2193b9ae9921d6c1b0530ac9e9920d133892822f5d1c3fce44ef707fe2983`
-- C11 receipt: `blake3-512:4df172b7abbc68b016cb720d0610f9e9f491038064511f76002968db0d183be9af4d2244c5285ce04980e3354f2edf9521523ca45ad42f3b30b7690ea51b5d9e`
-- Rust morphism: `blake3-512:f8e2d1629e7881ab250be766a445634ad5dd95d72dc6cacb0e4d83c32a8ab702cfffc77e8adffe6104577d61fab9c52cba87c8c85cc8509a092f94df6621c6ea`
-- Rust receipt: `blake3-512:93da5ffe4ac9b0db94512a6fcf9e5278930c5b2df4f4153d083302cb50f49aab32c2d4a4a4ae66f66b57f8fc7f4621d5d6e65d769dc392aa0d63ffb5c281dbed`
-
-### concept:seq
-
-- Shape: `blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3`
-- C11 morphism: `blake3-512:2a33b17d00047ead5accc6deaab7f568e22765b17faa8f8bf7bd129d73b781703aec9e42c077bf51fecfc45dca7dae1c1e7bd1b8598fb763e8fdc15dc360f08c`
-- C11 receipt: `blake3-512:4c8a3b7347b9ea94518724bed4d2a87882b627ea213155cba56d5c160c6cbcf9c7ebc60c2562f5b9facddce89cce188dcb38751477f7966d44065d62ae69c025`
-- Rust morphism: `blake3-512:6a9c5ca2f05f3637e2c5aeb52553a8aa3e9b9075fe22591a15a04ebb71fc1b4cb8c118af42edb19503dc4aba90418474be8ca9c449e785f0e5a85795ba490ade`
-- Rust receipt: `blake3-512:9a920ddb49c2a528712d0f670277ae67c7475dc63881b8495d5d2f021ef5ef40293f9fc99e9f732cc7da790804177ecba61c26fc53337d72f035bd2b2092ae6b`
-
-### concept:return
-
-- Shape: `blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607`
-- C11 morphism: `blake3-512:0ddc6e3b43315e20fb0cdf7247033c6ed0107f783efb64a2ddd1a587131d5290ea32c383545bd21ad0faf1a91e8609d11c3da0c3bd3065042f328af8cffc6f40`
-- C11 receipt: `blake3-512:15f925e4a2a595fd1eb56621e78cea864653be2b81729475d374adfcb093c7376193cdbd022ff0a12f1ad4863b43f62311d107b1d9babf78e204602892d38fec`
-- Rust morphism: `blake3-512:c8cf99d11d38f448eb9446b796169595f0f6cc16b5299b511eac9d17e36c6297ae56cc5ab6861bfd93535daf16444e55dabbc07467e3a9f91b6874da437de3f2`
-- Rust receipt: `blake3-512:6bf6d365c9efd0da64a18bfc3ac31784f0409315e2267de23281e08c1903f87d3699935108ce43cc3b24bd681e9d8c4e842c022ee3e32014f94eaa49eb675e9c`
-
-### concept:eq
-
-- Shape: `blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4`
-- C11 morphism: `blake3-512:c4e27ee557c5e5d07f70dfa5c413e15054a74040cb5281a401fea2b7cc171f0385c3d5cc3661a386d11dd6000e6db28dc0b4f9e3fd29e055a094b81bf58d479c`
-- C11 receipt: `blake3-512:40d7eaaab7835a804b91d2c7106e020c8bf51238f85e91ae458d21fef18ad551a26afd276e3acb10ffecb54db63a63c98ecff84a7c39cc3b0211579e84ce0255`
-- Rust morphism: `blake3-512:9fc82534d0412744f4f03bd619d8ed26206a016eccf20129f94fec2b11b57e2f5e264c7633659532601cdd1fcac169d9098bf86d5edaf3fa71bff19d416b3bb1`
-- Rust receipt: `blake3-512:a0f983e4ad306af230826cdd1f269d551cfd49d370e395cbfa69c4d5257aa574a52101da0019d6fd26a827c78b5635947623c6a96e9ad9ca1c75617298dd3650`
-
-### concept:skip
-
-- Shape: `blake3-512:919a20906437f5ac7d4b389a8ddb22ac69112f4ba0aa2ae396ee41e591f3518aae4d4d2dbb4008e183b665e3d0f23ebfdce650ec15b9b0568532d6376757e1e5`
-- C11 morphism: `blake3-512:52bd954f4443466b5e71e5d36479f8617575c107412d938db60a328c903d6eba5916224d95119594a0c0fa579234a8d6502b7ecc13a67128968fd1df3df2038f`
-- C11 receipt: `blake3-512:1b7d34d3b4ff2699bdfa45e760c0a6c903838dc06a4f6e7f1a206a5c21bf23c06d6114965f7279f382fe4146c8028116305063ac905c08255071812e64ff560e`
-- Rust morphism: `blake3-512:75dd1b52dcffb21b23bb3118a9d9368948722655be8c6d4287fd39dc36718843cc7118ce9929d2289d2cd66bdc311a8fe64df5cff82a7b991f90c0490a8d2566`
-- Rust receipt: `blake3-512:03b6432332aa722002dbe64f2c64abed1ff8bda523c261f809bfd4c4ea117a1136afdc95955cba640ccd8d3f4ad3b82b04b9db2a5e3d698b8cd38132f18789ec`
 
 ## Concept Details
 

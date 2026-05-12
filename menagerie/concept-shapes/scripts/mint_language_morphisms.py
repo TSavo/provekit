@@ -61,18 +61,11 @@ LANGUAGES = [
 ]
 LANG_BY_ID = {item["id"]: item for item in LANGUAGES}
 
-PRIMITIVE_STEMS = {
-    # morphism_c11_if_to_conditional: removed because c11:if gained wp_rule (PR3); source CID changed
-    # morphism_rust_if_to_conditional: removed because rust:if gained wp_rule (PR3); source CID changed
-    # morphism_c11_seq_to_seq: removed because c11:seq gained wp_rule (PR3); source CID changed
-    # morphism_rust_seq_to_seq: removed because rust:seq gained wp_rule (PR3); source CID changed
-    # morphism_c11_skip_to_skip: removed because c11:skip gained wp_rule (PR3); source CID changed
-    # morphism_rust_skip_to_skip: removed because rust:skip gained wp_rule (PR3); source CID changed
-    "morphism_c11_return_to_return",
-    "morphism_rust_return_to_return",
-    "morphism_c11_eq_to_eq",
-    "morphism_rust_eq_to_eq",
-}
+PRIMITIVE_STEMS: set[str] = set()
+# All five primitive ops (conditional/seq/skip/return/eq) are now minted exclusively here.
+# primitive_ops.py OPS list is empty; this script is the single source of truth for every
+# language morphism.  If a stem is added to PRIMITIVE_STEMS it must have already been
+# minted to SPEC_DIR + RECEIPT_DIR by a prior stage (currently no such stage exists).
 
 COMMON_ALIASES = {
     "conditional": {lang: ["op_if.spec.json"] for lang in ["c11", "csharp", "go", "python", "typescript", "zig", "ruby", "php", "rust", "java"]},
@@ -655,17 +648,24 @@ def existing_cid_rows():
 
 def append_cids(rows):
     existing = CID_FILE.read_text(encoding="utf-8").splitlines() if CID_FILE.exists() else ["kind\tname\tcid\tpath"]
-    seen = set()
+    seen = {}  # (kind, name) -> cid
     for line in existing[1:]:
         parts = line.split("\t")
-        if len(parts) >= 2:
-            seen.add((parts[0], parts[1]))
+        if len(parts) >= 3:
+            seen[(parts[0], parts[1])] = parts[2]
     for row in rows:
         key = (row["kind"], row["name"])
         if key in seen:
+            if seen[key] != row["cid"]:
+                raise SystemExit(
+                    f"one-name-one-CID violation: {row['kind']} {row['name']} "
+                    f"already registered as {seen[key]!r} but new mint produced {row['cid']!r}. "
+                    f"A stale cids.tsv row is hiding the fresh mint. "
+                    f"Re-run mint.sh from a clean state."
+                )
             continue
         existing.append(f"{row['kind']}\t{row['name']}\t{row['cid']}\t{row['path']}")
-        seen.add(key)
+        seen[key] = row["cid"]
     CID_FILE.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
 
@@ -749,6 +749,39 @@ def _collect_union_effects(op_def):
     return list(seen_keys.values())
 
 
+def sweep_stale_catalog_files(catalog_path_str, current_cid):
+    """Remove stale CID-named files for the same logical stem.
+
+    The content-addressed catalog never deletes files on its own, so when a
+    morphism spec changes (e.g. its source CID changes after a lifter update),
+    the old CID-named file is left beside the new one.  Two files for the same
+    logical stem with different CIDs breaks one-name-one-CID invariant.
+
+    Given the path of the CURRENT file (just written by provekit mint or
+    store_receipt), delete any sibling files in the same directory that share
+    the same stem prefix but have a different CID suffix.
+
+    The stem prefix is everything before ".{cid}.json" in the filename.
+    """
+    current_path = Path(catalog_path_str)
+    parent = current_path.parent
+    # The stem prefix: everything before the CID hash portion.
+    # Filename pattern: "<stem>.<cid>.json" where cid = "blake3-512:XXXX".
+    name = current_path.name
+    # Split on ".blake3-512:" to get the prefix.
+    if ".blake3-512:" not in name:
+        return
+    stem_prefix = name.split(".blake3-512:")[0] + ".blake3-512:"
+    current_cid_suffix = current_cid.split("blake3-512:", 1)[-1]
+    for sibling in parent.iterdir():
+        sname = sibling.name
+        if not sname.startswith(stem_prefix):
+            continue
+        sibling_cid_suffix = sname[len(stem_prefix):].removesuffix(".json")
+        if sibling_cid_suffix != current_cid_suffix:
+            sibling.unlink()
+
+
 def main():
     discharge.build_tools()
     for path in [SPEC_DIR, RECEIPT_DIR, DISCHARGE_DIR, CATALOG_REAL]:
@@ -771,6 +804,7 @@ def main():
         spec_name = f"{op_def['slug']}_shape.spec.json"
         write_json(SPEC_DIR / spec_name, concept_spec)
         shape_cid, shape_path = discharge.mint("algorithm", spec_name)
+        sweep_stale_catalog_files(shape_path, shape_cid)
         expected = canonical_cid_spec(concept_spec)
         if shape_cid != expected:
             raise SystemExit(f"{op_def['slug']} shape CID mismatch: {shape_cid} != {expected}")
@@ -818,6 +852,7 @@ def main():
                 m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map, discharge_method)
                 write_json(SPEC_DIR / f"{stem}.spec.json", m_spec)
                 morphism_cid, morphism_path = discharge.mint("algorithm", f"{stem}.spec.json")
+                sweep_stale_catalog_files(morphism_path, morphism_cid)
                 rows.append({"kind": "morphism", "name": stem, "cid": morphism_cid, "path": morphism_path})
                 receipt = {
                     "schema_version": "1",
@@ -843,6 +878,7 @@ def main():
                 if effect_subset_relaxed:
                     receipt["effect_subset_relaxed"] = True
                 receipt_cid, receipt_path = discharge.store_receipt(stem, receipt)
+                sweep_stale_catalog_files(receipt_path, receipt_cid)
                 rows.append({"kind": "receipt", "name": stem, "cid": receipt_cid, "path": receipt_path})
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})
                 break

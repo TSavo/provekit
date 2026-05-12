@@ -1,23 +1,19 @@
 {
-  "cid": "blake3-512:40d7eaaab7835a804b91d2c7106e020c8bf51238f85e91ae458d21fef18ad551a26afd276e3acb10ffecb54db63a63c98ecff84a7c39cc3b0211579e84ce0255",
+  "cid": "blake3-512:44f3d445a2c63a8fcc371d569661098bfe3830ddaec8b410782bb1548cc2466fc73618290a6181e8dd918b788e3b086100f621c9aaca8dd9386dabc593e17852",
   "memento": {
     "schema_version": "1",
     "kind": "MorphismDischargeReceipt",
-    "morphism_cid": "blake3-512:c4e27ee557c5e5d07f70dfa5c413e15054a74040cb5281a401fea2b7cc171f0385c3d5cc3661a386d11dd6000e6db28dc0b4f9e3fd29e055a094b81bf58d479c",
+    "morphism_cid": "blake3-512:a35927a10ae38158594c41e0f2c1042708e82edfc1474c747af0558a58de355d1600a714473653d8a64ca1244d115758d0453816ca96d945c3a07dba0f379931",
     "source_contract_cid": "blake3-512:786af5f3033d4bcb976140d677166038e48a0905318e9d8ab7445d14f4986f22f38ce1d9924ac538fa020901b782c6e6fa4f3abe4016fa384947af727f0e415d",
-    "renaming_map": {
-      "lhs": "lhs",
-      "rhs": "rhs"
-    },
+    "renaming_map": {},
     "representation_map": {},
-    "operator_map": {
-      "eq": "eq"
-    },
+    "operator_map": {},
     "literal_map": {},
     "after_substitution_cid": "blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4",
     "shape_cid": "blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4",
     "discharged": true,
-    "method": "canonicalizer-alpha-equivalence-plus-representation-map"
+    "method": "canonicalizer-alpha-equivalence-plus-representation-map",
+    "signature": null
   },
   "signature": null
 }

@@ -24,19 +24,15 @@
   "post": {
     "kind": "contract-renaming-morphism",
     "source_contract_cid": "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6",
-    "target_shape_cid": "blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607",
-    "renaming_map": {
-      "value": "value"
-    },
+    "target_shape_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db",
+    "renaming_map": {},
     "representation_map": {},
-    "operator_map": {
-      "return": "return"
-    },
+    "operator_map": {},
     "literal_map": {},
     "homomorphism_obligation": {
-      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "kind": "structural-effect-subset",
       "source": "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6",
-      "target": "blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607"
+      "target": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
     }
   },
   "effects": {
@@ -44,6 +40,6 @@
   },
   "input_cids": [
     "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6",
-    "blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607"
+    "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
   ]
 }

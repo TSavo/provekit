@@ -25,14 +25,9 @@
     "kind": "contract-renaming-morphism",
     "source_contract_cid": "blake3-512:786af5f3033d4bcb976140d677166038e48a0905318e9d8ab7445d14f4986f22f38ce1d9924ac538fa020901b782c6e6fa4f3abe4016fa384947af727f0e415d",
     "target_shape_cid": "blake3-512:17d64f7bce0c5aa8b7bc81afd57bcb2a54a5d53ac626166ff2203773c8fdc6171fce7ff059e9de042909097ffc9f24ee3055801596b523d5677d7ccd45048ef4",
-    "renaming_map": {
-      "lhs": "lhs",
-      "rhs": "rhs"
-    },
+    "renaming_map": {},
     "representation_map": {},
-    "operator_map": {
-      "eq": "eq"
-    },
+    "operator_map": {},
     "literal_map": {},
     "homomorphism_obligation": {
       "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
