@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "rust:Result->concept:result",
+    "formals": [
+      "value",
+      "error"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "E",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "rust:Result",
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          },
+          {
+            "kind": "var",
+            "name": "error"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:result",
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          },
+          {
+            "kind": "var",
+            "name": "error"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-lift",
+    "direction": "left-to-right",
+    "source_lang": "rust",
+    "loss_record": {
+      "structural_divergence": "empty: Rust Result<T,E> is the canonical two-arm sum type; no structural encoding gap between the source and the hub concept"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:34ceb3b5926f9fbeade47081e0018ee5440e4acebc36591a4c09b5188917a4b0a2cc99fb5a883d6b92022df70ba25d7bb7399a2367bb7d7ea10762e4178da8e5",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
