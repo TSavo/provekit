@@ -145,7 +145,9 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
 pub fn run(args: BindArgs) -> u8 {
     // PEP 1.7.0: seal the plugin registry before running any pipeline work (§9).
     // The registry CID must appear in every output's provenance (§9.4).
-    let sealed_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let sealed_at = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     let plugin_registry = match args.plugins.build_registry(&sealed_at) {
         Ok(r) => {
             if !args.quiet {
@@ -163,7 +165,10 @@ pub fn run(args: BindArgs) -> u8 {
     };
     let _registry_cid = plugin_registry.cid().to_string();
 
-    let root = args.root.canonicalize().unwrap_or_else(|_| args.root.clone());
+    let root = args
+        .root
+        .canonicalize()
+        .unwrap_or_else(|_| args.root.clone());
     let output_dir = args
         .output
         .clone()
@@ -175,10 +180,13 @@ pub fn run(args: BindArgs) -> u8 {
             eprintln!("bind: {msg}");
             // Emit a gap record so callers see why no output was produced.
             let _ = std::fs::create_dir_all(&output_dir);
-            let gap_doc = build_gaps_doc("unknown", &[GapRecord {
-                kind: "source-language-not-supported".into(),
-                detail: msg,
-            }]);
+            let gap_doc = build_gaps_doc(
+                "unknown",
+                &[GapRecord {
+                    kind: "source-language-not-supported".into(),
+                    detail: msg,
+                }],
+            );
             let _ = std::fs::write(
                 output_dir.join("gaps.json"),
                 serde_json::to_string_pretty(&gap_doc).unwrap_or_default(),
@@ -217,7 +225,10 @@ pub fn run(args: BindArgs) -> u8 {
     let test_files = collect_rs_files(&root.join("tests"));
 
     if src_files.is_empty() {
-        eprintln!("bind: no Rust source files found under {}", scan_root.display());
+        eprintln!(
+            "bind: no Rust source files found under {}",
+            scan_root.display()
+        );
         // Emit a real gap record so callers know WHY nothing was produced.
         // When source_lang is non-Rust, record the source-language-not-supported gap
         // so composed loss in round-trip tests contains real (not synthetic) evidence.
@@ -293,7 +304,9 @@ pub fn run(args: BindArgs) -> u8 {
                 );
                 return EXIT_USER_ERROR;
             }
-            apply_annotate_rewrite(&root, &src_files, &result, &args.mode, /*to_disk=*/ true);
+            apply_annotate_rewrite(
+                &root, &src_files, &result, &args.mode, /*to_disk=*/ true,
+            );
         }
         RewriteShape::Canonical => {
             apply_canonical_rewrite(
@@ -310,7 +323,9 @@ pub fn run(args: BindArgs) -> u8 {
             // Invisible: stream to stdout. Apply annotate-shape for same-language,
             // canonical for cross-language.
             if target_lang == source_lang {
-                apply_annotate_rewrite(&root, &src_files, &result, &args.mode, /*to_disk=*/ false);
+                apply_annotate_rewrite(
+                    &root, &src_files, &result, &args.mode, /*to_disk=*/ false,
+                );
             } else {
                 apply_canonical_rewrite(
                     &root,
@@ -349,11 +364,7 @@ pub struct EngineResult {
 pub struct BindingRecord {
     pub site_file: String,
     pub site_fn: String,
-    pub site_line: usize,
-    pub shape_cid: String,
     pub concept_idx: usize,
-    pub contract_cid: Option<String>,
-    pub contract_content_cid: Option<String>,
     pub origin: ContractOrigin,
     pub discharge_verdict: DischargeVerdict,
     pub pretty_pre: Option<String>,
@@ -387,25 +398,6 @@ pub enum DischargeVerdict {
     Exact,
     LoudlyBoundedLossy { loss: String },
     Refuse { reason: String },
-}
-
-impl DischargeVerdict {
-    pub fn label(&self) -> String {
-        match self {
-            DischargeVerdict::Exact => "exact".into(),
-            DischargeVerdict::LoudlyBoundedLossy { loss } => {
-                format!("loudly-bounded-lossy({})", loss)
-            }
-            DischargeVerdict::Refuse { reason } => format!("refuse({})", reason),
-        }
-    }
-    pub fn verdict_str(&self) -> &'static str {
-        match self {
-            DischargeVerdict::Exact => "exact",
-            DischargeVerdict::LoudlyBoundedLossy { .. } => "loudly-bounded-lossy",
-            DischargeVerdict::Refuse { .. } => "refuse",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -473,8 +465,8 @@ fn run_bind_engine(
     // ---- Verb 1: LIFT -------------------------------------------------------
     let mut raw_lifts: Vec<RawLift> = Vec::new();
     for path in src_files {
-        let src = std::fs::read_to_string(path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let src =
+            std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
         let file = match syn::parse_file(&src) {
             Ok(f) => f,
             Err(e) => {
@@ -591,7 +583,9 @@ fn run_bind_engine(
 
     for lift in &raw_lifts {
         let shape_cid = lift.term_shape.shape_cid();
-        let concept_idx = *shape_to_concept.get(&shape_cid).expect("shape was clustered");
+        let concept_idx = *shape_to_concept
+            .get(&shape_cid)
+            .expect("shape was clustered");
 
         // Contract origin priority: attribute > test > algebra-synthesis > empty.
         let (origin, pre, post) = if lift.attr_pre.is_some() || lift.attr_post.is_some() {
@@ -615,7 +609,7 @@ fn run_bind_engine(
         };
 
         // Mint signed contract envelope when contract is non-empty.
-        let (contract_cid, contract_content_cid) = if pre.is_some() || post.is_some() {
+        let (_contract_cid, _contract_content_cid) = if pre.is_some() || post.is_some() {
             let pre_v = pre.as_deref().map(formula_text_to_value);
             let post_v = post.as_deref().map(formula_text_to_value);
             let mint_args = MintContractArgs {
@@ -649,7 +643,7 @@ fn run_bind_engine(
         let verdict = discharge_verdict(&lift.term_shape, &origin);
 
         // Mint ConceptSiteMemento when we have a contract.
-        let site_memento_cid = if let Some(local_cid) = &contract_content_cid {
+        let site_memento_cid = if let Some(local_cid) = &_contract_content_cid {
             let source_bytes = std::fs::read(root.join(&lift.file)).unwrap_or_default();
             let source_cid = blake3_512_of(&source_bytes);
             let (span_start, span_end) = byte_span_for_line(&source_bytes, lift.fn_line);
@@ -725,8 +719,8 @@ fn run_bind_engine(
             if let Some(ref drc) = discharge.discharge_receipt_cid {
                 discharge_kv.push(("discharge_receipt_cid", Value::string(drc.clone())));
             }
-            let loss_json = serde_json::to_string(&discharge.loss_record)
-                .expect("LossRecord serialization");
+            let loss_json =
+                serde_json::to_string(&discharge.loss_record).expect("LossRecord serialization");
             let loss_v = json_to_value(&serde_json::from_str(&loss_json).expect("parse loss"));
             discharge_kv.push(("loss_record", loss_v));
             let discharge_v = Value::object(discharge_kv);
@@ -783,11 +777,7 @@ fn run_bind_engine(
         bindings.push(BindingRecord {
             site_file: lift.file.clone(),
             site_fn: lift.fn_name.clone(),
-            site_line: lift.fn_line,
-            shape_cid,
             concept_idx,
-            contract_cid,
-            contract_content_cid,
             origin,
             discharge_verdict: verdict,
             pretty_pre: pre,
@@ -883,7 +873,11 @@ fn apply_annotate_rewrite(
 
     // Files with no bindings: no change needed.
     for path in src_files {
-        let rel = path.strip_prefix(root).unwrap_or(path).display().to_string();
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
         if !by_file.contains_key(&rel) && !to_disk {
             // invisible: emit unmodified source for completeness.
             if let Ok(src) = std::fs::read_to_string(path) {
@@ -960,7 +954,10 @@ fn inject_annotations(
 
             if let Some(b) = by_fn.get(&fn_name) {
                 if !out_lines.is_empty()
-                    && !out_lines.last().map(|s| s.trim().is_empty()).unwrap_or(false)
+                    && !out_lines
+                        .last()
+                        .map(|s| s.trim().is_empty())
+                        .unwrap_or(false)
                 {
                     out_lines.push(String::new());
                 }
@@ -1018,7 +1015,8 @@ fn inject_annotations(
         let trimmed = line.trim_start();
         if trimmed.starts_with("// concept:") {
             // Check if next line is substrate-origin (marking this as a substrate block).
-            let next_is_substrate_origin = lines.get(i + 1)
+            let next_is_substrate_origin = lines
+                .get(i + 1)
                 .map(|l| l.trim_start().starts_with("// substrate-origin:"))
                 .unwrap_or(false);
             if next_is_substrate_origin {
@@ -1106,7 +1104,9 @@ fn apply_canonical_rewrite(
         if !file_header.is_empty() {
             chunks.push(file_header);
         }
-        chunks.push(format!("{cmt} canonical rewrite: {rel_file} -> {target_lang}\n"));
+        chunks.push(format!(
+            "{cmt} canonical rewrite: {rel_file} -> {target_lang}\n"
+        ));
 
         for item in &file.items {
             if let syn::Item::Fn(item_fn) = item {
@@ -1188,7 +1188,11 @@ fn apply_canonical_rewrite(
 
     // Files with no bindings that are invisible: emit gap comment.
     for path in src_files {
-        let rel = path.strip_prefix(root).unwrap_or(path).display().to_string();
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
         if !by_file.contains_key(&rel) && !to_disk {
             let cmt = comment_prefix_for(target_lang);
             println!("{cmt} bind:canonical:no-bindings:{rel}");
@@ -1275,35 +1279,43 @@ fn build_target_annotations(
 
     // Mode attribute.
     match mode {
-        RuntimeMode::Monitor => {
-            match target_lang {
-                "rust" => lines.push(format!(
-                    "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
-                )),
-                "zig" => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
-                "java" => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
-                "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
-                _ => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
-            }
-        }
-        RuntimeMode::Emitter => {
-            match target_lang {
-                "rust" => lines.push(format!(
-                    "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
-                )),
-                "zig" => lines.push(format!("// @provekit_emitter(concept = \"{concept_name}\")")),
-                _ => lines.push(format!("// @provekit_emitter(concept = \"{concept_name}\")")),
-            }
-        }
-        RuntimeMode::Witness => {
-            match target_lang {
-                "rust" => lines.push(format!(
-                    "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
-                )),
-                "zig" => lines.push(format!("// @provekit_witness(concept = \"{concept_name}\")")),
-                _ => lines.push(format!("// @provekit_witness(concept = \"{concept_name}\")")),
-            }
-        }
+        RuntimeMode::Monitor => match target_lang {
+            "rust" => lines.push(format!(
+                "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
+            )),
+            "zig" => lines.push(format!(
+                "// @provekit_monitor(concept = \"{concept_name}\")"
+            )),
+            "java" => lines.push(format!(
+                "// @provekit_monitor(concept = \"{concept_name}\")"
+            )),
+            "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
+            _ => lines.push(format!(
+                "// @provekit_monitor(concept = \"{concept_name}\")"
+            )),
+        },
+        RuntimeMode::Emitter => match target_lang {
+            "rust" => lines.push(format!(
+                "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
+            )),
+            "zig" => lines.push(format!(
+                "// @provekit_emitter(concept = \"{concept_name}\")"
+            )),
+            _ => lines.push(format!(
+                "// @provekit_emitter(concept = \"{concept_name}\")"
+            )),
+        },
+        RuntimeMode::Witness => match target_lang {
+            "rust" => lines.push(format!(
+                "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
+            )),
+            "zig" => lines.push(format!(
+                "// @provekit_witness(concept = \"{concept_name}\")"
+            )),
+            _ => lines.push(format!(
+                "// @provekit_witness(concept = \"{concept_name}\")"
+            )),
+        },
     }
 
     lines.join("\n")
@@ -1359,32 +1371,34 @@ fn build_bind_meta_comment(
         }
     }
     match mode {
-        RuntimeMode::Monitor => {
-            match target_lang {
-                "rust" => lines.push(format!(
-                    "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
-                )),
-                "java" => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
-                "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
-                _ => lines.push(format!("{comment_prefix} @provekit_monitor(concept = \"{concept_name}\")")),
-            }
-        }
-        RuntimeMode::Emitter => {
-            match target_lang {
-                "rust" => lines.push(format!(
-                    "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
-                )),
-                _ => lines.push(format!("{comment_prefix} @provekit_emitter(concept = \"{concept_name}\")")),
-            }
-        }
-        RuntimeMode::Witness => {
-            match target_lang {
-                "rust" => lines.push(format!(
-                    "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
-                )),
-                _ => lines.push(format!("{comment_prefix} @provekit_witness(concept = \"{concept_name}\")")),
-            }
-        }
+        RuntimeMode::Monitor => match target_lang {
+            "rust" => lines.push(format!(
+                "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
+            )),
+            "java" => lines.push(format!(
+                "// @provekit_monitor(concept = \"{concept_name}\")"
+            )),
+            "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
+            _ => lines.push(format!(
+                "{comment_prefix} @provekit_monitor(concept = \"{concept_name}\")"
+            )),
+        },
+        RuntimeMode::Emitter => match target_lang {
+            "rust" => lines.push(format!(
+                "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
+            )),
+            _ => lines.push(format!(
+                "{comment_prefix} @provekit_emitter(concept = \"{concept_name}\")"
+            )),
+        },
+        RuntimeMode::Witness => match target_lang {
+            "rust" => lines.push(format!(
+                "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
+            )),
+            _ => lines.push(format!(
+                "{comment_prefix} @provekit_witness(concept = \"{concept_name}\")"
+            )),
+        },
     }
     lines.join("\n")
 }
@@ -1394,7 +1408,10 @@ fn build_bind_meta_comment(
 fn target_stub_body(target_lang: &str) -> String {
     match target_lang {
         "python" => "    raise NotImplementedError(\"provekit-bind: canonical stub\")".into(),
-        "java" => "        throw new UnsupportedOperationException(\"provekit-bind: canonical stub\");".into(),
+        "java" => {
+            "        throw new UnsupportedOperationException(\"provekit-bind: canonical stub\");"
+                .into()
+        }
         "go" => "    panic(\"provekit-bind: canonical stub\")".into(),
         "ruby" => "  raise NotImplementedError, \"provekit-bind: canonical stub\"".into(),
         _ => "    unimplemented!(\"provekit-bind: canonical stub\")".into(),
@@ -1463,7 +1480,9 @@ fn target_fn_def(
                 .map(|p| format!("{p}: number"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("{annotations}\nexport function {fn_name}({param_list}): number {{\n{body}\n}}\n")
+            format!(
+                "{annotations}\nexport function {fn_name}({param_list}): number {{\n{body}\n}}\n"
+            )
         }
         "ruby" => {
             let param_list = params.join(", ");
@@ -1475,9 +1494,7 @@ fn target_fn_def(
                 .map(|p| format!("${p}"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(
-                "<?php\n{annotations}\nfunction {fn_name}({param_list}) {{\n{body}\n}}\n"
-            )
+            format!("<?php\n{annotations}\nfunction {fn_name}({param_list}) {{\n{body}\n}}\n")
         }
         _ => {
             // Fallback: Rust-style.
@@ -1595,9 +1612,10 @@ fn shape_of_expr(expr: &syn::Expr) -> ShapeNode {
             then_branch: Box::new(ShapeNode::Block(
                 e.then_branch.stmts.iter().map(shape_of_stmt).collect(),
             )),
-            else_branch: e.else_branch.as_ref().map(|(_, else_expr)| {
-                Box::new(shape_of_expr(else_expr))
-            }),
+            else_branch: e
+                .else_branch
+                .as_ref()
+                .map(|(_, else_expr)| Box::new(shape_of_expr(else_expr))),
         },
         syn::Expr::While(e) => ShapeNode::While {
             cond: Box::new(shape_of_expr(&e.cond)),
@@ -1635,9 +1653,7 @@ fn shape_of_expr(expr: &syn::Expr) -> ShapeNode {
             }
         }
         syn::Expr::Call(_) | syn::Expr::MethodCall(_) => ShapeNode::Call,
-        syn::Expr::Block(b) => ShapeNode::Block(
-            b.block.stmts.iter().map(shape_of_stmt).collect(),
-        ),
+        syn::Expr::Block(b) => ShapeNode::Block(b.block.stmts.iter().map(shape_of_stmt).collect()),
         _ => ShapeNode::Opaque,
     }
 }
@@ -1646,9 +1662,16 @@ fn node_to_value(node: &ShapeNode) -> Arc<Value> {
     match node {
         ShapeNode::Body(stmts) => Value::object([
             ("kind", Value::string("body")),
-            ("stmts", Value::array(stmts.iter().map(node_to_value).collect())),
+            (
+                "stmts",
+                Value::array(stmts.iter().map(node_to_value).collect()),
+            ),
         ]),
-        ShapeNode::If { cond, then_branch, else_branch } => {
+        ShapeNode::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             let mut kv: Vec<(&str, Arc<Value>)> = Vec::new();
             kv.push(("kind", Value::string("if")));
             kv.push(("cond", node_to_value(cond)));
@@ -1681,7 +1704,10 @@ fn node_to_value(node: &ShapeNode) -> Arc<Value> {
         ShapeNode::Call => Value::object([("kind", Value::string("call"))]),
         ShapeNode::Block(stmts) => Value::object([
             ("kind", Value::string("block")),
-            ("stmts", Value::array(stmts.iter().map(node_to_value).collect())),
+            (
+                "stmts",
+                Value::array(stmts.iter().map(node_to_value).collect()),
+            ),
         ]),
         ShapeNode::Opaque => Value::object([("kind", Value::string("opaque"))]),
     }
@@ -1835,8 +1861,8 @@ fn discharge_verdict(shape: &TermShape, origin: &ContractOrigin) -> DischargeVer
                 _ => {}
             }
 
-            let sentinel = Cid::parse(format!("blake3-512:{}", "0".repeat(128)))
-                .expect("sentinel cid");
+            let sentinel =
+                Cid::parse(format!("blake3-512:{}", "0".repeat(128))).expect("sentinel cid");
             let term = Term::Op {
                 op_cid: sentinel,
                 name: cls.to_string(),
@@ -1868,14 +1894,25 @@ struct ExtractedContract {
 }
 
 fn extract_contract_attrs(attrs: &[syn::Attribute]) -> ExtractedContract {
-    let mut out = ExtractedContract { pre: None, post: None };
+    let mut out = ExtractedContract {
+        pre: None,
+        post: None,
+    };
     for attr in attrs {
         if let Some(name) = attr.path().get_ident().map(|i| i.to_string()) {
             if let syn::Meta::List(l) = &attr.meta {
                 let text = normalize_ws(&l.tokens.to_string());
                 match name.as_str() {
-                    "requires" => { if out.pre.is_none() { out.pre = Some(text); } }
-                    "ensures" => { if out.post.is_none() { out.post = Some(text); } }
+                    "requires" => {
+                        if out.pre.is_none() {
+                            out.pre = Some(text);
+                        }
+                    }
+                    "ensures" => {
+                        if out.post.is_none() {
+                            out.post = Some(text);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1906,8 +1943,16 @@ fn parse_kind_body(s: &str, out: &mut ExtractedContract) {
             if rest.starts_with('(') && rest.ends_with(')') {
                 let body = normalize_ws(&rest[1..rest.len() - 1]);
                 match kind {
-                    "requires" => { if out.pre.is_none() { out.pre = Some(body); } }
-                    "ensures" => { if out.post.is_none() { out.post = Some(body); } }
+                    "requires" => {
+                        if out.pre.is_none() {
+                            out.pre = Some(body);
+                        }
+                    }
+                    "ensures" => {
+                        if out.post.is_none() {
+                            out.post = Some(body);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1948,18 +1993,25 @@ fn extract_concept_annotation(src: &str, fn_name: &str) -> Option<String> {
 
 // ---- Test-lift (v0 stub) ---------------------------------------------------
 
-fn collect_test_witnesses(
-    test_files: &[PathBuf],
-) -> Vec<(String, String, String)> {
+fn collect_test_witnesses(test_files: &[PathBuf]) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
     for path in test_files {
-        let Ok(src) = std::fs::read_to_string(path) else { continue };
-        let Ok(file) = syn::parse_file(&src) else { continue };
-        let rel = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let Ok(src) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(file) = syn::parse_file(&src) else {
+            continue;
+        };
+        let rel = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         for item in &file.items {
             if let syn::Item::Fn(item_fn) = item {
                 let is_test = item_fn.attrs.iter().any(|a| a.path().is_ident("test"));
-                if !is_test { continue; }
+                if !is_test {
+                    continue;
+                }
                 let mut let_map: BTreeMap<String, String> = BTreeMap::new();
                 for stmt in &item_fn.block.stmts {
                     if let syn::Stmt::Local(local) = stmt {
@@ -1979,7 +2031,8 @@ fn collect_test_witnesses(
                             if s == "assert" || s == "assert_eq" || s == "assert_ne" {
                                 let body = m.mac.tokens.to_string();
                                 let lhs = first_ident_before_relop(&body);
-                                let target = lhs.as_deref()
+                                let target = lhs
+                                    .as_deref()
                                     .and_then(|k| let_map.get(k).cloned())
                                     .or_else(|| guess_fn_under_test(&body));
                                 if let Some(fn_name) = target {
@@ -1999,7 +2052,11 @@ fn collect_test_witnesses(
 }
 
 fn pat_to_ident(pat: &syn::Pat) -> Option<String> {
-    if let syn::Pat::Ident(p) = pat { Some(p.ident.to_string()) } else { None }
+    if let syn::Pat::Ident(p) = pat {
+        Some(p.ident.to_string())
+    } else {
+        None
+    }
 }
 
 fn call_target(expr: &syn::Expr) -> Option<String> {
@@ -2007,7 +2064,9 @@ fn call_target(expr: &syn::Expr) -> Option<String> {
         syn::Expr::Call(c) => {
             if let syn::Expr::Path(p) = c.func.as_ref() {
                 p.path.segments.last().map(|s| s.ident.to_string())
-            } else { None }
+            } else {
+                None
+            }
         }
         syn::Expr::MethodCall(m) => Some(m.method.to_string()),
         _ => None,
@@ -2021,14 +2080,23 @@ fn first_ident_before_relop(s: &str) -> Option<String> {
     let mut cur = String::new();
     while i < bytes.len() {
         let c = bytes[i] as char;
-        if c.is_alphanumeric() || c == '_' { cur.push(c); }
-        else {
-            if !cur.is_empty() { last = Some(std::mem::take(&mut cur)); }
+        if c.is_alphanumeric() || c == '_' {
+            cur.push(c);
+        } else {
+            if !cur.is_empty() {
+                last = Some(std::mem::take(&mut cur));
+            }
             let two = if i + 1 < bytes.len() {
                 std::str::from_utf8(&bytes[i..i + 2]).unwrap_or("")
-            } else { "" };
-            if matches!(two, ">=" | "<=" | "==" | "!=") { return last; }
-            if matches!(c, '>' | '<') { return last; }
+            } else {
+                ""
+            };
+            if matches!(two, ">=" | "<=" | "==" | "!=") {
+                return last;
+            }
+            if matches!(c, '>' | '<') {
+                return last;
+            }
         }
         i += 1;
     }
@@ -2038,15 +2106,26 @@ fn first_ident_before_relop(s: &str) -> Option<String> {
 fn guess_fn_under_test(body: &str) -> Option<String> {
     let mut cur = String::new();
     for c in body.chars() {
-        if c.is_alphanumeric() || c == '_' { cur.push(c); }
-        else if c == '(' && !cur.is_empty()
-            && cur.chars().next().map(|x| x.is_alphabetic()).unwrap_or(false)
+        if c.is_alphanumeric() || c == '_' {
+            cur.push(c);
+        } else if c == '('
+            && !cur.is_empty()
+            && cur
+                .chars()
+                .next()
+                .map(|x| x.is_alphabetic())
+                .unwrap_or(false)
         {
-            if !matches!(cur.as_str(), "assert" | "let" | "if" | "for" | "while" | "return" | "match") {
+            if !matches!(
+                cur.as_str(),
+                "assert" | "let" | "if" | "for" | "while" | "return" | "match"
+            ) {
                 return Some(cur);
             }
             cur.clear();
-        } else { cur.clear(); }
+        } else {
+            cur.clear();
+        }
     }
     None
 }
@@ -2310,16 +2389,14 @@ fn byte_span_for_line(bytes: &[u8], line_no: usize) -> (u64, u64) {
         return (0, 0);
     }
     let mut cur_line = 1usize;
-    let mut start = 0usize;
     for (i, &b) in bytes.iter().enumerate() {
         if cur_line == line_no {
-            start = i;
             let end_offset = bytes[i..]
                 .iter()
                 .position(|&x| x == b'\n')
                 .map(|p| i + p)
                 .unwrap_or(bytes.len());
-            return (start as u64, end_offset as u64);
+            return (i as u64, end_offset as u64);
         }
         if b == b'\n' {
             cur_line += 1;
@@ -2348,9 +2425,7 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
         }
         serde_json::Value::Bool(b) => Value::boolean(*b),
         serde_json::Value::Null => Value::null(),
-        serde_json::Value::Array(arr) => {
-            Value::array(arr.iter().map(json_to_value).collect())
-        }
+        serde_json::Value::Array(arr) => Value::array(arr.iter().map(json_to_value).collect()),
         serde_json::Value::Object(map) => {
             let kv: Vec<(String, Arc<Value>)> = map
                 .iter()
@@ -2363,7 +2438,13 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
 
 fn safe_filename(cid: &str) -> String {
     cid.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -2386,7 +2467,11 @@ fn parse_fn_name(line: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn name_for_annotation(name: &str) -> &str {
@@ -2398,7 +2483,9 @@ fn normalize_ws(s: &str) -> String {
     let mut prev_ws = false;
     for c in s.chars() {
         if c.is_whitespace() {
-            if !prev_ws && !out.is_empty() { out.push(' '); }
+            if !prev_ws && !out.is_empty() {
+                out.push(' ');
+            }
             prev_ws = true;
         } else {
             out.push(c);
@@ -2443,9 +2530,7 @@ mod tests {
 
     /// Create a temporary directory for a test case, run the closure to populate it,
     /// then call resolve_lang_detect and return the result.
-    fn with_temp_dir<F: FnOnce(&std::path::Path)>(
-        populate: F,
-    ) -> Result<String, String> {
+    fn with_temp_dir<F: FnOnce(&std::path::Path)>(populate: F) -> Result<String, String> {
         let dir = tempfile::tempdir().expect("tempdir");
         populate(dir.path());
         resolve_lang_detect(dir.path())

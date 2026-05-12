@@ -23,7 +23,6 @@
 // External plugins are spawned as child processes and spoken to via JSON-RPC.
 
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,10 +39,7 @@ pub struct ServerConfig {
     pub backend: String,
     #[serde(default)]
     pub backend_args: Vec<String>,
-    #[serde(default = "default_timeout")]
-    pub timeout_ms: u64,
-    #[serde(default = "default_cache_dir")]
-    pub cache_dir: String,
+    // timeout_ms and cache_dir removed (unused)
     /// Optional path to the provekit-linkerd Unix domain socket.
     ///
     /// When set, `did_open` / `did_change` route through the daemon instead
@@ -71,22 +67,6 @@ pub struct LanguagePluginConfig {
 }
 
 impl LspConfig {
-    /// Build a map from file extension -> language plugin config.
-    pub fn extension_map(&self) -> HashMap<String, LanguagePluginConfig> {
-        let mut map = HashMap::new();
-        for lang in &self.language {
-            for ext in &lang.extensions {
-                let ext_normalized = if ext.starts_with('.') {
-                    ext.to_string()
-                } else {
-                    format!(".{}", ext)
-                };
-                map.insert(ext_normalized, lang.clone());
-            }
-        }
-        map
-    }
-
     /// Find the language config for a given file path.
     pub fn for_path(&self, path: &Path) -> Option<&LanguagePluginConfig> {
         let ext = path.extension()?.to_str()?;
@@ -117,22 +97,12 @@ fn default_server() -> ServerConfig {
     ServerConfig {
         backend: default_backend(),
         backend_args: Vec::new(),
-        timeout_ms: default_timeout(),
-        cache_dir: default_cache_dir(),
         daemon_socket: None,
     }
 }
 
 fn default_backend() -> String {
     "provekit".to_string()
-}
-
-fn default_timeout() -> u64 {
-    5000
-}
-
-fn default_cache_dir() -> String {
-    ".provekit/cache".to_string()
 }
 
 fn default_languages() -> Vec<LanguagePluginConfig> {
