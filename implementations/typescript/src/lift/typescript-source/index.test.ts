@@ -151,21 +151,42 @@ describe("typescript-source lifter", () => {
     ]));
   });
 
-  it("preserves source-unit raw bytes for lift(compile(lift(src))) round-trips", () => {
-    const source = "function add(x: number, y: number): number { return x + y; }\n";
+  it("round-trips a multi-statement body through the AST printer path (compileTypeScriptSourceIr without source-unit bytes)", () => {
+    // The tautology this replaces: compileTypeScriptSourceIr short-circuits through the
+    // stored bytes when a ts:source-unit is present, so it never exercised the AST printer.
+    // This test drives the real compile path by stripping the source-unit memento so
+    // compileFunctionContract + emitStatementsFromTerm must reconstruct TypeScript from the IR.
+    const source = `function compute(x: number, y: number): number {
+  let a = x + y;
+  if (a > 0) {
+    a = a - 1;
+  } else {
+    a = a + 1;
+  }
+  return a;
+}
+`;
     const first = liftTypeScriptSourceText(source, "src/roundtrip.ts");
     expect(first.refusals).toEqual([]);
 
-    const compiled = compileTypeScriptSourceIr(first.declarations);
+    // Strip the source-unit memento: forces compileTypeScriptSourceIr onto the AST printer path.
+    const contractsOnly = first.declarations.filter((d) => !d.fnName.endsWith(":<source-unit>"));
+    expect(contractsOnly).toHaveLength(1);
+
+    const compiled = compileTypeScriptSourceIr(contractsOnly);
     const second = liftTypeScriptSourceText(compiled, "src/roundtrip.ts");
 
-    expect(compiled).toBe(source);
     expect(second.refusals).toEqual([]);
-    expect(canonicalJsonString(second.declarations)).toBe(
-      canonicalJsonString(first.declarations),
+    const secondContractsOnly = second.declarations.filter((d) => !d.fnName.endsWith(":<source-unit>"));
+    expect(secondContractsOnly).toHaveLength(1);
+
+    // The body term (rhs of the postcondition) must be structurally identical.
+    expect(canonicalJsonString(rhs(secondContractsOnly[0]!))).toBe(
+      canonicalJsonString(rhs(contractsOnly[0]!)),
     );
-    expect(second.declarations.map(functionContractCid)).toEqual(
-      first.declarations.map(functionContractCid),
+    // And its content-address must match.
+    expect(canonicalCid(rhs(secondContractsOnly[0]!))).toBe(
+      canonicalCid(rhs(contractsOnly[0]!)),
     );
   });
 
