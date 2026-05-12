@@ -37,7 +37,11 @@
         "kind": "operation-contract",
         "operator": "skip",
         "result": "Stmt",
-        "wp": "state unchanged"
+        "wp_note": "state unchanged",
+        "wp_rule": {
+          "kind": "var",
+          "name": "Q"
+        }
       }
     }
   },
@@ -59,5 +63,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:7fb4d0a88552579710ba2b9e7302981537fca6d599eca4c9f681b59f40adbb1ead9b3bb5851896aa683f9ab82b9e6a91e8d465db0b3332245bd00cd6a8d4b8f4",
   "target_concept_op": "concept:skip",
-  "target_op_cid": "blake3-512:a66930e06053bacfd74f398b69e199cbe5e35aa4f517bcbd2787b53a549966f6eb4ecca7b01d4a505b73893605ce5b09af843df8e0489d5181a2e9a633e0f90c"
+  "target_op_cid": "blake3-512:9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb"
 }

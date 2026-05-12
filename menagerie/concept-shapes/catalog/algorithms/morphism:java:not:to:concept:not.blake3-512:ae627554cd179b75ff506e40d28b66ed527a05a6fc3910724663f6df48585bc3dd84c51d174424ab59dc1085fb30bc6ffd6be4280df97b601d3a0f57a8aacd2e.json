@@ -20,18 +20,18 @@
       "name": "true"
     },
     "post": {
-      "kind": "contract-renaming-morphism",
-      "source_contract_cid": "blake3-512:44f1f99c95829b3745e8f331b82ba0de329a1f7120285114fb33b1a3ea4ff7cae25bccd09c7a5d439c1a6e0c1879e5aec5d5e7e9a9bf6cbd406aa26462cb11af",
-      "target_shape_cid": "blake3-512:74aa536fdfabbbbf60e1b5753381e7cebe4ae808dc0e3be6ed0d7aa1c231032e1a5ff3fd82939b1fb3096d8f92b832ec89c71841ea7f4cdf3a8b4c1481e789b6",
-      "renaming_map": {},
-      "representation_map": {},
-      "operator_map": {},
-      "literal_map": {},
       "homomorphism_obligation": {
         "kind": "structural-wp-abstraction",
         "source": "blake3-512:44f1f99c95829b3745e8f331b82ba0de329a1f7120285114fb33b1a3ea4ff7cae25bccd09c7a5d439c1a6e0c1879e5aec5d5e7e9a9bf6cbd406aa26462cb11af",
         "target": "blake3-512:74aa536fdfabbbbf60e1b5753381e7cebe4ae808dc0e3be6ed0d7aa1c231032e1a5ff3fd82939b1fb3096d8f92b832ec89c71841ea7f4cdf3a8b4c1481e789b6"
-      }
+      },
+      "kind": "contract-renaming-morphism",
+      "literal_map": {},
+      "operator_map": {},
+      "renaming_map": {},
+      "representation_map": {},
+      "source_contract_cid": "blake3-512:44f1f99c95829b3745e8f331b82ba0de329a1f7120285114fb33b1a3ea4ff7cae25bccd09c7a5d439c1a6e0c1879e5aec5d5e7e9a9bf6cbd406aa26462cb11af",
+      "target_shape_cid": "blake3-512:74aa536fdfabbbbf60e1b5753381e7cebe4ae808dc0e3be6ed0d7aa1c231032e1a5ff3fd82939b1fb3096d8f92b832ec89c71841ea7f4cdf3a8b4c1481e789b6"
     },
     "effects": {
       "effects": []

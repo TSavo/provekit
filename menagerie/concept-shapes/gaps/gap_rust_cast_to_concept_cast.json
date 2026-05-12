@@ -60,7 +60,7 @@
         "kind": "operation-contract",
         "operator": "cast",
         "result": "Expr",
-        "wp": "C cast expression preserving explicit target type and lifted child value"
+        "wp_note": "C cast expression preserving explicit target type and lifted child value"
       }
     }
   },
@@ -82,5 +82,5 @@
   "source_lang": "rust",
   "source_op_cid": "blake3-512:01e7e940a8648e6c5e9afed49ce4db4be40449d411f7fa53326c3982953ea16d086cfa4b2cb333220069e399cf57e125dad12dac5bb01acf17345be445d18e4c",
   "target_concept_op": "concept:cast",
-  "target_op_cid": "blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c"
+  "target_op_cid": "blake3-512:f410b454baa33f207b03cea78723ce7f457253c17959ca1d54c611e63e3260d2a5142ac927945118ad8b880cbcfbee16995db334c32f1caabe3a3677c59277f5"
 }

@@ -44,7 +44,6 @@
         "Stmt",
         "Stmt"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -62,6 +61,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "for",
+      "result": "Stmt",
       "wp_note": "seq(init, while(cond, seq(body, step)))"
     },
     "effects": {

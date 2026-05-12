@@ -34,7 +34,6 @@
       "arity": [
         "Int"
       ],
-      "result": "Int",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -43,6 +42,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "neg",
+      "result": "Int",
       "wp_note": "integer arithmetic negation when no overflow holds"
     },
     "effects": {

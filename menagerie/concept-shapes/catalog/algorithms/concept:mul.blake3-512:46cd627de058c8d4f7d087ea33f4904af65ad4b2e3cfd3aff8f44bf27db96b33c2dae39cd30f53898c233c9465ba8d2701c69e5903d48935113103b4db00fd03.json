@@ -45,7 +45,6 @@
         "Int",
         "Int"
       ],
-      "result": "Int",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -57,6 +56,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "mul",
+      "result": "Int",
       "wp_note": "mathematical integer multiplication when no overflow holds"
     },
     "effects": {

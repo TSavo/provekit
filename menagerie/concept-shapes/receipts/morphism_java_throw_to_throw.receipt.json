@@ -3,18 +3,16 @@
   "discharged": true,
   "effect_subset_relaxed": true,
   "kind": "MorphismDischargeReceipt",
+  "literal_map": {},
+  "method": "structural-wp-abstraction-and-effect-subset",
   "morphism_cid": "blake3-512:2e9645277a0efef1433349cb96df9049aafb2e2c649465df86c09dd93a6919e667e895a767abce99bd2a117e989f138837d22c6985a085dc4e9b714ce5b5a8d0",
-  "source_contract_cid": "blake3-512:ff44e2246ccc54061aed9362332072c3ab39c204a4e7b760d293816cf015aecbbf8fc2d729fff2e21ffae1b6b8d4f0277a291bdad27ffcb8e6b23ec705b06bf6",
-  "renaming_map": {},
-  "representation_map": {},
   "operator_map": {
     "Expr": "Value"
   },
-  "literal_map": {},
-  "after_substitution_cid": "blake3-512:aea37da09104a43016945004d124d01837b36949f65e37e1ec81cfa5242e8a2fab47021518926a5d842b38e444c264dc873c1f6016ccf1e9f1f383fee5d86960",
+  "renaming_map": {},
+  "representation_map": {},
+  "schema_version": "1",
   "shape_cid": "blake3-512:bfca9b128ea5128d15236ebbe44150ff60355b9bbcd664ae4abbc34f2e4e658f7441089449956bfdb333d1f2eb1bff828c74a5d2f3df7fec723abe883bb81a12",
-  "discharged": true,
-  "method": "structural-wp-abstraction-and-effect-subset",
   "signature": null,
   "source_contract_cid": "blake3-512:ff44e2246ccc54061aed9362332072c3ab39c204a4e7b760d293816cf015aecbbf8fc2d729fff2e21ffae1b6b8d4f0277a291bdad27ffcb8e6b23ec705b06bf6",
   "wp_abstracted": true

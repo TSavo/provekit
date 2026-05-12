@@ -37,7 +37,6 @@
       "Stmt",
       "Stmt"
     ],
-    "result": "Stmt",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -52,6 +51,9 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "conditional",
+    "result": "Stmt",
     "wp_note": "cond ? wp(then_branch, post) : wp(else_branch, post)",
     "wp_rule": {
       "kind": "and",
@@ -64,14 +66,14 @@
               "name": "cond"
             },
             {
-              "kind": "apply",
-              "fn": "wp_then_branch",
               "args": [
                 {
                   "kind": "var",
                   "name": "Q"
                 }
-              ]
+              ],
+              "fn": "wp_then_branch",
+              "kind": "apply"
             }
           ]
         },
@@ -88,14 +90,14 @@
               ]
             },
             {
-              "kind": "apply",
-              "fn": "wp_else_branch",
               "args": [
                 {
                   "kind": "var",
                   "name": "Q"
                 }
-              ]
+              ],
+              "fn": "wp_else_branch",
+              "kind": "apply"
             }
           ]
         }

@@ -9,38 +9,38 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "FunctionContractMemento",
-        "args": []
+        "name": "FunctionContractMemento"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "contract-renaming-morphism",
-      "source_contract_cid": "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae",
-      "target_shape_cid": "blake3-512:456f76c76a128069bd4970d4009e5f7e0d8938e009c2b096cd9612a6b50e2b4eac33d4c09d36e31bd7925c2ba8c3bf152b80ed559100740ceafeb8dad8be0985",
-      "renaming_map": {},
-      "representation_map": {},
-      "operator_map": {},
-      "literal_map": {},
       "homomorphism_obligation": {
         "kind": "structural-wp-abstraction",
         "source": "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae",
         "target": "blake3-512:456f76c76a128069bd4970d4009e5f7e0d8938e009c2b096cd9612a6b50e2b4eac33d4c09d36e31bd7925c2ba8c3bf152b80ed559100740ceafeb8dad8be0985"
-      }
+      },
+      "kind": "contract-renaming-morphism",
+      "literal_map": {},
+      "operator_map": {},
+      "renaming_map": {},
+      "representation_map": {},
+      "source_contract_cid": "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae",
+      "target_shape_cid": "blake3-512:456f76c76a128069bd4970d4009e5f7e0d8938e009c2b096cd9612a6b50e2b4eac33d4c09d36e31bd7925c2ba8c3bf152b80ed559100740ceafeb8dad8be0985"
     },
     "effects": {
       "effects": []
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
+      "name": "FunctionContractMemento"
     },
     "input_cids": [
       "blake3-512:e8e17bf9afd218fc3e88a48ed5e638da97d6d3c476f9f6c86ee961224c2c2c57e5344e9d5f49b0b3cf158ea12e5f8dfb924b7c7cd392d7ee4fe42d0b548662ae",

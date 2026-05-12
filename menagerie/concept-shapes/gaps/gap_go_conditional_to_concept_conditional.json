@@ -114,7 +114,55 @@
         "kind": "operation-contract",
         "operator": "conditional",
         "result": "Stmt",
-        "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)"
+        "wp_note": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+        "wp_rule": {
+          "kind": "and",
+          "operands": [
+            {
+              "kind": "implies",
+              "operands": [
+                {
+                  "kind": "var",
+                  "name": "cond"
+                },
+                {
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "Q"
+                    }
+                  ],
+                  "fn": "wp_then_branch",
+                  "kind": "apply"
+                }
+              ]
+            },
+            {
+              "kind": "implies",
+              "operands": [
+                {
+                  "kind": "not",
+                  "operands": [
+                    {
+                      "kind": "var",
+                      "name": "cond"
+                    }
+                  ]
+                },
+                {
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "Q"
+                    }
+                  ],
+                  "fn": "wp_else_branch",
+                  "kind": "apply"
+                }
+              ]
+            }
+          ]
+        }
       }
     }
   },
@@ -136,5 +184,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:90499ca96378d6a34d1accdd499de0bb5ec776eea38277ced9430ede0cb7f7d8abb2266c4635193ac1da6e77ca28b93cf0c964a1cdd5cf3598e67494c27d960d",
   "target_concept_op": "concept:conditional",
-  "target_op_cid": "blake3-512:46e8de67d7268a149d7429c115780cb286357fbed902dfd36618930c4ea9661e34e5e04a102f2864494e57c5db9410fa019dc85c39e2f8b431f616a05a010fdd"
+  "target_op_cid": "blake3-512:40d7790bd82a90175e5ffa7f0a3b4587c274d60a35065693eaa503f68bf8d1039839eb6687831dd7a66c9b45fcb57ec9eac68cf01f6b600afe6dd5a832c76492"
 }

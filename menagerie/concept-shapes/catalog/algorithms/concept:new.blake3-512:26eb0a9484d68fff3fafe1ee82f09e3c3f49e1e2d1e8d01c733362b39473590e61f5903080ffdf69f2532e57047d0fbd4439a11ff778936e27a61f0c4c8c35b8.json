@@ -30,7 +30,6 @@
         "String",
         "Expr"
       ],
-      "result": "Expr",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -45,6 +44,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "new",
+      "result": "Expr",
       "wp_note": "new object of type type_name constructed with args"
     },
     "effects": {

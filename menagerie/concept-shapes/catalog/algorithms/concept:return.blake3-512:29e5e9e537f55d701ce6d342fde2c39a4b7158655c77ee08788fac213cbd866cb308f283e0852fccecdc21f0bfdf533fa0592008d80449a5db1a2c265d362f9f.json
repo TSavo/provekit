@@ -23,7 +23,6 @@
       "arity": [
         "Expr"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -32,6 +31,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "return",
+      "result": "Stmt",
       "wp_note": "bind function out value and exit current body"
     },
     "effects": {

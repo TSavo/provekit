@@ -84,7 +84,7 @@
         "kind": "operation-contract",
         "operator": "mod",
         "result": "Int",
-        "wp": "integer remainder expression"
+        "wp_note": "integer remainder expression"
       }
     }
   },
@@ -106,5 +106,5 @@
   "source_lang": "python",
   "source_op_cid": "blake3-512:377cf94793191ab449c4e8dbe24aa3813b0dc6315dcea8c9312e078844519168e2689592cc24ef9ab3521f990084724423a8f98e14dae256443396194b8170d3",
   "target_concept_op": "concept:mod",
-  "target_op_cid": "blake3-512:f58d7f26192a3e713bd97c59aec8039a8b7c9ddd39e469d36da3077fe03de76912b4621ae3f4bdbae7d000a79303507e5ce2b1887221511ab905b896f321ef44"
+  "target_op_cid": "blake3-512:92340897b43965e01454b00a6a43ec54b2bf0e01213a45fa2311f730dde18adf8da97a22458c1a2a0fb23ce85ef3ad9b22e704804c74f41997aba3ba02cefe0d"
 }

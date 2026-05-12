@@ -69,7 +69,7 @@
         "kind": "operation-contract",
         "operator": "return",
         "result": "Stmt",
-        "wp": "bind function out value and exit current body"
+        "wp_note": "bind function out value and exit current body"
       }
     }
   },
@@ -91,5 +91,5 @@
   "source_lang": "ruby",
   "source_op_cid": "blake3-512:7d02a2b5bad98d1e2ab56fbd5a7ec8849e2922cd3507e0ae365e9dc95d50cceb6ac7545ccd467d1cb9a428b495d5f7283a7f16f58c5100ed71816d4f38df886e",
   "target_concept_op": "concept:return",
-  "target_op_cid": "blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db"
+  "target_op_cid": "blake3-512:29e5e9e537f55d701ce6d342fde2c39a4b7158655c77ee08788fac213cbd866cb308f283e0852fccecdc21f0bfdf533fa0592008d80449a5db1a2c265d362f9f"
 }

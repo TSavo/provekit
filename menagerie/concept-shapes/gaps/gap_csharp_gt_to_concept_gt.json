@@ -33,7 +33,7 @@
         "kind": "operation-contract",
         "operator": "gt",
         "result": "Bool",
-        "wp": "integer greater-than comparison"
+        "wp_note": "integer greater-than comparison"
       }
     }
   },
@@ -55,5 +55,5 @@
   "source_lang": "csharp",
   "source_op_cid": "blake3-512:906c4c7b52bb86424bc25d8ad2a373438925738eeefbb1a34d67fc2ae5976347679b68199783b3f79edf960d595dc569348bf9460b217d6eb9d287a9f52c8795",
   "target_concept_op": "concept:gt",
-  "target_op_cid": "blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6"
+  "target_op_cid": "blake3-512:e33869585ba33724173a12d34efa55544c133a4cc5a29d788e343fb7d9d4e06f7a8dd965a2492c989586989d84e3337d493d0704c34a9c486c4d72257a134e44"
 }

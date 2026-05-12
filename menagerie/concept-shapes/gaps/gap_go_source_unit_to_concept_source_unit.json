@@ -75,7 +75,17 @@
         "kind": "operation-contract",
         "operator": "source-unit",
         "result": "Stmt",
-        "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"
+        "wp_note": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+        "wp_rule": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "Q"
+            }
+          ],
+          "fn": "wp_operational_term",
+          "kind": "apply"
+        }
       }
     }
   },
@@ -97,5 +107,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:7579a25a7a50df35c8fb01a71639d9effc9b13be81b638a3a9c563275facbf9362cab66cac4c2448fa40c385ca061b867636f91cef3b3b961157b3a10f590a7c",
   "target_concept_op": "concept:source-unit",
-  "target_op_cid": "blake3-512:eb0385be264da92eb526401a968564f6eda9017bc4dc31069aaf8070aee7f1b22da2c680ba312ad2e3a29cf0ba881e13f7411ed082645ffe37d1605ea29db4b5"
+  "target_op_cid": "blake3-512:377bec17d4c9ea2e44216e244685c282b3ac83c19191699eab94a47ff0b123bf4899d6b5691ce88fa7bc70d4dd9f8d2566631bd02895f891ec67ca6d32a87285"
 }

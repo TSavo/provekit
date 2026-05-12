@@ -15,30 +15,31 @@
   ],
   "input_cids": [
     "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
-    "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+    "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
   ],
   "kind": "algorithm",
   "post": {
-    "kind": "contract-renaming-morphism",
-    "source_contract_cid": "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
-    "target_shape_cid": "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1",
-    "renaming_map": {},
-    "representation_map": {},
-    "operator_map": {},
-    "literal_map": {},
     "homomorphism_obligation": {
       "kind": "structural-wp-abstraction-and-effect-subset",
       "source": "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
       "target": "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
-    }
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {},
+    "renaming_map": {},
+    "representation_map": {},
+    "source_contract_cid": "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
+    "target_shape_cid": "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
   },
   "pre": {
     "args": [],
     "kind": "atomic",
     "name": "true"
   },
-  "input_cids": [
-    "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
-    "blake3-512:57b69cf351659f32356e3bfd6904171ae539776e0c0f60e25b330106ffc4b63a0854cb3d0716bb9198d6f53a2480d3b681dbf97c9be9a38f9c5f88ab3caa16c1"
-  ]
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
 }

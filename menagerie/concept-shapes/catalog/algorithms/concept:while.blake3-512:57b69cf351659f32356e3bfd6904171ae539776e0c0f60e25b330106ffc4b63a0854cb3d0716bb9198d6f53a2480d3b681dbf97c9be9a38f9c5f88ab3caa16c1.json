@@ -30,7 +30,6 @@
         "Bool",
         "Stmt"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -42,6 +41,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "while",
+      "result": "Stmt",
       "wp_note": "loop invariant holds and cond is false at exit"
     },
     "effects": {

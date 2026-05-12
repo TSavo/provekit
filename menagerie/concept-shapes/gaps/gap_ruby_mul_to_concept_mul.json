@@ -87,7 +87,7 @@
         "kind": "operation-contract",
         "operator": "mul",
         "result": "Int",
-        "wp": "mathematical integer multiplication when no overflow holds"
+        "wp_note": "mathematical integer multiplication when no overflow holds"
       }
     },
     "pre_delta": {
@@ -136,5 +136,5 @@
   "source_lang": "ruby",
   "source_op_cid": "blake3-512:48fa7f1fe9a51e572c54789720a6caa01844eaa786136463ee7606ed7be0923ec354849051080fb04fd1630d68b05bde7aec7675484218a666672c13f9ca16f0",
   "target_concept_op": "concept:mul",
-  "target_op_cid": "blake3-512:9c77e353a537b0cd2e67cc880bbf1e2937c1e2f26c0af2b8be1a2741f3521d9be07cd2ab2886d54c425e6fed3dd161636a5f430bf2e8874ec1ddac6326ac3d7f"
+  "target_op_cid": "blake3-512:46cd627de058c8d4f7d087ea33f4904af65ad4b2e3cfd3aff8f44bf27db96b33c2dae39cd30f53898c233c9465ba8d2701c69e5903d48935113103b4db00fd03"
 }

@@ -83,7 +83,7 @@
         "kind": "operation-contract",
         "operator": "shl",
         "result": "Int",
-        "wp": "integer left shift expression"
+        "wp_note": "integer left shift expression"
       }
     }
   },
@@ -105,5 +105,5 @@
   "source_lang": "typescript",
   "source_op_cid": "blake3-512:ec6368ab5b37b805731e2d3eb99cc6758c98415ce44ee372cdf7b3e70e3455386d101aa2c215c2e9ee6a611bfb2c6d15c37d1642236e1dfb7e5c13f51c555bae",
   "target_concept_op": "concept:shl",
-  "target_op_cid": "blake3-512:d5609e27e03c60f6d8405743da5a4fb5f0f4e6cd92390d18c69451925badd4a3a11ac8818f4934f8818b0a02c4c545372573951a0df3ddba77415db18d6cfa28"
+  "target_op_cid": "blake3-512:f9cdfcba8d0e223803126504a2a6ed10005fa61acb5c55b74b270bc66d963eb7648ab6763f0510760df93145c0f6670087a403417e8b3100c7142e121111807a"
 }

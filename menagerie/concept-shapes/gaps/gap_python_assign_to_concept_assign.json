@@ -96,7 +96,7 @@
         "kind": "operation-contract",
         "operator": "assign",
         "result": "Stmt",
-        "wp": "store value into target and update state"
+        "wp_note": "store value into target and update state"
       }
     }
   },
@@ -118,5 +118,5 @@
   "source_lang": "python",
   "source_op_cid": "blake3-512:ce8f5f07bd43afbdedceecb929e12884fdb85d0404b1ef63038b096a228bb29d40b9095ff4efbeb2d46d130b738b87d806df14b14b9babd2b0117d74ec9dd30c",
   "target_concept_op": "concept:assign",
-  "target_op_cid": "blake3-512:f4eed0b80103afe69a9999a1ff6195e048d2bfb14e4318ace99e95054ca7ecc4938da79e9492a0caef954f4c64ce1640e58c111cb0753a6ec5c9dd5c091b9379"
+  "target_op_cid": "blake3-512:c92de23581656b0f75bdeff5efe428c33b0088c43f28a35fa50ad77b73f5e13f60078d66c22cfed80d7764224d5647522e92d18de9e8808a19ae31fc4b1b389a"
 }

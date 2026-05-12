@@ -23,7 +23,6 @@
       "arity": [
         "Unit"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -32,6 +31,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "continue",
+      "result": "Stmt",
       "wp_note": "jump to next loop iteration"
     },
     "effects": {

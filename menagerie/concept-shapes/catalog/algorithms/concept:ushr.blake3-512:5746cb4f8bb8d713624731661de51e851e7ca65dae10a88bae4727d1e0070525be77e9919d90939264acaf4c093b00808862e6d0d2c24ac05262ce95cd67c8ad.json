@@ -30,7 +30,6 @@
         "Int",
         "Int"
       ],
-      "result": "Int",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -42,6 +41,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "ushr",
+      "result": "Int",
       "wp_note": "TypeScript binary operator >>> (zero-fill right shift, operands coerced to ToUint32)"
     },
     "effects": {

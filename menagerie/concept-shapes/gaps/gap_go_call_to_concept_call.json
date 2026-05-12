@@ -100,7 +100,7 @@
         "kind": "operation-contract",
         "operator": "call",
         "result": "Stmt",
-        "wp": "callee pre under bound args implies callee post under caller state"
+        "wp_note": "callee pre under bound args implies callee post under caller state"
       }
     }
   },
@@ -122,5 +122,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:3137f76279e614d0918d10c0fa6deddc86b51840a7a0eb8299203d43d6f3ef57f6af048934b64cd22904dea1d242088b094a4679a010a9bd535e35be6461743e",
   "target_concept_op": "concept:call",
-  "target_op_cid": "blake3-512:295cd7624a0ea33aff36e5c0b8d1fe9a566c7b8127f7f271aa302cdb35ef1fb06f2efa07f756514d15c6945ce7737cd24d450eb0898d5cf2711db08c428e941c"
+  "target_op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c"
 }

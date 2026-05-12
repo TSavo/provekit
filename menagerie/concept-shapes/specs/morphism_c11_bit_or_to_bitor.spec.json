@@ -1,47 +1,47 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "morphism:c11:bit_or:to:concept:bitor",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
   "formals": [
     "source_contract"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
-    }
+  "input_cids": [
+    "blake3-512:0493367378f71a903fff7c48614006b01f1144083f99b65a416c726584f459f8ab42eca0f2a3d7459ee8e198d5c31ff5ff9f33828391b66abbc015c2fb3bd48d",
+    "blake3-512:d57b54bffe698ed804a4a49486b73a1a8a3e7bd84fb12babaad01ce22d8b7bcb5a35f3476324063f8de9f8090846d0d4fbeb48d78475d07e16f7925b4f264de3"
   ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "FunctionContractMemento",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "contract-renaming-morphism",
-    "source_contract_cid": "blake3-512:0493367378f71a903fff7c48614006b01f1144083f99b65a416c726584f459f8ab42eca0f2a3d7459ee8e198d5c31ff5ff9f33828391b66abbc015c2fb3bd48d",
-    "target_shape_cid": "blake3-512:d57b54bffe698ed804a4a49486b73a1a8a3e7bd84fb12babaad01ce22d8b7bcb5a35f3476324063f8de9f8090846d0d4fbeb48d78475d07e16f7925b4f264de3",
-    "renaming_map": {},
-    "representation_map": {},
-    "operator_map": {
-      "bit_or": "bitor"
-    },
-    "literal_map": {},
     "homomorphism_obligation": {
       "kind": "structural-wp-abstraction",
       "source": "blake3-512:0493367378f71a903fff7c48614006b01f1144083f99b65a416c726584f459f8ab42eca0f2a3d7459ee8e198d5c31ff5ff9f33828391b66abbc015c2fb3bd48d",
       "target": "blake3-512:d57b54bffe698ed804a4a49486b73a1a8a3e7bd84fb12babaad01ce22d8b7bcb5a35f3476324063f8de9f8090846d0d4fbeb48d78475d07e16f7925b4f264de3"
-    }
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {
+      "bit_or": "bitor"
+    },
+    "renaming_map": {},
+    "representation_map": {},
+    "source_contract_cid": "blake3-512:0493367378f71a903fff7c48614006b01f1144083f99b65a416c726584f459f8ab42eca0f2a3d7459ee8e198d5c31ff5ff9f33828391b66abbc015c2fb3bd48d",
+    "target_shape_cid": "blake3-512:d57b54bffe698ed804a4a49486b73a1a8a3e7bd84fb12babaad01ce22d8b7bcb5a35f3476324063f8de9f8090846d0d4fbeb48d78475d07e16f7925b4f264de3"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "input_cids": [
-    "blake3-512:0493367378f71a903fff7c48614006b01f1144083f99b65a416c726584f459f8ab42eca0f2a3d7459ee8e198d5c31ff5ff9f33828391b66abbc015c2fb3bd48d",
-    "blake3-512:d57b54bffe698ed804a4a49486b73a1a8a3e7bd84fb12babaad01ce22d8b7bcb5a35f3476324063f8de9f8090846d0d4fbeb48d78475d07e16f7925b4f264de3"
-  ]
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
 }

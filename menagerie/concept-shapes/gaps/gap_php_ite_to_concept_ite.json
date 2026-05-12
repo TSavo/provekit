@@ -103,7 +103,7 @@
         "kind": "operation-contract",
         "operator": "ite",
         "result": "Expr",
-        "wp": "ternary expression selected by cond"
+        "wp_note": "ternary expression selected by cond"
       }
     }
   },
@@ -125,5 +125,5 @@
   "source_lang": "php",
   "source_op_cid": "blake3-512:e3d0ab08cbb8994dc677c1334eb83cfc7134140d2332c56d06afa740f318cfbf2656d9117241f410c012e8e9bc2f2673790430571f4a5ecdd21a08f6aa7fef49",
   "target_concept_op": "concept:ite",
-  "target_op_cid": "blake3-512:7fc1f25b05c8459e5d5af900c8369ced389d1994185b94216a8dfba3499875714746d684595a27923ae59258bc87d641b4c378b2debf2addc926c26bab5e075c"
+  "target_op_cid": "blake3-512:3c87b90507933effd400bd2ddc2e15430f55dcbd466f351b7bb96140015bd228faf54efe31032114d4d5dd255188c8d1dcf202b2267fa09db0560d40c1ec5bab"
 }

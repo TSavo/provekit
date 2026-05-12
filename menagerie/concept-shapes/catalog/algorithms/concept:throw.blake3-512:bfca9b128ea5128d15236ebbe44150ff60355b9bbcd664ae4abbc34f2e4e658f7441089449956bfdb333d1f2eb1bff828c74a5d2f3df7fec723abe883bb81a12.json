@@ -23,7 +23,6 @@
       "arity": [
         "Value"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -32,6 +31,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "throw",
+      "result": "Stmt",
       "wp_note": "throw exception or value"
     },
     "effects": {

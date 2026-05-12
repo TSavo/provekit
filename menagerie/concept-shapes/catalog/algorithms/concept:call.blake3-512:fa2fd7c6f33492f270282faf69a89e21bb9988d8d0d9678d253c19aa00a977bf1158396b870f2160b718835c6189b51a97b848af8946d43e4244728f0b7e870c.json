@@ -30,7 +30,6 @@
         "FnContract",
         "ListOf<Expr>"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -45,6 +44,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "call",
+      "result": "Stmt",
       "wp_note": "callee pre under bound args implies callee post under caller state"
     },
     "effects": {

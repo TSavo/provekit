@@ -140,7 +140,7 @@
         "kind": "operation-contract",
         "operator": "for",
         "result": "Stmt",
-        "wp": "seq(init, while(cond, seq(body, step)))"
+        "wp_note": "seq(init, while(cond, seq(body, step)))"
       }
     }
   },
@@ -162,5 +162,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:f73cd608b4b23f91b699a3e05f4df2e68f78eb305e082af120c97478ad281bcb2f8664a77c2dae8fea551dd8a6767ef7b905526f7d3706771626f4d7e0707e6e",
   "target_concept_op": "concept:for",
-  "target_op_cid": "blake3-512:3595b8dd26613833f59c6d411823ecd93008c07797557120ac0949c0367bca89b9ae77c243cf7c09e8b4865156513d2faccb9b5acf6baf19057b0737b9c07fd3"
+  "target_op_cid": "blake3-512:5efdbe33b64f902d53f221eb98e33511b98766333bc10042982a0f943faf1cb300bc5a0b6018af296c37f32fd0eb11a170bae1d06e42a604f85475c0f98eb16f"
 }

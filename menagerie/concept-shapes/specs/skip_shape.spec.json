@@ -18,7 +18,6 @@
     "arity": [
       "Unit"
     ],
-    "result": "Stmt",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -27,6 +26,9 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "skip",
+    "result": "Stmt",
     "wp_note": "state unchanged",
     "wp_rule": {
       "kind": "var",

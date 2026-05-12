@@ -33,7 +33,7 @@
         "kind": "operation-contract",
         "operator": "div",
         "result": "Int",
-        "wp": "integer division expression"
+        "wp_note": "integer division expression"
       }
     },
     "pre_delta": {
@@ -72,5 +72,5 @@
   "source_lang": "rust",
   "source_op_cid": "blake3-512:d7403da8d2a8921b71170b5fc34c12022118d0c545f25c7ff89fe77bbed02419e3528479ded0e746535ee92d0e1801bce46608c15c3d6d2a5567bec811cbc75a",
   "target_concept_op": "concept:div",
-  "target_op_cid": "blake3-512:dbb7e33b21b41fcf835530ee9f5e9d216d78ce5f293354efb2100ba3bdf436dc219f232fe8bb25b241b35ea559cd41e9707e1c83299b1dbef9fc8ea5f743f635"
+  "target_op_cid": "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839"
 }

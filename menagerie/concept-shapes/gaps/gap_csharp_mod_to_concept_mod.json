@@ -57,7 +57,7 @@
         "kind": "operation-contract",
         "operator": "mod",
         "result": "Int",
-        "wp": "integer remainder expression"
+        "wp_note": "integer remainder expression"
       }
     },
     "pre_delta": {
@@ -96,5 +96,5 @@
   "source_lang": "csharp",
   "source_op_cid": "blake3-512:c05fe30fca5b0514eda2028164285cfb9f5a89977af19f822f0de5be66a45d6e7f57feaa2d4dd8a0e5596682ce4218f316dc12d19a7b3f48d4adbfbc8ac08fa8",
   "target_concept_op": "concept:mod",
-  "target_op_cid": "blake3-512:f58d7f26192a3e713bd97c59aec8039a8b7c9ddd39e469d36da3077fe03de76912b4621ae3f4bdbae7d000a79303507e5ce2b1887221511ab905b896f321ef44"
+  "target_op_cid": "blake3-512:92340897b43965e01454b00a6a43ec54b2bf0e01213a45fa2311f730dde18adf8da97a22458c1a2a0fb23ce85ef3ad9b22e704804c74f41997aba3ba02cefe0d"
 }

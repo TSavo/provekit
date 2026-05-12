@@ -25,7 +25,6 @@
       "LValue",
       "FieldName"
     ],
-    "result": "LValue",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -38,6 +37,9 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "member",
+    "result": "LValue",
     "wp_note": "field lvalue projection"
   },
   "pre": {

@@ -1,62 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:seq",
-  "formals": [
-    "first",
-    "second"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "seq",
-    "arity": [
-      "Stmt",
-      "Stmt"
-    ],
-    "result": "Stmt",
-    "arity_shape": {
-      "kind": "positional",
-      "arity": 2
-    },
-    "wp_note": "wp(first, wp(second, post))",
-    "wp_rule": {
-      "kind": "apply",
-      "fn": "wp_first",
-      "args": [
-        {
-          "kind": "apply",
-          "fn": "wp_second",
-          "args": [
-            {
-              "kind": "var",
-              "name": "Q"
-            }
-          ]
-        }
-      ]
-    }
-  },
   "effects": {
     "effects": [
       {
@@ -95,7 +37,23 @@
     "kind": "operation-contract",
     "operator": "seq",
     "result": "Stmt",
-    "wp": "wp(first, wp(second, post))"
+    "wp_note": "wp(first, wp(second, post))",
+    "wp_rule": {
+      "args": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "Q"
+            }
+          ],
+          "fn": "wp_second",
+          "kind": "apply"
+        }
+      ],
+      "fn": "wp_first",
+      "kind": "apply"
+    }
   },
   "pre": {
     "args": [],

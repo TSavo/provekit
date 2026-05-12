@@ -1,53 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:index",
-  "formals": [
-    "base",
-    "index"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "LValue",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "index",
-    "arity": [
-      "Expr",
-      "Expr"
-    ],
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "base"
-        },
-        {
-          "name": "index"
-        }
-      ]
-    },
-    "result": "LValue",
-    "wp_note": "array element lvalue projection"
-  },
   "effects": {
     "effects": [
       {
@@ -105,7 +56,7 @@
     "kind": "operation-contract",
     "operator": "index",
     "result": "LValue",
-    "wp": "array element lvalue projection"
+    "wp_note": "array element lvalue projection"
   },
   "pre": {
     "args": [],

@@ -9,40 +9,40 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "FunctionContractMemento",
-        "args": []
+        "name": "FunctionContractMemento"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "contract-renaming-morphism",
-      "source_contract_cid": "blake3-512:0272ef1a131968f889dd40020133b7a4e909c3ae1c3557dfe59640eb90109c60d68676ba831eb25999f3d6338d179a6307844b37708fa4533bb3979995d11715",
-      "target_shape_cid": "blake3-512:ee6a800eaf4d13e80f06f936bbaa86a0a80276ce8d1ab8bc7440d194e0e2034ba8a74fb5c74e624a25f2c0bb76e288191ce4e282f1fbbefed91c390ff8a1dfeb",
-      "renaming_map": {},
-      "representation_map": {},
-      "operator_map": {
-        "go:ge": "ge"
-      },
-      "literal_map": {},
       "homomorphism_obligation": {
         "kind": "structural-wp-abstraction",
         "source": "blake3-512:0272ef1a131968f889dd40020133b7a4e909c3ae1c3557dfe59640eb90109c60d68676ba831eb25999f3d6338d179a6307844b37708fa4533bb3979995d11715",
         "target": "blake3-512:ee6a800eaf4d13e80f06f936bbaa86a0a80276ce8d1ab8bc7440d194e0e2034ba8a74fb5c74e624a25f2c0bb76e288191ce4e282f1fbbefed91c390ff8a1dfeb"
-      }
+      },
+      "kind": "contract-renaming-morphism",
+      "literal_map": {},
+      "operator_map": {
+        "go:ge": "ge"
+      },
+      "renaming_map": {},
+      "representation_map": {},
+      "source_contract_cid": "blake3-512:0272ef1a131968f889dd40020133b7a4e909c3ae1c3557dfe59640eb90109c60d68676ba831eb25999f3d6338d179a6307844b37708fa4533bb3979995d11715",
+      "target_shape_cid": "blake3-512:ee6a800eaf4d13e80f06f936bbaa86a0a80276ce8d1ab8bc7440d194e0e2034ba8a74fb5c74e624a25f2c0bb76e288191ce4e282f1fbbefed91c390ff8a1dfeb"
     },
     "effects": {
       "effects": []
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
+      "name": "FunctionContractMemento"
     },
     "input_cids": [
       "blake3-512:0272ef1a131968f889dd40020133b7a4e909c3ae1c3557dfe59640eb90109c60d68676ba831eb25999f3d6338d179a6307844b37708fa4533bb3979995d11715",

@@ -69,7 +69,23 @@
         "kind": "operation-contract",
         "operator": "seq",
         "result": "Stmt",
-        "wp": "wp(first, wp(second, post))"
+        "wp_note": "wp(first, wp(second, post))",
+        "wp_rule": {
+          "args": [
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "Q"
+                }
+              ],
+              "fn": "wp_second",
+              "kind": "apply"
+            }
+          ],
+          "fn": "wp_first",
+          "kind": "apply"
+        }
       }
     }
   },
@@ -91,5 +107,5 @@
   "source_lang": "go",
   "source_op_cid": "blake3-512:4cc2f526164023c6401828ed393f00546e71eb5f01d52f1a302c282bffc8db2690872b22727e228c8decf6785f38b1587e2ab1171d8c7af62bb4d6fa72ece8fb",
   "target_concept_op": "concept:seq",
-  "target_op_cid": "blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412"
+  "target_op_cid": "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504"
 }

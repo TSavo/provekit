@@ -30,7 +30,6 @@
         "LValue",
         "Expr"
       ],
-      "result": "Stmt",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -42,6 +41,9 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "assign",
+      "result": "Stmt",
       "wp_note": "store value into target and update state"
     },
     "effects": {

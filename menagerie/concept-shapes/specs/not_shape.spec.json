@@ -18,7 +18,6 @@
     "arity": [
       "Bool"
     ],
-    "result": "Bool",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -27,6 +26,9 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "not",
+    "result": "Bool",
     "wp_note": "boolean negation"
   },
   "pre": {

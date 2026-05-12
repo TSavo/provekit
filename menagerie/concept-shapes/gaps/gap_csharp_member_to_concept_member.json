@@ -72,7 +72,7 @@
         "kind": "operation-contract",
         "operator": "member",
         "result": "LValue",
-        "wp": "field lvalue projection"
+        "wp_note": "field lvalue projection"
       }
     }
   },
@@ -94,5 +94,5 @@
   "source_lang": "csharp",
   "source_op_cid": "blake3-512:4a7abe2df77ff3adc2bc6450c91c69e4b99306fad5c47a9d514b85d22319a6a5c7ff74cadf1f5702d845ac07e6292a465a222a2e4c7507e915ed1537a7144234",
   "target_concept_op": "concept:member",
-  "target_op_cid": "blake3-512:2d3b8518c51a93e8c42747b508b766134e14aeaa88327411b2bfb63da481aba27019d2f2613e85054c75d13e5b2f40efad4b9265b1148f1fcb13f4220b02fe2d"
+  "target_op_cid": "blake3-512:8c9f60571f0b644a09ef99ae2779927221cd61a7ba20000c0c933ac01b3fa4b1c41658df47404b49a0ef50006fd04139e7dd90f6352d3fc1aeb9b1c6c3677271"
 }

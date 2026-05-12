@@ -1,54 +1,4 @@
 {
-  "kind": "algorithm",
-  "fn_name": "concept:neg",
-  "formals": [
-    "value"
-  ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Int",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "no_signed_overflow",
-    "args": [
-      {
-        "kind": "op",
-        "name": "neg",
-        "args": [
-          {
-            "kind": "var",
-            "name": "value"
-          }
-        ]
-      }
-    ]
-  },
-  "post": {
-    "kind": "operation-contract",
-    "operator": "neg",
-    "arity": [
-      "Int"
-    ],
-    "result": "Int",
-    "arity_shape": {
-      "kind": "named",
-      "slots": [
-        {
-          "name": "value"
-        }
-      ]
-    },
-    "wp_note": "integer arithmetic negation when no overflow holds"
-  },
   "effects": {
     "effects": [
       {
@@ -88,7 +38,7 @@
     "kind": "operation-contract",
     "operator": "neg",
     "result": "Int",
-    "wp": "integer arithmetic negation when no overflow holds"
+    "wp_note": "integer arithmetic negation when no overflow holds"
   },
   "pre": {
     "args": [

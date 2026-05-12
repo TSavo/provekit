@@ -74,7 +74,7 @@
         "kind": "operation-contract",
         "operator": "throw",
         "result": "Stmt",
-        "wp": "throw exception or value"
+        "wp_note": "throw exception or value"
       }
     }
   },
@@ -96,5 +96,5 @@
   "source_lang": "zig",
   "source_op_cid": "blake3-512:3de01f87a37636103e33944957b3b0d355b1a2e071e58bbe378059b2ea3c48c98e361f73251e0b8ef603685788154bbaaecdf02afd0d693f09313c87abbce6c5",
   "target_concept_op": "concept:throw",
-  "target_op_cid": "blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede"
+  "target_op_cid": "blake3-512:bfca9b128ea5128d15236ebbe44150ff60355b9bbcd664ae4abbc34f2e4e658f7441089449956bfdb333d1f2eb1bff828c74a5d2f3df7fec723abe883bb81a12"
 }
