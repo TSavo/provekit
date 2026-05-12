@@ -53,9 +53,9 @@ Helper sorts are minted for operation arities and effect signatures: `FnContract
 | `not` | `Bool` | `Bool` | boolean negation |
 | `assign` | `LValue x Expr` | `Stmt` | store value into target and update state |
 | `neg` | `Int` | `Int` | integer arithmetic negation when no overflow holds |
-| `source-unit` | `Expr x Stmt` | `Stmt` | lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term |
+| `source-unit` | `String x Stmt` | `Stmt` | lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term |
 | `opaque` | `Unit` | `Stmt` | stable placeholder for non-lifted or intentionally opaque cursor kinds |
-| `decl` | `Expr x Expr` | `Stmt` | bind local name to initializer before continuing |
+| `decl` | `String x Expr` | `Stmt` | bind local name to initializer before continuing |
 | `case` | `Expr x Stmt` | `Stmt` | switch case arm body guarded by value |
 | `default` | `Stmt` | `Stmt` | switch default arm body |
 | `label` | `Expr x Stmt` | `Stmt` | statement label with body |

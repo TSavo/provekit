@@ -36,7 +36,17 @@
     ],
     "result": "Stmt",
     "wp": "loop invariant holds and cond is false at exit",
-    "notes": "Requires a loop invariant memento for nontrivial discharge"
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    }
   },
   "effects": {
     "effects": [

@@ -130,7 +130,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:decl",
             "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161",
             2,
-            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\", \"slot_sort\": \"identifier\"}, {\"name\": \"initializer\"}]}",
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\"}, {\"name\": \"initializer\"}]}",
             "declared name, initializer or unit",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."
@@ -2006,7 +2006,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             "c11:decl",
             "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161",
             2,
-            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\", \"slot_sort\": \"identifier\"}, {\"name\": \"initializer\"}]}",
+            "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\"}, {\"name\": \"initializer\"}]}",
             "fold variable declarations as decl terms",
             "newly-minted",
             "Generated minimal stable op for this libclang cursor kind."

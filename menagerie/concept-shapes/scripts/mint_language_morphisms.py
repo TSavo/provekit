@@ -128,7 +128,7 @@ OPS = [
     op("ge", ("c11", "op_ge.spec.json")),
     op("not", ("c11", "op_not.spec.json")),
     op("assign", ("c11", "op_assign.spec.json"), renaming={"lvalue": "target", "rvalue": "value"}),
-    op("decl", ("c11", "op_decl.spec.json")),
+    op("decl", ("c11", "op_decl.spec.json"), renaming={"value": "initializer"}),
     op("seq", ("c11", "op_seq.spec.json")),
     op("skip", ("c11", "op_skip.spec.json")),
     op("conditional", ("c11", "op_if.spec.json"), concept_operator="conditional", base_operator="if"),

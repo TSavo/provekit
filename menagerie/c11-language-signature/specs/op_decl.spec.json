@@ -8,7 +8,7 @@
   "formal_sorts": [
     {
       "kind": "ctor",
-      "name": "Expr",
+      "name": "String",
       "args": []
     },
     {
@@ -31,15 +31,14 @@
     "kind": "operation-contract",
     "operator": "decl",
     "arity": [
-      "Expr",
+      "String",
       "Expr"
     ],
     "arity_shape": {
       "kind": "named",
       "slots": [
         {
-          "name": "name",
-          "slot_sort": "identifier"
+          "name": "name"
         },
         {
           "name": "initializer"

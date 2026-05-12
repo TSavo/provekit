@@ -1,0 +1,45 @@
+{
+  "kind": "algorithm",
+  "fn_name": "morphism:ruby:while:to:concept:while",
+  "formals": [
+    "source_contract"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "FunctionContractMemento",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:d094ebafdb8ede6aabbf1a9dc8e084fbd00622c683549e9a519d85aad6dbe1ffde0be3f2e7bd22c2c52deca9b12dac958d2a97ff8aa7bbeb13a7cab9c018bd4b",
+    "target_shape_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {},
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction-and-effect-subset",
+      "source": "blake3-512:d094ebafdb8ede6aabbf1a9dc8e084fbd00622c683549e9a519d85aad6dbe1ffde0be3f2e7bd22c2c52deca9b12dac958d2a97ff8aa7bbeb13a7cab9c018bd4b",
+      "target": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "input_cids": [
+    "blake3-512:d094ebafdb8ede6aabbf1a9dc8e084fbd00622c683549e9a519d85aad6dbe1ffde0be3f2e7bd22c2c52deca9b12dac958d2a97ff8aa7bbeb13a7cab9c018bd4b",
+    "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276"
+  ]
+}
