@@ -11,6 +11,14 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[1]
 ROOT = BASE.parents[1]
 RUST_DIR = ROOT / "implementations" / "rust"
+
+
+def rel_path(path):
+    """Return *path* relative to ROOT if it is absolute and under ROOT; else str(path)."""
+    try:
+        return str(Path(path).resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        return str(path)
 TARGET = RUST_DIR / "target" / "debug"
 PROVEKIT = TARGET / "provekit"
 CANON = TARGET / "compute_fixture_cid"
@@ -968,7 +976,7 @@ def mint(kind, spec_name):
         ]
     )
     cid, path = output.split("\t", 1)
-    return cid, path
+    return cid, rel_path(path)
 
 
 def normalize_string(value, renaming_map, representation_map, operator_map, literal_map):
@@ -1099,7 +1107,7 @@ def store_receipt(name, receipt):
     catalog_dir.mkdir(parents=True, exist_ok=True)
     catalog_path = catalog_dir / f"{name}.{cid}.json"
     write_json(catalog_path, {"cid": cid, "memento": receipt, "signature": None})
-    return cid, str(catalog_path)
+    return cid, rel_path(catalog_path)
 
 
 def pure_compose_atom(fn_name, formals, sorts, return_sort, post, formal_idx=None):
@@ -1362,7 +1370,7 @@ def main():
             source_path = SOURCE_DIR / f"{source_name}.contract.json"
             write_json(source_path, contract)
             source_cid = canonical_cid_file(source_path)
-            cids.append({"kind": "source", "name": source_name, "cid": source_cid, "path": str(source_path)})
+            cids.append({"kind": "source", "name": source_name, "cid": source_cid, "path": rel_path(source_path)})
 
             spec_stem = f"morphism_{source_name}_to_shape"
             spec_name = f"{spec_stem}.spec.json"
@@ -1490,7 +1498,7 @@ def main():
                 "kind": "ccp-compose",
                 "name": "validated-allocated-access:pure-projection",
                 "cid": compose_probe["composed_cid"],
-                "path": str(COMPOSITION_DIR / "validated_allocated_access.compose-probe.json"),
+                "path": rel_path(COMPOSITION_DIR / "validated_allocated_access.compose-probe.json"),
             }
         )
 

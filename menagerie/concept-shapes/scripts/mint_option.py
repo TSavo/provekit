@@ -33,6 +33,14 @@ CID_FILE = BASE / "cids.tsv"
 ROOT = BASE.parents[1]
 RUST_DIR = ROOT / "implementations" / "rust"
 
+
+def rel_path(path):
+    """Return *path* relative to ROOT if it is absolute and under ROOT; else str(path)."""
+    try:
+        return str(Path(path).resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        return str(path)
+
 BINARY_CANDIDATES = [
     RUST_DIR / "target" / "debug" / "compute_fixture_cid",
     Path("/Users/tsavo/provekit/implementations/rust/target/debug/compute_fixture_cid"),
@@ -348,7 +356,7 @@ def mint_all():
     lift_path = REAL_DIR / f"rust:Option->concept:option.{lift_cid}.json"
     write_json(lift_path, lift_entry)
     print(f"  rust:Option->concept:option: {lift_cid[:40]}...")
-    cid_rows.append({"kind": "lift-equation", "name": "rust:Option->concept:option", "cid": lift_cid, "path": str(lift_path)})
+    cid_rows.append({"kind": "lift-equation", "name": "rust:Option->concept:option", "cid": lift_cid, "path": rel_path(lift_path)})
 
     print("[C] Minting concept:option->c:tagged-union-macro realization (N edge)...")
     real_memento = build_realization_option_c()
@@ -356,7 +364,7 @@ def mint_all():
     real_path = REAL_DIR / f"concept:option->c:tagged-union-macro.{real_cid}.json"
     write_json(real_path, real_entry)
     print(f"  concept:option->c:tagged-union-macro: {real_cid[:40]}...")
-    cid_rows.append({"kind": "realization", "name": "concept:option->c:tagged-union-macro", "cid": real_cid, "path": str(real_path)})
+    cid_rows.append({"kind": "realization", "name": "concept:option->c:tagged-union-macro", "cid": real_cid, "path": rel_path(real_path)})
 
     # Step 2: build and mint abstraction once, with realizations already populated.
     print("[A] Minting concept:option<T> abstraction (with realization CID populated)...")
@@ -366,7 +374,7 @@ def mint_all():
     abst_path = ABST_DIR / f"concept:option.{abst_cid}.json"
     write_json(abst_path, abst_entry)
     print(f"  concept:option: {abst_cid[:40]}...")
-    cid_rows.append({"kind": "abstraction", "name": "concept:option", "cid": abst_cid, "path": str(abst_path)})
+    cid_rows.append({"kind": "abstraction", "name": "concept:option", "cid": abst_cid, "path": rel_path(abst_path)})
 
     # Stability check: mint each artifact a second time and compare.
     print("\n[STABILITY] Re-minting all artifacts for byte-stability check...")
