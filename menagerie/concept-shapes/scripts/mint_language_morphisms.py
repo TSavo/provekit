@@ -448,6 +448,10 @@ def try_structural_subsumption(after_spec, concept_spec):
     1. wp-text abstraction: the wp field is human-readable documentation; it carries
        no semantic weight in the discharge obligation.  If after_spec matches
        concept_spec in every field except post.wp, the morphism is discharged.
+       Also strips the post.notes field (documentation metadata, never present in
+       concept hub specs) when it appears in a language spec but not in the concept.
+       notes is documentation in the same sense as wp: it records implementation
+       detail for human readers and carries no semantic discharge obligation.
        Discharge method: "structural-wp-abstraction".
 
     2. pre-weakening: if lang_pre = true (the trivially-weak precondition) then
@@ -474,6 +478,11 @@ def try_structural_subsumption(after_spec, concept_spec):
     """
     import copy as _copy
 
+    # Documentation-only keys in post that carry no semantic discharge obligation.
+    # The concept hub never emits these; language specs may include them as
+    # human-readable annotations.  They are stripped during wp-abstraction.
+    _DOC_ONLY_KEYS = {"wp", "notes"}
+
     after_pre = after_spec.get("pre")
     concept_pre = concept_spec.get("pre")
     after_wp = after_spec.get("post", {}).get("wp")
@@ -481,12 +490,19 @@ def try_structural_subsumption(after_spec, concept_spec):
     after_effects = _effect_set(after_spec)
     concept_effects = _effect_set(concept_spec)
 
+    # notes_match: True if the post.notes field (or its absence) is identical
+    # on both sides.  A language spec may carry notes that the concept hub lacks;
+    # that difference is documentation-only and folds into wp-abstraction.
+    after_notes = after_spec.get("post", {}).get("notes")
+    concept_notes = concept_spec.get("post", {}).get("notes")
+    notes_match = after_notes == concept_notes
+
     pre_matches = after_pre == concept_pre
     wp_matches = after_wp == concept_wp
     effects_match = after_effects == concept_effects
     effects_ok = _effects_subset(after_effects, concept_effects)
 
-    if pre_matches and wp_matches and effects_match:
+    if pre_matches and wp_matches and notes_match and effects_match:
         # Byte-equality should have caught this already; shouldn't reach here.
         return None
 
@@ -498,6 +514,14 @@ def try_structural_subsumption(after_spec, concept_spec):
         if relax_wp:
             if "post" in relaxed:
                 relaxed["post"]["wp"] = concept_wp
+                # Strip documentation-only keys that the concept hub doesn't carry.
+                # notes (and any future doc-only key) has no semantic role in the
+                # discharge obligation; its presence in a language spec must not
+                # block an otherwise-sound structural subsumption.
+                concept_post = concept_spec.get("post", {})
+                for doc_key in _DOC_ONLY_KEYS - {"wp"}:
+                    if doc_key in relaxed["post"] and doc_key not in concept_post:
+                        del relaxed["post"][doc_key]
         if relax_effects:
             relaxed["effects"] = _copy.deepcopy(concept_spec.get("effects", empty_effects()))
         return relaxed
@@ -541,9 +565,11 @@ def try_structural_subsumption(after_spec, concept_spec):
             continue
         # Skip if the fields we'd relax already match (no benefit, and the
         # byte-equal fast-path should have caught full-match already).
+        # notes_match is folded into relax_wp: the wp-abstraction path strips
+        # documentation-only extra keys (notes) in addition to normalising wp text.
         needs = (
             (relax_pre and not pre_matches)
-            or (relax_wp and not wp_matches)
+            or (relax_wp and (not wp_matches or not notes_match))
             or (relax_effects and not effects_match)
         )
         if not needs:

@@ -21,7 +21,7 @@
     },
     "post": {
       "kind": "contract-renaming-morphism",
-      "source_contract_cid": "blake3-512:0f58b26321fdfbd8d96be4395bb2524f628f1b6b53346ee26a25192917bac4049e704944188281e10a19ae4fc46c229b88c37c4bc50d21c2f743fc9ff44fdbba",
+      "source_contract_cid": "blake3-512:e45c006b526976bf657b49be4c85edd3012749b5950b80bcd33909aa4cb44e9d44f68096673c1709ace6af330fa86f6b78f10119a3611162d413c7675bfecaba",
       "target_shape_cid": "blake3-512:eb0385be264da92eb526401a968564f6eda9017bc4dc31069aaf8070aee7f1b22da2c680ba312ad2e3a29cf0ba881e13f7411ed082645ffe37d1605ea29db4b5",
       "renaming_map": {},
       "representation_map": {},
@@ -29,7 +29,7 @@
       "literal_map": {},
       "homomorphism_obligation": {
         "kind": "structural-wp-abstraction",
-        "source": "blake3-512:0f58b26321fdfbd8d96be4395bb2524f628f1b6b53346ee26a25192917bac4049e704944188281e10a19ae4fc46c229b88c37c4bc50d21c2f743fc9ff44fdbba",
+        "source": "blake3-512:e45c006b526976bf657b49be4c85edd3012749b5950b80bcd33909aa4cb44e9d44f68096673c1709ace6af330fa86f6b78f10119a3611162d413c7675bfecaba",
         "target": "blake3-512:eb0385be264da92eb526401a968564f6eda9017bc4dc31069aaf8070aee7f1b22da2c680ba312ad2e3a29cf0ba881e13f7411ed082645ffe37d1605ea29db4b5"
       }
     },
@@ -43,14 +43,14 @@
       "args": []
     },
     "input_cids": [
-      "blake3-512:0f58b26321fdfbd8d96be4395bb2524f628f1b6b53346ee26a25192917bac4049e704944188281e10a19ae4fc46c229b88c37c4bc50d21c2f743fc9ff44fdbba",
+      "blake3-512:e45c006b526976bf657b49be4c85edd3012749b5950b80bcd33909aa4cb44e9d44f68096673c1709ace6af330fa86f6b78f10119a3611162d413c7675bfecaba",
       "blake3-512:eb0385be264da92eb526401a968564f6eda9017bc4dc31069aaf8070aee7f1b22da2c680ba312ad2e3a29cf0ba881e13f7411ed082645ffe37d1605ea29db4b5"
     ]
   },
-  "cid": "blake3-512:aa04e777b6c4d0765f387abff543d61fbed1cab39ba96bcaef8d2dd955bcec6b8b7ed9bf20fd2d16433a0510ff0fb5c1014ac380c63a66ff5ee71f1b3c2b72e4",
+  "cid": "blake3-512:45fc54c2286b6f1f2fa1deda86002d16e1820c9e8a2b78458978b9bb90cdb3b048c2f7ca538a4cb0d22afbd20b53ba4a45dd47d26f6420db7965e42724365e42",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "Xg30EbEVPPCpFzAsrCes8byS6eGY2nqZKWELVVoDlp7inKRbUwhAAWDgiqYP5mLwMGmLg20K9sDQ0+cFj1VuAQ=="
+    "sig_b64": "A8Htp2Gu2qHsePTx4H+xTQez+G9lE9rWAXCR21OR62t6qPAR67oeh35MXLWtCNwTHYyHY9jWKZnUNH7SkCQBAA=="
   }
 }
