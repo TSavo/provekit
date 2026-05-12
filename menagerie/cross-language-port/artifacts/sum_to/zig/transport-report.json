@@ -1,7 +1,7 @@
 {
   "function": "sum_to",
   "note": "Precise extension request: the concept hub catalog has no discharged morphism covering the refused operation for this target language; see transport-gaps.md for the structural reason.",
-  "refusal": "refusal: transport-time:no-target-morphism-for-op operation `concept:return` CID mismatch: expected blake3-512:408a99b65b634b0425cb1a516151367b39ede0edd92a909dc239372fbd36e37023c45384447fe716e89396ac9828887bde8ce278ffa9a4f95ccacf28689ef6db, got blake3-512:57981a2c7d25fd2afe840d6d30e503b6c04b98e5c909457dee1083f852fa746e0addb62c00b0d39e951193ce2a1fe75e36f7728625d53224f3a9adee3b690607",
+  "refusal": "refusal: transport-time:no-target-morphism-for-op missing discharged morphism for operation `concept:seq`",
   "source_file": "menagerie/cross-language-port/sum_to.c",
   "source_language": "c11",
   "status": "refusal",

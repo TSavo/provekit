@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "morphism:c11:do:to:concept:do",
+    "formals": [
+      "source_contract"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "FunctionContractMemento",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "contract-renaming-morphism",
+      "source_contract_cid": "blake3-512:ec4d45631f2be0a3f3bc56a0cdb7be848a6095f5f2924f53986d0d6124ce072fba0d5933e5593ed64fd50fff27f264c4df2c551ad1fee36a69d170d1968b60d8",
+      "target_shape_cid": "blake3-512:8531b1d03564cb98d0c9dda92f973048b2451e9b4ad830e7f2fd8cc1f031e14cc96cba2db884c9ae6001a126c0c48463b5b531ab829399168d56df51050b0041",
+      "renaming_map": {},
+      "representation_map": {},
+      "operator_map": {},
+      "literal_map": {},
+      "homomorphism_obligation": {
+        "kind": "structural-wp-abstraction",
+        "source": "blake3-512:ec4d45631f2be0a3f3bc56a0cdb7be848a6095f5f2924f53986d0d6124ce072fba0d5933e5593ed64fd50fff27f264c4df2c551ad1fee36a69d170d1968b60d8",
+        "target": "blake3-512:8531b1d03564cb98d0c9dda92f973048b2451e9b4ad830e7f2fd8cc1f031e14cc96cba2db884c9ae6001a126c0c48463b5b531ab829399168d56df51050b0041"
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    },
+    "input_cids": [
+      "blake3-512:ec4d45631f2be0a3f3bc56a0cdb7be848a6095f5f2924f53986d0d6124ce072fba0d5933e5593ed64fd50fff27f264c4df2c551ad1fee36a69d170d1968b60d8",
+      "blake3-512:8531b1d03564cb98d0c9dda92f973048b2451e9b4ad830e7f2fd8cc1f031e14cc96cba2db884c9ae6001a126c0c48463b5b531ab829399168d56df51050b0041"
+    ]
+  },
+  "cid": "blake3-512:f44b6d1f26c4bef8e284e6bed0f8326f919cd27c6b752110ce415540a1e7a031e632be06ec8e6ff25ff76bf704ba00670ed092c549cfbfcf449e02f247a8693b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "dBcp7RkYZ78rPnJu+lVauy1l2OInjJLghLa0yIgZL4X350Fo+M8WNjaUqQVTSB5lp41TQawGCmGnHz5/tp1cAw=="
+  }
+}

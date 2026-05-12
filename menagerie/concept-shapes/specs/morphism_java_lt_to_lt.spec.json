@@ -19,27 +19,26 @@
   ],
   "kind": "algorithm",
   "post": {
+    "kind": "contract-renaming-morphism",
+    "source_contract_cid": "blake3-512:4fa08dc7ec94517f8c8becffd366652fc8a1d0b6fb8c75bdf7d317a31ed85890c190a7ea1144b61bc223abba68040f6b3d9640371a48d68e0eb75369be836600",
+    "target_shape_cid": "blake3-512:3a4a311ed57e6cf96508cfb5b9e4456716bab5a6eaa4ef43ee5163e5592b28b6da1844d64da78cf36bdcf90eaaf07de82ed51851d9668cb9dafe0cfe2a52a20b",
+    "renaming_map": {},
+    "representation_map": {},
+    "operator_map": {},
+    "literal_map": {},
     "homomorphism_obligation": {
       "kind": "structural-wp-abstraction",
       "source": "blake3-512:4fa08dc7ec94517f8c8becffd366652fc8a1d0b6fb8c75bdf7d317a31ed85890c190a7ea1144b61bc223abba68040f6b3d9640371a48d68e0eb75369be836600",
-      "target": "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
-    },
-    "kind": "contract-renaming-morphism",
-    "literal_map": {},
-    "operator_map": {},
-    "renaming_map": {},
-    "representation_map": {},
-    "source_contract_cid": "blake3-512:4fa08dc7ec94517f8c8becffd366652fc8a1d0b6fb8c75bdf7d317a31ed85890c190a7ea1144b61bc223abba68040f6b3d9640371a48d68e0eb75369be836600",
-    "target_shape_cid": "blake3-512:8c7fce94edcded09f792c5629cb0fa418ee79f31efe96e6d88c88412a882bc292eee6ea9a19a28f6b10d1028476810e5ce01fd261fbaef5ae4441f6901e724dd"
+      "target": "blake3-512:3a4a311ed57e6cf96508cfb5b9e4456716bab5a6eaa4ef43ee5163e5592b28b6da1844d64da78cf36bdcf90eaaf07de82ed51851d9668cb9dafe0cfe2a52a20b"
+    }
   },
   "pre": {
     "args": [],
     "kind": "atomic",
     "name": "true"
   },
-  "return_sort": {
-    "args": [],
-    "kind": "ctor",
-    "name": "FunctionContractMemento"
-  }
+  "input_cids": [
+    "blake3-512:4fa08dc7ec94517f8c8becffd366652fc8a1d0b6fb8c75bdf7d317a31ed85890c190a7ea1144b61bc223abba68040f6b3d9640371a48d68e0eb75369be836600",
+    "blake3-512:3a4a311ed57e6cf96508cfb5b9e4456716bab5a6eaa4ef43ee5163e5592b28b6da1844d64da78cf36bdcf90eaaf07de82ed51851d9668cb9dafe0cfe2a52a20b"
+  ]
 }
