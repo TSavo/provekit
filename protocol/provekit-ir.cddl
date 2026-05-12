@@ -450,6 +450,198 @@ LossRecord = {
 ; Convenience alias matching spec §2.4 dimension names
 loss-record = LossRecord
 
+; ================================================================
+; Transport gap mementos (issue #66, PR feat/gap-mementos-1-impl-pr1)
+; ================================================================
+;
+; Source of truth:
+;   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.1-§1.4
+;
+; Three new memento types:
+;   TransportGapMemento      -- the negative-space artifact (§1.1)
+;   PartialMorphismMemento   -- a morphism valid under a precondition (§1.2)
+;   LossyMorphismMemento     -- a morphism with characterized loss (§1.4)
+;
+; Amendment: `no-such-concept-op` added to gap-kind enum (this PR).
+; This is the case where a source-language op has no matching concept:* hub op
+; at all (target_op_cid is null). Distinct from missing-target-construct
+; (the construct exists in the language but not the hub; this is: the hub
+; does not even have a slot for it). The generator emits this when the
+; language op is in a signature directory but has no matching OPS entry.
+;
+; All three mementos are JCS-canonical (BTreeMap key order = alphabetical),
+; BLAKE3-512-hashed, and live in menagerie/concept-shapes/specs/.
+;
+; ----------------------------------------------------------------
+; gap-kind and gap-reason (shared)
+; ----------------------------------------------------------------
+;
+; Locked key order for gap-reason (alphabetical):
+;   ? effects_delta, ? formal_sorts_delta, ? post_delta, ? pre_delta,
+;   ? source_supported, ? divergent_tag, ? wp_rule_delta
+
+gap-kind = "sort-mismatch"
+         / "polymorphic-source-op"
+         / "divergent-semantics"
+         / "missing-target-construct"
+         / "missing-source-op"
+         / "no-such-concept-op"            ; NEW (this PR): source op has no hub op at all
+         / "effect-mismatch"
+         / "arity-shape-mismatch"
+         / "wp-rule-mismatch"              ; post-WPF: the wp_rules do not refine
+
+divergent-semantics-tag = "integer-vs-true-division"
+                        / "truncated-vs-floored-modulo"
+                        / "bounded-vs-unbounded-integer"
+                        / "overflow-behavior"
+                        / "rounding-mode"
+                        / "short-circuit-vs-eager"
+                        / tstr             ; open: a new tag is a new fact, recorded, not invented in code
+
+gap-reason = {
+  ? "effects_delta":      { "got": any, "want": any },
+  ? "formal_sorts_delta": { "got": [* ir-formula], "want": [* ir-formula] },
+  ? "post_delta":         { "got": any, "want": any },   ; the operation-contract subtree that differs
+  ? "pre_delta":          { "got": ir-formula, "want": ir-formula },
+  ? "source_supported":   bool,            ; for missing-source-op / no-such-concept-op
+  ? "divergent_tag":      divergent-semantics-tag, ; REQUIRED iff gap_kind == "divergent-semantics"
+  ? "wp_rule_delta":      { "got": ir-formula, "want": ir-formula }, ; post-WPF
+}
+
+; ----------------------------------------------------------------
+; resolution-option (shared by TransportGapMemento)
+; ----------------------------------------------------------------
+;
+; Locked key order (alphabetical): dual_view_cid, loss, loss_severity,
+;   option_kind, partial_morphism_cid, precondition, representation_map_delta,
+;   respec_target_to, split_targets, status, tradeoff
+
+resolution-option-kind = "partial-morphism"
+                       / "lossy-morphism"
+                       / "split-target-op"
+                       / "re-spec-target-op"
+                       / "add-representation-map"
+                       / "statement-level-desugaring"
+                       / "accept-permanent"
+
+option-status = "recommended"   ; the generator's suggestion
+              / "chosen"        ; a project has selected this option
+              / "deferred"      ; under consideration, not acted on
+              / "rejected"      ; considered and declined
+
+loss-severity-level = "lossless" / "safe-bounded" / "lossy-bounded" / "lossy-unbounded"
+
+loss-severity = { tstr => loss-severity-level }
+
+resolution-option = {
+  option_kind:              resolution-option-kind,
+  status:                   option-status,
+  tradeoff:                 tstr,        ; what you give up by taking this option
+  ? dual_view_cid:          cid,         ; the OTHER presentation of the same divergence
+  ? loss:                   loss-record,
+  ? loss_severity:          loss-severity,
+  ? partial_morphism_cid:   cid,
+  ? precondition:           ir-formula,
+  ? representation_map_delta: any,
+  ? respec_target_to:       any,
+  ? split_targets:          [+ tstr],
+}
+
+; ----------------------------------------------------------------
+; TransportGapMemento (§1.1)
+; ----------------------------------------------------------------
+;
+; Locked key order (alphabetical):
+;   fn_name, gap_kind, kind, ? reason, ? reason_note,
+;   resolution_options, schema_version, ? signature, source_lang,
+;   source_op_cid, target_concept_op, ? target_op_cid
+
+TransportGapMemento = {
+  fn_name:           tstr,                ; e.g. "gap:python:add:to:concept:add"
+  gap_kind:          gap-kind,
+  kind:              "TransportGapMemento",
+  ? reason:          gap-reason,          ; structured diff; machine-readable
+  ? reason_note:     tstr,               ; OPTIONAL prose; MUST be omitted (not null) when absent
+  resolution_options: [+ resolution-option],
+  schema_version:    "1",
+  ? signature:       tstr / null,        ; ed25519 over the canonical bytes; null in the unsigned exhibit
+  source_lang:       tstr,               ; e.g. "python"
+  source_op_cid:     cid,               ; the lifter-emitted <lang>:op contract memento
+  target_concept_op: tstr,              ; e.g. "concept:add"
+  ? target_op_cid:   cid,              ; the concept:op hub contract memento; OMITTED for no-such-concept-op
+}
+
+; ----------------------------------------------------------------
+; PartialMorphismMemento (§1.2)
+; ----------------------------------------------------------------
+;
+; A morphism valid under a precondition. The precondition is a formula in
+; the WPF formula language; it must be established at every use-site.
+;
+; Locked key order (alphabetical):
+;   fn_name, ? gap_memento_cid, homomorphism_obligation, kind,
+;   literal_map, operator_map, renaming_map, representation_map,
+;   schema_version, ? signature, source_contract_cid, target_shape_cid,
+;   validity_precondition
+
+PartialMorphismMemento = {
+  fn_name:              tstr,            ; e.g. "partial-morphism:python:add:to:concept:add"
+  ? gap_memento_cid:    cid,            ; OPTIONAL back-pointer to the TransportGapMemento
+  homomorphism_obligation: {
+    kind:               "wp-refinement-under-precondition",
+    source:             cid,
+    target:             cid,
+  },
+  kind:                 "PartialMorphismMemento",
+  literal_map:          any,
+  operator_map:         any,
+  renaming_map:         any,
+  representation_map:   any,
+  schema_version:       "1",
+  ? signature:          tstr / null,
+  source_contract_cid:  cid,
+  target_shape_cid:     cid,
+  validity_precondition: ir-formula,     ; NEW; formula over op's formals + site-static predicates
+}
+
+; ----------------------------------------------------------------
+; LossyMorphismMemento (§1.4)
+; ----------------------------------------------------------------
+;
+; A morphism with characterized loss. The loss field is a per-dimension
+; divergence record; it is the rigorous, solver-checked part of the contract.
+;
+; Locked key order (alphabetical):
+;   coarsening_kind, fn_name, ? gap_memento_cid, homomorphism_obligation,
+;   kind, literal_map, loss, loss_severity, operator_map,
+;   renaming_map, representation_map, schema_version, ? signature,
+;   source_contract_cid, target_shape_cid
+
+LossyMorphismMemento = {
+  coarsening_kind:   "quotient-target-sort"
+                   / "drop-target-precondition"
+                   / "widen-target-postcondition"
+                   / tstr,
+  fn_name:           tstr,              ; e.g. "lossy-morphism:python:add:to:c11:add@mod-w"
+  ? gap_memento_cid: cid,
+  homomorphism_obligation: {
+    kind:            "wp-refinement-into-coarsening",
+    source:          cid,
+    target:          cid,
+  },
+  kind:              "LossyMorphismMemento",
+  literal_map:       any,
+  loss:              loss-record,       ; the per-dimension divergence formulas
+  loss_severity:     loss-severity,     ; the per-dimension advisory tags
+  operator_map:      any,
+  renaming_map:      any,
+  representation_map: any,
+  schema_version:    "1",
+  ? signature:       tstr / null,
+  source_contract_cid: cid,
+  target_shape_cid:  cid,
+}
+
 ; ----------------------------------------------------------------
 ; ConceptAbstractionMemento (§2.1)
 ; ----------------------------------------------------------------

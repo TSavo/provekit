@@ -496,3 +496,344 @@ pub struct RealizationDesugaringMemento {
 // ============================================================
 // End manual extension block -- abstraction layer (issue #71)
 // ============================================================
+
+// ============================================================
+// NOTE: Manual extension block -- transport gap mementos (issue #66)
+// ============================================================
+//
+// Three new memento types per
+// protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md
+// §1.1 (TransportGapMemento), §1.2 (PartialMorphismMemento), §1.4 (LossyMorphismMemento).
+// CDDL: protocol/provekit-ir.cddl "Transport gap mementos" block.
+//
+// Amendment (this PR): `no-such-concept-op` added to GapKind.
+//
+// Key-order rule: struct field names mirror the CDDL alphabetical key order.
+// Fields with `skip_serializing_if = "Option::is_none"` are OMITTED when None.
+// Required fields that are always present are never skipped.
+
+/// The `gap_kind` discriminant for a `TransportGapMemento`.
+///
+/// `no-such-concept-op` is an amendment in this PR: the source-language op
+/// has no matching concept:* hub op at all (target_op_cid is absent).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GapKind {
+    #[serde(rename = "arity-shape-mismatch")]
+    ArityShapeMismatch,
+    #[serde(rename = "divergent-semantics")]
+    DivergentSemantics,
+    #[serde(rename = "effect-mismatch")]
+    EffectMismatch,
+    #[serde(rename = "missing-source-op")]
+    MissingSourceOp,
+    #[serde(rename = "missing-target-construct")]
+    MissingTargetConstruct,
+    #[serde(rename = "no-such-concept-op")]
+    NoSuchConceptOp,
+    #[serde(rename = "polymorphic-source-op")]
+    PolymorphicSourceOp,
+    #[serde(rename = "sort-mismatch")]
+    SortMismatch,
+    #[serde(rename = "wp-rule-mismatch")]
+    WpRuleMismatch,
+}
+
+/// The `divergent_tag` sub-discriminant for `gap_kind: "divergent-semantics"`.
+///
+/// Open extension: unknown tags deserialize as `Other(String)`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DivergentSemanticsTag {
+    #[serde(rename = "bounded-vs-unbounded-integer")]
+    BoundedVsUnboundedInteger,
+    #[serde(rename = "integer-vs-true-division")]
+    IntegerVsTrueDivision,
+    #[serde(rename = "overflow-behavior")]
+    OverflowBehavior,
+    #[serde(rename = "rounding-mode")]
+    RoundingMode,
+    #[serde(rename = "short-circuit-vs-eager")]
+    ShortCircuitVsEager,
+    #[serde(rename = "truncated-vs-floored-modulo")]
+    TruncatedVsFlooredModulo,
+    Other(String),
+}
+
+/// A structured delta for a field that differs between source and concept spec.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldDelta {
+    pub got: serde_json::Value,
+    pub want: serde_json::Value,
+}
+
+/// The structured diff that explains why a gap exists.
+///
+/// All fields optional; at least one should be present in practice.
+/// Locked JCS key order (alphabetical):
+///   effects_delta, formal_sorts_delta, post_delta, pre_delta,
+///   source_supported, divergent_tag, wp_rule_delta
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct GapReason {
+    #[serde(rename = "effects_delta")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effects_delta: Option<FieldDelta>,
+    #[serde(rename = "formal_sorts_delta")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub formal_sorts_delta: Option<FieldDelta>,
+    #[serde(rename = "post_delta")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_delta: Option<FieldDelta>,
+    #[serde(rename = "pre_delta")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_delta: Option<FieldDelta>,
+    #[serde(rename = "source_supported")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_supported: Option<bool>,
+    #[serde(rename = "divergent_tag")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divergent_tag: Option<DivergentSemanticsTag>,
+    #[serde(rename = "wp_rule_delta")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wp_rule_delta: Option<FieldDelta>,
+}
+
+/// Advisory severity tag for a single loss dimension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LossSeverityLevel {
+    #[serde(rename = "lossless")]
+    Lossless,
+    #[serde(rename = "lossy-bounded")]
+    LossyBounded,
+    #[serde(rename = "lossy-unbounded")]
+    LossyUnbounded,
+    #[serde(rename = "safe-bounded")]
+    SafeBounded,
+}
+
+/// Per-dimension advisory severity tags.
+///
+/// A BTreeMap gives alphabetical key order (JCS canonical).
+pub type LossSeverity = BTreeMap<String, LossSeverityLevel>;
+
+/// The `option_kind` discriminant for a `ResolutionOption`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResolutionOptionKind {
+    #[serde(rename = "accept-permanent")]
+    AcceptPermanent,
+    #[serde(rename = "add-representation-map")]
+    AddRepresentationMap,
+    #[serde(rename = "lossy-morphism")]
+    LossyMorphism,
+    #[serde(rename = "partial-morphism")]
+    PartialMorphism,
+    #[serde(rename = "re-spec-target-op")]
+    ReSpecTargetOp,
+    #[serde(rename = "split-target-op")]
+    SplitTargetOp,
+    #[serde(rename = "statement-level-desugaring")]
+    StatementLevelDesugaring,
+}
+
+/// The `status` field in a `ResolutionOption`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OptionStatus {
+    #[serde(rename = "chosen")]
+    Chosen,
+    #[serde(rename = "deferred")]
+    Deferred,
+    #[serde(rename = "recommended")]
+    Recommended,
+    #[serde(rename = "rejected")]
+    Rejected,
+}
+
+/// One entry in `TransportGapMemento.resolution_options`.
+///
+/// Locked JCS key order (alphabetical):
+///   dual_view_cid, loss, loss_severity, option_kind, partial_morphism_cid,
+///   precondition, representation_map_delta, respec_target_to, split_targets,
+///   status, tradeoff
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolutionOption {
+    #[serde(rename = "dual_view_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dual_view_cid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loss: Option<LossRecord>,
+    #[serde(rename = "loss_severity")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loss_severity: Option<LossSeverity>,
+    #[serde(rename = "option_kind")]
+    pub option_kind: ResolutionOptionKind,
+    #[serde(rename = "partial_morphism_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial_morphism_cid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub precondition: Option<IrFormula>,
+    #[serde(rename = "representation_map_delta")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub representation_map_delta: Option<serde_json::Value>,
+    #[serde(rename = "respec_target_to")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub respec_target_to: Option<serde_json::Value>,
+    #[serde(rename = "split_targets")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_targets: Option<Vec<String>>,
+    pub status: OptionStatus,
+    pub tradeoff: String,
+}
+
+/// A `TransportGapMemento` records why a source-language op has no exact
+/// morphism into a concept hub op, plus the resolution options.
+///
+/// Source of truth:
+///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.1
+/// CDDL: protocol/provekit-ir.cddl `TransportGapMemento`
+///
+/// Amendment (this PR): `gap_kind: "no-such-concept-op"` -- source op has no
+/// hub op at all; `target_op_cid` is absent in that case.
+///
+/// Locked JCS key order (alphabetical):
+///   fn_name, gap_kind, kind, reason (omitted when absent),
+///   reason_note (omitted when absent), resolution_options,
+///   schema_version, signature (omitted when absent),
+///   source_lang, source_op_cid, target_concept_op,
+///   target_op_cid (omitted when absent)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransportGapMemento {
+    #[serde(rename = "fn_name")]
+    pub fn_name: String,
+    #[serde(rename = "gap_kind")]
+    pub gap_kind: GapKind,
+    pub kind: String,           // must be "TransportGapMemento"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<GapReason>,
+    #[serde(rename = "reason_note")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason_note: Option<String>,
+    #[serde(rename = "resolution_options")]
+    pub resolution_options: Vec<ResolutionOption>,
+    #[serde(rename = "schema_version")]
+    pub schema_version: String, // must be "1"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<serde_json::Value>, // tstr | null
+    #[serde(rename = "source_lang")]
+    pub source_lang: String,
+    #[serde(rename = "source_op_cid")]
+    pub source_op_cid: String,
+    #[serde(rename = "target_concept_op")]
+    pub target_concept_op: String,
+    #[serde(rename = "target_op_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_op_cid: Option<String>,
+}
+
+/// The homomorphism obligation in a `PartialMorphismMemento`.
+///
+/// Locked JCS key order (alphabetical): kind, source, target
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartialHomomorphismObligation {
+    pub kind: String,   // must be "wp-refinement-under-precondition"
+    pub source: String, // CID
+    pub target: String, // CID
+}
+
+/// A `PartialMorphismMemento` is a morphism valid under a precondition.
+///
+/// Source of truth:
+///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.2
+/// CDDL: protocol/provekit-ir.cddl `PartialMorphismMemento`
+///
+/// Locked JCS key order (alphabetical):
+///   fn_name, gap_memento_cid (omitted when absent),
+///   homomorphism_obligation, kind, literal_map, operator_map,
+///   renaming_map, representation_map, schema_version,
+///   signature (omitted when absent), source_contract_cid,
+///   target_shape_cid, validity_precondition
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartialMorphismMemento {
+    #[serde(rename = "fn_name")]
+    pub fn_name: String,
+    #[serde(rename = "gap_memento_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap_memento_cid: Option<String>,
+    #[serde(rename = "homomorphism_obligation")]
+    pub homomorphism_obligation: PartialHomomorphismObligation,
+    pub kind: String,           // must be "PartialMorphismMemento"
+    #[serde(rename = "literal_map")]
+    pub literal_map: serde_json::Value,
+    #[serde(rename = "operator_map")]
+    pub operator_map: serde_json::Value,
+    #[serde(rename = "renaming_map")]
+    pub renaming_map: serde_json::Value,
+    #[serde(rename = "representation_map")]
+    pub representation_map: serde_json::Value,
+    #[serde(rename = "schema_version")]
+    pub schema_version: String, // must be "1"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<serde_json::Value>, // tstr | null
+    #[serde(rename = "source_contract_cid")]
+    pub source_contract_cid: String,
+    #[serde(rename = "target_shape_cid")]
+    pub target_shape_cid: String,
+    #[serde(rename = "validity_precondition")]
+    pub validity_precondition: IrFormula,
+}
+
+/// The homomorphism obligation in a `LossyMorphismMemento`.
+///
+/// Locked JCS key order (alphabetical): kind, source, target
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LossyHomomorphismObligation {
+    pub kind: String,   // must be "wp-refinement-into-coarsening"
+    pub source: String, // CID
+    pub target: String, // CID
+}
+
+/// A `LossyMorphismMemento` is a morphism with characterized loss.
+///
+/// Source of truth:
+///   protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md §1.4
+/// CDDL: protocol/provekit-ir.cddl `LossyMorphismMemento`
+///
+/// Locked JCS key order (alphabetical):
+///   coarsening_kind, fn_name, gap_memento_cid (omitted when absent),
+///   homomorphism_obligation, kind, literal_map, loss, loss_severity,
+///   operator_map, renaming_map, representation_map, schema_version,
+///   signature (omitted when absent), source_contract_cid, target_shape_cid
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LossyMorphismMemento {
+    #[serde(rename = "coarsening_kind")]
+    pub coarsening_kind: String, // "quotient-target-sort" | "drop-target-precondition" | "widen-target-postcondition" | open tstr
+    #[serde(rename = "fn_name")]
+    pub fn_name: String,
+    #[serde(rename = "gap_memento_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap_memento_cid: Option<String>,
+    #[serde(rename = "homomorphism_obligation")]
+    pub homomorphism_obligation: LossyHomomorphismObligation,
+    pub kind: String,           // must be "LossyMorphismMemento"
+    #[serde(rename = "literal_map")]
+    pub literal_map: serde_json::Value,
+    pub loss: LossRecord,
+    #[serde(rename = "loss_severity")]
+    pub loss_severity: LossSeverity,
+    #[serde(rename = "operator_map")]
+    pub operator_map: serde_json::Value,
+    #[serde(rename = "renaming_map")]
+    pub renaming_map: serde_json::Value,
+    #[serde(rename = "representation_map")]
+    pub representation_map: serde_json::Value,
+    #[serde(rename = "schema_version")]
+    pub schema_version: String, // must be "1"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<serde_json::Value>, // tstr | null
+    #[serde(rename = "source_contract_cid")]
+    pub source_contract_cid: String,
+    #[serde(rename = "target_shape_cid")]
+    pub target_shape_cid: String,
+}
+
+// ============================================================
+// End manual extension block -- transport gap mementos (issue #66)
+// ============================================================
