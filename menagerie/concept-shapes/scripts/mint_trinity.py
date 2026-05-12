@@ -287,6 +287,22 @@ def build_op_mementos():
             },
             {"effects": []},
         ),
+        "concept:itab-of": amp_memento(
+            "concept:itab-of",
+            ["value"],
+            ["Value"],
+            "ITabPtr",
+            true_formula(),
+            {
+                "kind": "operation-contract",
+                "operator": "itab-of",
+                "arity": ["Value"],
+                "result": "ITabPtr",
+                "wp_note": "the interface-table pointer for value's runtime type; projects a Value to the ITabPtr slot required by concept:itab-method; identity for JVM objects since the itable is embedded in the class header",
+                "arity_shape": {"kind": "named", "slots": [{"name": "value"}]},
+            },
+            {"effects": []},
+        ),
         "concept:dict-lookup-over-mro": amp_memento(
             "concept:dict-lookup-over-mro",
             ["type_tag", "method_name"],
@@ -522,13 +538,13 @@ def build_realizations(op_cids, abst_cids):
         atomic("virtually_dispatched", [var("method_name"), var("receiver")]),
         dd_lhs(),
         op_term("concept:call", [
-            op_term("concept:itab-method", [op_term("concept:type-of", [var("receiver")]), var("method_name"), var("receiver"), var("args")]),
+            op_term("concept:itab-method", [op_term("concept:itab-of", [var("receiver")]), var("method_name"), var("receiver"), var("args")]),
             op_term("concept:cons", [var("receiver"), var("args")]),
         ]),
         "java",
         loss(
             structural_divergence=lf("invokevirtual_invokeinterface_near_identity",
-                op_term("concept:itab-method", [op_term("concept:type-of", [var("receiver")]), var("method_name")]),
+                op_term("concept:itab-method", [op_term("concept:itab-of", [var("receiver")]), var("method_name")]),
             ),
             domain_narrowing=lf("method_must_be_virtual_non_final_non_static",
                 var("method_name"),
