@@ -266,6 +266,17 @@ fn collect_formula(
             collect_formula(body, ctx, bound)?;
             bound.remove(&lean_name);
         }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term and are eliminated by `libprovekit::wp` before any formula
+        // reaches the Lean backend. Reaching this arm is a bug.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            return Err(CompileError::Internal(
+                "wp-rule schema node (substitute/apply) reached the Lean collector; \
+                 it must be reduced via libprovekit::wp before compilation"
+                    .to_string(),
+            ));
+        }
     }
     Ok(())
 }
@@ -393,6 +404,14 @@ fn emit_formula(formula: &Formula, ctx: &mut EmitContext) -> Result<String, Comp
             lean_ident(var_name),
             emit_sort(sort, ctx)?,
             emit_formula(body, ctx)?
+        )),
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // see the note in `collect_formula`. These must be reduced via
+        // `libprovekit::wp` before reaching the Lean backend.
+        Formula::Substitute { .. } | Formula::Apply { .. } => Err(CompileError::Internal(
+            "wp-rule schema node (substitute/apply) reached the Lean formula emitter; \
+             it must be reduced via libprovekit::wp before compilation"
+                .to_string(),
         )),
     }
 }

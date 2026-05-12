@@ -1705,6 +1705,17 @@ fn predicate_term(formula: &IrFormula) -> IrTerm {
         IrFormula::Forall { .. } | IrFormula::Exists { .. } | IrFormula::Choice { .. } => {
             ctor("predicate", vec![])
         }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term and are eliminated by `libprovekit::wp` before any formula
+        // reaches a lifter. The aarch64 lifter never builds such formulas;
+        // reaching this arm is a bug.
+        IrFormula::Substitute { .. } | IrFormula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the aarch64 predicate-term builder; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
     }
 }
 

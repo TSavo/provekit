@@ -276,6 +276,17 @@ pub enum IrTerm {
     },
 }
 
+// NOTE: The `IrFormula` enum below has been MANUALLY extended beyond the
+// codegen output to add the `Substitute` and `Apply` variants per the
+// wp-as-formula spec (protocol/specs/2026-05-13-wp-as-formula.md §2.3).
+// These two are the "wp-rule schema" nodes: they appear inside a
+// `wp_rule` term and are reduced away by `libprovekit::wp` before any
+// formula reaches a solver backend. The codegen (`provekit-ir-codegen`)
+// currently emits only the 8-way union without these arms; if you
+// regenerate this file via `cargo run -p provekit-ir-codegen`, you WILL
+// clobber the manual extensions. Re-apply them from this comment block
+// through the closing `}` of the `IrFormula` enum, keeping the CDDL
+// (`protocol/provekit-ir.cddl`) as the source of truth.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum IrFormula {
@@ -310,6 +321,35 @@ pub enum IrFormula {
         var_name: String,
         sort: Sort,
         body: Box<IrFormula>,
+    },
+    /// `substitute` — an explicit, capture-avoiding, single-variable
+    /// substitution on a formula: `target` with `var` replaced by `term`.
+    /// This is `Q[result_value := value_expr]` written as a node. It is
+    /// needed because in a `wp_rule` schema the `target` is the
+    /// postcondition meta-variable `Q`, not yet known; once `target` is
+    /// ground the node can always be eliminated by performing the
+    /// substitution. JCS-canonical key order: `kind`, `target`, `term`,
+    /// `var` (alphabetical, with `kind` first by the tag convention).
+    #[serde(rename = "substitute")]
+    Substitute {
+        target: Box<IrFormula>,
+        term: IrTerm,
+        var: String,
+    },
+    /// `apply` — application of a slot-transformer meta-variable
+    /// (`wp_<slot>`) to one formula argument: `apply(wp_<slot>, X)` is
+    /// "the weakest precondition of the term plugged into slot `<slot>`,
+    /// with respect to X." When the evaluator instantiates `wp_<slot>`
+    /// with the actual slot transformer the node reduces to a concrete
+    /// formula. `fn` is the meta-variable name (`"wp_then_branch"`,
+    /// `"wp_body"`, ...); `args` carries the single formula argument
+    /// (a one-element list for forward compatibility). JCS-canonical key
+    /// order: `args`, `fn`, `kind`.
+    #[serde(rename = "apply")]
+    Apply {
+        args: Vec<IrFormula>,
+        #[serde(rename = "fn")]
+        r#fn: String,
     },
 }
 
