@@ -1015,3 +1015,298 @@ pub struct ConceptSiteMemento {
 // ============================================================
 // End manual extension block -- concept-site layer (PR-A)
 // ============================================================
+
+// ============================================================
+// Manual extension: compound-contract layer (PR-A of compound spec)
+// Source of truth:
+//   protocol/specs/2026-05-13-compound-contract-memento.md §1, §2, §3
+//   AMENDS protocol/specs/2026-05-12-concept-site-memento.md §1.1 and §5.4
+//
+// This block adds the EvidenceMemento and CompoundContractMemento
+// substrate primitives. The compound is the new convergence point for
+// every contract-source the substrate can lift from a user's codebase:
+// annotations, test assertions, type signatures, docstrings, loop
+// invariants, implicit-effect call-sites, native contract surfaces
+// (JML / Zod / Spring / pydantic / OpenAPI), structurally synthesized
+// wp_rules, empirical witnesses, and (future) review comments.
+//
+// Trichotomy is enforced at TWO levels:
+//   * per-evidence: each evidence's discharge verdict against the
+//     concept's wp_rule (recorded in the discharge receipt, PR-F).
+//   * compound: derived from per-evidence verdicts under the recorded
+//     aggregation_strategy (§2 of the spec).
+//
+// v0 wires only `AggregationStrategy::Conjunction`; the other two
+// strategies are spec'd but `unimplemented!` here. The Rust enum carries
+// all three variants so downstream callers can name them; only the
+// conjunction discharge path is functional in v0.
+//
+// CID-determining bytes for both mementos are JCS(header) with `cid`
+// elided; that JCS encoder lives in provekit-claim-envelope. Byte-pin
+// tests for the compound CID belong there; THIS crate carries serde
+// round-trip tests only.
+// ============================================================
+
+/// One point inside a source span: 1-based line / col.
+///
+/// Locked JCS key order: col, line.
+///
+/// Note: line/col (not byte offsets) -- evidence often comes from
+/// docstrings, test sources, or native contract surfaces where byte
+/// offsets are unstable across re-formatting. This diverges from
+/// `CodeSiteSpan` (which uses byte offsets, anchored at the function
+/// boundary where formatters do not move text); see the compound spec
+/// §1.1 for rationale.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceLocatorPoint {
+    pub col: u32,
+    pub line: u32,
+}
+
+/// A span inside a source artifact, as a (start, end) pair of
+/// `SourceLocatorPoint`s.
+///
+/// Locked JCS key order: end, start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceLocatorSpan {
+    pub end: SourceLocatorPoint,
+    pub start: SourceLocatorPoint,
+}
+
+/// Provenance for one piece of evidence: which source artifact it was
+/// extracted from, and where inside that artifact.
+///
+/// Locked JCS key order: source_cid, span.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceLocator {
+    #[serde(rename = "source_cid")]
+    pub source_cid: String,
+    pub span: SourceLocatorSpan,
+}
+
+/// The kind of contract-evidence source. Open enum; unknown labels
+/// MUST be accepted at shape level (per spec §5.1) and are carried as
+/// `Other(String)`.
+///
+/// Wire format: a bare JSON string (e.g., `"test-assertion"`).
+///
+/// Mirrors the `DivergentSemanticsTag` pattern: `#[serde(from = "String",
+/// into = "String")]` with explicit kebab-case mapping. (Using
+/// `#[serde(untagged)]` with all-unit variants silently ignores
+/// `#[serde(rename)]` and serializes every unit variant as `null`, so we
+/// must go through `String`.)
+///
+/// The ten canonical labels are documented in spec §10. `Other(String)`
+/// is the open-extension placeholder; downstream consumers decide how
+/// to treat unknown kinds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum SourceKind {
+    Annotation,
+    TestAssertion,
+    TypeSignature,
+    Docstring,
+    LoopInvariant,
+    ImplicitEffect,
+    NativeSurface,
+    StructuralSynthesis,
+    EmpiricalWitness,
+    ReviewComment,
+    Other(String),
+}
+
+impl From<String> for SourceKind {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "annotation" => SourceKind::Annotation,
+            "test-assertion" => SourceKind::TestAssertion,
+            "type-signature" => SourceKind::TypeSignature,
+            "docstring" => SourceKind::Docstring,
+            "loop-invariant" => SourceKind::LoopInvariant,
+            "implicit-effect" => SourceKind::ImplicitEffect,
+            "native-surface" => SourceKind::NativeSurface,
+            "structural-synthesis" => SourceKind::StructuralSynthesis,
+            "empirical-witness" => SourceKind::EmpiricalWitness,
+            "review-comment" => SourceKind::ReviewComment,
+            _ => SourceKind::Other(s),
+        }
+    }
+}
+
+impl From<SourceKind> for String {
+    fn from(k: SourceKind) -> String {
+        match k {
+            SourceKind::Annotation => "annotation".to_string(),
+            SourceKind::TestAssertion => "test-assertion".to_string(),
+            SourceKind::TypeSignature => "type-signature".to_string(),
+            SourceKind::Docstring => "docstring".to_string(),
+            SourceKind::LoopInvariant => "loop-invariant".to_string(),
+            SourceKind::ImplicitEffect => "implicit-effect".to_string(),
+            SourceKind::NativeSurface => "native-surface".to_string(),
+            SourceKind::StructuralSynthesis => "structural-synthesis".to_string(),
+            SourceKind::EmpiricalWitness => "empirical-witness".to_string(),
+            SourceKind::ReviewComment => "review-comment".to_string(),
+            SourceKind::Other(s) => s,
+        }
+    }
+}
+
+/// How per-evidence verdicts compose into the compound's verdict.
+///
+/// v0 NORMATIVE: only `Conjunction` is wired in the discharger
+/// (PR-F). `BestConfidence` and `LoudlyBoundedDisjunction` are spec'd
+/// (compound spec §2.2 and §2.3) and round-trip serde here, but a
+/// discharger that encounters them MUST `unimplemented!` until PR-F+1.
+///
+/// Wire format: a bare JSON string. Same `from/into String` pattern as
+/// `SourceKind`. `Other(String)` is the open-extension placeholder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum AggregationStrategy {
+    Conjunction,
+    BestConfidence,
+    LoudlyBoundedDisjunction,
+    Other(String),
+}
+
+impl From<String> for AggregationStrategy {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "conjunction" => AggregationStrategy::Conjunction,
+            "best-confidence" => AggregationStrategy::BestConfidence,
+            "loudly-bounded-disjunction" => AggregationStrategy::LoudlyBoundedDisjunction,
+            _ => AggregationStrategy::Other(s),
+        }
+    }
+}
+
+impl From<AggregationStrategy> for String {
+    fn from(s: AggregationStrategy) -> String {
+        match s {
+            AggregationStrategy::Conjunction => "conjunction".to_string(),
+            AggregationStrategy::BestConfidence => "best-confidence".to_string(),
+            AggregationStrategy::LoudlyBoundedDisjunction => "loudly-bounded-disjunction".to_string(),
+            AggregationStrategy::Other(s) => s,
+        }
+    }
+}
+
+/// One piece of contract evidence from one source. Content-addressed.
+///
+/// Source of truth: protocol/specs/2026-05-13-compound-contract-memento.md §1.1
+///
+/// This is the `header` layer per the substrate envelope/header/metadata
+/// layering (`2026-05-03-substrate-layers-envelope-header-body.md`); the
+/// envelope (`declaredAt`, `signature`, `signer`) and metadata (`note`)
+/// are carried by the wrapping envelope structures in
+/// `provekit-claim-envelope`.
+///
+/// Locked JCS key order (alphabetical):
+///   cid, confidence_basis_points, extension_fields, kind, lifter_cid,
+///   predicate, schemaVersion, source_kind, source_locator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceMemento {
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    /// Lifter's prior on this evidence (0..10000, basis points).
+    /// 10000 for static-derived (annotations, type signatures); lower
+    /// for grammar-extracted or sampled (docstrings, empirical witnesses).
+    #[serde(rename = "confidence_basis_points")]
+    pub confidence_basis_points: u16,
+    /// Per-kind structured metadata. Keys and values participate in
+    /// the CID (open-extension under deterministic addressing).
+    #[serde(rename = "extension_fields")]
+    pub extension_fields: BTreeMap<String, serde_json::Value>,
+    /// MUST be "evidence".
+    pub kind: String,
+    /// CID of the lifter binary or rule-set that emitted this evidence.
+    /// Reserved sentinel `blake3-512:autoPromote000...` for the
+    /// backward-compat auto-promotion path (compound spec §4.4).
+    #[serde(rename = "lifter_cid")]
+    pub lifter_cid: String,
+    /// The asserted predicate (an `IrFormula`).
+    pub predicate: IrFormula,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    /// The kind of source this evidence was extracted from.
+    #[serde(rename = "source_kind")]
+    pub source_kind: SourceKind,
+    /// Where this evidence was extracted from.
+    #[serde(rename = "source_locator")]
+    pub source_locator: SourceLocator,
+}
+
+/// A reference to an `EvidenceMemento` with a per-compound weight.
+///
+/// Under `Conjunction` (v0) the weight is informational. Under the
+/// spec'd strategies (`BestConfidence`, `LoudlyBoundedDisjunction`) it
+/// is consulted during verdict derivation. The weight participates in
+/// the compound's CID either way (different weights = different
+/// compound bytes = different CID).
+///
+/// Locked JCS key order: evidence_cid, weight_basis_points.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceRef {
+    #[serde(rename = "evidence_cid")]
+    pub evidence_cid: String,
+    #[serde(rename = "weight_basis_points")]
+    pub weight_basis_points: u16,
+}
+
+/// A content-addressed aggregation of `EvidenceMemento`s for one
+/// function. The convergence point for every contract source the
+/// substrate can lift.
+///
+/// Source of truth: protocol/specs/2026-05-13-compound-contract-memento.md §1.2
+///
+/// CID-determining: `aggregation_strategy`, `composed_post`,
+/// `composed_pre`, `evidences` (sorted by evidence_cid at JCS time),
+/// `function_term_cid`, `kind`, `schemaVersion`. Changing one evidence's
+/// bytes rolls its CID, which rolls this compound's CID, which rolls
+/// every binding citing this compound.
+///
+/// `composed_pre` and `composed_post` are DERIVED-AND-STORED (cached
+/// truth-source duality). Validators MUST recompute under the recorded
+/// strategy and reject on mismatch; that recompute requires a JCS
+/// encoder and lives in provekit-claim-envelope.
+///
+/// Locked JCS key order (alphabetical):
+///   aggregation_strategy, cid, composed_post, composed_pre, evidences,
+///   function_term_cid, kind, schemaVersion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompoundContractMemento {
+    /// How per-evidence verdicts compose into the compound's verdict.
+    /// v0: only `Conjunction` is wired.
+    #[serde(rename = "aggregation_strategy")]
+    pub aggregation_strategy: AggregationStrategy,
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    /// DERIVED-AND-STORED: the aggregated post-condition.
+    /// Validators MUST recompute and reject on mismatch.
+    #[serde(rename = "composed_post")]
+    pub composed_post: IrFormula,
+    /// DERIVED-AND-STORED: the aggregated pre-condition.
+    /// Validators MUST recompute and reject on mismatch.
+    #[serde(rename = "composed_pre")]
+    pub composed_pre: IrFormula,
+    /// References to the constituent `EvidenceMemento`s.
+    /// MUST be sorted by `evidence_cid` ascending in the JCS bytes
+    /// (Rust constructors MAY preserve insertion order; the JCS encoder
+    /// sorts at canonicalization time).
+    /// MAY be empty (degenerate compound; composed_pre/post = `true`/`true`).
+    pub evidences: Vec<EvidenceRef>,
+    /// The `FunctionContractMemento.cid` of the function this compound
+    /// is the contract for.
+    #[serde(rename = "function_term_cid")]
+    pub function_term_cid: String,
+    /// MUST be "compound-contract".
+    pub kind: String,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+}
+
+// ============================================================
+// End manual extension block -- compound-contract layer (PR-A)
+// ============================================================
