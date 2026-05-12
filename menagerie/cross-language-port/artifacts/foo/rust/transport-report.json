@@ -1,49 +1,19 @@
 {
-  "status": "transported",
-  "source_file": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/foo.c",
-  "source_language": "c11",
-  "target_language": "rust",
-  "function": "foo",
   "artifacts": {
-    "concept_term": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/concept.term.json",
-    "roundtrip_concept_term": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/roundtrip.concept.term.json",
-    "rust_source": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
-    "rust_term": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/rust.term.json",
-    "source_term": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/c11.term.json",
-    "target_source": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
-    "target_term": "/Users/tsavo/provekit-worktrees/pk-java-typed-sorts/menagerie/cross-language-port/artifacts/foo/rust/rust.term.json"
+    "concept_term": "menagerie/cross-language-port/artifacts/foo/rust/concept.term.json",
+    "roundtrip_concept_term": "menagerie/cross-language-port/artifacts/foo/rust/roundtrip.concept.term.json",
+    "rust_source": "menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
+    "rust_term": "menagerie/cross-language-port/artifacts/foo/rust/rust.term.json",
+    "source_term": "menagerie/cross-language-port/artifacts/foo/rust/c11.term.json",
+    "target_source": "menagerie/cross-language-port/artifacts/foo/rust/foo.rs",
+    "target_term": "menagerie/cross-language-port/artifacts/foo/rust/rust.term.json"
   },
-  "stages": [
-    {
-      "stage": "lift",
-      "status": "ok",
-      "detail": "c11 source projected to algebra term"
-    },
-    {
-      "stage": "desugar",
-      "status": "checked",
-      "detail": "2 discharged desugaring equations are available; C11/projected Term transport did not require an IrTerm rewrite"
-    },
-    {
-      "stage": "transport-to-concept",
-      "status": "ok",
-      "detail": "c11 operations transported through discharged morphisms"
-    },
-    {
-      "stage": "transport-to-target",
-      "status": "ok",
-      "detail": "concept operations transported to rust"
-    },
-    {
-      "stage": "realize",
-      "status": "ok",
-      "detail": "emitted core-form rust source"
-    }
+  "deferred": [
+    "bytecode and asm transport through conditional-jump recovery",
+    "cosmetic re-sugaring after the core-form realizer",
+    "source lifter subprocess wiring for every non-C language in this CLI path"
   ],
-  "normalizations": [
-    "normalized c11:bop_eq to core c11:eq",
-    "folded c11:uop_neg(integer-literal) into a signed integer constant"
-  ],
+  "function": "foo",
   "morphism_receipts": [
     "morphism_c11_add_to_add=blake3-512:1546458bf93fd30d66d8cd187d400db747e8ea579824ae2853968f19db078996cc198aebc4e2106fc107253f85daed4c11dcd04c2520521a4b41b3a93a598983",
     "morphism_c11_addr_of_to_addr=blake3-512:b6548be43be33755624cff6c15230445a9251a3d3b569d978f22caf6eb8f410753653f4d50f4b43be4a5c31442fa5bf88daa04eaa58891b010ecb478d3de2290",
@@ -95,9 +65,39 @@
     "morphism_rust_skip_to_skip=blake3-512:1dd361e3f636b7ec5949a9eba487760c614bcf245f93af48bd8ded323759d9aeaf9ecce2ffebedd5ede1c2d92bef7bf18c622108b96452aea646e5aacea9e40a",
     "morphism_rust_while_to_while=blake3-512:c70edb47d70f785863aef6c97fbfae6ca600e878d128446d2573ee37deaac44400f7cd74e9fcb4aa8a2a55ac9130f4977083bef965780ad81546103b0ddacc90"
   ],
-  "deferred": [
-    "bytecode and asm transport through conditional-jump recovery",
-    "cosmetic re-sugaring after the core-form realizer",
-    "source lifter subprocess wiring for every non-C language in this CLI path"
-  ]
+  "normalizations": [
+    "normalized c11:bop_eq to core c11:eq",
+    "folded c11:uop_neg(integer-literal) into a signed integer constant"
+  ],
+  "source_file": "menagerie/cross-language-port/foo.c",
+  "source_language": "c11",
+  "stages": [
+    {
+      "detail": "c11 source projected to algebra term",
+      "stage": "lift",
+      "status": "ok"
+    },
+    {
+      "detail": "2 discharged desugaring equations are available; C11/projected Term transport did not require an IrTerm rewrite",
+      "stage": "desugar",
+      "status": "checked"
+    },
+    {
+      "detail": "c11 operations transported through discharged morphisms",
+      "stage": "transport-to-concept",
+      "status": "ok"
+    },
+    {
+      "detail": "concept operations transported to rust",
+      "stage": "transport-to-target",
+      "status": "ok"
+    },
+    {
+      "detail": "emitted core-form rust source",
+      "stage": "realize",
+      "status": "ok"
+    }
+  ],
+  "status": "transported",
+  "target_language": "rust"
 }

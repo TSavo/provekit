@@ -45,11 +45,30 @@ report = {
 }
 json.dump(report, open(sys.argv[5], 'w', encoding='utf-8'), indent=2, sort_keys=True)
 open(sys.argv[5], 'a', encoding='utf-8').write('\n')
-" "$refusal_msg" "$src" "$target" "$fn" "$dir/transport-report.json"
+" "$refusal_msg" "menagerie/cross-language-port/$fn.c" "$target" "$fn" "$dir/transport-report.json"
       printf '%s -> %s: refusal recorded (%s)\n' "$fn" "$target" "$refusal_msg"
       continue
     fi
     rm -f "$refusal_tmp"
+    python3 - "$dir/transport-report.json" "$ROOT" <<'RELATIVIZE_PY'
+import json, sys
+from pathlib import Path
+report_path = Path(sys.argv[1])
+root = Path(sys.argv[2]).resolve()
+report = json.load(open(report_path, encoding='utf-8'))
+def rel(value):
+    try:
+        p = Path(value).resolve()
+        return str(p.relative_to(root))
+    except (ValueError, TypeError):
+        return value
+if 'source_file' in report:
+    report['source_file'] = rel(report['source_file'])
+if 'artifacts' in report and isinstance(report['artifacts'], dict):
+    report['artifacts'] = {k: rel(v) for k, v in sorted(report['artifacts'].items())}
+json.dump(report, open(report_path, 'w', encoding='utf-8'), indent=2, sort_keys=True)
+open(report_path, 'a', encoding='utf-8').write('\n')
+RELATIVIZE_PY
     cmp "$dir/concept.term.json" "$dir/roundtrip.concept.term.json"
     test -s "$dir/$fn.$ext"
     printf '%s -> %s: roundtrip concept artifact ok\n' "$fn" "$target"
