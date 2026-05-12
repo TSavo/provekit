@@ -47,10 +47,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use syn::spanned::Spanned;
 use provekit_ir_symbolic::{
     and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, or_, serialize::formula_to_value,
     str_const, ContractDecl, Formula, Int, Sort, Term,
 };
+use provekit_ir_symbolic::parse_expr::parse_expr;
 use provekit_ir_types::{
     EvidenceMemento, IrFormula, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
 };
@@ -696,6 +698,426 @@ fn type_to_string(ty: &syn::Type) -> String {
         .replace("< ", "<")
         .replace(" >", ">")
         .replace(" ,", ",")
+}
+
+// ---------------------------------------------------------------------------
+// Docstring evidence lifter (PR-E of #716)
+// ---------------------------------------------------------------------------
+
+/// Confidence bands for docstring-pattern evidence.
+/// All values in basis points (1/100 of a percent; 10000 = 100%).
+const CONF_REQUIRES: u16 = 8000;
+const CONF_PANICS_IF: u16 = 8000;
+const CONF_RETURNS_IF: u16 = 7500;
+const CONF_ARGUMENTS_MUST_BE: u16 = 8500;
+
+/// Walk every function in `file` and emit one `EvidenceMemento` per
+/// docstring pattern site (returns-if, requires, panics-if, arguments
+/// must-be constraints).
+///
+/// Unlike `lift_file` / `lift_file_with_source`, this function does NOT
+/// require contract annotations — it visits ALL functions with doc comments.
+/// The caller supplies the raw source bytes so the evidence's
+/// `source_locator.source_cid` can be BLAKE3-512(source_bytes) per spec §1.1.
+///
+/// The returned `AdapterOutput.decls` is always empty: this path emits
+/// evidences only, not ContractDecls.  Callers that want both should call
+/// `lift_file_with_source` and `lift_file_with_docstring_evidence` separately
+/// and merge the outputs.
+///
+/// Conservative semantics (Supra omnia, rectum): patterns that do not match
+/// unambiguously emit nothing.  Minimum confidence is 7500; there is no
+/// sub-7500 band for ambiguous prose.
+pub fn lift_file_with_docstring_evidence(
+    file: &syn::File,
+    source_path: &str,
+    source_bytes: &[u8],
+) -> AdapterOutput {
+    let source_cid = blake3_512_of(source_bytes);
+    let mut out = AdapterOutput::default();
+    walk_items_for_doc(&file.items, source_path, &source_cid, &mut out);
+    out
+}
+
+fn walk_items_for_doc(
+    items: &[syn::Item],
+    source_path: &str,
+    source_cid: &str,
+    out: &mut AdapterOutput,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(f) => {
+                let fn_name = f.sig.ident.to_string();
+                emit_doc_evidences(&fn_name, &f.attrs, source_path, source_cid, out);
+            }
+            syn::Item::Mod(m) => {
+                if let Some((_, items)) = &m.content {
+                    walk_items_for_doc(items, source_path, source_cid, out);
+                }
+            }
+            syn::Item::Impl(i) => {
+                for it in &i.items {
+                    if let syn::ImplItem::Fn(f) = it {
+                        let fn_name = f.sig.ident.to_string();
+                        emit_doc_evidences(&fn_name, &f.attrs, source_path, source_cid, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collected doc attributes for a function.
+struct DocAttr {
+    /// The trimmed text from `#[doc = " ..."]` (leading space stripped).
+    text: String,
+    /// Line/col span of the attribute for `source_locator`.
+    span_start_line: u32,
+    span_start_col: u32,
+    span_end_line: u32,
+    span_end_col: u32,
+}
+
+/// Recognized docstring pattern kinds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DocPattern {
+    /// "Returns None if <tail>"
+    ReturnsNoneIf { tail: String, confidence: u16 },
+    /// "Returns Some(...) if <tail>" / "Returns <non-None> if <tail>"
+    ReturnsSomeIf { tail: String, confidence: u16 },
+    /// "Requires <tail>"
+    Requires { tail: String, confidence: u16 },
+    /// "Panics if <tail>"
+    PanicsIf { tail: String, confidence: u16 },
+    /// `# Arguments` / `# Parameters` section bullet: "- `<var>`: must be <tail>"
+    ArgumentsMustBe {
+        var_name: String,
+        tail: String,
+        confidence: u16,
+    },
+}
+
+/// Extract doc attribute text from syn attributes.
+/// Returns a vec of (text, span) for all `#[doc = "..."]` attrs in order.
+fn collect_doc_attrs(attrs: &[syn::Attribute]) -> Vec<DocAttr> {
+    let mut result = Vec::new();
+    for attr in attrs {
+        if !attr.path().is_ident("doc") {
+            continue;
+        }
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(el) = &nv.value {
+                if let syn::Lit::Str(ls) = &el.lit {
+                    let raw = ls.value();
+                    // `///` lines come as " text" with a leading space; strip it.
+                    let text = raw.strip_prefix(' ').unwrap_or(&raw).to_string();
+                    let sp = attr.span();
+                    let s = sp.start();
+                    let e = sp.end();
+                    result.push(DocAttr {
+                        text,
+                        span_start_line: s.line as u32,
+                        span_start_col: s.column as u32,
+                        span_end_line: e.line as u32,
+                        span_end_col: e.column as u32,
+                    });
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Try to match a single doc line (or sequence of lines for # Arguments section)
+/// against the 4 recognized patterns. Returns a list of matched patterns.
+///
+/// This function processes a SLICE of doc attrs: it handles both single-line
+/// patterns and the multi-line `# Arguments` section.
+fn match_doc_patterns(doc_attrs: &[DocAttr]) -> Vec<(DocPattern, usize)> {
+    let mut matched = Vec::new();
+    let mut in_arguments_section = false;
+
+    for (idx, da) in doc_attrs.iter().enumerate() {
+        let line = da.text.trim();
+
+        // Section header detection (case-insensitive).
+        if line.eq_ignore_ascii_case("# arguments") || line.eq_ignore_ascii_case("# parameters") {
+            in_arguments_section = true;
+            continue;
+        }
+        // Any other `#` section heading exits the arguments section.
+        if line.starts_with('#') {
+            in_arguments_section = false;
+            continue;
+        }
+        // Blank lines within the arguments section are fine (common in rustdoc);
+        // only exit the section when we see a non-blank, non-bullet line.
+        if line.is_empty() {
+            continue;
+        }
+
+        if in_arguments_section {
+            // Parse `- \`var_name\`: must be <tail>` (bullet list item).
+            if let Some(p) = try_parse_arguments_bullet(line) {
+                matched.push((p, idx));
+            }
+            continue;
+        }
+
+        // Pattern 1: "Returns None if <tail>"  (case-insensitive anchor)
+        if let Some(tail) = try_strip_prefix_ci(line, "returns none if ") {
+            let tail = tail.trim_end_matches('.').trim().to_string();
+            if !tail.is_empty() {
+                matched.push((
+                    DocPattern::ReturnsNoneIf {
+                        tail,
+                        confidence: CONF_RETURNS_IF,
+                    },
+                    idx,
+                ));
+            }
+            continue;
+        }
+
+        // Pattern 2: "Returns Some(...) if <tail>" or "Returns <X> if <tail>"
+        // where X is not "None" (captures the positive-result branch).
+        if let Some(rest) = try_strip_prefix_ci(line, "returns ") {
+            // Find " if " separator (case-insensitive).
+            if let Some(if_pos) = rest.to_ascii_lowercase().find(" if ") {
+                let _returned_val = &rest[..if_pos];
+                let tail = rest[if_pos + 4..].trim_end_matches('.').trim().to_string();
+                // Skip "returns none if" — handled above; only proceed if not "none"
+                if !_returned_val.trim().eq_ignore_ascii_case("none") && !tail.is_empty() {
+                    matched.push((
+                        DocPattern::ReturnsSomeIf {
+                            tail,
+                            confidence: CONF_RETURNS_IF,
+                        },
+                        idx,
+                    ));
+                }
+                continue;
+            }
+        }
+
+        // Pattern 3: "Requires <tail>"
+        if let Some(tail) = try_strip_prefix_ci(line, "requires ") {
+            let tail = tail.trim_end_matches('.').trim().to_string();
+            if !tail.is_empty() {
+                matched.push((
+                    DocPattern::Requires {
+                        tail,
+                        confidence: CONF_REQUIRES,
+                    },
+                    idx,
+                ));
+            }
+            continue;
+        }
+
+        // Pattern 4: "Panics if <tail>"
+        if let Some(tail) = try_strip_prefix_ci(line, "panics if ") {
+            let tail = tail.trim_end_matches('.').trim().to_string();
+            if !tail.is_empty() {
+                matched.push((
+                    DocPattern::PanicsIf {
+                        tail,
+                        confidence: CONF_PANICS_IF,
+                    },
+                    idx,
+                ));
+            }
+            continue;
+        }
+    }
+
+    matched
+}
+
+/// Try to parse an `# Arguments` section bullet of the form:
+///   `- \`var_name\`: must be <tail>`
+/// Returns None if the line doesn't match.
+fn try_parse_arguments_bullet(line: &str) -> Option<DocPattern> {
+    // Strip leading bullet marker(s): "- ", "* ", "  - " etc.
+    let stripped = line.trim_start_matches(|c: char| c == '-' || c == '*' || c.is_whitespace());
+    // Extract backtick-wrapped var name: `var_name`
+    let stripped = stripped.trim();
+    let stripped = stripped.strip_prefix('`')?;
+    let (var_name, rest) = stripped.split_once('`')?;
+    let var_name = var_name.trim().to_string();
+    if var_name.is_empty() {
+        return None;
+    }
+    // Expect `: must be <tail>`
+    let rest = rest.trim();
+    let rest = rest.strip_prefix(':')?;
+    let rest = rest.trim();
+    let tail = rest.strip_prefix("must be ")?.trim_end_matches('.').trim().to_string();
+    if tail.is_empty() {
+        return None;
+    }
+    Some(DocPattern::ArgumentsMustBe {
+        var_name,
+        tail,
+        confidence: CONF_ARGUMENTS_MUST_BE,
+    })
+}
+
+/// Case-insensitive prefix strip. Returns the suffix after the prefix
+/// (preserving original case) if the line starts with `prefix` (case-insensitively).
+fn try_strip_prefix_ci<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
+    if line.len() < prefix.len() {
+        return None;
+    }
+    if line[..prefix.len()].eq_ignore_ascii_case(prefix) {
+        Some(&line[prefix.len()..])
+    } else {
+        None
+    }
+}
+
+/// Convert a matched `DocPattern` to a `Formula`.
+///
+/// For `Requires` and `PanicsIf`, tries `parse_expr` on the tail.
+/// If parsing fails → returns `None` (emit nothing; conservative).
+///
+/// For `ReturnsNoneIf` and `ReturnsSomeIf`, the condition pattern produces
+/// a fixed structural predicate (is_none / is_some on `result`); the tail
+/// is stored as `raw_text` in extension_fields but is not parsed symbolically
+/// (natural-language condition is loss-characterized in `raw_text`).
+///
+/// For `ArgumentsMustBe`, tries `parse_expr` on `"<var> <tail>"`.
+/// If parsing fails → returns `None`.
+fn doc_pattern_to_formula(pattern: &DocPattern) -> Option<(Rc<Formula>, String, String)> {
+    // Returns: (formula, pattern_kind, raw_text)
+    match pattern {
+        DocPattern::ReturnsNoneIf { tail, .. } => {
+            // Predicate: is_none(result)  — the condition is characterized via raw_text.
+            let formula = atomic_("is_none", vec![make_var("result")]);
+            Some((formula, "returns_if".to_string(), format!("Returns None if {tail}")))
+        }
+        DocPattern::ReturnsSomeIf { tail, .. } => {
+            // Predicate: is_some(result).
+            let formula = atomic_("is_some", vec![make_var("result")]);
+            Some((formula, "returns_if".to_string(), format!("Returns Some(...) if {tail}")))
+        }
+        DocPattern::Requires { tail, .. } => {
+            // Try parse_expr on the tail.
+            match parse_expr(tail) {
+                Ok(f) => Some((f, "requires".to_string(), format!("Requires {tail}"))),
+                Err(_) => None, // conservative: ambiguous prose emits nothing
+            }
+        }
+        DocPattern::PanicsIf { tail, .. } => {
+            // Try parse_expr on the tail.
+            match parse_expr(tail) {
+                Ok(f) => Some((f, "panics_if".to_string(), format!("Panics if {tail}"))),
+                Err(_) => None, // conservative: ambiguous prose emits nothing
+            }
+        }
+        DocPattern::ArgumentsMustBe { var_name, tail, .. } => {
+            // Try parse_expr on the full constraint expression.
+            // First try "var_name <tail>" (e.g. "n > 0"), then just tail.
+            let expr_str = format!("{var_name} {tail}");
+            match parse_expr(&expr_str).or_else(|_| parse_expr(tail)) {
+                Ok(f) => Some((
+                    f,
+                    "arguments_must_be".to_string(),
+                    format!("`{var_name}` must be {tail}"),
+                )),
+                Err(_) => None, // conservative
+            }
+        }
+    }
+}
+
+/// Confidence for a matched `DocPattern`.
+fn doc_pattern_confidence(pattern: &DocPattern) -> u16 {
+    match pattern {
+        DocPattern::ReturnsNoneIf { confidence, .. } => *confidence,
+        DocPattern::ReturnsSomeIf { confidence, .. } => *confidence,
+        DocPattern::Requires { confidence, .. } => *confidence,
+        DocPattern::PanicsIf { confidence, .. } => *confidence,
+        DocPattern::ArgumentsMustBe { confidence, .. } => *confidence,
+    }
+}
+
+/// Emit `EvidenceMemento`s from docstring patterns on a function.
+fn emit_doc_evidences(
+    fn_name: &str,
+    attrs: &[syn::Attribute],
+    source_path: &str,
+    source_cid: &str,
+    out: &mut AdapterOutput,
+) {
+    let doc_attrs = collect_doc_attrs(attrs);
+    if doc_attrs.is_empty() {
+        return;
+    }
+    out.seen += 1;
+    let patterns = match_doc_patterns(&doc_attrs);
+    let function_symbol = format!("{fn_name}@{source_path}");
+
+    for (pattern, attr_idx) in patterns {
+        let confidence = doc_pattern_confidence(&pattern);
+        let (formula, pattern_kind, raw_text) = match doc_pattern_to_formula(&pattern) {
+            Some(r) => r,
+            None => continue, // conservative: skip unparseable tails
+        };
+
+        let da = &doc_attrs[attr_idx];
+        let locator = SourceLocator {
+            source_cid: source_cid.to_string(),
+            span: SourceLocatorSpan {
+                start: SourceLocatorPoint {
+                    line: da.span_start_line,
+                    col: da.span_start_col,
+                },
+                end: SourceLocatorPoint {
+                    line: da.span_end_line,
+                    col: da.span_end_col,
+                },
+            },
+        };
+
+        let mut ext = BTreeMap::new();
+        ext.insert(
+            "function_symbol".to_string(),
+            serde_json::Value::String(function_symbol.clone()),
+        );
+        ext.insert(
+            "pattern_kind".to_string(),
+            serde_json::Value::String(pattern_kind),
+        );
+        ext.insert(
+            "raw_text".to_string(),
+            serde_json::Value::String(raw_text),
+        );
+
+        let ir_formula = formula_to_ir_formula(&formula);
+        let cid = evidence_memento_cid(
+            confidence,
+            &ext,
+            AUTO_PROMOTE_LIFTER_CID,
+            &ir_formula,
+            &SourceKind::Docstring,
+            &locator,
+        );
+        out.evidences.push(EvidenceMemento {
+            cid,
+            confidence_basis_points: confidence,
+            extension_fields: ext,
+            kind: "evidence".to_string(),
+            lifter_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+            predicate: ir_formula,
+            schema_version: "1".to_string(),
+            source_kind: SourceKind::Docstring,
+            source_locator: locator,
+        });
+        out.lifted += 1;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1872,6 +2294,208 @@ mod tests {
                 other
             ),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Docstring evidence lifter (PR-E of #716)
+    // ------------------------------------------------------------------
+
+    fn parse_doc_bytes(src: &str) -> (syn::File, Vec<u8>) {
+        (syn::parse_file(src).unwrap(), src.as_bytes().to_vec())
+    }
+
+    /// "Returns None if x is negative" produces a post evidence with
+    /// predicate `is_none(result)` and source_kind Docstring.
+    #[test]
+    fn doc_returns_none_if_produces_is_none_evidence() {
+        let src = r#"
+            /// Returns None if x is negative.
+            fn maybe_negate(x: i32) -> Option<i32> { None }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out.evidences.len(), 1, "expected 1 evidence; got {:?}", out.evidences);
+        let ev = &out.evidences[0];
+        assert_eq!(ev.source_kind, provekit_ir_types::SourceKind::Docstring);
+        assert_eq!(ev.confidence_basis_points, 7500);
+        assert_eq!(
+            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            Some("returns_if"),
+        );
+        // Predicate must be is_none(result).
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Atomic { name, args } => {
+                assert_eq!(name, "is_none");
+                assert_eq!(args.len(), 1);
+                match &args[0] {
+                    provekit_ir_types::IrTerm::Var { name: v } => assert_eq!(v, "result"),
+                    other => panic!("expected Var(result); got {other:?}"),
+                }
+            }
+            other => panic!("expected Atomic(is_none); got {other:?}"),
+        }
+    }
+
+    /// "Requires x > 0" produces a pre evidence with predicate `x > 0`.
+    #[test]
+    fn doc_requires_parseable_tail_produces_evidence() {
+        let src = r#"
+            /// Requires x > 0.
+            fn sqrt(x: f64) -> f64 { x }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out.evidences.len(), 1, "expected 1 evidence; got {:?}", out.evidences);
+        let ev = &out.evidences[0];
+        assert_eq!(ev.source_kind, provekit_ir_types::SourceKind::Docstring);
+        assert_eq!(ev.confidence_basis_points, 8000);
+        assert_eq!(
+            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            Some("requires"),
+        );
+        // Predicate should parse as x > 0.
+        match &ev.predicate {
+            provekit_ir_types::IrFormula::Atomic { name, args } => {
+                assert_eq!(name, ">", "predicate name must be '>'");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("expected Atomic(>); got {other:?}"),
+        }
+    }
+
+    /// "Panics if n == 0" produces a pre evidence with predicate `n == 0`.
+    #[test]
+    fn doc_panics_if_parseable_tail_produces_evidence() {
+        let src = r#"
+            /// Panics if n == 0.
+            fn divide(a: i32, n: i32) -> i32 { a / n }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out.evidences.len(), 1, "expected 1 evidence; got {:?}", out.evidences);
+        let ev = &out.evidences[0];
+        assert_eq!(ev.source_kind, provekit_ir_types::SourceKind::Docstring);
+        assert_eq!(ev.confidence_basis_points, 8000);
+        assert_eq!(
+            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            Some("panics_if"),
+        );
+    }
+
+    /// Ambiguous prose (no recognized pattern) emits zero evidences.
+    #[test]
+    fn doc_ambiguous_prose_emits_no_evidence() {
+        let src = r#"
+            /// This function does something interesting when the input is large.
+            /// It may or may not work under special conditions.
+            fn do_thing(x: i32) -> i32 { x }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert!(
+            out.evidences.is_empty(),
+            "ambiguous prose must emit no evidence; got: {:?}",
+            out.evidences
+        );
+    }
+
+    /// "Requires" with an unparseable natural-language tail emits nothing (conservative).
+    #[test]
+    fn doc_requires_unparseable_tail_emits_no_evidence() {
+        let src = r#"
+            /// Requires the buffer to be non-empty and UTF-8 encoded.
+            fn parse_str(buf: &[u8]) -> Option<String> { None }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert!(
+            out.evidences.is_empty(),
+            "unparseable tail must emit no evidence; got: {:?}",
+            out.evidences
+        );
+    }
+
+    /// Mixed doc: pre + post patterns in one docstring both produce evidences.
+    #[test]
+    fn doc_mixed_pre_and_post_in_one_docstring() {
+        let src = r#"
+            /// Returns None if x < 0.
+            /// Requires x != -1.
+            fn f(x: i32) -> Option<i32> { None }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(
+            out.evidences.len(),
+            2,
+            "expected 2 evidences (returns_if + requires); got {:?}",
+            out.evidences
+                .iter()
+                .map(|e| e.extension_fields.get("pattern_kind").and_then(|v| v.as_str()))
+                .collect::<Vec<_>>()
+        );
+        let kinds: Vec<&str> = out
+            .evidences
+            .iter()
+            .filter_map(|e| e.extension_fields.get("pattern_kind").and_then(|v| v.as_str()))
+            .collect();
+        assert!(kinds.contains(&"returns_if"), "missing returns_if evidence");
+        assert!(kinds.contains(&"requires"), "missing requires evidence");
+    }
+
+    /// `# Arguments` section with `must be` constraint produces evidence.
+    #[test]
+    fn doc_arguments_section_must_be_produces_evidence() {
+        let src = r#"
+            /// Does something.
+            ///
+            /// # Arguments
+            ///
+            /// - `count`: must be count > 0
+            fn repeat(count: u32) -> Vec<u8> { vec![] }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out.evidences.len(), 1, "expected 1 arguments_must_be evidence; got {:?}", out.evidences);
+        let ev = &out.evidences[0];
+        assert_eq!(ev.confidence_basis_points, 8500);
+        assert_eq!(
+            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            Some("arguments_must_be"),
+        );
+    }
+
+    /// Evidence CIDs are deterministic: same source bytes → same CIDs.
+    #[test]
+    fn doc_evidence_cid_is_deterministic() {
+        let src = r#"
+            /// Returns None if x < 0.
+            /// Requires x != -1.
+            fn f(x: i32) -> Option<i32> { None }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out1 = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        let out2 = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out1.evidences.len(), out2.evidences.len());
+        for (a, b) in out1.evidences.iter().zip(out2.evidences.iter()) {
+            assert_eq!(a.cid, b.cid, "CIDs must be deterministic");
+        }
+    }
+
+    /// impl method docstring is walked (not just top-level fns).
+    #[test]
+    fn doc_impl_method_docstring_is_walked() {
+        let src = r#"
+            struct Counter;
+            impl Counter {
+                /// Panics if n == 0.
+                fn increment(&mut self, n: i32) { }
+            }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert_eq!(out.evidences.len(), 1, "impl method docstring must be walked");
+        assert_eq!(out.evidences[0].source_kind, provekit_ir_types::SourceKind::Docstring);
     }
 
     /// B3 — `-> Vec<T>` emits predicate `is_finite_list(result)`.
