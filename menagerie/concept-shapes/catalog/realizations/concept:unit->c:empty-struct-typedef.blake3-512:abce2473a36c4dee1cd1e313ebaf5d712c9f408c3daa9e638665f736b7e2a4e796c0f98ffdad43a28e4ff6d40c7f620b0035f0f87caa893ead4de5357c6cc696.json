@@ -1,0 +1,50 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:unit->c:empty-struct-typedef",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:unit",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c:empty-struct-typedef",
+        "args": [
+          {
+            "kind": "op",
+            "name": "c:macro-expand",
+            "args": [
+              {
+                "kind": "const",
+                "value": "typedef struct {} unit_t; #define UNIT ((unit_t){})",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "MacroName",
+                  "args": []
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c",
+    "loss_record": {
+      "structural_divergence": "empty_struct_replaces_native_unit_type: C has no native unit/void-as-value type; the realization uses typedef struct {} unit_t with a UNIT macro for the single value; pre-C23 compilers treat empty structs as a GCC/Clang extension; some ABIs assign size 1 to empty structs rather than size 0"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:abce2473a36c4dee1cd1e313ebaf5d712c9f408c3daa9e638665f736b7e2a4e796c0f98ffdad43a28e4ff6d40c7f620b0035f0f87caa893ead4de5357c6cc696",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
