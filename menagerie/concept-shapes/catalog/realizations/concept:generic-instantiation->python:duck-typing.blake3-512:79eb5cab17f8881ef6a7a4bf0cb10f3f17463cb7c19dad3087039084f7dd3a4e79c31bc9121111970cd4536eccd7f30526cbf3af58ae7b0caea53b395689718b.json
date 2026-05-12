@@ -43,7 +43,7 @@
           },
           {
             "kind": "var",
-            "name": "args"
+            "name": "type_args"
           }
         ]
       }
@@ -58,7 +58,7 @@
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:a3b0ce27a2775d168b36d1b8d77239989b6e840c2cc2b3eea348d943a64ff467bc2fed39660f2af787f42bdc1be8a004891a8227a4ca0ec9b4e2574ac5caacc8",
+  "cid": "blake3-512:79eb5cab17f8881ef6a7a4bf0cb10f3f17463cb7c19dad3087039084f7dd3a4e79c31bc9121111970cd4536eccd7f30526cbf3af58ae7b0caea53b395689718b",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

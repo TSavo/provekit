@@ -24,7 +24,8 @@
       "kind": "wp-rule",
       "formals": [
         "try_body",
-        "handlers"
+        "handlers",
+        "throw_payload"
       ],
       "body": {
         "kind": "or",
@@ -58,7 +59,7 @@
       "blake3-512:e6a5a2cb2a53f538a3b64cbe441f41b57b82515f83a14ab09f12efd6b22dca65bc715eec367e30da1f117996df939a6d26e81aa7f774d7a76330d88cd5823437"
     ]
   },
-  "cid": "blake3-512:b257f8356ff246f2a37ce7446bbfd8317289d339af01cb98ec76982255e3869bf4c18d5cb3eac8d5bcdd68959b7da57c51c0fdfe3338452bca03eaf337258668",
+  "cid": "blake3-512:e25613727d54acc00af826691aa6f1776235cc64eac5543a3896de3fc2082fdd7f8b52208e949e66c279cf9d315dd578e05810b5bdead77f12d3e24de555e2f5",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

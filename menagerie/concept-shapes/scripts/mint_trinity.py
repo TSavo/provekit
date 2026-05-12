@@ -379,7 +379,7 @@ def build_abstractions():
             "result_sort": "Stmt",
             "contract": {
                 "kind": "wp-rule",
-                "formals": ["try_body", "handlers"],
+                "formals": ["try_body", "handlers", "throw_payload"],
                 "body": {
                     "kind": "or",
                     "operands": [
@@ -505,7 +505,7 @@ def build_realizations(op_cids, abst_cids):
         atomic("virtually_dispatched", [var("method_name"), var("receiver")]),
         dd_lhs(),
         op_term("concept:call", [
-            op_term("concept:itab-method", [var("receiver"), var("method_name"), var("receiver"), var("args")]),
+            op_term("concept:itab-method", [op_term("concept:type-of", [var("receiver")]), var("method_name"), var("receiver"), var("args")]),
             op_term("concept:cons", [var("receiver"), var("args")]),
         ]),
         "java",
@@ -858,7 +858,7 @@ def build_realizations(op_cids, abst_cids):
         ["GenericDef", "ListOfType"],
         None,
         gen_lhs(),
-        op_term("python:duck-typed-call", [var("parametric_def"), var("args")]),
+        op_term("python:duck-typed-call", [var("parametric_def"), var("type_args")]),
         "python",
         loss(
             structural_divergence="the realization IS the absence of an instantiation: the parametric_def works on any type_args via duck typing; no instantiation site is generated; the type_args annotation (if any, via type hints) is erased at runtime",

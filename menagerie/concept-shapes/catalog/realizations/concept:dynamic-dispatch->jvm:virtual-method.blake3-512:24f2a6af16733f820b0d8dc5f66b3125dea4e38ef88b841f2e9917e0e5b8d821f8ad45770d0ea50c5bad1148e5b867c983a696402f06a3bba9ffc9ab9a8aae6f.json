@@ -52,8 +52,14 @@
             "name": "concept:itab-method",
             "args": [
               {
-                "kind": "var",
-                "name": "receiver"
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  }
+                ]
               },
               {
                 "kind": "var",
@@ -110,7 +116,7 @@
       ]
     }
   },
-  "cid": "blake3-512:d3b6c3fe50f3dcf61a77a54582a601ee8e58020ef2c80355b650fdf11aeabb088c53f022c6307d5a14a334f13f734b59d40f7ffa335d87cd729f0c61955ef9f4",
+  "cid": "blake3-512:24f2a6af16733f820b0d8dc5f66b3125dea4e38ef88b841f2e9917e0e5b8d821f8ad45770d0ea50c5bad1148e5b867c983a696402f06a3bba9ffc9ab9a8aae6f",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
