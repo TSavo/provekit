@@ -1,0 +1,100 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:bool_cell_get",
+  "formals": [
+    "cell",
+    "val"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "bool_ptr"
+    },
+    {
+      "kind": "primitive",
+      "name": "bool"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "bool"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "non_null",
+    "args": [
+      {
+        "kind": "var",
+        "name": "cell"
+      }
+    ]
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "var",
+            "name": "val"
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "non_null",
+            "args": [
+              {
+                "kind": "var",
+                "name": "cell"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "bool_value_at",
+            "args": [
+              {
+                "kind": "var",
+                "name": "cell"
+              },
+              {
+                "kind": "var",
+                "name": "val"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "MemRead",
+        "target": "cell",
+        "index": null,
+        "guard": {
+          "kind": "atomic",
+          "name": "non_null",
+          "args": [
+            {
+              "kind": "var",
+              "name": "cell"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}

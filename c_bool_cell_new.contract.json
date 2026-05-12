@@ -1,0 +1,153 @@
+{
+  "kind": "function-contract",
+  "fn_name": "c:bool_cell_new",
+  "formals": [
+    "sz",
+    "ptr"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "size_t"
+    },
+    {
+      "kind": "primitive",
+      "name": "bool_ptr"
+    }
+  ],
+  "return_sort": {
+    "kind": "primitive",
+    "name": "bool_ptr"
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          },
+          {
+            "kind": "ctor",
+            "name": "ite",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "malloc_failed",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "sizeof_bool"
+                  }
+                ]
+              },
+              {
+                "kind": "const",
+                "value": "null",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "bool_ptr"
+                }
+              },
+              {
+                "kind": "var",
+                "name": "ptr"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "malloc_failed",
+            "args": [
+              {
+                "kind": "var",
+                "name": "sizeof_bool"
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+              {
+                "kind": "var",
+                "name": "ptr"
+              },
+              {
+                "kind": "const",
+                "value": "null",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "bool_ptr"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "not",
+            "operands": [
+              {
+                "kind": "atomic",
+                "name": "malloc_failed",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "sizeof_bool"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "atomic",
+            "name": "non_null",
+            "args": [
+              {
+                "kind": "var",
+                "name": "ptr"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "Alloc",
+        "result": "ptr",
+        "size": "sz",
+        "failure_condition": {
+          "kind": "ctor",
+          "name": "malloc_failed",
+          "args": [
+            {
+              "kind": "var",
+              "name": "sizeof_bool"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "auto_minted_mementos": []
+}
