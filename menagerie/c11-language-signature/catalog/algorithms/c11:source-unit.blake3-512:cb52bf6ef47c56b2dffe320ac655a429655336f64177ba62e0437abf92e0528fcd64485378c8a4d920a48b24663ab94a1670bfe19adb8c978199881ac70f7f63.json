@@ -46,17 +46,7 @@
         ]
       },
       "result": "Stmt",
-      "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
-      "wp_rule": {
-        "kind": "apply",
-        "fn": "wp_operational_term",
-        "args": [
-          {
-            "kind": "var",
-            "name": "Q"
-          }
-        ]
-      }
+      "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"
     },
     "effects": {
       "effects": []
@@ -69,10 +59,10 @@
     },
     "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
   },
-  "cid": "blake3-512:be6d948884eb22631fa2d760e04c0ed9170c60d76d3c85dd7fc0e4a67f42c690afda90983cb132ed1aa8e0e399ac22a6bd8c112bc25834b4133879b70088ec2f",
+  "cid": "blake3-512:cb52bf6ef47c56b2dffe320ac655a429655336f64177ba62e0437abf92e0528fcd64485378c8a4d920a48b24663ab94a1670bfe19adb8c978199881ac70f7f63",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "U5Wy0ksAGoJDs/7tSEJeXm8RN+dLjU/K3+RukA+JxJFbitjLtbkm5fieH7atLTjlov6TvHFjrauViwV0SMjMAA=="
+    "sig_b64": "gSwj32Awwl13Png/5b+knSxhhG20mc8dx/HIvvJHCcfmJX7Krkl+vCcBiH7wPS5RzFLQcO9pYId+IlqMMBApCA=="
   }
 }

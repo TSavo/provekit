@@ -11,12 +11,12 @@
     "formal_sorts": [
       {
         "kind": "ctor",
-        "name": "Expr",
+        "name": "Int",
         "args": []
       },
       {
         "kind": "ctor",
-        "name": "Expr",
+        "name": "Int",
         "args": []
       }
     ],
@@ -29,11 +29,11 @@
       "kind": "operation-contract",
       "operator": "ushr",
       "arity": [
-        "Expr",
-        "Expr"
+        "Int",
+        "Int"
       ],
-      "result": "Expr",
-      "wp": "TypeScript binary operator >>>",
+      "result": "Int",
+      "wp": "TypeScript binary operator >>> (zero-fill right shift, operands coerced to ToUint32)",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -52,15 +52,15 @@
     "auto_minted_mementos": [],
     "return_sort": {
       "kind": "ctor",
-      "name": "Expr",
+      "name": "Int",
       "args": []
     },
     "locus": "menagerie/typescript-language-signature/README.md#operations"
   },
-  "cid": "blake3-512:affe6e07ffd118e91dafd45e69d9f844d7471bd33c14410715def352618abfe4b5e4b3b240f01839f1b1e700ab5a0a6c454b0024c3e988d4d7a15d65049602b0",
+  "cid": "blake3-512:1a2557f93bd0bad843baf496fbe3e45e70bdfe084d4b171e6481829f91afc0ec0521271999090bc703c44580b855bb253c5ff722d304bf4a0e8997fb7d3568f5",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "Bh39fQTuAghUfoB3mme+RUpNv5r/OOlOuLEeKiuyTQ+PTyTkH64Nw7ii9a+6q+sCOclvP9k/3mW+vAUshejtDQ=="
+    "sig_b64": "b2srUcGaHMawZEf8kA9snVfpcWnil8Q8i/IUIpZLtdmVUfSve44rhn3fQIiRilui/1WM5D7r4NCaV/IpijHyBA=="
   }
 }

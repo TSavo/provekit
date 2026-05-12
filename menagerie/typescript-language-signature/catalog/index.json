@@ -1,12 +1,6 @@
 {
   "schema_version": "provekit-algebraic-catalog-index/1",
   "entries": {
-    "blake3-512:0e162ea6f4e5f28a44a628f1ec4dcba4192eb5f367c8bf63579dd023c3f984e130c96a82df7f4e0aac8742ba146816ff0fb1d6ea3296c30f5d7f8247efd36026": {
-      "cid": "blake3-512:0e162ea6f4e5f28a44a628f1ec4dcba4192eb5f367c8bf63579dd023c3f984e130c96a82df7f4e0aac8742ba146816ff0fb1d6ea3296c30f5d7f8247efd36026",
-      "kind": "language_signature",
-      "name": "typescript",
-      "path": "signatures/typescript.blake3-512:0e162ea6f4e5f28a44a628f1ec4dcba4192eb5f367c8bf63579dd023c3f984e130c96a82df7f4e0aac8742ba146816ff0fb1d6ea3296c30f5d7f8247efd36026.json"
-    },
     "blake3-512:110567bc440f42caf937502b159db345d3c99bdae060029741ab022526fef68a2c744f19d5227e90dd70ec7fb15635d456bb7e61d632f2c70cc734fc02e71a03": {
       "cid": "blake3-512:110567bc440f42caf937502b159db345d3c99bdae060029741ab022526fef68a2c744f19d5227e90dd70ec7fb15635d456bb7e61d632f2c70cc734fc02e71a03",
       "kind": "sort",
@@ -36,6 +30,12 @@
       "kind": "effect_signature",
       "name": "ts:effect-signature:call",
       "path": "signatures/ts:effect-signature:call.blake3-512:177f684aebe77d244a89f64b1340be5a4322f57da6a43a86846200f7bdddbda1dfbfc427ee6fe9861546e26af1fcc06c265f18f72641a2984cb11063ecabdee6.json"
+    },
+    "blake3-512:1a2557f93bd0bad843baf496fbe3e45e70bdfe084d4b171e6481829f91afc0ec0521271999090bc703c44580b855bb253c5ff722d304bf4a0e8997fb7d3568f5": {
+      "cid": "blake3-512:1a2557f93bd0bad843baf496fbe3e45e70bdfe084d4b171e6481829f91afc0ec0521271999090bc703c44580b855bb253c5ff722d304bf4a0e8997fb7d3568f5",
+      "kind": "algorithm",
+      "name": "ts:ushr",
+      "path": "algorithms/ts:ushr.blake3-512:1a2557f93bd0bad843baf496fbe3e45e70bdfe084d4b171e6481829f91afc0ec0521271999090bc703c44580b855bb253c5ff722d304bf4a0e8997fb7d3568f5.json"
     },
     "blake3-512:1a39cc3dd4bfb8f4131c4923615c68534d479f7d331b46fda21c3c93912b4ca716cc56232ce6f4d7e8890649883b55dc6a2ee4c537ca80f3c8cd8834c3f617a3": {
       "cid": "blake3-512:1a39cc3dd4bfb8f4131c4923615c68534d479f7d331b46fda21c3c93912b4ca716cc56232ce6f4d7e8890649883b55dc6a2ee4c537ca80f3c8cd8834c3f617a3",
@@ -91,6 +91,12 @@
       "name": "ts:typeof",
       "path": "algorithms/ts:typeof.blake3-512:249180b47b95a4a90be4e048a313a9a11b6630035bc897623bb28ed1ef7bf54f7e0035572647d5177d7a4a1bc3ed165b10b9a55e1cb2cbea751a7921295837e1.json"
     },
+    "blake3-512:25deb33508cee2ebdb55467a23ec7efb57c83e8b3ae8a8dd999e954a568e7970d552ee1c6f4ff97e519e8542b2512958242f6cc87cdf48c2f05b67a6de7ac156": {
+      "cid": "blake3-512:25deb33508cee2ebdb55467a23ec7efb57c83e8b3ae8a8dd999e954a568e7970d552ee1c6f4ff97e519e8542b2512958242f6cc87cdf48c2f05b67a6de7ac156",
+      "kind": "equation",
+      "name": "ts:and-to-ite-desugar",
+      "path": "equations/ts:and-to-ite-desugar.blake3-512:25deb33508cee2ebdb55467a23ec7efb57c83e8b3ae8a8dd999e954a568e7970d552ee1c6f4ff97e519e8542b2512958242f6cc87cdf48c2f05b67a6de7ac156.json"
+    },
     "blake3-512:26fead58b25a5f14c30fb8a988be4c186fc925c0cc284442da9d1e5b7a8ea4dee10e4729a8deefa7f14b0222bd9d43884221a59cdf399efef49c65f0d1fc4100": {
       "cid": "blake3-512:26fead58b25a5f14c30fb8a988be4c186fc925c0cc284442da9d1e5b7a8ea4dee10e4729a8deefa7f14b0222bd9d43884221a59cdf399efef49c65f0d1fc4100",
       "kind": "equation",
@@ -120,6 +126,12 @@
       "kind": "algorithm",
       "name": "ts:sub",
       "path": "algorithms/ts:sub.blake3-512:30f7e9f25b036a1c80782e8132e5dd00150685cb83ed46da960bbd229a30661557bdd65786314c03db5b68f24258c3bbf6fc26a0ee73bd90fe955c10722eb479.json"
+    },
+    "blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d": {
+      "cid": "blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d",
+      "kind": "language_signature",
+      "name": "typescript",
+      "path": "signatures/typescript.blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d.json"
     },
     "blake3-512:362381eb86d30adb737d83ef3d72b557e3ddbc8381064e66141ef0a9d2d18d594c32c28ea1b661c15f767b3b915b637bc22e83e4aa1b795212ac2d9ebe3a68b4": {
       "cid": "blake3-512:362381eb86d30adb737d83ef3d72b557e3ddbc8381064e66141ef0a9d2d18d594c32c28ea1b661c15f767b3b915b637bc22e83e4aa1b795212ac2d9ebe3a68b4",
@@ -175,12 +187,6 @@
       "name": "ts:neg",
       "path": "algorithms/ts:neg.blake3-512:64c0f0594f71b3ba86dceaeac915ab9840d569bc45092851d85544edacb6d85dd211f48a6265cc511fb5654b378167d6a4cada2c23e998c3d820bdb5dc9f7d55.json"
     },
-    "blake3-512:673fe02c3e31c42a3273fe88787ce2ef3d16f1a5d67f6d5a4a921d47b57f4fdb1fb8b68ddb01f110473bba5a4dd7b62b50258761081ec8315a1f11c67b5d73f7": {
-      "cid": "blake3-512:673fe02c3e31c42a3273fe88787ce2ef3d16f1a5d67f6d5a4a921d47b57f4fdb1fb8b68ddb01f110473bba5a4dd7b62b50258761081ec8315a1f11c67b5d73f7",
-      "kind": "equation",
-      "name": "ts:and-to-ite-desugar",
-      "path": "equations/ts:and-to-ite-desugar.blake3-512:673fe02c3e31c42a3273fe88787ce2ef3d16f1a5d67f6d5a4a921d47b57f4fdb1fb8b68ddb01f110473bba5a4dd7b62b50258761081ec8315a1f11c67b5d73f7.json"
-    },
     "blake3-512:69b60e0bc27a84499bb5fb7ff7f453cb594544221241476a49bddb81b57279161e4df345b7668b535acce422ca499705b32ef4a1dcb949633ceb776320733291": {
       "cid": "blake3-512:69b60e0bc27a84499bb5fb7ff7f453cb594544221241476a49bddb81b57279161e4df345b7668b535acce422ca499705b32ef4a1dcb949633ceb776320733291",
       "kind": "algorithm",
@@ -198,12 +204,6 @@
       "kind": "algorithm",
       "name": "ts:predec",
       "path": "algorithms/ts:predec.blake3-512:6eb952c013345d0d48778254cd7ed0741cb2de54e8c0b4f1a7003da9c70ccb1296eb5d3454dcc9f2fb391805272bd72fda021ea97758c87edb594a843a22c33b.json"
-    },
-    "blake3-512:779661d0c76db88bc7bacb26bad9aeff8380c16d43b733aaa2e036311c99b9d84fd3d786021b7ec1d24461081c72410236ddffbf4270cb905cfce10936bced95": {
-      "cid": "blake3-512:779661d0c76db88bc7bacb26bad9aeff8380c16d43b733aaa2e036311c99b9d84fd3d786021b7ec1d24461081c72410236ddffbf4270cb905cfce10936bced95",
-      "kind": "equation",
-      "name": "ts:or-to-ite-desugar",
-      "path": "equations/ts:or-to-ite-desugar.blake3-512:779661d0c76db88bc7bacb26bad9aeff8380c16d43b733aaa2e036311c99b9d84fd3d786021b7ec1d24461081c72410236ddffbf4270cb905cfce10936bced95.json"
     },
     "blake3-512:779e84f80157e68de7d50854a881a5eb9407d40eb0ded41b42d2b5f810cb8d54c9688272a8f7ea177dc17dfaaeaa81bf88daec963ab634ede71153dd8bca42b0": {
       "cid": "blake3-512:779e84f80157e68de7d50854a881a5eb9407d40eb0ded41b42d2b5f810cb8d54c9688272a8f7ea177dc17dfaaeaa81bf88daec963ab634ede71153dd8bca42b0",
@@ -331,12 +331,6 @@
       "name": "ts:call",
       "path": "algorithms/ts:call.blake3-512:ab6094400e968c94a287c84668aba865e56bc42120139a631807b620185bfe73bb5c00558e9745667b6ac14c695ff1a874a955ef4011654e9d60c43a9feec944.json"
     },
-    "blake3-512:affe6e07ffd118e91dafd45e69d9f844d7471bd33c14410715def352618abfe4b5e4b3b240f01839f1b1e700ab5a0a6c454b0024c3e988d4d7a15d65049602b0": {
-      "cid": "blake3-512:affe6e07ffd118e91dafd45e69d9f844d7471bd33c14410715def352618abfe4b5e4b3b240f01839f1b1e700ab5a0a6c454b0024c3e988d4d7a15d65049602b0",
-      "kind": "algorithm",
-      "name": "ts:ushr",
-      "path": "algorithms/ts:ushr.blake3-512:affe6e07ffd118e91dafd45e69d9f844d7471bd33c14410715def352618abfe4b5e4b3b240f01839f1b1e700ab5a0a6c454b0024c3e988d4d7a15d65049602b0.json"
-    },
     "blake3-512:becb9c14ca29d1629a0e09b6886617863b47f5342174d7bda3cdf86d88afb084e812645fd47aa4b68df488fe47a313e68cb3725edac3ae30fd2c056c71411ca3": {
       "cid": "blake3-512:becb9c14ca29d1629a0e09b6886617863b47f5342174d7bda3cdf86d88afb084e812645fd47aa4b68df488fe47a313e68cb3725edac3ae30fd2c056c71411ca3",
       "kind": "algorithm",
@@ -384,6 +378,12 @@
       "kind": "algorithm",
       "name": "ts:index",
       "path": "algorithms/ts:index.blake3-512:cb13e7e5c12451e35e81b83e4655b7de04c3e2a2f2a062b3e29461f3ce4c6b1317a78ac903d44904465355964ad93fb6b0e6097cf886026b1223f0b4adcbf37c.json"
+    },
+    "blake3-512:da40fe29997cb937ee4e5c37226c1939a44310d4182af671ddae1d945c4a4f01025a8f31fc074c83745e0e22408c198e5cdeb57f48b648bc478c4afc61ebae78": {
+      "cid": "blake3-512:da40fe29997cb937ee4e5c37226c1939a44310d4182af671ddae1d945c4a4f01025a8f31fc074c83745e0e22408c198e5cdeb57f48b648bc478c4afc61ebae78",
+      "kind": "equation",
+      "name": "ts:or-to-ite-desugar",
+      "path": "equations/ts:or-to-ite-desugar.blake3-512:da40fe29997cb937ee4e5c37226c1939a44310d4182af671ddae1d945c4a4f01025a8f31fc074c83745e0e22408c198e5cdeb57f48b648bc478c4afc61ebae78.json"
     },
     "blake3-512:db37efdfd365f62c67e2cbd6a97c0021083009b07fad0ac9a4f6f18b3fda1d5850955f00bc79cfc45ae2f46020648c731589e8e2ac31a20edb256cae014bd26b": {
       "cid": "blake3-512:db37efdfd365f62c67e2cbd6a97c0021083009b07fad0ac9a4f6f18b3fda1d5850955f00bc79cfc45ae2f46020648c731589e8e2ac31a20edb256cae014bd26b",
