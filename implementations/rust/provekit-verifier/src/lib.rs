@@ -34,6 +34,7 @@
 
 pub mod call_edge_loader;
 pub mod cbor_decode;
+pub mod domain_claim_verifier;
 pub mod enumerate_callsites;
 pub mod formula_rewrite;
 pub mod handshake;
@@ -49,6 +50,10 @@ pub mod solve_obligation;
 pub mod solvers;
 pub mod types;
 
+pub use domain_claim_verifier::{
+    verify_claim, verify_claims, ClaimOutcome, ClaimReport, TrichotomyError,
+    validate_trichotomy,
+};
 pub use runner::{Runner, RunnerConfig, SolverStats, TierStats};
 pub use solvers::{
     DispatchConfig, PortfolioMode, SolveResult, Solver, SolverConfig, SolverHandle, SolverPlan,

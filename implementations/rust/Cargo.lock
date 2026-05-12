@@ -2129,6 +2129,7 @@ dependencies = [
  "provekit-ir-compiler-maude",
  "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "provekit-proof-envelope",
  "rayon",
  "serde",
