@@ -19,27 +19,26 @@
   ],
   "kind": "algorithm",
   "post": {
-    "homomorphism_obligation": {
-      "kind": "structural-wp-rule-abstraction",
-      "source": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
-      "target": "blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412"
-    },
     "kind": "contract-renaming-morphism",
-    "literal_map": {},
-    "operator_map": {},
+    "source_contract_cid": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
+    "target_shape_cid": "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504",
     "renaming_map": {},
     "representation_map": {},
-    "source_contract_cid": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
-    "target_shape_cid": "blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412"
+    "operator_map": {},
+    "literal_map": {},
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction",
+      "source": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
+      "target": "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504"
+    }
   },
   "pre": {
     "args": [],
     "kind": "atomic",
     "name": "true"
   },
-  "return_sort": {
-    "args": [],
-    "kind": "ctor",
-    "name": "FunctionContractMemento"
-  }
+  "input_cids": [
+    "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
+    "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504"
+  ]
 }

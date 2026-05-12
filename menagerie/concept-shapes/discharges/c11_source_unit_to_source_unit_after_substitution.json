@@ -1,0 +1,66 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:source-unit",
+  "formals": [
+    "bytes",
+    "operational_term"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "source-unit",
+    "arity": [
+      "String",
+      "Stmt"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "bytes",
+          "evaluation": "unevaluated",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "operational_term"
+        }
+      ]
+    },
+    "result": "Stmt",
+    "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+    "wp_rule": {
+      "kind": "apply",
+      "fn": "wp_operational_term",
+      "args": [
+        {
+          "kind": "var",
+          "name": "Q"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  }
+}

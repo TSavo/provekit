@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "kind": "MorphismDischargeReceipt",
+  "morphism_cid": "blake3-512:dbeb66a34871d25dbeb824770a2b3f01c700f8697f6374ecd89e81014310e873a47ce2c092bed3504c81d1438b354948bf0d09134141d8929df45d86d70da560",
+  "source_contract_cid": "blake3-512:5d75f23828f0401cacf733ad8ae79c40bcabed67dcd5a455d4b6e6c165fbfe23c86e307dc86bde085ac5eec8dc6ae2030c74cbd0696f1fb0152c78719b3869ba",
+  "renaming_map": {},
+  "representation_map": {},
+  "operator_map": {},
+  "literal_map": {},
+  "after_substitution_cid": "blake3-512:5909bab9ebfbae533a81d45e3dc7af462fd64435e6209c04a0b4f96d3c90070ab4f8bf589d639de2afcd3397b75283938f4ccbc62b4e61d7221d838f009d558c",
+  "shape_cid": "blake3-512:9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb",
+  "discharged": true,
+  "method": "structural-wp-abstraction",
+  "signature": null,
+  "wp_abstracted": true
+}

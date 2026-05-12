@@ -332,9 +332,12 @@ def concept_spec_from_base(op_def):
     data = normalize_node(strip_locus(source), op_def["renaming"], {}, operators, {})
     data["fn_name"] = op_def["concept_fn"]
     data["post"]["operator"] = op_def["concept_operator"]
-    # Strip wp_rule from the concept spec: language-spec wp_rules are per-language
-    # annotations, not canonical fields of the concept-shape hub op.  The hub
-    # op's CID must not change when a language spec adds wp_rule (PR3+).
+    # Strip any wp_rule that was present in the base lang spec before calling
+    # apply_wp_rule, which re-injects the authoritative wp_rule from op_def when
+    # the op definition carries one (the four PR2 ops: seq/skip/conditional/
+    # source-unit).  Ops without an op_def wp_rule stay wp_rule-free.  This
+    # ensures concept CIDs are stable: they are determined by the authored
+    # op_def, not by whatever the base lang spec happens to carry.
     data["post"].pop("wp_rule", None)
     apply_patches(data, op_def["patches"])
     apply_wp_rule(data, op_def)
@@ -519,15 +522,16 @@ def try_structural_subsumption(after_spec, concept_spec):
                           "structural-wp-abstraction-and-effect-subset",
                           "structural-pre-weakening-and-wp-abstraction-and-effect-subset".
 
-    4. wp_rule abstraction: if after_spec carries a wp_rule field in post that
-       concept_spec does not (because concept hub ops do not yet carry wp_rule; see
-       PR3 note in concept_spec_from_base), strip it from the comparison and attempt
-       byte-equality discharge.  Soundness: concept_spec_from_base explicitly omits
-       wp_rule from hub op specs (it is a per-language annotation until #633 lands);
-       a language spec's wp_rule is therefore not a semantic gap vs the concept shape.
-       Discharge method: "structural-wp-rule-abstraction".
-       Fast path: tried before the general relaxation loop, so it takes priority over
-       relaxations 1-3 when wp_rule is the *only* difference.
+    4. wp_rule normalisation: after PR2, the four authored ops (seq/skip/conditional/
+       source-unit) carry wp_rule on BOTH concept and language sides.  Remaining ops
+       have wp_rule only in language specs (PR3 lifters) or neither side.  The
+       discharge logic in _make_relaxed strips wp_rule from the relaxed lang copy and
+       re-injects concept's wp_rule when present, so the relaxed copy's CID can match
+       the concept CID regardless of which side originated the wp_rule.
+       Fast path: when the only differences are wp_rule presence and/or the wp/wp_note
+       key rename, the fast path handles both in one step.
+       Discharge methods: "structural-wp-rule-abstraction" (wp_rule-only difference,
+       same key), "structural-wp-abstraction" (key rename or both key + wp_rule).
 
     Returns (method_string, pre_relaxed, wp_abstracted) on success, or None on failure.
     Sound: false-negatives (remaining gaps) are acceptable; false-positives are not
@@ -555,8 +559,10 @@ def try_structural_subsumption(after_spec, concept_spec):
     concept_wp = concept_post.get(concept_wp_key) if concept_wp_key else None
     after_effects = _effect_set(after_spec)
     concept_effects = _effect_set(concept_spec)
-    # wp_rule is a per-language annotation; concept specs never include it (stripped
-    # in concept_spec_from_base).  It is always treated as abstract for discharge.
+    # after_has_wp_rule: True when the language spec carries a wp_rule field.
+    # Note: after PR2, concept specs for the four authored ops ALSO carry wp_rule
+    # (injected by apply_wp_rule in concept_spec_from_base).  _make_relaxed handles
+    # both sides symmetrically by re-injecting concept's wp_rule into the relaxed copy.
     after_has_wp_rule = "wp_rule" in after_post
 
     # notes_match: True if the post.notes field (or its absence) is identical
@@ -604,10 +610,18 @@ def try_structural_subsumption(after_spec, concept_spec):
                 for doc_key in _DOC_ONLY_KEYS - {"wp", "wp_note"}:
                     if doc_key in relaxed["post"] and doc_key not in concept_post:
                         del relaxed["post"][doc_key]
-        # wp_rule is always stripped: it is a language-spec annotation and concept
-        # specs do not include it, so a relaxed copy must omit it to match CIDs.
+        # wp_rule: strip from the relaxed copy, then re-inject concept's wp_rule when
+        # the concept spec carries one.  Before PR2, concept specs never carried
+        # wp_rule so "always strip" was correct.  After PR2, the four authored ops
+        # (seq/skip/conditional/source-unit) have a wp_rule on both sides; stripping
+        # without re-injecting made relaxed CID != concept CID, silently dropping 27
+        # morphisms.  Re-injecting is sound: we are matching the lang spec against the
+        # concept spec's wp_rule, not asserting one; any lang op that structurally
+        # subsumes the concept shape is obligated to honour the concept's wp_rule.
         if "post" in relaxed:
             relaxed["post"].pop("wp_rule", None)
+            if "wp_rule" in concept_post:
+                relaxed["post"]["wp_rule"] = _copy.deepcopy(concept_post["wp_rule"])
         if relax_effects:
             relaxed["effects"] = _copy.deepcopy(concept_spec.get("effects", empty_effects()))
         return relaxed
@@ -627,12 +641,21 @@ def try_structural_subsumption(after_spec, concept_spec):
     if not effects_ok:
         return None
 
-    # Fast path: if the only difference is a wp_rule annotation in the language spec
-    # (which concept specs never carry), strip it and attempt byte-equality discharge.
+    # Fast path: if the only differences are (a) a wp_rule annotation present in
+    # the language spec and (b) optionally a wp/wp_note key rename, strip/normalise
+    # and attempt byte-equality discharge.
+    # Pre-PR2: concept specs never carried wp_rule, so relax_wp=False was sufficient.
+    # Post-PR2: the four authored ops carry wp_rule on both sides; _make_relaxed now
+    # re-injects concept's wp_rule (see above), so the fast path still applies, but
+    # we must also normalise the wp key when the two sides use different names.
     if after_has_wp_rule and pre_matches and wp_matches and effects_match:
-        relaxed = _make_relaxed(False, False, False)
+        # Use relax_wp=True when the wp key names differ so _make_relaxed normalises
+        # wp->wp_note; when keys already agree, relax_wp=False leaves the key intact.
+        needs_key_norm = not wp_byte_same
+        relaxed = _make_relaxed(False, needs_key_norm, False)
         if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
-            return ("structural-wp-rule-abstraction", False, False)
+            method = "structural-wp-rule-abstraction" if not needs_key_norm else "structural-wp-abstraction"
+            return (method, False, needs_key_norm)
 
     # Try all useful combinations of relaxations.
     # Order: tightest first (fewest relaxations), then broader.

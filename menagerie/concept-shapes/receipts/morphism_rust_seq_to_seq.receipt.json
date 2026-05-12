@@ -2,14 +2,16 @@
   "after_substitution_cid": "blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3",
   "discharged": true,
   "kind": "MorphismDischargeReceipt",
-  "literal_map": {},
-  "method": "structural-wp-rule-abstraction",
-  "morphism_cid": "blake3-512:f3fc97e055edd4b3525de9909956216dbcce0aac43d367995509efbb61307039efbc071b79dc43f9611f4129b5b975a355ecad50392a1f79c80199f32b104746",
-  "operator_map": {},
+  "morphism_cid": "blake3-512:3ad7d28bcb7aa32fc649b980e32307d007bc597180cc4c7c18b1c43697080ad31bce8f8f05642a2570f6c2151aa7639bfbd2819334709987aebf180041bfb968",
+  "source_contract_cid": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2",
   "renaming_map": {},
   "representation_map": {},
-  "schema_version": "1",
-  "shape_cid": "blake3-512:3c4a1439095b9f4117290c71f63945331bca57ae1aa82ff0b7a3a97599615d8b8ea286658874e2a9ee811804d84a3febdb4538d9e0b84fbb8962b88034a90412",
+  "operator_map": {},
+  "literal_map": {},
+  "after_substitution_cid": "blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3",
+  "shape_cid": "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504",
+  "discharged": true,
+  "method": "structural-wp-abstraction",
   "signature": null,
-  "source_contract_cid": "blake3-512:372ad0733e57b039d6b8558ca31d42cbcab3067f82d96713832218c7cb7b8d8e58939fb95f2f534b1a7a559303d6129e4100fa945fabc014ebc15091b25c64f2"
+  "wp_abstracted": true
 }

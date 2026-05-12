@@ -46,9 +46,9 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `concept:not` | morphism_c11_not_to_not, morphism_zig_not_to_not, morphism_java_not_to_not |
 | `concept:assign` | morphism_c11_assign_to_assign, morphism_typescript_assign_to_assign, morphism_zig_assign_to_assign |
 | `concept:decl` | morphism_c11_decl_to_decl, morphism_typescript_decl_to_decl, morphism_zig_decl_to_decl, morphism_java_decl_to_decl |
-| `concept:seq` | morphism_c11_seq_to_seq, morphism_rust_seq_to_seq |
-| `concept:skip` | morphism_c11_skip_to_skip, morphism_rust_skip_to_skip |
-| `concept:conditional` | morphism_c11_if_to_conditional, morphism_rust_if_to_conditional |
+| `concept:seq` | morphism_c11_seq_to_seq, morphism_csharp_seq_to_seq, morphism_python_seq_to_seq, morphism_zig_seq_to_seq, morphism_ruby_seq_to_seq, morphism_php_seq_to_seq, morphism_java_seq_to_seq, morphism_rust_seq_to_seq |
+| `concept:skip` | morphism_c11_skip_to_skip, morphism_csharp_skip_to_skip, morphism_zig_skip_to_skip, morphism_java_skip_to_skip, morphism_rust_skip_to_skip |
+| `concept:conditional` | morphism_c11_if_to_conditional, morphism_csharp_if_to_conditional, morphism_python_if_to_conditional, morphism_zig_if_to_conditional, morphism_ruby_if_to_conditional, morphism_rust_if_to_conditional |
 | `concept:ite` | morphism_c11_conditional_to_ite, morphism_java_ite_to_ite |
 | `concept:while` | morphism_c11_while_to_while, morphism_csharp_while_to_while, morphism_python_while_to_while, morphism_zig_while_to_while, morphism_ruby_while_to_while, morphism_java_while_to_while, morphism_rust_while_to_while |
 | `concept:do` | morphism_c11_do_to_do, morphism_java_do_to_do |
@@ -68,7 +68,7 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `concept:postdec` | morphism_c11_post_dec_to_postdec |
 | `concept:preinc` | morphism_c11_pre_inc_to_preinc |
 | `concept:predec` | morphism_c11_pre_dec_to_predec |
-| `concept:source-unit` | none |
+| `concept:source-unit` | morphism_c11_source_unit_to_source_unit, morphism_csharp_source_unit_to_source_unit, morphism_python_source_unit_to_source_unit, morphism_typescript_source_unit_to_source_unit, morphism_zig_source_unit_to_source_unit, morphism_ruby_source_unit_to_source_unit, morphism_php_source_unit_to_source_unit, morphism_java_source_unit_to_source_unit |
 
 ## Gaps
 
@@ -207,29 +207,16 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `ruby` | `concept:decl` | `op_decl.spec.json` | no candidate source operation spec |
 | `php` | `concept:decl` | `op_decl.spec.json` | no candidate source operation spec |
 | `rust` | `concept:decl` | `op_let.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Pattern","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
-| `csharp` | `concept:seq` | `op_seq.spec.json` | operation-contract mismatch |
 | `go` | `concept:seq` | `op_seq.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `python` | `concept:seq` | `op_seq.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(first.effects, second.effects)"}]}` |
 | `typescript` | `concept:seq` | `op_seq.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `zig` | `concept:seq` | `op_seq.spec.json` | operation-contract mismatch |
-| `ruby` | `concept:seq` | `op_seq.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(first.effects, second.effects)"}]}` |
-| `php` | `concept:seq` | `op_seq.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(first.effects, second.effects)"}]}` |
-| `java` | `concept:seq` | `op_seq.spec.json` | operation-contract mismatch |
-| `csharp` | `concept:skip` | `op_skip.spec.json` | wp mismatch: got `"post"` want `"state unchanged"` |
 | `go` | `concept:skip` | `op_skip.spec.json` | return sort mismatch: got `{"kind":"ctor","name":"Unit","args":[]}` want `{"kind":"ctor","name":"Stmt","args":[]}` |
 | `python` | `concept:skip` | `op_skip.spec.json` | no candidate source operation spec |
 | `typescript` | `concept:skip` | `op_skip.spec.json` | no candidate source operation spec |
-| `zig` | `concept:skip` | `op_skip.spec.json` | operation-contract mismatch |
 | `ruby` | `concept:skip` | `op_skip.spec.json` | no candidate source operation spec |
 | `php` | `concept:skip` | `op_skip.spec.json` | no candidate source operation spec |
-| `java` | `concept:skip` | `op_skip.spec.json` | wp mismatch: got `"empty statement / absent branch"` want `"state unchanged"` |
 | `c11` | `concept:conditional` | `op_conditional.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `csharp` | `concept:conditional` | `op_if.spec.json` | operation-contract mismatch |
 | `go` | `concept:conditional` | `op_if.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `python` | `concept:conditional` | `op_if.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(then_branch.effects, else_branch.effects)"}]}` |
 | `typescript` | `concept:conditional` | `op_if.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `zig` | `concept:conditional` | `op_if.spec.json` | wp mismatch: got `"branch-selected weakest precondition"` want `"cond ? wp(then_branch, post) : wp(else_branch, post)"` |
-| `ruby` | `concept:conditional` | `op_if.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(then_branch.effects, else_branch.effects)"}]}` |
 | `php` | `concept:conditional` | `op_if.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `java` | `concept:conditional` | `op_if.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(then_branch.effects, else_branch.effects)"}]}` |
 | `csharp` | `concept:ite` | `op_ite.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Int","args":[]},{"kind":"ctor","name":"Int","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
@@ -376,15 +363,7 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `php` | `concept:predec` | `op_predec.spec.json` | no candidate source operation spec |
 | `java` | `concept:predec` | `op_predec.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
 | `rust` | `concept:predec` | `op_predec.spec.json` | no candidate source operation spec |
-| `c11` | `concept:source-unit` | `op_source_unit.spec.json` | operation-contract mismatch |
-| `csharp` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"source bytes are recoverable; operational_term is the lifted program"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
 | `go` | `concept:source-unit` | `op_source_unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Literal","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `python` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"lossless Python source wrapper; project_effects descends to operational_term"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
-| `typescript` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"lossless TypeScript source wrapper; source bytes are recoverable and operational_term is the lifted program"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
-| `zig` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"lossless Zig source wrapper; bytes are recoverable and operational_term is the lifted program"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
-| `ruby` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"lossless Ruby source wrapper; project_effects descends to operational_term"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
-| `php` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"lossless PHP source wrapper; source bytes are recoverable and operational_term is the lifted program"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
-| `java` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"source bytes are recoverable; operational_term is the lifted program"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
 | `rust` | `concept:source-unit` | `op_source_unit.spec.json` | no candidate source operation spec |
 
 T Savo
