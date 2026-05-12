@@ -41,17 +41,7 @@
     "kind": "operation-contract",
     "operator": "source-unit",
     "result": "Stmt",
-    "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
-    "wp_rule": {
-      "args": [
-        {
-          "kind": "var",
-          "name": "Q"
-        }
-      ],
-      "fn": "wp_operational_term",
-      "kind": "apply"
-    }
+    "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"
   },
   "pre": {
     "args": [],
