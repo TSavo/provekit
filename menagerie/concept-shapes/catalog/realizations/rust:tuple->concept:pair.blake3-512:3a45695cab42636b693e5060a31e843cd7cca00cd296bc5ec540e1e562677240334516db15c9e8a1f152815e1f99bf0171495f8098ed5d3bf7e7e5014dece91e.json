@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "rust:tuple->concept:pair",
+    "formals": [
+      "first",
+      "second"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T1",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "T2",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "rust:tuple",
+        "args": [
+          {
+            "kind": "var",
+            "name": "first"
+          },
+          {
+            "kind": "var",
+            "name": "second"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:pair",
+        "args": [
+          {
+            "kind": "var",
+            "name": "first"
+          },
+          {
+            "kind": "var",
+            "name": "second"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-lift",
+    "direction": "left-to-right",
+    "source_lang": "rust",
+    "loss_record": {
+      "structural_divergence": "empty: Rust tuple (T1, T2) is the canonical two-slot product type; no structural encoding gap between the source and the hub concept"
+    },
+    "discharge_receipt": "deferred:pending-641-PR8",
+    "effects": []
+  },
+  "cid": "blake3-512:3a45695cab42636b693e5060a31e843cd7cca00cd296bc5ec540e1e562677240334516db15c9e8a1f152815e1f99bf0171495f8098ed5d3bf7e7e5014dece91e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
