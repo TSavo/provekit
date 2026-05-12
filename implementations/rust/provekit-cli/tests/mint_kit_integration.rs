@@ -427,7 +427,7 @@ const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp", "python", "ruby
 /// Pinned contractSetCid for `--kit=go` after Tier 1 wiring fix (#176).
 /// Reflects the 11 canonical contracts in `implementations/go/provekit-self-contracts/slabs/`.
 /// Update this constant when contracts change (re-run `make mint-go` and capture the new CID).
-const GO_CONTRACT_SET_CID: &str = "blake3-512:e23649f383162398556a508c2e69e035d6d231bfaf6e8926ced547fb19ddd9c65779f39fe31d85519c957bc40afa432c9be468eadfa5aac77f74f5de8c56324c";
+const GO_CONTRACT_SET_CID: &str = "blake3-512:073e401089e249eec9fda0430027ca28bd4fece920cda632e53cbf46278c46834fba04d2c23509ec9a9356edf3b2bd0fcbfac5af795edfc4e4c36007bb2dd84e";
 
 #[test]
 #[serial(mint_kit_files)]
