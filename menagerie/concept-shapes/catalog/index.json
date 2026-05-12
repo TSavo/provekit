@@ -949,12 +949,6 @@
       "name": "morphism:go:bitnot:to:concept:bitnot",
       "path": "algorithms/morphism:go:bitnot:to:concept:bitnot.blake3-512:a925984ca837fe3534b57a06db35db0c5e28ecd827b12382a7e46fcdfb828febad4c138c991ef7787f2ea59064b827e0cab167e1082273f63064575fb33cb890.json"
     },
-    "blake3-512:aa04e777b6c4d0765f387abff543d61fbed1cab39ba96bcaef8d2dd955bcec6b8b7ed9bf20fd2d16433a0510ff0fb5c1014ac380c63a66ff5ee71f1b3c2b72e4": {
-      "cid": "blake3-512:aa04e777b6c4d0765f387abff543d61fbed1cab39ba96bcaef8d2dd955bcec6b8b7ed9bf20fd2d16433a0510ff0fb5c1014ac380c63a66ff5ee71f1b3c2b72e4",
-      "kind": "algorithm",
-      "name": "morphism:ruby:source-unit:to:concept:source-unit",
-      "path": "algorithms/morphism:ruby:source-unit:to:concept:source-unit.blake3-512:aa04e777b6c4d0765f387abff543d61fbed1cab39ba96bcaef8d2dd955bcec6b8b7ed9bf20fd2d16433a0510ff0fb5c1014ac380c63a66ff5ee71f1b3c2b72e4.json"
-    },
     "blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6": {
       "cid": "blake3-512:aa88cf65e27d770b78bc7116b51fe414594416d52b8e91dc99b50c496730b4810c481183a3cba771855a1604ea1187aabaa07cb78f59c800c2a1668edfbc57a6",
       "kind": "algorithm",

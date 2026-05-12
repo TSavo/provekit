@@ -64,7 +64,7 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `concept:postdec` | morphism_c11_post_dec_to_postdec |
 | `concept:preinc` | morphism_c11_pre_inc_to_preinc |
 | `concept:predec` | morphism_c11_pre_dec_to_predec |
-| `concept:source-unit` | morphism_c11_source_unit_to_source_unit, morphism_csharp_source_unit_to_source_unit, morphism_python_source_unit_to_source_unit, morphism_typescript_source_unit_to_source_unit, morphism_zig_source_unit_to_source_unit, morphism_ruby_source_unit_to_source_unit, morphism_php_source_unit_to_source_unit, morphism_java_source_unit_to_source_unit |
+| `concept:source-unit` | morphism_c11_source_unit_to_source_unit, morphism_csharp_source_unit_to_source_unit, morphism_python_source_unit_to_source_unit, morphism_typescript_source_unit_to_source_unit, morphism_zig_source_unit_to_source_unit, morphism_php_source_unit_to_source_unit, morphism_java_source_unit_to_source_unit |
 
 ## Gaps
 
@@ -360,6 +360,7 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `java` | `concept:predec` | `op_predec.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
 | `rust` | `concept:predec` | `op_predec.spec.json` | no candidate source operation spec |
 | `go` | `concept:source-unit` | `op_source_unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Literal","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
+| `ruby` | `concept:source-unit` | `op_source-unit.spec.json` | wp mismatch: got `"lossless Ruby source wrapper; project_effects descends to operational_term"` want `"lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term"` |
 | `rust` | `concept:source-unit` | `op_source_unit.spec.json` | no candidate source operation spec |
 
 T Savo
