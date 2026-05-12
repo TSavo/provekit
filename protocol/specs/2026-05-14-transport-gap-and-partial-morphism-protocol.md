@@ -31,6 +31,8 @@ The real choice the substrate faces at a divergence is therefore a **trichotomy*
 
 `PartialMorphismMemento` is the trichotomy's second branch presented from the *domain* side ("here is the sub-domain where it is exact"); `LossyMorphismMemento` is the same branch presented from the *codomain* side ("here is the quotient into which it is total"). They are dual views of one fact (§1.0), and which one a project instantiates is ergonomics, not semantics.
 
+And the loss itself is not one formula but a record: **loss is `effects`, but for divergences.** `effects` is already a *set of named components*, composed *per-component*, ordered by *per-component subset*; loss has exactly that structure, pointed at "ways the translation can be wrong" (`value_divergence`, `ub_introduction`, `domain_narrowing`, `effect_divergence`, ...) instead of "ways the operation touches the world." That parallel is load-bearing, not decorative, §1.3 spells it out, and the budget, the acceptability check, the candidate ordering, and the program-level fidelity-domain are all per-dimension because the type is.
+
 This is a design draft for review, not a decision. It defines the schemas, the discharge checks, the generator change, the CLI refusal change, and the migration path concretely enough to scope from.
 
 ## §1: The three memento types
@@ -95,8 +97,8 @@ gap-reason = {
 resolution-option = {
   option_kind:       resolution-option-kind,
   ? precondition:    ir-formula,             ; the side-condition under which a partial morphism would discharge
-  ? characterization: ir-formula,            ; the divergence-set formula the lossy view's loss accepts
-  ? loss_severity:   loss-severity,          ; for lossy-morphism: surfaced from the LossyMorphismMemento; advisory
+  ? loss:            loss-record,            ; for lossy-morphism: the per-dimension divergence record the lossy view accepts (see §1.3)
+  ? loss_severity:   loss-severity,          ; for lossy-morphism: the per-dimension advisory tags, surfaced from the LossyMorphismMemento
   ? split_targets:   [+ tstr],               ; for split-target-op: the names the hub op would split into
   ? respec_target_to: any,                   ; for re-spec-target-op: the operation-contract the hub op would have to become
   ? representation_map_delta: any,           ; for add-representation-map: what φ's representation_map would need to carry
@@ -179,23 +181,69 @@ partial-morphism-discharge-receipt = {
 }
 ```
 
-### §1.3 `LossyMorphismMemento` (a.k.a. `QuotientMorphismMemento`)
+### §1.3 Loss is multidimensional: the `loss-record`
 
-A `LossyMorphismMemento` is a `LanguageMorphismMemento` that holds only *after coarsening the target's contract*, you have decided to ignore some distinction the exact contract makes, and you have written down exactly which one. The canonical case: `python:add → c11:add` *if you quotient* the target's fixed-width `Int` by "agrees on all inputs whose sum fits the width," i.e. you accept that the transported program differs from the original *exactly* on the overflow set `{a + b ∉ [INT_MIN, INT_MAX]}` and nowhere else (`1 + 1 ↦ 2` on both; only `INT_MAX + 1`-class inputs diverge). This is the codomain-side view of the same fact the `PartialMorphismMemento` views from the domain side (§1.0); instantiating the lossy view with `status: "chosen"` is the *normal, legitimate* outcome for a real cross-language port, not a fallback.
+**Read this before §1.4 / §1.5.** A "loss" is not a single formula. It is `effects`, but for divergences. `effects` is already a *set of named components* (each component an effect signature), composed *per-component* (the union of the operands' effect sets), and ordered by *per-component subset* (one effect set refines another iff it is a subset). Loss has exactly that structure, pointed at "ways the translation can be wrong" instead of "ways the operation touches the world." The structural precedent is concrete: `implementations/rust/provekit-walk/src/contract.rs`'s `Effect` enum with its `to_value` / `sort_key` (the per-component canonical encoding) and the way `compose` does per-effect subset reasoning. A `loss-record` is the same shape: a map from a *loss-dimension* name to a formula characterizing that dimension's divergence.
+
+```cddl
+; Imports:
+;   ir-formula        ; from 2026-04-30-ir-formal-grammar.md, extended per WPF §2.3 + this spec's added predicates
+
+loss-record = {
+  * loss-dimension => ir-formula           ; dimension name -> the formula characterizing that dimension's divergence;
+                                           ; an absent dimension means "no loss in that dimension" (formula = false)
+}
+
+loss-dimension = "value_divergence"        ; inputs where the result VALUE differs; ideally a RELATION, not just a set
+                                           ; (e.g. "target_result ≡ source_result mod 2^w"), so the loss is characterized exactly
+               / "ub_introduction"         ; inputs where the target's behavior becomes UNDEFINED/unconstrained;
+                                           ; a strictly worse kind of loss than value-divergence (one can tolerate the latter
+                                           ; and absolutely refuse the former), so it is its own dimension
+               / "domain_narrowing"        ; inputs valid for the SOURCE op but meaningless/rejected by the target
+                                           ; (python:add accepts float/str/list operands; c11:add does not)
+               / "effect_divergence"       ; the source op carries an effect the target does not; one sub-component per effect,
+                                           ; mirroring the effects set structure exactly
+               / tstr                      ; OPEN; a new dimension is a new fact, recorded, not invented in code
+
+loss-severity = {                          ; advisory only; one coarse tag PER DIMENSION; not a proof obligation
+  * loss-dimension => severity-tag
+}
+
+severity-tag = "empty-on-bounded-subset"   ; exact whenever inputs stay in a bounded range (e.g. value_divergence of python:add → c11:add: exact for all inputs whose sum fits the width)
+             / "rare-in-practice"           ; the divergence-set is non-empty but real programs almost never hit it
+             / "common"                     ; routinely hit; usable, but the artifact is genuinely a different operation on a meaningful fraction of inputs in this dimension
+             / "nearly-total"               ; the two coincide only on a negligible set in this dimension; a red flag (e.g. value_divergence of python:add → concept:string-concat)
+```
+
+`loss-severity` is the heuristic, advisory layer: per-dimension coarse tags so a tool (and the gap memento's `recommended`-vs-`rejected` annotation, and a human reading a `--accept-loss` prompt) can tell `python:add → c11:add` (value-divergence `empty-on-bounded-subset`, ub-introduction `empty-on-bounded-subset`, domain-narrowing `common`-but-only-for-non-int-operands) apart from `python:add → concept:string-concat` (value-divergence `nearly-total`) without re-deriving the formulas. The *formulas* in the `loss-record` are the rigorous part; the severity tags are the convenience. They have the same per-dimension shape because they are talking about the same dimensions.
+
+**Why per-dimension matters (the canonical illustration).** The `c11:add` ↔ `python:add` divergence is *three* losses, not one, and a project's stance on each can differ:
+
+- `value_divergence`: on inputs where `python`'s exact sum exceeds the C width, the values differ; the *relation* is `c11_result ≡ python_result mod 2^w` (wrapping) or "`c11_result` is unconstrained" (UB target), write the relation, it is more informative than a set.
+- `ub_introduction`: on signed overflow, `c11:add` is *undefined behavior*, which is worse than "a different but defined value." A project porting safety-critical code might tolerate `value_divergence` (it knows its inputs are bounded) and absolutely refuse `ub_introduction` (it will not ship a UB-introducing translation regardless). These must be separable, hence separate dimensions.
+- `domain_narrowing`: `python:add` accepts float, string, and list operands; `c11:add` accepts neither, the source op's domain is *narrowed*. This is not a value divergence and not UB; it is "inputs the source op handled that the target op cannot be fed at all." A third, orthogonal axis.
+
+A scalar `loss_characterization` would collapse these into one undifferentiated formula and lose the ability to say "fine on values, not fine on UB, narrowing is acceptable here." That is why the central type is the record.
+
+> **Readability note.** The central type is the `loss-record` (a map `loss-dimension → formula`), the budget is the same shape, acceptability is component-wise, and the candidate ordering is a partial order (one bridge dominates another iff its loss is `⊆` the other's *in every dimension*, see §5.1). For prose flow, later sections sometimes write "the loss formula" / "the precondition" in the singular, as if loss were scalar; read those as "per dimension", the generalization is mechanical and the type definition above is authoritative. A full prose unification of §3 / §5 / §6 / §7 to the multidimensional phrasing throughout is a follow-up edit on this proposal.
+
+### §1.4 `LossyMorphismMemento` (a.k.a. `QuotientMorphismMemento`)
+
+A `LossyMorphismMemento` is a `LanguageMorphismMemento` that holds only *after coarsening the target's contract*, you have decided to ignore some distinction the exact contract makes, and you have written down exactly which ones, per dimension. The canonical case: `python:add → c11:add` *if you accept* the `loss-record` `{ value_divergence: <c11_result ≡ python_result mod 2^w>, ub_introduction: <signed_overflow(add(lhs,rhs))>, domain_narrowing: <not(operand_is_int(lhs)) ∨ not(operand_is_int(rhs))> }`, and nowhere else (`1 + 1 ↦ 2` on both, no UB, both int; only the named inputs diverge in the named ways). This is the codomain-side view of the same fact the `PartialMorphismMemento` views from the domain side (§1.0); instantiating the lossy view with `status: "chosen"` is the *normal, legitimate* outcome for a real cross-language port, not a fallback.
 
 ```cddl
 lossy-morphism-memento = {
   ; All LanguageMorphismMemento fields per LSP §1.4 / PTP §4, plus:
   kind:              "LossyMorphismMemento",
-  fn_name:           tstr,                   ; e.g. "lossy-morphism:python:add:to:concept:add@mod64"
+  fn_name:           tstr,                   ; e.g. "lossy-morphism:python:add:to:c11:add@mod-w"
   source_contract_cid: cid,
   target_shape_cid:  cid,
   renaming_map:      any,
   representation_map: any,
   operator_map:      any,
   literal_map:       any,
-  loss_characterization: ir-formula,         ; NEW; a formula exactly characterizing what the coarsening collapses (the rigorous part)
-  loss_severity:     loss-severity,           ; NEW; a coarse advisory tag for HOW MUCH it loses (the heuristic part)
+  loss:              loss-record,            ; NEW; the per-dimension divergence formulas (the rigorous part)
+  loss_severity:     loss-severity,          ; NEW; the per-dimension advisory tags (the heuristic part)
   coarsening_kind:   "quotient-target-sort" / "drop-target-precondition" / "widen-target-postcondition" / tstr,
   homomorphism_obligation: {
     kind:            "wp-refinement-into-coarsening",
@@ -205,24 +253,19 @@ lossy-morphism-memento = {
   ? gap_memento_cid: cid,
   ? signature:       tstr / null
 }
-
-loss-severity = "loss-empty-on-bounded-subset"   ; exact whenever inputs stay in a bounded range; e.g. python:add → c11:add stays exact for all inputs whose sum fits
-              / "loss-rare-in-practice"           ; the divergence-set is non-empty but real programs almost never hit it
-              / "loss-common"                     ; the divergence-set is routinely hit; usable but the artifact is genuinely a different operation on a meaningful fraction of inputs
-              / "loss-nearly-total"               ; the two coincide only on a negligible set; a red flag, almost certainly the wrong target (e.g. python:add → concept:string-concat)
 ```
 
-The `loss_characterization` is a formula in the WPF formula language (the same grammar `pre`, `post`, `wp_rule`, loop invariants use), *where* it loses, the rigorous, solver-checked part. The `loss_severity` tag is *how much* it loses, heuristic, advisory, not a proof obligation, but a different and necessary fact: `python:add → c11:add` (lossy only on overflow, `loss-empty-on-bounded-subset`) and a hypothetical `python:add → concept:string-concat` (lossy ≈ always, semantically absurd, `loss-nearly-total`) have the *same shape* (a `LossyMorphismMemento` with a characterization formula and a discharge receipt) but are emphatically not the same kind of artifact, and the `--accept-loss` decision, and the gap memento's `recommended`-vs-`rejected` annotation on the option, needs both: the characterization to know exactly where it bites, the severity to know whether anyone should ever take it. For the mod-64 example the characterization is "`transported(x) ≡ original(x)  unless  |lhs + rhs| ≥ 2⁶³`" and the severity is `loss-empty-on-bounded-subset`. This is content-addressed like everything else; two lossy morphisms accepting different losses (or asserting different severities) have different CIDs, which is correct (PTP §4: name-equivalence is forbidden, contract-equivalence is what counts, and a coarsening *is* a contract change).
+The `loss` record's formulas are in the WPF formula language (the same grammar `pre`, `post`, `wp_rule`, loop invariants use), extended with the divergence predicates this spec adds (`operand_is_int`, `signed_overflow`, `disagrees`, the arithmetic-bound predicates), *where* it loses, the rigorous, solver-checked part, one formula per dimension. This is content-addressed like everything else; two lossy morphisms accepting different `loss` records (or asserting different `loss_severity` tags) have different CIDs, which is correct (PTP §4: name-equivalence is forbidden, contract-equivalence is what counts, and a coarsening *is* a contract change).
 
-**The discharge.** A `LossyMorphismDischargeReceipt` certifies:
+**The discharge.** A `LossyMorphismDischargeReceipt` certifies the per-dimension obligation. For each dimension `d` with formula `L_d` in the `loss` record:
 
 ```
-φ( wp(<lang>:op, Q) )  ⇒  coarsen( wp(concept:op, Q), loss_characterization )
+φ( wp(<lang>:op, Q) )  ⇒  coarsen_d( wp(concept:op, Q), L_d )
 ```
 
-read: the φ-translated lang op's `wp` is at least as strong as the *coarsened* concept op's `wp`. `coarsen(formula, L)` is the syntactic operation of weakening `formula` by exactly `L`, for `coarsening_kind: "quotient-target-sort"` it replaces equalities on the quotiented sort with the quotient-equivalence; for `"drop-target-precondition"` it deletes the named precondition conjunct; for `"widen-target-postcondition"` it disjoins the loss term into the postcondition. Each is a deterministic formula rewrite, content-addressed, then handed to Z3 in the WPF §3 shape. When `loss_characterization` is `false` (the empty loss), `coarsen` is the identity and the check collapses to the exact-morphism check, so the exact case is also the `loss = ∅` instance.
+read: the φ-translated lang op's `wp` is at least as strong as the concept op's `wp` *coarsened in dimension `d` by exactly `L_d`*. `coarsen_d(formula, L_d)` is the deterministic per-dimension formula rewrite: for `value_divergence` it replaces result equalities with the supplied relation on the inputs in `L_d` (identity elsewhere); for `ub_introduction` it disjoins "behavior unconstrained" into the postcondition on the inputs in `L_d`; for `domain_narrowing` it conjoins `not(L_d)` into the precondition (the target only claims the un-narrowed domain); for `effect_divergence` it adds the named effect to the target's effect set. Each is content-addressed, then handed to Z3 in the WPF §3 shape. When every `L_d` is `false` (the empty loss-record), all `coarsen_d` are the identity and the check collapses to the exact-morphism check, so the exact case is the `loss = ∅` instance, in every dimension.
 
-**What using a lossy morphism is, operationally.** It is an *explicit, recorded choice*. `provekit transport` will not use a lossy morphism unless the migration is invoked with `--accept-loss <loss-characterization-cid>` (or the loss is below a project-configured threshold, a coarseness metric over `loss_characterization`, e.g. "the disagreement set has measure zero" or "the disagreement set is a finite enumeration"). The produced transport artifact records, in its report, exactly which losses were accepted, by CID. Honest lossy is *recorded* lossy. Silent lossy is what the substrate refuses.
+**What using a lossy morphism is, operationally.** It is an *explicit, recorded choice*, and the choice is *per-dimension*: `provekit transport` will not use a lossy morphism unless the migration's loss-budget (§5.1) admits the morphism's `loss` record component-wise (every `L_d ⊆ budget_d`). The shorthand `--accept-loss <loss-record-cid>` pre-authorizes a specific record; `--accept-loss-threshold` authorizes per-dimension severity bounds. The produced transport artifact records, in its report, the per-dimension fidelity-domain it ships with. Honest lossy is *recorded* lossy, per dimension. Silent lossy is what the substrate refuses.
 
 ```cddl
 lossy-morphism-discharge-receipt = {
@@ -231,12 +274,11 @@ lossy-morphism-discharge-receipt = {
   morphism_cid:      cid,
   source_contract_cid: cid,
   target_shape_cid:  cid,
-  loss_characterization: ir-formula,
+  loss:              loss-record,
   coarsening_kind:   tstr,
   obligation:        "wp-refinement-into-coarsening",
-  method:            "z3-quantified" / "structural-into-coarsening",
-  discharged:        bool,
-  ? witness:         any,
+  per_dimension:     { * loss-dimension => { method: tstr, discharged: bool, ? witness: any } },
+  discharged:        bool,                   ; iff every dimension discharged
   ? signature:       tstr / null
 }
 ```
@@ -264,11 +306,13 @@ resolution_options: [
     tradeoff: "exact at sites where the lift proves both operands are statically Int and the sum fits 64 bits; for un-annotated dynamic python that is almost never provable, so this stays a recorded option the pipeline cannot auto-use today.",
     status: "recommended" },
   { option_kind: "lossy-morphism",             ; the CODOMAIN-side view of the SAME divergence
-    characterization: <implies(not(result_fits_64bit(add(lhs,rhs))), disagrees(transported, original))>,
-    loss_severity: "loss-empty-on-bounded-subset",
+    loss: { value_divergence:  <c11_result ≡ python_result mod 2^w>,   ; on inputs whose sum exceeds the C width: wraps
+            ub_introduction:   <signed_overflow(add(lhs,rhs))>,        ; on signed overflow: c11:add is UB, strictly worse than wrap
+            domain_narrowing:  <not(operand_is_int(lhs)) ∨ not(operand_is_int(rhs))> },  ; c11:add cannot be fed float/str/list
+    loss_severity: { value_divergence: "empty-on-bounded-subset", ub_introduction: "empty-on-bounded-subset", domain_narrowing: "common" },
     lossy_morphism_cid: <blake3-512:...>,
     dual_view_cid: <the partial-morphism CID above>,
-    tradeoff: "the transported program agrees with the original everywhere except where the sum exceeds 64 bits (1+1↦2 on both; only INT_MAX+1-class inputs diverge); usable under --accept-loss; a recorded, signed choice, not a degraded mode.",
+    tradeoff: "agrees with the original everywhere except: the value wraps past the C width (1+1↦2 on both; only INT_MAX+1-class inputs diverge); signed overflow becomes UB; non-int operands are rejected. THREE dimensions, not one, a project can accept the value-wrap and the domain-narrowing and still refuse the UB-introduction. Usable per-dimension under --accept-loss; a recorded, signed choice, not a degraded mode.",
     status: "chosen" },                        ; ← a NORMAL, legitimate, signed state, like accepting a `pre`
   { option_kind: "accept-permanent",
     tradeoff: "decline any bridge: a polymorphic arbitrary-precision op is genuinely not a fixed-width modular op. Recording this as the project's standing choice is itself a signed decision, appropriate when even the loudly-bounded-lossy bridge is unwanted (e.g. the port must be all-or-nothing).",
@@ -427,21 +471,21 @@ It returns:
 So the refusal *is* the precise extension request the principle promises: it names the gap memento, enumerates the resolution options, says for each partial morphism whether the pipeline can establish the precondition (and if not, why), and says for each lossy morphism the exact flag and loss CID the user would supply to accept it. The PTP §3.3 entry:
 
 - `transport-time:gap`: a source operation has no exact morphism into the hub; the payload names the `TransportGapMemento` CID and the resolution options, including any `PartialMorphismMemento` (with whether the precondition is establishable from the lift) and any `LossyMorphismMemento` (with the `--accept-loss` invocation). This *replaces* `no-morphism-for-op` / `no-target-morphism-for-op` as the standard refusal for a missing exact morphism; those kinds remain only for the degenerate case where not even a gap memento has been minted yet (a brand-new op the generator has not run over).
-- `transport-time:gap-over-budget`: a source operation has a `PartialMorphismMemento` or `LossyMorphismMemento` available, but its precondition cannot be established at the use-site and its loss is not within the caller's loss-budget (§5.1). The payload names the op + source location, the `TransportGapMemento` CID, and `minimal_additional_budget`: the formula that, if added to the budget, would close this site. The dead end tells the caller exactly the price of getting past it.
+- `transport-time:gap-over-budget`: a source operation has a `PartialMorphismMemento` or `LossyMorphismMemento` available, but its precondition cannot be established at the use-site and its `loss-record` exceeds the caller's loss-budget *in some dimension* (§5.1). The payload names the op + source location, the offending `dimension`, that dimension's `exceeding_loss` formula, the `TransportGapMemento` CID, and `minimal_additional_budget`: the formula that, added to that dimension's budget, would close this site. The dead end tells the caller exactly the price of getting past it, by dimension.
 
 ### §5.1 The loss-budget: the gap is a negotiation, not a dead end
 
-The reason `loss_characterization` MUST be a *formula* and not just a severity tag is that a formula is the only representation you can **intersect, compare by `⊆`, propagate through dataflow, and Z3-check against a budget**. (`loss_severity` is a UX/advisory convenience layered on top; the formula is what makes the mechanism computable.) That representation choice turns a gap from a stop sign into an optimization problem with three operational consequences:
+The reason a loss MUST be a *record of formulas* (a `loss-record`, §1.3) and not a severity tag is that formulas are the only representation you can **intersect, compare by `⊆`, propagate through dataflow, and Z3-check against a budget**, and a *record* of them is what lets you do all four *per dimension* (`loss_severity`, the per-dimension advisory tags, is a UX convenience layered on top). That choice turns a gap from a stop sign into a negotiation with three operational consequences. (For readability the rest of this section sometimes writes "the loss" / "the budget" in the singular; everything below is per-dimension, per the §1.3 note.)
 
-**(1) Loss-budget as a first-class input.** The caller, or the project recorded as a memento, specifies what divergences are tolerable: a formula (`tolerate {overflow on values past 2³¹}`, because the program's domain is bounded), or a severity threshold, or `exact-only` (the budget is `false`, no loss admitted). `provekit transport` then *solves*: find a morphism set for the ops the program uses that minimizes a cost (prefer exact `>` partial `>` lossy; among lossy, prefer smaller divergence-sets), subject to `loss_i ⊆ ¬budget` for each op `i`. This is a Z3-checkable constraint solve over content-addressed formulas. The candidate morphisms for a given op order by `⊆` on their losses (`loss_A ⊆ loss_B ⇒ A is strictly better`), so the search is principled, not heuristic. New CLI surface: `--loss-budget <formula-cid>` (or `--loss-budget-memento <cid>` to point at a recorded project budget), with `--accept-loss <cid>` / `--accept-loss-threshold <metric>` from above being shorthand for narrower budgets.
+**(1) Loss-budget as a first-class input; the candidate ordering is a partial order.** The caller, or the project recorded as a memento, supplies a *budget record*, a tolerance formula per dimension (`{ value_divergence: <a + b ∉ [-2³¹, 2³¹-1] → tolerate>, ub_introduction: false, domain_narrowing: true }` reads "tolerate value-wrap past 2³¹, never tolerate UB-introduction, tolerate any domain-narrowing"), or a per-dimension severity threshold, or `exact-only` (every budget component `false`). A bridge is **in-budget iff every loss-component `⊆` its corresponding budget-component**, component-wise acceptability, not a scalar threshold. The candidate bridges for a given op are ordered by a **partial order**: bridge `A` dominates `B` iff `A`'s loss `⊆` `B`'s loss *in every dimension*. There is no total order on losses, so `provekit transport` does **not** "minimize loss"; it computes the **Pareto frontier** of bridge-sets, intersects it with the budget-box, and picks from what survives, and if more than one survives, those are *genuinely incomparable acceptable answers* (one wraps more values but introduces no UB, another introduces UB but never narrows the domain), so the implementation **surfaces the choice** rather than faking a winner. New CLI surface: `--loss-budget <budget-record-cid>` (or `--loss-budget-memento <cid>`), with `--accept-loss <loss-record-cid>` / `--accept-loss-threshold <per-dimension-metric>` being shorthand for narrower budgets.
 
-**(2) Loss composes through dataflow, so the transported *program* gets a fidelity-domain.** The transported program's total divergence-set from the original is derivable from the per-op `loss_characterization`s plus the program's dataflow, this is *the same operation `compose` runs to propagate `pre`s*, performed on the complementary side of the contract (a `pre` is "where the op is defined"; a loss is "where the op's transport disagrees"; both propagate backward through dataflow by the same machinery, which is exactly why this spec and #613 are one piece of machinery seen from two sides of the contract). So `provekit migrate` reports, *before running anything*: "this port is exact except on inputs satisfying `{add@L42 overflows the C width} ∨ {div@L70 negative-operand case}`", and that **fidelity-domain ships with the produced artifact**, the way a `pre` ships with a contract. The port is not "approximate"; it is "exact, with this precondition", a `pre` on the whole transported program, content-addressed, computed not asserted.
+**(2) Loss composes per-dimension through dataflow, so the transported *program* gets a fidelity-domain record.** The transported program's total divergence from the original is derivable from the per-op `loss-record`s plus the program's dataflow, combined *within each dimension*: the program's `value_divergence` is the union-modulo-dataflow of the per-op value-divergences; its `ub_introduction` likewise; its `domain_narrowing` likewise; etc. This is *the same operation `compose` runs to propagate `pre`s* (and to union `effects`), performed on the complementary side of the contract: a `pre` is "where the op is defined," a loss-component is "where the op's transport is wrong in that dimension," both propagate backward through dataflow by the same machinery, which is exactly why this spec and #613 are one piece of machinery seen from two sides of the contract. So `provekit migrate` reports, *before running anything*, a **fidelity-domain record** `{ value_divergence: <{add@L42 wraps} ∨ {mul@L51 wraps}>, ub_introduction: <{add@L42 signed-overflow}>, domain_narrowing: false }`, and that record **ships with the produced artifact**, the way a `pre` (and an `effects` set) ships with a contract. The port is not "approximate"; it is "exact, with this fidelity-domain record", a `pre`-shaped thing per dimension, content-addressed, computed not asserted.
 
-**(3) The refusal is constructive.** When the budget cannot be met, the result is not `Refusal{no-morphism}` but `Refusal{kind: "transport-time:gap-over-budget", op_site: <op + source location>, gap_memento: <cid>, minimal_additional_budget: <the formula that, tolerated, closes it>}`. The caller learns the exact additional tolerance the port would cost, and can decide to widen the budget (a recorded decision), pick a different op-resolution, or accept the refusal. A dead end that quotes its own price is an extension request in the strongest sense PTP §3 means.
+**(3) The refusal is constructive, and dimension-specific.** When the budget cannot be met, the result is not `Refusal{no-morphism}` but `Refusal{kind: "transport-time:gap-over-budget", op_site: <op + source location>, dimension: <the dimension D whose loss exceeds budget>, exceeding_loss: <φ>, minimal_additional_budget: <the formula ψ that, added to the budget for D, closes this site>}`. The caller learns the exact dimension and the exact additional tolerance the port would cost there, and can decide to widen that dimension's budget (a recorded decision), pick a different op-resolution from the Pareto frontier, or accept the refusal. A dead end that quotes its own price, by dimension, is an extension request in the strongest sense PTP §3 means.
 
-A new flag on `provekit transport` / `provekit migrate`: `--accept-loss <cid>` (repeatable), pre-authorizes the named `loss_characterization` CIDs; the pipeline may then use any `LossyMorphismMemento` whose loss is in the authorized set. A `--accept-loss-threshold <metric>` variant authorizes all losses below a coarseness bound. The transport report's `stages` block records, per stage, which lossy morphisms were used and which losses were accepted, by CID, plus the accumulated program-level fidelity-domain formula, the artifact is self-describing about its own coarsening.
+A new flag on `provekit transport` / `provekit migrate`: `--accept-loss <loss-record-cid>` (repeatable), pre-authorizes a specific `loss-record`; the pipeline may then use any `LossyMorphismMemento` whose loss is component-wise within the authorized set. `--accept-loss-threshold <per-dimension-metric>` authorizes per-dimension severity bounds. The transport report's `stages` block records, per stage, which lossy morphisms were used and the per-dimension losses accepted, by CID, plus the accumulated program-level fidelity-domain record, the artifact is self-describing about its own coarsening, dimension by dimension.
 
-**Round-trip closure with loss.** PTP §5 requires `c' = c` (concept round-trip). A program transported via a partial or lossy morphism does *not* satisfy that with equality, and that is correct, that is the loss being visible. The closure obligation becomes: a program transported via lossy / partial morphisms re-lifts and transports back to a *contracted* concept IR `c'` whose precondition is exactly the accumulated fidelity-domain `L` from (2), `c'` is `coarsen(c, L)`, the round-trip lands on the coarsened concept term, and the diff `c \ c'` is exactly `L`. The transport report states `roundtrip_closure: "coarsened-by <fidelity-domain-cid>"` rather than `"exact"`. A program transported entirely via partial morphisms used at sites where their preconditions hold *does* satisfy exact closure (each precondition restricts to the sub-domain where the morphism is total and exact); the report states `roundtrip_closure: "exact-on-fidelity-domain"` and the fidelity-domain is the conjunction of those preconditions. This is the "honest lossy ≠ silent lossy" guarantee at the round-trip layer: you cannot transport-with-loss and then claim an exact round-trip; the loss shows up in `c'` as a `pre`.
+**Round-trip closure with loss.** PTP §5 requires `c' = c` (concept round-trip). A program transported via a partial or lossy morphism does *not* satisfy that with equality, and that is correct, that is the loss being visible. The closure obligation becomes: a program transported via lossy / partial morphisms re-lifts and transports back to a *contracted* concept IR `c'` whose precondition (per dimension) is exactly the accumulated fidelity-domain record `L` from (2), `c'` is `coarsen(c, L)`, the round-trip lands on the coarsened concept term, and the diff `c \ c'` is exactly `L` in every dimension. The transport report states `roundtrip_closure: "coarsened-by <fidelity-domain-record-cid>"` rather than `"exact"`. A program transported entirely via partial morphisms used at sites where their preconditions hold *does* satisfy exact closure (each precondition restricts to the sub-domain where the morphism is total and exact); the report states `roundtrip_closure: "exact-on-fidelity-domain"` and the fidelity-domain is the conjunction of those preconditions. This is the "honest lossy ≠ silent lossy" guarantee at the round-trip layer: you cannot transport-with-loss and then claim an exact round-trip; the loss shows up in `c'` as a `pre`-shaped record, dimension by dimension.
 
 ## §6: The generalization, one primitive, three instantiations
 
