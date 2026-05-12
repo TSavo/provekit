@@ -1,0 +1,114 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:bool-cell->java:atomic-boolean",
+    "formals": [
+      "cell",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "BoolCell",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:bool-cell",
+        "args": [
+          {
+            "kind": "var",
+            "name": "cell"
+          },
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "java:atomic-boolean",
+        "args": [
+          {
+            "kind": "op",
+            "name": "java:method-call",
+            "args": [
+              {
+                "kind": "const",
+                "value": "AtomicBoolean",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "ClassName",
+                  "args": []
+                }
+              },
+              {
+                "kind": "const",
+                "value": "set",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "MethodName",
+                  "args": []
+                }
+              },
+              {
+                "kind": "var",
+                "name": "value"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "java:method-call",
+            "args": [
+              {
+                "kind": "const",
+                "value": "AtomicBoolean",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "ClassName",
+                  "args": []
+                }
+              },
+              {
+                "kind": "const",
+                "value": "get",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "MethodName",
+                  "args": []
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": "AtomicBoolean is a class wrapper around a boolean primitive; set/get are method calls not direct assignment/read; the cell is heap-allocated (object reference) not a stack variable; alternative boolean[] array idiom exists for non-thread-safe use",
+      "domain_narrowing": "AtomicBoolean provides stronger (thread-safe) semantics than the concept:bool-cell contract requires; the realization is correct in single-threaded and concurrent programs; no domain narrowing for correctness, but AtomicBoolean has overhead vs boolean[] for single-threaded use",
+      "ub_introduction": "none: Java has no undefined behavior; AtomicBoolean operations are always safe; NullPointerException only if cell reference itself is null; no memory corruption",
+      "effect_divergence": "none: AtomicBoolean.set and get have no side effects beyond the cell itself; thread-safety is an implementation detail, not an effect in the contract sense",
+      "value_divergence": "none: AtomicBoolean.get() returns the exact value last set by set(v); read-after-write axiom holds: cell.set(v); cell.get() == v; no value-representation gap for boolean values"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:0511bb7979647fb7774efce0f401f145203aa3d298aa8db6a5b33e1968aaaead52bc6cbb10d803d452d29821295302738d6f8a1d588d66aa5d4f5356539fecd2",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
