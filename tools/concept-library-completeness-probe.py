@@ -663,9 +663,12 @@ def main():
         trio_count = len(covered)
         # Note
         note = ""
-        if concept_op in ("acquire-use-release", "allocate-or-bail", "branch-on-error-else-passthrough",
-                           "check-bounds-then-access"):
-            note = "pattern-layer concept; abstraction tier"
+        # PATTERN_LAYER_CONCEPTS defined in 4.1 block below; inline here for table
+        _plc = {"acquire-use-release", "allocate-or-bail", "branch-on-error-else-passthrough",
+                "check-bounds-then-access", "refcount-inc-use-dec", "validate-then-commit",
+                "validated-allocated-access"}
+        if concept_op in _plc:
+            note = "pattern-layer shape; abstraction tier (zero coverage expected)"
         elif trio_count == 0:
             note = "unreached by trio — demotion or extension candidate"
         elif trio_count == 1 and covered[0] == "c11":
@@ -676,17 +679,46 @@ def main():
     p()
 
     # Cross-reference against transport-gaps minted coverage for empty concept ops
-    h3("4.1 Concept Ops with Zero Trio Coverage")
+    # Pattern-layer concept ops: these belong to abstraction tier (#617); they are
+    # shape specs, not primitive op specs, and are expected to be unreachable at the
+    # op-layer. They are not gaps — they are correctly absent from op-layer morphisms.
+    PATTERN_LAYER_CONCEPTS = {
+        "acquire-use-release",
+        "allocate-or-bail",
+        "branch-on-error-else-passthrough",
+        "check-bounds-then-access",
+        "refcount-inc-use-dec",
+        "validate-then-commit",
+        "validated-allocated-access",
+    }
+
+    h3("4.1 Pattern-Layer Concepts (Expected: Zero Trio Coverage)")
+    p()
+    p("These concept ops are abstraction-tier shapes from PR #617, not primitive op nodes.")
+    p("Op-layer morphisms into them are not expected. Zero coverage here is correct behavior.")
     p()
     zero_trio = [op for op in concept_ops if not concept_trio_coverage[op]]
-    if zero_trio:
-        for op in sorted(zero_trio):
-            # Check if any language at all covers it
+    pattern_layer_zero = sorted(op for op in zero_trio if op in PATTERN_LAYER_CONCEPTS)
+    real_gap_zero = sorted(op for op in zero_trio if op not in PATTERN_LAYER_CONCEPTS)
+    if pattern_layer_zero:
+        for op in pattern_layer_zero:
+            p(f"- `concept:{op}` — abstraction-tier shape (expected empty)")
+    else:
+        p("_None._")
+    p()
+
+    h3("4.2 Real Op-Layer Gaps (Zero Trio Coverage, Not Pattern-Layer)")
+    p()
+    p("These are primitive op nodes that no trio language currently reaches via a minted morphism.")
+    p("Each represents a concrete coverage gap or a correctness barrier still unresolved.")
+    p()
+    if real_gap_zero:
+        for op in real_gap_zero:
             all_covering = minted_coverage.get(op, [])
             all_lang_str = ", ".join(all_covering) if all_covering else "none"
             p(f"- `concept:{op}`: minted by [{all_lang_str}] (outside trio)")
     else:
-        p("_None — all concept ops have at least one trio-language morphism._")
+        p("_None — all primitive concept ops have at least one trio-language morphism._")
     p()
 
     # -------------------------------------------------------------------
@@ -696,14 +728,15 @@ def main():
     h2("5. Recommendations")
     p()
 
-    p("### R1. Lower the `concept:add/sub/mul` precondition to `true` (absorb java + python-adjacent overflow semantics)")
+    p("### R1. Split `concept:add/sub/mul` into `-checked` and `-wrapping` variants (unblocks java + python)")
     p()
     p("`concept:add`, `concept:sub`, `concept:mul` require `no_signed_overflow` as precondition.")
-    p("java wraps silently (no precondition); python is arbitrary-precision (different but also `true`).")
-    p("This single precondition delta is the reason java:add/sub/mul/neg produce mint refusals.")
-    p("Proposal: relax the concept precondition to `true` (or add a `concept:add-wrapping` / `concept:add-checked` split).")
-    p("If both variants are needed, the hub-shrink-round-3 target is explicit: add `concept:add-wrapping` for java-style")
-    p("and demote current `concept:add` to `concept:add-checked`. Cost: 3 new concept specs + 3 java morphisms.")
+    p("java wraps silently on overflow (no precondition); python is arbitrary-precision (also unconditional).")
+    p("This precondition delta is the primary reason java:add/sub/mul/neg produce mint refusals.")
+    p("Primary proposal: split into `concept:add-checked` (the current overflow-guarded semantics, c11-style)")
+    p("and `concept:add-wrapping` (wrapping semantics for java; also covers python modular overflow).")
+    p("Same split for sub and mul. Cost: 6 new concept specs (3 checked + 3 wrapping) + renaming current 3.")
+    p("This is the correct call under Supra omnia rectum: the current concept conflates two distinct contracts.")
     p("Trio impact: would move java:add, java:sub, java:mul, java:neg from `precondition-mismatch` to `mapped`.")
     p()
 
@@ -730,6 +763,10 @@ def main():
     p("Fix the LANGUAGES alias map in the generator, then re-run mint. Most of these will either")
     p("discharge cleanly (c11-equivalent semantics) or produce new gap rows with actionable reasons.")
     p("Unblocking this reveals the true java coverage rate (currently artificially depressed).")
+    p("Cross-link: fixing this lookup also directly unblocks `concept:new` and `concept:throw`.")
+    p("`java:new` (op_new.spec.json) and `java:throw` (op_throw.spec.json) both exist on disk;")
+    p("they show zero trio coverage in section 4.2 only because the generator cannot find java's specs.")
+    p("Once the lookup is fixed, both will mint (or produce a specific actionable gap row).")
     p()
 
     p("### R4. Demote or re-spec: `concept:deref`, `concept:addr`, `concept:member` — c11-only, unreachable by java+python")

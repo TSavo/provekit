@@ -304,20 +304,20 @@ Empty = no trio language reaches this concept op.
 
 | concept op | c11 | java | python | trio coverage | note |
 | --- | --- | --- | --- | --- | --- |
-| `concept:acquire-use-release` |  |  |  | 0/3 | pattern-layer concept; abstraction tier |
+| `concept:acquire-use-release` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
 | `concept:add` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:addr` | Y |  |  | 1/3 | c11-only; java+python missing |
-| `concept:allocate-or-bail` |  |  |  | 0/3 | pattern-layer concept; abstraction tier |
+| `concept:allocate-or-bail` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
 | `concept:assign` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:bitand` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:bitnot` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:bitor` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:bitxor` | Y |  |  | 1/3 | c11-only; java+python missing |
-| `concept:branch-on-error-else-passthrough` |  |  |  | 0/3 | pattern-layer concept; abstraction tier |
+| `concept:branch-on-error-else-passthrough` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
 | `concept:break` | Y | Y |  | 2/3 |  |
 | `concept:call` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:cast` | Y |  |  | 1/3 | c11-only; java+python missing |
-| `concept:check-bounds-then-access` |  |  |  | 0/3 | pattern-layer concept; abstraction tier |
+| `concept:check-bounds-then-access` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
 | `concept:conditional` | Y |  | Y | 2/3 |  |
 | `concept:continue` | Y | Y |  | 2/3 |  |
 | `concept:decl` | Y |  |  | 1/3 | c11-only; java+python missing |
@@ -343,7 +343,7 @@ Empty = no trio language reaches this concept op.
 | `concept:postinc` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:predec` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:preinc` | Y |  |  | 1/3 | c11-only; java+python missing |
-| `concept:refcount-inc-use-dec` |  |  |  | 0/3 | unreached by trio — demotion or extension candidate |
+| `concept:refcount-inc-use-dec` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
 | `concept:return` | Y | Y |  | 2/3 |  |
 | `concept:seq` | Y | Y | Y | 3/3 |  |
 | `concept:shl` | Y |  |  | 1/3 | c11-only; java+python missing |
@@ -353,34 +353,45 @@ Empty = no trio language reaches this concept op.
 | `concept:sub` | Y |  |  | 1/3 | c11-only; java+python missing |
 | `concept:throw` |  |  |  | 0/3 | unreached by trio — demotion or extension candidate |
 | `concept:ushr` |  | Y |  | 1/3 |  |
-| `concept:validate-then-commit` |  |  |  | 0/3 | unreached by trio — demotion or extension candidate |
-| `concept:validated-allocated-access` |  |  |  | 0/3 | unreached by trio — demotion or extension candidate |
+| `concept:validate-then-commit` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
+| `concept:validated-allocated-access` |  |  |  | 0/3 | pattern-layer shape; abstraction tier (zero coverage expected) |
 | `concept:while` | Y |  |  | 1/3 | c11-only; java+python missing |
 
-### 4.1 Concept Ops with Zero Trio Coverage
+### 4.1 Pattern-Layer Concepts (Expected: Zero Trio Coverage)
 
 
-- `concept:acquire-use-release`: minted by [none] (outside trio)
-- `concept:allocate-or-bail`: minted by [none] (outside trio)
-- `concept:branch-on-error-else-passthrough`: minted by [none] (outside trio)
-- `concept:check-bounds-then-access`: minted by [none] (outside trio)
+These concept ops are abstraction-tier shapes from PR #617, not primitive op nodes.
+Op-layer morphisms into them are not expected. Zero coverage here is correct behavior.
+
+- `concept:acquire-use-release` — abstraction-tier shape (expected empty)
+- `concept:allocate-or-bail` — abstraction-tier shape (expected empty)
+- `concept:branch-on-error-else-passthrough` — abstraction-tier shape (expected empty)
+- `concept:check-bounds-then-access` — abstraction-tier shape (expected empty)
+- `concept:refcount-inc-use-dec` — abstraction-tier shape (expected empty)
+- `concept:validate-then-commit` — abstraction-tier shape (expected empty)
+- `concept:validated-allocated-access` — abstraction-tier shape (expected empty)
+
+### 4.2 Real Op-Layer Gaps (Zero Trio Coverage, Not Pattern-Layer)
+
+
+These are primitive op nodes that no trio language currently reaches via a minted morphism.
+Each represents a concrete coverage gap or a correctness barrier still unresolved.
+
 - `concept:new`: minted by [morphism_csharp_new_to_new] (outside trio)
-- `concept:refcount-inc-use-dec`: minted by [none] (outside trio)
 - `concept:throw`: minted by [morphism_php_throw_to_throw] (outside trio)
-- `concept:validate-then-commit`: minted by [none] (outside trio)
-- `concept:validated-allocated-access`: minted by [none] (outside trio)
 
 ## 5. Recommendations
 
 
-### R1. Lower the `concept:add/sub/mul` precondition to `true` (absorb java + python-adjacent overflow semantics)
+### R1. Split `concept:add/sub/mul` into `-checked` and `-wrapping` variants (unblocks java + python)
 
 `concept:add`, `concept:sub`, `concept:mul` require `no_signed_overflow` as precondition.
-java wraps silently (no precondition); python is arbitrary-precision (different but also `true`).
-This single precondition delta is the reason java:add/sub/mul/neg produce mint refusals.
-Proposal: relax the concept precondition to `true` (or add a `concept:add-wrapping` / `concept:add-checked` split).
-If both variants are needed, the hub-shrink-round-3 target is explicit: add `concept:add-wrapping` for java-style
-and demote current `concept:add` to `concept:add-checked`. Cost: 3 new concept specs + 3 java morphisms.
+java wraps silently on overflow (no precondition); python is arbitrary-precision (also unconditional).
+This precondition delta is the primary reason java:add/sub/mul/neg produce mint refusals.
+Primary proposal: split into `concept:add-checked` (the current overflow-guarded semantics, c11-style)
+and `concept:add-wrapping` (wrapping semantics for java; also covers python modular overflow).
+Same split for sub and mul. Cost: 6 new concept specs (3 checked + 3 wrapping) + renaming current 3.
+This is the correct call under Supra omnia rectum: the current concept conflates two distinct contracts.
 Trio impact: would move java:add, java:sub, java:mul, java:neg from `precondition-mismatch` to `mapped`.
 
 ### R2. Extend concept hub for python-specific ops: `floordiv`, `pow`, `pos`, `compare`
@@ -405,6 +416,10 @@ even though they exist on disk. This is a known follow-up from PR #618 / task #5
 Fix the LANGUAGES alias map in the generator, then re-run mint. Most of these will either
 discharge cleanly (c11-equivalent semantics) or produce new gap rows with actionable reasons.
 Unblocking this reveals the true java coverage rate (currently artificially depressed).
+Cross-link: fixing this lookup also directly unblocks `concept:new` and `concept:throw`.
+`java:new` (op_new.spec.json) and `java:throw` (op_throw.spec.json) both exist on disk;
+they show zero trio coverage in section 4.2 only because the generator cannot find java's specs.
+Once the lookup is fixed, both will mint (or produce a specific actionable gap row).
 
 ### R4. Demote or re-spec: `concept:deref`, `concept:addr`, `concept:member` — c11-only, unreachable by java+python
 
