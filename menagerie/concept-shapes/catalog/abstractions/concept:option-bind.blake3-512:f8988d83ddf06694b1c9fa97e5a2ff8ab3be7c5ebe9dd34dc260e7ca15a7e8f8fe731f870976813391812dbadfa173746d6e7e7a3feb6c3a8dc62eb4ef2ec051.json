@@ -1,0 +1,81 @@
+{
+  "memento": {
+    "kind": "abstraction",
+    "name": "concept:option-bind",
+    "formals": [
+      "T",
+      "U"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "constructor",
+        "name": "T"
+      },
+      {
+        "kind": "constructor",
+        "name": "U"
+      }
+    ],
+    "type": {
+      "kind": "function",
+      "formal_sorts": [
+        {
+          "kind": "operation",
+          "name": "concept:option",
+          "args": [
+            {
+              "kind": "var",
+              "name": "T"
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "fn",
+          "args": [
+            {
+              "kind": "var",
+              "name": "T"
+            },
+            {
+              "kind": "operation",
+              "name": "concept:option",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "U"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "return_sort": {
+        "kind": "operation",
+        "name": "concept:option",
+        "args": [
+          {
+            "kind": "var",
+            "name": "U"
+          }
+        ]
+      }
+    },
+    "description": "Monadic bind for option type. Applies a function that returns an Option to the value inside an Option, flattening the nested option structure. Pattern-mirrors the monad law m >>= f.",
+    "role": "hub-abstraction",
+    "semantics": "monadic-bind",
+    "dependencies": [
+      "concept:option"
+    ],
+    "realizations": [
+      "blake3-512:64bb53691dbcf43055113a458322d656b1240418fc0a089bc42cbe33230d2c465f4a06a3e93e69972b01b9758ec2713c725591174eee3b2a18b755c8c23aa768"
+    ],
+    "discharge_receipt": "deferred:pending-642-PR5"
+  },
+  "cid": "blake3-512:f8988d83ddf06694b1c9fa97e5a2ff8ab3be7c5ebe9dd34dc260e7ca15a7e8f8fe731f870976813391812dbadfa173746d6e7e7a3feb6c3a8dc62eb4ef2ec051",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
