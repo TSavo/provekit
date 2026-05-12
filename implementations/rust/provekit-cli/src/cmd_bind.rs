@@ -12,7 +12,8 @@
 //   - Three runtime modes:  witness / emitter / monitor.
 //   - Target-language axis: rust / python / java / go / csharp / typescript /
 //     zig / ruby / php (default = source language).
-//   - canonical rewrite delegates to cmd_transport::realize_function (ORP).
+//   - canonical rewrite emits per-language contract stubs (v0); full ORP delegation
+//     via realize_function deferred to v1 (realize_function is fn not pub today).
 //   - invisible writes to stdout instead of disk.
 //   - All 9 (rewrite x mode) combinations handled; canonical-mode branches
 //     converge to ORP.
@@ -91,7 +92,7 @@ pub struct BindArgs {
 pub enum RewriteShape {
     /// Inject substrate comments + attributes above each function, write back to disk.
     Annotate,
-    /// Delegate to ORP (realize_function); canonical rewrite to target language.
+    /// Emit contract-annotated target-language stub; full ORP delegation in v1.
     Canonical,
     /// Like annotate or canonical, but stream to stdout instead of disk.
     Invisible,
@@ -751,6 +752,12 @@ fn run_bind_engine(
         kind: "v0-capability-gap".into(),
         detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
     });
+    gaps.push(GapRecord {
+        kind: "v0-orp-delegation-gap".into(),
+        detail: "emit_target_stub emits per-language contract stubs directly; full ORP delegation via \
+                 realize_function deferred to v1 (realize_function is fn not pub; visibility change \
+                 needed for cross-module delegation)".into(),
+    });
 
     Ok(EngineResult {
         bindings,
@@ -1008,8 +1015,8 @@ fn apply_canonical_rewrite(
 
                 if let Some(b) = by_fn.get(&fn_name) {
                     let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);
-                    // Delegate to ORP via the transport layer.
-                    let realized = delegate_to_orp(
+                    // Emit target-language stub (v0; full ORP delegation in v1 when realize_function is pub).
+                    let realized = emit_target_stub(
                         target_lang,
                         &fn_name,
                         &params,
@@ -1069,7 +1076,7 @@ fn apply_canonical_rewrite(
 /// That path is used by `provekit transport`; bind delegates at the
 /// annotation level here and records the gap when real body realization
 /// is needed.
-fn delegate_to_orp(
+fn emit_target_stub(
     target_lang: &str,
     fn_name: &str,
     params: &[String],

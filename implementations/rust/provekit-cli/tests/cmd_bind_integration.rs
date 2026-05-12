@@ -10,9 +10,9 @@
 //   - Invisible mode does not modify source on disk
 //   - Site mementos + index.json + gaps.json written
 //   - Annotation idempotence (second pass identical to first)
-//   - Trinity round-trip: Rust -> Java -> Python -> Rust exits 0, concept present
-//   - Java output carries contract annotation syntax (Spring-flavored demo)
-//   - gaps.json records v0-capability-gap entries
+//   - Multi-target canonical emission smoke (Rust->Java, Rust->Python, Rust->Rust)
+//   - Java output carries contract annotation syntax (contract-annotated demo)
+//   - gaps.json records v0-capability-gap and v0-orp-delegation-gap entries
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -327,13 +327,13 @@ fn annotate_is_idempotent() {
 }
 
 // ============================================================================
-// Test 13: Java deposit carries Spring-flavored contract annotations
-// (the user-visible demo: "a unit test in Rust converted into Spring
+// Test 13: Java deposit carries contract annotations
+// (the user-visible demo: "a unit test in Rust converted into contract
 // annotations in Java that say this is required at this call site")
 // ============================================================================
 
 #[test]
-fn java_canonical_deposit_carries_spring_flavored_contract() {
+fn java_canonical_deposit_carries_contract_annotations() {
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&root, &out, "canonical", "monitor", Some("java"));
@@ -395,16 +395,17 @@ fn python_canonical_carries_contract_comments() {
 }
 
 // ============================================================================
-// Test 15: Trinity round-trip Rust -> Java -> Python -> Rust
+// Test 15: Multi-target canonical emission smoke (Rust->Java, Rust->Python, Rust->Rust)
 //
 // Each leg exits 0 and produces concept-bearing output. In v0 the bind
-// engine processes Rust source for all legs (M+N hub: the catalog collapses
-// the NxM translation table). Full body realization across all three legs
-// will be exact when ORP's per-concept term graph is complete (v1).
+// engine processes Rust source for all legs via the M+N concept hub (the hub
+// collapses the NxM translation table: each leg is Rust->concept hub->target).
+// True multi-leg round-trip (lift from Java/Python output back through the hub)
+// is deferred to v1 when multi-lang lift_plugin dispatch is complete.
 // ============================================================================
 
 #[test]
-fn trinity_round_trip_rust_java_python_rust() {
+fn canonical_multi_target_emission_smoke() {
     let root = fixture_root();
 
     // Leg 1: Rust -> Java
@@ -480,6 +481,10 @@ fn gaps_doc_records_v0_capability_gaps() {
     assert!(
         kinds.contains(&"v0-capability-gap"),
         "gaps.json must record at least one v0-capability-gap"
+    );
+    assert!(
+        kinds.contains(&"v0-orp-delegation-gap"),
+        "gaps.json must record v0-orp-delegation-gap (realize_function is fn not pub)"
     );
 }
 
