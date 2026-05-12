@@ -1,0 +1,78 @@
+{
+  "schema": "rust-ir-term-v1",
+  "source_file": "source.rs",
+  "fn_name": "maybe_double",
+  "params": [
+    {
+      "name": "x",
+      "sort": {
+        "kind": "op",
+        "name": "rust:Option",
+        "args": [
+          {
+            "kind": "primitive",
+            "name": "i32"
+          }
+        ]
+      }
+    }
+  ],
+  "return_sort": {
+    "kind": "op",
+    "name": "rust:Option",
+    "args": [
+      {
+        "kind": "primitive",
+        "name": "i32"
+      }
+    ]
+  },
+  "body": {
+    "kind": "op",
+    "name": "rust:map",
+    "args": [
+      {
+        "kind": "var",
+        "name": "x"
+      },
+      {
+        "kind": "op",
+        "name": "rust:closure",
+        "args": [
+          {
+            "kind": "var",
+            "name": "n"
+          },
+          {
+            "kind": "op",
+            "name": "rust:mul",
+            "args": [
+              {
+                "kind": "var",
+                "name": "n"
+              },
+              {
+                "kind": "const",
+                "value": 2,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "i32"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "option_usage_node": {
+    "kind": "op",
+    "name": "rust:Option",
+    "args": [
+      {
+        "kind": "var",
+        "name": "value"
+      }
+    ]
+  }
+}

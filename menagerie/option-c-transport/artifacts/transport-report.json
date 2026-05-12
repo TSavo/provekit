@@ -1,0 +1,39 @@
+{
+  "schema": "transport-report-v1",
+  "topology": "M+N",
+  "note": "This report is the empirical M+N proof for concept:option<T>. It cites exactly one M edge (source language -> hub) and one N edge (hub -> target language). No M*N cross-table exists anywhere in this artifact. The three CIDs (rust_ir_cid, concept_term_cid, c_realized_cid) are independent BLAKE3-512 content addresses computed at each step of the composition. LIMITATION: the Rust IR term is hand-authored, not produced by the rust-source lifter plugin. A full lifter pipeline for Option<T> is a follow-up task. The composition proof (M+N topology, loss-record union, three-CID chain) is correct regardless of how the Rust IR term was produced.",
+  "source_file": "source.rs",
+  "source_function": "maybe_double",
+  "source_language": "rust",
+  "target_language": "c",
+  "hub_concept": "concept:option",
+  "m_edges": [
+    {
+      "name": "rust:Option->concept:option",
+      "cid": "blake3-512:a829703f2ba7be255092e574b6bd040540336d7ceda380851bbb99dde2193c08bb4cafbe650aba03e0c392c018e46687ae0e274862f39921904dc2064438d16d",
+      "role": "abstraction-lift",
+      "source_lang": "rust",
+      "hub_concept": "concept:option"
+    }
+  ],
+  "n_edges": [
+    {
+      "name": "concept:option->c:tagged-union-macro",
+      "cid": "blake3-512:c550fb759564433d1ec92f9ca402dc4007c150b46e63385f9298eb836e6cc0a636f65dddaede1325852925bb72d8d570ae309e11281a3075f17749e9bc753807",
+      "role": "abstraction-realization",
+      "hub_concept": "concept:option",
+      "target_lang": "c"
+    }
+  ],
+  "m_edge_count": 1,
+  "n_edge_count": 1,
+  "rust_ir_cid": "blake3-512:9c8beadda261b1e9fb224df6fd71dc8c4b1695ab25177ae66303e4cf2a32f028b6aa4f2e124da6f1fdc5b3fa339e595605ed06d6fa226a9dd86aae34fc1e5c64",
+  "concept_term_cid": "blake3-512:181868078d7bcc6bee8a6b0bb626269e8173f01919caac85d16c5fdb3201501eec1a1b229bdd811b33c14df48939aca59300b0a689437258b14702c9b85da180",
+  "c_realized_cid": "blake3-512:316f4180968bf6605b425cd4c6ba5f7b7b98bdd36a06fab9194e4f3328e69befeb7b926fb6840edae47b8d1939cbdb68dde0509b714c2611e378ba59f181a38b",
+  "composed_loss_cid": "blake3-512:d553200a55fa3be9efe7e91c810e05bd750570b43e108b446ac0038c0edc4cb71ee2b2bc13fffa6e416c18b5e9bff41cf06db0e7e11ce2875708913f95a271c9",
+  "composed_loss_dimensions": [
+    "domain_narrowing",
+    "structural_divergence",
+    "ub_introduction"
+  ]
+}

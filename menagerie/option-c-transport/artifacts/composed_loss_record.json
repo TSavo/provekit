@@ -1,0 +1,5 @@
+{
+  "domain_narrowing": "[N edge] C cannot statically enforce exhaustiveness over the two arms; the realization narrows the abstraction domain to programs where the caller manually checks opt.tag before accessing opt.some; programs that omit the check are in the narrowed-out domain",
+  "structural_divergence": "[M edge] empty: Rust Option<T> is the canonical two-arm sum type; no structural encoding gap between the source and the hub concept; [N edge] tagged-union macro family replaces native sum type: three declarations (enum discriminator + union field + wrapper struct) replace a single ADT constructor; arms encoded as integer tag values (name_NONE=0, name_SOME=1) instead of named constructors; pattern matching becomes switch(opt.tag) with manual exhaustiveness; instantiation requires caller-supplied type and macro-name identifiers",
+  "ub_introduction": "[N edge] accessing opt.some when opt.tag == name_NONE reads an uninitialised union field; this is undefined behaviour in C; the abstraction statically excludes this state; the C realization introduces UB on exactly those states"
+}
