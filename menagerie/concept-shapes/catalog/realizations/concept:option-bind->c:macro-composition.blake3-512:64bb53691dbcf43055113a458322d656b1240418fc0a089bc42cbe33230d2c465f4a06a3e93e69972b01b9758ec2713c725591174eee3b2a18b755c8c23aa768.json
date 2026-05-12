@@ -1,0 +1,94 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:option-bind->c:macro-composition",
+    "formals": [
+      "T",
+      "U"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "constructor",
+        "name": "T"
+      },
+      {
+        "kind": "constructor",
+        "name": "U"
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "operation",
+        "name": "concept:option-bind",
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "U"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "operation",
+        "name": "c:macro-composition",
+        "args": [
+          {
+            "kind": "operation",
+            "name": "c:macro-expand",
+            "args": [
+              {
+                "kind": "const",
+                "value": "OPTION_BIND(name, opt, var, body)",
+                "sort": {
+                  "kind": "constructor",
+                  "name": "MacroName"
+                }
+              },
+              {
+                "kind": "var",
+                "name": "T"
+              },
+              {
+                "kind": "var",
+                "name": "U"
+              }
+            ]
+          },
+          {
+            "kind": "operation",
+            "name": "c:compose-on-cell",
+            "args": [
+              {
+                "kind": "const",
+                "value": "concept:option",
+                "sort": {
+                  "kind": "constructor",
+                  "name": "CellRef"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c",
+    "loss_record": {
+      "structural_divergence": "macro-composition replaces native monad operator: bind is implemented as a ternary conditional operator with embedded GNU statement-expression rather than a native function call or operator",
+      "domain_narrowing": "T must be compatible with block-expression binding semantics; the closure body must be a valid C expression (no multiple statements without wrapping); the macro composition assumes the closure evaluates to type Option<U>",
+      "non_portability": "requires GNU C statement-expressions ({ ... }) which is not portable to MSVC or strict C99; requires -std=gnu99 or gnu11 flag"
+    },
+    "discharge_receipt": "deferred:pending-642-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:64bb53691dbcf43055113a458322d656b1240418fc0a089bc42cbe33230d2c465f4a06a3e93e69972b01b9758ec2713c725591174eee3b2a18b755c8c23aa768",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
