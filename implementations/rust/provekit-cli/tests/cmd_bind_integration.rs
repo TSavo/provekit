@@ -541,8 +541,8 @@ fn gaps_doc_records_v0_capability_gaps() {
         "gaps.json must record at least one v0-capability-gap"
     );
     assert!(
-        kinds.contains(&"v0-orp-delegation-gap"),
-        "gaps.json must record v0-orp-delegation-gap (realize_function is fn not pub)"
+        !kinds.contains(&"v0-orp-delegation-gap"),
+        "gaps.json must NOT record v0-orp-delegation-gap after delegation is closed"
     );
 }
 

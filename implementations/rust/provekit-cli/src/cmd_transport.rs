@@ -60,7 +60,7 @@ struct StageReport {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum TransportCliError {
+pub(crate) enum TransportCliError {
     #[error("Refusal: {0}")]
     Refusal(String),
     #[error("{0}")]
@@ -1176,9 +1176,30 @@ fn emit_annotation_prefix(
 }
 
 #[derive(Debug)]
-struct RealizedSource {
-    extension: &'static str,
-    source: String,
+pub(crate) struct RealizedSource {
+    pub(crate) extension: &'static str,
+    pub(crate) source: String,
+}
+
+/// Public-crate bridge for `cmd_bind`'s canonical-mode path.
+///
+/// Lifts contract annotations from `source_text` (Rust source of the origin
+/// file) for the named function, then calls `realize_function` with a
+/// `Term::Unit` body. The body is `Unit` because `cmd_bind` operates at the
+/// annotation/concept level; full Term-graph realization is `cmd_transport`'s
+/// domain and is not available from the bind context.
+///
+/// Returns a `RealizedSource` on success. The `source` field carries the
+/// full target-language snippet including the ORP annotation prefix.
+pub(crate) fn realize_for_bind(
+    language: &str,
+    function: &str,
+    params: &[String],
+    source_text: &str,
+    concept_name: &str,
+) -> Result<RealizedSource, TransportCliError> {
+    let annotations = lift_rust_contracts(source_text, function);
+    realize_function(language, function, params, &Term::Unit, &annotations, concept_name)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

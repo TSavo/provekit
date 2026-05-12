@@ -12,8 +12,8 @@
 //   - Three runtime modes:  witness / emitter / monitor.
 //   - Target-language axis: rust / python / java / go / csharp / typescript /
 //     zig / ruby / php (default = source language).
-//   - canonical rewrite emits per-language contract stubs (v0); full ORP delegation
-//     via realize_function deferred to v1 (realize_function is fn not pub today).
+//   - canonical rewrite delegates to cmd_transport::realize_for_bind (ORP); falls
+//     back to emit_target_stub only when the ORP realizer refuses (unknown language).
 //   - invisible writes to stdout instead of disk.
 //   - All 9 (rewrite x mode) combinations handled; canonical-mode branches
 //     converge to ORP.
@@ -763,13 +763,6 @@ fn run_bind_engine(
         kind: "v0-capability-gap".into(),
         detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
     });
-    gaps.push(GapRecord {
-        kind: "v0-orp-delegation-gap".into(),
-        detail: "emit_target_stub emits per-language contract stubs directly; full ORP delegation via \
-                 realize_function deferred to v1 (realize_function is fn not pub; visibility change \
-                 needed for cross-module delegation)".into(),
-    });
-
     Ok(EngineResult {
         bindings,
         concepts,
@@ -1049,16 +1042,28 @@ fn apply_canonical_rewrite(
 
                 if let Some(b) = by_fn.get(&fn_name) {
                     let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);
-                    // Emit target-language stub (v0; full ORP delegation in v1 when realize_function is pub).
-                    let realized = emit_target_stub(
+                    // Delegate to ORP realize_for_bind; fall back to emit_target_stub if
+                    // the ORP realizer refuses (e.g. unsupported language).
+                    let realized_chunk = match crate::cmd_transport::realize_for_bind(
                         target_lang,
                         &fn_name,
                         &params,
-                        b,
+                        &orig,
                         &concept_name,
-                        mode,
-                    );
-                    chunks.push(realized);
+                    ) {
+                        Ok(r) => {
+                            // Prepend bind-specific metadata (substrate-origin, memento-cid,
+                            // contract annotations, runtime-mode) before the ORP-generated snippet.
+                            let meta = build_bind_meta_comment(target_lang, &concept_name, b, mode);
+                            format!("{meta}\n{}", r.source)
+                        }
+                        Err(_) => {
+                            // ORP refused (unsupported language or parse error); fall back
+                            // to the annotation-level stub so output is never empty.
+                            emit_target_stub(target_lang, &fn_name, &params, b, &concept_name, mode)
+                        }
+                    };
+                    chunks.push(realized_chunk);
                 } else {
                     // Coverage gap: no binding for this function.
                     chunks.push(format!(
@@ -1097,19 +1102,10 @@ fn apply_canonical_rewrite(
     }
 }
 
-/// Delegate a single function's canonical rewrite to the ORP realize infrastructure.
-///
-/// Builds the annotation set from the binding's contract and concept name,
-/// then emits a target-language snippet. This is not a full ORP invocation
-/// (which requires a loaded Term graph and catalog entry); it is the CLI-level
-/// bridge that prepares the annotation block in the target style and emits a
-/// typed stub for the function.
-///
-/// For a full ORP invocation (with real Term traversal), see
-/// `cmd_transport::realize_function` which requires a parsed Term body.
-/// That path is used by `provekit transport`; bind delegates at the
-/// annotation level here and records the gap when real body realization
-/// is needed.
+/// Fallback stub emitter used when ORP `realize_for_bind` refuses (e.g. an
+/// unsupported target language). Emits bind-level annotations without real
+/// body realization. Canonical mode always tries `realize_for_bind` first;
+/// this path is only taken on refusal.
 fn emit_target_stub(
     target_lang: &str,
     fn_name: &str,
@@ -1199,6 +1195,83 @@ fn build_target_annotations(
         }
     }
 
+    lines.join("\n")
+}
+
+/// Build bind-specific metadata comment block to prepend before an ORP-realized
+/// snippet. Carries substrate-origin, memento-cid, contract annotations from
+/// the binding record, and the runtime-mode attribute. The ORP realizer may also
+/// emit concept+contract lines in its own prefix; the bind-layer ones here ensure
+/// provenance is always present even when ORP cannot re-lift contracts from source.
+fn build_bind_meta_comment(
+    target_lang: &str,
+    concept_name: &str,
+    binding: &BindingRecord,
+    mode: &RuntimeMode,
+) -> String {
+    let comment_prefix = match target_lang {
+        "python" | "ruby" => "#",
+        _ => "//",
+    };
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(format!(
+        "{comment_prefix} substrate-origin: {}",
+        binding.origin.label()
+    ));
+    if !binding.site_memento_cid.is_empty() {
+        lines.push(format!(
+            "{comment_prefix} memento-cid: {}",
+            binding.site_memento_cid
+        ));
+    }
+    // Contract annotations from the binding record (pre/post as pretty-printed strings).
+    // These come from the bind engine's own lift pass, which is authoritative for the
+    // source language. ORP may also emit contract lines in its prefix; these ensure
+    // they are always present.
+    if let Some(pre) = &binding.pretty_pre {
+        match target_lang {
+            "rust" | "zig" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
+            "java" | "csharp" => lines.push(format!("/* @requires: {pre} */")),
+            "python" | "ruby" => lines.push(format!("# @requires: {pre}")),
+            _ => lines.push(format!("// @requires: {pre}")),
+        }
+    }
+    if let Some(post) = &binding.pretty_post {
+        match target_lang {
+            "rust" | "zig" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
+            "java" | "csharp" => lines.push(format!("/* @ensures: {post} */")),
+            "python" | "ruby" => lines.push(format!("# @ensures: {post}")),
+            _ => lines.push(format!("// @ensures: {post}")),
+        }
+    }
+    match mode {
+        RuntimeMode::Monitor => {
+            match target_lang {
+                "rust" => lines.push(format!(
+                    "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
+                )),
+                "java" => lines.push(format!("// @provekit_monitor(concept = \"{concept_name}\")")),
+                "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
+                _ => lines.push(format!("{comment_prefix} @provekit_monitor(concept = \"{concept_name}\")")),
+            }
+        }
+        RuntimeMode::Emitter => {
+            match target_lang {
+                "rust" => lines.push(format!(
+                    "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
+                )),
+                _ => lines.push(format!("{comment_prefix} @provekit_emitter(concept = \"{concept_name}\")")),
+            }
+        }
+        RuntimeMode::Witness => {
+            match target_lang {
+                "rust" => lines.push(format!(
+                    "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
+                )),
+                _ => lines.push(format!("{comment_prefix} @provekit_witness(concept = \"{concept_name}\")")),
+            }
+        }
+    }
     lines.join("\n")
 }
 
