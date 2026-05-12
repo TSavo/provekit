@@ -134,6 +134,52 @@ carried across languages, repositories, package ecosystems, commits, and time.
 The contracts were often already in your code; ProvekIt turns them into
 accountable edges the rest of the graph must satisfy.
 
+## Federation by Construction
+
+A substrate that promises portable correctness has to answer how it scales
+without drowning. Every prior framework that tried to cover many languages,
+many checkers, many proof obligations, and many target runtimes ran into the
+same wall: each new dimension multiplied the surface that had to be built,
+audited, and trusted. M sources times N targets times K checkers times L
+sugars is unbounded. ProvekIt is structured so that wall is never met.
+
+Each semantic axis collapses through the same hub topology. Languages do not
+translate to each other; they translate to and from canonical operation CIDs.
+Lifters do not bind to specific provers; they emit ProofIR and the discharge
+portfolio chooses. Loss functions do not bind to specific transports; they
+rank candidate transformations by content-addressed loss records. The cost of
+extending the substrate is linear in the number of plugged-in components, not
+quadratic in the number of pairs they could connect.
+
+| Axis | What plugs in |
+| --- | --- |
+| Source languages | Lifters that emit terms over canonical operation CIDs |
+| Target runtimes | Realizers that consume terms and emit per-target source |
+| Sugar dictionaries | JSON files or JSON-RPC plugins per host idiom (Spring, JML, JUnit, ...) |
+| Loss functions | JSON files or JSON-RPC plugins that rank candidate transformations |
+| Discharge backends | Solver portfolios that close obligations into signed receipts |
+| Effect signatures | Catalogs that name the side effects an op is permitted to admit |
+| Concept catalogs | Federated stores of canonical operation and abstraction CIDs |
+
+Every plug is content-addressed. Every plug is byte-deterministic. The
+`provekit` binary is the protocol implementation; the protocol is the set of
+plugins currently loaded; the loaded set is itself a content-addressed object
+any audit can replay. Two installations that load the same plugin set produce
+the same receipts. Two installations that load different plugin sets disagree
+by exactly the loss records their plugins emit, and the disagreement is itself
+addressable.
+
+The substrate grows by being used. A new sugar dictionary published as a JSON
+file becomes a citable artifact the moment something runs against it. A new
+lifter for an unsupported language extends coverage the moment it discharges
+its first obligation cleanly. A new loss function published with a fidelity
+receipt becomes a lens any caller can adopt. The hub is the public good and
+the spokes are the contributions; use is publication.
+
+That externalization is tracked end to end in [#732](https://github.com/TSavo/provekit/issues/732),
+which enumerates the surfaces being moved out of the binary and into
+content-addressed federable mementos.
+
 ## I want to...
 
 | | |
