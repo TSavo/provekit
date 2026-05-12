@@ -157,8 +157,8 @@ evidence-ref = {
 }
 
 ; Open enum; v0 ships ONLY "conjunction". Other strategies have their
-; verdict-derivation rule specified in §2, but the Rust impl ships them
-; as `unimplemented!`.
+; verdict-derivation rule specified in §2, but the Rust impl returns
+; Err(WpError::UnimplementedAggregationStrategy) for them (not unimplemented!).
 aggregation-strategy = tstr               ; "conjunction" | "best-confidence" | "loudly-bounded-disjunction" | extension label
 
 ; The compound-contract memento itself.
@@ -404,7 +404,7 @@ Reject if:
 - For `EvidenceMemento`: `kind != "evidence"`, `schemaVersion != "1"`, `confidence_basis_points > 10000`.
 - For `CompoundContractMemento`: `kind != "compound-contract"`, `schemaVersion != "1"`, any `evidence-ref.weight_basis_points > 10000`, or (when `aggregation_strategy = "conjunction"`) any `evidence-ref.weight_basis_points != 10000`.
 - Any hash/CID field does not match `"blake3-512:" ++ 128-hex`.
-- For `CompoundContractMemento`: `aggregation_strategy` is not one of the canonical labels AND v0 does not accept extension labels at all (per §0; only `"conjunction"` is wired in v0; the others are spec'd but ship as `unimplemented!` in Rust).
+- For `CompoundContractMemento`: `aggregation_strategy` is not one of the canonical labels AND v0 does not accept extension labels at all (per §0; only `"conjunction"` is wired in v0; the others are spec'd but return `Err(WpError::UnimplementedAggregationStrategy)` in Rust).
 
 NOTE on `source_kind`: validators MUST accept unknown source-kind labels at shape level (open extension). Downstream consumers decide whether to refuse unknown kinds; the spec does not.
 
@@ -599,6 +599,6 @@ Each label is extension-open: validators MUST accept unknown labels at shape lev
 - The smoke-test demonstration (PR-H).
 - Byte-exact CID-pinning tests for the compound (live in `provekit-claim-envelope`).
 - Wire-level migration of existing `ConceptSiteMemento`s in any deployed pool (handled as a one-shot pool-walker in PR-B).
-- `"best-confidence"` and `"loudly-bounded-disjunction"` aggregation behavior (spec'd in §2.2 / §2.3; v0 Rust ships them as `unimplemented!`).
+- `"best-confidence"` and `"loudly-bounded-disjunction"` aggregation behavior (spec'd in §2.2 / §2.3; v0 Rust returns `Err(WpError::UnimplementedAggregationStrategy)` for them).
 
 PR-A is the SPEC, the Rust TYPES, and the serde round-trip tests. Validation passes 1-2 are testable from the types layer (CDDL-shape + degenerate-compound); pass 3 (DERIVED constraints) requires the JCS encoder and is tested in `provekit-claim-envelope`; pass 4 (pool REFERENT) is tested in PR-B when the pool is wired.

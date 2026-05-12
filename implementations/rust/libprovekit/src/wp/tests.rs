@@ -606,7 +606,7 @@ use provekit_ir_types::{
     AggregationStrategy, CompoundContractMemento, EvidenceMemento, EvidenceRef, LossRecord,
     SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan, VerdictKind,
 };
-use crate::wp::{CompoundDischargeReport, EvidenceVerdict, wp_compound};
+use crate::wp::{aggregate_conjunction, EvidenceVerdict, wp_compound};
 
 /// Build a minimal `SourceLocator` for test fixtures.
 fn test_locator() -> SourceLocator {
@@ -770,7 +770,6 @@ fn wp_compound_one_refuse_yields_compound_refuse() {
         .with("opaque_call", opaque_call_contract("missing_fn"));
 
     let q = prop("Q");
-    let exact_ev = make_evidence("cid-exact", q.clone());
     // This evidence's predicate will be evaluated via wp(opaque_call, Q).
     // wp will return Err(WpError::Refused(OpaqueCall{..})) → Refuse verdict.
     let opaque_target = t_op("opaque_call", vec![]);
@@ -797,66 +796,45 @@ fn wp_compound_one_refuse_yields_compound_refuse() {
 }
 
 // ---- Test 6: any refuse dominates lossy under conjunction ----
+//
+// NOTE: wp_compound takes ONE target_term shared by all evidences. A Refuse
+// verdict is triggered by the target itself (loop CID / opaque call), which
+// means ALL evidences refuse together — you cannot get mixed Refuse+Lossy
+// verdicts from a single wp_compound call. The correct way to test the
+// "refuse dominates" aggregation rule is to call aggregate_conjunction
+// directly with synthetic EvidenceVerdict slices.
 
 #[test]
 fn wp_compound_refuse_dominates_lossy() {
-    // One evidence → Refuse (opaque call), one → LoudlyBoundedLossy (divergence).
-    // Refuse wins.
-    let opaque_resolver = MapResolver::default()
-        .with("add", add_contract())
-        .with("div", div_contract())
-        .with("uop_neg", neg_contract())
-        .with("bop_eq", eq_contract())
-        .with("if", if_contract())
-        .with("seq", seq_contract())
-        .with("return", return_contract())
-        .with("skip", skip_contract())
-        .with("opaque_call", opaque_call_contract("missing_fn"));
-
-    let q = prop("Q");
-    let r = prop("R"); // different from Q → lossy divergence with skip target
-
-    // For the "refuse" evidence: wp(opaque_call, Q) → Refused.
-    // But we're calling wp_compound with ONE target term.
-    // To get mixed verdicts from one target: the target must drive different
-    // outcomes per evidence. That requires different predicates: evidence A
-    // has predicate that will diverge (lossy) from what wp produces; evidence
-    // B has same predicate (exact) — but to get a refuse we need an opaque op.
-    //
-    // Since wp_compound uses one target_term, the only path to Refuse is a
-    // target that triggers Refusal. Let's use a loop CID.
-    let loop_cid =
-        Cid::parse(format!("blake3-512:{}", "a".repeat(128))).expect("loop cid valid");
-    let loop_resolver = MapResolver::default()
-        .with("add", add_contract())
-        .with("div", div_contract())
-        .with("uop_neg", neg_contract())
-        .with("bop_eq", eq_contract())
-        .with("if", if_contract())
-        .with("seq", seq_contract())
-        .with("return", return_contract())
-        .with("skip", skip_contract())
-        .with("while", opaque_while_contract(loop_cid.clone()));
-
-    let while_target = Term::Op {
-        op_cid: sentinel_cid(),
-        name: "while".to_string(),
-        args: vec![t_const(1), t_op("skip", vec![])],
+    // Synthesise one Refuse verdict and one LoudlyBoundedLossy verdict.
+    let lossy_loss = {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "structural_divergence".to_string(),
+            prop("divergence_formula"),
+        );
+        LossRecord(m)
     };
 
-    // One evidence expects Q (refuse verdict since wp(while, Q) → Refused).
-    let ev = make_evidence("cid-e1", q.clone());
-    let compound = make_compound(
-        "cid-compound-refuse-dom",
-        AggregationStrategy::Conjunction,
-        vec![evidence_ref("cid-e1")],
-    );
+    let verdicts = vec![
+        EvidenceVerdict {
+            evidence_cid: "cid-lossy".to_string(),
+            verdict: VerdictKind::LoudlyBoundedLossy,
+            loss_record: lossy_loss.clone(),
+        },
+        EvidenceVerdict {
+            evidence_cid: "cid-refuse".to_string(),
+            verdict: VerdictKind::Refuse,
+            loss_record: LossRecord(BTreeMap::new()),
+        },
+    ];
 
-    let report = wp_compound(&compound, &while_target, &[ev], &loop_resolver)
-        .expect("refuse dominates");
+    let (compound_verdict, composed_loss) = aggregate_conjunction(&verdicts);
 
-    assert_eq!(report.compound_verdict, VerdictKind::Refuse);
-    assert_eq!(report.per_evidence_verdicts[0].verdict, VerdictKind::Refuse);
+    // Refuse must dominate.
+    assert_eq!(compound_verdict, VerdictKind::Refuse);
+    // Refuse compound carries no loss record.
+    assert!(composed_loss.0.is_empty(), "refuse has no loss");
 }
 
 // ---- Test 7: unimplemented strategy returns Err, not panic ----
@@ -949,6 +927,61 @@ fn wp_compound_report_carries_compound_cid() {
 
     assert_eq!(report.compound_cid, "the-compound-cid");
     assert_eq!(report.per_evidence_verdicts[0].evidence_cid, "cid-e1");
+}
+
+// ---- Test 11: two lossy evidences — loss records union, not LWW ----
+//
+// Regression for the LWW bug in aggregate_conjunction (Opus review #726):
+// when two evidences both emit "structural_divergence", the last-write-wins
+// `BTreeMap::insert` silently dropped the first formula. The fix unions them
+// as `And { operands: [F1, F2] }`.
+//
+// Verification protocol: temporarily revert F1 (union) to LWW (plain insert)
+// and this test MUST fail — only F2 survives, not F1.
+
+#[test]
+fn wp_compound_multiple_lossy_evidences_union_loss_records() {
+    // uop_neg target. Two evidences with different predicates that both diverge
+    // from wp(uop_neg(x), predicate):
+    //   ev1: predicate = (result == 0)  → wp = (neg(x) == 0)  — diverges → F1 in loss
+    //   ev2: predicate = (result == 1)  → wp = (neg(x) == 1)  — diverges → F2 in loss
+    let result_is_zero = atomic("=", vec![ir_var("result"), ir_const(0)]);
+    let result_is_one  = atomic("=", vec![ir_var("result"), ir_const(1)]);
+
+    let ev1 = make_evidence("cid-lossy-1", result_is_zero.clone());
+    let ev2 = make_evidence("cid-lossy-2", result_is_one.clone());
+
+    let compound = make_compound(
+        "cid-compound-two-lossy",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-lossy-1"), evidence_ref("cid-lossy-2")],
+    );
+    let target = t_op("uop_neg", vec![t_var("x")]);
+
+    let report = wp_compound(&compound, &target, &[ev1, ev2], &base_resolver())
+        .expect("two-lossy compound");
+
+    assert_eq!(report.compound_verdict, VerdictKind::LoudlyBoundedLossy);
+
+    let structural = report
+        .composed_loss_record
+        .0
+        .get("structural_divergence")
+        .expect("structural_divergence dimension must be present");
+
+    // Must be a conjunction of BOTH evidence formulas, not just the last one.
+    match structural {
+        IrFormula::And { operands } => {
+            assert_eq!(
+                operands.len(),
+                2,
+                "union must be And of two formulas, not LWW singleton"
+            );
+        }
+        other => panic!(
+            "expected IrFormula::And (union of two divergence formulas), got {other:?}"
+        ),
+    }
 }
 
 // ============================================================

@@ -1250,7 +1250,7 @@ fn discharge_one_evidence(
 /// - otherwise → `LoudlyBoundedLossy`, union of per-evidence loss records
 ///
 /// Returns `(compound_verdict, composed_loss_record)`.
-fn aggregate_conjunction(
+pub(crate) fn aggregate_conjunction(
     verdicts: &[EvidenceVerdict],
 ) -> (VerdictKind, LossRecord) {
     // Empty compound: vacuously exact (spec §5.2).
@@ -1274,15 +1274,25 @@ fn aggregate_conjunction(
     }
 
     // has_lossy (and no refuse): compose loss records.
+    // Spec §2.1: "per-dimension union of each loudly-bounded-lossy evidence's
+    // loss-record". Union under the same dimension key is the logical AND of
+    // the per-evidence formulas: both divergence constraints must hold.
     debug_assert!(has_lossy);
     let mut composed: BTreeMap<String, IrFormula> = BTreeMap::new();
     for v in verdicts {
         if v.verdict == VerdictKind::LoudlyBoundedLossy {
             for (k, formula) in &v.loss_record.0 {
-                // On key collision: last writer wins (all entries carry the
-                // same key "structural_divergence" in v0; future keys will
-                // be dimension-specific and collisions will not occur).
-                composed.insert(k.clone(), formula.clone());
+                match composed.get(k) {
+                    None => {
+                        composed.insert(k.clone(), formula.clone());
+                    }
+                    Some(existing) => {
+                        let combined = IrFormula::And {
+                            operands: vec![existing.clone(), formula.clone()],
+                        };
+                        composed.insert(k.clone(), combined);
+                    }
+                }
             }
         }
     }
