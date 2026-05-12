@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-12T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:ad148c5f529aab7b019c8980ffa2b2f0d982fd43799a4ee87a01e3e3d5da6cd414beac89adddbad09c03d398b77ec2cda74bc04fe63b1494e6d1bed8880fd7ea",
+    "content": {
+      "data": "test-dummy-fixture-2026-05-12",
+      "kind": "test:dummy",
+      "version": "0.1.0"
+    },
+    "critical": false,
+    "kind": "test:dummy",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:provenance-test-dummy-fixture-2026-05-12",
+    "schemaVersion": "1",
+    "version": "0.1.0"
+  },
+  "metadata": {
+    "note": "Test fixture for provekit-plugin-loader integration tests. Not a real plugin.",
+    "source_url": "tests/fixtures/dummy-sugar.json"
+  }
+}

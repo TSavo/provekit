@@ -42,6 +42,7 @@ mod cmd_transport;
 mod cmd_verify_protocol;
 mod cmd_version;
 mod cmd_witness;
+mod cmd_plugin;
 mod lift_plugin;
 mod project_config;
 mod prompts;
@@ -79,6 +80,21 @@ pub struct OutputFlags {
     #[arg(long, global = true)]
     pub quiet: bool,
 }
+
+/// PEP 1.7.0 plugin flags.  Embed in any subcommand that participates in the
+/// plugin registry (§7 / §9).  The registry seals once per run; every output's
+/// provenance MUST cite the registry CID (§9.4).
+///
+/// Flag catalogue (§7):
+///   --plugin <kind>:<source>     canonical form
+///   --sugar <source>             alias for --plugin sugar:<source>
+///   --loss-fn <source>           alias for --plugin loss-function:<source>
+///   --lifter <source>            alias for --plugin lift:<source>  (wire kind = "lift")
+///   --no-default-plugins         suppress ALL built-in plugin registration
+///   --no-default-plugin <kind>   suppress built-ins for one kind
+///   --strict-plugins             promote every plugin load failure to a refuse
+///   --plugin-registry-out <path> write PluginRegistryMemento to <path> after sealing
+pub use cmd_plugin::PluginFlags;
 
 #[derive(Subcommand, Debug)]
 enum Cmd {

@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 # Workspace-internal libs.
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-plugin-loader = { path = "../provekit-plugin-loader" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
@@ -32,6 +33,7 @@ syn = { workspace = true }
 
 # External.
 clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["clock"] }
 anyhow = "1"
 owo-colors = "4"
 serde = { workspace = true }

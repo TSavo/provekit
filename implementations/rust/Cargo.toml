@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "provekit-canonicalizer",
+    "provekit-plugin-loader",
     "provekit-mint-amp",
     "provekit-proof-envelope",
     "provekit-claim-envelope",

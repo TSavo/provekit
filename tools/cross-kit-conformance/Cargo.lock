@@ -294,6 +294,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libprovekit"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-types",
+ "provekit-proof-envelope",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -356,6 +368,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-lean"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-ir-compiler-maude"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-ir-compiler-smt-lib"
 version = "0.1.0"
 dependencies = [
@@ -414,34 +446,21 @@ dependencies = [
 name = "provekit-verifier"
 version = "0.1.0"
 dependencies = [
+ "libprovekit",
  "provekit-canonicalizer",
  "provekit-ir-compiler",
  "provekit-ir-compiler-coq",
+ "provekit-ir-compiler-lean",
+ "provekit-ir-compiler-maude",
  "provekit-ir-compiler-smt-lib",
+ "provekit-ir-types",
  "provekit-proof-envelope",
- "provekit-walk",
  "rayon",
  "serde",
  "serde_json",
  "thiserror",
  "toml",
  "walkdir",
-]
-
-[[package]]
-name = "provekit-walk"
-version = "0.1.0"
-dependencies = [
- "base64",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "quote",
- "serde_json",
- "syn",
- "thiserror",
 ]
 
 [[package]]

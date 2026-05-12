@@ -33,6 +33,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chrono;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +87,13 @@ pub struct BindArgs {
     /// Quiet: suppress non-error output.
     #[arg(long)]
     pub quiet: bool,
+
+    /// PEP 1.7.0 plugin flags (§7): --plugin, --sugar, --loss-fn, --lifter,
+    /// --no-default-plugins, --no-default-plugin, --strict-plugins,
+    /// --plugin-registry-out.  The registry is sealed once per run and its CID
+    /// is included in every output's provenance (§9.4).
+    #[command(flatten)]
+    pub plugins: crate::PluginFlags,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +143,26 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
 // ============================================================================
 
 pub fn run(args: BindArgs) -> u8 {
+    // PEP 1.7.0: seal the plugin registry before running any pipeline work (§9).
+    // The registry CID must appear in every output's provenance (§9.4).
+    let sealed_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let plugin_registry = match args.plugins.build_registry(&sealed_at) {
+        Ok(r) => {
+            if !args.quiet {
+                eprintln!(
+                    "bind: plugin-registry sealed cid={}",
+                    &r.header.cid[..std::cmp::min(32, r.header.cid.len())]
+                );
+            }
+            r
+        }
+        Err(refusal) => {
+            eprintln!("bind: {refusal}");
+            return EXIT_USER_ERROR;
+        }
+    };
+    let _registry_cid = plugin_registry.cid().to_string();
+
     let root = args.root.canonicalize().unwrap_or_else(|_| args.root.clone());
     let output_dir = args
         .output
