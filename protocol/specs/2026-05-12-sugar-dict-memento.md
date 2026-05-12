@@ -1,4 +1,4 @@
-# Sugar Dict Memento (`provekit-plugin/1`, kind = `"sugar"`)
+# Sugar Dict Memento (`pep/1.7.0`, kind = `"sugar"`)
 
 **Status:** v1.0.0 normative draft. First consumer of the universal plugin protocol.
 **Date:** 2026-05-12
@@ -281,7 +281,7 @@ For Sugar dict 1 (Spring) above, the full plugin memento `header` (per `2026-05-
   },
   "critical": false,
   "kind": "sugar",
-  "protocol_versions": ["provekit-plugin/1"],
+  "protocol_versions": ["pep/1.7.0"],
   "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
   "schemaVersion": "1",
   "version": "1.0.0"

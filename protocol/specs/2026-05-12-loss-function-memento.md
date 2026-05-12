@@ -1,4 +1,4 @@
-# Loss Function Memento (`provekit-plugin/1`, kind = `"loss-function"`)
+# Loss Function Memento (`pep/1.7.0`, kind = `"loss-function"`)
 
 **Status:** v1.0.0 normative draft. Second consumer of the universal plugin protocol.
 **Date:** 2026-05-12
@@ -259,7 +259,7 @@ The default loss function's plugin memento header (full bytes, ready for JCS + B
   },
   "critical": false,
   "kind": "loss-function",
-  "protocol_versions": ["provekit-plugin/1"],
+  "protocol_versions": ["pep/1.7.0"],
   "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
   "schemaVersion": "1",
   "version": "1.0.0"
@@ -291,7 +291,7 @@ A safety-critical project loads a custom loss function that refuses any candidat
   },
   "critical": true,
   "kind": "loss-function",
-  "protocol_versions": ["provekit-plugin/1"],
+  "protocol_versions": ["pep/1.7.0"],
   "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
   "schemaVersion": "1",
   "version": "1.0.0"

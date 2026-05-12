@@ -1,4 +1,4 @@
-# Universal Plugin Protocol (`provekit-plugin/1`)
+# Plugin Extension Protocol (`pep/1.7.0`)
 
 **Status:** v1.0.0 normative draft. Listed in the protocol catalog under property key `plugin-protocol` (catalog entry to be appended in a follow-up CI mint; this spec MUST NOT edit `2026-04-30-protocol-catalog.json` directly). CID is computed from the bytes of this file (raw-bytes BLAKE3-512).
 **Date:** 2026-05-12
@@ -7,9 +7,9 @@
 - `2026-04-30-canonicalization-grammar.md` (JCS canonicalization, normative)
 - `2026-04-30-ir-formal-grammar.md` (IrFormula shape used by `sugar` plugins)
 - `2026-04-30-protocol-versioning.md` (version token grammar)
-- `2026-04-30-agent-plugin-protocol.md` (kind-specific predecessor; coexists, see §0.4)
-- `2026-04-30-lift-plugin-protocol.md` (kind-specific predecessor; coexists, see §0.4)
-- `2026-04-30-extension-protocols.md` and `2026-05-06-extension-protocols.md` (extension surfaces this protocol unifies)
+- `2026-04-30-agent-plugin-protocol.md` (kind-specific predecessor; legacy protocol identifier `provekit-agent/1`, see §0.4)
+- `2026-04-30-lift-plugin-protocol.md` (kind-specific predecessor; legacy protocol identifier `provekit-lift/1`, see §0.4)
+- `2026-04-30-ir-extension-protocol.md` and `2026-05-06-extension-protocols.md` (extension surfaces this protocol unifies)
 - `2026-05-03-substrate-layers-envelope-header-body.md` (envelope/header/metadata layering reused)
 - `2026-05-03-contract-cid-vs-attestation-cid.md` (CID semantics for the declared-behavior vs delivery split, §6)
 - `2026-05-09-pattern-predicate-protocol.md` (precedent for content-addressed editorial extensions registered at runtime)
@@ -48,7 +48,18 @@ A plugin manipulates {terms, contracts, implications}. Sugar dicts render `contr
 
 ### §0.4 Relation to the existing kind-specific plugin specs
 
-The two existing plugin specs (`2026-04-30-agent-plugin-protocol.md`, `2026-04-30-lift-plugin-protocol.md`) remain authoritative for their kinds (`agent`, `lift`) at their declared protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`). This spec defines a SUPERSET surface: any new plugin kind (`sugar`, `loss-function`, `discharge-backend`, `realizer`, `effect-signature`, `concept-extension`, and the open set §2.1 enumerates) MUST follow this protocol. Re-expression of the two predecessor specs as `provekit-plugin/1` memento kinds is an architect-call follow-up and is NOT taken by this PR. The two predecessors and this spec coexist; consumers wanting an `agent` or `lift` plugin continue to use their dedicated protocols.
+`pep/1.7.0` is THE protocol going forward. Having three parallel protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`, `pep/1.7.0`) permanently embeds an M*N protocol-space tax: every new kind must decide which surface to follow, every runtime must implement and maintain multiple dispatch paths, and every verifier must understand the union. Per Supra omnia, rectum, that is incorrect. The protocol that exists to eliminate M*N complexity MUST itself be the singular seam.
+
+**Legacy protocol identifiers.** `provekit-agent/1` and `provekit-lift/1` are now defined as legacy protocol identifiers. The kinds `agent` and `lift` are two of the first entries in `pep/1.7.0`'s open `kind` enum (§2.1). The kind-specific predecessor specs (`2026-04-30-agent-plugin-protocol.md`, `2026-04-30-lift-plugin-protocol.md`) remain readable as the authoritative definitions of the `content` payload shapes for those two kinds; they do NOT define a separate ongoing protocol surface.
+
+**Migration semantics.** Any existing `provekit-agent/1` or `provekit-lift/1` memento MUST be re-mintable into a `pep/1.7.0` memento with byte-stable content payload. The `content` field of the plugin memento carries the same kind-specific bytes the predecessor memento carried; the only field that changes is `protocol_versions` (which MUST be `["pep/1.7.0"]` in the re-minted form). CID identity MUST be verified over the full `pep/1.7.0` header, not the legacy header; the two headers have different shapes and WILL produce different CIDs. This is correct: a `pep/1.7.0` `agent`-kind memento and the legacy `provekit-agent/1` memento it was re-minted from are different content-addressed objects.
+
+**Deprecation timeline.** The migration window spans one provekit binary minor version:
+
+- The CURRENT minor version of the provekit binary (the version that ships with this spec) MUST accept both legacy protocol-version tokens (`provekit-agent/1`, `provekit-lift/1`) and `pep/1.7.0` as valid `protocol_versions` values. When a legacy token is accepted, the binary MUST emit a `PluginLoadFailureMemento` with `reason_kind = "deprecated-protocol-identifier"` and `critical = false`, recording the legacy token and the `pep/1.7.0` equivalent. The run proceeds; the failure is a loud deprecation notice, not a refusal.
+- The NEXT minor version of the provekit binary MUST refuse to load any plugin whose `protocol_versions` array does not contain `pep/1.7.0`. Legacy tokens MUST NOT be accepted. Refusal MUST emit `reason_kind = "refused-legacy-protocol-identifier"`. Producers MUST re-mint mementos against `pep/1.7.0` before the next minor version ships.
+
+Version-bump mechanics for the protocol catalog entry follow `2026-04-30-protocol-versioning.md`.
 
 ## §1. The plugin memento
 
@@ -129,6 +140,8 @@ Open enum. The following labels are reserved by v1.0.0 of this protocol; their c
 
 | `kind`                | Consumer spec                                                                 | What it carries                                                                                  |
 |-----------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| `agent`               | `2026-04-30-agent-plugin-protocol.md` (content-payload shape; legacy `provekit-agent/1`) | Agent proposals and verification invocations; first legacy kind absorbed into this protocol. |
+| `lift`                | `2026-04-30-lift-plugin-protocol.md` (content-payload shape; legacy `provekit-lift/1`)   | Source-to-IR mint procedures via JSON-RPC over stdio; second legacy kind absorbed into this protocol. |
 | `sugar`               | `2026-05-12-sugar-dict-memento.md`                                            | Canonical-clause-to-surface-syntax rendering rules; the first consumer of this protocol.         |
 | `loss-function`       | `2026-05-12-loss-function-memento.md`                                         | Scoring algorithms over `loss-record` candidates; the second consumer of this protocol.          |
 | `discharge-backend`   | DEFERRED to follow-up; precedent `2026-04-30-multi-solver-protocol.md`        | Z3 / cvc5 / Vampire / Maude / CeTA / others; one plugin per backend.                             |
@@ -160,7 +173,7 @@ The canonical CLI form is:
 --plugin <kind>:<source>
 ```
 
-where `<source>` is a filesystem path (absolute or relative to CWD). The runtime MUST distinguish file sources from RPC sources by inspecting `<source>`: a string beginning with `http://`, `https://`, or `tcp://` (or matching the JSON-RPC endpoint grammar of §4) is treated as RPC; otherwise it is treated as a file path.
+where `<source>` is a filesystem path (absolute or relative to CWD) or an RPC endpoint descriptor. The runtime MUST distinguish file sources from RPC sources by inspecting `<source>`: a string beginning with `stdio:`, `http://`, `https://`, or `tcp://` (or matching the JSON-RPC endpoint grammar of §4) is treated as RPC; otherwise it is treated as a file path. The `stdio:` prefix is the canonical form for sidecar subprocess plugins (matching the LSP/MCP spawn shape) and MUST be recognized as a first-class RPC-source kind.
 
 Per-kind aliases SHOULD be provided by the runtime for ergonomic reasons:
 
@@ -204,7 +217,7 @@ Request:
   "id": 1,
   "method": "provekit.plugin.describe",
   "params": {
-    "runtime_protocol_versions": ["provekit-plugin/1"]
+    "runtime_protocol_versions": ["pep/1.7.0"]
   }
 }
 ```
@@ -250,7 +263,7 @@ JSON-RPC errors per RFC 7065. The runtime treats any error response from `descri
 
 ### §5.1 Protocol versions the runtime accepts
 
-The runtime declares a SET of protocol-version tokens it accepts. v1.0.0 of this spec defines exactly one token: `provekit-plugin/1`. Future minor versions of this protocol that are wire-compatible MAY add tokens to the set; future major versions mint a new spec at a new file path.
+The runtime declares a SET of protocol-version tokens it accepts. v1.0.0 of this spec defines `pep/1.7.0` as the canonical token. During the deprecation migration window defined in §0.4, the current minor version of the runtime MUST also accept `provekit-agent/1` and `provekit-lift/1` as legacy tokens (with a loud deprecation notice per §0.4). The NEXT minor version of the runtime MUST drop the legacy tokens and accept only `pep/1.7.0`. Future minor versions of this protocol that are wire-compatible MAY add tokens to the set; future major versions mint a new spec at a new file path.
 
 ### §5.2 Negotiation procedure
 
@@ -447,7 +460,7 @@ A federated discovery service (e.g., a content-addressed plugin index) is antici
 - The `cid` construction follows `2026-04-30-canonicalization-grammar.md`.
 - The `provenance_cid` field MUST resolve to a `ProvenanceMemento` per `2026-05-06-provenance-memento.md`.
 - The `protocol_versions` token grammar MUST conform to `2026-04-30-protocol-versioning.md`.
-- The existing kind-specific plugin specs (`2026-04-30-agent-plugin-protocol.md`, `2026-04-30-lift-plugin-protocol.md`) remain authoritative for their kinds; this spec does NOT supersede them (§0.4).
+- The kind-specific predecessor specs (`2026-04-30-agent-plugin-protocol.md`, `2026-04-30-lift-plugin-protocol.md`) remain readable as authoritative definitions of the `content` payload shapes for the `agent` and `lift` kinds; this spec SUPERSEDES them as the ongoing protocol surface per §0.4. New `agent` and `lift` plugin mementos MUST be minted against `pep/1.7.0`, not the legacy tokens.
 - The first two consumer specs are minted in this PR:
   - `2026-05-12-sugar-dict-memento.md` (kind = `"sugar"`).
   - `2026-05-12-loss-function-memento.md` (kind = `"loss-function"`).
@@ -456,7 +469,6 @@ A federated discovery service (e.g., a content-addressed plugin index) is antici
 
 ## §12. Out of scope for v1.0.0
 
-- Re-expressing `provekit-agent/1` and `provekit-lift/1` as `provekit-plugin/1` kind mementos.
 - Hot-reload of the registry mid-run.
 - Cross-runtime portability beyond byte-identical CIDs.
 - Sandboxing of RPC plugin processes.
