@@ -536,7 +536,7 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
         let lang = if *kit == "ts" { "ts" } else { kit };
         let attest = read_attestation(root, lang);
         let cset = attest["contractSetCid"].as_str().unwrap();
-        if *kit == "zig" && cset == EMPTY_SET_CID {
+        if cset == EMPTY_SET_CID {
             panic_if_empty_set_cid_in_ci(kit);
             eprintln!(
                 "kit `{kit}`: lifter binary not built locally; skipping aggregate non-empty assertion"
@@ -827,6 +827,15 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
         .as_str()
         .expect("contractSetCid must be string");
 
+    // Skip the pinning assertion if the lifter binary isn't built: when
+    // the dispatcher hits ENOENT on spawn it returns ok=true with the
+    // empty-set CID. Panic in CI (missing binary there is a CI config bug).
+    if cset == EMPTY_SET_CID {
+        panic_if_empty_set_cid_in_ci("rust");
+        eprintln!("rust kit: mint-self-contracts binary not built locally -- skipping pinning assertion");
+        return;
+    }
+
     // Pinned value: must match the canonical self-contracts CID.
     assert_eq!(
         cset, RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID,
@@ -953,6 +962,15 @@ fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     let cset = attest["contractSetCid"]
         .as_str()
         .expect("contractSetCid must be string");
+
+    // Skip the pinning assertion if the lifter binary isn't built: when
+    // the dispatcher hits ENOENT on spawn it returns ok=true with the
+    // empty-set CID. Panic in CI (missing binary there is a CI config bug).
+    if cset == EMPTY_SET_CID {
+        panic_if_empty_set_cid_in_ci("cpp");
+        eprintln!("cpp kit: mint_cpp_self_contracts binary not built locally -- skipping pinning assertion");
+        return;
+    }
 
     // Pinned value: must match the canonical self-contracts CID.
     assert_eq!(
@@ -1208,8 +1226,9 @@ fn c_kit_pins_expected_contract_set_cid() {
 
     // Skip the pinning assertion if the lifter binary isn't built: when
     // the dispatcher hits ENOENT on spawn it returns ok=true with the
-    // empty-set CID. Mirrors the cpp/swift skip pattern.
+    // empty-set CID. Panic in CI (missing binary there is a CI config bug).
     if cset == EMPTY_SET_CID {
+        panic_if_empty_set_cid_in_ci("c");
         eprintln!("c kit: lifter binary not built -- skipping pinning assertion");
         return;
     }
@@ -1263,8 +1282,9 @@ fn ruby_kit_pins_expected_contract_set_cid() {
 
     // Skip the pinning assertion if the lifter binary isn't built: when
     // the dispatcher hits ENOENT on spawn it returns ok=true with the
-    // empty-set CID. Mirrors the cpp/swift skip pattern.
+    // empty-set CID. Panic in CI (missing binary there is a CI config bug).
     if cset == EMPTY_SET_CID {
+        panic_if_empty_set_cid_in_ci("ruby");
         eprintln!("ruby kit: lifter binary not built -- skipping pinning assertion");
         return;
     }
