@@ -16,7 +16,6 @@ struct OpInfo {
     path_url: String,
     contract_name: String,
     response_constraints: Option<Value>,
-    request_constraints: Option<Value>,
 }
 
 pub struct AnnotateInput {
@@ -96,7 +95,7 @@ pub fn run_annotate(input: &AnnotateInput) -> Result<AnnotateOutput, String> {
                 .and_then(|responses| responses.get("200").or_else(|| responses.values().next()))
                 .and_then(|resp| lift_response_body(resp, &schemas));
 
-            let req_constraints = operation
+            let _req_constraints = operation
                 .get("requestBody")
                 .and_then(|body| lift_response_body(body, &schemas));
 
@@ -108,7 +107,6 @@ pub fn run_annotate(input: &AnnotateInput) -> Result<AnnotateOutput, String> {
                 path_url: path_url.clone(),
                 contract_name: ct_slug,
                 response_constraints: resp_constraints,
-                request_constraints: req_constraints,
             });
         }
     }
@@ -551,13 +549,6 @@ fn schema_to_constraints_on_value_inner(
         return operands.into_iter().next().unwrap();
     }
     ir_builder::and(operands)
-}
-
-fn resolve_schema_ref(schema: &Value) -> Value {
-    if let Some(ref_path) = schema.get("$ref").and_then(|v| v.as_str()) {
-        return Value::String(ref_path.to_string());
-    }
-    schema.clone()
 }
 
 fn resolve_schema(schema: &Value, schemas: &serde_json::Map<String, Value>) -> Value {

@@ -159,7 +159,6 @@ struct ProvekitLanguageServer {
     config: LspConfig,
     documents: Arc<Mutex<HashMap<Url, SourceAnnotations>>>,
     plugins: Arc<Mutex<HashMap<String, LanguageHandle>>>,
-    project_root: PathBuf,
     /// Path to the provekit-linkerd Unix domain socket, if daemon-client mode
     /// is active.  `None` means per-plugin subprocess mode (the default).
     daemon_socket: Option<PathBuf>,
@@ -821,7 +820,7 @@ async fn main() {
         config,
         documents: Arc::new(Mutex::new(HashMap::new())),
         plugins: Arc::new(Mutex::new(HashMap::new())),
-        project_root: PathBuf::from("."),
+        // project_root removed (unused)
         daemon_socket,
         daemon_stream: Arc::new(Mutex::new(None)),
     });

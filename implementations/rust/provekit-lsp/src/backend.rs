@@ -24,25 +24,14 @@ pub struct JsonRpcBackend {
 pub struct VerifyResult {
     pub status: String,
     #[serde(default)]
-    pub function: String,
-    #[serde(default)]
-    pub target_cid: String,
-    #[serde(default)]
     pub transfers: Vec<Transfer>,
     #[serde(default)]
     pub error: Option<String>,
-    #[serde(default)]
-    pub counterexample: Option<Value>,
-    #[serde(default)]
-    pub suggestion: Option<String>,
-    #[serde(default)]
-    pub evidence: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Transfer {
-    pub domain: String,
-    pub cid: String,
+    // domain and cid removed (unused in current LSP code)
 }
 
 impl JsonRpcBackend {

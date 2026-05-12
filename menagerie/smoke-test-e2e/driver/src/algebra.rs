@@ -86,11 +86,6 @@ impl TermShape {
         blake3_512_of(encode_jcs(&v).as_bytes())
     }
 
-    /// Pretty-print for the report.
-    pub fn render(&self) -> String {
-        render_node(&self.root, 0)
-    }
-
     /// Cheap classifier: returns one of "retry-loop" / "guard-then-commit"
     /// / "option-default" / "unknown" based on the top-level skeleton.
     /// The seed catalog uses this for the soft-match second pass.
@@ -100,19 +95,12 @@ impl TermShape {
 }
 
 #[derive(Debug, Clone)]
-pub struct FormulaShape {
-    pub pretty: String,
-}
+pub struct FormulaShape;
 
 impl FormulaShape {
     pub fn from_fn_body(item_fn: &syn::ItemFn) -> Self {
-        // The smoke test does not lift Rust expressions into IrFormula
-        // (that is provekit-lift's job). We carry a pretty form for
-        // the report only.
-        let n = item_fn.block.stmts.len();
-        FormulaShape {
-            pretty: format!("body[{}]", n),
-        }
+        let _ = item_fn;
+        FormulaShape
     }
 }
 
@@ -142,7 +130,10 @@ fn shape_of_expr(expr: &syn::Expr) -> ShapeNode {
         syn::Expr::If(e) => ShapeNode::If {
             cond: Box::new(shape_of_expr(&e.cond)),
             then_branch: Box::new(shape_of_block(&e.then_branch)),
-            else_branch: e.else_branch.as_ref().map(|(_, b)| Box::new(shape_of_expr(b))),
+            else_branch: e
+                .else_branch
+                .as_ref()
+                .map(|(_, b)| Box::new(shape_of_expr(b))),
         },
         syn::Expr::While(e) => ShapeNode::While {
             cond: Box::new(shape_of_expr(&e.cond)),
@@ -210,9 +201,16 @@ fn node_to_value(n: &ShapeNode) -> Arc<Value> {
     match n {
         ShapeNode::Body(items) => Value::object([
             ("k", Value::string("Body")),
-            ("items", Value::array(items.iter().map(node_to_value).collect())),
+            (
+                "items",
+                Value::array(items.iter().map(node_to_value).collect()),
+            ),
         ]),
-        ShapeNode::If { cond, then_branch, else_branch } => {
+        ShapeNode::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             let mut kvs: Vec<(String, Arc<Value>)> = vec![
                 ("k".into(), Value::string("If")),
                 ("cond".into(), node_to_value(cond)),
@@ -228,10 +226,9 @@ fn node_to_value(n: &ShapeNode) -> Arc<Value> {
             ("cond", node_to_value(cond)),
             ("body", node_to_value(body)),
         ]),
-        ShapeNode::For { body } => Value::object([
-            ("k", Value::string("For")),
-            ("body", node_to_value(body)),
-        ]),
+        ShapeNode::For { body } => {
+            Value::object([("k", Value::string("For")), ("body", node_to_value(body))])
+        }
         ShapeNode::Exit => Value::object([("k", Value::string("Exit"))]),
         ShapeNode::Assign => Value::object([("k", Value::string("Assign"))]),
         ShapeNode::Let => Value::object([("k", Value::string("Let"))]),
@@ -246,60 +243,12 @@ fn node_to_value(n: &ShapeNode) -> Arc<Value> {
         ShapeNode::Call => Value::object([("k", Value::string("Call"))]),
         ShapeNode::Block(items) => Value::object([
             ("k", Value::string("Block")),
-            ("items", Value::array(items.iter().map(node_to_value).collect())),
+            (
+                "items",
+                Value::array(items.iter().map(node_to_value).collect()),
+            ),
         ]),
         ShapeNode::Opaque => Value::object([("k", Value::string("Opaque"))]),
-    }
-}
-
-fn render_node(n: &ShapeNode, depth: usize) -> String {
-    let pad = "  ".repeat(depth);
-    match n {
-        ShapeNode::Body(items) => {
-            let inner: Vec<String> = items.iter().map(|n| render_node(n, depth + 1)).collect();
-            format!("{}Body[\n{}\n{}]", pad, inner.join("\n"), pad)
-        }
-        ShapeNode::If { cond, then_branch, else_branch } => {
-            let mut out = format!(
-                "{}If({}) {{\n{}\n{}}}",
-                pad,
-                render_node(cond, 0).trim(),
-                render_node(then_branch, depth + 1),
-                pad
-            );
-            if let Some(e) = else_branch {
-                out.push_str(&format!(
-                    " else {{\n{}\n{}}}",
-                    render_node(e, depth + 1),
-                    pad
-                ));
-            }
-            out
-        }
-        ShapeNode::While { cond, body } => format!(
-            "{}While({}) {{\n{}\n{}}}",
-            pad,
-            render_node(cond, 0).trim(),
-            render_node(body, depth + 1),
-            pad
-        ),
-        ShapeNode::For { body } => format!(
-            "{}For {{\n{}\n{}}}",
-            pad,
-            render_node(body, depth + 1),
-            pad
-        ),
-        ShapeNode::Exit => format!("{}Exit", pad),
-        ShapeNode::Assign => format!("{}Assign", pad),
-        ShapeNode::Let => format!("{}Let", pad),
-        ShapeNode::Rel { op } => format!("{}Rel({})", pad, op),
-        ShapeNode::Bin { op } => format!("{}Bin({})", pad, op),
-        ShapeNode::Call => format!("{}Call", pad),
-        ShapeNode::Block(items) => {
-            let inner: Vec<String> = items.iter().map(|n| render_node(n, depth + 1)).collect();
-            format!("{}Block[\n{}\n{}]", pad, inner.join("\n"), pad)
-        }
-        ShapeNode::Opaque => format!("{}Opaque", pad),
     }
 }
 
@@ -328,7 +277,11 @@ fn classify_node(n: &ShapeNode) -> &'static str {
                 ShapeNode::Let => {
                     // Let bindings ahead of the loop don't change classification.
                 }
-                ShapeNode::If { then_branch, else_branch, .. } => {
+                ShapeNode::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
                     if !has_loop {
                         // Distinguish a guarded-mutation if (one whose
                         // branches contain an Assign or arithmetic Bin
@@ -374,7 +327,11 @@ fn contains_assign(n: &ShapeNode) -> bool {
         ShapeNode::Assign => true,
         ShapeNode::Bin { .. } => true,
         ShapeNode::Body(items) | ShapeNode::Block(items) => items.iter().any(contains_assign),
-        ShapeNode::If { then_branch, else_branch, .. } => {
+        ShapeNode::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
             contains_assign(then_branch)
                 || else_branch.as_deref().map(contains_assign).unwrap_or(false)
         }
@@ -387,7 +344,11 @@ fn contains_exit(n: &ShapeNode) -> bool {
     match n {
         ShapeNode::Exit => true,
         ShapeNode::Body(items) | ShapeNode::Block(items) => items.iter().any(contains_exit),
-        ShapeNode::If { then_branch, else_branch, .. } => {
+        ShapeNode::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
             contains_exit(then_branch) || else_branch.as_deref().map(contains_exit).unwrap_or(false)
         }
         ShapeNode::While { body, .. } | ShapeNode::For { body, .. } => contains_exit(body),

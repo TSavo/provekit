@@ -184,7 +184,6 @@ struct ProtoField {
     name: String,
     field_type: String,
     label: FieldLabel,
-    number: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -294,28 +293,26 @@ impl ProtoParser {
             }
 
             if line.starts_with("map<") {
-                if let Some((field_name, number)) = parse_field_tail(line) {
+                if let Some((field_name, _number)) = parse_field_tail(line) {
                     let map_type = line
-                        .trim_end_matches(&format!(" {} = {number};", field_name))
+                        .trim_end_matches(&format!(" {} = {};", field_name, _number))
                         .trim()
                         .to_string();
                     fields.push(ProtoField {
                         name: field_name,
                         field_type: map_type,
                         label: FieldLabel::None,
-                        number,
                     });
                 }
                 pos += 1;
                 continue;
             }
 
-            if let Some((label, field_type, field_name, number)) = parse_field_line(line) {
+            if let Some((label, field_type, field_name, _number)) = parse_field_line(line) {
                 fields.push(ProtoField {
                     name: field_name,
                     field_type,
                     label,
-                    number,
                 });
             }
 

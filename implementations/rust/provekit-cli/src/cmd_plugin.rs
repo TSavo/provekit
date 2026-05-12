@@ -27,8 +27,6 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, FromArgMatches};
-
 use provekit_plugin_loader::{
     error::LoadError,
     load_plugin_from_file, load_plugin_from_rpc,
@@ -156,14 +154,13 @@ impl clap::FromArgMatches for PluginFlags {
         Ok(s)
     }
 
-    fn update_from_arg_matches(
-        &mut self,
-        matches: &clap::ArgMatches,
-    ) -> Result<(), clap::Error> {
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
         // Scalar flags.
         self.no_default_plugins = matches.get_flag("no_default_plugins");
         self.strict_plugins = matches.get_flag("strict_plugins");
-        self.plugin_registry_out = matches.get_one::<String>("plugin_registry_out").map(PathBuf::from);
+        self.plugin_registry_out = matches
+            .get_one::<String>("plugin_registry_out")
+            .map(PathBuf::from);
         self.no_default_plugin = matches
             .get_many::<String>("no_default_plugin")
             .into_iter()
@@ -383,18 +380,14 @@ impl std::fmt::Display for PluginLoadRefusal {
         write!(
             f,
             "plugin load refused for '{}': {} ({})",
-            self.source,
-            self.failure.header.reason_detail,
-            self.failure.header.reason_kind
+            self.source, self.failure.header.reason_detail, self.failure.header.reason_kind
         )
     }
 }
 
 /// Source detection per §3.1: determine whether the source is RPC or file,
 /// then dispatch accordingly.
-fn load_one(
-    source: &str,
-) -> Result<provekit_plugin_loader::types::PluginMemento, LoadError> {
+fn load_one(source: &str) -> Result<provekit_plugin_loader::types::PluginMemento, LoadError> {
     if source.starts_with("stdio:")
         || source.starts_with("http://")
         || source.starts_with("https://")
