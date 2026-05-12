@@ -36,6 +36,22 @@
     ],
     "result": "Stmt",
     "wp": "wp(first, wp(second, post))",
+    "wp_rule": {
+      "kind": "apply",
+      "fn": "wp_first",
+      "args": [
+        {
+          "kind": "apply",
+          "fn": "wp_second",
+          "args": [
+            {
+              "kind": "var",
+              "name": "Q"
+            }
+          ]
+        }
+      ]
+    },
     "arity_shape": {
       "kind": "positional",
       "arity": 2

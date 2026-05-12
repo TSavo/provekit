@@ -1,0 +1,61 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "morphism:c11:seq:to:concept:seq",
+    "formals": [
+      "source_contract"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "FunctionContractMemento",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "contract-renaming-morphism",
+      "source_contract_cid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+      "target_shape_cid": "blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3",
+      "renaming_map": {
+        "first": "first",
+        "second": "second"
+      },
+      "representation_map": {},
+      "operator_map": {
+        "seq": "seq"
+      },
+      "literal_map": {},
+      "homomorphism_obligation": {
+        "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+        "source": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+        "target": "blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3"
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "FunctionContractMemento",
+      "args": []
+    },
+    "input_cids": [
+      "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+      "blake3-512:a8ac4cc963454b6872c3f770c1989cb8deed7420a9acb8bc30b2a5eec788e170036dacdb3360190fe3482fdd76086d38adb0ff58179f14a4397bebbeb07f8df3"
+    ]
+  },
+  "cid": "blake3-512:2a33b17d00047ead5accc6deaab7f568e22765b17faa8f8bf7bd129d73b781703aec9e42c077bf51fecfc45dca7dae1c1e7bd1b8598fb763e8fdc15dc360f08c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "PE0f6kSvaofz4lxhitDixrBikOR+lyG9Si+8ZNEolYL+hCL2t/VQJuJLCjwDyarFi5uHNtF/gYxoh8F4LcqqAg=="
+  }
+}

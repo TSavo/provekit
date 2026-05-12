@@ -4,7 +4,7 @@ C is emitted as a content-addressed algebra over contracts. Here is the algebra.
 
 The minted C11 `LanguageSignatureMemento` is:
 
-`blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69`
+`blake3-512:c40d422b1dd624045c4d4d00417f1993c32c8a5665707b65f467dbc82497004cfb77909ad141658b1c7574d6b458c81f64979371e2c6d044b54dc65978e8aba6`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted C function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 

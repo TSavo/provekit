@@ -1,0 +1,78 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:source-unit",
+    "formals": [
+      "bytes",
+      "operational_term"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "source-unit",
+      "arity": [
+        "String",
+        "Stmt"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "bytes",
+            "evaluation": "unevaluated",
+            "slot_sort": "literal"
+          },
+          {
+            "name": "operational_term"
+          }
+        ]
+      },
+      "result": "Stmt",
+      "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+      "wp_rule": {
+        "kind": "apply",
+        "fn": "wp_operational_term",
+        "args": [
+          {
+            "kind": "var",
+            "name": "Q"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:be6d948884eb22631fa2d760e04c0ed9170c60d76d3c85dd7fc0e4a67f42c690afda90983cb132ed1aa8e0e399ac22a6bd8c112bc25834b4133879b70088ec2f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "U5Wy0ksAGoJDs/7tSEJeXm8RN+dLjU/K3+RukA+JxJFbitjLtbkm5fieH7atLTjlov6TvHFjrauViwV0SMjMAA=="
+  }
+}

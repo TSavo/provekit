@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "rust:or-to-ite-desugar",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      "blake3-512:fdf1dd9f635a122d86b4d77c7c64bf7bc5ebc62e5000202a15f789451a79a036e31e86efa828f5c28d6dd4e8276a3141a0f4680af3b87265a78a48ef2e2729d3",
+      "blake3-512:fdf1dd9f635a122d86b4d77c7c64bf7bc5ebc62e5000202a15f789451a79a036e31e86efa828f5c28d6dd4e8276a3141a0f4680af3b87265a78a48ef2e2729d3"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "rust:or",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "rust:ite",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "const",
+            "value": true,
+            "sort": {
+              "kind": "ctor",
+              "name": "Bool",
+              "args": []
+            }
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:1a32f31cb565e03672da305dc0aa7efbb003978dda1bfa8d3d219e823e47e334f6cd364c2f45b02234bf09bd51409952220e603ca1593958804fad84ee6c8126",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "W35BO+eeysxYjfJBShUoHBgfoMxsCVeMisxnKDebsgJU+26+42+XjcnT8omfsjScAcp+TVdT4TtkAv//NUuXBA=="
+  }
+}

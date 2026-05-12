@@ -43,6 +43,25 @@
     ],
     "result": "Stmt",
     "wp": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+    "wp_rule": {
+      "kind": "and",
+      "operands": [
+        {
+          "kind": "implies",
+          "operands": [
+            {"kind": "var", "name": "cond"},
+            {"kind": "apply", "fn": "wp_then_branch", "args": [{"kind": "var", "name": "Q"}]}
+          ]
+        },
+        {
+          "kind": "implies",
+          "operands": [
+            {"kind": "not", "operands": [{"kind": "var", "name": "cond"}]},
+            {"kind": "apply", "fn": "wp_else_branch", "args": [{"kind": "var", "name": "Q"}]}
+          ]
+        }
+      ]
+    },
     "arity_shape": {
       "kind": "named",
       "slots": [

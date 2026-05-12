@@ -58,7 +58,7 @@ def operation_post(name, arity, result, wp, notes=None):
         "operator": name,
         "arity": arity,
         "result": result,
-        "wp": wp,
+        "wp_note": wp,
     }
     if notes:
         post["notes"] = notes

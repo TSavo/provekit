@@ -4,7 +4,7 @@ Rust is emitted as a content-addressed algebra over contracts. Here is the algeb
 
 The minted Rust `LanguageSignatureMemento` is:
 
-`blake3-512:6e96976ee181cc32de6dfb326b9b9a96e5f47b7ba8afef9606d93cee15984fc1c81de78491da094a788bf50725b26824e22b16d79a5b80dc76cd169c59aa844c`
+`blake3-512:6deecfe92276d776c3aad4c52ed1e69dd8f4196eeb87ab6e836639bc7c494bd9a0f65558e5c43891b74430a20d08e1c5ef9ee962cb3646666b45bb7cd07cd662`
 
 The carrier is the function contract space: `FunctionContractMemento`, predicate terms, and WP-propagated contract values. A lifted Rust function body is a term over this signature. Evaluation of that term propagates weakest preconditions and returns a contract memento.
 

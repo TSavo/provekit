@@ -20,6 +20,10 @@ corresponding concept hub op.  Three discharge strategies are attempted in order
       concept op's full effect set is not surprised if the actual lang op does
       fewer effects.  The reverse (lang does MORE than concept promised) is never
       discharged.  Composes with wp-abstraction and pre-weakening.
+   d. wp_rule abstraction: if the lang spec carries post.wp_rule but the concept
+      spec does not (hub ops do not yet carry wp_rule; deferred to #633 per spec
+      §1.4), strip wp_rule from the comparison and attempt byte-equality discharge.
+      Discharge method: "structural-wp-rule-abstraction".
 
 Concept ops declare the UNION of all language effects for the same op, so the
 effect-⊆ relaxation discharges language ops that do a proper subset of those effects.
@@ -58,16 +62,16 @@ LANGUAGES = [
 LANG_BY_ID = {item["id"]: item for item in LANGUAGES}
 
 PRIMITIVE_STEMS = {
-    "morphism_c11_if_to_conditional",
-    "morphism_rust_if_to_conditional",
-    "morphism_c11_seq_to_seq",
-    "morphism_rust_seq_to_seq",
+    # morphism_c11_if_to_conditional: removed because c11:if gained wp_rule (PR3); source CID changed
+    # morphism_rust_if_to_conditional: removed because rust:if gained wp_rule (PR3); source CID changed
+    # morphism_c11_seq_to_seq: removed because c11:seq gained wp_rule (PR3); source CID changed
+    # morphism_rust_seq_to_seq: removed because rust:seq gained wp_rule (PR3); source CID changed
+    # morphism_c11_skip_to_skip: removed because c11:skip gained wp_rule (PR3); source CID changed
+    # morphism_rust_skip_to_skip: removed because rust:skip gained wp_rule (PR3); source CID changed
     "morphism_c11_return_to_return",
     "morphism_rust_return_to_return",
     "morphism_c11_eq_to_eq",
     "morphism_rust_eq_to_eq",
-    "morphism_c11_skip_to_skip",
-    "morphism_rust_skip_to_skip",
 }
 
 COMMON_ALIASES = {
@@ -292,6 +296,10 @@ def concept_spec_from_base(op_def):
     data = normalize_node(strip_locus(source), op_def["renaming"], {}, operators, {})
     data["fn_name"] = op_def["concept_fn"]
     data["post"]["operator"] = op_def["concept_operator"]
+    # Strip wp_rule from the concept spec: language-spec wp_rules are per-language
+    # annotations, not canonical fields of the concept-shape hub op.  The hub
+    # op's CID must not change when a language spec adds wp_rule (PR3+).
+    data["post"].pop("wp_rule", None)
     apply_patches(data, op_def["patches"])
     return data
 
@@ -443,7 +451,7 @@ def _effects_subset(lang_effects_set, concept_effects_set):
 def try_structural_subsumption(after_spec, concept_spec):
     """Sound structural ⊑ discharge when byte-equality fails on relaxable fields only.
 
-    Three relaxations, all sound under the morphism contract:
+    Four relaxations, all sound under the morphism contract:
 
     1. wp-text abstraction: the wp field is human-readable documentation; it carries
        no semantic weight in the discharge obligation.  If after_spec matches
@@ -472,6 +480,16 @@ def try_structural_subsumption(after_spec, concept_spec):
                           "structural-wp-abstraction-and-effect-subset",
                           "structural-pre-weakening-and-wp-abstraction-and-effect-subset".
 
+    4. wp_rule abstraction: if after_spec carries a wp_rule field in post that
+       concept_spec does not (because concept hub ops do not yet carry wp_rule; see
+       PR3 note in concept_spec_from_base), strip it from the comparison and attempt
+       byte-equality discharge.  Soundness: concept_spec_from_base explicitly omits
+       wp_rule from hub op specs (it is a per-language annotation until #633 lands);
+       a language spec's wp_rule is therefore not a semantic gap vs the concept shape.
+       Discharge method: "structural-wp-rule-abstraction".
+       Fast path: tried before the general relaxation loop, so it takes priority over
+       relaxations 1-3 when wp_rule is the *only* difference.
+
     Returns (method_string, pre_relaxed, wp_abstracted) on success, or None on failure.
     Sound: false-negatives (remaining gaps) are acceptable; false-positives are not
     emitted because every structural claim has a verified implication.
@@ -489,6 +507,9 @@ def try_structural_subsumption(after_spec, concept_spec):
     concept_wp = concept_spec.get("post", {}).get("wp")
     after_effects = _effect_set(after_spec)
     concept_effects = _effect_set(concept_spec)
+    # wp_rule is a per-language annotation; concept specs never include it (stripped
+    # in concept_spec_from_base).  It is always treated as abstract for discharge.
+    after_has_wp_rule = "wp_rule" in after_spec.get("post", {})
 
     # notes_match: True if the post.notes field (or its absence) is identical
     # on both sides.  A language spec may carry notes that the concept hub lacks;
@@ -502,7 +523,7 @@ def try_structural_subsumption(after_spec, concept_spec):
     effects_match = after_effects == concept_effects
     effects_ok = _effects_subset(after_effects, concept_effects)
 
-    if pre_matches and wp_matches and notes_match and effects_match:
+    if pre_matches and wp_matches and notes_match and effects_match and not after_has_wp_rule:
         # Byte-equality should have caught this already; shouldn't reach here.
         return None
 
@@ -522,6 +543,10 @@ def try_structural_subsumption(after_spec, concept_spec):
                 for doc_key in _DOC_ONLY_KEYS - {"wp"}:
                     if doc_key in relaxed["post"] and doc_key not in concept_post:
                         del relaxed["post"][doc_key]
+        # wp_rule is always stripped: it is a language-spec annotation and concept
+        # specs do not include it, so a relaxed copy must omit it to match CIDs.
+        if "post" in relaxed:
+            relaxed["post"].pop("wp_rule", None)
         if relax_effects:
             relaxed["effects"] = _copy.deepcopy(concept_spec.get("effects", empty_effects()))
         return relaxed
@@ -540,6 +565,13 @@ def try_structural_subsumption(after_spec, concept_spec):
     # Only attempt discharge if effect direction is sound (lang ⊆ concept).
     if not effects_ok:
         return None
+
+    # Fast path: if the only difference is a wp_rule annotation in the language spec
+    # (which concept specs never carry), strip it and attempt byte-equality discharge.
+    if after_has_wp_rule and pre_matches and wp_matches and effects_match:
+        relaxed = _make_relaxed(False, False, False)
+        if canonical_cid_spec(relaxed) == canonical_cid_spec(concept_spec):
+            return ("structural-wp-rule-abstraction", False, False)
 
     # Try all useful combinations of relaxations.
     # Order: tightest first (fewest relaxations), then broader.
