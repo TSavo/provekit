@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::{BindingRecord, ConceptRecord, ContractOrigin, NameSource, PassResult, WitnessRecord};
+use crate::{ConceptRecord, ContractOrigin, NameSource, PassResult, WitnessRecord};
 
 pub fn render_report(
     fixture_root: &Path,
@@ -397,7 +397,15 @@ fn section_8_zero_authoring(s: &mut String, pass: &PassResult) {
     );
     let _ = writeln!(
         s,
-        "- ConceptSiteMemento and ConceptAbstractionMemento are emitted with `schemaVersion: \"stub-0\"`. The canonical layered schema is being drafted (Opus agent `acd66a6b322284a3a` at the time of writing). The stub schema's keys (`siteFile`, `siteFn`, `conceptShapeCid`, `contractCid`, `dischargeVerdict`) match the emerging proposal so the migration to the canonical layered envelope is a renaming pass once the PR lands."
+        "- **[CLOSED — Stub 3]** `ConceptSiteMemento` is now emitted with `schemaVersion: \"1\"` using the canonical `provekit_ir_types::ConceptSiteMemento` type (PR #692, commit 5919e46f). Each site with a recovered contract emits a fully-structured JSON artifact under `artifacts/`. Sites with no recovered contract are skip-emitted (see next bullet). `ConceptAbstractionMemento` remains on `stub-0` schema (its canonical spec is a separate landing)."
+    );
+    let _ = writeln!(
+        s,
+        "- **[Open — synthetic referents]** `provenance.{{clusterer_cid,discharger_cid,lifter_cid}}` and `discharge.discharge_receipt_cid` are synthetic deterministic hashes (`blake3-512` of a stable seed string). No real binary CIDs or `MorphismDischargeReceipt` objects exist yet (PR-B and PR-C are pending). The smoke test's CIDs are reproducible and content-addressed but do not reference objects in the pool. Closing this gap requires PR-B (lifter wiring) and PR-C (discharge wiring)."
+    );
+    let _ = writeln!(
+        s,
+        "- **[Open — skip-emitted sites]** The 3 sites with no recovered contract (`clamp_score`, `clamp_pressure`, `attempt_succeeds`) do not emit a `ConceptSiteMemento` because `local_contract_cid` is required by spec §1.1 and there is no contract to reference. These sites are recorded with `discharge_verdict: refuse(no contract recovered)` in the report but are absent from the artifacts pool. Closing this gap requires a `FunctionContractMemento` for empty-contract functions (e.g., a trivial `true` postcondition)."
     );
     let _ = writeln!(s);
 }

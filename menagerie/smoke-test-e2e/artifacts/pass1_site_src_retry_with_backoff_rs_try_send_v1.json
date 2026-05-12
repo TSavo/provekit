@@ -1,1 +1,27 @@
-{"conceptName":"concept:retry-with-bounded-attempts","conceptShapeCid":"blake3-512:4b48c5b59fab37a3c25ef0ca2f1e8ffc83826059b2bdac97ae8878a02fe40683fbdc25337d6ced61e28b62715aa8a663915a6f07291b2cee7d20d0b3ac48755d","contractCid":"blake3-512:88c92b7c05ab0997b6d7faf585cbb03a39dbe8caca8baa4ac21f050104fe88ff688491896b9efebde78c3ad4b59f40da5077c592e21d90be72b8279d9088726f","contractOrigin":"algebra-synthesis[wp_rule.retry-with-bounded-attempts.v0]","dischargeVerdict":"exact","kind":"concept-site-stub-0","schemaVersion":"stub-0","siteFile":"src/retry_with_backoff.rs","siteFn":"try_send_v1","siteLine":21}
+{
+  "cid": "blake3-512:7ba1fe5a458cb7a1e8662943b5384f6b7aa8579556ef2a45ca90186d403dc5a73df31bbf73c41176d1a1504657e431c477936e30b9412b41fe488a07e8aa7226",
+  "code_site": {
+    "function_term_cid": "blake3-512:a1b4c58ef06c6ef2dcd73bdd58e756c4810cc8d0895dbeb55cf9266ad7f894e1d80a362c7bb082d50833ec6f733a9733d93c9647cb813cd5922bfe4f3509a40d",
+    "source_cid": "blake3-512:07a75f81c2b66b4bec08bd141ea7034bda0b7f56347eee95549516923d580680f70e2be1791bc11d0b8562e412f56d3ca0d2b78b6f999f8859b7c7853548534c",
+    "span": {
+      "end": 1053,
+      "start": 1005
+    }
+  },
+  "concept_cid": "blake3-512:9457e50e1871f694df0f9a98e94c82826343fecc954b5ed385e173ae28629c80d58198b25180eb93411b151e0d1f5d84afa6f50acea6c11521b61ecfd1cc6719",
+  "discharge": {
+    "method": "wp",
+    "verdict": "exact",
+    "discharge_receipt_cid": "blake3-512:36176d8e30f7df255a26e056ecbab6235c87553e64f685f09cf945a35a8c60da2b217d3b4d80997452d101816d59e50735296eede086e549f2212c10e06378e3",
+    "loss_record": {}
+  },
+  "kind": "concept-site",
+  "local_contract_cid": "blake3-512:a1b4c58ef06c6ef2dcd73bdd58e756c4810cc8d0895dbeb55cf9266ad7f894e1d80a362c7bb082d50833ec6f733a9733d93c9647cb813cd5922bfe4f3509a40d",
+  "provenance": {
+    "clusterer_cid": "blake3-512:03a70aece9916e50982aa3b8d81dd5ade479ebd67034f5b2a0dcaee2d08448aeb846996b4b7c7452b9d3fa71131e6f89d68003b9d0dc0b5d888f0a7c6a3ce60f",
+    "discharger_cid": "blake3-512:9ec1028c460527f8bf0d99928b090a63ef985c94754f88d1d8365464b42e6ce1974ac753de63a8949a62f0f583ed77cb94cd42a0e2e22186c9c3ccbad1e894e4",
+    "lifter_cid": "blake3-512:ade6080ae818f7a8e16b8a30e5442e329a77fa8b52b5075557915dfd62acd6740ca4893db1c8ed300c632487e27ba45eed300c8339474f36fe545aad0687ff3f"
+  },
+  "schemaVersion": "1",
+  "witnesses": []
+}

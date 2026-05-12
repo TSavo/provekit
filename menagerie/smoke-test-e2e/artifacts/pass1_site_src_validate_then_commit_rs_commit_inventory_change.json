@@ -1,1 +1,27 @@
-{"conceptName":"concept:guard-then-commit","conceptShapeCid":"blake3-512:520961a119b28bf8de5e4ab8fb72047bff157694277fc37ca9ca0fda8854c13ca6f738ca2398a0a007f989ef4a1be1d985054a356d9ad3fe82177caa85e762b8","contractCid":"blake3-512:9e270257e1258a3a82e1e39b84fd4f036cbe590ae60616845ec714e0b9b5e500ce6612bddbb19fb8795907adf3f9f065a58479777b503a9f834f0903efe787da","contractOrigin":"algebra-synthesis[wp_rule.guard-then-commit.v0]","dischargeVerdict":"exact","kind":"concept-site-stub-0","schemaVersion":"stub-0","siteFile":"src/validate_then_commit.rs","siteFn":"commit_inventory_change","siteLine":28}
+{
+  "cid": "blake3-512:130f7979d1171e5f3b11f8d00ccde98293963d354d907e4956b19d495616b949f99d46055fb7dcc0363f1d6f26c38a6b956c54c119654347dd36a9cad7627d92",
+  "code_site": {
+    "function_term_cid": "blake3-512:244b669c64291946312f445271f7f88c1c408eaa32f1c51ba49dadfbcad1e8b95ca41f8741f51d3cd2b89426a4ecaaab67243ed110851982ee707ea433bf4efe",
+    "source_cid": "blake3-512:60ded140ddfa153ec09678ff5d1e6468a0c9f62f4cde1d94fb013c097dc7f1a6d9724e6578ec019aeb2bb2c3c549f00ccf318e5a701683f6bf8b8ea5904dcbd2",
+    "span": {
+      "end": 1030,
+      "start": 966
+    }
+  },
+  "concept_cid": "blake3-512:bfce31ab082348558696ea574fe9c9145ffd432970c52c9d9d53837724aa9a06eb74bb2b0af48edccae46d96c130689a78fec96d9049fdb7a6f7593ded180f08",
+  "discharge": {
+    "method": "wp",
+    "verdict": "exact",
+    "discharge_receipt_cid": "blake3-512:1cb20d378cd159e65ec49497f814568e2d70814a597230d6de998ad8fa741e2eaf39673dd3b1a12ded49f2c03354a09117015a755a6e0a7dfbb83008e78ec6b4",
+    "loss_record": {}
+  },
+  "kind": "concept-site",
+  "local_contract_cid": "blake3-512:244b669c64291946312f445271f7f88c1c408eaa32f1c51ba49dadfbcad1e8b95ca41f8741f51d3cd2b89426a4ecaaab67243ed110851982ee707ea433bf4efe",
+  "provenance": {
+    "clusterer_cid": "blake3-512:03a70aece9916e50982aa3b8d81dd5ade479ebd67034f5b2a0dcaee2d08448aeb846996b4b7c7452b9d3fa71131e6f89d68003b9d0dc0b5d888f0a7c6a3ce60f",
+    "discharger_cid": "blake3-512:9ec1028c460527f8bf0d99928b090a63ef985c94754f88d1d8365464b42e6ce1974ac753de63a8949a62f0f583ed77cb94cd42a0e2e22186c9c3ccbad1e894e4",
+    "lifter_cid": "blake3-512:ade6080ae818f7a8e16b8a30e5442e329a77fa8b52b5075557915dfd62acd6740ca4893db1c8ed300c632487e27ba45eed300c8339474f36fe545aad0687ff3f"
+  },
+  "schemaVersion": "1",
+  "witnesses": []
+}

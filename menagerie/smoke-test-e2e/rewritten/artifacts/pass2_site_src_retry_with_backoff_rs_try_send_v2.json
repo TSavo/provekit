@@ -1,1 +1,33 @@
-{"conceptName":"concept:retry-with-bounded-attempts","conceptShapeCid":"blake3-512:987bda3963eeab3b379029c7d3063e0c1cb5e1d8f7d010c1a08825f5a5398c236412469e5e85591b33897bb6f5218aa26c35172369f6a2fc303868db05e8ef95","contractCid":"blake3-512:2fe6934d0746c981f94478780188df99605af0dbd4e8b8b394cb69b3d2d0d053ca370913e61c7e64bdca920a56079a8e33dd284c6b8b05b4016dabb32d01da4a","contractOrigin":"annotation-lift","dischargeVerdict":"loudly-bounded-lossy(formula-string-transport (smoke-test single-atom encoding))","kind":"concept-site-stub-0","schemaVersion":"stub-0","siteFile":"src/retry_with_backoff.rs","siteFn":"try_send_v2","siteLine":51}
+{
+  "cid": "blake3-512:49d1bace624e72f50aa474e569a2b4a7d7e6491f87b4ec5c98d96bcf2e537db7dde5e24334a8a90e83ec6c745cd5ced4b8076dcffa0651fe837aa43baa90a4c1",
+  "code_site": {
+    "function_term_cid": "blake3-512:18ca4f604d7a6901f2dc5df533ea3a6d1a8e673c4901fea1eee0118e1855de8abd01cf15550e5592c3843ce4a1b0cdfdba449a73e537f3b181e4c822077463a7",
+    "source_cid": "blake3-512:a620dc01e9d112a6aa43fbfbc31632772c13f9bdb3e53bc5370d103fe51038a1ab0696aaec7412c7b52a835eee2a11bf7509942f7d8736c99edd4fd13fbaf3ef",
+    "span": {
+      "end": 2337,
+      "start": 2289
+    }
+  },
+  "concept_cid": "blake3-512:9457e50e1871f694df0f9a98e94c82826343fecc954b5ed385e173ae28629c80d58198b25180eb93411b151e0d1f5d84afa6f50acea6c11521b61ecfd1cc6719",
+  "discharge": {
+    "method": "wp",
+    "verdict": "loudly-bounded-lossy",
+    "discharge_receipt_cid": "blake3-512:8fdf0305d5a8a3505aed4e3a327558d6681ea314a127490432f8c16b55088147502b390dfa1f395512abfd1bfc1684016b3ebc07340ee264dc3cc1accc5024f2",
+    "loss_record": {
+      "structural_divergence": {
+        "kind": "atomic",
+        "name": "smoke-test-single-atom-encoding:formula-string-transport (smoke-test single-atom encoding)",
+        "args": []
+      }
+    }
+  },
+  "kind": "concept-site",
+  "local_contract_cid": "blake3-512:18ca4f604d7a6901f2dc5df533ea3a6d1a8e673c4901fea1eee0118e1855de8abd01cf15550e5592c3843ce4a1b0cdfdba449a73e537f3b181e4c822077463a7",
+  "provenance": {
+    "clusterer_cid": "blake3-512:03a70aece9916e50982aa3b8d81dd5ade479ebd67034f5b2a0dcaee2d08448aeb846996b4b7c7452b9d3fa71131e6f89d68003b9d0dc0b5d888f0a7c6a3ce60f",
+    "discharger_cid": "blake3-512:9ec1028c460527f8bf0d99928b090a63ef985c94754f88d1d8365464b42e6ce1974ac753de63a8949a62f0f583ed77cb94cd42a0e2e22186c9c3ccbad1e894e4",
+    "lifter_cid": "blake3-512:ade6080ae818f7a8e16b8a30e5442e329a77fa8b52b5075557915dfd62acd6740ca4893db1c8ed300c632487e27ba45eed300c8339474f36fe545aad0687ff3f"
+  },
+  "schemaVersion": "1",
+  "witnesses": []
+}

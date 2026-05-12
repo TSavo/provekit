@@ -2,7 +2,7 @@
 
 The eight-verb pipeline (Lift, Cluster, Name, Scope, Cluster, Identify, Realize, Witness) walking around a 200-line Rust fixture. Every contract in the rewritten output traces to one of three substrate sources: a lifted annotation, a lifted test assertion, or a wp_rule applied to a recognized term-shape. None of the contracts shown below were authored by the smoke-test driver author.
 
-Fixture root: `/Users/tsavo/provekit-worktrees/pk-695-unstub/menagerie/smoke-test-e2e`
+Fixture root: `/Users/tsavo/provekit-worktrees/pk-695-stub3/menagerie/smoke-test-e2e`
 
 ## 1. The fixture
 
@@ -147,7 +147,7 @@ The rewritten tree under `rewritten/` is itself a buildable Rust crate (`smoke-t
 - `src/retry_with_backoff.rs` -> `rewritten/src/retry_with_backoff.rs`
 - `src/validate_then_commit.rs` -> `rewritten/src/validate_then_commit.rs`
 
-Run `diff -u /Users/tsavo/provekit-worktrees/pk-695-unstub/menagerie/smoke-test-e2e/src/option_handling.rs /Users/tsavo/provekit-worktrees/pk-695-unstub/menagerie/smoke-test-e2e/rewritten/src/option_handling.rs` (etc) to see every line the substrate added.
+Run `diff -u /Users/tsavo/provekit-worktrees/pk-695-stub3/menagerie/smoke-test-e2e/src/option_handling.rs /Users/tsavo/provekit-worktrees/pk-695-stub3/menagerie/smoke-test-e2e/rewritten/src/option_handling.rs` (etc) to see every line the substrate added.
 
 ## 8. Zero-authoring receipt
 
@@ -169,7 +169,9 @@ Every contract in the rewritten output, with its substrate source traced back to
 
 - The driver's `formula_text_to_value` encoding wraps each pretty-printed contract string in a single-atom IR formula (`{kind:atomic, name:"<text>", args:[]}`). The mint envelope is signed correctly and the BLAKE3-512 CID is deterministic, but the formula is opaque to the kit's parse/serialize round-trip. Discharge verdict for these mints is `loudly-bounded-lossy(formula-string-transport)`. Closing this gap requires the upstream `provekit-ir-symbolic::parse` to accept the rewritten predicate strings; until then the smoke test's transport is signed-but-opaque.
 - **[CLOSED — Stub 2]** The smoke-test driver now invokes the live `libprovekit::wp` evaluator for algebra-synthesis discharge. A `SmokeTestResolver` carries authored `wp_rule`s for `retry-loop` (`max_attempts >= 0 ∧ Q`) and `guard-then-commit` (`Q`). The evaluator reduces the rule against the postcondition placeholder and returns a ground formula; verdict is `exact`. The previously blocking condition (wp-as-formula PR series — PRs #619, #633, #663) is fully merged on main; this stub is now closed. Remaining loss on algebra-synthesis sites: the synthesized contract formula is still a single-atom shim (Stub 1 — `provekit-ir-symbolic::parse` round-trip not yet wired). The discharge ITSELF is exact; the formula encoding is the remaining open gap.
-- ConceptSiteMemento and ConceptAbstractionMemento are emitted with `schemaVersion: "stub-0"`. The canonical layered schema is being drafted (Opus agent `acd66a6b322284a3a` at the time of writing). The stub schema's keys (`siteFile`, `siteFn`, `conceptShapeCid`, `contractCid`, `dischargeVerdict`) match the emerging proposal so the migration to the canonical layered envelope is a renaming pass once the PR lands.
+- **[CLOSED — Stub 3]** `ConceptSiteMemento` is now emitted with `schemaVersion: "1"` using the canonical `provekit_ir_types::ConceptSiteMemento` type (PR #692, commit 5919e46f). Each site with a recovered contract emits a fully-structured JSON artifact under `artifacts/`. Sites with no recovered contract are skip-emitted (see next bullet). `ConceptAbstractionMemento` remains on `stub-0` schema (its canonical spec is a separate landing).
+- **[Open — synthetic referents]** `provenance.{clusterer_cid,discharger_cid,lifter_cid}` and `discharge.discharge_receipt_cid` are synthetic deterministic hashes (`blake3-512` of a stable seed string). No real binary CIDs or `MorphismDischargeReceipt` objects exist yet (PR-B and PR-C are pending). The smoke test's CIDs are reproducible and content-addressed but do not reference objects in the pool. Closing this gap requires PR-B (lifter wiring) and PR-C (discharge wiring).
+- **[Open — skip-emitted sites]** The 3 sites with no recovered contract (`clamp_score`, `clamp_pressure`, `attempt_succeeds`) do not emit a `ConceptSiteMemento` because `local_contract_cid` is required by spec §1.1 and there is no contract to reference. These sites are recorded with `discharge_verdict: refuse(no contract recovered)` in the report but are absent from the artifacts pool. Closing this gap requires a `FunctionContractMemento` for empty-contract functions (e.g., a trivial `true` postcondition).
 
 ## 9. Open Karlton work
 

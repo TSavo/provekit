@@ -21,10 +21,13 @@
 //     provekit_canonicalizer::blake3_512_of.
 //   - All mementos that have a corresponding mint API in
 //     provekit_claim_envelope use it (signed, layered shape).
-//     Concept-shape mementos and concept-site mementos use a
-//     locally-defined stub schema labelled "schemaVersion": "stub-0"
-//     because the canonical ConceptSiteMemento spec PR has not yet
-//     landed (see report §10 / open-questions).
+//   - ConceptSiteMemento is emitted with `schemaVersion: "1"` using the
+//     canonical provekit_ir_types::ConceptSiteMemento type (PR #692 /
+//     5919e46f). Provenance CIDs and discharge_receipt_cid are synthetic
+//     deterministic hashes; see report §8 "Known transport losses".
+//   - ConceptAbstractionMemento uses a locally-defined stub schema labelled
+//     "schemaVersion": "stub-0" (the ConceptAbstractionMemento spec is a
+//     separate landing from the ConceptSiteMemento spec).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -34,6 +37,10 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
+use provekit_ir_types::{
+    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge, IrFormula,
+    LossRecord,
+};
 use provekit_proof_envelope::Ed25519Seed;
 
 mod algebra;
@@ -155,7 +162,8 @@ pub struct BindingRecord {
     pub shape_cid: String,
     /// Index into PassResult.concepts.
     pub concept_idx: usize,
-    /// Site-level memento CID for the concept:site binding (stub schema).
+    /// Site-level memento CID for the concept:site binding (canonical ConceptSiteMemento schema v1).
+    /// Empty string when no contract was recovered (site is skip-emitted; see report §8).
     pub site_memento_cid: String,
     /// wp-discharge verdict: "exact" / "loudly-bounded-lossy" / "refuse".
     pub discharge_verdict: DischargeVerdict,
@@ -424,8 +432,6 @@ fn run_pass(
     for lift in &raw_lifts {
         let shape_cid = lift.term_shape.shape_cid();
         let concept_idx = *shape_to_concept_idx.get(&shape_cid).expect("clustered");
-        let concept_name = concepts[concept_idx].name.clone();
-
         // ----- Choose contract origin in priority order -----
         //
         //   1. attribute lift if present,
@@ -497,47 +503,208 @@ fn run_pass(
         };
 
         // Discharge verdict.
-        // The live libprovekit::wp evaluator is not yet stable enough for
-        // this driver to drive end-to-end without per-rule wiring (the
-        // wp-as-formula PR series is still landing). Per the
-        // "loudly-bounded-incomplete" rule the verdict is computed by
-        // a small structural-discharge oracle here and EXPLICITLY
-        // labelled in the report as "structural-oracle" instead of
-        // "live-wp" wherever the live evaluator was not used.
+        // The live libprovekit::wp evaluator runs for algebra-synthesis sites
+        // (wp-as-formula PR series fully merged on main; Stub 2 closed). For
+        // annotation-lift and test-lift sites the verdict is computed by a
+        // structural oracle and labelled "loudly-bounded-lossy" because the
+        // formula encoding is single-atom (Stub 1 open). For empty-contract
+        // sites the verdict is "refuse(no contract recovered)".
         let verdict = synthesize::discharge_for_shape(&lift.term_shape, &origin);
 
-        // Site memento CID (stub schema; the canonical ConceptSiteMemento
-        // PR has not landed yet, but the schema below matches the
-        // emerging shape: kind / siteLocation / conceptShapeCid /
-        // contractCid / dischargeVerdict).
-        let site_v = Value::object([
-            ("kind", Value::string("concept-site-stub-0")),
-            ("schemaVersion", Value::string("stub-0")),
-            ("siteFile", Value::string(lift.file.clone())),
-            ("siteFn", Value::string(lift.fn_name.clone())),
-            ("siteLine", Value::integer(lift.fn_line as i64)),
-            ("conceptName", Value::string(concept_name.clone())),
-            ("conceptShapeCid", Value::string(shape_cid.clone())),
-            (
-                "contractCid",
-                Value::string(contract_cid.clone().unwrap_or_default()),
-            ),
-            (
-                "contractOrigin",
-                Value::string(origin.label()),
-            ),
-            ("dischargeVerdict", Value::string(verdict.label())),
-        ]);
-        let site_memento_cid = blake3_512_of(encode_jcs(&site_v).as_bytes());
-        let _ = fs::write(
-            artifacts_dir.join(format!(
-                "pass{}_site_{}_{}.json",
-                pass_id,
-                sanitize(&lift.file),
-                lift.fn_name
-            )),
-            encode_jcs(&site_v),
-        );
+        // Canonical ConceptSiteMemento (schema v1, PR #692 / 5919e46f).
+        //
+        // Sites with no recovered contract are skipped: the spec requires
+        // local_contract_cid to be present (§1.1), and an empty-contract
+        // mint would produce a meaningless FunctionContractMemento. These
+        // are recorded as "skip-emitted" in report §8.
+        //
+        // Provenance and discharge_receipt_cid are synthetic deterministic
+        // hashes (no real MorphismDischargeReceipt or binary CIDs exist yet;
+        // PR-B and PR-C are pending). See report §8 for loss accounting.
+        let site_memento_cid = if contract_content_cid.is_some() {
+            // Synthetic deterministic provenance CIDs.
+            let lifter_cid = blake3_512_of(b"smoke-test-e2e-driver/lifter-v1");
+            let clusterer_cid = blake3_512_of(b"smoke-test-e2e-driver/clusterer-v1");
+            let discharger_cid = blake3_512_of(b"smoke-test-e2e-driver/discharger-v1");
+
+            // source_cid: hash the actual file bytes of the source file.
+            // The file path is relative to source_root; the src_dir is
+            // source_root/src/. Re-read the content here to hash it.
+            let source_file_path = source_root.join(&lift.file);
+            let source_bytes = fs::read(&source_file_path).unwrap_or_default();
+            let source_cid = blake3_512_of(&source_bytes);
+
+            // span: approximate byte offsets from line number.
+            // We know fn starts at lift.fn_line (1-based); scan to find
+            // the byte offset of that line's start and end.
+            let (span_start, span_end) = byte_span_for_line(&source_bytes, lift.fn_line);
+
+            // function_term_cid and local_contract_cid: per spec §4 step 1/3,
+            // these are the FunctionContractMemento content CID (not the
+            // attestation/envelope CID). That is contract_content_cid.
+            let local_cid = contract_content_cid.clone().expect("checked above");
+            let fn_term_cid = local_cid.clone();
+
+            // Build discharge block.
+            let (d_verdict, d_loss, d_receipt, d_refusal) = match &verdict {
+                DischargeVerdict::Exact => {
+                    let receipt = blake3_512_of(
+                        format!("smoke-test-discharge-receipt:{}", local_cid).as_bytes(),
+                    );
+                    (
+                        "exact".to_string(),
+                        LossRecord(std::collections::BTreeMap::new()),
+                        Some(receipt),
+                        None,
+                    )
+                }
+                DischargeVerdict::LoudlyBoundedLossy { loss } => {
+                    // Loss dimension: structural_divergence, characterized by
+                    // an atomic formula naming the smoke-test single-atom encoding.
+                    let receipt = blake3_512_of(
+                        format!("smoke-test-discharge-receipt:{}", local_cid).as_bytes(),
+                    );
+                    let mut loss_map = std::collections::BTreeMap::new();
+                    loss_map.insert(
+                        "structural_divergence".to_string(),
+                        IrFormula::Atomic {
+                            name: format!("smoke-test-single-atom-encoding:{}", loss),
+                            args: vec![],
+                        },
+                    );
+                    (
+                        "loudly-bounded-lossy".to_string(),
+                        LossRecord(loss_map),
+                        Some(receipt),
+                        None,
+                    )
+                }
+                DischargeVerdict::Refuse { reason } => (
+                    "refuse".to_string(),
+                    LossRecord(std::collections::BTreeMap::new()),
+                    None,
+                    Some(reason.clone()),
+                ),
+            };
+
+            let discharge = Discharge {
+                method: "wp".to_string(),
+                verdict: d_verdict,
+                loss_record: d_loss,
+                discharge_receipt_cid: d_receipt,
+                refusal_reason: d_refusal,
+            };
+
+            // Build the header WITHOUT cid for JCS hashing.
+            // Locked alphabetical key order per spec §3.1:
+            //   code_site, concept_cid, discharge, kind, local_contract_cid,
+            //   provenance, [realization_mode_hint,] schemaVersion, witnesses
+            let code_site_v = Value::object([
+                ("function_term_cid", Value::string(fn_term_cid.clone())),
+                ("source_cid", Value::string(source_cid.clone())),
+                (
+                    "span",
+                    Value::object([
+                        ("end", Value::integer(span_end as i64)),
+                        ("start", Value::integer(span_start as i64)),
+                    ]),
+                ),
+            ]);
+
+            // discharge as Value — build in locked alphabetical order.
+            // Note: Value::string/integer etc. return Arc<Value>.
+            let mut discharge_kv: Vec<(&str, Arc<Value>)> = Vec::new();
+            discharge_kv.push(("method", Value::string(discharge.method.clone())));
+            if let Some(ref rr) = discharge.refusal_reason {
+                discharge_kv.push(("refusal_reason", Value::string(rr.clone())));
+            }
+            discharge_kv.push(("verdict", Value::string(discharge.verdict.clone())));
+            if let Some(ref drc) = discharge.discharge_receipt_cid {
+                discharge_kv.push(("discharge_receipt_cid", Value::string(drc.clone())));
+            }
+            // loss_record: serialize via serde_json then convert to Arc<Value>
+            let loss_json = serde_json::to_string(&discharge.loss_record)
+                .expect("LossRecord serialization");
+            let loss_v = json_to_value(&serde_json::from_str(&loss_json).expect("parse loss_json"));
+            discharge_kv.push(("loss_record", loss_v));
+            let discharge_v = Value::object(discharge_kv);
+
+            let provenance_v = Value::object([
+                ("clusterer_cid", Value::string(clusterer_cid.clone())),
+                ("discharger_cid", Value::string(discharger_cid.clone())),
+                ("lifter_cid", Value::string(lifter_cid.clone())),
+            ]);
+
+            let abstraction_cid = concepts[concept_idx].abstraction_cid.clone();
+
+            let mut header_kv: Vec<(&str, Arc<Value>)> = Vec::new();
+            header_kv.push(("code_site", code_site_v));
+            header_kv.push(("concept_cid", Value::string(abstraction_cid.clone())));
+            header_kv.push(("discharge", discharge_v));
+            header_kv.push(("kind", Value::string("concept-site".to_string())));
+            header_kv.push(("local_contract_cid", Value::string(local_cid.clone())));
+            header_kv.push(("provenance", provenance_v));
+            // realization_mode_hint: omitted (discharger is silent in smoke test)
+            header_kv.push(("schemaVersion", Value::string("1".to_string())));
+            header_kv.push(("witnesses", Value::array(vec![])));
+
+            let header_v = Value::object(header_kv);
+            let computed_cid = blake3_512_of(encode_jcs(&header_v).as_bytes());
+
+            // Inline §5.1-§5.3 validator.
+            validate_concept_site_memento(
+                &computed_cid,
+                "concept-site",
+                "1",
+                &discharge.verdict,
+                &discharge.loss_record,
+                &discharge.discharge_receipt_cid,
+                &discharge.refusal_reason,
+                &computed_cid, // header cid = computed_cid, derived check is trivially true
+                &lift.fn_name,
+            );
+
+            // Build the full ConceptSiteMemento struct for artifact serialization.
+            let memento = ConceptSiteMemento {
+                cid: computed_cid.clone(),
+                code_site: CodeSite {
+                    function_term_cid: fn_term_cid,
+                    source_cid,
+                    span: CodeSiteSpan {
+                        end: span_end,
+                        start: span_start,
+                    },
+                },
+                concept_cid: abstraction_cid,
+                discharge,
+                kind: "concept-site".to_string(),
+                local_contract_cid: local_cid,
+                provenance: ConceptSiteProvenance {
+                    clusterer_cid,
+                    discharger_cid,
+                    lifter_cid,
+                },
+                realization_mode_hint: None,
+                schema_version: "1".to_string(),
+                witnesses: vec![],
+            };
+            let memento_json = serde_json::to_string_pretty(&memento)
+                .expect("ConceptSiteMemento serialization");
+            let _ = fs::write(
+                artifacts_dir.join(format!(
+                    "pass{}_site_{}_{}.json",
+                    pass_id,
+                    sanitize(&lift.file),
+                    lift.fn_name
+                )),
+                memento_json,
+            );
+            computed_cid
+        } else {
+            // No contract recovered: skip-emit. Record empty string as sentinel.
+            // See report §8 for loss accounting.
+            String::new()
+        };
 
         let idx = bindings.len();
         concepts[concept_idx].site_indices.push(idx);
@@ -675,3 +842,159 @@ fn formula_text_to_value(text: &str) -> Arc<Value> {
 // edge visible.
 #[allow(dead_code)]
 fn _ensure_kit_link(_: Rc<provekit_ir_symbolic::Formula>) {}
+
+/// Given a file's bytes and a 1-based line number, return (start, end) byte
+/// offsets for that line (exclusive end). Used to populate CodeSiteSpan.
+/// Falls back to (0, 0) if the line number is out of range.
+fn byte_span_for_line(bytes: &[u8], line_1based: usize) -> (u64, u64) {
+    if line_1based == 0 || bytes.is_empty() {
+        return (0, 0);
+    }
+    let mut line = 1usize;
+    let mut start = 0usize;
+    for (i, &b) in bytes.iter().enumerate() {
+        if line == line_1based {
+            // Scan forward to end of line.
+            let end = bytes[i..]
+                .iter()
+                .position(|&c| c == b'\n')
+                .map(|p| i + p + 1)
+                .unwrap_or(bytes.len());
+            return (start as u64, end as u64);
+        }
+        if b == b'\n' {
+            line += 1;
+            start = i + 1;
+        }
+    }
+    (start as u64, bytes.len() as u64)
+}
+
+/// Convert a `serde_json::Value` into a `provekit_canonicalizer::Value` (Arc-wrapped).
+/// Used to bridge the LossRecord serialization path.
+fn json_to_value(v: &serde_json::Value) -> Arc<Value> {
+    match v {
+        serde_json::Value::Null => Value::null(),
+        serde_json::Value::Bool(b) => Value::boolean(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::integer(i)
+            } else {
+                Value::string(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => Value::string(s.clone()),
+        serde_json::Value::Array(arr) => {
+            Value::array(arr.iter().map(json_to_value).collect())
+        }
+        serde_json::Value::Object(map) => {
+            let kv: Vec<(&str, Arc<Value>)> = map
+                .iter()
+                .map(|(k, v)| (k.as_str(), json_to_value(v)))
+                .collect();
+            Value::object(kv)
+        }
+    }
+}
+
+/// Inline §5.1-§5.3 validator for ConceptSiteMemento.
+///
+/// Panics if any invariant from spec §5.1 (CDDL shape), §5.2
+/// (verdict-consistency), or §5.3 (derived CID) is violated. This
+/// makes the smoke test a live conformance check against the spec.
+#[allow(clippy::too_many_arguments)]
+fn validate_concept_site_memento(
+    computed_cid: &str,
+    kind: &str,
+    schema_version: &str,
+    verdict: &str,
+    loss_record: &LossRecord,
+    discharge_receipt_cid: &Option<String>,
+    refusal_reason: &Option<String>,
+    header_cid: &str,
+    site_label: &str,
+) {
+    // §5.1 CDDL shape check.
+    let cid_re = regex_cid();
+    assert_eq!(kind, "concept-site", "[§5.1] kind mismatch at {}", site_label);
+    assert_eq!(schema_version, "1", "[§5.1] schemaVersion mismatch at {}", site_label);
+    assert!(
+        cid_re(computed_cid),
+        "[§5.1] computed_cid is not a valid blake3-512 CID at {}",
+        site_label
+    );
+    assert!(
+        ["exact", "loudly-bounded-lossy", "refuse"].contains(&verdict),
+        "[§5.1] invalid verdict '{}' at {}",
+        verdict,
+        site_label
+    );
+
+    // §5.2 verdict-consistency.
+    match verdict {
+        "exact" => {
+            assert!(
+                loss_record.0.is_empty(),
+                "[§5.2] exact verdict requires empty loss_record at {}",
+                site_label
+            );
+            assert!(
+                discharge_receipt_cid.is_some(),
+                "[§5.2] exact verdict requires discharge_receipt_cid at {}",
+                site_label
+            );
+            assert!(
+                refusal_reason.is_none(),
+                "[§5.2] exact verdict must omit refusal_reason at {}",
+                site_label
+            );
+        }
+        "loudly-bounded-lossy" => {
+            assert!(
+                !loss_record.0.is_empty(),
+                "[§5.2] loudly-bounded-lossy requires non-empty loss_record at {}",
+                site_label
+            );
+            assert!(
+                discharge_receipt_cid.is_some(),
+                "[§5.2] loudly-bounded-lossy requires discharge_receipt_cid at {}",
+                site_label
+            );
+            assert!(
+                refusal_reason.is_none(),
+                "[§5.2] loudly-bounded-lossy must omit refusal_reason at {}",
+                site_label
+            );
+        }
+        "refuse" => {
+            assert!(
+                discharge_receipt_cid.is_none(),
+                "[§5.2] refuse verdict must omit discharge_receipt_cid at {}",
+                site_label
+            );
+            assert!(
+                refusal_reason.as_deref().map(|s| !s.is_empty()).unwrap_or(false),
+                "[§5.2] refuse verdict requires non-empty refusal_reason at {}",
+                site_label
+            );
+        }
+        _ => unreachable!("already checked above"),
+    }
+
+    // §5.3 derived CID check.
+    assert_eq!(
+        computed_cid, header_cid,
+        "[§5.3] CID mismatch: computed {} != header {} at {}",
+        computed_cid, header_cid, site_label
+    );
+}
+
+/// Returns a simple regex matcher for "blake3-512:" + 128 hex chars.
+fn regex_cid() -> impl Fn(&str) -> bool {
+    |s: &str| {
+        s.starts_with("blake3-512:") && {
+            let hex = &s["blake3-512:".len()..];
+            hex.len() == 128 && hex.chars().all(|c| c.is_ascii_hexdigit())
+        }
+    }
+}

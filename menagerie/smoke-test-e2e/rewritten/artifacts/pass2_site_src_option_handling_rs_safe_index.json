@@ -1,1 +1,33 @@
-{"conceptName":"UNNAMED-CONCEPT-2","conceptShapeCid":"blake3-512:f103ab16bf16849782e2406e1ffb45c3c28a90f2ef0555b1f0082c53661a3d9cbae08b36eee522dbcdae797c8fa98f4a5129f7fb56c2c762d844b1fc53b43ec1","contractCid":"blake3-512:e3a27191078d666aa6f158919e2b9e8c6402dc93f997587f6d387f2329fb698d1dcb6eb3fb285f8725f7b715b7e5f4ae5026e843790635ef81d9acd5c53fd8f9","contractOrigin":"annotation-lift","dischargeVerdict":"loudly-bounded-lossy(formula-string-transport (smoke-test single-atom encoding))","kind":"concept-site-stub-0","schemaVersion":"stub-0","siteFile":"src/option_handling.rs","siteFn":"safe_index","siteLine":44}
+{
+  "cid": "blake3-512:b72916aab4b4123534ac190d526a423569fdd9ff09eced808a2d45321cd42ad4a6e9f5e88298a46c9a82f199fbce0193e54cd48cb919d2016df372b71c4b84dd",
+  "code_site": {
+    "function_term_cid": "blake3-512:9de5f093cfe3f6e1e4bfc725df1f66d97660fcfb24e8e01dd252eedc95f49443d9a8a8af7ee8697ff79948d64ac2bdd64d5bf5e8035b547337baffe170e930db",
+    "source_cid": "blake3-512:15e75eaa23586d8ca5c9e4affc495f074a05757df38c6ca4621c4af4426b2870ac014925644abb9f465f2d078611f68e198734cadb2f8874d2a7a7c2d5f29833",
+    "span": {
+      "end": 1940,
+      "start": 1893
+    }
+  },
+  "concept_cid": "blake3-512:aec46d7155644137ccbfeccf4a578d0cb4399bc14a91367e6cfccec98df3686629320fbc938c2bbbb46e198a513d36e51037a034a4fa49b586d9a53c717002ae",
+  "discharge": {
+    "method": "wp",
+    "verdict": "loudly-bounded-lossy",
+    "discharge_receipt_cid": "blake3-512:6c66a7b4ecf68bad7d11ae8458ae92e55531e0c4dfec73b89f65b0714ce4563ba5d5430fe115fb1bf48df95b3d102d619cef5400310f9123a342592cabd92e2e",
+    "loss_record": {
+      "structural_divergence": {
+        "kind": "atomic",
+        "name": "smoke-test-single-atom-encoding:formula-string-transport (smoke-test single-atom encoding)",
+        "args": []
+      }
+    }
+  },
+  "kind": "concept-site",
+  "local_contract_cid": "blake3-512:9de5f093cfe3f6e1e4bfc725df1f66d97660fcfb24e8e01dd252eedc95f49443d9a8a8af7ee8697ff79948d64ac2bdd64d5bf5e8035b547337baffe170e930db",
+  "provenance": {
+    "clusterer_cid": "blake3-512:03a70aece9916e50982aa3b8d81dd5ade479ebd67034f5b2a0dcaee2d08448aeb846996b4b7c7452b9d3fa71131e6f89d68003b9d0dc0b5d888f0a7c6a3ce60f",
+    "discharger_cid": "blake3-512:9ec1028c460527f8bf0d99928b090a63ef985c94754f88d1d8365464b42e6ce1974ac753de63a8949a62f0f583ed77cb94cd42a0e2e22186c9c3ccbad1e894e4",
+    "lifter_cid": "blake3-512:ade6080ae818f7a8e16b8a30e5442e329a77fa8b52b5075557915dfd62acd6740ca4893db1c8ed300c632487e27ba45eed300c8339474f36fe545aad0687ff3f"
+  },
+  "schemaVersion": "1",
+  "witnesses": []
+}
