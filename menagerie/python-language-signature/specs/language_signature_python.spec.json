@@ -23,6 +23,8 @@
     "op_break.spec.json",
     "op_continue.spec.json",
     "op_raise.spec.json",
+    "op_throw.spec.json",
+    "op_new.spec.json",
     "op_call.spec.json",
     "op_attribute.spec.json",
     "op_subscript.spec.json",
@@ -58,6 +60,7 @@
     "eff_write.spec.json",
     "eff_io.spec.json",
     "eff_panic.spec.json",
+    "eff_alloc.spec.json",
     "eff_unresolved_call.spec.json",
     "eff_opaque_loop.spec.json"
   ],
@@ -66,6 +69,7 @@
     "effsig_write.spec.json",
     "effsig_io.spec.json",
     "effsig_panic.spec.json",
+    "effsig_alloc.spec.json",
     "effsig_unresolved_call.spec.json",
     "effsig_opaque_loop.spec.json"
   ],

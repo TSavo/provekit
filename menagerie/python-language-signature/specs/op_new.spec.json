@@ -1,0 +1,63 @@
+{
+  "kind": "algorithm",
+  "fn_name": "python:new",
+  "formals": [
+    "type_name",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "new",
+    "arity": [
+      "String",
+      "Value"
+    ],
+    "result": "Value",
+    "wp": "construct new instance of type_name with args",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "type_name"
+        },
+        {
+          "name": "args",
+          "shape": {
+            "kind": "set"
+          }
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Alloc"
+      }
+    ]
+  },
+  "locus": "menagerie/python-language-signature/README.md"
+}

@@ -63,7 +63,7 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `concept:addr` | morphism_c11_addr_of_to_addr, morphism_zig_addr_to_addr |
 | `concept:new` | morphism_csharp_new_to_new |
 | `concept:cast` | morphism_c11_cast_to_cast |
-| `concept:throw` | morphism_typescript_throw_to_throw, morphism_php_throw_to_throw, morphism_java_throw_to_throw |
+| `concept:throw` | morphism_python_throw_to_throw, morphism_typescript_throw_to_throw, morphism_php_throw_to_throw, morphism_java_throw_to_throw |
 | `concept:postinc` | morphism_c11_post_inc_to_postinc |
 | `concept:postdec` | morphism_c11_post_dec_to_postdec |
 | `concept:preinc` | morphism_c11_pre_inc_to_preinc |
@@ -220,7 +220,7 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `python` | `concept:mul` | `polymorphic-source-op` | `gap_python_mul_to_concept_mul.json` | partial-morphism, accept-permanent |
 | `python` | `concept:ne` | `missing-source-op` | `gap_python_ne_to_concept_ne.json` | accept-permanent |
 | `python` | `concept:neg` | `polymorphic-source-op` | `gap_python_neg_to_concept_neg.json` | partial-morphism, accept-permanent |
-| `python` | `concept:new` | `missing-source-op` | `gap_python_new_to_concept_new.json` | accept-permanent |
+| `python` | `concept:new` | `sort-mismatch` | `gap_python_new_to_concept_new.json` | add-representation-map, accept-permanent |
 | `python` | `concept:not` | `arity-shape-mismatch` | `gap_python_not_to_concept_not.json` | re-spec-target-op, accept-permanent |
 | `python` | `concept:postdec` | `missing-source-op` | `gap_python_postdec_to_concept_postdec.json` | accept-permanent |
 | `python` | `concept:postinc` | `missing-source-op` | `gap_python_postinc_to_concept_postinc.json` | accept-permanent |

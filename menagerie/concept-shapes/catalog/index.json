@@ -589,6 +589,12 @@
       "name": "morphism:java:mod:to:concept:mod",
       "path": "algorithms/morphism:java:mod:to:concept:mod.blake3-512:71afcdf68b5858c63ff59bb35f4f4c57650bf1ab1bb87f124e5a50f354f50677b139cfce60dba0a86a81974e6215d999a8316fda968b39a718faa18e372fcfb0.json"
     },
+    "blake3-512:724b3cc974ead7cb2421e9aa308ce2686fe7330ba65cb964f3c23d91eacf194d2d07a14e627112830261704d85398fd3f285f1e9891207f22e0348f2e44da7a1": {
+      "cid": "blake3-512:724b3cc974ead7cb2421e9aa308ce2686fe7330ba65cb964f3c23d91eacf194d2d07a14e627112830261704d85398fd3f285f1e9891207f22e0348f2e44da7a1",
+      "kind": "algorithm",
+      "name": "morphism:python:throw:to:concept:throw",
+      "path": "algorithms/morphism:python:throw:to:concept:throw.blake3-512:724b3cc974ead7cb2421e9aa308ce2686fe7330ba65cb964f3c23d91eacf194d2d07a14e627112830261704d85398fd3f285f1e9891207f22e0348f2e44da7a1.json"
+    },
     "blake3-512:7319f35e95e69589a0121d6314da4a53a89f77bff219cd2b4c701671784f68b2564660d1fc28de19492696b35fb40c8d6b0c891cbad9c3410a4f5497e5f782a7": {
       "cid": "blake3-512:7319f35e95e69589a0121d6314da4a53a89f77bff219cd2b4c701671784f68b2564660d1fc28de19492696b35fb40c8d6b0c891cbad9c3410a4f5497e5f782a7",
       "kind": "algorithm",

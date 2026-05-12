@@ -207,7 +207,7 @@ LANG_SUPPORTED = {
     "c11": PORTABLE_ALL | {"div", "do", "deref", "addr"},
     "csharp": PORTABLE_ALL | {"div", "do", "new", "throw", "ushr"},
     "go": (PORTABLE_ALL | {"div", "deref", "addr", "new"}) - {"postinc", "postdec", "preinc", "predec", "ite"},
-    "python": (PORTABLE_ALL | {"div", "throw"}) - {"div", "bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
+    "python": (PORTABLE_ALL | {"div", "throw", "new"}) - {"div", "bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
     "typescript": (PORTABLE_ALL | {"new", "throw", "ushr"}) - {"div", "deref", "addr"},
     "zig": PORTABLE_ALL | {"div", "do", "deref", "addr", "new", "throw"},
     "ruby": (PORTABLE_ALL | {"throw"}) - {"bitnot", "shl", "shr", "postinc", "postdec", "preinc", "predec", "cast"},
