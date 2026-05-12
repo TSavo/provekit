@@ -228,7 +228,7 @@ They are operation-contract shape mementos, not language-prefixed operations. Pe
 | `concept:addr` | `blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411` | morphism_c11_addr_of_to_addr, morphism_zig_addr_to_addr |
 | `concept:new` | `blake3-512:37eca90a0c83eaceaa3ffcf8fe7b00ce539a75692f973cd76931ac10443d24053470830c63844551399a2953d3294744b59d083738d5d30e7591071edef384a2` | morphism_csharp_new_to_new |
 | `concept:cast` | `blake3-512:07d28a993c8fcb4bf3e07fe25e475343c2b97ce78f2613f409cb975fe73fa1b212349cd9e27702b26fe59072ae3e579637700547f83f21e51a48a9926bc7780c` | morphism_c11_cast_to_cast |
-| `concept:throw` | `blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede` | morphism_php_throw_to_throw |
+| `concept:throw` | `blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede` | morphism_typescript_throw_to_throw, morphism_php_throw_to_throw, morphism_java_throw_to_throw |
 | `concept:postinc` | `blake3-512:f3ec855449cc03006d7475b89cf8258569a000c50f56b040e5fd42f866dc5c205e084b5fb4a6d443755a67b3959244ea0653e73c0854cd2835020524aa72f523` | morphism_c11_post_inc_to_postinc |
 | `concept:postdec` | `blake3-512:d952d67b8983d8cdcf6511e520d0df8c178f5d486f19f2fa55ffc026c8a17ba942584470f52b3bf052700d31cdc66242f04d9933c834c9b39219c294f0f5e908` | morphism_c11_post_dec_to_postdec |
 | `concept:preinc` | `blake3-512:b2c50f6374a69b3cce1dc0faf973dc866c0a46864b6c0a2b7f94198bea1a704e817d0f562176d0f95b41d917a3e3d5ac49991fa7205c4eeb1a785857323fc1a8` | morphism_c11_pre_inc_to_preinc |
