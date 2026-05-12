@@ -6,7 +6,7 @@
 #include <string.h>
 
 const char *pk_c11_signature_cid(void) {
-    return "blake3-512:13e0215bde01ee47e8dbaed5ad3cc48eb4c6dd7e3ca0e25ef50e0b6cce42338850c7703b08a4836b851beea03e66e47ed05ecd63f599d4eec349b66970663c69";
+    return "blake3-512:b5ad11779fe86ac7600fd3c4efad91c668505c92e0838d66c581fe52de08057e29b7a1e21885cbb1da695019066d3b0939ccd64ba5ea3de4dd40559d6f3fc801";
 }
 
 const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind kind) {
@@ -128,7 +128,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)9, /* CXCursor_VarDecl */
             "CXCursor_VarDecl",
             "c11:decl",
-            "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161",
+            "blake3-512:3ff181ea4b9fa837e54f3f5248a2527b10d7410418a09e61e61a015cbb023d5bbacc1ecf59653b3437a25b1a12313fbc8abc573f290ea2a891bbc748745b5bb1",
             2,
             "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\"}, {\"name\": \"initializer\"}]}",
             "declared name, initializer or unit",
@@ -1598,7 +1598,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)202, /* CXCursor_CompoundStmt */
             "CXCursor_CompoundStmt",
             "c11:seq",
-            "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+            "blake3-512:6c476a5d6b7c4eaf832ec897b1b518364b049578764a37183a109a2ae86942e3699cc27e9ef8d6a059b095a8807a0054a7492ecb57c9c9895562a7b659f5dacb",
             2,
             "{\"arity\": 2, \"kind\": \"positional\"}",
             "fold children left with seq; empty body is skip",
@@ -1640,7 +1640,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)205, /* CXCursor_IfStmt */
             "CXCursor_IfStmt",
             "c11:if",
-            "blake3-512:29004b6aa5186996e03e7a7d0615aeefb1d147b1b2ce29aa476052c294578271c0f4b09d32c19cf5f458ced8cf0839c0f229d0bd7b131bd5c5fbbf44d8e25f35",
+            "blake3-512:ba0d198096aa099df8437c015e7dc52ccf7e97e17707ec6c6e69ae38fc85057b1b7a71e54897bdb1ac0da80a56707e4c00f46b39570644334526ec009f225636",
             3,
             "{\"kind\": \"named\", \"slots\": [{\"name\": \"cond\"}, {\"name\": \"then_branch\"}, {\"name\": \"else_branch\"}]}",
             "condition, then branch, else branch or skip",
@@ -1668,7 +1668,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)207, /* CXCursor_WhileStmt */
             "CXCursor_WhileStmt",
             "c11:while",
-            "blake3-512:f2cc21f1fe8b6836f87b0ddab3b27737e6ca7392040e4c9d6e4afadad66d74cfb745863c9478f9b90369eaa7a3a56456617b9688eefefc471809cffb74f435fc",
+            "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255",
             2,
             "{\"kind\": \"named\", \"slots\": [{\"name\": \"cond\"}, {\"name\": \"body\"}]}",
             "condition, body",
@@ -1990,7 +1990,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)230, /* CXCursor_NullStmt */
             "CXCursor_NullStmt",
             "c11:skip",
-            "blake3-512:27e6a7cdb6abe2524c913852a5cb224f7ba132b08cd03de355516c90addb8ec49f047464cef79a7f0eb4a831850a9cb4f94efca5bed88b8dc0f582a205d8a876",
+            "blake3-512:0fa998caf17ceaa7553e76248eb663e4146e17e80e005c37293f4244c163372ec7faf6eaebc9c21a9aa380b1b3e311cd2f5f28111c1c96ad12c154e2da00530e",
             1,
             "{\"kind\": \"named\", \"slots\": [{\"name\": \"unit\"}]}",
             "unit",
@@ -2004,7 +2004,7 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
             (enum CXCursorKind)231, /* CXCursor_DeclStmt */
             "CXCursor_DeclStmt",
             "c11:decl",
-            "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161",
+            "blake3-512:3ff181ea4b9fa837e54f3f5248a2527b10d7410418a09e61e61a015cbb023d5bbacc1ecf59653b3437a25b1a12313fbc8abc573f290ea2a891bbc748745b5bb1",
             2,
             "{\"kind\": \"named\", \"slots\": [{\"name\": \"name\"}, {\"name\": \"initializer\"}]}",
             "fold variable declarations as decl terms",
@@ -4076,10 +4076,10 @@ const pk_c11_cursor_dispatch *pk_c11_cursor_dispatch_lookup(enum CXCursorKind ki
 }
 
 static const pk_c11_op_dispatch PK_C11_OPS[] = {
-    {"c11:skip", "blake3-512:27e6a7cdb6abe2524c913852a5cb224f7ba132b08cd03de355516c90addb8ec49f047464cef79a7f0eb4a831850a9cb4f94efca5bed88b8dc0f582a205d8a876", 1},
-    {"c11:seq", "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333", 1},
-    {"c11:if", "blake3-512:29004b6aa5186996e03e7a7d0615aeefb1d147b1b2ce29aa476052c294578271c0f4b09d32c19cf5f458ced8cf0839c0f229d0bd7b131bd5c5fbbf44d8e25f35", 1},
-    {"c11:while", "blake3-512:f2cc21f1fe8b6836f87b0ddab3b27737e6ca7392040e4c9d6e4afadad66d74cfb745863c9478f9b90369eaa7a3a56456617b9688eefefc471809cffb74f435fc", 1},
+    {"c11:skip", "blake3-512:0fa998caf17ceaa7553e76248eb663e4146e17e80e005c37293f4244c163372ec7faf6eaebc9c21a9aa380b1b3e311cd2f5f28111c1c96ad12c154e2da00530e", 1},
+    {"c11:seq", "blake3-512:6c476a5d6b7c4eaf832ec897b1b518364b049578764a37183a109a2ae86942e3699cc27e9ef8d6a059b095a8807a0054a7492ecb57c9c9895562a7b659f5dacb", 1},
+    {"c11:if", "blake3-512:ba0d198096aa099df8437c015e7dc52ccf7e97e17707ec6c6e69ae38fc85057b1b7a71e54897bdb1ac0da80a56707e4c00f46b39570644334526ec009f225636", 1},
+    {"c11:while", "blake3-512:3e6038515919ed0df72d16f2bec0212f1a3fd0d8883015c6af96dbf4def8dde2c5693c8a2c72606c0b6629f5539fd3008fd3231889dd186d3e07bc3444926255", 1},
     {"c11:for", "blake3-512:ef9fff35478be5c8ccf81dbed86e9197f12f3a9e759483cec288123bc0435a20be1319b12ab5ccde389abf28469e166abb74ebb42bc886b6a462de416931f36d", 1},
     {"c11:switch", "blake3-512:b0bfd53ebf3991ca52ba1789d025b6fe72879f0aecc86a2b9f3c90c9c182217c30a958ead204fb0860392fd2d6d022811adeda80683aedf7bcb786d5ea127392", 1},
     {"c11:call", "blake3-512:3e565a23f6743a974f3a44343ce03bd134f94b6b37a602725fb8382a9d4f75031bc227a8521b0e7932f293a39c9d1d20ebfafa0c204825bacff9d9ca03144698", 1},
@@ -4099,9 +4099,9 @@ static const pk_c11_op_dispatch PK_C11_OPS[] = {
     {"c11:not", "blake3-512:ae19b703305c08d3983a741a8e7484f7a96af62919dbdb17282aa89a0aef22c6b248537c783c912f0cbfef1d813bf19f58a02e67c861dea32120c0c3fd7fb5a5", 1},
     {"c11:assign", "blake3-512:b1da209232583dfd8d69b1f169700f996d7bdf712841c9d74e0136df0527ac2f3eb0c28f98a1b58505877b7a732d9a2376a8502a594ced342b1e10d3673409e0", 1},
     {"c11:neg", "blake3-512:3d2a3a00ff900c93cb4453efb8d2bf38424a6b531c2fdd72bd9736fa870c603b0462387438df623bc396140bc9cc0c4f572dcfc9327ede274304d3c5542b5259", 1},
-    {"c11:source-unit", "blake3-512:7826723d55b4e7951dd38bbf6c4b3cb3697f7656d13ff81e535d50ccc18f7e59d9ebce5fa24cf8969d0a87434101f12c2bdbe821a9dbb0166f4a1364dc22fa81", 1},
+    {"c11:source-unit", "blake3-512:be6d948884eb22631fa2d760e04c0ed9170c60d76d3c85dd7fc0e4a67f42c690afda90983cb132ed1aa8e0e399ac22a6bd8c112bc25834b4133879b70088ec2f", 1},
     {"c11:opaque", "blake3-512:5f9b599f00600df72f733dc7ad35aa78fbced876d5cc8264a099a549a3c03caed97558c06c38ccc84f6f78d1d392687616f6f6241d83115b77154de9f24ca499", 1},
-    {"c11:decl", "blake3-512:c5bb5a34d98ac0f9f2d4a8cbf2de8229b0dd2f02662879d8141015aa7ee0c6fde41fa839ca72cab720669764343f322a8754d0f47e37ab31f826dfbb827fd161", 1},
+    {"c11:decl", "blake3-512:3ff181ea4b9fa837e54f3f5248a2527b10d7410418a09e61e61a015cbb023d5bbacc1ecf59653b3437a25b1a12313fbc8abc573f290ea2a891bbc748745b5bb1", 1},
     {"c11:case", "blake3-512:979de6f162350277e9721fe63d7465ccdd5927bf1e2ccfc3e481ec28b02d24e1f39cfd5897c33bbc4d2156243a589ef791cf6f8b72d556739c14c8bb2bbaa2dd", 1},
     {"c11:default", "blake3-512:3285e01084c79f734c5fed24bfe38f52627dc052482e7de68df3f8882662b2d329efe7b03e27207c5a37982f0d1a005a48916195be7afaaae944859c47efb9cd", 1},
     {"c11:label", "blake3-512:c81cbb7ba8308cd3f709f642387e9c41997c44c548afe941b65f7d167d65a116102b23f73d7150ed27f3942e3aaa66b0cf5b7d5b513a6ae4a02b03b8f2eee6a2", 1},
