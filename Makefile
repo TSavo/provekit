@@ -701,7 +701,7 @@ build-zig:
 # NOTE: test-swift is intentionally excluded from test-all: it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python test-java
+test-all: test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java
 	@echo ""
 	@echo "==== test-all: PASS ===="
 

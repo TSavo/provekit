@@ -275,6 +275,7 @@ final class PhpSourceCompiler
 
     private function isUnit(array $term): bool
     {
-        return ($term['kind'] ?? null) === 'const' && !array_key_exists('value', $term) || (($term['kind'] ?? null) === 'const' && ($term['value'] ?? null) === null);
+        return ($term['kind'] ?? null) === 'const'
+            && (!array_key_exists('value', $term) || ($term['value'] ?? null) === null);
     }
 }
