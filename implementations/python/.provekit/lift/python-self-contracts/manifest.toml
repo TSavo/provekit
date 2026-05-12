@@ -1,6 +1,7 @@
 name = "python-self-contracts"
 version = "1.0.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = ["python3", "bin/mint-python-self-contracts"]
 working_dir = "."
 

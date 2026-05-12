@@ -4,7 +4,7 @@
 # mint-ruby-self-contracts: RPC entry point for the ruby-self-contracts
 # lift surface, plus direct CLI invocation.
 #
-# Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on stdio
+# Speaks the lift-plugin protocol (pep/1.7.0) over NDJSON on stdio
 # when invoked with --rpc. Otherwise mints once into the given output
 # directory (or a tmpdir) for human inspection.
 #

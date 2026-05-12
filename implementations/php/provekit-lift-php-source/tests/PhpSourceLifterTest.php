@@ -196,7 +196,7 @@ function test_initialize_declares_php_source_draft(): void
     $result = initialize_result();
 
     assert_same('0.1.0-draft', $result['version'], 'initialize version');
-    assert_same('provekit-lift/1', $result['protocol_version'], 'initialize protocol version');
+    assert_same('pep/1.7.0', $result['protocol_version'], 'initialize protocol version');
     assert_same('php-source', $result['dialect'], 'initialize dialect');
     assert_same(['php-source'], $result['capabilities']['authoring_surfaces'], 'initialize surfaces');
     assert_same(false, $result['capabilities']['emits_signed_mementos'], 'initialize does not sign');

@@ -117,7 +117,7 @@ public static class Program
                     {
                         ["name"] = "csharp-self-contracts",
                         ["version"] = "1.0.0",
-                        ["protocol_version"] = "provekit-lift/1",
+                        ["protocol_version"] = "pep/1.7.0",
                         ["capabilities"] = new JsonObject
                         {
                             ["authoring_surfaces"] = new JsonArray { "csharp" },

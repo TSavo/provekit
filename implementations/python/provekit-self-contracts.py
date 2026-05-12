@@ -463,7 +463,7 @@ def run_rpc_mode(stdin=None, stdout=None) -> int:
                 "result": {
                     "name": "python-self-contracts",
                     "version": "1.0.0",
-                    "protocol_version": "provekit-lift/1",
+                    "protocol_version": "pep/1.7.0",
                     "capabilities": {
                         "authoring_surfaces": ["python-self-contracts"],
                         "ir_version": "v1.1.0",

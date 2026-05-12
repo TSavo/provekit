@@ -48,7 +48,7 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 One extension-surface re-bake; no core verifier, ProofIR grammar, canonicalization, proof-file format, or cross-language fixture semantic obligation changed. v1.6.2 mementos, fixtures, `.proof` bundles, and kit conformance obligations remain valid forever against the bytes they were minted for.
 
 - **`lift-plugin-protocol`** formalizes `options.layer = "identify-only"` and the `package-inspection-document` result.
-- `provekit package inspect` is specified as a client command over `provekit-lift/1`: it dispatches to the configured lifter and requires a `package-inspection-document`.
+- `provekit package inspect` is specified as a client command over `pep/1.7.0`: it dispatches to the configured lifter and requires a `package-inspection-document`.
 - Package inspection now has named rails for package artifact bytes, CI input closure, release contract sets, conventional receipts, admission hints, and shipped `.proof` files.
 - The PEP transition is recorded under [`../../protocol/evolution/v1.6.3/`](../../protocol/evolution/v1.6.3/), with a `ProtocolEvolutionBodyClaim` and TDP-shaped witness.
 

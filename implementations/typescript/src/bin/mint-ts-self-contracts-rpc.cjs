@@ -4,7 +4,7 @@
 // mint-ts-self-contracts-rpc: RPC entry point for the typescript-self-contracts
 // lift surface.
 //
-// Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on stdio.
+// Speaks the lift-plugin protocol (pep/1.7.0) over NDJSON on stdio.
 // The Rust CLI spawns this with `--rpc` and exchanges:
 //   -> initialize
 //   <- {name, version, capabilities}
@@ -67,7 +67,7 @@ function handleLine(line) {
       result: {
         name: "typescript-self-contracts",
         version: "1.0.0",
-        protocol_version: "provekit-lift/1",
+        protocol_version: "pep/1.7.0",
         capabilities: {
           authoring_surfaces: ["typescript-self-contracts"],
           ir_version: "v1.1.0",

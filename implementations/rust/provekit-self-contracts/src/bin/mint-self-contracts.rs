@@ -80,7 +80,7 @@ fn run_rpc_mode() -> ExitCode {
                 "result": {
                     "name": "rust-self-contracts",
                     "version": env!("CARGO_PKG_VERSION"),
-                    "protocol_version": "provekit-lift/1",
+                    "protocol_version": "pep/1.7.0",
                     "capabilities": {
                         "authoring_surfaces": ["rust-self-contracts"],
                         "ir_version": "v1.1.0",

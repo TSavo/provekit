@@ -70,7 +70,7 @@ fn handle_initialize(id: Value) -> Value {
         "result": {
             "name": "provekit-lift-asm-x86-64",
             "version": "0.1.0",
-            "protocol_version": "provekit-lift/1",
+            "protocol_version": "pep/1.7.0",
             "capabilities": {
                 "authoring_surfaces": [provekit_lift_asm_x86_64::SURFACE],
                 "ir_version": "v1.1.0",

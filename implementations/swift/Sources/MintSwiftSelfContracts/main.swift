@@ -7,7 +7,7 @@
 //   1. Default (no `--rpc` arg): print the canonical contractSetCid for the
 //      11-contract slab to stdout. Used by humans and the make targets.
 //
-//   2. `--rpc`: speak the lift-plugin protocol (provekit-lift/1) over NDJSON
+//   2. `--rpc`: speak the lift-plugin protocol (pep/1.7.0) over NDJSON
 //      on stdio. The Rust CLI dispatcher (provekit mint --kit=swift) spawns
 //      this binary with `--rpc` and exchanges initialize/lift/shutdown.
 //      Wire shape mirrors PR #220's typescript-self-contracts RPC server

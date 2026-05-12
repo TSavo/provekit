@@ -853,7 +853,7 @@ if (in_array('--rpc', $argv)) {
                     'result' => [
                         'name' => 'provekit-lift-php',
                         'version' => '1.0.0',
-                        'protocol_version' => 'provekit-lift/1',
+                        'protocol_version' => 'pep/1.7.0',
                         'capabilities' => [
                             'authoring_surfaces' => ['php', 'phpunit', 'php-docblock'],
                             'ir_version' => 'v1.1.0',

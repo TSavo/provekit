@@ -51,7 +51,7 @@ function dispatch(request: JsonRpcRequest): Record<string, unknown> | null {
       return success(request.id, {
         name: "provekit-lift-typescript-source",
         version: VERSION,
-        protocol_version: "provekit-lift/1",
+        protocol_version: "pep/1.7.0",
         capabilities: {
           authoring_surfaces: [DIALECT],
           ir_version: "v1.1.0",

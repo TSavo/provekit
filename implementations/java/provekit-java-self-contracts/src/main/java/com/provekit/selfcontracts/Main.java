@@ -16,7 +16,7 @@
 //                   distinct dirs.
 //
 //   * --rpc:        java -jar provekit-java-self-contracts.jar --rpc
-//                   Speaks the lift-plugin protocol (provekit-lift/1)
+//                   Speaks the lift-plugin protocol (pep/1.7.0)
 //                   over NDJSON on stdio. The Rust CLI dispatcher uses
 //                   this mode; spec is
 //                   protocol/specs/2026-04-30-lift-plugin-protocol.md.

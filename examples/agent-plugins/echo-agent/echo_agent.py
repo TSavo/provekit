@@ -19,7 +19,7 @@ import sys
 
 NAME = "echo-agent"
 VERSION = "0.1.0"
-PROTOCOL_VERSION = "provekit-agent/1"
+PROTOCOL_VERSION = "pep/1.7.0"
 
 # Canonical IR-JSON for `out >= 0`, used as the safe fallback contract.
 NONNEG_POST = (

@@ -242,14 +242,14 @@ func InvariantsLiftPluginProtocolContracts() {
 	// -- C1: initialize protocol_version match. ------------------------
 	//
 	// go-kit's `--rpc` initialize handler emits
-	//   capabilities.protocol_version == "provekit-lift/1"
+	//   capabilities.protocol_version == "pep/1.7.0"
 	// matching the request, OR responds with PROTOCOL_VERSION_MISMATCH
 	// (the spec-named error).
 	ir.Contract("go_lift_plugin_initialize_protocol_version_match",
 		ir.ContractArgs{
 			Pre: ir.Eq(
 				ctor1("go_request_protocol_version", ir.StrConst("req")),
-				ir.StrConst("provekit-lift/1"),
+				ir.StrConst("pep/1.7.0"),
 			),
 			Post: ir.Eq(
 				ctor1("go_response_confirms_protocol_or_errors_mismatch", ir.StrConst("req")),

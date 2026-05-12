@@ -16,7 +16,7 @@
         contract slabs, mints each contract as a signed memento via
         provekit-claim-envelope, bundles them into a deterministic .proof
         envelope, and exposes the result over the lift-plugin protocol
-        (provekit-lift/1) on stdio. Mirrors the rust / csharp / cpp / go
+        (pep/1.7.0) on stdio. Mirrors the rust / csharp / cpp / go
         peer orchestrators.
     </description>
 

@@ -1,6 +1,7 @@
 name = "provekit-lift-java-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = ["java", "-jar", "provekit-lift-java-source/target/provekit-lift-java-source.jar", "--rpc"]
 working_dir = "."
 

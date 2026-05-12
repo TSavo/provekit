@@ -173,7 +173,7 @@ final class SwiftSourceLifterTests: XCTestCase {
         let result = SwiftSourceRPC.initializeResult()
 
         XCTAssertEqual(result["version"] as? String, "0.1.0-draft")
-        XCTAssertEqual(result["protocol_version"] as? String, "provekit-lift/1")
+        XCTAssertEqual(result["protocol_version"] as? String, "pep/1.7.0")
         XCTAssertEqual(result["dialect"] as? String, "swift-source")
         let capabilities = result["capabilities"] as? [String: Any]
         XCTAssertEqual(capabilities?["authoring_surfaces"] as? [String], ["swift-source"])

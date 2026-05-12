@@ -144,7 +144,7 @@ impl LiftPluginKit {
             "method": "initialize",
             "params": {
                 "client": {"name": "libprovekit", "version": env!("CARGO_PKG_VERSION")},
-                "protocol_version": "provekit-lift/1",
+                "protocol_version": "pep/1.7.0",
                 "workspace_root": lift_params.get("workspace_root").cloned().unwrap_or_else(|| json!(".")),
                 "config_path": lift_params.get("config_path").cloned().unwrap_or_else(|| json!(".provekit/config.toml"))
             }

@@ -166,7 +166,7 @@ def test_rpc_initialize_declares_python_source_draft() -> None:
     result = initialize_result()
 
     assert result["version"] == "0.1.0-draft"
-    assert result["protocol_version"] == "provekit-lift/1"
+    assert result["protocol_version"] == "pep/1.7.0"
     assert result["dialect"] == "python-source"
     assert result["capabilities"]["authoring_surfaces"] == ["python-source"]
     assert result["capabilities"]["emits_signed_mementos"] is False

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// lift-plugin protocol RPC handler. Speaks provekit-lift/1 over NDJSON
+// lift-plugin protocol RPC handler. Speaks pep/1.7.0 over NDJSON
 // on stdio. Persistent daemon: stays up across multiple lift calls,
 // only exits on `shutdown`. Mirrors the daemon-lifecycle pattern
 // established by the typescript-self-contracts shim (PR #220) and the
@@ -99,7 +99,7 @@ public final class Rpc {
           .append(",\"result\":{")
           .append("\"name\":\"java-self-contracts\",")
           .append("\"version\":\"1.0.0\",")
-          .append("\"protocol_version\":\"provekit-lift/1\",")
+          .append("\"protocol_version\":\"pep/1.7.0\",")
           .append("\"capabilities\":{")
           .append("\"authoring_surfaces\":[\"java-self-contracts\"],")
           .append("\"ir_version\":\"v1.1.0\",")

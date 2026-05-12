@@ -242,7 +242,7 @@ fn capture_rpc(
     // 1. initialize
     let init_params = json!({
         "client": {"name": "provekit-cli", "version": env!("CARGO_PKG_VERSION")},
-        "protocol_version": "provekit-lift/1",
+        "protocol_version": "pep/1.7.0",
         "workspace_root": project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf()),
         "config_path": ".provekit/config.toml"
     });
@@ -860,7 +860,7 @@ mod tests {
             "result": {
                 "name": format!("{surface}-lifter"),
                 "version": "1.0.0",
-                "protocol_version": "provekit-lift/1",
+                "protocol_version": "pep/1.7.0",
                 "capabilities": {
                     "authoring_surfaces": [surface],
                     "ir_version": "v1.1.0",
@@ -887,7 +887,7 @@ mod tests {
         CapturedRpc {
             init_params: json!({
                 "client": {"name": "provekit-cli", "version": "0.1.0"},
-                "protocol_version": "provekit-lift/1",
+                "protocol_version": "pep/1.7.0",
                 "workspace_root": "/tmp",
                 "config_path": ".provekit/config.toml"
             }),
@@ -951,7 +951,7 @@ mod tests {
             "result": {
                 "name": "bad-plugin",
                 "version": "0.0.1",
-                "protocol_version": "provekit-lift/1",
+                "protocol_version": "pep/1.7.0",
                 "capabilities": {
                     "authoring_surfaces": [],
                     "ir_version": "v1.0.0",

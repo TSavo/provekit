@@ -9,7 +9,7 @@ function initialize_result(): array
     return [
         'name' => 'provekit-lift-php-source',
         'version' => VERSION,
-        'protocol_version' => 'provekit-lift/1',
+        'protocol_version' => 'pep/1.7.0',
         'dialect' => DIALECT,
         'capabilities' => [
             'authoring_surfaces' => [DIALECT],

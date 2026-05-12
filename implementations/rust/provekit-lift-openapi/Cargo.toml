@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt lift adapter for OpenAPI/Swagger and Protobuf specs. Reads spec files, emits IR contracts via the provekit-lift/1 RPC plugin protocol."
+description = "ProvekIt lift adapter for OpenAPI/Swagger and Protobuf specs. Reads spec files, emits IR contracts via the pep/1.7.0 RPC plugin protocol."
 
 [[bin]]
 name = "provekit-lift-openapi"

@@ -166,7 +166,7 @@ public static class CrossKitBridges
         Contract("csharp_lift_plugin_initialize_protocol_version_match",
             pre: Eq(
                 Ctor("csharp_request_protocol_version", StrConst("req")),
-                StrConst("provekit-lift/1")),
+                StrConst("pep/1.7.0")),
             post: Eq(
                 Ctor("csharp_response_confirms_protocol_or_errors_mismatch", StrConst("req")),
                 Ctor("true_const", StrConst(""))));

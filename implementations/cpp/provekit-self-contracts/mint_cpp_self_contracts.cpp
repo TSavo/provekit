@@ -314,7 +314,7 @@ static void run_rpc_mode() {
             out << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw << ",\"result\":{"
                 << "\"name\":\"cpp-self-contracts\","
                 << "\"version\":\"1.0.0\","
-                << "\"protocol_version\":\"provekit-lift/1\","
+                << "\"protocol_version\":\"pep/1.7.0\","
                 << "\"capabilities\":{"
                 << "\"authoring_surfaces\":[\"cpp-self-contracts\"],"
                 << "\"ir_version\":\"v1.1.0\","

@@ -1142,7 +1142,7 @@ static void handle_initialize(const char *id) {
     send_response(id,
         "{\"capabilities\":{\"authoring_surfaces\":[\"c-kernel-doc\"],"
         "\"emits_signed_mementos\":false,\"ir_version\":\"v1.1.0\"},"
-        "\"name\":\"c-kernel-doc\",\"protocol_version\":\"provekit-lift/1\","
+        "\"name\":\"c-kernel-doc\",\"protocol_version\":\"pep/1.7.0\","
         "\"version\":\"0.1.0\"}");
 }
 

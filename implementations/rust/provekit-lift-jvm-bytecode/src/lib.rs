@@ -255,7 +255,7 @@ fn initialize(id: Json) -> Json {
         "result": {
             "name": "provekit-lift-jvm-bytecode",
             "version": "0.1.0",
-            "protocol_version": "provekit-lift/1",
+            "protocol_version": "pep/1.7.0",
             "capabilities": {
                 "authoring_surfaces": [SURFACE, DIALECT],
                 "ir_version": "v1.1.0",

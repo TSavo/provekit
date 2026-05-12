@@ -50,7 +50,7 @@ public final class RpcServer {
             "result", Jcs.object(
                 "name", Jcs.string("provekit-lift-java-source"),
                 "version", Jcs.string(Version),
-                "protocol_version", Jcs.string("provekit-lift/1"),
+                "protocol_version", Jcs.string("pep/1.7.0"),
                 "capabilities", Jcs.object(
                     "authoring_surfaces", Jcs.array(Jcs.string(Dialect)),
                     "dialect", Jcs.string(Dialect),

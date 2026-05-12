@@ -62,7 +62,7 @@ fn run_rpc() {
                 json!({
                     "name": "supply-chain-npm-lifter",
                     "version": "0.1.0",
-                    "protocol_version": "provekit-lift/1",
+                    "protocol_version": "pep/1.7.0",
                     "capabilities": {
                         "authoring_surfaces": ["supply-chain-npm"],
                         "ir_version": "v1.1.0",

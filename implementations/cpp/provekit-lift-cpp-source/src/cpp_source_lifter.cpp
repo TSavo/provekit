@@ -1319,7 +1319,7 @@ ValuePtr initialize_result() {
         {"capabilities", obj({{"authoring_surfaces", arr({strv(DIALECT)})}, {"emits_signed_mementos", boolv(false)}, {"ir_version", strv(IR_VERSION)}})},
         {"dialect", strv(DIALECT)},
         {"name", strv("provekit-lift-cpp-source")},
-        {"protocol_version", strv("provekit-lift/1")},
+        {"protocol_version", strv("pep/1.7.0")},
         {"version", strv(VERSION)},
     });
 }

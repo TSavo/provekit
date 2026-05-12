@@ -1,6 +1,7 @@
 name = "go-self-contracts"
 version = "1.0.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = ["go", "run", "./cmd/mint-go-self-contracts"]
 working_dir = "provekit-self-contracts"
 

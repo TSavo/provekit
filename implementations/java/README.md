@@ -115,7 +115,7 @@ The core discovers bindings via `ServiceLoader`. No config needed.
 ```toml
 name = "java"
 version = "1.0.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
 command = ["java", "-cp", "provekit-lift-java-core-0.1.0-shaded.jar:provekit-lift-java-bean-validation-0.1.0.jar:provekit-lift-java-junit-0.1.0.jar:provekit-lift-java-spring-web-0.1.0.jar", "com.provekit.lift.Main", "--rpc"]
 
 [capabilities]

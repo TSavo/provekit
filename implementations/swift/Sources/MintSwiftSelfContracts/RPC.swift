@@ -2,7 +2,7 @@
 //
 // RPC.swift: `--rpc` mode for mint-swift-self-contracts.
 //
-// Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on stdio.
+// Speaks the lift-plugin protocol (pep/1.7.0) over NDJSON on stdio.
 // Mirrors implementations/typescript/src/bin/mint-ts-self-contracts-rpc.cjs
 // (PR #220 daemon-lifecycle pattern: persistent stdin loop, explicit
 // `shutdown` response, EOF-on-stdin = graceful exit).
@@ -70,13 +70,13 @@ func runRPC() {
 
 private func handleInitialize(id: Any?) {
     // Per spec lines 64-86 + manifest mirror lines 44-48:
-    //   protocol_version: "provekit-lift/1"
+    //   protocol_version: "pep/1.7.0"
     //   capabilities.authoring_surfaces: non-empty array
     //   capabilities.ir_version: starts with "v"
     let result: [String: Any] = [
         "name": "swift-self-contracts",
         "version": "1.0.0",
-        "protocol_version": "provekit-lift/1",
+        "protocol_version": "pep/1.7.0",
         "capabilities": [
             "authoring_surfaces": ["swift-self-contracts"],
             "ir_version": "v1.1.0",

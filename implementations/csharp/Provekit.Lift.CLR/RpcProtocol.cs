@@ -47,7 +47,7 @@ public static class RpcProtocol
             {
                 ["name"] = "provekit-lift-clr-bytecode",
                 ["version"] = "0.1.0",
-                ["protocol_version"] = "provekit-lift/1",
+                ["protocol_version"] = "pep/1.7.0",
                 ["capabilities"] = new JsonObject
                 {
                     ["authoring_surfaces"] = new JsonArray { "clr-bytecode", "cil" },
