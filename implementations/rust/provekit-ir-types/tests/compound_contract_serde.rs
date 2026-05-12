@@ -55,7 +55,9 @@ const SRC_CID: &str = "blake3-512:src2222222222222222222222222222222222222222222
 const LIFTER_CID: &str = "blake3-512:lift33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333";
 const COMPOUND_CID: &str = "blake3-512:comp44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444";
 // Reserved sentinel for the auto-promote backward-compat path; spec §4.4.
-const AUTO_PROMOTE_LIFTER_CID: &str = "blake3-512:autoPromote00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+// 128 hex 0s -- provably not a real BLAKE3-512 output (P ≈ 2^-512).
+// All-hex so pass-1 CID format validation accepts it without a special-case exception.
+const AUTO_PROMOTE_LIFTER_CID: &str = "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
 
 // ================================================================
 // SourceKind round-trips through every canonical label
@@ -533,4 +535,115 @@ fn compound_evidences_always_present_even_when_empty() {
     };
     let s = serde_json::to_string(&c).expect("serialize");
     assert!(s.contains("\"evidences\":[]"), "got: {}", s);
+}
+
+// ================================================================
+// §4.5 byte-offset → line/col conversion (normative algorithm test)
+// ================================================================
+//
+// These tests pin the §4.5 algorithm used when auto-promotion (§4.3)
+// derives a source_locator from a FunctionContractMemento byte-offset
+// locus. The implementation of `byte_offset_to_line_col` lives in
+// the PR-B validator; these tests serve as the normative spec fixture.
+//
+// Algorithm (from §4.5):
+//   line := 1, col := 0
+//   for i in 0..byte_offset: if src[i]==LF => line+=1, col:=0; else col+=1
+//   return (line, col)
+
+fn byte_offset_to_line_col(source_bytes: &[u8], byte_offset: usize) -> (u32, u32) {
+    assert!(
+        byte_offset <= source_bytes.len(),
+        "byte_offset out of range"
+    );
+    let mut line: u32 = 1;
+    let mut col: u32 = 0;
+    for b in &source_bytes[..byte_offset] {
+        if *b == b'\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
+#[test]
+fn byte_offset_line_col_start_of_file() {
+    // offset 0 → line 1, col 0
+    let src = b"fn foo() {}";
+    assert_eq!(byte_offset_to_line_col(src, 0), (1, 0));
+}
+
+#[test]
+fn byte_offset_line_col_mid_first_line() {
+    // "fn foo" → offset 3 = 'f' of 'foo' → line 1, col 3
+    let src = b"fn foo() {}";
+    assert_eq!(byte_offset_to_line_col(src, 3), (1, 3));
+}
+
+#[test]
+fn byte_offset_line_col_start_of_second_line() {
+    // "fn foo()\n" → offset 9 = first byte of line 2 → line 2, col 0
+    let src = b"fn foo()\nfn bar()";
+    assert_eq!(byte_offset_to_line_col(src, 9), (2, 0));
+}
+
+#[test]
+fn byte_offset_line_col_mid_second_line() {
+    // "fn foo()\nfn bar()" → offset 12 = 'b' in 'bar' → line 2, col 3
+    let src = b"fn foo()\nfn bar()";
+    assert_eq!(byte_offset_to_line_col(src, 12), (2, 3));
+}
+
+#[test]
+fn byte_offset_line_col_three_lines() {
+    // "a\nb\nc" → offset 4 = 'c' → line 3, col 0
+    let src = b"a\nb\nc";
+    assert_eq!(byte_offset_to_line_col(src, 4), (3, 0));
+}
+
+#[test]
+fn byte_offset_line_col_crlf_cr_is_ordinary_byte() {
+    // CRLF: CR is ordinary byte (increments col), LF advances line.
+    // "a\r\nb" → bytes: [97, 13, 10, 98]
+    //   offset 0 = 'a' → (1, 0)
+    //   offset 1 = '\r' → (1, 1)  [CR counted as col byte]
+    //   offset 2 = '\n' → (1, 2)  [LF not yet consumed]
+    //   offset 3 = 'b' → (2, 0)
+    let src = b"a\r\nb";
+    assert_eq!(byte_offset_to_line_col(src, 0), (1, 0));
+    assert_eq!(byte_offset_to_line_col(src, 1), (1, 1)); // after 'a', before CR
+    assert_eq!(byte_offset_to_line_col(src, 2), (1, 2)); // after CR, before LF
+    assert_eq!(byte_offset_to_line_col(src, 3), (2, 0)); // after LF, start of line 2
+}
+
+#[test]
+fn byte_offset_line_col_tab_is_one_byte() {
+    // Tab counts as 1 byte, no tab-stop expansion.
+    // "\tfoo" → offset 1 = 'f' → line 1, col 1
+    let src = b"\tfoo";
+    assert_eq!(byte_offset_to_line_col(src, 0), (1, 0));
+    assert_eq!(byte_offset_to_line_col(src, 1), (1, 1));
+    assert_eq!(byte_offset_to_line_col(src, 2), (1, 2));
+}
+
+#[test]
+fn byte_offset_line_col_end_of_file() {
+    // offset == src.len() is the one-past-the-end position.
+    let src = b"ab\ncd";
+    assert_eq!(byte_offset_to_line_col(src, 5), (2, 2));
+}
+
+#[test]
+fn byte_offset_line_col_multibyte_utf8() {
+    // UTF-8 multibyte chars: col counts bytes, not codepoints.
+    // "é" = [0xC3, 0xA9] (2 bytes). Source: "éx"
+    // offset 0 → (1, 0), offset 1 → (1, 1), offset 2 → (1, 2)
+    let src = "éx".as_bytes(); // [0xC3, 0xA9, 0x78]
+    assert_eq!(byte_offset_to_line_col(src, 0), (1, 0));
+    assert_eq!(byte_offset_to_line_col(src, 1), (1, 1));
+    assert_eq!(byte_offset_to_line_col(src, 2), (1, 2)); // char boundary for 'x'
+    assert_eq!(byte_offset_to_line_col(src, 3), (1, 3));
 }

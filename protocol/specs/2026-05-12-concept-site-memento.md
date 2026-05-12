@@ -147,7 +147,7 @@ concept-site-memento = {
 | header   | `concept_cid`            | yes      | The `ConceptAbstractionMemento.cid` this site binds to. Substrate matches exactly. |
 | header   | `discharge`              | yes      | Verdict, loss, receipt, method. See §1.2. |
 | header   | `kind`                   | yes      | MUST be `"concept-site"`. |
-| header   | `local_contract_cid`     | yes      | The `FunctionContractMemento.cid` of the user-lifted contract for this function. |
+| header   | `local_contract_cid`     | yes      | The `FunctionContractMemento.cid` of the user-lifted contract for this function. *(Amended by `2026-05-13-compound-contract-memento.md` §0.4: after the compound layer lands, this field points at a `CompoundContractMemento.cid` instead; bare `FunctionContractMemento`s are auto-promoted per that spec's §4.4.)* |
 | header   | `provenance`             | yes      | The three CIDs of the producers (lifter, clusterer, discharger). |
 | header   | `realization_mode_hint`  | no       | Deployment policy hint. OMITTED when discharger does not opinion. |
 | header   | `schemaVersion`          | yes      | MUST be `"1"`. |
@@ -320,7 +320,7 @@ Per the §1.2 table:
 ### §5.4 Pass 4: REFERENT constraints (pool-level)
 
 - The pool MUST contain a `ConceptAbstractionMemento` with `cid = header.concept_cid`.
-- The pool MUST contain a `FunctionContractMemento` with `cid = header.local_contract_cid`.
+- The pool MUST contain EITHER a `CompoundContractMemento` with `cid = header.local_contract_cid`, OR a `FunctionContractMemento` with that CID that the validator auto-promotes per `2026-05-13-compound-contract-memento.md` §4.4. *(Amended by `2026-05-13-compound-contract-memento.md` §0.4.)*
 - The pool MUST contain a `FunctionContractMemento` with `cid = header.code_site.function_term_cid`.
 - For each `witness-ref` in `witnesses`, the pool MUST contain a `WitnessMemento` with that CID.
 - For non-`refuse` verdicts, the pool MUST contain a `MorphismDischargeReceipt` with `cid = header.discharge.discharge_receipt_cid`.

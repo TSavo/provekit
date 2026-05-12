@@ -71,9 +71,13 @@ The `code_site.function_term_cid` field of `ConceptSiteMemento` continues to poi
 ;   hash, cid, signature, pubkey, iso8601, ir-formula, json-value
 
 ; Locked JCS key order: end, start
-; Both points are {line, col} pairs (1-based, line/col instead of byte
-; offsets, because evidence often comes from formatters / docstrings /
-; tests where byte offsets are unstable across re-formatting).
+; Both points are {line, col} pairs (1-based line, 0-indexed col in UTF-8
+; bytes; see §1.1 normative note below) instead of byte offsets, because
+; evidence often comes from formatters / docstrings / tests where absolute
+; byte offsets are unstable across re-formatting.
+; NOTE: CDDL display order {line, col} is illustrative. JCS sorts keys
+; alphabetically, so the on-wire bytes are encoded as {col, line}.
+; CDDL display order != JCS canonical order.
 source-locator-span = {
   end:   { line: uint, col: uint },
   start: { line: uint, col: uint }
@@ -135,6 +139,8 @@ evidence-memento = {
 | header   | `source_kind`               | yes      | One of the canonical labels (§10) or an extension label (unknown labels MUST NOT be rejected by shape validation; downstream consumers decide). |
 | header   | `source_locator`            | yes      | Where this evidence was extracted from. |
 | metadata | `note`                      | no       | Human-readable annotation. OMITTED when absent. |
+
+**Normative: column counting.** `col` counts UTF-8 BYTES within the line, 0-indexed. Line numbers are 1-indexed. Rationale: bytes are the substrate's native unit; UTF-8 bytes survive transport without re-encoding; converting to codepoints or graphemes requires Unicode-version-specific tables which would roll CIDs as the Unicode standard evolves. Tools that want codepoint-level positions must derive them from the source bytes; the substrate stores bytes. Tab characters (0x09) count as 1 byte, not as tab-stop expansions. CRLF line endings: the CR byte (0x0D) is part of the preceding line; only LF (0x0A) advances the line counter.
 
 ### §1.2 `CompoundContractMemento`
 
@@ -227,7 +233,8 @@ The compound's verdict is:
 ```
 non_refuting := [e_i for v_i != "refuse"]
 if non_refuting is empty                        then "refuse"
-else                                            v_{argmax(e_i.confidence_basis_points, e_i in non_refuting)}
+else                                            v_{argmax(e_i.confidence_basis_points, e_i in non_refuting,
+                                                          tiebreak by ascending evidence_cid)}
 ```
 
 Refused evidences contribute to the compound's confidence-score (lowering it) but do not kill the compound if at least one evidence discharges. `composed_pre` and `composed_post` come from the chosen "best" evidence only (NOT from the conjunction); the other evidences contribute to compound-CID-determination by their CIDs but not to the composed pre/post bytes.
@@ -321,7 +328,7 @@ NOTE: this crate (`provekit-ir-types`) carries no JCS encoder; round-trip serde 
 
 1. Identify the function: obtain `function_term_cid` (the `FunctionContractMemento.cid` of the function this compound is the contract for).
 2. Collect all minted `EvidenceMemento`s whose `extension_fields.test_target_function_cid` (or equivalent per-kind back-link, §10) is `function_term_cid`, plus the function's own annotation-derived evidences.
-3. Build `evidence-ref`s with `weight_basis_points` (default 10000 under conjunction; the field is informational under v0 but part of the CID, so it MUST be set deliberately).
+3. Build `evidence-ref`s with `weight_basis_points`. Under `"conjunction"`, MUST be exactly 10000; validators MUST reject any `evidence-ref.weight_basis_points != 10000` when `aggregation_strategy = "conjunction"`. The field is informational under v0 conjunction but is part of the CID, so pinning it normatively ensures CID stability across lifters.
 4. Choose `aggregation_strategy` (v0: always `"conjunction"`).
 5. Compute `composed_pre` and `composed_post`:
    - For `"conjunction"`: pre/post-separate each evidence's `predicate` (§6), then JCS-normalize-conjunct the pres and the posts.
@@ -340,18 +347,52 @@ NOTE: this crate (`provekit-ir-types`) carries no JCS encoder; round-trip serde 
    - `predicate` = the `FunctionContractMemento`'s `pre /\ post` packaged per §6.
    - `confidence_basis_points = 10000`.
    - `source_locator` = derived from the `FunctionContractMemento`'s `locus`.
-   - `lifter_cid` = `"blake3-512:autoPromote000...0"` (a reserved sentinel CID, §4.4).
+   - `lifter_cid` = `"blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"` (128 hex `0`s; a reserved sentinel CID, §4.4).
    - `extension_fields = { "auto_promoted_from": <function_contract_cid> }`.
-2. Build a `CompoundContractMemento` with `evidences = [refToTheEvidence]`, `aggregation_strategy = "conjunction"`, `composed_pre`/`composed_post` from the bare contract.
+2. Build a `CompoundContractMemento` with `evidences = [refToTheEvidence]` where the evidence-ref has `weight_basis_points = 10000` (normative per §4.2 step 3), `aggregation_strategy = "conjunction"`, `composed_pre`/`composed_post` from the bare contract.
 3. The promoted compound's CID is recomputed per §3.1.
 
 The auto-promoted compound has a fresh CID different from the bare contract's CID. The substrate stores this mapping (bare-contract-CID -> promoted-compound-CID) in the pool index so future lookups bypass re-promotion.
 
 ### §4.4 The sentinel `auto-promote` lifter CID
 
-A reserved CID `blake3-512:autoPromote000...000` (128 hex `0`s after the prefix) identifies the auto-promotion path as the lifter. Downstream consumers can detect auto-promoted compounds by checking this lifter CID. The sentinel CID is NOT a valid BLAKE3-512 hash of any real lifter binary; it is reserved for this purpose by spec.
+A reserved CID `blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000` (128 hex `0`s) identifies the auto-promotion path as the lifter. Downstream consumers can detect auto-promoted compounds by checking this lifter CID. The sentinel CID is NOT a valid BLAKE3-512 hash of any real lifter binary; it is reserved for this purpose by spec. The probability that a real BLAKE3-512 digest equals all-zeros is 2^-512; the sentinel is provably distinct from any real hash output.
+
+Pass-1 validation (§5.1) accepts this sentinel at `lifter_cid`: "128-hex" is satisfied by 128 hex `0` digits. No special-case exception to the CID format rule is needed.
 
 **INVARIANT (mint idempotency):** Two mint operations with byte-identical inputs MUST produce the same `cid` for both kinds.
+
+### §4.5 Byte-offset to line/col conversion (normative)
+
+When auto-promotion (§4.3) derives a `source_locator` from a `FunctionContractMemento.locus` (which uses byte-offset spans), the byte-offset MUST be converted to line/col using the following algorithm to ensure CID determinism across implementations:
+
+```
+Input:  source_bytes (UTF-8 encoded source file contents as a byte array)
+        byte_offset (usize, 0-indexed byte position within source_bytes)
+Output: { line: u32, col: u32 }
+
+Algorithm:
+  line := 1
+  col  := 0
+  for i in 0..byte_offset:
+    if source_bytes[i] == 0x0A (LF):
+      line := line + 1
+      col  := 0
+    else:
+      col  := col + 1
+  return { line, col }
+```
+
+Properties and constraints:
+
+- `line` is 1-indexed (starts at 1 for offset 0).
+- `col` is 0-indexed UTF-8 byte count from the most recent LF (or start of file) to `byte_offset`.
+- CRLF line endings: CR (0x0D) increments `col` as an ordinary byte; only LF (0x0A) resets `col` and increments `line`. This means the CR byte is counted as part of the preceding line's col.
+- `byte_offset` MUST point at a UTF-8 character boundary. If it does not, the conversion result is unspecified and validators MUST reject the containing `EvidenceMemento`.
+- `byte_offset` MUST be in `0..=source_bytes.len()`. An offset equal to `source_bytes.len()` is the one-past-the-end position (end of last line).
+- Tab characters (0x09) count as 1 byte in the `col` counter (no tab-stop expansion).
+
+This algorithm is byte-deterministic: two implementations fed identical `source_bytes` and `byte_offset` MUST produce identical `{ line, col }` outputs, which produces identical `source_locator` bytes, which produces an identical `EvidenceMemento` CID.
 
 ## §5. Validation rules
 
@@ -361,7 +402,7 @@ Reject if:
 
 - Any required field is missing.
 - For `EvidenceMemento`: `kind != "evidence"`, `schemaVersion != "1"`, `confidence_basis_points > 10000`.
-- For `CompoundContractMemento`: `kind != "compound-contract"`, `schemaVersion != "1"`, any `evidence-ref.weight_basis_points > 10000`.
+- For `CompoundContractMemento`: `kind != "compound-contract"`, `schemaVersion != "1"`, any `evidence-ref.weight_basis_points > 10000`, or (when `aggregation_strategy = "conjunction"`) any `evidence-ref.weight_basis_points != 10000`.
 - Any hash/CID field does not match `"blake3-512:" ++ 128-hex`.
 - For `CompoundContractMemento`: `aggregation_strategy` is not one of the canonical labels AND v0 does not accept extension labels at all (per §0; only `"conjunction"` is wired in v0; the others are spec'd but ship as `unimplemented!` in Rust).
 
@@ -374,6 +415,8 @@ If `evidences` is empty:
 - `composed_pre` MUST equal the `IrFormula` representation of `true`.
 - `composed_post` MUST equal the `IrFormula` representation of `true`.
 - `aggregation_strategy` is informational (does not apply); SHOULD be `"conjunction"` for least-surprise.
+
+The compound verdict for an empty-evidences compound is `"exact"`. By §2.1: "if every v_i == exact, then exact"; with zero evidences the condition holds vacuously. Downstream consumers MUST NOT second-guess this: an empty-evidences compound has exactly the trivial contract `{ pre: true, post: true }` with verdict `"exact"` (trivially satisfied).
 
 Rationale: a function with no extracted evidence has the trivial contract `{ pre: true, post: true }`. This is the substrate's degenerate base case and is valid; it is the starting point before any lifter runs.
 
@@ -426,7 +469,7 @@ Rationale: every contract-source ultimately reduces to `requires(P) -> ensures(Q
 
 `JCS-normalize-conjunct(P_1, ..., P_n)` is defined as:
 
-1. De-duplicate at the predicate-CID level: `P_i` and `P_j` with identical JCS bytes collapse to one occurrence.
+1. De-duplicate at the predicate-CID level: for each `P_i`, its predicate-CID is `"blake3-512:" ++ hex(BLAKE3-512(JCS(P_i)))`. `P_i` and `P_j` with identical predicate-CIDs (i.e., identical JCS bytes) collapse to one occurrence.
 2. Sort by predicate-CID ascending.
 3. Build the conjunction term `and(P_1, ..., P_n)` in `IrFormula`.
 4. JCS-canonicalize.

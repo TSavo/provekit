@@ -1220,8 +1220,10 @@ pub struct EvidenceMemento {
     /// MUST be "evidence".
     pub kind: String,
     /// CID of the lifter binary or rule-set that emitted this evidence.
-    /// Reserved sentinel `blake3-512:autoPromote000...` for the
+    /// Reserved sentinel `blake3-512:` ++ 128 hex `0`s for the
     /// backward-compat auto-promotion path (compound spec §4.4).
+    /// All-zeros is provably not a real BLAKE3-512 output (P ≈ 2^-512).
+    /// Pass-1 CID validation accepts it without a special-case exception.
     #[serde(rename = "lifter_cid")]
     pub lifter_cid: String,
     /// The asserted predicate (an `IrFormula`).
