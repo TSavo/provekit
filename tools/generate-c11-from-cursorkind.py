@@ -145,14 +145,13 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
             "source-unit",
             {
                 "formals": ["bytes", "operational_term"],
-                "formal_sorts": ["Expr", "Stmt"],
+                "formal_sorts": ["String", "Stmt"],
                 "return_sort": "Stmt",
-                "wp": "lossless C source wrapper; the source bytes are recoverable and the operational projection is operational_term",
+                "wp": "lossless source wrapper; the source bytes are recoverable and the operational projection is operational_term",
                 "arity_shape": named_slots(
                     unevaluated("bytes", slot_sort="literal"),
                     slot("operational_term"),
                 ),
-                "notes": "The bytes slot is a binary literal; project_effects descends to operational_term.",
             },
         ),
         (
@@ -169,13 +168,9 @@ MINTED_OPS: OrderedDict[str, dict] = OrderedDict(
             "decl",
             {
                 "formals": ["name", "initializer"],
-                "formal_sorts": ["Expr", "Expr"],
+                "formal_sorts": ["String", "Expr"],
                 "return_sort": "Stmt",
                 "wp": "bind local name to initializer before continuing",
-                "arity_shape": named_slots(
-                    slot("name", slot_sort="identifier"),
-                    slot("initializer"),
-                ),
             },
         ),
         (

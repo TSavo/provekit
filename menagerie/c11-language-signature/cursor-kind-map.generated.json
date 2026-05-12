@@ -744,8 +744,7 @@
         "kind": "named",
         "slots": [
           {
-            "name": "name",
-            "slot_sort": "identifier"
+            "name": "name"
           },
           {
             "name": "initializer"
@@ -4083,8 +4082,7 @@
         "kind": "named",
         "slots": [
           {
-            "name": "name",
-            "slot_sort": "identifier"
+            "name": "name"
           },
           {
             "name": "initializer"
