@@ -1,0 +1,94 @@
+{
+  "memento": {
+    "kind": "realization-desugaring-memento",
+    "operator": "concept:tagged-union",
+    "target_lang": "python",
+    "target_form": "python:dataclass-discriminated-union",
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T1",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "T2",
+        "args": []
+      }
+    ],
+    "morphism": {
+      "kind": "equation",
+      "fn_name": "concept:tagged-union->python:dataclass-discriminated-union",
+      "formals": [
+        "value"
+      ],
+      "formal_sorts": [
+        {
+          "kind": "ctor",
+          "name": "T1",
+          "args": []
+        },
+        {
+          "kind": "ctor",
+          "name": "T2",
+          "args": []
+        }
+      ],
+      "post": {
+        "lhs": {
+          "kind": "op",
+          "name": "concept:tagged-union",
+          "args": [
+            {
+              "kind": "var",
+              "name": "value"
+            }
+          ]
+        },
+        "rhs": {
+          "kind": "op",
+          "name": "python:dataclass-discriminated-union",
+          "args": [
+            {
+              "kind": "op",
+              "name": "python:dataclass-decl",
+              "args": [
+                {
+                  "kind": "const",
+                  "value": "TaggedUnion",
+                  "sort": {
+                    "kind": "ctor",
+                    "name": "ClassName",
+                    "args": []
+                  }
+                },
+                {
+                  "kind": "var",
+                  "name": "value"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "role": "abstraction-realization",
+      "direction": "left-to-right",
+      "target_lang": "python"
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "loss_record": {
+      "structural_divergence": "tagged-union dataclass has three fields (tag, value_left, value_right) instead of a native union type or pattern-matching primitive; arms are encoded as integer tag values (LEFT=0, RIGHT=1) with oneOf semantics enforced by convention, not by the type system; instantiation requires caller to supply all three fields; pattern matching becomes if/elif on tu.tag with manual field access",
+      "domain_narrowing": "Python's type system cannot statically enforce that only one of value_left or value_right is non-None at any time; the realization narrows the abstraction domain to programs where the caller maintains the invariant that exactly one field is active; programs that set both fields or read the inactive field are in the narrowed-out domain",
+      "ub_introduction": "accessing tu.value_left when tu.tag == 1 (right active) yields None, not undefined behaviour as in C, but a runtime type error if the code assumes a non-None value; the abstraction statically excludes these reads; the Python realization introduces a runtime invariant violation on exactly those states"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:0dd3b740ebf7683291980d17227152fb00baf7289646d8b939667a3c45ff03b973245440e26fc3dd9ce73b469f80dc2dd09103b6d6f8e683ab53b48d622fba6b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
