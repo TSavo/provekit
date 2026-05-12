@@ -8,12 +8,12 @@
   "formal_sorts": [
     {
       "kind": "ctor",
-      "name": "Expr",
+      "name": "Int",
       "args": []
     },
     {
       "kind": "ctor",
-      "name": "Expr",
+      "name": "Int",
       "args": []
     }
   ],
@@ -31,8 +31,8 @@
     "kind": "operation-contract",
     "operator": "gt",
     "arity": [
-      "Expr",
-      "Expr"
+      "Int",
+      "Int"
     ],
     "result": "Bool",
     "wp": "lhs > rhs",

@@ -7,7 +7,7 @@
   "formal_sorts": [
     {
       "kind": "ctor",
-      "name": "Expr",
+      "name": "Bool",
       "args": []
     }
   ],
@@ -25,7 +25,7 @@
     "kind": "operation-contract",
     "operator": "not",
     "arity": [
-      "Expr"
+      "Bool"
     ],
     "result": "Bool",
     "wp": "! value",

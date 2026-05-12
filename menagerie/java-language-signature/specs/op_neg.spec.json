@@ -7,13 +7,13 @@
   "formal_sorts": [
     {
       "kind": "ctor",
-      "name": "Expr",
+      "name": "Int",
       "args": []
     }
   ],
   "return_sort": {
     "kind": "ctor",
-    "name": "Expr",
+    "name": "Int",
     "args": []
   },
   "pre": {
@@ -25,9 +25,9 @@
     "kind": "operation-contract",
     "operator": "neg",
     "arity": [
-      "Expr"
+      "Int"
     ],
-    "result": "Expr",
+    "result": "Int",
     "wp": "- value",
     "arity_shape": {
       "kind": "named",
