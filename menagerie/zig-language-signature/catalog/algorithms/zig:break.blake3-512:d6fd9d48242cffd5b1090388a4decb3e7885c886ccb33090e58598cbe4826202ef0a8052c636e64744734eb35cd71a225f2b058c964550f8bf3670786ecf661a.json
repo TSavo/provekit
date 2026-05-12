@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "zig:break",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "break",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Stmt",
+      "wp": "exit nearest loop",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:d6fd9d48242cffd5b1090388a4decb3e7885c886ccb33090e58598cbe4826202ef0a8052c636e64744734eb35cd71a225f2b058c964550f8bf3670786ecf661a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "o8O/NpRSS6R+OYJcj9Cy+vgbGpA1I3DqvX7QFz0sTvEOe1mOeZcAID43LfSMm5vwyvWYlQJwUYu/jNx84uQqCg=="
+  }
+}

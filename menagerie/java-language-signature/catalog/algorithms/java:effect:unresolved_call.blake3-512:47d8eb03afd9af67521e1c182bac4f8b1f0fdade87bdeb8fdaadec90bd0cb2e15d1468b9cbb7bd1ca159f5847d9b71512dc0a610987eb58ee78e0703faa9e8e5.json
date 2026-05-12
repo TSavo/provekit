@@ -1,0 +1,62 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "java:effect:unresolved_call",
+    "formals": [
+      "name"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unresolved-call-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "canonical unresolved_call effect name",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "name",
+            "slot_sort": "literal"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "UnresolvedCall"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/java-language-signature/README.md"
+  },
+  "cid": "blake3-512:47d8eb03afd9af67521e1c182bac4f8b1f0fdade87bdeb8fdaadec90bd0cb2e15d1468b9cbb7bd1ca159f5847d9b71512dc0a610987eb58ee78e0703faa9e8e5",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "zxzkraTXq0y3LEMNdka47c93g46cAq9Kwh++MpNnL5EBuLEq+TTjFOLLlg+vFmrU1e/ClwCpwNwrQInCaWKSCQ=="
+  }
+}

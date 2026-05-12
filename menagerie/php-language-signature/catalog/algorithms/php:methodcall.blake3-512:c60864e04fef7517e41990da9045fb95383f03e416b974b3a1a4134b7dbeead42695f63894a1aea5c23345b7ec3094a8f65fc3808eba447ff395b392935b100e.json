@@ -1,0 +1,80 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:methodcall",
+    "formals": [
+      "receiver",
+      "method",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "methodcall",
+      "arity": [
+        "Value",
+        "String",
+        "Value"
+      ],
+      "result": "Value",
+      "wp": "instance method call",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "receiver"
+          },
+          {
+            "name": "method",
+            "slot_sort": "identifier"
+          },
+          {
+            "name": "args",
+            "shape": {
+              "kind": "set"
+            }
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:c60864e04fef7517e41990da9045fb95383f03e416b974b3a1a4134b7dbeead42695f63894a1aea5c23345b7ec3094a8f65fc3808eba447ff395b392935b100e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "yB2DlxcLTD5WsUyg9W+/qSQmV+bE40x7xuQT94ze0Izy2p+jKmnJVHwUY8XD6Zg8h6IEz9Q72o3CXUS4mTiMBA=="
+  }
+}

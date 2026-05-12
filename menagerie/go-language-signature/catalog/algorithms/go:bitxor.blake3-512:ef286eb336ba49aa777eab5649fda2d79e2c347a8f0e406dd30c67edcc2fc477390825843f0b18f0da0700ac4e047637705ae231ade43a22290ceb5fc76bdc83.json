@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:bitxor",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:bitxor",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "bitwise xor",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:ef286eb336ba49aa777eab5649fda2d79e2c347a8f0e406dd30c67edcc2fc477390825843f0b18f0da0700ac4e047637705ae231ade43a22290ceb5fc76bdc83",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "bF5nb+kg58JrmRM/7Z3xOPvw0Oo9FKTjHfEqtfFJaovtZcW5+f0SO0r0LJsfm9GWFbzBHmrxJHGY++mjT/21AQ=="
+  }
+}

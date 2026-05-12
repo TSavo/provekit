@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ruby:mul",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "mul",
+      "arity": [
+        "Value",
+        "Value"
+      ],
+      "result": "Value",
+      "wp": "Ruby mul expression",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/ruby-language-signature/README.md"
+  },
+  "cid": "blake3-512:48fa7f1fe9a51e572c54789720a6caa01844eaa786136463ee7606ed7be0923ec354849051080fb04fd1630d68b05bde7aec7675484218a666672c13f9ca16f0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "QUX2s8RjPZ/CILyIbAJJ/kZuVSM7bPAmI6rcy1HaYtKSIZHrKT0DKdr+H9wFFHqLl29zjgorij/rFZu23sGnBg=="
+  }
+}

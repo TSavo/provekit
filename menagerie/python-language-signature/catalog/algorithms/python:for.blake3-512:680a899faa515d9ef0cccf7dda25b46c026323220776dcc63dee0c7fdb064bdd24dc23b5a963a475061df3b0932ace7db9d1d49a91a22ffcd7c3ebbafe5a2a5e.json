@@ -1,0 +1,81 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "python:for",
+    "formals": [
+      "target",
+      "iterable",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "for",
+      "arity": [
+        "Value",
+        "Value",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "opaque Python for loop over iterable",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target"
+          },
+          {
+            "name": "iterable"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "OpaqueLoop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/python-language-signature/README.md"
+  },
+  "cid": "blake3-512:680a899faa515d9ef0cccf7dda25b46c026323220776dcc63dee0c7fdb064bdd24dc23b5a963a475061df3b0932ace7db9d1d49a91a22ffcd7c3ebbafe5a2a5e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "RE9l461c3rWx1XClrKmPR6nkWEhzuONV4nRpAJ1qbIxsmW5Iy+gRn1q/O6R5dUqxaP1AkFx13xgmqDhZD/rGAA=="
+  }
+}

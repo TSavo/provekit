@@ -1,0 +1,61 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ts:effect:unresolved-call",
+    "formals": [
+      "name"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unresolved-call-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "record a call whose callee contract is not available",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "name"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Call"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#effects"
+  },
+  "cid": "blake3-512:69b60e0bc27a84499bb5fb7ff7f453cb594544221241476a49bddb81b57279161e4df345b7668b535acce422ca499705b32ef4a1dcb949633ceb776320733291",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "eehy8YL40U5mNVCx5CGI1hqtLwZ0nTXdQjxq0bnsYaFnXoSe9ULcXQ0F2BFcl9evDdch+2+oViq/xmYbA56xAA=="
+  }
+}

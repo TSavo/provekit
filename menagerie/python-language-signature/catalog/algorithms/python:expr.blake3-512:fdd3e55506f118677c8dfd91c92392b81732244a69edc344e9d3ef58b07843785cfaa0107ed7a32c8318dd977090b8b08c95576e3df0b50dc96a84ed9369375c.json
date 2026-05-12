@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "python:expr",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "expr",
+      "arity": [
+        "Value"
+      ],
+      "result": "Stmt",
+      "wp": "evaluate expression for effects",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/python-language-signature/README.md"
+  },
+  "cid": "blake3-512:fdd3e55506f118677c8dfd91c92392b81732244a69edc344e9d3ef58b07843785cfaa0107ed7a32c8318dd977090b8b08c95576e3df0b50dc96a84ed9369375c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "5iabEgVAVbJKiq8APQPbNHIOup1Cb3/Oo625moOMb1erAKwyQ01vaiiBKqo5SI12BIyR2W1r5//5dU80kz2AAw=="
+  }
+}

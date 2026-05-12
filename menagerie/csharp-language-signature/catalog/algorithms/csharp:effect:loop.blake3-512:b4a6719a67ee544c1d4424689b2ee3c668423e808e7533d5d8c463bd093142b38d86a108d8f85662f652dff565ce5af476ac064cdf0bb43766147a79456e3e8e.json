@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:effect:loop",
+    "formals": [
+      "kind"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "loop-effect",
+      "arity": [
+        "String"
+      ],
+      "result": "Unit",
+      "wp": "note that a loop of kind was entered"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Loop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:b4a6719a67ee544c1d4424689b2ee3c668423e808e7533d5d8c463bd093142b38d86a108d8f85662f652dff565ce5af476ac064cdf0bb43766147a79456e3e8e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "8OaROSZmynWT3QaC0gxN4mu3B9MMoFH7ZN7D8qC2uK7lgE8SJOy2/8BwSdjBcpsQTMLV0eBI/f1JW+NSlw0WBA=="
+  }
+}

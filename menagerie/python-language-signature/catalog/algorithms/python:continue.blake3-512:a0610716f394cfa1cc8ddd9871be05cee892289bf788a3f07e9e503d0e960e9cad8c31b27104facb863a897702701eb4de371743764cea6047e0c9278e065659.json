@@ -1,0 +1,52 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "python:continue",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "continue",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Stmt",
+      "wp": "continue nearest loop",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 1
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/python-language-signature/README.md"
+  },
+  "cid": "blake3-512:a0610716f394cfa1cc8ddd9871be05cee892289bf788a3f07e9e503d0e960e9cad8c31b27104facb863a897702701eb4de371743764cea6047e0c9278e065659",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "O1d+eBHk4o5fyC7lAOQwz3wvOW8qoS2EPCa6kKbOD+jBexeJGu37HHq92JoOfJQ7keY2i1/p61RShqg+mrSbCQ=="
+  }
+}

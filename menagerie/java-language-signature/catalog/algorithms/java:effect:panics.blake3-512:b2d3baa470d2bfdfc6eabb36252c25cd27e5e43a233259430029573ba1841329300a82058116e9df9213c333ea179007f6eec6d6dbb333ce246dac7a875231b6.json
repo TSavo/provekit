@@ -1,0 +1,61 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "java:effect:panics",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "panics-effect",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Unit",
+      "wp": "canonical panics effect",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Panics"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/java-language-signature/README.md"
+  },
+  "cid": "blake3-512:b2d3baa470d2bfdfc6eabb36252c25cd27e5e43a233259430029573ba1841329300a82058116e9df9213c333ea179007f6eec6d6dbb333ce246dac7a875231b6",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "eLORt6eBsFcrUIQtBwhWA/3ar9Z/O0N7BlR+QXvi88VMOM0wbhQVZwA2vMRPFmZFd4wRcazZAc/MWNF5vcy+Aw=="
+  }
+}

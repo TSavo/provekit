@@ -1,0 +1,68 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "java:source-unit",
+    "formals": [
+      "bytes",
+      "operational_term"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "source-unit",
+      "arity": [
+        "String",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "source bytes are recoverable; operational_term is the lifted program",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "bytes",
+            "slot_sort": "literal"
+          },
+          {
+            "name": "operational_term",
+            "slot_sort": "Stmt"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/java-language-signature/README.md"
+  },
+  "cid": "blake3-512:6f700e89732ab780279859ed24c57dd29e490e6591f6277b0bc3819f96b972274417ec1d75abfc9ac2183dc1a8f50f1d63ea5a4b6a647bb63c5118735c52ec87",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "VCSvXu0Z6FEJL1r4HFqXO0v2ImRqHZbl3D+oBeAPGDxVjCu615XEHj2LkZOLoN6ZD2pAjApHD5rq3xwouIrgAQ=="
+  }
+}

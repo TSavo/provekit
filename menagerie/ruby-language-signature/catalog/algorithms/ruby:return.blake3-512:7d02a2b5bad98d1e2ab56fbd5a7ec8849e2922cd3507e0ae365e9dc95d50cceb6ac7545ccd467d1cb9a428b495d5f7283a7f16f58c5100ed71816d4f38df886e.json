@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ruby:return",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "return",
+      "arity": [
+        "Value"
+      ],
+      "result": "Stmt",
+      "wp": "bind function return value",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/ruby-language-signature/README.md"
+  },
+  "cid": "blake3-512:7d02a2b5bad98d1e2ab56fbd5a7ec8849e2922cd3507e0ae365e9dc95d50cceb6ac7545ccd467d1cb9a428b495d5f7283a7f16f58c5100ed71816d4f38df886e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "foUOtZPknhrOWlttZfE22e8cIZ/OAm/OLDSDGs16RrWajVX/8JzNNfYSv7rwn16XzZwTdsiEC27zdKzjmgEACA=="
+  }
+}

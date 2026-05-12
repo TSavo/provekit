@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:bitand",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "bitand",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "lhs & rhs (bitwise AND)"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:fc4dff723905f71b925b81b6fa3e60fd5085ce59d8071d9f2648c459dc46d17eb10065649a8c71b55ef9d2314cb7d87aa0f1b7b636c223b37fed4dab034e08a7",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "poTyGgQfDgOVskxTXg2s5WHfujO5edsId5grQ2nSxqPTgkErmWpu/EDOBUu3iItOEo5lsoGILwagCWKaZpePBg=="
+  }
+}

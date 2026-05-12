@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:effect:reads",
+    "formals": [
+      "target"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Identifier",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "effect:reads",
+      "arity": [
+        "Identifier"
+      ],
+      "result": "Unit",
+      "wp": "Read a named Go state cell"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#effects"
+  },
+  "cid": "blake3-512:8faab6d9948a9e3e139e566cd23b2c80ac350ce130f477cc304a4a6103a9497325a8d245c23717fb95e5bde49527cb4214bc9cf16bb3ef6203bccb7cc58fd1dc",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "5iZ6LAclio+RuZQPbMWShoc/1VFDDvrjN0v6fqq3PduWC1vvhuFh0WXq0v96xOq5DR5Ld5/LM/baKFX27i4qAA=="
+  }
+}

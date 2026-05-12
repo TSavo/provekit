@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:and",
+    "formals": [
+      "left",
+      "right"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "and",
+      "arity": [
+        "Bool",
+        "Bool"
+      ],
+      "result": "Bool",
+      "wp": "left && right (short-circuit evaluation)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "left"
+          },
+          {
+            "name": "right"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:ae75d5a91fa03cc559b329c62ea2c6cb5eb6a2a4c772262cc3b9dbaf51b2741e1535d50a54bd8e850c84eec0243187757189b4373f0045a61e6bd39076bf14c7",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "jZJKhbTSunCmdfPm3ohX+V1HU2ge6e4qGbXs2vhV8JfOqK/jQrHKn93D/8Mr536Rbw0GZTpeM1ePyS8PCb4aAw=="
+  }
+}

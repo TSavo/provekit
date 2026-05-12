@@ -1,24 +1,10 @@
 {
-  "kind": "effect-signature",
-  "version": "0.1.0-draft",
-  "fn_name": "zig:effect:MemWrite",
-  "formals": [],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Unit",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
-  "post": {
-    "kind": "effect-signature-description",
-    "name": "MemWrite"
-  },
-  "effects": {
-    "effects": []
-  },
-  "locus": "menagerie/zig-language-signature/README.md"
+  "kind": "effect_signature",
+  "fn_name": "zig:effect-signature:MemWrite",
+  "sorts": [
+    "sort_unit.spec.json"
+  ],
+  "operations": [],
+  "equations": [],
+  "effect_signatures": []
 }

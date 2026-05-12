@@ -1,7 +1,14 @@
 {
-    "kind": "sort",
-    "fn_name": "php:sort:real",
-    "version": "0.1.0-draft",
+  "kind": "sort",
+  "fn_name": "php:Real",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
     "name": "Real",
-    "locus": "menagerie/php-language-signature/README.md#sorts"
+    "description": "PHP floating-point values."
+  }
 }

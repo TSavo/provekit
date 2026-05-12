@@ -1,0 +1,41 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EffectSignatureMemento",
+    "fn_name": "ts:effect-signature:io",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "sorts": [
+        "blake3-512:362381eb86d30adb737d83ef3d72b557e3ddbc8381064e66141ef0a9d2d18d594c32c28ea1b661c15f767b3b915b637bc22e83e4aa1b795212ac2d9ebe3a68b4",
+        "blake3-512:dd27dde85aff798d695e95e5a0f95ea1be5d654e5cf1494111170a4e119db7fc6cfc1fe4f95827f4bfc2035ad93de62ac5aa9fa7e32a3f7944f0e2e8864c79dc"
+      ],
+      "operations": [
+        "blake3-512:c962ad005d3ffe9ffad677e5cb788e515afa185805cc6a96fbbfa1fbb7d9bec230b65f6c5d597bfd136c00ab73ef2ea0121ec00d0e7d00940e0e021c07c92bd0"
+      ],
+      "equations": [],
+      "effect_signatures": []
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "EffectSignature",
+      "args": []
+    }
+  },
+  "cid": "blake3-512:9418e4002f4dadf9d584f5c39e45f5e99f572cd49353d913fbeea13600b910295b223bf2291c2b987e4ba34011702a47b45f541d7e3ada9d7c0c438d2ac34dee",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "lRD8ccexvSHH2xkYweU0OBvFcbdqjNS2Ii6wj7bnVRo3w4y9r48J1nn2ktew9sigOe1WcN68k8SCw0NT6UsPCg=="
+  }
+}

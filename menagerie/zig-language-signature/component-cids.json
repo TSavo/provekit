@@ -1,0 +1,410 @@
+[
+  {
+    "kind": "sort",
+    "spec": "sort_bool.spec.json",
+    "cid": "blake3-512:45df3640bad816635e715a24c6619b84535d61737856a5dc9cb9f515a5cf5c3d66396a83a3bb93a138ca10e2456079ca63fa3c42dd39559a393633eb16e9db7c",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Bool.blake3-512:45df3640bad816635e715a24c6619b84535d61737856a5dc9cb9f515a5cf5c3d66396a83a3bb93a138ca10e2456079ca63fa3c42dd39559a393633eb16e9db7c.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_bottom.spec.json",
+    "cid": "blake3-512:19f13899902f1c93e2402405488f7d605ac130eaa218b5e641bebdc820241d037f24a8beedad19972d5d485269dd4fbba9241071da48477c79650a2dea2a6269",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Bottom.blake3-512:19f13899902f1c93e2402405488f7d605ac130eaa218b5e641bebdc820241d037f24a8beedad19972d5d485269dd4fbba9241071da48477c79650a2dea2a6269.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_expr.spec.json",
+    "cid": "blake3-512:8f7383072cce304afde25b1a60762b6adc6da7f7478a315ef503d80f0bb47845547aef990a7c6e71c8be6c6bc906bf08e9e9cd50710c01ecddddb775a1eb185f",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Expr.blake3-512:8f7383072cce304afde25b1a60762b6adc6da7f7478a315ef503d80f0bb47845547aef990a7c6e71c8be6c6bc906bf08e9e9cd50710c01ecddddb775a1eb185f.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_fieldname.spec.json",
+    "cid": "blake3-512:0e80ff304005faf4844f724d0c150bdafa79b5bd1ce585edcd1e34a14286aa3615e470cf14b52e4c409f76bde34d0df89c132b3bb7cdad4a6b68a88a3ce4d634",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:FieldName.blake3-512:0e80ff304005faf4844f724d0c150bdafa79b5bd1ce585edcd1e34a14286aa3615e470cf14b52e4c409f76bde34d0df89c132b3bb7cdad4a6b68a88a3ce4d634.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_int.spec.json",
+    "cid": "blake3-512:98ef7d7a832938585b0fcfb239f66230e04d1f9a9ff248ca9cfcb55f0b1528815a1b9941f2ddffd48160ed24818f80b94ab20e62c50ed560e16c18634f8fad13",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Int.blake3-512:98ef7d7a832938585b0fcfb239f66230e04d1f9a9ff248ca9cfcb55f0b1528815a1b9941f2ddffd48160ed24818f80b94ab20e62c50ed560e16c18634f8fad13.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_listofexpr.spec.json",
+    "cid": "blake3-512:175968c59c1f27613d86479c1e06129ff375e64be27ea1d31534fa6a9f9fe38b945e302e88c2aa180ad5976ae425b4f0d1a548eb980bcf400f7c040e1e120000",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:ListOfExpr.blake3-512:175968c59c1f27613d86479c1e06129ff375e64be27ea1d31534fa6a9f9fe38b945e302e88c2aa180ad5976ae425b4f0d1a548eb980bcf400f7c040e1e120000.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_lvalue.spec.json",
+    "cid": "blake3-512:54c381a416114999b0a693881bec2479a7a422bdce00372a6b1d044fede0975ac07b365d83c2e63029e19275e0f609fe048a99a792dd927cca5e0002b0ad104b",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:LValue.blake3-512:54c381a416114999b0a693881bec2479a7a422bdce00372a6b1d044fede0975ac07b365d83c2e63029e19275e0f609fe048a99a792dd927cca5e0002b0ad104b.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_ptr.spec.json",
+    "cid": "blake3-512:d85bcc3c45b30f49b0855867d022759a0b195743dc7697ffd71b74980a236bcca6cae68ace78076b842f7ea162c9b4d076c7de9d22c522bea1dfe985c7a92c55",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Ptr.blake3-512:d85bcc3c45b30f49b0855867d022759a0b195743dc7697ffd71b74980a236bcca6cae68ace78076b842f7ea162c9b4d076c7de9d22c522bea1dfe985c7a92c55.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_reason.spec.json",
+    "cid": "blake3-512:b24659e054d6c3fddad00b0714132a550e71963f72b32eca2f3c5360500247408805ef4f688fbcfc06e33c55eac1b77a0780af484e2d0489df4ce2642e90fadf",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Reason.blake3-512:b24659e054d6c3fddad00b0714132a550e71963f72b32eca2f3c5360500247408805ef4f688fbcfc06e33c55eac1b77a0780af484e2d0489df4ce2642e90fadf.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_stmt.spec.json",
+    "cid": "blake3-512:dc90f2a618eff5268224aa5d272f9afd6f07207aa2e7b90ef7e50f9637fe68f33d731cd718942e61a553b515a48137412df4e07a6586f8e31492993b0bed6700",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Stmt.blake3-512:dc90f2a618eff5268224aa5d272f9afd6f07207aa2e7b90ef7e50f9637fe68f33d731cd718942e61a553b515a48137412df4e07a6586f8e31492993b0bed6700.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_string.spec.json",
+    "cid": "blake3-512:079c03d6595e50a11c3ed39f22ad64de203949f130b407dddc6bd1450e37c0c0791591a5ee605141c96cce159b700108c022eaa9329cfeb4585c52240de65737",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:String.blake3-512:079c03d6595e50a11c3ed39f22ad64de203949f130b407dddc6bd1450e37c0c0791591a5ee605141c96cce159b700108c022eaa9329cfeb4585c52240de65737.json"
+  },
+  {
+    "kind": "sort",
+    "spec": "sort_unit.spec.json",
+    "cid": "blake3-512:0713077e2c5db5c52b7cb0805931fee2eb03f1a04365ed9652e4d288c18574ee71b8f27567a5af3adc16736955e4fe5fbfa8478f5565d12f7237a175d8ef25af",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/sorts/zig:Unit.blake3-512:0713077e2c5db5c52b7cb0805931fee2eb03f1a04365ed9652e4d288c18574ee71b8f27567a5af3adc16736955e4fe5fbfa8478f5565d12f7237a175d8ef25af.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_add.spec.json",
+    "cid": "blake3-512:6873c310a7f70d62088521e45b8598e07036a67c6ee17b7783c738fc42cb06e8323df01cd3a7a7bd2e81aff87a5bfb1dadd542292592511c40954caacc7ddb00",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:add.blake3-512:6873c310a7f70d62088521e45b8598e07036a67c6ee17b7783c738fc42cb06e8323df01cd3a7a7bd2e81aff87a5bfb1dadd542292592511c40954caacc7ddb00.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_addr.spec.json",
+    "cid": "blake3-512:812dd81d917ffddf088f641e5d5b645add5fcf47d70471efdfdfb45ca2dce1866c8f65ae9587682d6066c16df3ddb6de7c5959130819019ada64773913923187",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:addr.blake3-512:812dd81d917ffddf088f641e5d5b645add5fcf47d70471efdfdfb45ca2dce1866c8f65ae9587682d6066c16df3ddb6de7c5959130819019ada64773913923187.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_and.spec.json",
+    "cid": "blake3-512:cec8e80ec1474275db984730cc84a6c6e1bc175056d7e625d8344e07b2cb063a201d7245d2650d0bd1847a85fc2340fff349852527528bcb04f414e73771dc70",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:and.blake3-512:cec8e80ec1474275db984730cc84a6c6e1bc175056d7e625d8344e07b2cb063a201d7245d2650d0bd1847a85fc2340fff349852527528bcb04f414e73771dc70.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_assign.spec.json",
+    "cid": "blake3-512:aa96a5d16f9230ada2f2b0ce8c0836fc79d70affb001542fe3ec18fd7b828f2c934bd38dbe4f9cd2a2cc13a4052155e2e2e41ee4dbc88b2c70da7c3ec6520ba4",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:assign.blake3-512:aa96a5d16f9230ada2f2b0ce8c0836fc79d70affb001542fe3ec18fd7b828f2c934bd38dbe4f9cd2a2cc13a4052155e2e2e41ee4dbc88b2c70da7c3ec6520ba4.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitand.spec.json",
+    "cid": "blake3-512:70419f37d21afdb2144ef8683b48eb12a19061027a101ebbfad5b35c285b0cf3c01f32456f8424d58716a7883ea04cb6acff270305521b4cad2711da0a705587",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:bitand.blake3-512:70419f37d21afdb2144ef8683b48eb12a19061027a101ebbfad5b35c285b0cf3c01f32456f8424d58716a7883ea04cb6acff270305521b4cad2711da0a705587.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitnot.spec.json",
+    "cid": "blake3-512:ba8a67d8917881ff3cd9f2e3a49d39779202120e4012524051412f32dc63624fab11903b78c578bedad1061dcd8a5bec75ed3b07c54c7a5db20843d81a5cc12b",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:bitnot.blake3-512:ba8a67d8917881ff3cd9f2e3a49d39779202120e4012524051412f32dc63624fab11903b78c578bedad1061dcd8a5bec75ed3b07c54c7a5db20843d81a5cc12b.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitor.spec.json",
+    "cid": "blake3-512:4bddb9f0f11a2ec20561fa11eb04864687342852c4af903185fc3d9f91dc63ac2290f6ff9a9fd3bf32ffe32fa9a9745c05dcede92d8e69963f07bb63895be84d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:bitor.blake3-512:4bddb9f0f11a2ec20561fa11eb04864687342852c4af903185fc3d9f91dc63ac2290f6ff9a9fd3bf32ffe32fa9a9745c05dcede92d8e69963f07bb63895be84d.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_bitxor.spec.json",
+    "cid": "blake3-512:53ebdedba39d693052a6a5dfe85584b537bc2ebcefbc98113b972dd947ecc1521a0df2d426d117b52a9e175f03021f6fa2ca3b2feb6b2f2db91a54cce1f78fb8",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:bitxor.blake3-512:53ebdedba39d693052a6a5dfe85584b537bc2ebcefbc98113b972dd947ecc1521a0df2d426d117b52a9e175f03021f6fa2ca3b2feb6b2f2db91a54cce1f78fb8.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_break.spec.json",
+    "cid": "blake3-512:d6fd9d48242cffd5b1090388a4decb3e7885c886ccb33090e58598cbe4826202ef0a8052c636e64744734eb35cd71a225f2b058c964550f8bf3670786ecf661a",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:break.blake3-512:d6fd9d48242cffd5b1090388a4decb3e7885c886ccb33090e58598cbe4826202ef0a8052c636e64744734eb35cd71a225f2b058c964550f8bf3670786ecf661a.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_call.spec.json",
+    "cid": "blake3-512:78726d7615a6ba4678b0d4b628503dbbbc46da78a744e9a0b1592d5a915975340354a8d70e00278c2c348c539d4b6b0309cd6248509490be91f90b36bdf1016f",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:call.blake3-512:78726d7615a6ba4678b0d4b628503dbbbc46da78a744e9a0b1592d5a915975340354a8d70e00278c2c348c539d4b6b0309cd6248509490be91f90b36bdf1016f.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_cast.spec.json",
+    "cid": "blake3-512:5cfb81de9fcd12be567832855b96f4fc57e2c9a83c15b08f803c0c45caf0e093f773365eaacf6fdd815a230e1c4493c9c734d22bf0b87dbd9a5fb2dd2e21eca8",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:cast.blake3-512:5cfb81de9fcd12be567832855b96f4fc57e2c9a83c15b08f803c0c45caf0e093f773365eaacf6fdd815a230e1c4493c9c734d22bf0b87dbd9a5fb2dd2e21eca8.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_continue.spec.json",
+    "cid": "blake3-512:4e7d79c9f0a61998fa6fe8540d9b11d2616d8fd7583a2ed7b3272efc657db2318c0dfa3055db107d2ee8633a34ef2047af377b705688f358f2b3c3ea70357aed",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:continue.blake3-512:4e7d79c9f0a61998fa6fe8540d9b11d2616d8fd7583a2ed7b3272efc657db2318c0dfa3055db107d2ee8633a34ef2047af377b705688f358f2b3c3ea70357aed.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_decl.spec.json",
+    "cid": "blake3-512:bf9a3839b35b2e165537c78d5398272875bba518b3a0b9857fea1574713d40c32cb7c989756cdbdfbd3e80dc597af0c7496de545840a3eb6727b721321e9ac85",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:decl.blake3-512:bf9a3839b35b2e165537c78d5398272875bba518b3a0b9857fea1574713d40c32cb7c989756cdbdfbd3e80dc597af0c7496de545840a3eb6727b721321e9ac85.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_deref.spec.json",
+    "cid": "blake3-512:8e0dd99d3425890284df5580bf29a7017f960bd9ddbe4900a793241cd7f1a227b35f1d264160010d2484e4a44e4c9d8f34d037a3fc9b5162120165cf5453a2b0",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:deref.blake3-512:8e0dd99d3425890284df5580bf29a7017f960bd9ddbe4900a793241cd7f1a227b35f1d264160010d2484e4a44e4c9d8f34d037a3fc9b5162120165cf5453a2b0.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_div.spec.json",
+    "cid": "blake3-512:935692e4ef76934ff3b3995820a4e978babd8b5c8ba030986f990c967883affc64e472a09dfc3fb48345da06eef15a4d4c67110d4e91eff410b6eca148afb06d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:div.blake3-512:935692e4ef76934ff3b3995820a4e978babd8b5c8ba030986f990c967883affc64e472a09dfc3fb48345da06eef15a4d4c67110d4e91eff410b6eca148afb06d.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_eq.spec.json",
+    "cid": "blake3-512:116cc4407d0495b16b8401d99ce86e3431cc00be1e8aeae06ec5195d2604adc6e14bedeebedcd58f8882fd32d93a370e84b6d43244129877b0a1cbd43609a1de",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:eq.blake3-512:116cc4407d0495b16b8401d99ce86e3431cc00be1e8aeae06ec5195d2604adc6e14bedeebedcd58f8882fd32d93a370e84b6d43244129877b0a1cbd43609a1de.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_field.spec.json",
+    "cid": "blake3-512:245fc57c940055411d2c733435cdf67ad0c285bfbfa2a9cb62c262758acac658e886c0ef3061e6a71e371311740a1bb15f14f3631ec48861c56c3c80ad84c00e",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:field.blake3-512:245fc57c940055411d2c733435cdf67ad0c285bfbfa2a9cb62c262758acac658e886c0ef3061e6a71e371311740a1bb15f14f3631ec48861c56c3c80ad84c00e.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_for.spec.json",
+    "cid": "blake3-512:38f0380250c94b76738ff077c8d6557f62e7cd2e11c8af6c010d2d17b5bdf0dd315c2c7571c8094e3cec6907697adc7f2e51482d250ba9785b6fbf4dd26fd144",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:for.blake3-512:38f0380250c94b76738ff077c8d6557f62e7cd2e11c8af6c010d2d17b5bdf0dd315c2c7571c8094e3cec6907697adc7f2e51482d250ba9785b6fbf4dd26fd144.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_ge.spec.json",
+    "cid": "blake3-512:b719f65b3f7f3c8fac34cfddcfb973b1529ccdfbf91330eb19408c43a4205df6da588be754752bb56ebcd2f5196b2abaa3b95561f3b72a7114b70c3438c5e562",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:ge.blake3-512:b719f65b3f7f3c8fac34cfddcfb973b1529ccdfbf91330eb19408c43a4205df6da588be754752bb56ebcd2f5196b2abaa3b95561f3b72a7114b70c3438c5e562.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_gt.spec.json",
+    "cid": "blake3-512:49e5d68a7a041fd51cf53e5336ee96b95bdee11b4437fe1c0595b6d4d61a5ff16fc5fcadfe4d750a0413b77daf931c3089f54c29bbd35b544e92eb434476e78b",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:gt.blake3-512:49e5d68a7a041fd51cf53e5336ee96b95bdee11b4437fe1c0595b6d4d61a5ff16fc5fcadfe4d750a0413b77daf931c3089f54c29bbd35b544e92eb434476e78b.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_if.spec.json",
+    "cid": "blake3-512:dd37023ebf6436a3dc4c777be751ef0e9b688718f34fe0d3a2ca47092a009406c42395939e3bd06428c2c94f0340e1d169c364f9b08e1a5636b42c312fafeabb",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:if.blake3-512:dd37023ebf6436a3dc4c777be751ef0e9b688718f34fe0d3a2ca47092a009406c42395939e3bd06428c2c94f0340e1d169c364f9b08e1a5636b42c312fafeabb.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_index.spec.json",
+    "cid": "blake3-512:730424ebebb38bb859491696dfd8dca398a2662dce94699df8ea4ddf18eb8142e78f9e85849164cf0ff52c21f5ffc43cc992a8144c1fc38a726dee0bb6e6928c",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:index.blake3-512:730424ebebb38bb859491696dfd8dca398a2662dce94699df8ea4ddf18eb8142e78f9e85849164cf0ff52c21f5ffc43cc992a8144c1fc38a726dee0bb6e6928c.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_le.spec.json",
+    "cid": "blake3-512:0af4bee2df98e9bb4f3dd227e4dfab2bd09a08eaca7b62929f8906ccc91482a234bf9e96856fee38ddafc52c92db933bd0939ea07e808afe24e68c19e80bedaf",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:le.blake3-512:0af4bee2df98e9bb4f3dd227e4dfab2bd09a08eaca7b62929f8906ccc91482a234bf9e96856fee38ddafc52c92db933bd0939ea07e808afe24e68c19e80bedaf.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_lt.spec.json",
+    "cid": "blake3-512:8e1d4fd8a8b8f385200fc2ce12babc5615ebb5bbad490ed7e90417e025e4576097e82d74900956cb9e087b2025b03c681e9d47a41f09d0804e155381eaf8ea3a",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:lt.blake3-512:8e1d4fd8a8b8f385200fc2ce12babc5615ebb5bbad490ed7e90417e025e4576097e82d74900956cb9e087b2025b03c681e9d47a41f09d0804e155381eaf8ea3a.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_mod.spec.json",
+    "cid": "blake3-512:64ef7d77a3a24ca08550dedcfdf7bc1dfecd3bc62e72a66a4c0a8e03c117b2cb1d1e4fa274e9db22ccc8e34e934169cd0229bb3a9dbb75b4c66d8fdda55b1f1d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:mod.blake3-512:64ef7d77a3a24ca08550dedcfdf7bc1dfecd3bc62e72a66a4c0a8e03c117b2cb1d1e4fa274e9db22ccc8e34e934169cd0229bb3a9dbb75b4c66d8fdda55b1f1d.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_mul.spec.json",
+    "cid": "blake3-512:c42c6b2ce98409626ab73f0f1d8adaf939eecf747747761c0979ac92ae893e09d1b6fa4e5f38c35c571bb67e9e80464c6ff170aae69c30400db4fb3f593f7947",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:mul.blake3-512:c42c6b2ce98409626ab73f0f1d8adaf939eecf747747761c0979ac92ae893e09d1b6fa4e5f38c35c571bb67e9e80464c6ff170aae69c30400db4fb3f593f7947.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_ne.spec.json",
+    "cid": "blake3-512:9b0b781a9e1c6e1b768b1ba8e1abbc5045d5d1e234220e7be9d243950c3f4c3439f0537a0f63fda7630ce6cdcc9fddaf41e76ba7a2c0eb0dc10d26edb8a7e7f8",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:ne.blake3-512:9b0b781a9e1c6e1b768b1ba8e1abbc5045d5d1e234220e7be9d243950c3f4c3439f0537a0f63fda7630ce6cdcc9fddaf41e76ba7a2c0eb0dc10d26edb8a7e7f8.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_neg.spec.json",
+    "cid": "blake3-512:a1590c122e5d907e98af45d9e08b756812bdc0b5113ad517cc1807090a8f2b5c0dad9d6f95a78c105a910144d4bfa8284a87840b9de6a0d7fa653bf774e0ec2f",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:neg.blake3-512:a1590c122e5d907e98af45d9e08b756812bdc0b5113ad517cc1807090a8f2b5c0dad9d6f95a78c105a910144d4bfa8284a87840b9de6a0d7fa653bf774e0ec2f.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_not.spec.json",
+    "cid": "blake3-512:3b1b3382894902e613caacbfc6372f5985c0d83919f4180818d2704ca71f66081ad10e38ca7bb7103dbab1a53c7268ecea3604e0fb326411dd58fd0d68a22245",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:not.blake3-512:3b1b3382894902e613caacbfc6372f5985c0d83919f4180818d2704ca71f66081ad10e38ca7bb7103dbab1a53c7268ecea3604e0fb326411dd58fd0d68a22245.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_or.spec.json",
+    "cid": "blake3-512:3e8bfb6ec2ffdd5cef2a64e3274b6cfe7b89d5696e08ffe9def3a61c5894fe47ac51fbc8453222795fe0fc1419b334c2598b177691b20a7161a7b8a0c5811a2a",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:or.blake3-512:3e8bfb6ec2ffdd5cef2a64e3274b6cfe7b89d5696e08ffe9def3a61c5894fe47ac51fbc8453222795fe0fc1419b334c2598b177691b20a7161a7b8a0c5811a2a.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_panic.spec.json",
+    "cid": "blake3-512:3de01f87a37636103e33944957b3b0d355b1a2e071e58bbe378059b2ea3c48c98e361f73251e0b8ef603685788154bbaaecdf02afd0d693f09313c87abbce6c5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:panic.blake3-512:3de01f87a37636103e33944957b3b0d355b1a2e071e58bbe378059b2ea3c48c98e361f73251e0b8ef603685788154bbaaecdf02afd0d693f09313c87abbce6c5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_return.spec.json",
+    "cid": "blake3-512:9161a9c0a56c7aa3ff6fd51f7f2ea15129db3c4ac62ee1cbe15b45b0e80d24e41977440d2d2e8f3253fc2b57c29993a90c94c81724ca8230d163788682e967d5",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:return.blake3-512:9161a9c0a56c7aa3ff6fd51f7f2ea15129db3c4ac62ee1cbe15b45b0e80d24e41977440d2d2e8f3253fc2b57c29993a90c94c81724ca8230d163788682e967d5.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_seq.spec.json",
+    "cid": "blake3-512:4f5b9e39745851d397f3aa8db4a9d662cbcf642d6c25f638376646b177f7e153f1cd387b83357b7a8c2ac40004668288db6a093e0950a9cb8d5aaa6c507dbffc",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:seq.blake3-512:4f5b9e39745851d397f3aa8db4a9d662cbcf642d6c25f638376646b177f7e153f1cd387b83357b7a8c2ac40004668288db6a093e0950a9cb8d5aaa6c507dbffc.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_shl.spec.json",
+    "cid": "blake3-512:577d9498e937b68e9e25531203d970403e23fd23d5b343a10089efbee5b0a12f2e5145d5a71e8a1bed0a555a4fc95ada86102987513410d24cfb341838bdd9e9",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:shl.blake3-512:577d9498e937b68e9e25531203d970403e23fd23d5b343a10089efbee5b0a12f2e5145d5a71e8a1bed0a555a4fc95ada86102987513410d24cfb341838bdd9e9.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_shr.spec.json",
+    "cid": "blake3-512:f900206ce2822fff4c04d0846ff9ed0bce1031ec2cda9c2d964980ab78c86b81a271574bc58e413375658e4345eb8f678ebd4d03e20b412ebcca1d5025f3f285",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:shr.blake3-512:f900206ce2822fff4c04d0846ff9ed0bce1031ec2cda9c2d964980ab78c86b81a271574bc58e413375658e4345eb8f678ebd4d03e20b412ebcca1d5025f3f285.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_skip.spec.json",
+    "cid": "blake3-512:5327af625cd7de8e42521d0f9f0143b859451157ae9d74ecb37b3b4a1eb3a89820c290d185a569658335df9b33b2cd96e9f92b23270b116a5ebff0fcd4fdd1d8",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:skip.blake3-512:5327af625cd7de8e42521d0f9f0143b859451157ae9d74ecb37b3b4a1eb3a89820c290d185a569658335df9b33b2cd96e9f92b23270b116a5ebff0fcd4fdd1d8.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_source-unit.spec.json",
+    "cid": "blake3-512:fe69376250216c82878613196127c74cb3eaf64a94272812541bb6413c8697da580468d9aff8010afc17565e6e97f55c05a23a6bc120c23e601f52a419d5f213",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:source-unit.blake3-512:fe69376250216c82878613196127c74cb3eaf64a94272812541bb6413c8697da580468d9aff8010afc17565e6e97f55c05a23a6bc120c23e601f52a419d5f213.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_sub.spec.json",
+    "cid": "blake3-512:29f80caf3bf70ebea5a0f9b919fe64a5300b9c6cde124ef151140f4c4831c645d1f0e28ae476d957cdae3799867c5d817dc73ce9a80deaa3819fd04ba4d0a812",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:sub.blake3-512:29f80caf3bf70ebea5a0f9b919fe64a5300b9c6cde124ef151140f4c4831c645d1f0e28ae476d957cdae3799867c5d817dc73ce9a80deaa3819fd04ba4d0a812.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_unit.spec.json",
+    "cid": "blake3-512:8790c4dcb616bc4dcf2d86fdacc86ed7a6d7af7903661daa29419f85f5c914176c3c1c0b742226b9d53e32ef27acf1742f8d5f2aa1176dfe5c17a68a50b3f058",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:unit.blake3-512:8790c4dcb616bc4dcf2d86fdacc86ed7a6d7af7903661daa29419f85f5c914176c3c1c0b742226b9d53e32ef27acf1742f8d5f2aa1176dfe5c17a68a50b3f058.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_unreachable.spec.json",
+    "cid": "blake3-512:f97e2a6b06aa79a6a7e6619aad10a2042fd5072e8d31b513cce1ac159636702aee3e6cd7e8352ad5e2a7c001501ead2020231f9b896975ac64fed968f220a4ae",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:unreachable.blake3-512:f97e2a6b06aa79a6a7e6619aad10a2042fd5072e8d31b513cce1ac159636702aee3e6cd7e8352ad5e2a7c001501ead2020231f9b896975ac64fed968f220a4ae.json"
+  },
+  {
+    "kind": "algorithm",
+    "spec": "op_while.spec.json",
+    "cid": "blake3-512:fa28cd4ef2d4baa4c7107a82b0681bbaaa03ed699b1157f77e70d075c6717f02f1e37d4d8c1c6216e3ced43b0f6b9b8726324c998fb4f1f4b253cb5a985227cd",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/algorithms/zig:while.blake3-512:fa28cd4ef2d4baa4c7107a82b0681bbaaa03ed699b1157f77e70d075c6717f02f1e37d4d8c1c6216e3ced43b0f6b9b8726324c998fb4f1f4b253cb5a985227cd.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_and_false.spec.json",
+    "cid": "blake3-512:3d7f2658797930e4caa521d3e295cba35b5d3305426ccf8ebfa89e6f79cfb8a05a0dc79d075ec11f0806a11e8800fad47aabc7e2fdd8eb12952c15e8a0bcf131",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:and-false.blake3-512:3d7f2658797930e4caa521d3e295cba35b5d3305426ccf8ebfa89e6f79cfb8a05a0dc79d075ec11f0806a11e8800fad47aabc7e2fdd8eb12952c15e8a0bcf131.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_and_true.spec.json",
+    "cid": "blake3-512:80257671ba91da5fc897e7f673d03be7c5d8b7cb25880ee1964cd97d26c0ea79abae414dba2921ea66a032d780636e1682752bf037c03b716fd3ca2eadd9c926",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:and-true.blake3-512:80257671ba91da5fc897e7f673d03be7c5d8b7cb25880ee1964cd97d26c0ea79abae414dba2921ea66a032d780636e1682752bf037c03b716fd3ca2eadd9c926.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_or_false.spec.json",
+    "cid": "blake3-512:ce1fdc613821a305500292d15479bcf5d4d68484ed033e4a2df07b4ae481bf6bd5bd5bb7f716d231d1f62d7c7ae0eee06c0f4c427e5494984f7ac9b794e38ea4",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:or-false.blake3-512:ce1fdc613821a305500292d15479bcf5d4d68484ed033e4a2df07b4ae481bf6bd5bd5bb7f716d231d1f62d7c7ae0eee06c0f4c427e5494984f7ac9b794e38ea4.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_or_true.spec.json",
+    "cid": "blake3-512:ceb891c52bbf0adc5cd6c66252738e2c179b8022f527ef6070c76628f5c25315063a9cc32c5d16a2a7055bfd224d3004813d0e715d1f7145909ef6b6623a7059",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:or-true.blake3-512:ceb891c52bbf0adc5cd6c66252738e2c179b8022f527ef6070c76628f5c25315063a9cc32c5d16a2a7055bfd224d3004813d0e715d1f7145909ef6b6623a7059.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_seq_assoc.spec.json",
+    "cid": "blake3-512:84a4f204492fcc37d16db1a660bbe4b0cf0d63e9276426b1c3d5c592ada02beb56ab88655f6a61c7e9b1fb89fd5912b0e3ae0e051bfbd17c97eb4891daa5318d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:seq-assoc.blake3-512:84a4f204492fcc37d16db1a660bbe4b0cf0d63e9276426b1c3d5c592ada02beb56ab88655f6a61c7e9b1fb89fd5912b0e3ae0e051bfbd17c97eb4891daa5318d.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_seq_skip_left.spec.json",
+    "cid": "blake3-512:59604a727e3c542d383d09322475f87e88e02d1cc498b39072017173cd3cc6c5b2dd6251c0505f68e2287181bf7d899869d0121c76bcf1e0608033c796ab1c75",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:seq-skip-left.blake3-512:59604a727e3c542d383d09322475f87e88e02d1cc498b39072017173cd3cc6c5b2dd6251c0505f68e2287181bf7d899869d0121c76bcf1e0608033c796ab1c75.json"
+  },
+  {
+    "kind": "equation",
+    "spec": "eq_seq_skip_right.spec.json",
+    "cid": "blake3-512:9617152401afc510794fd9cb9402232f21921ea21c7256ab3a6afe36043f0a3c94ade16d4bd4b6de0f0e6916a29ad499f512c5ac136d84e4271347bcb88377b6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/equations/zig:seq-skip-right.blake3-512:9617152401afc510794fd9cb9402232f21921ea21c7256ab3a6afe36043f0a3c94ade16d4bd4b6de0f0e6916a29ad499f512c5ac136d84e4271347bcb88377b6.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_io.spec.json",
+    "cid": "blake3-512:e0329b6a8719b55857a89884a4db871b27414a84dc7c65b4681d373349b579e8ee5930b5911b8dfb1ed4d9ae978662bc3d4ae3d39886f6ec664f1f02752e5bbf",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:IO.blake3-512:e0329b6a8719b55857a89884a4db871b27414a84dc7c65b4681d373349b579e8ee5930b5911b8dfb1ed4d9ae978662bc3d4ae3d39886f6ec664f1f02752e5bbf.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_opaque_loop.spec.json",
+    "cid": "blake3-512:c4d7b31fe1ca7c7232cea12c79670aa1645fe32399bfdc95686333cf5db2319727e63b36ee57f084ffd62cfd15d599b783875bdf8641ce8536397588897614a6",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:OpaqueLoop.blake3-512:c4d7b31fe1ca7c7232cea12c79670aa1645fe32399bfdc95686333cf5db2319727e63b36ee57f084ffd62cfd15d599b783875bdf8641ce8536397588897614a6.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_panic.spec.json",
+    "cid": "blake3-512:d842b28071158eea656aa2706a764cf79a36ec2e8a71b18a73ac5bf6a05d92da366ad909069ff5eee0ed1a814f004c7f9f6d261a5f3dd81c383ee492662dc284",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:Panic.blake3-512:d842b28071158eea656aa2706a764cf79a36ec2e8a71b18a73ac5bf6a05d92da366ad909069ff5eee0ed1a814f004c7f9f6d261a5f3dd81c383ee492662dc284.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_read.spec.json",
+    "cid": "blake3-512:550a4058b2590caa1ffe2f98e535c7504adf4094ee94ed2d445fb2c04a0842921134ca2d65358f84fb3effb12f64038d565736316661259e46ec902a7196ed16",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:MemRead.blake3-512:550a4058b2590caa1ffe2f98e535c7504adf4094ee94ed2d445fb2c04a0842921134ca2d65358f84fb3effb12f64038d565736316661259e46ec902a7196ed16.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_unresolved_call.spec.json",
+    "cid": "blake3-512:d29b9351a3d7b327d9f9b2d903fc070e3d272c14ed45b9b68717401bff210ea16ffc709b89aa098867c076a3aa06979d82f1981a9c5b3a766a4e05f4793cfe8d",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:UnresolvedCall.blake3-512:d29b9351a3d7b327d9f9b2d903fc070e3d272c14ed45b9b68717401bff210ea16ffc709b89aa098867c076a3aa06979d82f1981a9c5b3a766a4e05f4793cfe8d.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_unsafe.spec.json",
+    "cid": "blake3-512:8b1686cd8342dd0aeab1bfa0c17a346fc3d333dc374ae570a38e272e7f913f5abc561655359593186e8f15333d930199783edc87cf27372dd91af350d613f8e3",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:Unsafe.blake3-512:8b1686cd8342dd0aeab1bfa0c17a346fc3d333dc374ae570a38e272e7f913f5abc561655359593186e8f15333d930199783edc87cf27372dd91af350d613f8e3.json"
+  },
+  {
+    "kind": "effect-signature",
+    "spec": "effsig_write.spec.json",
+    "cid": "blake3-512:ab39895b724e5c58b39af46240e4ed72ecfc5646b71e8c231acafd245bb5dde26987562c0805c1b9a5d2bea06acda3de86939af65a374ecf265c6560a7e72771",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig:effect-signature:MemWrite.blake3-512:ab39895b724e5c58b39af46240e4ed72ecfc5646b71e8c231acafd245bb5dde26987562c0805c1b9a5d2bea06acda3de86939af65a374ecf265c6560a7e72771.json"
+  },
+  {
+    "kind": "language-signature",
+    "spec": "language_signature_zig.spec.json",
+    "cid": "blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535",
+    "path": "/Users/tsavo/provekit-worktrees/pk-transport-cli/menagerie/zig-language-signature/dev/../catalog/signatures/zig.blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535.json"
+  }
+]

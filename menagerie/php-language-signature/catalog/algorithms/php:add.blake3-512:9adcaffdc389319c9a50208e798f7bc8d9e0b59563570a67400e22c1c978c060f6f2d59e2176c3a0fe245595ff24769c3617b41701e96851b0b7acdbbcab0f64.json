@@ -1,0 +1,66 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:add",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "add",
+      "arity": [
+        "Value",
+        "Value"
+      ],
+      "result": "Value",
+      "wp": "PHP + operator",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:9adcaffdc389319c9a50208e798f7bc8d9e0b59563570a67400e22c1c978c060f6f2d59e2176c3a0fe245595ff24769c3617b41701e96851b0b7acdbbcab0f64",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "KowJgMgHl8V39gFPMSE5/YsLZbh4a9Vvjfx6TfV49JRF7I1QxiDkZPtouD5L3rcI/1ylKOyXgt0grLuPGDUgBw=="
+  }
+}
