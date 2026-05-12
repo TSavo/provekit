@@ -1,0 +1,85 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:result->python:dataclass-tagged-union",
+    "formals": [
+      "value",
+      "error"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "E",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:result",
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          },
+          {
+            "kind": "var",
+            "name": "error"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:dataclass-tagged-union",
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:dataclass-union",
+            "args": [
+              {
+                "kind": "const",
+                "value": "is_ok",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "DiscriminatorField",
+                  "args": []
+                }
+              },
+              {
+                "kind": "var",
+                "name": "value"
+              },
+              {
+                "kind": "var",
+                "name": "error"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "dataclass with bool discriminator replaces native sum type: three fields (is_ok, value, error) with optional types replace two named constructor arms; instantiation requires explicit Ok(v) or Err(e) factory calls; pattern matching becomes if res.is_ok / else with manual exhaustiveness",
+      "domain_narrowing": "Python does not statically enforce the invariant that exactly one of (value, error) is active given is_ok; realization domain is narrowed to programs where the programmer maintains the invariant at every construction and access site",
+      "ub_introduction": "No classical undefined behavior; however, type checkers (mypy) will flag accessing res.value when is_ok=False as type-incompatible; this is a type-system violation rather than memory UB, but represents a domain violation",
+      "effect_divergence": "empty: dataclass construction is side-effect-free; no resource patterns differ from the abstraction",
+      "value_divergence": "empty: the slot structure (value, error) maps directly to Python fields; no value-representation gap"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:4c5345ac7de40c6f66a08b189060562d7ea00144b3438da46134c28752c7fcd2001a520140858b4338af062ff8e9c122a6b296521a87b95b9b076bbaf88f888b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
