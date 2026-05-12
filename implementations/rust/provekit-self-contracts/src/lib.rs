@@ -152,8 +152,8 @@ pub const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
 /// dogfood-surface drift only moves the Rust kit pin.
 pub const ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID: &str = concat!(
     "blake3-512:",
-    "804c8c31fd4743c35280760cb14ce7ba31942806bb3d41be9cec32fac8f9b1c1",
-    "7ebd62fef41e3b06d8262cdc4b86f82fe0be4f7d4f7b4d1791bdb5c34e5127bb"
+    "2b41786f188d603fe0232c6cf64d7a1b4dfc29b07cd1f272b9241c0ed08ebd1f",
+    "1e8cc4eb032d0715915115481ef272f5e454fec77216fadfbccb7098e888db81"
 );
 
 // --- Orchestrator types ----------------------------------------------------
