@@ -226,10 +226,10 @@ fn concept_hint_from_span(
     source_lines: Option<&[&str]>,
 ) -> Option<String> {
     // --- Path 1: doc attributes (/// concept: <name>) ---
-    // Scan attrs in reverse; stop at first non-doc attr.
+    // Scan ALL attrs in reverse; skip non-doc attrs, return first matching doc attr.
     for attr in attrs.iter().rev() {
         if !attr.path().is_ident("doc") {
-            break;
+            continue;
         }
         // Extract the string value of the #[doc = "..."] attribute.
         if let syn::Meta::NameValue(nv) = &attr.meta {
@@ -698,6 +698,30 @@ mod tests {
             out.decls[0].concept_hint.as_deref(),
             Some("retry-with-jitter"),
             "doc-comment concept annotation must be extracted"
+        );
+    }
+
+    /// Regression: idiomatic Rust ordering is `[doc, requires]`; reverse iter
+    /// sees `[requires, doc]`.  The old `break` on `requires` caused the doc
+    /// attr to be silently skipped.  The fix changes `break` -> `continue` so
+    /// all attrs are scanned and the doc attr is found.
+    ///
+    /// This test MUST fail against pre-fix HEAD and pass after the fix.
+    #[test]
+    fn concept_hint_doc_above_requires_extracts_correctly() {
+        let src = r#"
+            /// concept: retry-with-jitter
+            #[requires(x > 0)]
+            fn retry(x: i32) -> i32 { x }
+        "#;
+        let f = parse(src);
+        // lift_file (no source_text) — mirrors the production caller in lift_pass.rs.
+        let out = lift_file(&f, "test.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(
+            out.decls[0].concept_hint.as_deref(),
+            Some("retry-with-jitter"),
+            "doc attr above #[requires] must be found despite non-doc attr in reverse iter"
         );
     }
 }
