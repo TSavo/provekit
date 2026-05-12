@@ -141,7 +141,23 @@ pub fn run(args: BindArgs) -> u8 {
         .clone()
         .unwrap_or_else(|| root.join(".provekit").join("bindings"));
 
-    let source_lang = resolve_lang(&args.lang, &root);
+    let source_lang = match resolve_lang(&args.lang, &root) {
+        Ok(lang) => lang,
+        Err(msg) => {
+            eprintln!("bind: {msg}");
+            // Emit a gap record so callers see why no output was produced.
+            let _ = std::fs::create_dir_all(&output_dir);
+            let gap_doc = build_gaps_doc("unknown", &[GapRecord {
+                kind: "source-language-not-supported".into(),
+                detail: msg,
+            }]);
+            let _ = std::fs::write(
+                output_dir.join("gaps.json"),
+                serde_json::to_string_pretty(&gap_doc).unwrap_or_default(),
+            );
+            return EXIT_USER_ERROR;
+        }
+    };
 
     if source_lang != "rust" {
         eprintln!(
@@ -174,9 +190,22 @@ pub fn run(args: BindArgs) -> u8 {
 
     if src_files.is_empty() {
         eprintln!("bind: no Rust source files found under {}", scan_root.display());
-        // Still write gap record.
+        // Emit a real gap record so callers know WHY nothing was produced.
+        // When source_lang is non-Rust, record the source-language-not-supported gap
+        // so composed loss in round-trip tests contains real (not synthetic) evidence.
+        let mut early_gaps: Vec<GapRecord> = Vec::new();
+        if source_lang != "rust" {
+            early_gaps.push(GapRecord {
+                kind: "source-language-not-supported".into(),
+                detail: format!(
+                    "no full lifter for {source_lang} in v0; bind engine is Rust-only. \
+                     Round-trip through {source_lang} is loudly-bounded-lossy at this boundary. \
+                     Full {source_lang} lifter deferred to v1."
+                ),
+            });
+        }
         let _ = std::fs::create_dir_all(&output_dir);
-        let gaps = build_gaps_doc(&source_lang, &[]);
+        let gaps = build_gaps_doc(&source_lang, &early_gaps);
         let _ = std::fs::write(
             output_dir.join("gaps.json"),
             serde_json::to_string_pretty(&gaps).unwrap_or_default(),
@@ -2025,24 +2054,74 @@ fn print_summary(result: &EngineResult) {
 // Helpers
 // ============================================================================
 
-fn resolve_lang(lang: &str, root: &Path) -> String {
-    if lang != "auto" {
-        return lang.to_string();
+/// Detect the source language from directory contents.
+///
+/// Priority: explicit `lang` arg (non-"auto") > Cargo.toml/\.rs > pom.xml/build.gradle/\.java >
+/// pyproject.toml/setup.py/\.py > unknown (returns Err).
+///
+/// Returns `Ok(lang)` or `Err(message)` so `run()` can hard-fail with a clear gap record
+/// rather than silently assuming Rust and producing empty output.
+fn resolve_lang_detect(root: &Path) -> Result<String, String> {
+    // Check for Rust indicators.
+    if root.join("Cargo.toml").exists() {
+        return Ok("rust".to_string());
     }
-    // v0: always rust (auto-detect from src/*.rs presence)
-    let src = root.join("src");
-    if src.is_dir() {
-        return "rust".to_string();
-    }
-    // check root for *.rs
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for e in entries.flatten() {
-            if e.path().extension().map(|x| x == "rs").unwrap_or(false) {
-                return "rust".to_string();
+    if root.join("src").is_dir() {
+        // Check if src/ contains .rs files.
+        if let Ok(entries) = std::fs::read_dir(root.join("src")) {
+            for e in entries.flatten() {
+                if e.path().extension().map(|x| x == "rs").unwrap_or(false) {
+                    return Ok("rust".to_string());
+                }
             }
         }
     }
-    "rust".to_string() // fallback
+    // Check root for *.rs files.
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            if e.path().extension().map(|x| x == "rs").unwrap_or(false) {
+                return Ok("rust".to_string());
+            }
+        }
+    }
+
+    // Check for Java indicators.
+    if root.join("pom.xml").exists() || root.join("build.gradle").exists() {
+        return Ok("java".to_string());
+    }
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            if e.path().extension().map(|x| x == "java").unwrap_or(false) {
+                return Ok("java".to_string());
+            }
+        }
+    }
+
+    // Check for Python indicators.
+    if root.join("pyproject.toml").exists() || root.join("setup.py").exists() {
+        return Ok("python".to_string());
+    }
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            if e.path().extension().map(|x| x == "py").unwrap_or(false) {
+                return Ok("python".to_string());
+            }
+        }
+    }
+
+    Err(format!(
+        "cannot determine source language from {}; directory contains no recognised source files \
+         (.rs / Cargo.toml, .java / pom.xml / build.gradle, .py / pyproject.toml / setup.py). \
+         Use --lang=<language> to specify explicitly.",
+        root.display()
+    ))
+}
+
+fn resolve_lang(lang: &str, root: &Path) -> Result<String, String> {
+    if lang != "auto" {
+        return Ok(lang.to_string());
+    }
+    resolve_lang_detect(root)
 }
 
 fn collect_rs_files(dir: &Path) -> Vec<PathBuf> {
@@ -2192,5 +2271,66 @@ fn mode_label_for_hint(m: &RuntimeMode) -> String {
         RuntimeMode::Monitor => "monitor".to_string(),
         RuntimeMode::Emitter => "emitter".to_string(),
         RuntimeMode::Witness => "witness".to_string(),
+    }
+}
+
+// ============================================================================
+// Unit tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_lang_detect;
+    use std::fs;
+
+    /// Create a temporary directory for a test case, run the closure to populate it,
+    /// then call resolve_lang_detect and return the result.
+    fn with_temp_dir<F: FnOnce(&std::path::Path)>(
+        populate: F,
+    ) -> Result<String, String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        populate(dir.path());
+        resolve_lang_detect(dir.path())
+    }
+
+    #[test]
+    fn resolve_lang_detect_rust_via_cargo_toml() {
+        let result = with_temp_dir(|p| {
+            fs::write(p.join("Cargo.toml"), "[package]\nname = \"foo\"\n").unwrap();
+        });
+        assert_eq!(result, Ok("rust".to_string()));
+    }
+
+    #[test]
+    fn resolve_lang_detect_java_via_pom_xml() {
+        let result = with_temp_dir(|p| {
+            fs::write(p.join("pom.xml"), "<project/>").unwrap();
+        });
+        assert_eq!(result, Ok("java".to_string()));
+    }
+
+    #[test]
+    fn resolve_lang_detect_python_via_pyproject_toml() {
+        let result = with_temp_dir(|p| {
+            fs::write(p.join("pyproject.toml"), "[tool.poetry]\n").unwrap();
+        });
+        assert_eq!(result, Ok("python".to_string()));
+    }
+
+    #[test]
+    fn resolve_lang_detect_unknown_returns_err() {
+        let result = with_temp_dir(|_p| {
+            // Empty directory: no recognised source files.
+        });
+        assert!(
+            result.is_err(),
+            "Expected Err for empty dir, got: {:?}",
+            result
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("cannot determine source language"),
+            "Err message should explain the problem; got: {msg}"
+        );
     }
 }
