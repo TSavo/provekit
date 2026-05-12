@@ -115,6 +115,17 @@ fn validate_formula(formula: &provekit_ir_types::IrFormula) -> Result<(), String
         provekit_ir_types::IrFormula::Forall { body, .. }
         | provekit_ir_types::IrFormula::Exists { body, .. }
         | provekit_ir_types::IrFormula::Choice { body, .. } => validate_formula(body),
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term; `libprovekit::wp` eliminates them before any formula reaches
+        // the SMT-LIB backend. Reaching this arm means a `wp_rule` schema was
+        // handed to the solver without instantiation.
+        provekit_ir_types::IrFormula::Substitute { .. }
+        | provekit_ir_types::IrFormula::Apply { .. } => Err(
+            "wp-rule schema node (substitute/apply) reached the SMT-LIB validator; \
+             it must be reduced via libprovekit::wp before solving"
+                .to_string(),
+        ),
     }
 }
 

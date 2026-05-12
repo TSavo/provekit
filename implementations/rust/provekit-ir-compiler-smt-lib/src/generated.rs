@@ -172,6 +172,17 @@ pub fn emit_formula(formula: &Formula) -> String {
             );
             format!("(exists (({} {})) {})", var_name, sort_str, unique)
         }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term and are eliminated by `libprovekit::wp` before any solver
+        // or compiler backend sees the formula. Reaching this arm is a bug.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the SMT-LIB formula emitter; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
     }
 }
 
@@ -336,6 +347,15 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
                 format!("(exists (({} {})) {})", var_name, sort_str, unique)
             }
         }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // see the note in `emit_formula`.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the SMT-LIB opacity emitter; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
     }
 }
 
@@ -428,6 +448,15 @@ pub fn collect_free_vars_formula(
             let mut nb = bound.clone();
             nb.insert(var_name.clone());
             collect_free_vars_formula(body, out, &nb);
+        }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // see the note in `emit_formula`.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the SMT-LIB free-var collector; \
+                 must be reduced via libprovekit::wp first"
+            )
         }
     }
 }
@@ -523,6 +552,15 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
         | Formula::Exists { body, .. }
         | Formula::Choice { body, .. } => {
             collect_ctor_decls_formula(body, out);
+        }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // see the note in `emit_formula`.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the SMT-LIB ctor-decl collector; \
+                 must be reduced via libprovekit::wp first"
+            )
         }
     }
 }
@@ -686,5 +724,10 @@ fn has_outlives_predicate(formula: &Formula) -> bool {
         Formula::Not { operands } => operands.iter().any(has_outlives_predicate),
         Formula::Forall { body, .. } | Formula::Exists { body, .. } => has_outlives_predicate(body),
         Formula::Choice { body, .. } => has_outlives_predicate(body),
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // see the note in `emit_formula`.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { target, .. } => has_outlives_predicate(target),
+        Formula::Apply { args, .. } => args.iter().any(has_outlives_predicate),
     }
 }

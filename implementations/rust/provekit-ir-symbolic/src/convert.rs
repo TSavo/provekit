@@ -278,5 +278,17 @@ pub fn formula_from_ir(f: ir::Formula) -> Formula {
             sort: sort.into(),
             body: Rc::new(formula_from_ir(*body)),
         },
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term. They are eliminated by `libprovekit::wp` before any formula
+        // is converted into the symbolic representation; the symbolic engine
+        // has no equivalent and is not meant to see them. Reaching this arm
+        // is a bug.
+        ir::Formula::Substitute { .. } | ir::Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached ir-symbolic formula conversion; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
     }
 }

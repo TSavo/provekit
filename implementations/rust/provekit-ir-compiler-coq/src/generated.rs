@@ -138,6 +138,17 @@ pub fn emit_formula(formula: &Formula) -> String {
                 var_name, coq_sort, var_name, body_str
             )
         }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term and are eliminated by `libprovekit::wp` before any solver
+        // or compiler backend sees the formula. Reaching this arm is a bug.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the Coq formula emitter; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
     }
 }
 fn emit_sort(sort: &Sort) -> String {
@@ -344,6 +355,16 @@ pub fn collect_free_vars_formula(
             let mut nb = bound.clone();
             nb.insert(var_name.clone());
             collect_free_vars_formula(body, out, &nb);
+        }
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // see the note in `emit_formula`. These must be reduced via
+        // `libprovekit::wp` before reaching the Coq backend.
+        // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the Coq free-var collector; \
+                 must be reduced via libprovekit::wp first"
+            )
         }
     }
 }

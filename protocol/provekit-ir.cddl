@@ -243,12 +243,49 @@ PrimitiveSortName = "Int" / "Real" / "Bool" / "String"
 ; ================================================================
 
 IrFormula = AtomicFormula / ConnectiveFormula / QuantifierFormula / ChoiceFormula
+          / SubstituteFormula / ApplyFormula
 
 ; Locked key order: kind, name, args
 AtomicFormula = {
   kind: "atomic",
   name: AtomicPredicateName,
   args: [* IrTerm],
+}
+
+; ----------------------------------------------------------------
+; wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3).
+;
+; `substitute` is an explicit, capture-avoiding, single-variable
+; substitution on a formula: `target` with `var` replaced by `term`.
+; It is `Q[result_value := value_expr]` written as a node, so that a
+; `wp_rule` can reference the postcondition meta-variable `Q` before it
+; is known. It reduces to the existing grammar when `target` is ground:
+; performing the substitution eliminates the node.
+;
+; `apply` is the application of a slot-transformer meta-variable
+; (`wp_<slot>`) to one formula argument: `apply(wp_<slot>, X)` is "the
+; weakest precondition of the term in slot `<slot>`, with respect to X."
+; When the evaluator instantiates `wp_<slot>` with the actual slot
+; transformer, the node reduces to a concrete formula.
+;
+; Both are conservative extensions: an existing IrFormula is still an
+; IrFormula. They are the smallest addition that lets a `wp_rule` be
+; written in the formula language the rest of the substrate speaks.
+; ----------------------------------------------------------------
+
+; Locked key order: kind, target, term, var
+SubstituteFormula = {
+  kind: "substitute",
+  target: IrFormula,
+  term: IrTerm,
+  var: tstr,
+}
+
+; Locked key order: args, fn, kind
+ApplyFormula = {
+  args: [+ IrFormula],
+  fn: tstr,
+  kind: "apply",
 }
 
 AtomicPredicateName = "=" / "≠" / "<" / "≤" / ">" / "≥"
