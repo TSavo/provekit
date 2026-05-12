@@ -34,6 +34,13 @@ use serde_json::Value;
 /// The `structural_divergence` key is a successor-mint addition (LSP §4.4):
 /// it is absent in previously-minted records and reads as false.
 ///
+/// Extension path: new dimensions are added as named Optional fields following
+/// the successor-mint protocol (LSP §4.4).  The former `extra: BTreeMap` with
+/// `#[serde(flatten)]` was removed (2026-05-11) because `#[serde(flatten)]`
+/// emits flattened keys AFTER the named fields in plain serde_json output,
+/// breaking lexicographic JCS key order at the struct level.  Any dimension
+/// not yet in the named set must be added as a proper typed field.
+///
 /// JCS key order (lexicographic): domain_narrowing, effect_divergence,
 /// structural_divergence, ub_introduction, value_divergence.
 /// Fields are declared in this order so plain `serde_json::to_string` output
@@ -61,14 +68,6 @@ pub struct LossRecord {
     /// Inputs where the result VALUE differs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_divergence: Option<Value>,
-
-    /// Extension dimensions not yet in the named set.
-    /// NOTE: #[serde(flatten)] emits these keys AFTER the named fields in
-    /// plain serde_json output.  If any fixture carries extra dimensions
-    /// the CID-pinning test will catch the mismatch.  No current catalog
-    /// fixture uses extra dimensions (verified 2026-05-11).
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
 }
 
 /// Per-dimension advisory severity tags (heuristic, not solver-checked).
@@ -288,7 +287,13 @@ impl TransportGapMemento {
 /// JCS key order: fn_name, gap_memento_cid, homomorphism_obligation, kind,
 /// literal_map, operator_map, renaming_map, representation_map,
 /// schema_version, signature, source_contract_cid, target_shape_cid,
-/// validity_precondition
+/// validity_precondition.
+/// Fields declared in this order so plain serde_json output matches Python bytes.
+///
+/// `signature` is always present in JCS (never skipped); unsigned mementos carry `null`.
+/// Kept as `Value` (not `Option<Value>`) so Python-emitted `"signature": null`
+/// round-trips byte-identically -- skip_serializing_if would omit it, breaking
+/// CID agreement with any Python generator that always writes the key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PartialMorphismMemento {
     pub fn_name: String,
@@ -301,8 +306,8 @@ pub struct PartialMorphismMemento {
     pub renaming_map: Value,
     pub representation_map: Value,
     pub schema_version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Value>,
+    /// Always present in JCS (never skipped); unsigned mementos carry `null`.
+    pub signature: Value,
     pub source_contract_cid: String,
     pub target_shape_cid: String,
     pub validity_precondition: Value,
@@ -331,7 +336,7 @@ impl PartialMorphismMemento {
             renaming_map: Value::Object(Default::default()),
             representation_map: Value::Object(Default::default()),
             schema_version: "1".into(),
-            signature: None,
+            signature: Value::Null,
             source_contract_cid: src,
             target_shape_cid: tgt,
             validity_precondition,
@@ -348,7 +353,13 @@ impl PartialMorphismMemento {
 /// JCS key order: coarsening_kind, fn_name, gap_memento_cid,
 /// homomorphism_obligation, kind, literal_map, loss, loss_severity,
 /// operator_map, renaming_map, representation_map, schema_version,
-/// signature, source_contract_cid, target_shape_cid
+/// signature, source_contract_cid, target_shape_cid.
+/// Fields declared in this order so plain serde_json output matches Python bytes.
+///
+/// `signature` is always present in JCS (never skipped); unsigned mementos carry `null`.
+/// Kept as `Value` (not `Option<Value>`) so Python-emitted `"signature": null`
+/// round-trips byte-identically -- skip_serializing_if would omit it, breaking
+/// CID agreement with any Python generator that always writes the key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LossyMorphismMemento {
     pub coarsening_kind: String,
@@ -364,8 +375,8 @@ pub struct LossyMorphismMemento {
     pub renaming_map: Value,
     pub representation_map: Value,
     pub schema_version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Value>,
+    /// Always present in JCS (never skipped); unsigned mementos carry `null`.
+    pub signature: Value,
     pub source_contract_cid: String,
     pub target_shape_cid: String,
 }
@@ -505,14 +516,13 @@ mod tests {
                 domain_narrowing: None,
                 effect_divergence: None,
                 structural_divergence: None,
-                extra: Default::default(),
             },
             loss_severity: LossSeverity(BTreeMap::new()),
             operator_map: Value::Object(Default::default()),
             renaming_map: Value::Object(Default::default()),
             representation_map: Value::Object(Default::default()),
             schema_version: "1".into(),
-            signature: None,
+            signature: Value::Null,
             source_contract_cid: "blake3-512:cccc".into(),
             target_shape_cid: "blake3-512:dddd".into(),
         };
@@ -700,5 +710,118 @@ mod tests {
     #[test]
     fn cid_pinning_gap_rust_deref_to_concept_deref() {
         assert_gap_cid_pins("gap_rust_deref_to_concept_deref");
+    }
+
+    // ----------------------------------------------------------------
+    // Lock-by-construction tests for PartialMorphismMemento,
+    // LossyMorphismMemento, and LossRecord.
+    //
+    // These tests mirror transport_gap_top_level_field_order_is_jcs and
+    // extend the gate-promotion to cover the entire bug-class, not just
+    // the TransportGapMemento instance where the bug was first caught.
+    //
+    // To planted-regression-test each:
+    //   1. Swap two adjacent fields in the struct declaration.
+    //   2. `cargo test -p libprovekit -- <test_name>` must FAIL.
+    //   3. The other two lock-tests must still PASS.
+    //   4. Revert the swap.
+    // ----------------------------------------------------------------
+
+    /// Verify that PartialMorphismMemento top-level fields are declared in JCS
+    /// (lexicographic) order.  If they are, serde_json::to_string (declaration
+    /// order) == serializable_jcs (sorted) for a struct with only typed fields.
+    #[test]
+    fn partial_morphism_top_level_field_order_is_jcs() {
+        let memento = PartialMorphismMemento {
+            fn_name: "partial:test:add:to:concept:add".into(),
+            gap_memento_cid: None,
+            homomorphism_obligation: HomomorphismObligation {
+                kind: "wp-refinement-under-precondition".into(),
+                source: "blake3-512:aaaa".into(),
+                target: "blake3-512:bbbb".into(),
+            },
+            kind: "PartialMorphismMemento".into(),
+            literal_map: Value::Object(Default::default()),
+            operator_map: Value::Object(Default::default()),
+            renaming_map: Value::Object(Default::default()),
+            representation_map: Value::Object(Default::default()),
+            schema_version: "1".into(),
+            signature: Value::Null,
+            source_contract_cid: "blake3-512:aaaa".into(),
+            target_shape_cid: "blake3-512:bbbb".into(),
+            validity_precondition: Value::Bool(true),
+        };
+        let rust_compact = serde_json::to_string(&memento).expect("to_string");
+        let rust_jcs = crate::canonical::serializable_jcs(&memento)
+            .expect("serializable_jcs");
+        assert_eq!(
+            rust_compact, rust_jcs,
+            "Field declaration order != JCS order: serde_json::to_string differs from \
+             encode_jcs output for PartialMorphismMemento.  Struct fields are NOT in \
+             lexicographic order -- fix the declaration order."
+        );
+    }
+
+    /// Verify that LossyMorphismMemento top-level fields are declared in JCS
+    /// (lexicographic) order.
+    #[test]
+    fn lossy_morphism_top_level_field_order_is_jcs() {
+        let memento = LossyMorphismMemento {
+            coarsening_kind: "widen-target-postcondition".into(),
+            fn_name: "lossy:test:add:to:c11:add".into(),
+            gap_memento_cid: None,
+            homomorphism_obligation: HomomorphismObligation {
+                kind: "wp-refinement-into-coarsening".into(),
+                source: "blake3-512:cccc".into(),
+                target: "blake3-512:dddd".into(),
+            },
+            kind: "LossyMorphismMemento".into(),
+            literal_map: Value::Object(Default::default()),
+            loss: LossRecord::default(),
+            loss_severity: LossSeverity(BTreeMap::new()),
+            operator_map: Value::Object(Default::default()),
+            renaming_map: Value::Object(Default::default()),
+            representation_map: Value::Object(Default::default()),
+            schema_version: "1".into(),
+            signature: Value::Null,
+            source_contract_cid: "blake3-512:cccc".into(),
+            target_shape_cid: "blake3-512:dddd".into(),
+        };
+        let rust_compact = serde_json::to_string(&memento).expect("to_string");
+        let rust_jcs = crate::canonical::serializable_jcs(&memento)
+            .expect("serializable_jcs");
+        assert_eq!(
+            rust_compact, rust_jcs,
+            "Field declaration order != JCS order: serde_json::to_string differs from \
+             encode_jcs output for LossyMorphismMemento.  Struct fields are NOT in \
+             lexicographic order -- fix the declaration order."
+        );
+    }
+
+    /// Verify that LossRecord top-level fields are declared in JCS (lexicographic)
+    /// order.  LossRecord is a JCS-locked struct (embedded in every lossy memento)
+    /// and belongs in the same gate-promotion.
+    ///
+    /// This test uses scalar Value::String entries (not nested Value::Object maps)
+    /// so that nested-Value insertion order does not interfere with the assertion.
+    /// The goal is to catch top-level declaration-order drift, not sub-key order.
+    #[test]
+    fn loss_record_top_level_field_order_is_jcs() {
+        let lr = LossRecord {
+            domain_narrowing: Some(Value::String("narrow".into())),
+            effect_divergence: None,
+            structural_divergence: None,
+            ub_introduction: None,
+            value_divergence: Some(Value::String("diff".into())),
+        };
+        let rust_compact = serde_json::to_string(&lr).expect("to_string");
+        let rust_jcs = crate::canonical::serializable_jcs(&lr)
+            .expect("serializable_jcs");
+        assert_eq!(
+            rust_compact, rust_jcs,
+            "Field declaration order != JCS order: serde_json::to_string differs from \
+             encode_jcs output for LossRecord.  Struct fields are NOT in \
+             lexicographic order -- fix the declaration order."
+        );
     }
 }
