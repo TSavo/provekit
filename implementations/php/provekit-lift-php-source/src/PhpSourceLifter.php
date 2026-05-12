@@ -829,6 +829,12 @@ final class PhpSourceLifter
     private function lowerFallbackExpr(string $expr, EffectSet $effects): array
     {
         $expr = trim($expr);
+        if (str_starts_with($expr, '(') && str_ends_with($expr, ')')) {
+            $inner = substr($expr, 1, -1);
+            if ($this->fallbackParensBalance($inner)) {
+                return $this->lowerFallbackExpr($inner, $effects);
+            }
+        }
         if (preg_match('/^\$GLOBALS\["([^"]+)"\]$/', $expr, $m)) {
             $effects->addRead('GLOBALS.' . $m[1]);
             return ctor('php:index', var_term('GLOBALS'), string_const($m[1]));
@@ -838,6 +844,9 @@ final class PhpSourceLifter
         }
         if (preg_match('/^-?\\d+$/', $expr)) {
             return int_const((int)$expr);
+        }
+        if (preg_match('/^\\$(\\w+)\\s*=\\s*(.+)$/', $expr, $m)) {
+            return ctor('php:assign', var_term($m[1]), $this->lowerFallbackExpr($m[2], $effects));
         }
         if (preg_match('/^(.+)\\s*\\+\\s*(.+)$/', $expr, $m)) {
             return ctor('php:add', $this->lowerFallbackExpr($m[1], $effects), $this->lowerFallbackExpr($m[2], $effects));
@@ -852,6 +861,27 @@ final class PhpSourceLifter
             return ctor('php:lt', $this->lowerFallbackExpr($m[1], $effects), $this->lowerFallbackExpr($m[2], $effects));
         }
         throw new RefusalException('unhandled-syntax', null, 'token fallback cannot lower expression: ' . $expr);
+    }
+
+    /**
+     * Returns true if $s has balanced parentheses (i.e., the outer parens were
+     * the only wrapping layer and the content is self-contained).
+     */
+    private function fallbackParensBalance(string $s): bool
+    {
+        $depth = 0;
+        $len = strlen($s);
+        for ($i = 0; $i < $len; $i++) {
+            if ($s[$i] === '(') {
+                $depth++;
+            } elseif ($s[$i] === ')') {
+                $depth--;
+                if ($depth < 0) {
+                    return false;
+                }
+            }
+        }
+        return $depth === 0;
     }
 
     private function matchingBrace(string $source, int $open): ?int
