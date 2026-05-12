@@ -52,14 +52,55 @@
     "direction": "left-to-right",
     "target_lang": "c11",
     "loss_record": {
-      "structural_divergence": "C has no generic types; the realization is either _Generic macro expansion or X-macro code duplication; neither is a native instantiation; each instantiation is a distinct copy of the code",
-      "domain_narrowing": "type arguments must be expressible as C types known at preprocessing time; type constraints cannot be expressed or checked",
-      "ub_introduction": "macro expansion is textual; ill-typed expansions produce code that compiles but has undefined behavior at runtime if type assumptions are violated"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:macro-expansion",
+            "args": [
+              {
+                "kind": "var",
+                "name": "parametric_def"
+              },
+              {
+                "kind": "var",
+                "name": "type_args"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "c_generic_macro_expansion_code_duplication_no_native_instantiation"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ],
+        "kind": "atomic",
+        "name": "type_args_must_be_c_types_known_at_preprocessing"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ],
+        "kind": "atomic",
+        "name": "textual_macro_expansion_ill_typed_expansions_ub"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:986a78a70e235baa34f03386bf16b5793db024558f5865f2f31cb54854640b103107fc8df11fb47f383f191db9a90905d86d6330b9d22ad31a324afab8156384",
+  "cid": "blake3-512:aafa628899a375fce6c01d97bf55ae9fa5050c9e473fbc0734c94fc1f3b39c28c0df2b4393cb3d7f031012b065b4c533366229105ca7bfc58f842cf7567d5d85",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

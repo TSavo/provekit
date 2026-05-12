@@ -48,12 +48,27 @@
     "direction": "left-to-right",
     "target_lang": "python",
     "loss_record": {
-      "structural_divergence": "near-zero: iter(collection) returns an iterator object implementing __next__(); StopIteration signals exhaustion; the for loop desugars to this; the abstraction IS Python iterator protocol"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:iter-call",
+            "args": [
+              {
+                "kind": "var",
+                "name": "collection"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "iter_next_protocol_is_abstraction"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:502fb4f7f84133d0bfbf2f82c72532fd31eb7c42f5772057c8a40986d4dea8459c5b5df727cd7197b53d0567ed7edb125147e107a7b3e53b76944da7e6fcad12",
+  "cid": "blake3-512:fc2f1a9fd664d934754d336d9c505394e0d2841b9f65cc271143d653d9c6c0f782996c5fe0b1ea62021b4396f406e83fe869e6706ff312c99bff601112e54bf8",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

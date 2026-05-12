@@ -52,13 +52,41 @@
     "direction": "left-to-right",
     "target_lang": "python",
     "loss_record": {
-      "structural_divergence": "the realization IS the absence of an instantiation: the parametric_def works on any type_args via duck typing; no instantiation site is generated; the type_args annotation (if any, via type hints) is erased at runtime",
-      "domain_narrowing": "type checking occurs at runtime, not at the instantiation site; violations of the type parameter bounds are caught as AttributeError or TypeError at use time, not at the instantiation call"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:duck-typed-call",
+            "args": [
+              {
+                "kind": "var",
+                "name": "parametric_def"
+              },
+              {
+                "kind": "var",
+                "name": "type_args"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "duck_typing_realization_is_absence_of_instantiation"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ],
+        "kind": "atomic",
+        "name": "type_bound_violations_caught_at_use_time_not_instantiation"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:79eb5cab17f8881ef6a7a4bf0cb10f3f17463cb7c19dad3087039084f7dd3a4e79c31bc9121111970cd4536eccd7f30526cbf3af58ae7b0caea53b395689718b",
+  "cid": "blake3-512:6f790319928e5cd2e1d2dc23167f3558c10de30a9fe20d2d997635b9839191c04e447c614c097e46b62fa605e1f66c91fbe16bb848e3ee428a2bc0dff01285ec",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

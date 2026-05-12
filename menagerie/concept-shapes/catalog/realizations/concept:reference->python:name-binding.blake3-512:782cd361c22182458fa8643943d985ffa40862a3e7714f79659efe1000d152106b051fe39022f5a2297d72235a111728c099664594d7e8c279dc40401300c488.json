@@ -38,13 +38,37 @@
     "direction": "left-to-right",
     "target_lang": "python",
     "loss_record": {
-      "structural_divergence": "near-zero: Python names are references to objects; assigning one name to another makes both reference the same object; the abstraction IS Python default semantics",
-      "domain_narrowing": "immutable objects (int, str, tuple, frozenset) cannot be mutated through the reference; concept:reference over an immutable type narrows to read-only aliasing"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:name-binding",
+            "args": [
+              {
+                "kind": "var",
+                "name": "referent_var"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "python_name_binding_is_abstraction_default_semantics"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "referent_var"
+          }
+        ],
+        "kind": "atomic",
+        "name": "immutable_types_narrow_to_read_only_aliasing"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:b291a6706a68db96e3e8696fa95def89b4da29617d1aa3a92ddcbeebd6d3a17adcfeeb3a053272acb116f3cccd0830c27adb6e2f1af06e1b52c50819b556338f",
+  "cid": "blake3-512:782cd361c22182458fa8643943d985ffa40862a3e7714f79659efe1000d152106b051fe39022f5a2297d72235a111728c099664594d7e8c279dc40401300c488",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

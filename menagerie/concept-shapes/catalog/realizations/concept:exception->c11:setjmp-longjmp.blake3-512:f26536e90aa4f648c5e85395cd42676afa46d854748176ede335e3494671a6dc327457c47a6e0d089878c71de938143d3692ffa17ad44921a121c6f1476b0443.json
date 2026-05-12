@@ -118,14 +118,71 @@
     "direction": "left-to-right",
     "target_lang": "c11",
     "loss_record": {
-      "structural_divergence": "setjmp(buf) at entry; longjmp(buf, payload) at throw site; conditional on setjmp return value; no structured handler table; handler dispatch is a hand-written switch over a type tag in the jump buffer",
-      "ub_introduction": "longjmp over stack frames with non-trivial objects is undefined behavior in C11; longjmp from signal handlers is restricted; cannot cross C++ frames with active destructors",
-      "effect_divergence": "a jump buffer (jmp_buf on the stack or heap); longjmp unwinds without calling destructors; no RAII/defer equivalent"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:setjmp",
+            "args": [
+              {
+                "kind": "var",
+                "name": "jump_buf"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "c11:handler-dispatch",
+            "args": [
+              {
+                "kind": "var",
+                "name": "handlers"
+              },
+              {
+                "kind": "op",
+                "name": "c11:read-jump-payload",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "jump_buf"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "setjmp_longjmp_replaces_structured_handler_table"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "jump_buf"
+          },
+          {
+            "kind": "var",
+            "name": "try_body"
+          }
+        ],
+        "kind": "atomic",
+        "name": "longjmp_over_nontrivial_frames_is_ub"
+      },
+      "effect_divergence": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "jump_buf"
+          }
+        ],
+        "kind": "atomic",
+        "name": "jmp_buf_longjmp_no_destructor_raii"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:e0b09c4cb64644ab04c346e67b601b79e79c65a28f421bfe3d4330038f6b003f1d4c4acf3f944c6e8d410234920182750401d148df52f35ec25b7c436194c8df",
+  "cid": "blake3-512:f26536e90aa4f648c5e85395cd42676afa46d854748176ede335e3494671a6dc327457c47a6e0d089878c71de938143d3692ffa17ad44921a121c6f1476b0443",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

@@ -38,13 +38,37 @@
     "direction": "left-to-right",
     "target_lang": "java",
     "loss_record": {
-      "structural_divergence": "near-zero: Java object variables are references by default; the realization IS the identity map for object types",
-      "domain_narrowing": "Java primitive types (int, long, double, etc.) are value-typed; concept:reference over a primitive requires boxing (Integer, Long, Double) which adds allocation and unboxing cost"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "jvm:object-ref",
+            "args": [
+              {
+                "kind": "var",
+                "name": "referent_var"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "java_object_ref_is_identity_map_for_object_types"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "referent_var"
+          }
+        ],
+        "kind": "atomic",
+        "name": "primitive_types_require_boxing"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:6e0d566a023ef29abbd489a154d5b3af3248e473bda834e6a5665606c53cf4e1085207129ba26facbc904218e9ea0186175e917e6a2fff7bc5e696506b080c72",
+  "cid": "blake3-512:6fbf5e3e946abfa2922867d300093829188c27f7e23f8f50e7ff30c42ea68450e935b3c81360d4afff7aa09764d5e416c3e569e4ee619f18e1d20cacea787f16",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

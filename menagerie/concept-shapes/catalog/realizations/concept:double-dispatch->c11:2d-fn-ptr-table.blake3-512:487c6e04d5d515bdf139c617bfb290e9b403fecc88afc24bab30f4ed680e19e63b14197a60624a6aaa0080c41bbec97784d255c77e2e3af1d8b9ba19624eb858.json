@@ -138,9 +138,98 @@
     "direction": "left-to-right",
     "target_lang": "c11",
     "loss_record": {
-      "structural_divergence": "2D array of void function pointers; table[type_tag(receiver)][type_tag(secondary)] cast to (void (*)(receiver_type, secondary_type, args*)); two indirections plus cast; no source-language equivalent to the double-index-and-cast",
-      "domain_narrowing": "both tag spaces (receiver types and secondary types) are closed at table construction; any type added after construction is out of range",
-      "ub_introduction": "out-of-range type_tag index into either dimension is undefined behavior in C; no bounds check in the generated dispatch"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:index",
+            "args": [
+              {
+                "kind": "var",
+                "name": "dispatch_table_2d"
+              },
+              {
+                "kind": "op",
+                "name": "c11:type-tag",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:index",
+            "args": [
+              {
+                "kind": "var",
+                "name": "dispatch_table_2d"
+              },
+              {
+                "kind": "op",
+                "name": "c11:type-tag",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "c11:cast-fn-ptr",
+            "args": [
+              {
+                "kind": "var",
+                "name": "dispatch_table_2d"
+              },
+              {
+                "kind": "const",
+                "value": "void (*)(void*, void*, ...)",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "TypeExpr"
+                }
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "open_coded_2d_fn_ptr_table_replaces_double_dispatch"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "tag_spaces_closed_at_table_construction"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "out_of_range_type_tag_index_is_ub"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": [],
@@ -155,7 +244,7 @@
       ]
     }
   },
-  "cid": "blake3-512:f8ade70d354207e0614c6ac07a6085131db155003bbdb5681c229e96315e79a490348b87348fbfa1e84953cdd4c59c3ba6b6057e6114cd586976dbc9dcde6df0",
+  "cid": "blake3-512:487c6e04d5d515bdf139c617bfb290e9b403fecc88afc24bab30f4ed680e19e63b14197a60624a6aaa0080c41bbec97784d255c77e2e3af1d8b9ba19624eb858",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

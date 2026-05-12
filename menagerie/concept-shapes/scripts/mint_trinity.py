@@ -141,18 +141,30 @@ def realization_memento(fn_name, formals, formal_sorts, pre, lhs, rhs, target_la
     return m
 
 
+def lf(name, *args):
+    """Build a loss-record IrFormula: an atomic node with snake_case name and variable args.
+
+    Each loss-record value must be an IrFormula per the canonical LossRecord schema
+    (BTreeMap<String, IrFormula>) introduced in #634. We use the `atomic` kind:
+      {"kind": "atomic", "name": <snake_case_label>, "args": [<IrTerm>, ...]}
+    The name encodes the semantic label; args carry the variables that the loss clause
+    quantifies over (the witnesses to the divergence).
+    """
+    return {"args": list(args), "kind": "atomic", "name": name}
+
+
 def loss(structural_divergence=None, domain_narrowing=None, ub_introduction=None,
          effect_divergence=None, value_divergence=None):
     r = {}
-    if structural_divergence:
+    if structural_divergence is not None:
         r["structural_divergence"] = structural_divergence
-    if domain_narrowing:
+    if domain_narrowing is not None:
         r["domain_narrowing"] = domain_narrowing
-    if ub_introduction:
+    if ub_introduction is not None:
         r["ub_introduction"] = ub_introduction
-    if effect_divergence:
+    if effect_divergence is not None:
         r["effect_divergence"] = effect_divergence
-    if value_divergence:
+    if value_divergence is not None:
         r["value_divergence"] = value_divergence
     return r
 
@@ -492,8 +504,13 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "c11",
         loss(
-            structural_divergence="open-coded pointer chain (deref vtbl field, index by compile-time-fixed offset, fn-ptr call); not a dispatch primitive; the abstraction lookup is by name, the realization offset is fixed at link time",
-            domain_narrowing="dispatch table for runtime_type(receiver) must be fixed at compile or link time; runtime table mutation is not supportable in this realization",
+            structural_divergence=lf("open_coded_ptr_chain_replaces_name_lookup",
+                op_term("concept:deref", [op_term("concept:member", [var("receiver"), const_term("vtbl", "FieldName")])]),
+                var("method_name"),
+            ),
+            domain_narrowing=lf("dispatch_table_fixed_at_compile_or_link_time",
+                op_term("runtime_type", [var("receiver")]),
+            ),
         ),
     )
 
@@ -510,8 +527,13 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "java",
         loss(
-            structural_divergence="near-first-class: invokevirtual / invokeinterface; barely a desugaring; the JVM dispatch IS the lookup",
-            domain_narrowing="method_name must resolve to a non-final, non-static, non-private method on the receiver class hierarchy; final/sealed/static/private methods are statically bound and require a different realization",
+            structural_divergence=lf("invokevirtual_invokeinterface_near_identity",
+                op_term("concept:itab-method", [op_term("concept:type-of", [var("receiver")]), var("method_name")]),
+            ),
+            domain_narrowing=lf("method_must_be_virtual_non_final_non_static",
+                var("method_name"),
+                var("receiver"),
+            ),
         ),
     )
 
@@ -534,8 +556,13 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "python",
         loss(
-            structural_divergence="name-lookup protocol over a linked list of dicts (__mro__ scan); not a primitive; structurally identical to the abstraction lookup under the MRO-axiom",
-            domain_narrowing="outbound only: Python over-delivers runtime mutability of the dispatch table (setattr/delattr/__class__-reassignment); transporting OUT of Python to a vtable-family language narrows to states where the dispatched-upon type is not mutated after construction",
+            structural_divergence=lf("mro_dict_scan_structurally_identical_under_mro_axiom",
+                op_term("concept:dict-lookup-over-mro", [op_term("concept:type-of", [var("receiver")]), var("method_name")]),
+            ),
+            domain_narrowing=lf("outbound_narrows_mutable_dispatch_table",
+                var("receiver"),
+                var("method_name"),
+            ),
         ),
     )
 
@@ -558,9 +585,19 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "c11",
         loss(
-            structural_divergence="2D array of void function pointers; table[type_tag(receiver)][type_tag(secondary)] cast to (void (*)(receiver_type, secondary_type, args*)); two indirections plus cast; no source-language equivalent to the double-index-and-cast",
-            domain_narrowing="both tag spaces (receiver types and secondary types) are closed at table construction; any type added after construction is out of range",
-            ub_introduction="out-of-range type_tag index into either dimension is undefined behavior in C; no bounds check in the generated dispatch",
+            structural_divergence=lf("open_coded_2d_fn_ptr_table_replaces_double_dispatch",
+                op_term("concept:index", [var("dispatch_table_2d"), op_term("c11:type-tag", [var("receiver")])]),
+                op_term("concept:index", [var("dispatch_table_2d"), op_term("c11:type-tag", [var("secondary")])]),
+                op_term("c11:cast-fn-ptr", [var("dispatch_table_2d"), const_term("void (*)(void*, void*, ...)", "TypeExpr")]),
+            ),
+            domain_narrowing=lf("tag_spaces_closed_at_table_construction",
+                var("receiver"),
+                var("secondary"),
+            ),
+            ub_introduction=lf("out_of_range_type_tag_index_is_ub",
+                var("receiver"),
+                var("secondary"),
+            ),
         ),
     )
 
@@ -588,8 +625,14 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "java",
         loss(
-            structural_divergence="fresh Visitable interface + fresh Visitor interface with one visit_T method per concrete receiver type; two invokeinterface (itab) dispatches in sequence (accept then visit_T); the visitor pattern is the Java idiom for double dispatch",
-            domain_narrowing="the visitable and visitor type sets are fixed at interface declaration; open extensibility of either type set requires re-opening the interface",
+            structural_divergence=lf("visitor_accept_visit_itab_pair_indirection",
+                op_term("concept:itab-method", [var("receiver"), const_term("accept", "Name"), var("secondary")]),
+                op_term("concept:itab-method", [var("secondary"), op_term("c11:concat-name", [const_term("visit_", "Name"), op_term("concept:type-of", [var("receiver")])])]),
+            ),
+            domain_narrowing=lf("visitable_and_visitor_sets_fixed_at_interface_declaration",
+                var("receiver"),
+                var("secondary"),
+            ),
         ),
     )
 
@@ -609,8 +652,13 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "python",
         loss(
-            structural_divergence="match (type(receiver), type(secondary)) with one case arm per (X,Y) pair from the contract guarded clauses; method_name string becomes case arm selection; near-identity to the contract",
-            domain_narrowing="fallthrough to TypeError for unmatched (X,Y) pair; narrows the open Python dispatch domain to the explicitly enumerated pairs in the match",
+            structural_divergence=lf("match_type_pair_near_identity_to_contract",
+                op_term("python:tuple", [op_term("concept:type-of", [var("receiver")]), op_term("concept:type-of", [var("secondary")])]),
+            ),
+            domain_narrowing=lf("unmatched_type_pair_raises_type_error",
+                var("receiver"),
+                var("secondary"),
+            ),
         ),
     )
 
@@ -629,9 +677,17 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "c11",
         loss(
-            structural_divergence="defunctionalization: body becomes a named function with an explicit env-struct pointer as extra first argument; captured_env becomes a malloc'd struct; calling the closure = calling the function with the env pointer prepended; no first-class function type in C",
-            effect_divergence="heap allocation for the environment struct when the closure outlives the stack frame; absent when proven stack-lifetime (the stack-env sub-realization)",
-            ub_introduction="use-after-free if the env-struct pointer outlives the heap allocation; aliasing through the env pointer introduces C11 aliasing hazards if captured vars are also accessible by name in the caller scope",
+            structural_divergence=lf("defunctionalization_explicit_env_struct_no_first_class_fn",
+                op_term("c11:function-pointer", [var("body_as_fn"), var("env_ptr")]),
+                op_term("c11:heap-alloc", [var("captured_env")]),
+            ),
+            effect_divergence=lf("heap_alloc_for_env_struct_when_outlives_stack",
+                op_term("c11:heap-alloc", [var("captured_env")]),
+            ),
+            ub_introduction=lf("use_after_free_env_ptr_and_c11_aliasing_hazard",
+                var("env_ptr"),
+                var("captured_env"),
+            ),
         ),
     )
 
@@ -649,8 +705,12 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "java",
         loss(
-            structural_divergence="modern Java: lambda desugars to invokedynamic + LambdaMetafactory; effectively first-class; structural_divergence near zero for the modern case; the pre-Java-8 anonymous-inner-class realization has heavy structural_divergence (a one-method object standing in for a function)",
-            domain_narrowing="captured variables must be effectively final; closures that mutate their captured environment require a workaround (single-element array trick or AtomicReference)",
+            structural_divergence=lf("invokedynamic_lambda_near_first_class",
+                op_term("jvm:invoke-dynamic", [const_term("LambdaMetafactory.metafactory", "MethodRef"), var("body"), var("captured_env")]),
+            ),
+            domain_narrowing=lf("captured_vars_must_be_effectively_final",
+                var("captured_env"),
+            ),
         ),
     )
 
@@ -664,7 +724,9 @@ def build_realizations(op_cids, abst_cids):
         op_term("python:lambda-or-def", [var("params"), var("body"), var("captured_env")]),
         "python",
         loss(
-            structural_divergence="near-zero: a Python lambda or nested def IS the concept:closure; the realization is the identity map for captured_env (Python cell objects handle capture automatically)",
+            structural_divergence=lf("python_lambda_or_def_is_identity_map",
+                op_term("python:lambda-or-def", [var("params"), var("body"), var("captured_env")]),
+            ),
         ),
     )
 
@@ -685,9 +747,17 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "c11",
         loss(
-            structural_divergence="setjmp(buf) at entry; longjmp(buf, payload) at throw site; conditional on setjmp return value; no structured handler table; handler dispatch is a hand-written switch over a type tag in the jump buffer",
-            effect_divergence="a jump buffer (jmp_buf on the stack or heap); longjmp unwinds without calling destructors; no RAII/defer equivalent",
-            ub_introduction="longjmp over stack frames with non-trivial objects is undefined behavior in C11; longjmp from signal handlers is restricted; cannot cross C++ frames with active destructors",
+            structural_divergence=lf("setjmp_longjmp_replaces_structured_handler_table",
+                op_term("c11:setjmp", [var("jump_buf")]),
+                op_term("c11:handler-dispatch", [var("handlers"), op_term("c11:read-jump-payload", [var("jump_buf")])]),
+            ),
+            effect_divergence=lf("jmp_buf_longjmp_no_destructor_raii",
+                var("jump_buf"),
+            ),
+            ub_introduction=lf("longjmp_over_nontrivial_frames_is_ub",
+                var("jump_buf"),
+                var("try_body"),
+            ),
         ),
     )
 
@@ -701,8 +771,13 @@ def build_realizations(op_cids, abst_cids):
         op_term("jvm:try-catch", [var("try_body"), var("handlers")]),
         "java",
         loss(
-            structural_divergence="near-first-class: jvm:try-catch / throw; the realization IS the abstraction",
-            domain_narrowing="checked exceptions (throws declarations on methods): a source program that throws an exception not declared in the method signature requires either declaring it or wrapping in RuntimeException",
+            structural_divergence=lf("jvm_try_catch_near_first_class_realization_is_abstraction",
+                op_term("jvm:try-catch", [var("try_body"), var("handlers")]),
+            ),
+            domain_narrowing=lf("checked_exceptions_require_throws_declaration",
+                var("throw_payload"),
+                var("handlers"),
+            ),
         ),
     )
 
@@ -716,7 +791,9 @@ def build_realizations(op_cids, abst_cids):
         op_term("python:try-except", [var("try_body"), var("handlers")]),
         "python",
         loss(
-            structural_divergence="near-zero: python:try/except IS the concept; the realization is the identity map",
+            structural_divergence=lf("python_try_except_is_identity_map",
+                op_term("python:try-except", [var("try_body"), var("handlers")]),
+            ),
         ),
     )
 
@@ -730,8 +807,12 @@ def build_realizations(op_cids, abst_cids):
         op_term("c11:addr-of", [var("referent_var")]),
         "c11",
         loss(
-            structural_divergence="c11:addr-of produces a raw pointer; accessing the referent requires explicit deref; no aliasing tracking; the abstraction aliasing guarantee is present but unchecked",
-            ub_introduction="use-after-free: if referent_var goes out of scope while the pointer lives, any deref is undefined behavior; aliasing-with-mutation through multiple raw pointers violates C11 strict-aliasing rules",
+            structural_divergence=lf("raw_pointer_explicit_deref_no_aliasing_tracking",
+                op_term("c11:addr-of", [var("referent_var")]),
+            ),
+            ub_introduction=lf("use_after_free_and_strict_aliasing_violation",
+                var("referent_var"),
+            ),
         ),
     )
 
@@ -745,8 +826,12 @@ def build_realizations(op_cids, abst_cids):
         op_term("jvm:object-ref", [var("referent_var")]),
         "java",
         loss(
-            structural_divergence="near-zero: Java object variables are references by default; the realization IS the identity map for object types",
-            domain_narrowing="Java primitive types (int, long, double, etc.) are value-typed; concept:reference over a primitive requires boxing (Integer, Long, Double) which adds allocation and unboxing cost",
+            structural_divergence=lf("java_object_ref_is_identity_map_for_object_types",
+                op_term("jvm:object-ref", [var("referent_var")]),
+            ),
+            domain_narrowing=lf("primitive_types_require_boxing",
+                var("referent_var"),
+            ),
         ),
     )
 
@@ -760,8 +845,12 @@ def build_realizations(op_cids, abst_cids):
         op_term("python:name-binding", [var("referent_var")]),
         "python",
         loss(
-            structural_divergence="near-zero: Python names are references to objects; assigning one name to another makes both reference the same object; the abstraction IS Python default semantics",
-            domain_narrowing="immutable objects (int, str, tuple, frozenset) cannot be mutated through the reference; concept:reference over an immutable type narrows to read-only aliasing",
+            structural_divergence=lf("python_name_binding_is_abstraction_default_semantics",
+                op_term("python:name-binding", [var("referent_var")]),
+            ),
+            domain_narrowing=lf("immutable_types_narrow_to_read_only_aliasing",
+                var("referent_var"),
+            ),
         ),
     )
 
@@ -779,9 +868,16 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "c11",
         loss(
-            structural_divergence="hand-rolled struct { int index; int length; T* data }; next() is index++; exhausted() is index >= length; no protocol; each collection type needs its own cursor type",
-            ub_introduction="advancing the cursor past the length and dereferencing is undefined behavior; no bounds check unless explicitly written",
-            domain_narrowing="infinite or lazy collections cannot be represented; the length must be known at iteration start; linked lists and tree structures require different cursor implementations",
+            structural_divergence=lf("hand_rolled_cursor_struct_no_protocol",
+                op_term("c11:struct-literal", [const_term("0", "Int"), op_term("c11:array-length", [var("collection")]), op_term("c11:addr-of", [var("collection")])]),
+            ),
+            ub_introduction=lf("cursor_past_length_deref_is_ub",
+                var("state"),
+                op_term("c11:array-length", [var("collection")]),
+            ),
+            domain_narrowing=lf("length_must_be_known_at_iteration_start_no_lazy_collections",
+                var("collection"),
+            ),
         ),
     )
 
@@ -798,8 +894,12 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "java",
         loss(
-            structural_divergence="near-first-class: java.lang.Iterable/Iterator with hasNext()/next(); the for-each loop desugars to this; structural_divergence low",
-            domain_narrowing="the collection type must implement java.lang.Iterable; primitive arrays use a special index-loop realization; the Iterator protocol is stateful and not re-entrant",
+            structural_divergence=lf("iterable_iterator_has_next_next_near_first_class",
+                op_term("jvm:invoke-interface", [const_term("java.lang.Iterable.iterator", "MethodRef"), var("collection")]),
+            ),
+            domain_narrowing=lf("collection_must_implement_java_lang_iterable",
+                var("collection"),
+            ),
         ),
     )
 
@@ -813,7 +913,9 @@ def build_realizations(op_cids, abst_cids):
         op_term("python:iter-call", [var("collection")]),
         "python",
         loss(
-            structural_divergence="near-zero: iter(collection) returns an iterator object implementing __next__(); StopIteration signals exhaustion; the for loop desugars to this; the abstraction IS Python iterator protocol",
+            structural_divergence=lf("iter_next_protocol_is_abstraction",
+                op_term("python:iter-call", [var("collection")]),
+            ),
         ),
     )
 
@@ -827,9 +929,16 @@ def build_realizations(op_cids, abst_cids):
         op_term("c11:macro-expansion", [var("parametric_def"), var("type_args")]),
         "c11",
         loss(
-            structural_divergence="C has no generic types; the realization is either _Generic macro expansion or X-macro code duplication; neither is a native instantiation; each instantiation is a distinct copy of the code",
-            domain_narrowing="type arguments must be expressible as C types known at preprocessing time; type constraints cannot be expressed or checked",
-            ub_introduction="macro expansion is textual; ill-typed expansions produce code that compiles but has undefined behavior at runtime if type assumptions are violated",
+            structural_divergence=lf("c_generic_macro_expansion_code_duplication_no_native_instantiation",
+                op_term("c11:macro-expansion", [var("parametric_def"), var("type_args")]),
+            ),
+            domain_narrowing=lf("type_args_must_be_c_types_known_at_preprocessing",
+                var("type_args"),
+            ),
+            ub_introduction=lf("textual_macro_expansion_ill_typed_expansions_ub",
+                var("parametric_def"),
+                var("type_args"),
+            ),
         ),
     )
 
@@ -846,8 +955,13 @@ def build_realizations(op_cids, abst_cids):
         ]),
         "java",
         loss(
-            structural_divergence="type parameters are erased to their bounds (Object by default) at bytecode level; casts inserted at use sites by the compiler; no runtime type information for type parameters",
-            domain_narrowing="cannot create arrays of a generic type; cannot use instanceof with a type parameter; reified generics require a Class<T> token workaround; two instantiations of the same generic produce identical bytecode",
+            structural_divergence=lf("type_erasure_to_bounds_casts_at_use_sites_no_reified_types",
+                op_term("jvm:type-erasure-with-casts", [var("parametric_def"), op_term("jvm:erase-to-bounds", [var("type_args")])]),
+            ),
+            domain_narrowing=lf("no_generic_arrays_no_instanceof_reified_generics_need_class_token",
+                var("type_args"),
+                var("parametric_def"),
+            ),
         ),
     )
 
@@ -861,8 +975,12 @@ def build_realizations(op_cids, abst_cids):
         op_term("python:duck-typed-call", [var("parametric_def"), var("type_args")]),
         "python",
         loss(
-            structural_divergence="the realization IS the absence of an instantiation: the parametric_def works on any type_args via duck typing; no instantiation site is generated; the type_args annotation (if any, via type hints) is erased at runtime",
-            domain_narrowing="type checking occurs at runtime, not at the instantiation site; violations of the type parameter bounds are caught as AttributeError or TypeError at use time, not at the instantiation call",
+            structural_divergence=lf("duck_typing_realization_is_absence_of_instantiation",
+                op_term("python:duck-typed-call", [var("parametric_def"), var("type_args")]),
+            ),
+            domain_narrowing=lf("type_bound_violations_caught_at_use_time_not_instantiation",
+                var("type_args"),
+            ),
         ),
     )
 

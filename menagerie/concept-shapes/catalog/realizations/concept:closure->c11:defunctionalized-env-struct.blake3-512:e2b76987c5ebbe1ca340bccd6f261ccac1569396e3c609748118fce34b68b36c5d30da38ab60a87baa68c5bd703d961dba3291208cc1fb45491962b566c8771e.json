@@ -94,14 +94,71 @@
     "direction": "left-to-right",
     "target_lang": "c11",
     "loss_record": {
-      "structural_divergence": "defunctionalization: body becomes a named function with an explicit env-struct pointer as extra first argument; captured_env becomes a malloc'd struct; calling the closure = calling the function with the env pointer prepended; no first-class function type in C",
-      "ub_introduction": "use-after-free if the env-struct pointer outlives the heap allocation; aliasing through the env pointer introduces C11 aliasing hazards if captured vars are also accessible by name in the caller scope",
-      "effect_divergence": "heap allocation for the environment struct when the closure outlives the stack frame; absent when proven stack-lifetime (the stack-env sub-realization)"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:function-pointer",
+            "args": [
+              {
+                "kind": "var",
+                "name": "body_as_fn"
+              },
+              {
+                "kind": "var",
+                "name": "env_ptr"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "c11:heap-alloc",
+            "args": [
+              {
+                "kind": "var",
+                "name": "captured_env"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "defunctionalization_explicit_env_struct_no_first_class_fn"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "env_ptr"
+          },
+          {
+            "kind": "var",
+            "name": "captured_env"
+          }
+        ],
+        "kind": "atomic",
+        "name": "use_after_free_env_ptr_and_c11_aliasing_hazard"
+      },
+      "effect_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:heap-alloc",
+            "args": [
+              {
+                "kind": "var",
+                "name": "captured_env"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "heap_alloc_for_env_struct_when_outlives_stack"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:ee170c63527fd325b9023c8d794badf889d0105901227fb4ad81ca6795fa0997dc1f78b65132f3113c1fbd83ebd6711084b7cc426349e0a8b42200fab48c6839",
+  "cid": "blake3-512:e2b76987c5ebbe1ca340bccd6f261ccac1569396e3c609748118fce34b68b36c5d30da38ab60a87baa68c5bd703d961dba3291208cc1fb45491962b566c8771e",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

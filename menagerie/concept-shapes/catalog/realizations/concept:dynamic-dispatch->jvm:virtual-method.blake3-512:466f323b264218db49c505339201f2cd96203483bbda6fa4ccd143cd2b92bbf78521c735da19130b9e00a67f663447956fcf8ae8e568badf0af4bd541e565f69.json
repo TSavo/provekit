@@ -96,8 +96,46 @@
     "direction": "left-to-right",
     "target_lang": "java",
     "loss_record": {
-      "structural_divergence": "near-first-class: invokevirtual / invokeinterface; barely a desugaring; the JVM dispatch IS the lookup",
-      "domain_narrowing": "method_name must resolve to a non-final, non-static, non-private method on the receiver class hierarchy; final/sealed/static/private methods are statically bound and require a different realization"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "method_name"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "invokevirtual_invokeinterface_near_identity"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "receiver"
+          }
+        ],
+        "kind": "atomic",
+        "name": "method_must_be_virtual_non_final_non_static"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": [],
@@ -116,7 +154,7 @@
       ]
     }
   },
-  "cid": "blake3-512:24f2a6af16733f820b0d8dc5f66b3125dea4e38ef88b841f2e9917e0e5b8d821f8ad45770d0ea50c5bad1148e5b867c983a696402f06a3bba9ffc9ab9a8aae6f",
+  "cid": "blake3-512:466f323b264218db49c505339201f2cd96203483bbda6fa4ccd143cd2b92bbf78521c735da19130b9e00a67f663447956fcf8ae8e568badf0af4bd541e565f69",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

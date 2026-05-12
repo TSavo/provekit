@@ -38,13 +38,37 @@
     "direction": "left-to-right",
     "target_lang": "c11",
     "loss_record": {
-      "structural_divergence": "c11:addr-of produces a raw pointer; accessing the referent requires explicit deref; no aliasing tracking; the abstraction aliasing guarantee is present but unchecked",
-      "ub_introduction": "use-after-free: if referent_var goes out of scope while the pointer lives, any deref is undefined behavior; aliasing-with-mutation through multiple raw pointers violates C11 strict-aliasing rules"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "c11:addr-of",
+            "args": [
+              {
+                "kind": "var",
+                "name": "referent_var"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "raw_pointer_explicit_deref_no_aliasing_tracking"
+      },
+      "ub_introduction": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "referent_var"
+          }
+        ],
+        "kind": "atomic",
+        "name": "use_after_free_and_strict_aliasing_violation"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:08cc1de06640aa2762fa4cf67bebd3391b64f9fbfe682b1c5118a7dce6c32359130f26b9463749135888969ea623776e58665af150e7ee4d587893e862363e8e",
+  "cid": "blake3-512:55ab61c1dae9b02e23dbf29a69c60c963eb11f37a2956ad3975831ef860ea0ec10a2e440057bf2ac519ef49ebe6e1985ee5d80b5cd7aad58609317d06c496354",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

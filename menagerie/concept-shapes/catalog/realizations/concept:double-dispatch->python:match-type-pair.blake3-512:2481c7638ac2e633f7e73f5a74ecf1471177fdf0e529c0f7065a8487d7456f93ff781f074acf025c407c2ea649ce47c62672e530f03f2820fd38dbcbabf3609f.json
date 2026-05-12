@@ -98,13 +98,57 @@
     "direction": "left-to-right",
     "target_lang": "python",
     "loss_record": {
-      "structural_divergence": "match (type(receiver), type(secondary)) with one case arm per (X,Y) pair from the contract guarded clauses; method_name string becomes case arm selection; near-identity to the contract",
-      "domain_narrowing": "fallthrough to TypeError for unmatched (X,Y) pair; narrows the open Python dispatch domain to the explicitly enumerated pairs in the match"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:tuple",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  }
+                ]
+              },
+              {
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "match_type_pair_near_identity_to_contract"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "unmatched_type_pair_raises_type_error"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:489a9e69cf7c91027a66ef081d480827a1f087c5f31318b28560e28ef80a215bce4d65f1ea5e177607b3efd5d04375f991e57b595926aec0161e21cc510b9fa1",
+  "cid": "blake3-512:2481c7638ac2e633f7e73f5a74ecf1471177fdf0e529c0f7065a8487d7456f93ff781f074acf025c407c2ea649ce47c62672e530f03f2820fd38dbcbabf3609f",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

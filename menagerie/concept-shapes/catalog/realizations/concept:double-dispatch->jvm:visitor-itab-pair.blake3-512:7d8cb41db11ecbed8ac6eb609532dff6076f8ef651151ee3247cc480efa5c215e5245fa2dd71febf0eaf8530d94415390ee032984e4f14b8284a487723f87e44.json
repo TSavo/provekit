@@ -130,8 +130,82 @@
     "direction": "left-to-right",
     "target_lang": "java",
     "loss_record": {
-      "structural_divergence": "fresh Visitable interface + fresh Visitor interface with one visit_T method per concrete receiver type; two invokeinterface (itab) dispatches in sequence (accept then visit_T); the visitor pattern is the Java idiom for double dispatch",
-      "domain_narrowing": "the visitable and visitor type sets are fixed at interface declaration; open extensibility of either type set requires re-opening the interface"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "const",
+                "value": "accept",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Name"
+                }
+              },
+              {
+                "kind": "var",
+                "name": "secondary"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "secondary"
+              },
+              {
+                "kind": "op",
+                "name": "c11:concat-name",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "visit_",
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "Name"
+                    }
+                  },
+                  {
+                    "kind": "op",
+                    "name": "concept:type-of",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "visitor_accept_visit_itab_pair_indirection"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "visitable_and_visitor_sets_fixed_at_interface_declaration"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": [],
@@ -162,7 +236,7 @@
       ]
     }
   },
-  "cid": "blake3-512:14a6a938cdab1efebf55cd4c9aa913cd559bd7f8788cada93aa1ac89828f77a7ada02ebeea5bd6534d1c81c51b234a5fc032abc0bc8dc1355eb5151d9f0a994c",
+  "cid": "blake3-512:7d8cb41db11ecbed8ac6eb609532dff6076f8ef651151ee3247cc480efa5c215e5245fa2dd71febf0eaf8530d94415390ee032984e4f14b8284a487723f87e44",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

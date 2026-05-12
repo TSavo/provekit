@@ -1,7 +1,7 @@
 {
   "memento": {
     "kind": "equation",
-    "fn_name": "concept:dynamic-dispatch->c11:vtable-indirection",
+    "fn_name": "concept:dynamic-dispatch->python:mro-dict-lookup",
     "formals": [
       "receiver",
       "method_name",
@@ -49,29 +49,58 @@
         "args": [
           {
             "kind": "op",
-            "name": "concept:member",
+            "name": "concept:bound-method",
             "args": [
               {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
                 "kind": "op",
-                "name": "concept:deref",
+                "name": "concept:dict-lookup-over-mro",
                 "args": [
                   {
                     "kind": "op",
-                    "name": "concept:member",
+                    "name": "concept:type-of",
                     "args": [
                       {
                         "kind": "var",
                         "name": "receiver"
-                      },
-                      {
-                        "kind": "const",
-                        "value": "vtbl",
-                        "sort": {
-                          "kind": "primitive",
-                          "name": "FieldName"
-                        }
                       }
                     ]
+                  },
+                  {
+                    "kind": "var",
+                    "name": "method_name"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:dict-lookup-over-mro",
+            "args": [
+              {
+                "kind": "op",
+                "name": "concept:type-of",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
                   }
                 ]
               },
@@ -80,51 +109,30 @@
                 "name": "method_name"
               }
             ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "mro_dict_scan_structurally_identical_under_mro_axiom"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
           },
           {
-            "kind": "op",
-            "name": "concept:cons",
-            "args": [
-              {
-                "kind": "var",
-                "name": "receiver"
-              },
-              {
-                "kind": "var",
-                "name": "args"
-              }
-            ]
+            "kind": "var",
+            "name": "method_name"
           }
-        ]
+        ],
+        "kind": "atomic",
+        "name": "outbound_narrows_mutable_dispatch_table"
       }
     },
-    "role": "abstraction-realization",
-    "direction": "left-to-right",
-    "target_lang": "c11",
-    "loss_record": {
-      "structural_divergence": "open-coded pointer chain (deref vtbl field, index by compile-time-fixed offset, fn-ptr call); not a dispatch primitive; the abstraction lookup is by name, the realization offset is fixed at link time",
-      "domain_narrowing": "dispatch table for runtime_type(receiver) must be fixed at compile or link time; runtime table mutation is not supportable in this realization"
-    },
     "discharge_receipt": "deferred:pending-61-PR5",
-    "effects": [],
-    "pre": {
-      "kind": "atomic",
-      "name": "dispatch_table_fixed_at_compile_time",
-      "args": [
-        {
-          "kind": "op",
-          "name": "runtime_type",
-          "args": [
-            {
-              "kind": "var",
-              "name": "receiver"
-            }
-          ]
-        }
-      ]
-    }
+    "effects": []
   },
-  "cid": "blake3-512:0579c5915b0b799dcce2d1fcf2a7e1c2a14831151f47b7a760bf744c79d7faeed439c0ec688a918ee14062266e63c1c72676292f5741a2925a662f18fea5fdcd",
+  "cid": "blake3-512:417165fe5951c0a7f6a4607993544ce67defa00c41c297eb792e525b8e2a4d6f7f6001672cd645fee863e9d53b59e23643055c99340d89b29d7bf262514dbe9c",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",

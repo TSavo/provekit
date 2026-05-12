@@ -1,7 +1,7 @@
 {
   "memento": {
     "kind": "equation",
-    "fn_name": "concept:exception->python:try-except",
+    "fn_name": "concept:exception->jvm:try-catch",
     "formals": [
       "try_body",
       "handlers",
@@ -45,7 +45,7 @@
       },
       "rhs": {
         "kind": "op",
-        "name": "python:try-except",
+        "name": "jvm:try-catch",
         "args": [
           {
             "kind": "var",
@@ -60,14 +60,47 @@
     },
     "role": "abstraction-realization",
     "direction": "left-to-right",
-    "target_lang": "python",
+    "target_lang": "java",
     "loss_record": {
-      "structural_divergence": "near-zero: python:try/except IS the concept; the realization is the identity map"
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "jvm:try-catch",
+            "args": [
+              {
+                "kind": "var",
+                "name": "try_body"
+              },
+              {
+                "kind": "var",
+                "name": "handlers"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "jvm_try_catch_near_first_class_realization_is_abstraction"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "throw_payload"
+          },
+          {
+            "kind": "var",
+            "name": "handlers"
+          }
+        ],
+        "kind": "atomic",
+        "name": "checked_exceptions_require_throws_declaration"
+      }
     },
     "discharge_receipt": "deferred:pending-61-PR5",
     "effects": []
   },
-  "cid": "blake3-512:e6a5a2cb2a53f538a3b64cbe441f41b57b82515f83a14ab09f12efd6b22dca65bc715eec367e30da1f117996df939a6d26e81aa7f774d7a76330d88cd5823437",
+  "cid": "blake3-512:a60d0ca74d7d3c9e0636c2c0dd538f3bb598f96c0060dae870d068969476c14e9882f81e54d2313ac260e7f74b1a1a4bc1a4d94288da3486a2b1a097f020f6e0",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
