@@ -310,6 +310,27 @@ fn annotate_is_idempotent() {
     assert!(r1.status.success(), "first annotate pass should succeed");
     let pass1 = fs::read_to_string(tmp.join("src").join("account.rs")).unwrap();
 
+    // B2 regression gate: pass1 must contain the *content* of the lifted contract for
+    // deposit, not merely structural annotations.  The cmd_bind annotator strips existing
+    // `#[cfg_attr(any(), requires...)]` lines and re-emits them only when the parse-lift
+    // extracted a non-empty predicate (B1 fix).  If B1's trim-ordering fix is reverted
+    // the parser fails to extract the predicate and `requires(amount > 0)` is silently
+    // dropped from pass1 — both this assertion AND the structural-idempotence check below
+    // must fire against that regression.
+    assert!(
+        pass1.contains("substrate-origin: annotation-lift"),
+        "pass1 must carry `substrate-origin: annotation-lift` for the deposit function \
+         (B2 regression check — empty would mean the annotation-lift path did not fire)"
+    );
+    assert!(
+        pass1.contains("requires(amount > 0)")
+            || pass1.contains("requires (amount > 0)")
+            || pass1.contains("requires(amount>0)"),
+        "pass1 must contain the lifted `requires(amount > 0)` predicate for deposit \
+         (B2 regression check — absence means B1 trim-ordering bug was reintroduced)\n\
+         pass1:\n{pass1}"
+    );
+
     // pass2: source after second annotate run on already-annotated file.
     let r2 = bind_cmd(&tmp, &out, "annotate", "monitor", None);
     assert!(r2.status.success(), "second annotate pass should succeed");
