@@ -1082,3 +1082,95 @@ pub fn jcs_bytes_of_value(v: &Value) -> Vec<u8> {
 pub use crate::wp::{
     free_vars_formula, free_vars_term, substitute_in_formula, substitute_in_term,
 };
+
+// ============================================================
+// DomainClaim projection for FunctionContractMemento (PR-B of #717)
+//
+// Bare `FunctionContractMemento`s have no inline discharge. They MUST
+// be wrapped in a `ConceptSiteMemento` (the binding) or a
+// `CompoundContractMemento` (PR #716) before reaching the verifier
+// surface. This impl is intentionally always-Err so the type system
+// encodes the invariant: the call-site is forced to handle the error
+// and either reject the bare contract or promote it through a binding
+// (spec §2.3, §6.1).
+// ============================================================
+
+impl TryFrom<&FunctionContractMemento> for provekit_ir_types::DomainClaim {
+    type Error = provekit_ir_types::DomainClaimConversionError;
+
+    fn try_from(_m: &FunctionContractMemento) -> Result<Self, Self::Error> {
+        Err(provekit_ir_types::DomainClaimConversionError::UnboundContract)
+    }
+}
+
+#[cfg(test)]
+mod domain_claim_fcm_tests {
+    use super::*;
+    use provekit_ir_types::{DomainClaimConversionError, IrFormula};
+
+    /// Build a minimal but valid `FunctionContractMemento` for testing.
+    /// `pre` and `post` use `And { operands: [] }` which is the canonical
+    /// encoding of the trivial `true` formula.
+    fn minimal_fcm() -> FunctionContractMemento {
+        FunctionContractMemento {
+            fn_name: "test_fn".to_string(),
+            formals: vec![],
+            formal_sorts: vec![],
+            formal_regions: vec![],
+            return_sort: provekit_ir_types::Sort::Primitive {
+                name: "bool".to_string(),
+            },
+            return_region: None,
+            pre: IrFormula::And { operands: vec![] },
+            post: IrFormula::And { operands: vec![] },
+            body_cid: None,
+            effects: EffectSet::default(),
+            locus: Locus {
+                file: Some("test.rs".to_string()),
+                line: 1,
+                col: 0,
+            },
+            canonical_bytes: vec![],
+            cid: "blake3-512:000000".to_string(),
+            auto_minted_mementos: vec![],
+            concept_hint: None,
+        }
+    }
+
+    #[test]
+    fn bare_fcm_returns_unbound_contract_error() {
+        let fcm = minimal_fcm();
+        let result = provekit_ir_types::DomainClaim::try_from(&fcm);
+        assert_eq!(result, Err(DomainClaimConversionError::UnboundContract));
+    }
+
+    #[test]
+    fn bare_fcm_error_is_deterministic() {
+        let fcm = minimal_fcm();
+        let r1 = provekit_ir_types::DomainClaim::try_from(&fcm);
+        let r2 = provekit_ir_types::DomainClaim::try_from(&fcm);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn unbound_contract_display_is_informative() {
+        let msg = DomainClaimConversionError::UnboundContract.to_string();
+        assert!(
+            msg.contains("unbound") || msg.contains("bare") || msg.contains("FunctionContract"),
+            "display message should be informative, got: {msg:?}"
+        );
+        assert!(
+            msg.contains("ConceptSiteMemento") || msg.contains("CompoundContract"),
+            "display message should mention the binding type, got: {msg:?}"
+        );
+    }
+
+    #[test]
+    fn unbound_contract_error_variant_matches() {
+        let fcm = minimal_fcm();
+        let err = provekit_ir_types::DomainClaim::try_from(&fcm).unwrap_err();
+        // Pattern-match to confirm the correct variant -- won't compile if
+        // the variant is renamed or removed.
+        assert!(matches!(err, DomainClaimConversionError::UnboundContract));
+    }
+}
