@@ -160,6 +160,8 @@ fn is_ground(formula: &IrFormula) -> bool {
         IrFormula::Forall { body, .. }
         | IrFormula::Exists { body, .. }
         | IrFormula::Choice { body, .. } => is_ground(body),
+        IrFormula::Substitute { target, term, .. } => is_ground(target) && is_ground_term(term),
+        IrFormula::Apply { args, .. } => args.iter().all(is_ground),
     }
 }
 
