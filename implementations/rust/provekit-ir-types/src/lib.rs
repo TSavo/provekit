@@ -1475,6 +1475,11 @@ pub enum DomainClaimConversionError {
     /// entries and are not directly verifiable through the `DomainClaim`
     /// surface (spec §2.2).
     StandaloneRealization,
+    /// A bare `FunctionContractMemento` was offered directly to the verifier
+    /// surface. Bare contracts have no inline discharge and MUST be wrapped
+    /// in a `ConceptSiteMemento` binding or `CompoundContractMemento` (PR #716)
+    /// before they can be projected onto `DomainClaim` (spec §2.3).
+    UnboundContract,
 }
 
 impl std::fmt::Display for DomainClaimConversionError {
@@ -1490,6 +1495,13 @@ impl std::fmt::Display for DomainClaimConversionError {
                 "RealizationDesugaringMemento is standalone (not cited by a \
                  ConceptSiteMemento); standalone realizations are catalog \
                  entries and do not project directly onto DomainClaim"
+            ),
+            Self::UnboundContract => write!(
+                f,
+                "FunctionContractMemento is unbound: bare contracts have no \
+                 inline discharge and must be wrapped in a ConceptSiteMemento \
+                 or CompoundContractMemento before projecting onto DomainClaim \
+                 (spec §2.3)"
             ),
         }
     }
