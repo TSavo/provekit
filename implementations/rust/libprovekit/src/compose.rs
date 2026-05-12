@@ -1722,6 +1722,68 @@ mod fcm_auto_promote_tests {
         let via_into: CompoundContractMemento = (&fcm).into();
         assert_eq!(via_fn.cid, via_into.cid);
     }
+
+    // ----------------------------------------------------------------
+    // CID symmetry: evidence_cid() and compound_cid() must produce
+    // the SAME CID as serde_json::to_value(&struct) → strip cid →
+    // serde_to_canonical → cid_of_value. This is the correctness
+    // invariant that prevents every downstream consumer from rejecting
+    // the output as tampered or malformed.
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn evidence_cid_is_symmetric_with_serde_roundtrip() {
+        let fcm = fcm_with_pre_post(
+            "symmetry_test",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:sym1",
+            11,
+            3,
+        );
+        let (ev, _compound) = promote_fcm_to_compound(&fcm);
+
+        // Recompute CID via serde path: serialize → remove cid → canonical → CID.
+        let mut as_value = serde_json::to_value(&ev).expect("EvidenceMemento serializes");
+        as_value
+            .as_object_mut()
+            .expect("EvidenceMemento serializes as object")
+            .remove("cid");
+        let recomputed = cid_of_value(&serde_to_canonical(as_value));
+
+        assert_eq!(
+            recomputed, ev.cid,
+            "evidence CID computed by evidence_cid() must match CID derived \
+             from serde_json::to_value path (symmetry invariant)"
+        );
+    }
+
+    #[test]
+    fn compound_cid_is_symmetric_with_serde_roundtrip() {
+        let fcm = fcm_with_pre_post(
+            "compound_symmetry",
+            nontrivial_pre(),
+            nontrivial_post(),
+            "blake3-512:sym2",
+            15,
+            7,
+        );
+        let (_ev, compound) = promote_fcm_to_compound(&fcm);
+
+        // Recompute CID via serde path: serialize → remove cid → canonical → CID.
+        let mut as_value = serde_json::to_value(&compound).expect("CompoundContractMemento serializes");
+        as_value
+            .as_object_mut()
+            .expect("CompoundContractMemento serializes as object")
+            .remove("cid");
+        let recomputed = cid_of_value(&serde_to_canonical(as_value));
+
+        assert_eq!(
+            recomputed, compound.cid,
+            "compound CID computed by compound_cid() must match CID derived \
+             from serde_json::to_value path (symmetry invariant)"
+        );
+    }
 }
 
 #[cfg(test)]
