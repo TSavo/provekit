@@ -285,7 +285,7 @@ mod tests {
             let json = serde_json::to_string(m).expect("must serialize");
             let back: EvidenceMemento = serde_json::from_str(&json).expect("must deserialize");
             assert_eq!(back.cid, m.cid);
-            assert!(back.extension_fields.contains_key("surface_kind"));
+            assert!(back.extension_fields.contains_key("surface_name"));
             assert!(back.extension_fields.contains_key("target_function_or_field"));
             assert!(back.extension_fields.contains_key("original_text"));
         }

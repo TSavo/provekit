@@ -112,8 +112,7 @@ pub fn lift_spring_file(source: &str, source_cid: &str) -> Vec<EvidenceMemento> 
 
     for (line_idx, line) in lines.iter().enumerate() {
         let line_no = (line_idx + 1) as u32; // 1-based
-        let next_line = lines.get(line_idx + 1).copied().unwrap_or("");
-        let target = extract_java_target(line, next_line);
+        let target = extract_java_target(&lines, line_idx);
         let locator = make_locator(source_cid, line_no, line_no);
 
         // @PreCondition("expr")
@@ -273,15 +272,37 @@ pub fn lift_spring_file(source: &str, source_cid: &str) -> Vec<EvidenceMemento> 
 // Target name heuristic
 // ---------------------------------------------------------------------------
 
-/// Try to extract the field/parameter name from `annotation_line` and the
-/// following `next_line`.  Returns `"_unknown"` if nothing obvious is found.
-fn extract_java_target(annotation_line: &str, next_line: &str) -> String {
-    // Look in the annotation line itself (inline annotation on a field decl).
-    // Also look at next line (annotation on its own line above the declaration).
-    for candidate in &[annotation_line, next_line] {
+/// Try to extract the field/parameter name from the annotation at `from_index`
+/// and the lines that follow it.  Scans forward past consecutive annotation
+/// lines (lines whose trimmed text starts with `@`), blank lines, and
+/// single-line `//` comments until a non-annotation, non-blank, non-comment
+/// line is found, then extracts the identifier from that declaration.
+/// Returns `"_unknown"` if nothing obvious is found or EOF is reached.
+fn extract_java_target(lines: &[&str], from_index: usize) -> String {
+    let annotation_line = lines[from_index];
+    // 1. Inline annotation on a field declaration (e.g. `@NotNull int age`).
+    if let Some(name) = java_decl_last_word(annotation_line) {
+        return name;
+    }
+    // 2. Annotation on its own line — walk forward past more annotations,
+    //    blank lines, and `//` comments until a declaration line is found.
+    let mut idx = from_index + 1;
+    while idx < lines.len() {
+        let candidate = lines[idx].trim();
+        if candidate.is_empty() || candidate.starts_with("//") {
+            idx += 1;
+            continue;
+        }
+        if candidate.starts_with('@') {
+            // Another stacked annotation — keep walking.
+            idx += 1;
+            continue;
+        }
+        // Non-annotation, non-blank, non-comment line: this is the declaration.
         if let Some(name) = java_decl_last_word(candidate) {
             return name;
         }
+        break;
     }
     "_unknown".to_string()
 }
@@ -373,7 +394,7 @@ mod tests {
         assert_eq!(back.cid, m.cid);
         assert_eq!(back.confidence_basis_points, 10000);
         // extension_fields must contain the three mandatory keys
-        assert!(back.extension_fields.contains_key("surface_kind"));
+        assert!(back.extension_fields.contains_key("surface_name"));
         assert!(back.extension_fields.contains_key("target_function_or_field"));
         assert!(back.extension_fields.contains_key("original_text"));
     }
@@ -414,6 +435,46 @@ mod tests {
         match &m.predicate {
             IrFormula::Atomic { name, .. } => assert_eq!(name, "opaque"),
             other => panic!("expected opaque atomic, got {:?}", other),
+        }
+    }
+
+    /// Regression: stacked annotations on one field must all resolve to the
+    /// same target, not `_unknown`.  Previously @Min(1) saw next_line=@Max(100)
+    /// and fell through to `_unknown`.
+    #[test]
+    fn test_spring_stacked_annotations_two_same_field() {
+        let src = "    @Min(1)\n    @Max(100)\n    private int score;\n";
+        let mementos = lift_spring_file(src, FAKE_CID);
+        assert_eq!(mementos.len(), 2, "expected one memento per annotation");
+        for m in &mementos {
+            let target = m
+                .extension_fields
+                .get("target_function_or_field")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            assert_eq!(
+                target, "score",
+                "stacked annotation target must be 'score', got '{target}'"
+            );
+        }
+    }
+
+    /// Regression: three stacked annotations — no off-by-one in the forward walk.
+    #[test]
+    fn test_spring_stacked_annotations_three_same_field() {
+        let src = "    @NotNull\n    @Min(1)\n    @Max(100)\n    private int score;\n";
+        let mementos = lift_spring_file(src, FAKE_CID);
+        assert_eq!(mementos.len(), 3, "expected one memento per annotation");
+        for m in &mementos {
+            let target = m
+                .extension_fields
+                .get("target_function_or_field")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            assert_eq!(
+                target, "score",
+                "all three stacked annotations must resolve to 'score', got '{target}'"
+            );
         }
     }
 }

@@ -218,14 +218,14 @@ pub(crate) fn make_locator(source_cid: &str, start_line: u32, end_line: u32) -> 
 
 /// Build the mandatory extension fields for a native-surface memento.
 pub(crate) fn native_ext(
-    surface_kind: &str,
+    surface_name: &str,
     target_function_or_field: &str,
     original_text: &str,
 ) -> BTreeMap<String, serde_json::Value> {
     let mut m = BTreeMap::new();
     m.insert(
-        "surface_kind".to_string(),
-        serde_json::Value::String(surface_kind.to_string()),
+        "surface_name".to_string(),
+        serde_json::Value::String(surface_name.to_string()),
     );
     m.insert(
         "target_function_or_field".to_string(),
