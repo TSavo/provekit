@@ -185,7 +185,7 @@ Per-kind aliases SHOULD be provided by the runtime for ergonomic reasons:
 ```
 --sugar <source>           ≡  --plugin sugar:<source>
 --loss-function <source>   ≡  --plugin loss-function:<source>
---lifter <source>          ≡  --plugin lifter:<source>
+--lifter <source>          ≡  --plugin lift:<source>
 ```
 
 Aliases MUST desugar to the canonical form before registry insertion; the canonical form is what appears in the `PluginRegistryMemento` (§9).

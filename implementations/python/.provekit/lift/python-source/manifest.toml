@@ -1,6 +1,7 @@
 name = "python-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = ["python3", "-m", "provekit_lift_python_source", "--rpc"]
 working_dir = "provekit-lift-python-source/src"
 

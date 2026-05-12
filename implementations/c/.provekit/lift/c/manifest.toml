@@ -1,6 +1,7 @@
 name = "c-lift-compat"
 version = "0.1.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = ["./provekit-lift/bin/provekit-lift-c", "--rpc"]
 working_dir = "."
 

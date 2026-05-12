@@ -1,6 +1,7 @@
 name = "swift-source"
 version = "0.1.0-draft"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = [".build/release/provekit-lift-swift-source", "--rpc"]
 working_dir = "."
 

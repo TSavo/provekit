@@ -1,6 +1,7 @@
 name = "cpp-self-contracts"
 version = "1.0.0"
-protocol_version = "provekit-lift/1"
+protocol_version = "pep/1.7.0"
+kind = "lift"
 command = ["./target/mint_cpp_self_contracts"]
 working_dir = "."
 
