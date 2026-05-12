@@ -55,6 +55,8 @@ members = [
     "../../menagerie/bridgeworks",
     "../../menagerie/supply-chain-rails",
     "../../menagerie/protocol-switchyard",
+    "../../menagerie/smoke-test-e2e",
+    "../../menagerie/smoke-test-e2e/driver",
 ]
 
 [workspace.package]
