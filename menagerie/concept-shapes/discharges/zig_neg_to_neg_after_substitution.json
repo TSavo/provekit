@@ -1,34 +1,23 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:neg",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
   "formals": [
     "value"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Int",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "neg",
     "arity": [
       "Int"
     ],
-    "result": "Int",
-    "wp": "Zig unary -",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -36,9 +25,20 @@
           "name": "value"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "neg",
+    "result": "Int",
+    "wp": "Zig unary -"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
   }
 }

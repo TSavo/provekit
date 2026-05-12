@@ -1,59 +1,59 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "acquire-use-release:c:to-shape",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
   "formals": [
     "source_contract"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
-    }
+  "input_cids": [
+    "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
+    "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4"
   ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "FunctionContractMemento",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "contract-renaming-morphism",
-    "source_contract_cid": "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
-    "target_shape_cid": "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4",
-    "renaming_map": {
-      "mutex": "m",
-      "body_result": "body_ret",
-      "result": "ret"
-    },
-    "representation_map": {
-      "pthread_mutex_t_ptr": "Lock",
-      "int": "CriticalValue"
-    },
-    "operator_map": {
-      "pthread_mutex_available": "lock_available",
-      "pthread_state_after": "lock_state_after",
-      "pthread_state_before": "lock_state_before",
-      "pthread_balanced": "balanced_lock_pair",
-      "pthread_mutex_held": "holds_lock",
-      "critical_body_done": "body_effects_done"
-    },
-    "literal_map": {},
     "homomorphism_obligation": {
       "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
       "source": "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
       "target": "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4"
-    }
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {
+      "critical_body_done": "body_effects_done",
+      "pthread_balanced": "balanced_lock_pair",
+      "pthread_mutex_available": "lock_available",
+      "pthread_mutex_held": "holds_lock",
+      "pthread_state_after": "lock_state_after",
+      "pthread_state_before": "lock_state_before"
+    },
+    "renaming_map": {
+      "body_result": "body_ret",
+      "mutex": "m",
+      "result": "ret"
+    },
+    "representation_map": {
+      "int": "CriticalValue",
+      "pthread_mutex_t_ptr": "Lock"
+    },
+    "source_contract_cid": "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
+    "target_shape_cid": "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "input_cids": [
-    "blake3-512:7a71116f6f21bade4739d9fd066f5352b1ba739133bf01a014bfe1c38efdc332326ad06f4a495d81bf194d604fc95715d48d7ae9e8e649c1b9512156d72a2a6c",
-    "blake3-512:caac0f85ee27cfed8ebc894ac69b0ec6f31da3f274f7820fbb04be6751c1618264a22380fb3dfc55d12b1a6894201f95f412ba36261cf2eef8132ce8553069c4"
-  ]
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
 }

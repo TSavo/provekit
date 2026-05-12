@@ -1,0 +1,153 @@
+{
+  "fn_name": "gap:python:for:to:concept:for",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "OpaqueLoop"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union(init.effects, body.effects, step.effects)"
+          },
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union(init.effects, body.effects, {Loop})"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "OpaqueLoop"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Loop"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target"
+            },
+            {
+              "name": "iterable"
+            },
+            {
+              "name": "body"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "for",
+        "result": "Stmt",
+        "wp": "opaque Python for loop over iterable"
+      },
+      "want": {
+        "arity": [
+          "Stmt",
+          "Bool",
+          "Stmt",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "init"
+            },
+            {
+              "name": "cond"
+            },
+            {
+              "name": "step"
+            },
+            {
+              "name": "body"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "for",
+        "result": "Stmt",
+        "wp": "seq(init, while(cond, seq(body, step)))"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:680a899faa515d9ef0cccf7dda25b46c026323220776dcc63dee0c7fdb064bdd24dc23b5a963a475061df3b0932ace7db9d1d49a91a22ffcd7c3ebbafe5a2a5e",
+  "target_concept_op": "concept:for",
+  "target_op_cid": "blake3-512:3595b8dd26613833f59c6d411823ecd93008c07797557120ac0949c0367bca89b9ae77c243cf7c09e8b4865156513d2faccb9b5acf6baf19057b0737b9c07fd3"
+}

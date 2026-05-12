@@ -1,26 +1,26 @@
 {
   "cid": "blake3-512:2a75cb1b90b46a75430a5a1233b456ee03209ec7ccb77d24cf5c665525ff57fd14ea98150c359dccc2b0dffb81490512ca39054c6a48979f48f09c5c56daeac8",
   "memento": {
-    "schema_version": "1",
+    "after_substitution_cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
+    "discharged": true,
     "kind": "MorphismDischargeReceipt",
+    "literal_map": {},
+    "method": "canonicalizer-alpha-equivalence-plus-representation-map",
     "morphism_cid": "blake3-512:08e136f0b16268168cc70ecb6095d1d5643c190120ed9a08d8ef70161fb9b5eac02dc03f139a21c8581a2f90bc9092ac0987ae9dcd288c1ddd865a41d4ca1975",
-    "source_contract_cid": "blake3-512:5f474e8af37af7a6730fbc704fe4350059c2334c948d7e34489ed4f41531af1cdd10fc87bd29bc6b697d89f7d82e999ab690f80d271d15fec8ccf03016ebdeb2",
+    "operator_map": {
+      "c_status_is_error": "err_cond"
+    },
     "renaming_map": {
-      "status": "x",
       "fail_value": "err_val",
-      "result": "ret"
+      "result": "ret",
+      "status": "x"
     },
     "representation_map": {
       "int": "Value"
     },
-    "operator_map": {
-      "c_status_is_error": "err_cond"
-    },
-    "literal_map": {},
-    "after_substitution_cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
+    "schema_version": "1",
     "shape_cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
-    "discharged": true,
-    "method": "canonicalizer-alpha-equivalence-plus-representation-map"
+    "source_contract_cid": "blake3-512:5f474e8af37af7a6730fbc704fe4350059c2334c948d7e34489ed4f41531af1cdd10fc87bd29bc6b697d89f7d82e999ab690f80d271d15fec8ccf03016ebdeb2"
   },
   "signature": null
 }

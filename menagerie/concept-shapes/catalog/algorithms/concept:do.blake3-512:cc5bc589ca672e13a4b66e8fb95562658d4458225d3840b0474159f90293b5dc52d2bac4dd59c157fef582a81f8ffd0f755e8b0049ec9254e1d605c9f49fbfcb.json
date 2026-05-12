@@ -10,24 +10,22 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Stmt",
-        "args": []
+        "name": "Stmt"
       },
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Bool",
-        "args": []
+        "name": "Bool"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "do",
       "arity": [
         "Stmt",
         "Bool"
@@ -43,6 +41,8 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "do",
       "result": "Stmt",
       "wp": "do body once, then loop while cond"
     },
@@ -51,9 +51,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Stmt",
-      "args": []
+      "name": "Stmt"
     }
   },
   "cid": "blake3-512:cc5bc589ca672e13a4b66e8fb95562658d4458225d3840b0474159f90293b5dc52d2bac4dd59c157fef582a81f8ffd0f755e8b0049ec9254e1d605c9f49fbfcb",

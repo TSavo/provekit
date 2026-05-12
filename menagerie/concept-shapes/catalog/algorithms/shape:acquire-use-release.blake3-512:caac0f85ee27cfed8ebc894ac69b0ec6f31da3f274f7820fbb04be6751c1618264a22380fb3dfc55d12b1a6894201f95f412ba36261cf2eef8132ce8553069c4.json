@@ -19,21 +19,19 @@
       }
     ],
     "pre": {
-      "kind": "atomic",
-      "name": "lock_available",
       "args": [
         {
           "kind": "var",
           "name": "m"
         }
-      ]
+      ],
+      "kind": "atomic",
+      "name": "lock_available"
     },
     "post": {
       "kind": "and",
       "operands": [
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
               "kind": "var",
@@ -43,66 +41,68 @@
               "kind": "var",
               "name": "body_ret"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
-          "kind": "atomic",
-          "name": "=",
           "args": [
             {
-              "kind": "ctor",
-              "name": "lock_state_after",
               "args": [
                 {
                   "kind": "var",
                   "name": "m"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "lock_state_after"
             },
             {
-              "kind": "ctor",
-              "name": "lock_state_before",
               "args": [
                 {
                   "kind": "var",
                   "name": "m"
                 }
-              ]
+              ],
+              "kind": "ctor",
+              "name": "lock_state_before"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "="
         },
         {
-          "kind": "atomic",
-          "name": "balanced_lock_pair",
           "args": [
             {
               "kind": "var",
               "name": "m"
             }
-          ]
+          ],
+          "kind": "atomic",
+          "name": "balanced_lock_pair"
         },
         {
           "kind": "implies",
           "operands": [
             {
-              "kind": "atomic",
-              "name": "holds_lock",
               "args": [
                 {
                   "kind": "var",
                   "name": "m"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "holds_lock"
             },
             {
-              "kind": "atomic",
-              "name": "body_effects_done",
               "args": [
                 {
                   "kind": "var",
                   "name": "m"
                 }
-              ]
+              ],
+              "kind": "atomic",
+              "name": "body_effects_done"
             }
           ]
         }
@@ -111,20 +111,20 @@
     "effects": {
       "effects": [
         {
-          "kind": "CriticalSection",
-          "lock": "m",
+          "balanced": true,
+          "body_effects": "body_effects",
           "guard": {
-            "kind": "ctor",
-            "name": "holds_lock",
             "args": [
               {
                 "kind": "var",
                 "name": "m"
               }
-            ]
+            ],
+            "kind": "ctor",
+            "name": "holds_lock"
           },
-          "body_effects": "body_effects",
-          "balanced": true
+          "kind": "CriticalSection",
+          "lock": "m"
         }
       ]
     },

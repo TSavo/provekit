@@ -1,41 +1,30 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:shr",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
   "formals": [
     "lhs",
     "rhs"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Int",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "shr",
     "arity": [
       "Int",
       "Int"
     ],
-    "result": "Int",
-    "wp": "integer right shift",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -46,9 +35,20 @@
           "name": "rhs"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "shr",
+    "result": "Int",
+    "wp": "integer right shift"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
   }
 }

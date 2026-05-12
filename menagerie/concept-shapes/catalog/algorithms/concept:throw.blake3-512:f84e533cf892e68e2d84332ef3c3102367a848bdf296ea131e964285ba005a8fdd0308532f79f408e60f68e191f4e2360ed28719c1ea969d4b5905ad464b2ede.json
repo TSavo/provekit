@@ -9,24 +9,20 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Value",
-        "args": []
+        "name": "Value"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "throw",
       "arity": [
         "Value"
       ],
-      "result": "Stmt",
-      "wp": "throw exception or value",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -34,7 +30,11 @@
             "name": "value"
           }
         ]
-      }
+      },
+      "kind": "operation-contract",
+      "operator": "throw",
+      "result": "Stmt",
+      "wp": "throw exception or value"
     },
     "effects": {
       "effects": [
@@ -50,9 +50,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Stmt",
-      "args": []
+      "name": "Stmt"
     }
   },
   "cid": "blake3-512:f84e533cf892e68e2d84332ef3c3102367a848bdf296ea131e964285ba005a8fdd0308532f79f408e60f68e191f4e2360ed28719c1ea969d4b5905ad464b2ede",

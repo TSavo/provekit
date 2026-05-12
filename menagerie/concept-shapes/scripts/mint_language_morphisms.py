@@ -47,6 +47,9 @@ DISCHARGE_DIR = discharge.DISCHARGE_DIR
 CATALOG_REAL = discharge.CATALOG_REAL
 CID_FILE = discharge.CID_FILE
 
+# Gap memento files live in BASE/gaps/ per spec §4 catalog placement.
+GAP_DIR = BASE / "gaps"
+
 LANGUAGES = [
     {"id": "c11", "prefix": "c11", "dir": "c11-language-signature"},
     {"id": "csharp", "prefix": "csharp", "dir": "csharp-language-signature"},
@@ -669,13 +672,290 @@ def append_cids(rows):
     CID_FILE.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
 
+def gap_kind_from_reason(reason_str, lang_id=None, slug=None):
+    """Map a diff_reason() string to a gap-kind enum value per spec §1.1.
+
+    Uses heuristics on the prose reason produced by diff_reason().
+    Returns a string matching the CDDL gap-kind enum.
+    """
+    if "language signature directory is absent" in reason_str:
+        return "missing-source-op"
+    if "not in supported set" in reason_str:
+        return "missing-source-op"
+    if "no candidate source operation spec" in reason_str:
+        return "missing-source-op"
+    if lang_id and slug:
+        known = KNOWN_DIVERGENCE_REASONS.get((lang_id, slug))
+        if known:
+            # Detect polymorphic vs divergent-semantics
+            if "polymorphic" in known or "dispatches on operand type" in known:
+                return "polymorphic-source-op"
+            return "divergent-semantics"
+    if "formal sort mismatch" in reason_str or "return sort" in reason_str:
+        return "sort-mismatch"
+    if "effect signature mismatch" in reason_str:
+        return "effect-mismatch"
+    if "arity_shape" in reason_str:
+        return "arity-shape-mismatch"
+    if "precondition mismatch" in reason_str:
+        return "sort-mismatch"
+    return "sort-mismatch"
+
+
+def divergent_tag_from_reason(reason_str):
+    """Return a divergent-semantics sub-tag from the reason prose, or None."""
+    if "floored" in reason_str or "truncated" in reason_str:
+        return "truncated-vs-floored-modulo"
+    if "true division" in reason_str or "integer division" in reason_str:
+        return "integer-vs-true-division"
+    if "polymorphic" in reason_str or "dispatches on operand type" in reason_str:
+        return "bounded-vs-unbounded-integer"
+    return None
+
+
+def build_gap_reason(after_spec, concept_spec, reason_str, lang_id, slug):
+    """Build a structured GapReason dict from the diff."""
+    reason = {}
+    gk = gap_kind_from_reason(reason_str, lang_id, slug)
+
+    # For known semantic divergences, attach divergent_tag
+    if gk == "divergent-semantics":
+        tag = divergent_tag_from_reason(reason_str)
+        if tag:
+            reason["divergent_tag"] = tag
+
+    # Populate deltas where we can derive them
+    if after_spec and concept_spec:
+        if after_spec.get("formal_sorts") != concept_spec.get("formal_sorts"):
+            reason["formal_sorts_delta"] = {
+                "got": after_spec.get("formal_sorts"),
+                "want": concept_spec.get("formal_sorts"),
+            }
+        if after_spec.get("pre") != concept_spec.get("pre"):
+            reason["pre_delta"] = {
+                "got": after_spec.get("pre"),
+                "want": concept_spec.get("pre"),
+            }
+        after_post = after_spec.get("post", {})
+        concept_post = concept_spec.get("post", {})
+        if after_post != concept_post:
+            reason["post_delta"] = {
+                "got": after_post,
+                "want": concept_post,
+            }
+        if after_spec.get("effects") != concept_spec.get("effects"):
+            reason["effects_delta"] = {
+                "got": after_spec.get("effects"),
+                "want": concept_spec.get("effects"),
+            }
+
+    # For missing-source-op: record source_supported=false
+    if gk == "missing-source-op":
+        reason["source_supported"] = False
+
+    return reason if reason else None
+
+
+def resolution_options_for(gap_kind):
+    """Return the template resolution options for a given gap_kind.
+
+    Per spec §3: per-gap_kind templates, not an exhaustive universe.
+    """
+    if gap_kind == "polymorphic-source-op":
+        return [
+            {
+                "option_kind": "partial-morphism",
+                "status": "recommended",
+                "tradeoff": "requires the lift to establish operands_statically_int at every use-site; dynamic languages rarely carry enough static sort info",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "status": "deferred",
+                "tradeoff": "no exact bridge for the polymorphic case; gap is permanent unless the hub op is split or the lift learns sort-resolution",
+            },
+        ]
+    if gap_kind == "divergent-semantics":
+        return [
+            {
+                "option_kind": "partial-morphism",
+                "status": "recommended",
+                "tradeoff": "partial morphism valid on the non-diverging sub-domain; requires static proof of the side-condition at every use-site",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "status": "deferred",
+                "tradeoff": "no exact bridge for the semantically-diverging case",
+            },
+        ]
+    if gap_kind == "sort-mismatch":
+        return [
+            {
+                "option_kind": "add-representation-map",
+                "status": "recommended",
+                "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "status": "deferred",
+                "tradeoff": "no exact bridge for structurally distinct sorts",
+            },
+        ]
+    if gap_kind == "effect-mismatch":
+        return [
+            {
+                "option_kind": "accept-permanent",
+                "status": "recommended",
+                "tradeoff": "effect sets differ; transport would silently misrepresent the effect contract",
+            },
+        ]
+    if gap_kind == "arity-shape-mismatch":
+        return [
+            {
+                "option_kind": "re-spec-target-op",
+                "status": "recommended",
+                "tradeoff": "the hub op's arity_shape does not match; re-spec the hub op or the language spec",
+            },
+            {
+                "option_kind": "accept-permanent",
+                "status": "deferred",
+                "tradeoff": "no exact bridge for mismatched arity shapes",
+            },
+        ]
+    if gap_kind == "missing-source-op":
+        return [
+            {
+                "option_kind": "accept-permanent",
+                "status": "recommended",
+                "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec",
+            },
+        ]
+    if gap_kind == "no-such-concept-op":
+        return [
+            {
+                "option_kind": "accept-permanent",
+                "status": "recommended",
+                "tradeoff": "no concept hub op exists for this source-language op; accept the gap or mint a new hub op to cover it",
+            },
+        ]
+    # fallback
+    return [
+        {
+            "option_kind": "accept-permanent",
+            "status": "deferred",
+            "tradeoff": "gap reason not categorized; review manually",
+        },
+    ]
+
+
+def emit_gap_memento(gap, after_spec=None, concept_spec=None, source_op_cid=None, shape_cid=None):
+    """Emit a TransportGapMemento JSON file for a gap entry.
+
+    The file is written under GAP_DIR with a deterministic stem:
+      gap_<sanitized-lang>_<sanitized-slug>_to_<sanitized-concept>.json
+
+    Returns the path written (or None if the file already exists with the same content).
+    """
+    GAP_DIR.mkdir(parents=True, exist_ok=True)
+
+    language = gap["language"]
+    concept = gap["concept"]  # e.g. "concept:add"
+    reason_str = gap.get("reason", "")
+    # Extract slug from concept fn name (e.g. "concept:add" -> "add")
+    concept_slug = concept.split(":", 1)[-1] if ":" in concept else concept
+    lang_id = gap.get("lang_id", language)
+    slug = gap.get("slug", concept_slug)
+
+    gap_kind = gap_kind_from_reason(reason_str, lang_id, slug)
+    # Override gap_kind if explicitly set in gap dict
+    if "gap_kind" in gap:
+        gap_kind = gap["gap_kind"]
+
+    structured_reason = build_gap_reason(after_spec, concept_spec, reason_str, lang_id, slug)
+
+    # Use placeholder CIDs when real ones not available (e.g. no spec found)
+    src_cid = source_op_cid or f"blake3-512:gap-no-source-cid-{sanitize(language)}-{sanitize(concept_slug)}"
+    tgt_cid = shape_cid
+
+    fn_name = f"gap:{language}:{concept_slug}:to:{concept}"
+    options = resolution_options_for(gap_kind)
+
+    memento = {
+        "fn_name": fn_name,
+        "gap_kind": gap_kind,
+        "kind": "TransportGapMemento",
+        "resolution_options": options,
+        "schema_version": "1",
+        "signature": None,
+        "source_lang": language,
+        "source_op_cid": src_cid,
+        "target_concept_op": concept,
+    }
+    if structured_reason:
+        memento["reason"] = structured_reason
+    if tgt_cid:
+        memento["target_op_cid"] = tgt_cid
+    # reason_note from the prose reason
+    if reason_str and len(reason_str) < 500:
+        memento["reason_note"] = reason_str
+
+    stem = f"gap_{sanitize(language)}_{sanitize(concept_slug)}_to_{sanitize(concept)}"
+    path = GAP_DIR / f"{stem}.json"
+    write_json(path, memento)
+    cid = discharge.canonical_cid_file(path)
+    return path, cid, stem
+
+
 def write_gap_report(gaps, records):
+    """Write transport-gaps.md as a GENERATED VIEW over the gap memento files.
+
+    Source of truth: GAP_DIR/*.json (TransportGapMemento files).
+    This file must NOT be hand-edited. To rebuild, run `./mint.sh`.
+
+    Per spec 2026-05-14-transport-gap-and-partial-morphism-protocol.md §3:
+    transport-gaps.md is a rendered view, not the source of truth.
+    """
+    # Rebuild the gaps table from memento files in GAP_DIR.
+    gap_rows = []
+    if GAP_DIR.exists():
+        for memento_path in sorted(GAP_DIR.glob("gap_*.json")):
+            try:
+                m = read_json(memento_path)
+            except Exception:
+                continue
+            row = {
+                "language": m.get("source_lang", "?"),
+                "concept": m.get("target_concept_op", "?"),
+                "gap_kind": m.get("gap_kind", "?"),
+                "reason_note": m.get("reason_note", ""),
+                "fn_name": m.get("fn_name", ""),
+                "options": [o.get("option_kind", "?") for o in m.get("resolution_options", [])],
+            }
+            gap_rows.append(row)
+
+    # Fall back to in-memory gaps list if GAP_DIR was empty or not yet written.
+    if not gap_rows:
+        gap_rows = [
+            {
+                "language": g["language"],
+                "concept": g["concept"],
+                "gap_kind": gap_kind_from_reason(g.get("reason", ""), g.get("lang_id", g["language"]), g.get("slug", "")),
+                "reason_note": g.get("reason", ""),
+                "fn_name": f"gap:{g['language']}:{g['concept'].split(':',1)[-1]}:to:{g['concept']}",
+                "options": [],
+            }
+            for g in gaps
+        ]
+
     lines = [
         "# Program Transport Gaps",
         "",
-        "Generated by `scripts/mint_language_morphisms.py`.",
-        "Rows here are refusals to mint a morphism because the canonicalizer discharge did not land on the concept shape CID, or because the language has no op spec for that concept node.",
-        "Each gap records the structural reason for the mismatch with actual vs. expected values.",
+        "**GENERATED FILE. DO NOT EDIT.**",
+        "Rebuilt by `scripts/mint_language_morphisms.py` from `gaps/*.json` memento files.",
+        "To regenerate: run `./mint.sh` from `menagerie/concept-shapes/`.",
+        "",
+        "Each gap is a `TransportGapMemento` -- a content-addressed, machine-readable record of why",
+        "a source-language op has no exact morphism into the concept hub, with resolution options.",
+        "See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.",
         "",
         "## Semantic Restrictions",
         "",
@@ -692,9 +972,17 @@ def write_gap_report(gaps, records):
         "## Minted Coverage", "", "| Concept op | Minted morphisms |", "| --- | --- |"]
     for record in records:
         lines.append(f"| `{record['concept']}` | {', '.join(m['name'] for m in record['morphisms']) or 'none'} |")
-    lines += ["", "## Gaps", "", "| Language | Concept op | Source spec | Reason |", "| --- | --- | --- | --- |"]
-    for gap in gaps:
-        lines.append(f"| `{gap['language']}` | `{gap['concept']}` | `{gap['spec']}` | {gap['reason']} |")
+    lines += [
+        "",
+        "## Gaps",
+        "",
+        "| Language | Concept op | Gap kind | Gap memento | Resolution options |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for row in gap_rows:
+        options_str = ", ".join(row["options"]) if row["options"] else "accept-permanent"
+        stem = f"gap_{sanitize(row['language'])}_{sanitize(row['concept'].split(':',1)[-1])}_to_{sanitize(row['concept'])}"
+        lines.append(f"| `{row['language']}` | `{row['concept']}` | `{row['gap_kind']}` | `{stem}.json` | {options_str} |")
     lines += ["", "T Savo", ""]
     (BASE / "transport-gaps.md").write_text("\n".join(lines), encoding="utf-8")
 
@@ -784,7 +1072,7 @@ def sweep_stale_catalog_files(catalog_path_str, current_cid):
 
 def main():
     discharge.build_tools()
-    for path in [SPEC_DIR, RECEIPT_DIR, DISCHARGE_DIR, CATALOG_REAL]:
+    for path in [SPEC_DIR, RECEIPT_DIR, DISCHARGE_DIR, CATALOG_REAL, GAP_DIR]:
         path.mkdir(parents=True, exist_ok=True)
 
     concept_specs = {op_def["slug"]: concept_spec_from_base(op_def) for op_def in OPS}
@@ -813,12 +1101,23 @@ def main():
         for language in LANGUAGES:
             directory = specs_dir(language["id"])
             if not directory.is_dir():
-                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": f"menagerie/{language['dir']}/specs", "reason": "language signature directory is absent"})
+                gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": f"menagerie/{language['dir']}/specs", "reason": "language signature directory is absent", "lang_id": language["id"], "slug": op_def["slug"]}
+                gaps.append(gap_entry)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
                 continue
             found = False
             if op_def["slug"] not in LANG_SUPPORTED.get(language["id"], set()):
-                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": "not-supported", "reason": "operation not in supported set for this language"})
+                gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": "not-supported", "reason": "operation not in supported set for this language", "lang_id": language["id"], "slug": op_def["slug"]}
+                gaps.append(gap_entry)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
                 continue
+            # Defer gap emission until all candidates are exhausted (defer-and-collapse).
+            # Emitting inside the loop for each failed candidate causes duplicate gap stems with
+            # different source_op_cids when multiple candidate files exist (e.g. rust member/field),
+            # triggering the one-name-one-CID invariant in append_cids.
+            first_failure: dict | None = None
             for candidate in spec_candidates(op_def, language):
                 path = directory / candidate
                 if not path.exists():
@@ -831,6 +1130,7 @@ def main():
                     morphism_row = cid_rows.get(("morphism", stem), {"cid": "already-minted", "path": f"specs/{stem}.spec.json"})
                     receipt_row = cid_rows.get(("receipt", stem), {"cid": "already-minted", "path": f"receipts/{stem}.receipt.json"})
                     record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_row["cid"], "receipt_cid": receipt_row["cid"]})
+                    first_failure = None  # success -- clear any pending deferred gap
                     break
                 source_cid = canonical_cid_spec(source_spec)
                 after_spec, operator_map = transformed_source_spec(op_def, source_spec, language)
@@ -838,7 +1138,14 @@ def main():
                 if after_cid != shape_cid:
                     subsumption = try_structural_subsumption(after_spec, concept_spec)
                     if subsumption is None:
-                        gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])})
+                        if first_failure is None:
+                            # Record the first failure; do NOT emit yet -- a later candidate may succeed.
+                            reason_str = diff_reason(after_spec, concept_spec, lang_id=language["id"], slug=op_def["slug"])
+                            first_failure = {
+                                "gap_entry": {"language": language["id"], "concept": op_def["concept_fn"], "spec": candidate, "reason": reason_str, "lang_id": language["id"], "slug": op_def["slug"]},
+                                "after_spec": after_spec,
+                                "source_cid": source_cid,
+                            }
                         continue
                     discharge_method, pre_relaxed, wp_abstracted = subsumption
                     effect_subset_relaxed = "effect-subset" in discharge_method
@@ -882,16 +1189,33 @@ def main():
                 rows.append({"kind": "receipt", "name": stem, "cid": receipt_cid, "path": receipt_path})
                 record["morphisms"].append({"language": language["id"], "name": stem, "morphism_cid": morphism_cid, "receipt_cid": receipt_cid})
                 break
+            # Emit the deferred gap if every candidate failed discharge (defer-and-collapse).
+            if first_failure is not None:
+                gap_entry = first_failure["gap_entry"]
+                gaps.append(gap_entry)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(
+                    gap_entry,
+                    after_spec=first_failure["after_spec"],
+                    concept_spec=concept_spec,
+                    source_op_cid=first_failure["source_cid"],
+                    shape_cid=shape_cid,
+                )
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
             if not found:
-                gaps.append({"language": language["id"], "concept": op_def["concept_fn"], "spec": f"op_{op_def['slug'].replace('-', '_')}.spec.json", "reason": "no candidate source operation spec"})
+                gap_entry = {"language": language["id"], "concept": op_def["concept_fn"], "spec": f"op_{op_def['slug'].replace('-', '_')}.spec.json", "reason": "no candidate source operation spec", "lang_id": language["id"], "slug": op_def["slug"]}
+                gaps.append(gap_entry)
+                gap_path, gap_cid, gap_stem = emit_gap_memento(gap_entry, source_op_cid=None, shape_cid=shape_cid)
+                rows.append({"kind": "gap", "name": gap_stem, "cid": gap_cid, "path": str(gap_path)})
         records.append(record)
     append_cids(rows)
     write_gap_report(gaps, records)
     update_readme(records)
     discharge.scan_created_text()
+    gap_memento_count = len(list(GAP_DIR.glob("gap_*.json"))) if GAP_DIR.exists() else 0
     print(f"concept_op_count\t{len(OPS)}")
     print(f"morphism_count\t{sum(len(r['morphisms']) for r in records)}")
     print(f"gap_count\t{len(gaps)}")
+    print(f"gap_memento_count\t{gap_memento_count}")
 
 
 if __name__ == "__main__":

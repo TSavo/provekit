@@ -1,22 +1,22 @@
 {
   "cid": "blake3-512:909963dec9f5170154f41d6b4a909a04491705996ec48495bb357d31c328a42fa42c53f02efce671c3692240a0528f1e1f907ac4d89a4259a5ce7cf5e52e6ce5",
   "memento": {
-    "schema_version": "1",
+    "after_substitution_cid": "blake3-512:046ae0b8a1945a80f0f53900cecb4b926c5fff0bc6b7ccc5e8f593da24a6a0fbdfeef051da6da49713df20739a89644faf684ba7e213774cbdea360257c696f5",
+    "discharged": true,
+    "effect_subset_relaxed": true,
     "kind": "MorphismDischargeReceipt",
+    "literal_map": {},
+    "method": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
     "morphism_cid": "blake3-512:b7970ccb5aee4d7138446e3a53248048be7b0fd184687e27b0786697be91ef7b64211d50549390a0d24b60cdd96d86190fa60ed124a01e2254c8bef9122ae335",
-    "source_contract_cid": "blake3-512:f7472333afcc5d5fe1260febe50147ef7c279cfb124077ef4b29fc98d6701cfc10fb8e9420eee207abd08bd71f18e50bad51c9cb32534db248704b4855a17737",
+    "operator_map": {},
+    "pre_relaxed": true,
     "renaming_map": {},
     "representation_map": {},
-    "operator_map": {},
-    "literal_map": {},
-    "after_substitution_cid": "blake3-512:046ae0b8a1945a80f0f53900cecb4b926c5fff0bc6b7ccc5e8f593da24a6a0fbdfeef051da6da49713df20739a89644faf684ba7e213774cbdea360257c696f5",
+    "schema_version": "1",
     "shape_cid": "blake3-512:9c77e353a537b0cd2e67cc880bbf1e2937c1e2f26c0af2b8be1a2741f3521d9be07cd2ab2886d54c425e6fed3dd161636a5f430bf2e8874ec1ddac6326ac3d7f",
-    "discharged": true,
-    "method": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
     "signature": null,
-    "pre_relaxed": true,
-    "wp_abstracted": true,
-    "effect_subset_relaxed": true
+    "source_contract_cid": "blake3-512:f7472333afcc5d5fe1260febe50147ef7c279cfb124077ef4b29fc98d6701cfc10fb8e9420eee207abd08bd71f18e50bad51c9cb32534db248704b4855a17737",
+    "wp_abstracted": true
   },
   "signature": null
 }

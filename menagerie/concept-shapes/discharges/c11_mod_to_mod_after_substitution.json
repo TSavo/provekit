@@ -1,35 +1,26 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:mod",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
   "formals": [
     "lhs",
     "rhs"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Int",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Int",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "mod",
     "arity": [
       "Int",
       "Int"
@@ -45,10 +36,19 @@
         }
       ]
     },
+    "kind": "operation-contract",
+    "operator": "mod",
     "result": "Int",
     "wp": "integer remainder expression"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
   }
 }

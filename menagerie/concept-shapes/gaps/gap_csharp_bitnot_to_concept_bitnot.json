@@ -1,0 +1,54 @@
+{
+  "fn_name": "gap:csharp:bitnot:to:concept:bitnot",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "bitnot",
+        "result": "Int",
+        "wp": "~value (bitwise complement)"
+      },
+      "want": {
+        "arity": [
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "bitnot",
+        "result": "Int",
+        "wp": "integer bitwise complement expression"
+      }
+    }
+  },
+  "reason_note": "wp mismatch: got `\"~value (bitwise complement)\"` want `\"integer bitwise complement expression\"`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:481706f139caa1e76727bcc5d89fcfd94af5bedff70bb4c1e67d955b293e53aae21746d3d6de7ef0ff99c4915fd37616eea9eeb5a1412fe17299055ce734d6ac",
+  "target_concept_op": "concept:bitnot",
+  "target_op_cid": "blake3-512:d63498a80320dc31dd14bd11e4a22e40439d4927ef6042ea3671d5591351785afb098600374ae2240c866054377a21e7bbd8c96938eb50c9fadcf07a18b08431"
+}

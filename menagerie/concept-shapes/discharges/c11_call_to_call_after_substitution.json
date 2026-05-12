@@ -1,41 +1,35 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "callee.effects"
+      }
+    ]
+  },
   "fn_name": "concept:call",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FnContract"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "ListOfExpr"
+    }
+  ],
   "formals": [
     "callee",
     "args"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "FnContract",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "ListOfExpr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "call",
     "arity": [
       "FnContract",
       "ListOf<Expr>"
     ],
-    "result": "Stmt",
-    "wp": "callee pre under bound args implies callee post under caller state",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -49,14 +43,20 @@
           }
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "call",
+    "result": "Stmt",
+    "wp": "callee pre under bound args implies callee post under caller state"
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "effect-polymorphic",
-        "rule": "callee.effects"
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

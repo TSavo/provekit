@@ -1,34 +1,23 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:not",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    }
+  ],
   "formals": [
     "value"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Bool",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Bool",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "not",
     "arity": [
       "Bool"
     ],
-    "result": "Bool",
-    "wp": "boolean negation",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -36,9 +25,20 @@
           "name": "value"
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "not",
+    "result": "Bool",
+    "wp": "boolean negation"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Bool"
   }
 }

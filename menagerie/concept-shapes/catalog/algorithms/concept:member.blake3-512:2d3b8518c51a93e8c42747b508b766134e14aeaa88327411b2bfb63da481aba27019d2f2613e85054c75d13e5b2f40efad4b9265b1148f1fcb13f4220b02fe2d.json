@@ -10,30 +10,26 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "LValue",
-        "args": []
+        "name": "LValue"
       },
       {
+        "args": [],
         "kind": "ctor",
-        "name": "FieldName",
-        "args": []
+        "name": "FieldName"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "member",
       "arity": [
         "LValue",
         "FieldName"
       ],
-      "result": "LValue",
-      "wp": "field lvalue projection",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -45,16 +41,20 @@
             "slot_sort": "identifier"
           }
         ]
-      }
+      },
+      "kind": "operation-contract",
+      "operator": "member",
+      "result": "LValue",
+      "wp": "field lvalue projection"
     },
     "effects": {
       "effects": []
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "LValue",
-      "args": []
+      "name": "LValue"
     }
   },
   "cid": "blake3-512:2d3b8518c51a93e8c42747b508b766134e14aeaa88327411b2bfb63da481aba27019d2f2613e85054c75d13e5b2f40efad4b9265b1148f1fcb13f4220b02fe2d",

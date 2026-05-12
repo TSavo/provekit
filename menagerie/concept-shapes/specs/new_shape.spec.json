@@ -1,41 +1,35 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Alloc"
+      }
+    ]
+  },
   "fn_name": "concept:new",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    }
+  ],
   "formals": [
     "type_name",
     "args"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "String",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Expr",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Expr",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "new",
     "arity": [
       "String",
       "Expr"
     ],
-    "result": "Expr",
-    "wp": "new object of type type_name constructed with args",
     "arity_shape": {
       "kind": "named",
       "slots": [
@@ -49,14 +43,20 @@
           }
         }
       ]
-    }
+    },
+    "kind": "operation-contract",
+    "operator": "new",
+    "result": "Expr",
+    "wp": "new object of type type_name constructed with args"
   },
-  "effects": {
-    "effects": [
-      {
-        "kind": "effect-signature",
-        "name": "Alloc"
-      }
-    ]
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Expr"
   }
 }

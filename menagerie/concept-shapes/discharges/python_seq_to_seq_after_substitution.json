@@ -1,47 +1,47 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "concept:seq",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
   "formals": [
     "first",
     "second"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    },
-    {
-      "kind": "ctor",
-      "name": "Stmt",
-      "args": []
-    }
-  ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "Stmt",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
-    "kind": "operation-contract",
-    "operator": "seq",
     "arity": [
       "Stmt",
       "Stmt"
     ],
-    "result": "Stmt",
-    "wp": "wp(first, wp(second, post))",
     "arity_shape": {
-      "kind": "positional",
-      "arity": 2
-    }
+      "arity": 2,
+      "kind": "positional"
+    },
+    "kind": "operation-contract",
+    "operator": "seq",
+    "result": "Stmt",
+    "wp": "wp(first, wp(second, post))"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
   }
 }

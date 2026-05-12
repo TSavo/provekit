@@ -10,30 +10,26 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Int",
-        "args": []
+        "name": "Int"
       },
       {
+        "args": [],
         "kind": "ctor",
-        "name": "Int",
-        "args": []
+        "name": "Int"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "le",
       "arity": [
         "Int",
         "Int"
       ],
-      "result": "Bool",
-      "wp": "integer less-than-or-equal comparison",
       "arity_shape": {
         "kind": "named",
         "slots": [
@@ -44,16 +40,20 @@
             "name": "rhs"
           }
         ]
-      }
+      },
+      "kind": "operation-contract",
+      "operator": "le",
+      "result": "Bool",
+      "wp": "integer less-than-or-equal comparison"
     },
     "effects": {
       "effects": []
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Bool",
-      "args": []
+      "name": "Bool"
     }
   },
   "cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1",

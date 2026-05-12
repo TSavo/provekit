@@ -1,0 +1,110 @@
+{
+  "fn_name": "gap:python:mod:to:concept:mod",
+  "gap_kind": "divergent-semantics",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "divergent_tag": "truncated-vs-floored-modulo",
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "mod",
+        "result": "Value",
+        "wp": "Python mod expression"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "mod",
+        "result": "Int",
+        "wp": "integer remainder expression"
+      }
+    }
+  },
+  "reason_note": "python:mod is floored remainder (follows sign of divisor); concept:mod is truncated-toward-zero remainder (follows sign of dividend)",
+  "resolution_options": [
+    {
+      "option_kind": "partial-morphism",
+      "status": "recommended",
+      "tradeoff": "partial morphism valid on the non-diverging sub-domain; requires static proof of the side-condition at every use-site"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for the semantically-diverging case"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:377cf94793191ab449c4e8dbe24aa3813b0dc6315dcea8c9312e078844519168e2689592cc24ef9ab3521f990084724423a8f98e14dae256443396194b8170d3",
+  "target_concept_op": "concept:mod",
+  "target_op_cid": "blake3-512:f58d7f26192a3e713bd97c59aec8039a8b7c9ddd39e469d36da3077fe03de76912b4621ae3f4bdbae7d000a79303507e5ce2b1887221511ab905b896f321ef44"
+}

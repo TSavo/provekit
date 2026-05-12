@@ -1,0 +1,62 @@
+{
+  "fn_name": "gap:ruby:not:to:concept:not",
+  "gap_kind": "arity-shape-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Bool"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "operand"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "not",
+        "result": "Bool",
+        "wp": "boolean negation"
+      },
+      "want": {
+        "arity": [
+          "Bool"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "not",
+        "result": "Bool",
+        "wp": "boolean negation"
+      }
+    }
+  },
+  "reason_note": "arity_shape or slot policy mismatch: got `{\"kind\":\"named\",\"slots\":[{\"name\":\"operand\"}]}` want `{\"kind\":\"named\",\"slots\":[{\"name\":\"value\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "re-spec-target-op",
+      "status": "recommended",
+      "tradeoff": "the hub op's arity_shape does not match; re-spec the hub op or the language spec"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for mismatched arity shapes"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "ruby",
+  "source_op_cid": "blake3-512:b8edcd8612530cdecf687a9574026e3c020cbab127481fd041711a9defe53e35de25ab6af33aeb6829868f0f5ab1cce2ab8e563458de51673a85a18ecbc89815",
+  "target_concept_op": "concept:not",
+  "target_op_cid": "blake3-512:5cb76baa52aed7e9a64f0a29b5efc8b4b21c1ac8b9b7d4365b7eec90eec3c40bc6a083495a56fad4927334407dc8f34e8cff105f34c395416c63e7efb2bf0e58"
+}

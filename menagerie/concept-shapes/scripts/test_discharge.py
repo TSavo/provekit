@@ -102,5 +102,130 @@ class ConceptShapeDischargeTests(unittest.TestCase):
         self.assertEqual(target, normalized)
 
 
+class WriteJsonCanonicalTests(unittest.TestCase):
+    """Regression: Blocker 2 -- write_json must produce JCS-canonical (sorted-key) output.
+
+    Previously write_json used json.dump without sort_keys=True, so the on-disk
+    key order was Python insertion order.  Any consumer that recomputes a CID from
+    the on-disk bytes would get a different BLAKE3 than the registered CID.
+    """
+
+    def test_write_json_produces_sorted_key_order(self):
+        import json
+        import tempfile
+
+        # A dict with intentionally non-alphabetical insertion order
+        obj = {"z_key": 1, "a_key": 2, "m_key": 3}
+        with tempfile.NamedTemporaryFile(
+            mode="r", suffix=".json", delete=False
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+
+        try:
+            discharge.write_json(tmp_path, obj)
+            on_disk = tmp_path.read_text(encoding="utf-8")
+            parsed = json.loads(on_disk)
+            canonical = json.dumps(parsed, sort_keys=True, indent=2, ensure_ascii=True) + "\n"
+            self.assertEqual(
+                on_disk,
+                canonical,
+                "write_json must produce sort_keys=True output so on-disk bytes are "
+                "identical to re-serialized canonical form; "
+                f"got:\n{on_disk!r}\nwant:\n{canonical!r}",
+            )
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def test_write_json_gap_memento_key_order_matches_canonical(self):
+        """A gap memento written via write_json must have alphabetically-sorted keys."""
+        import json
+        import tempfile
+
+        memento = {
+            "fn_name": "gap:python:add:to:concept:add",
+            "gap_kind": "polymorphic-source-op",
+            "kind": "TransportGapMemento",
+            "resolution_options": [],
+            "schema_version": "1",
+            "source_lang": "python",
+            "source_op_cid": "blake3-512:aaaa",
+            "target_concept_op": "concept:add",
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="r", suffix=".json", delete=False
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+
+        try:
+            discharge.write_json(tmp_path, memento)
+            on_disk_keys = list(json.loads(tmp_path.read_text(encoding="utf-8")).keys())
+            expected_keys = sorted(on_disk_keys)
+            self.assertEqual(
+                on_disk_keys,
+                expected_keys,
+                f"Keys must be in alphabetical order; got {on_disk_keys}",
+            )
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+
+class SiblingWriteJsonDelegationTests(unittest.TestCase):
+    """Regression: sibling mint scripts must delegate write_json to discharge.write_json.
+
+    Issue 1 from the Opus round-2 review: mint_pair/option/result/tagged_union each had a
+    local write_json that called json.dump WITHOUT sort_keys=True.  Fix: each now imports
+    discharge as _discharge and delegates.  This test verifies the behaviour is byte-identical
+    to discharge.write_json (sorted keys, indent=2, ensure_ascii=True, trailing newline).
+    """
+
+    SIBLING_MODULES = [
+        "mint_pair",
+        "mint_option",
+        "mint_result",
+        "mint_tagged_union",
+    ]
+
+    def _import_sibling(self, name):
+        import importlib
+        scripts_dir = str(Path(__file__).resolve().parent)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        return importlib.import_module(name)
+
+    def _run_write_json_test(self, module_name):
+        import json
+        import tempfile
+
+        mod = self._import_sibling(module_name)
+        obj = {"z_key": 1, "a_key": 2, "m_key": 3}
+        with tempfile.NamedTemporaryFile(mode="r", suffix=".json", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            mod.write_json(tmp_path, obj)
+            on_disk = tmp_path.read_text(encoding="utf-8")
+            parsed = json.loads(on_disk)
+            canonical = json.dumps(parsed, sort_keys=True, indent=2, ensure_ascii=True) + "\n"
+            self.assertEqual(
+                on_disk,
+                canonical,
+                f"{module_name}.write_json must produce sort_keys=True output; "
+                f"got:\n{on_disk!r}\nwant:\n{canonical!r}",
+            )
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def test_mint_pair_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_pair")
+
+    def test_mint_option_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_option")
+
+    def test_mint_result_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_result")
+
+    def test_mint_tagged_union_write_json_produces_sorted_keys(self):
+        self._run_write_json_test("mint_tagged_union")
+
+
 if __name__ == "__main__":
     unittest.main()

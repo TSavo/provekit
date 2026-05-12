@@ -911,7 +911,7 @@ CONCEPTS = [
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
-        json.dump(value, handle, indent=2, ensure_ascii=True)
+        json.dump(value, handle, indent=2, sort_keys=True, ensure_ascii=True)
         handle.write("\n")
 
 

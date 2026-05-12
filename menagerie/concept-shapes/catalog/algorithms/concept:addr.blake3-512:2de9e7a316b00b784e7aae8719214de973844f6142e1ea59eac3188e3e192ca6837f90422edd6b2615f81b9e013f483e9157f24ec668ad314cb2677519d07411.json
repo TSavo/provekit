@@ -9,19 +9,17 @@
     ],
     "formal_sorts": [
       {
+        "args": [],
         "kind": "ctor",
-        "name": "LValue",
-        "args": []
+        "name": "LValue"
       }
     ],
     "pre": {
+      "args": [],
       "kind": "atomic",
-      "name": "true",
-      "args": []
+      "name": "true"
     },
     "post": {
-      "kind": "operation-contract",
-      "operator": "addr",
       "arity": [
         "LValue"
       ],
@@ -33,6 +31,8 @@
           }
         ]
       },
+      "kind": "operation-contract",
+      "operator": "addr",
       "result": "Ptr",
       "wp": "address-of expression yielding a pointer to target"
     },
@@ -41,9 +41,9 @@
     },
     "auto_minted_mementos": [],
     "return_sort": {
+      "args": [],
       "kind": "ctor",
-      "name": "Ptr",
-      "args": []
+      "name": "Ptr"
     }
   },
   "cid": "blake3-512:2de9e7a316b00b784e7aae8719214de973844f6142e1ea59eac3188e3e192ca6837f90422edd6b2615f81b9e013f483e9157f24ec668ad314cb2677519d07411",

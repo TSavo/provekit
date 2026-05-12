@@ -1,0 +1,59 @@
+{
+  "fn_name": "gap:csharp:le:to:concept:le",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "le",
+        "result": "Bool",
+        "wp": "lhs <= rhs"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "le",
+        "result": "Bool",
+        "wp": "integer less-than-or-equal comparison"
+      }
+    }
+  },
+  "reason_note": "wp mismatch: got `\"lhs <= rhs\"` want `\"integer less-than-or-equal comparison\"`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:f6a331d56d79fe7355e97c78249654f1908ebcad9e7353eee9b52f63abd3cc8d4a3556e1c2a2d819c083a5887b07de0c7530ef6ca823f2324e387b8479ff344f",
+  "target_concept_op": "concept:le",
+  "target_op_cid": "blake3-512:b225e83c0d5325413084ba1b805dbe040d3f2d297ac5ebd9455766843cf59498477749513b9839a8714513a31a366c7b84e85b73acc6bee78e8afb783f06adc1"
+}

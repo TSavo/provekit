@@ -1,0 +1,70 @@
+{
+  "fn_name": "gap:python:continue:to:concept:continue",
+  "gap_kind": "effect-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "control-transfer"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Continue"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "arity": 1,
+          "kind": "positional"
+        },
+        "kind": "operation-contract",
+        "operator": "continue",
+        "result": "Stmt",
+        "wp": "continue nearest loop"
+      },
+      "want": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "unit"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "continue",
+        "result": "Stmt",
+        "wp": "jump to next loop iteration"
+      }
+    }
+  },
+  "reason_note": "effect signature mismatch: got `{\"effects\":[]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"control-transfer\"},{\"kind\":\"effect-signature\",\"name\":\"Continue\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "effect sets differ; transport would silently misrepresent the effect contract"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:a0610716f394cfa1cc8ddd9871be05cee892289bf788a3f07e9e503d0e960e9cad8c31b27104facb863a897702701eb4de371743764cea6047e0c9278e065659",
+  "target_concept_op": "concept:continue",
+  "target_op_cid": "blake3-512:f4bb0e35cfaac91b064d68880930373bdea1f46fcf87081de1873edd3457a1d7a3ac95f9d42273ba7f686e523f9070b083eefbde0fe75e62760e59f2bb1d9f7a"
+}

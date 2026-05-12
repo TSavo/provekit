@@ -1,42 +1,34 @@
 {
-  "kind": "algorithm",
+  "effects": {
+    "effects": []
+  },
   "fn_name": "foo:specializes:branch-on-error-else-passthrough",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
   "formals": [
     "source_shape"
   ],
-  "formal_sorts": [
-    {
-      "kind": "ctor",
-      "name": "FunctionContractMemento",
-      "args": []
-    }
+  "input_cids": [
+    "blake3-512:a354ab103ca4ddc5f415c0652d99651e1e0d7f42a312f52fcf02bf34e5a68daa02a13bafc7449f55798cb326232e442cac09e0ba6d94bc4b1630a80414a09af1",
+    "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b"
   ],
-  "return_sort": {
-    "kind": "ctor",
-    "name": "FunctionContractMemento",
-    "args": []
-  },
-  "pre": {
-    "kind": "atomic",
-    "name": "true",
-    "args": []
-  },
+  "kind": "algorithm",
   "post": {
+    "implication": {
+      "antecedent": "blake3-512:a354ab103ca4ddc5f415c0652d99651e1e0d7f42a312f52fcf02bf34e5a68daa02a13bafc7449f55798cb326232e442cac09e0ba6d94bc4b1630a80414a09af1",
+      "consequent": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
+      "kind": "shape-instance-implies-general-shape"
+    },
     "kind": "specialization-of",
     "source_shape_cid": "blake3-512:a354ab103ca4ddc5f415c0652d99651e1e0d7f42a312f52fcf02bf34e5a68daa02a13bafc7449f55798cb326232e442cac09e0ba6d94bc4b1630a80414a09af1",
-    "target_shape_cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
     "substitution": {
-      "x": "arg_0",
       "err_cond": {
-        "kind": "lambda",
-        "paramName": "arg_0",
-        "paramSort": {
-          "kind": "primitive",
-          "name": "Int"
-        },
         "body": {
-          "kind": "ctor",
-          "name": "=",
           "args": [
             {
               "kind": "var",
@@ -44,35 +36,43 @@
             },
             {
               "kind": "const",
-              "value": 0,
               "sort": {
                 "kind": "primitive",
                 "name": "Int"
-              }
+              },
+              "value": 0
             }
-          ]
+          ],
+          "kind": "ctor",
+          "name": "="
+        },
+        "kind": "lambda",
+        "paramName": "arg_0",
+        "paramSort": {
+          "kind": "primitive",
+          "name": "Int"
         }
       },
       "err_val": {
         "kind": "const",
-        "value": -22,
         "sort": {
           "kind": "primitive",
           "name": "Int"
-        }
-      }
+        },
+        "value": -22
+      },
+      "x": "arg_0"
     },
-    "implication": {
-      "kind": "shape-instance-implies-general-shape",
-      "antecedent": "blake3-512:a354ab103ca4ddc5f415c0652d99651e1e0d7f42a312f52fcf02bf34e5a68daa02a13bafc7449f55798cb326232e442cac09e0ba6d94bc4b1630a80414a09af1",
-      "consequent": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b"
-    }
+    "target_shape_cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b"
   },
-  "effects": {
-    "effects": []
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
   },
-  "input_cids": [
-    "blake3-512:a354ab103ca4ddc5f415c0652d99651e1e0d7f42a312f52fcf02bf34e5a68daa02a13bafc7449f55798cb326232e442cac09e0ba6d94bc4b1630a80414a09af1",
-    "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b"
-  ]
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
 }
