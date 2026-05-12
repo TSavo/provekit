@@ -4,12 +4,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 
 use clap::Parser;
 use libprovekit::core::{Cid, Term};
 use libprovekit::desugar::{load_desugaring_rules_from_dir, DesugaringSet};
 use libprovekit::transport::{transport_term, OperationTransport, TermTransport};
 use owo_colors::OwoColorize;
+use provekit_ir_symbolic::{ConstValue, Formula, Term as SymTerm};
 use provekit_ir_types::Sort;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -214,7 +216,30 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
         collect_vars(&source_term, &mut vars);
         vars.into_iter().collect()
     });
-    let realized = realize_function(&target_language, &args.function, &params, &target_term)?;
+
+    // Load contract annotations from the source file when the source language
+    // supports it. For unsupported languages both fields remain None and the
+    // realize-side still emits the `// concept: ...` line without any
+    // pre/post annotations — which is the honest outcome.
+    let annotations = if source_language == "rust" {
+        lift_rust_contracts(&source_text, &args.function)
+    } else {
+        ContractAnnotations::default()
+    };
+
+    // Derive a stable concept binding for the `// concept: ...` comment.
+    // The name is deterministic from the target term's JSON serialization so
+    // every distinct function shape gets a unique, stable, per-function name.
+    let concept_name = derive_concept_comment(&target_term);
+
+    let realized = realize_function(
+        &target_language,
+        &args.function,
+        &params,
+        &target_term,
+        &annotations,
+        &concept_name,
+    )?;
     stages.push(StageReport {
         stage: "realize",
         status: "ok",
@@ -849,6 +874,307 @@ fn parse_int_params(source: &str, function: &str) -> Option<Vec<String>> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Contract annotation loading and formatting
+// ---------------------------------------------------------------------------
+
+/// Contracts extracted from the source function, ready for realize-side
+/// annotation emission. Both fields hold IR-symbolic Formula trees as
+/// produced by `provekit-lift-contracts::lift_file`.
+#[derive(Debug, Clone, Default)]
+struct ContractAnnotations {
+    /// `pre`-condition formula from `#[requires(...)]` (or language equivalent).
+    pre: Option<Rc<Formula>>,
+    /// `post`-condition formula from `#[ensures(...)]` (or language equivalent).
+    post: Option<Rc<Formula>>,
+}
+
+/// Try to lift contract annotations from a Rust source file for the named
+/// function. Returns `ContractAnnotations::default()` (both None) on any
+/// parsing failure, since annotations are best-effort: we never want the
+/// realize stage to fail just because a contract couldn't be parsed.
+fn lift_rust_contracts(source_text: &str, function_name: &str) -> ContractAnnotations {
+    let Ok(ast) = syn::parse_file(source_text) else {
+        return ContractAnnotations::default();
+    };
+    let output = provekit_lift_contracts::lift_file(&ast, "<transport>");
+    for decl in &output.decls {
+        if decl.name == function_name {
+            return ContractAnnotations {
+                pre: decl.pre.clone(),
+                post: decl.post.clone(),
+            };
+        }
+    }
+    ContractAnnotations::default()
+}
+
+/// Derive a stable per-function concept binding name for the
+/// `// concept: <name>` comment.
+///
+/// The name is derived from the **target term's** JSON serialization so every
+/// structurally-distinct function gets a unique, reproducible name regardless
+/// of the language. This is a content-addressed FNV-1a 64-bit hash — the same
+/// hash used everywhere in the ProvekIt toolchain for stable naming before a
+/// full CID is assigned.
+///
+/// Format: `UNNAMED-CONCEPT-<16 hex digits>`
+///
+/// Named concepts are not derived here because the hub concept name is an
+/// editorial property of the morphism catalog, not of the individual term.
+/// The naming-roundtrip lifter can replace this marker with a catalog-resolved
+/// name after the fact; the `UNNAMED-CONCEPT-*` form is what it starts with.
+fn derive_concept_comment(target_term: &Term) -> String {
+    // Serialize to canonical JSON and hash the bytes. serde_json's default
+    // serialization is deterministic for the same input value.
+    let json = serde_json::to_string(target_term)
+        .unwrap_or_else(|_| "<unserializable>".to_string());
+    let mut h: u64 = 0xcbf29ce484222325; // FNV-1a 64-bit offset basis
+    for b in json.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("UNNAMED-CONCEPT-{h:016x}")
+}
+
+/// Render an IR-symbolic `Term` to target-language expression syntax.
+///
+/// Only the surface forms produced by `provekit-lift-contracts` are
+/// handled: `Var`, `Const(Int)`, `Const(Bool)`. Anything else falls
+/// back to `<COMPLEX>` with a parenthetical note.
+fn emit_term_syntax(term: &SymTerm) -> String {
+    match term {
+        SymTerm::Var { name } => name.clone(),
+        SymTerm::Const { value, .. } => match value {
+            ConstValue::Int(n) => n.to_string(),
+            ConstValue::Bool(b) => b.to_string(),
+            ConstValue::String(s) => format!("{s:?}"),
+        },
+        SymTerm::Ctor { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let arg_strs: Vec<_> = args.iter().map(|a| emit_term_syntax(a)).collect();
+                format!("{name}({})", arg_strs.join(", "))
+            }
+        }
+        _ => "<COMPLEX>".to_string(),
+    }
+}
+
+/// Peel outer `Forall` / `Exists` quantifier wrappers from a formula.
+///
+/// `provekit-lift-contracts` wraps the predicate body in one `Forall` per
+/// parameter (the parameters define the quantified variables). For annotation
+/// emission we want only the predicate body since the function signature
+/// already declares the parameter names.
+fn peel_quantifiers(formula: &Formula) -> &Formula {
+    match formula {
+        Formula::Quantifier { body, .. } => peel_quantifiers(body),
+        other => other,
+    }
+}
+
+/// Per-language pretty-printer for an IR-symbolic `Formula` tree.
+///
+/// Supported constructs: atomic comparisons (=, ≠, <, ≤, >, ≥, true, false),
+/// `and`, `or`, `not`, `implies`, binary function application.
+/// Unsupported / too-complex forms emit `<COMPLEX: cid=none>`.
+///
+/// The target syntax is always valid source for the named language.
+fn formula_to_syntax(formula: &Formula, style: TargetStyle) -> String {
+    match formula {
+        Formula::Atomic { name, args } => emit_atomic(name, args, style),
+        Formula::Connective { kind, operands } => match kind.as_str() {
+            "and" => {
+                let sep = match style {
+                    TargetStyle::Python | TargetStyle::Ruby => " and ",
+                    _ => " && ",
+                };
+                let parts: Vec<_> = operands
+                    .iter()
+                    .map(|o| {
+                        let s = formula_to_syntax(o, style);
+                        // Parenthesize non-trivial sub-formulas to preserve precedence.
+                        if matches!(o.as_ref(), Formula::Connective { kind, .. } if kind == "or" || kind == "implies") {
+                            format!("({s})")
+                        } else {
+                            s
+                        }
+                    })
+                    .collect();
+                parts.join(sep)
+            }
+            "or" => {
+                let sep = match style {
+                    TargetStyle::Python | TargetStyle::Ruby => " or ",
+                    _ => " || ",
+                };
+                let parts: Vec<_> = operands
+                    .iter()
+                    .map(|o| {
+                        let s = formula_to_syntax(o, style);
+                        if matches!(o.as_ref(), Formula::Connective { .. }) {
+                            format!("({s})")
+                        } else {
+                            s
+                        }
+                    })
+                    .collect();
+                parts.join(sep)
+            }
+            "not" => {
+                let inner = operands
+                    .first()
+                    .map(|o| formula_to_syntax(o, style))
+                    .unwrap_or_else(|| "<COMPLEX>".to_string());
+                match style {
+                    TargetStyle::Python | TargetStyle::Ruby => format!("not {inner}"),
+                    _ => format!("!({inner})"),
+                }
+            }
+            "implies" => {
+                // A => B — no direct syntax in most languages; emit as comment-safe form.
+                if operands.len() == 2 {
+                    let a = formula_to_syntax(&operands[0], style);
+                    let b = formula_to_syntax(&operands[1], style);
+                    match style {
+                        TargetStyle::Python | TargetStyle::Ruby => {
+                            format!("(not {a}) or {b}")
+                        }
+                        _ => format!("(!({a})) || ({b})"),
+                    }
+                } else {
+                    "<COMPLEX: implies arity != 2>".to_string()
+                }
+            }
+            other => format!("<COMPLEX: connective {other}>"),
+        },
+        Formula::Quantifier { kind, name, body, .. } => {
+            // Quantifiers have no clean inlined form; emit as a readable comment.
+            let inner = formula_to_syntax(body, style);
+            format!("<COMPLEX: {kind} {name}. {inner}>")
+        }
+        Formula::Choice { var_name, body, .. } => {
+            let inner = formula_to_syntax(body, style);
+            format!("<COMPLEX: choice {var_name}. {inner}>")
+        }
+    }
+}
+
+fn emit_atomic(name: &str, args: &[Rc<SymTerm>], style: TargetStyle) -> String {
+    match name {
+        "true" => "true".to_string(),
+        "false" => "false".to_string(),
+        "=" if args.len() == 2 => {
+            let (a, b) = (&args[0], &args[1]);
+            format!("{} == {}", emit_term_syntax(a), emit_term_syntax(b))
+        }
+        "≠" if args.len() == 2 => {
+            let (a, b) = (&args[0], &args[1]);
+            format!("{} != {}", emit_term_syntax(a), emit_term_syntax(b))
+        }
+        "<" if args.len() == 2 => {
+            let (a, b) = (&args[0], &args[1]);
+            format!("{} < {}", emit_term_syntax(a), emit_term_syntax(b))
+        }
+        "≤" if args.len() == 2 => {
+            let (a, b) = (&args[0], &args[1]);
+            format!("{} <= {}", emit_term_syntax(a), emit_term_syntax(b))
+        }
+        ">" if args.len() == 2 => {
+            let (a, b) = (&args[0], &args[1]);
+            format!("{} > {}", emit_term_syntax(a), emit_term_syntax(b))
+        }
+        "≥" if args.len() == 2 => {
+            let (a, b) = (&args[0], &args[1]);
+            format!("{} >= {}", emit_term_syntax(a), emit_term_syntax(b))
+        }
+        other if args.is_empty() => other.to_string(),
+        other => {
+            // Generic n-ary atomic — emit as call syntax for most languages.
+            let arg_strs: Vec<_> = args.iter().map(|a| emit_term_syntax(a)).collect();
+            match style {
+                TargetStyle::Java | TargetStyle::CSharp => {
+                    format!("{other}({})", arg_strs.join(", "))
+                }
+                _ => format!("{other}({})", arg_strs.join(", ")),
+            }
+        }
+    }
+}
+
+/// Emit the contract annotation prefix for the named function and target style.
+///
+/// Return value is a string of zero or more lines, each ending with `\n`,
+/// to be prepended to the function definition. The `// concept: <name>` line
+/// comes first, then language-specific pre/post annotations.
+fn emit_annotation_prefix(
+    concept_name: &str,
+    annotations: &ContractAnnotations,
+    style: TargetStyle,
+    indent: &str,
+) -> String {
+    let mut out = String::new();
+
+    // concept binding comment — canonical format consumed by naming-roundtrip lifter.
+    // The comment marker is language-specific: `#` for Python/Ruby where `//` is
+    // the floor-division operator, `//` for all other target languages.
+    let concept_marker = match style {
+        TargetStyle::Python | TargetStyle::Ruby => "#",
+        _ => "//",
+    };
+    out.push_str(&format!("{indent}{concept_marker} concept: {concept_name}\n"));
+
+    if let Some(pre) = &annotations.pre {
+        // Peel Forall wrappers added by provekit-lift-contracts: the params
+        // are already in scope from the function signature.
+        let body = peel_quantifiers(pre);
+        let expr = formula_to_syntax(body, style);
+        match style {
+            TargetStyle::Rust | TargetStyle::Zig => {
+                out.push_str(&format!("{indent}#[requires({expr})]\n"));
+            }
+            TargetStyle::Python | TargetStyle::Ruby => {
+                out.push_str(&format!("{indent}# requires: {expr}\n"));
+            }
+            TargetStyle::Java => {
+                out.push_str(&format!("{indent}// @requires({expr})\n"));
+            }
+            TargetStyle::Go
+            | TargetStyle::CSharp
+            | TargetStyle::TypeScript
+            | TargetStyle::Php => {
+                out.push_str(&format!("{indent}// requires: {expr}\n"));
+            }
+        }
+    }
+
+    if let Some(post) = &annotations.post {
+        let body = peel_quantifiers(post);
+        let expr = formula_to_syntax(body, style);
+        match style {
+            TargetStyle::Rust | TargetStyle::Zig => {
+                out.push_str(&format!("{indent}#[ensures({expr})]\n"));
+            }
+            TargetStyle::Python | TargetStyle::Ruby => {
+                out.push_str(&format!("{indent}# ensures: {expr}\n"));
+            }
+            TargetStyle::Java => {
+                out.push_str(&format!("{indent}// @ensures({expr})\n"));
+            }
+            TargetStyle::Go
+            | TargetStyle::CSharp
+            | TargetStyle::TypeScript
+            | TargetStyle::Php => {
+                out.push_str(&format!("{indent}// ensures: {expr}\n"));
+            }
+        }
+    }
+
+    out
+}
+
 #[derive(Debug)]
 struct RealizedSource {
     extension: &'static str,
@@ -888,15 +1214,28 @@ fn realize_function(
     function: &str,
     params: &[String],
     body: &Term,
+    annotations: &ContractAnnotations,
+    concept_name: &str,
 ) -> Result<RealizedSource, TransportCliError> {
     let style = style_for(language).ok_or_else(|| {
         TransportCliError::Refusal(format!(
             "realize-time:no-realizer no source realizer for target `{language}`"
         ))
     })?;
+
+    // For languages where the function is a top-level definition (not wrapped
+    // in a class), the annotation indent is empty. For class-wrapped languages
+    // (CSharp, Java) the function def is indented 4 spaces, so annotations go there too.
+    let top_indent = match style {
+        TargetStyle::CSharp | TargetStyle::Java => "    ",
+        _ => "",
+    };
+
+    let annotation_prefix = emit_annotation_prefix(concept_name, annotations, style, top_indent);
+
     let source = match style {
         TargetStyle::Rust => format!(
-            "pub fn {function}({}) -> i32 {{\n{}}}\n",
+            "{annotation_prefix}pub fn {function}({}) -> i32 {{\n{}}}\n",
             params
                 .iter()
                 .map(|param| format!("{param}: i32"))
@@ -905,21 +1244,24 @@ fn realize_function(
             emit_stmt(body, style, 1)?
         ),
         TargetStyle::Python => format!(
-            "def {function}({}):\n{}",
+            "{annotation_prefix}def {function}({}):\n{}",
             params.join(", "),
             emit_block(body, style, 1)?
         ),
-        TargetStyle::Go => format!(
-            "package main\n\nfunc {function}({}) int {{\n{}}}\n",
-            params
-                .iter()
-                .map(|param| format!("{param} int"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            emit_stmt(body, style, 1)?
-        ),
+        TargetStyle::Go => {
+            // Go: package header first, then annotations above the function.
+            format!(
+                "package main\n\n{annotation_prefix}func {function}({}) int {{\n{}}}\n",
+                params
+                    .iter()
+                    .map(|param| format!("{param} int"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                emit_stmt(body, style, 1)?
+            )
+        }
         TargetStyle::CSharp => format!(
-            "public static class Transported {{\n    public static int {function}({}) {{\n{}    }}\n}}\n",
+            "public static class Transported {{\n{annotation_prefix}    public static int {function}({}) {{\n{}    }}\n}}\n",
             params
                 .iter()
                 .map(|param| format!("int {param}"))
@@ -928,7 +1270,7 @@ fn realize_function(
             emit_stmt(body, style, 2)?
         ),
         TargetStyle::TypeScript => format!(
-            "export function {function}({}): number {{\n{}}}\n",
+            "{annotation_prefix}export function {function}({}): number {{\n{}}}\n",
             params
                 .iter()
                 .map(|param| format!("{param}: number"))
@@ -937,7 +1279,7 @@ fn realize_function(
             emit_stmt(body, style, 1)?
         ),
         TargetStyle::Zig => format!(
-            "pub fn {function}({}) i32 {{\n{}}}\n",
+            "{annotation_prefix}pub fn {function}({}) i32 {{\n{}}}\n",
             params
                 .iter()
                 .map(|param| format!("{param}: i32"))
@@ -946,12 +1288,12 @@ fn realize_function(
             emit_stmt(body, style, 1)?
         ),
         TargetStyle::Ruby => format!(
-            "def {function}({})\n{}end\n",
+            "{annotation_prefix}def {function}({})\n{}end\n",
             params.join(", "),
             emit_block(body, style, 1)?
         ),
         TargetStyle::Php => format!(
-            "<?php\nfunction {function}({}) {{\n{}}}\n",
+            "<?php\n{annotation_prefix}function {function}({}) {{\n{}}}\n",
             params
                 .iter()
                 .map(|param| format!("${param}"))
@@ -960,7 +1302,7 @@ fn realize_function(
             emit_stmt(body, style, 1)?
         ),
         TargetStyle::Java => format!(
-            "final class Transported {{\n    public static int {function}({}) {{\n{}    }}\n}}\n",
+            "final class Transported {{\n{annotation_prefix}    public static int {function}({}) {{\n{}    }}\n}}\n",
             params
                 .iter()
                 .map(|param| format!("int {param}"))
@@ -1307,4 +1649,367 @@ fn ensure_arity(name: &str, args: &[Term], expected: usize) -> Result<(), Transp
 
 fn is_skip(term: &Term) -> bool {
     matches!(term, Term::Op { name, .. } if local_op(name) == "skip")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for annotation emission
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod annotation_tests {
+    use std::rc::Rc;
+
+    use provekit_ir_symbolic::{and_, atomic_, eq, gt, lte, make_var, ne, not_, num, or_};
+
+    use super::*;
+
+    fn var(name: &str) -> Rc<SymTerm> {
+        make_var(name)
+    }
+
+    // ------------------------------------------------------------------
+    // formula_to_syntax tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_atomic_gt_rust() {
+        let f = gt(var("x"), num(0));
+        let s = formula_to_syntax(&f, TargetStyle::Rust);
+        assert_eq!(s, "x > 0");
+    }
+
+    #[test]
+    fn test_atomic_gt_python() {
+        let f = gt(var("x"), num(0));
+        let s = formula_to_syntax(&f, TargetStyle::Python);
+        assert_eq!(s, "x > 0");
+    }
+
+    #[test]
+    fn test_atomic_eq() {
+        let f = eq(var("a"), var("b"));
+        let s = formula_to_syntax(&f, TargetStyle::Rust);
+        assert_eq!(s, "a == b");
+    }
+
+    #[test]
+    fn test_atomic_ne() {
+        let f = ne(var("a"), num(0));
+        let s = formula_to_syntax(&f, TargetStyle::Java);
+        assert_eq!(s, "a != 0");
+    }
+
+    #[test]
+    fn test_atomic_lte() {
+        let f = lte(var("n"), num(100));
+        let s = formula_to_syntax(&f, TargetStyle::Go);
+        assert_eq!(s, "n <= 100");
+    }
+
+    #[test]
+    fn test_and_rust() {
+        let f = and_(vec![gt(var("x"), num(0)), lte(var("x"), num(100))]);
+        let s = formula_to_syntax(&f, TargetStyle::Rust);
+        assert_eq!(s, "x > 0 && x <= 100");
+    }
+
+    #[test]
+    fn test_and_python() {
+        let f = and_(vec![gt(var("x"), num(0)), lte(var("x"), num(100))]);
+        let s = formula_to_syntax(&f, TargetStyle::Python);
+        assert_eq!(s, "x > 0 and x <= 100");
+    }
+
+    #[test]
+    fn test_or_typescript() {
+        let f = or_(vec![eq(var("a"), num(0)), eq(var("a"), num(1))]);
+        let s = formula_to_syntax(&f, TargetStyle::TypeScript);
+        assert_eq!(s, "a == 0 || a == 1");
+    }
+
+    #[test]
+    fn test_not_rust() {
+        let f = not_(gt(var("x"), num(0)));
+        let s = formula_to_syntax(&f, TargetStyle::Rust);
+        assert_eq!(s, "!(x > 0)");
+    }
+
+    #[test]
+    fn test_not_python() {
+        let f = not_(gt(var("x"), num(0)));
+        let s = formula_to_syntax(&f, TargetStyle::Python);
+        assert_eq!(s, "not x > 0");
+    }
+
+    // Regression: unary `!` must paren its inner expression in C-family targets.
+    // Without parens, `!x > 0` parses as `(!x) > 0` in Rust/Go/TS/Zig/Java/PHP/C# —
+    // wrong semantics. The parenthesized form `!(x > 0)` is unambiguous in all targets.
+    #[test]
+    fn not_with_comparison_emits_parenthesized() {
+        for style in [
+            TargetStyle::Rust,
+            TargetStyle::Go,
+            TargetStyle::TypeScript,
+            TargetStyle::Zig,
+            TargetStyle::Java,
+            TargetStyle::Php,
+            TargetStyle::CSharp,
+        ] {
+            let f = not_(gt(var("x"), num(0)));
+            let out = formula_to_syntax(&f, style);
+            assert_eq!(
+                out, "!(x > 0)",
+                "style {:?} emitted `{out}` — expected `!(x > 0)`",
+                style
+            );
+        }
+    }
+
+    #[test]
+    fn test_atomic_true_false() {
+        let t = atomic_("true", vec![]);
+        let f = atomic_("false", vec![]);
+        assert_eq!(formula_to_syntax(&t, TargetStyle::Rust), "true");
+        assert_eq!(formula_to_syntax(&f, TargetStyle::Python), "false");
+    }
+
+    // ------------------------------------------------------------------
+    // emit_annotation_prefix tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_rust_annotation_prefix_concept_only() {
+        let anns = ContractAnnotations::default();
+        let out = emit_annotation_prefix("seq", &anns, TargetStyle::Rust, "");
+        assert_eq!(out, "// concept: seq\n");
+    }
+
+    #[test]
+    fn test_rust_annotation_with_requires() {
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("x"), num(0))),
+            post: None,
+        };
+        let out = emit_annotation_prefix("my-concept", &anns, TargetStyle::Rust, "");
+        assert_eq!(out, "// concept: my-concept\n#[requires(x > 0)]\n");
+    }
+
+    #[test]
+    fn test_rust_annotation_with_requires_and_ensures() {
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("n"), num(0))),
+            post: Some(gt(var("out"), num(0))),
+        };
+        let out = emit_annotation_prefix("concept:sum", &anns, TargetStyle::Rust, "");
+        assert_eq!(
+            out,
+            "// concept: concept:sum\n#[requires(n > 0)]\n#[ensures(out > 0)]\n"
+        );
+    }
+
+    #[test]
+    fn test_python_annotation_comment_style() {
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("x"), num(0))),
+            post: None,
+        };
+        let out = emit_annotation_prefix("my-fn", &anns, TargetStyle::Python, "");
+        // Python uses `#` for comments; `//` is floor-division and would be a syntax error.
+        assert_eq!(out, "# concept: my-fn\n# requires: x > 0\n");
+    }
+
+    #[test]
+    fn test_java_annotation_comment_style() {
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("n"), num(0))),
+            post: Some(gt(var("out"), num(0))),
+        };
+        let out = emit_annotation_prefix("my-fn", &anns, TargetStyle::Java, "    ");
+        assert_eq!(
+            out,
+            "    // concept: my-fn\n    // @requires(n > 0)\n    // @ensures(out > 0)\n"
+        );
+    }
+
+    #[test]
+    fn test_go_annotation_comment_style() {
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("x"), num(0))),
+            post: None,
+        };
+        let out = emit_annotation_prefix("my-fn", &anns, TargetStyle::Go, "");
+        assert_eq!(out, "// concept: my-fn\n// requires: x > 0\n");
+    }
+
+    // ------------------------------------------------------------------
+    // lift_rust_contracts tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_lift_rust_contracts_basic_requires() {
+        let src = r#"
+use contracts::*;
+
+#[requires(x > 0)]
+pub fn positive(x: i32) -> i32 {
+    x
+}
+"#;
+        let anns = lift_rust_contracts(src, "positive");
+        assert!(
+            anns.pre.is_some(),
+            "expected pre annotation to be lifted"
+        );
+        // provekit-lift-contracts wraps the predicate body in a Forall quantifier;
+        // peel it before comparing the predicate expression.
+        let pre_body = peel_quantifiers(anns.pre.as_deref().unwrap());
+        let pre_str = formula_to_syntax(pre_body, TargetStyle::Rust);
+        assert_eq!(pre_str, "x > 0");
+        assert!(anns.post.is_none());
+    }
+
+    #[test]
+    fn test_lift_rust_contracts_requires_and_ensures() {
+        let src = r#"
+use contracts::*;
+
+#[requires(n > 0)]
+#[ensures(ret > 0)]
+pub fn double(n: i32) -> i32 {
+    n * 2
+}
+"#;
+        let anns = lift_rust_contracts(src, "double");
+        assert!(anns.pre.is_some(), "pre expected");
+        assert!(anns.post.is_some(), "post expected");
+        let pre_body = peel_quantifiers(anns.pre.as_deref().unwrap());
+        let pre_str = formula_to_syntax(pre_body, TargetStyle::Rust);
+        assert_eq!(pre_str, "n > 0");
+    }
+
+    #[test]
+    fn test_lift_rust_contracts_no_annotations() {
+        let src = r#"
+pub fn bare(x: i32) -> i32 {
+    x + 1
+}
+"#;
+        let anns = lift_rust_contracts(src, "bare");
+        assert!(anns.pre.is_none());
+        assert!(anns.post.is_none());
+    }
+
+    #[test]
+    fn test_lift_rust_contracts_wrong_function() {
+        let src = r#"
+use contracts::*;
+
+#[requires(x > 0)]
+pub fn foo(x: i32) -> i32 { x }
+
+pub fn bar(x: i32) -> i32 { x + 1 }
+"#;
+        // Looking up "bar" should return empty even though "foo" has annotations.
+        let anns = lift_rust_contracts(src, "bar");
+        assert!(anns.pre.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // realize_function annotation round-trip test
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_realize_function_emits_concept_comment_rust() {
+        // Use Term::Unit as a minimal valid body (emit_stmt handles it).
+        let body = Term::Unit;
+        let anns = ContractAnnotations::default();
+        let result = realize_function("rust", "foo", &[], &body, &anns, "seq");
+        assert!(result.is_ok());
+        let src = result.unwrap().source;
+        assert!(
+            src.contains("// concept: seq"),
+            "concept comment missing in: {src}"
+        );
+        assert!(
+            src.contains("pub fn foo()"),
+            "function def missing in: {src}"
+        );
+    }
+
+    #[test]
+    fn test_realize_function_emits_requires_rust() {
+        let body = Term::Unit;
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("x"), num(0))),
+            post: None,
+        };
+        let result = realize_function("rust", "foo", &["x".to_string()], &body, &anns, "my-concept");
+        assert!(result.is_ok());
+        let src = result.unwrap().source;
+        assert!(src.contains("// concept: my-concept"), "concept comment missing in: {src}");
+        assert!(src.contains("#[requires(x > 0)]"), "#[requires] missing in: {src}");
+        assert!(src.contains("pub fn foo(x: i32)"), "function def missing in: {src}");
+    }
+
+    #[test]
+    fn test_realize_function_emits_concept_comment_python() {
+        let body = Term::Unit;
+        let anns = ContractAnnotations {
+            pre: Some(gt(var("n"), num(0))),
+            post: None,
+        };
+        let result = realize_function("python", "compute", &["n".to_string()], &body, &anns, "seq");
+        assert!(result.is_ok());
+        let src = result.unwrap().source;
+        // Python: concept comment uses `#`, not `//` (which is floor-division).
+        assert!(src.contains("# concept: seq"), "concept comment missing in: {src}");
+        assert!(src.contains("# requires: n > 0"), "python requires comment missing in: {src}");
+        assert!(src.contains("def compute(n):"), "def missing in: {src}");
+    }
+
+    #[test]
+    fn test_realize_function_emits_concept_comment_java() {
+        let body = Term::Unit;
+        let anns = ContractAnnotations::default();
+        let result = realize_function("java", "compute", &["n".to_string()], &body, &anns, "seq");
+        assert!(result.is_ok());
+        let src = result.unwrap().source;
+        // Java: concept comment is indented inside the class wrapper
+        assert!(src.contains("// concept: seq"), "concept comment missing in: {src}");
+        assert!(src.contains("public static int compute(int n)"), "method sig missing in: {src}");
+    }
+
+    // ------------------------------------------------------------------
+    // derive_concept_comment tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_derive_concept_comment_always_unnamed_concept() {
+        // Every call produces an UNNAMED-CONCEPT-<hex> name derived from the term.
+        let term = Term::Unit;
+        let s = derive_concept_comment(&term);
+        assert!(
+            s.starts_with("UNNAMED-CONCEPT-"),
+            "expected UNNAMED-CONCEPT-* name, got: {s}"
+        );
+    }
+
+    #[test]
+    fn test_derive_concept_comment_stable_for_same_term() {
+        // Same term must always produce the same name.
+        let term = Term::Var { name: "x".into() };
+        let a = derive_concept_comment(&term);
+        let b = derive_concept_comment(&term);
+        assert_eq!(a, b, "concept name must be deterministic for the same term");
+    }
+
+    #[test]
+    fn test_derive_concept_comment_distinct_for_different_terms() {
+        // Different terms must produce different names.
+        let t1 = Term::Var { name: "x".into() };
+        let t2 = Term::Var { name: "y".into() };
+        let n1 = derive_concept_comment(&t1);
+        let n2 = derive_concept_comment(&t2);
+        assert_ne!(n1, n2, "distinct terms should produce distinct concept names");
+    }
 }
