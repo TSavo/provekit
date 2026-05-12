@@ -15,15 +15,18 @@
 // bind's own gap emission (F2: source-language-not-supported records).
 //
 // Trichotomy (Supra omnia, rectum):
-//   composed_loss.is_empty()  → byte-identical round-trip assertion
-//   else                      → diff precisely characterized by composed loss
+//   composed_loss.is_empty()  → byte-identical round-trip assertion (Branch 1)
+//   else                      → v0: assert REAL + EXPECTED gap kinds in composed loss
+//                               (Branch 2 per-line characterization gated — see F3 fix)
 //
 // v0 expected outcome: legs 2 and 3 receive non-Rust sources; bind detects
 // java/python via auto-detect, emits source-language-not-supported gap records
 // in gaps.json.  compose_losses returns real entries from those legs.
 // Test passes via the "loudly-bounded-lossy is a first-class legitimate outcome"
-// branch, with the diff-characterization assertion confirming the loss record
-// covers the observed diff.
+// branch, asserting the real gap kinds are present (NOT a permissive predicate).
+//
+// Branch 2 per-line divergence characterization is gated until real Java/Python→Rust
+// lifters land + a divergence-pattern registry is built.  See PR-F of #716 follow-up.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -157,36 +160,17 @@ fn normalize_whitespace(s: &str) -> String {
         .join("\n")
 }
 
-/// Return lines present in `got` but not in `expected` (one-sided diff for loss
-/// characterization — we care whether the round-tripped output diverges from
-/// the original and whether each divergence is covered by a loss record).
-fn compute_diff(got: &str, expected: &str) -> Vec<String> {
-    use std::collections::HashSet;
-    let exp_lines: HashSet<&str> = expected.lines().collect();
-    got.lines()
-        .filter(|l| !exp_lines.contains(*l))
-        .map(|l| l.to_string())
-        .collect()
-}
-
-/// Assert that every divergent line is attributable to one of the loss-record
-/// kinds in `composed_loss`.  In v0 the loss kinds are coarse (capability-gap,
-/// source-language-not-supported, etc.) so we accept any non-empty composed
-/// loss as "characterising" the divergence — the contract is that the loss
-/// record is NON-EMPTY and REAL (came from bind, not synthetic injection).
-///
-/// A future pass can tighten this to span-level attribution once bind emits
-/// per-function loss mementos.
-fn diff_is_characterized_by(diff: &[String], composed_loss: &[GapEntry]) -> bool {
-    if diff.is_empty() {
-        return true;
-    }
-    // In v0: the diff is characterized if and only if composed_loss is non-empty
-    // AND contains at least one loss record that acknowledges the transport gap.
-    // This is the weakest predicate that is still honest — it asserts the loss
-    // record exists (not fabricated) and is non-vacuous.
-    !composed_loss.is_empty()
-}
+// NOTE: compute_diff and diff_is_characterized_by are removed (F3 fix, Option B).
+//
+// Branch 2 per-line divergence characterization is gated until real Java/Python→Rust
+// lifters land and a divergence-pattern registry exists.  In v0 the round-trip
+// test's job is to verify the chain runs and emits HONEST loss-records, not to
+// verify per-line divergence mapping.
+//
+// When real lifters land, reactivate Branch 2 as a separate PR with:
+//   - per-function loss mementos from bind
+//   - a `kind → divergence-pattern` registry
+//   - compute_diff + per-line attribution loop
 
 // ── Main test ─────────────────────────────────────────────────────────────────
 
@@ -380,9 +364,17 @@ fn trinity_round_trip() {
              leg-3 rust output must match original fixture source"
         );
     } else {
-        // Branch 2: loudly-bounded-lossy.
-        // The diff between leg-3 output and the original fixture must be
-        // characterised by the composed loss record.
+        // v0 Branch 2 (Option B gating — F3 fix):
+        //
+        // Per-line divergence characterization is NOT asserted in v0 because leg-3
+        // doesn't produce Rust output (lifter not wired).  The vacuous-diff path
+        // (rust_back_source = String::new() → empty diff → permissive predicate
+        // returns true) was pre-flagged as F3 in the round-2 review.
+        //
+        // Instead: assert the composed loss is HONEST and contains the EXPECTED v0
+        // gap kinds.  When real lifters land, Branch 2's per-line characterization
+        // can be reactivated (requires divergence-pattern registry — see PR-F of #716
+        // follow-up or the issue created for this gating note).
 
         // All gaps in the composed loss must have non-empty kind and detail.
         for gap in &composed_loss {
@@ -398,75 +390,44 @@ fn trinity_round_trip() {
             );
         }
 
-        // v0: legs 2 and 3 are non-Rust; composed loss must contain real
-        // source-language-not-supported entries from bind (not synthetic ones).
-        // If bind emits them correctly (F2), this passes.  If it doesn't, this
-        // fails honestly — surfacing that as a substrate gap.
-        let loss_kinds: Vec<&str> = composed_loss.iter().map(|g| g.kind.as_str()).collect();
+        // Collect the set of loss kinds actually present.
+        use std::collections::HashSet;
+        let loss_kinds: HashSet<&str> = composed_loss.iter().map(|g| g.kind.as_str()).collect();
+
+        // v0 EXPECTED state: legs 2 and 3 receive non-Rust sources; bind must
+        // emit a real source-language-not-supported gap record (cmd_bind.rs, the
+        // `if src_files.is_empty() && source_lang != "rust"` block).
+        // If that emission breaks, this assertion catches it — that's the protocol.
         if leg2_src_lang != "rust" || leg3_src_lang != "rust" {
             assert!(
-                loss_kinds.contains(&"source-language-not-supported"),
-                "Composed loss must contain real source-language-not-supported entries for \
-                 non-Rust legs (from bind's gaps.json, not synthetic injection); \
+                loss_kinds.contains("source-language-not-supported"),
+                "v0 trinity round-trip MUST report source-language-not-supported gap \
+                 for non-Rust legs (emitted by bind's gaps.json, not synthetic injection). \
+                 This assertion fails if the gap-emission pipeline in cmd_bind breaks.\n\
                  got kinds: {:?}\n\
-                 leg2_src_lang={:?} leg3_src_lang={:?}",
-                loss_kinds, leg2_src_lang, leg3_src_lang
+                 leg2_src_lang={:?} leg3_src_lang={:?}\n\
+                 full composed_loss={:?}",
+                loss_kinds, leg2_src_lang, leg3_src_lang, composed_loss
             );
         }
 
-        // Compute the actual diff between leg-3 output and the original fixture.
-        // If leg 3 ran, read its rust output.  If it didn't, the absence is itself
-        // a gap characterized by the composed loss.
-        let rust_back_source = if let Some(out3_dir) = &out3 {
-            let rust_out_dir = out3_dir.join("translated").join("rust");
-            if rust_out_dir.exists() {
-                let rs_files: Vec<_> = fs::read_dir(&rust_out_dir)
-                    .expect("read rust out dir")
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().map(|x| x == "rs").unwrap_or(false))
-                    .collect();
-                if rs_files.is_empty() {
-                    String::new()
-                } else {
-                    fs::read_to_string(rs_files[0].path()).expect("read leg-3 rust output")
-                }
-            } else {
-                String::new()
-            }
-        } else {
-            // Leg 3 was not reached; absence is characterized by composed_loss.
-            String::new()
-        };
+        // v0 EXPECTED state: composed loss must NOT be empty.  If it is, either
+        // the chain produced a perfect round-trip (impossible in v0) or the
+        // loss-emission pipeline broke.  Fail explicitly so the gap is surfaced.
+        // (This branch is only reached when composed_loss.is_empty() is false,
+        // but guard anyway for future refactors.)
+        assert!(
+            !composed_loss.is_empty(),
+            "Trinity round-trip composed_loss is EMPTY in v0. \
+             Either the chain produced a perfect round-trip (impossible in v0) \
+             or the loss-emission pipeline broke. Check leg-2/leg-3 gap recording."
+        );
 
-        let original_source = fs::read_to_string(&fixture_path).expect("read original fixture");
-        let normalized_back = normalize_whitespace(&rust_back_source);
-        let normalized_orig = normalize_whitespace(&original_source);
-
-        if normalized_back == normalized_orig {
-            // Exact match despite non-empty loss record — conservative declaration.
-            // Overclaiming loss is acceptable; underclaiming is not.
-            eprintln!(
-                "trinity_round_trip: non-empty composed loss but round-trip matched exactly \
-                 (conservative loss declaration); {} loss entries:",
-                composed_loss.len()
-            );
-        } else {
-            let diff = compute_diff(&normalized_back, &normalized_orig);
-            assert!(
-                diff_is_characterized_by(&diff, &composed_loss),
-                "diff between original fixture and round-tripped Rust NOT characterized by \
-                 composed loss record\n\
-                 diff lines not in original ({} entries): {:?}\n\
-                 composed_loss ({} entries): {:?}",
-                diff.len(), diff,
-                composed_loss.len(), composed_loss
-            );
-            eprintln!(
-                "trinity_round_trip: loudly-bounded-lossy outcome; diff has {} divergent line(s), \
-                 characterized by composed loss ({} entries):",
-                diff.len(), composed_loss.len()
-            );
-        }
+        eprintln!(
+            "trinity_round_trip: v0 loudly-bounded-lossy outcome ({} loss entries; \
+             Branch 2 per-line characterization gated until real lifters land):",
+            composed_loss.len()
+        );
         for gap in &composed_loss {
             eprintln!("  [{kind}] {detail}", kind = gap.kind, detail = gap.detail);
         }

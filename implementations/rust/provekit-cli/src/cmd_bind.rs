@@ -2273,3 +2273,64 @@ fn mode_label_for_hint(m: &RuntimeMode) -> String {
         RuntimeMode::Witness => "witness".to_string(),
     }
 }
+
+// ============================================================================
+// Unit tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_lang_detect;
+    use std::fs;
+
+    /// Create a temporary directory for a test case, run the closure to populate it,
+    /// then call resolve_lang_detect and return the result.
+    fn with_temp_dir<F: FnOnce(&std::path::Path)>(
+        populate: F,
+    ) -> Result<String, String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        populate(dir.path());
+        resolve_lang_detect(dir.path())
+    }
+
+    #[test]
+    fn resolve_lang_detect_rust_via_cargo_toml() {
+        let result = with_temp_dir(|p| {
+            fs::write(p.join("Cargo.toml"), "[package]\nname = \"foo\"\n").unwrap();
+        });
+        assert_eq!(result, Ok("rust".to_string()));
+    }
+
+    #[test]
+    fn resolve_lang_detect_java_via_pom_xml() {
+        let result = with_temp_dir(|p| {
+            fs::write(p.join("pom.xml"), "<project/>").unwrap();
+        });
+        assert_eq!(result, Ok("java".to_string()));
+    }
+
+    #[test]
+    fn resolve_lang_detect_python_via_pyproject_toml() {
+        let result = with_temp_dir(|p| {
+            fs::write(p.join("pyproject.toml"), "[tool.poetry]\n").unwrap();
+        });
+        assert_eq!(result, Ok("python".to_string()));
+    }
+
+    #[test]
+    fn resolve_lang_detect_unknown_returns_err() {
+        let result = with_temp_dir(|_p| {
+            // Empty directory: no recognised source files.
+        });
+        assert!(
+            result.is_err(),
+            "Expected Err for empty dir, got: {:?}",
+            result
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("cannot determine source language"),
+            "Err message should explain the problem; got: {msg}"
+        );
+    }
+}
