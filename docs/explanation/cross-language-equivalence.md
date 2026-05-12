@@ -18,7 +18,7 @@ Second, CID equality would assert sameness by fiat. It would be true for the eas
 
 (Full normative spec: [LSP v0.1.0](../../protocol/specs/2026-05-09-language-signature-protocol.md). Full theory: [paper 13](../papers/13-after-grammars-programming-languages-as-content-addressed-algebras.md), Lemmas 1-5.)
 
-Sameness is carried by a `LanguageMorphismMemento` (LSP §1.4) with a checkable discharge obligation. For a renaming morphism `m` between two operations, the obligation is, in shape:
+Sameness is carried by a `LanguageMorphismMemento` (LSP §1.4, §2). LSP defines a morphism as a structure-preserving map between language signatures and their terms, with a homomorphism obligation over the full operation+equation algebra. What follows describes the *contract-renaming subcase* of that: a renaming morphism `m` between two operations where the obligation reduces to a per-operation check. For that subcase, the obligation is, in shape:
 
 ```
 φ_m(contract(c11:if)) ⊑ contract(csharp:if)   and the converse
@@ -32,10 +32,10 @@ One caveat the doc owes you up front: the concept-shapes catalog today names *id
 
 ## Worked example: `if` across C, C#, Rust
 
-The minted op specs are real artifacts. `menagerie/c11-language-signature/specs/op_if.spec.json`, `menagerie/csharp-language-signature/specs/op_if.spec.json`, `menagerie/rust-language-signature/specs/op_if.spec.json`. C11 and C# are byte-for-byte structurally identical modulo the `fn_name` prefix and the `locus`:
+The minted op specs are real artifacts. `menagerie/c11-language-signature/specs/op_if.spec.json`, `menagerie/csharp-language-signature/specs/op_if.spec.json`, `menagerie/rust-language-signature/specs/op_if.spec.json`. C11 and C# have JCS-canonicalized payloads that are byte-identical modulo the `fn_name` prefix and the `locus`:
 
-```jsonc
-// c11:if (and csharp:if, modulo the namespace and locus)
+```text
+// c11:if (schematic — and csharp:if, modulo the namespace and locus)
 "formals": ["cond", "then_branch", "else_branch"],
 "formal_sorts": [Bool, Stmt, Stmt],
 "return_sort": Stmt,
@@ -110,15 +110,62 @@ Not every operation is "core" in every language. `unless` is sugar in Ruby; Pyth
 
 This is the well-understood "desugaring to a core" of every compiler front end and every denotational-semantics treatment (Reynolds' definitional interpreters; Mosses' action semantics; the Wadler / Felleisen syntactic-sugar line; Felleisen's *On the Expressive Power of Programming Languages*, where a surface operation is core-definable exactly when it is a macro), made content-addressed and federated, the same move the rest of the stack makes. It is also the same quotient move as paper 13 Lemma 6 (an effect signature is a quotient of a free algebra over a smaller theory by the effect's equations; a surface algebra is a quotient of a free algebra over the core theory by the macro equations). The desugaring-equation memento is an `EquationMemento` (LSP §1.2) with two additive tags (`role: "desugaring"`, `direction: "left-to-right"`) and one extra obligation: the per-equation `wp`-preservation discharge is the same machinery as any equation discharge, and the *set* of a language's desugaring equations carries a per-set confluence-and-termination obligation that discharges through the CeTA gate already specified in the Equational Portfolio Extension. The first instance already exists: `menagerie/c11-language-signature/specs/eq_for_desugar.spec.json` is precisely a desugaring equation (`for(init, cond, step, body) = seq(init, while(cond, seq(body, step)))`). The normative version of all of this is [`protocol/specs/2026-05-11-desugaring-and-the-core-compression.md`](../../protocol/specs/2026-05-11-desugaring-and-the-core-compression.md).
 
+## Post-#597 additions: transport architecture, trichotomy, and completeness probe
+
+The following subsections record learnings settled after #597 merged. They do not revise the mechanism above; they extend and sharpen it.
+
+### The M+N hub topology and loss-composition
+
+The hub-and-spoke framing in §2 above ("N+M morphisms, not N²") has been operationalized into the full transport architecture. The organizing principle: a direct `<lang_i>:op → <lang_j>:op` morphism for every language pair is quadratic and unbounded. The `concept:*` hub holds this to linear. Every language lifts *to* the hub (N edges) and realizes *from* the hub (M edges). Cross-language transport `<lang_i> → <lang_j>` is composition through the hub: `<lang_i>:op → concept:op → <lang_j>:op`.
+
+The M+N topology produces M×N translations because losses compose through the hub. The lift edge `<lang_i>:op → concept:op` carries a loss-record `L_i`. The realize edge `concept:op → <lang_j>:op` carries `L_j`. Transport composes them (union per loss-dimension, propagated through the program's dataflow), so you get a precise loss-characterization for any pair without building a pair-specific table. `provekit migrate` is a loss-composition engine: the transport is the loss-record arithmetic, not just the namespace renaming. The specs that operationalize this are [#613 (wp-as-formula)](../../protocol/specs/2026-05-13-wp-as-formula.md) and [#616 (transport-gap-and-partial-morphism)](../../protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md).
+
+### The correctness trichotomy: exact / loudly-bounded-lossy / refuse
+
+"Sameness has to be proved" (§1 above) does not mean only exact translations are legitimate. The 2026-05-11 refinement of *Supra omnia, rectum* names three first-class outcomes:
+
+1. **Exact** (the morphism discharges with zero loss).
+2. **Loudly-bounded-lossy**: the morphism is correct except on a precisely characterized failure set, shipped with the recorded choice, the rationale, and the exact loss formula. The loss-characterization is the artifact's contract. This is more in the spirit of the first principle than a refusal: it ships something useful and is precisely honest about its domain.
+3. **Refuse**: when you cannot characterize the loss at all.
+
+The forbidden case is *silent* loss, a claim of correctness that hides a gap. `LossyMorphismMemento`, `PartialMorphismMemento`, and `TransportGapMemento` (spec #616) operationalize these cases. "Gap" stops meaning "dead end" and starts meaning "characterized loss-profile."
+
+### Lift, hub, realize as an autoencoder
+
+The three-stage pipeline has an information-theoretic reading. Lift is an encoder: many surface forms in many languages collapse to one concept-hub node, discarding surface variation and retaining only what the operation contract asserts. The concept hub is the latent code, designed to be complete over the admissible target set. Realize is a decoder family: each target language is a projection of the latent code onto that language's expressible subset.
+
+All loss lives in the decoder projection. The lift (encoder) is conservative by design: it recognizes only what is provable, so the latent code never overstates what the source said. The realize (decoder) for a target that lacks a native construct desugars into what the target has, with a structural-divergence loss record. The loss is real and named; the substrate declines to hide it.
+
+### The bracket trio and projection distance
+
+The initial validation target is {C, Java, Python}. These three bracket the forgivingness spectrum of mainstream imperative languages. C is the unforgiving end: no high-level abstractions native, so every abstraction-concept becomes an encoding with structural-divergence loss (`concept:dynamic-dispatch → vtable-struct`, `concept:closure → defunctionalization+env-struct`). Python is the loose end: abstractions are first-class, so the loss is not structural-divergence going in but domain-narrowing going out (`setattr`/monkey-patch/unbounded-int are the capabilities you restrict when realizing into a stricter target). Java sits in the middle. All other mainstream languages (Go, Rust, TypeScript, C#, Ruby, PHP, Swift, Zig) fall within the C-to-Python span; each is a column-add with no new concepts, once the trio is solid.
+
+This bracketing means: validate the concept library and realization-desugarings against the trio, and the design is validated. The other languages are mechanical interpolation.
+
+### The pluggable realization protocol and the loss-not-style principle
+
+The substrate fixes the concept and the loss; it does not fix the realization style. `concept:dynamic-dispatch → C` can be vtable-struct, array-of-fn-ptrs, switch-on-tag, or runtime-hashtable. All are semantically equivalent modulo their loss-records; they differ only in style (performance, code-size, idiom). A `RealizationDesugaringMemento` is the pluggable unit. Anyone mints one, characterizes its loss-record, and plugs it into the ORP (the open realization protocol). The substrate checks the discharge; it does not check whether the style is good. Two realizations with the same loss-record are interchangeable from the substrate's view. The protocol exposes the loss, not the style.
+
+### Completeness probe findings (PR #626)
+
+A deterministic completeness probe ran over the {C, Java, Python} trio after the hub-shrink rounds (#614, #619). Findings:
+
+- Real op-layer gaps: 2 (`concept:new`, `concept:throw`). Both are unblocked by fixing a generator lookup miss for Java op specs in `mint_language_morphisms.py` (not missing hub nodes; the specs exist on disk).
+- 7 zero-trio concept ops are pattern-layer shapes from the abstraction tier (#617: `acquire-use-release`, `allocate-or-bail`, `branch-on-error-else-passthrough`, `check-bounds-then-access`, `refcount-inc-use-dec`, `validate-then-commit`, `validated-allocated-access`). Zero coverage there is expected and correct; those are abstraction-tier nodes, not operation-layer nodes.
+- The "no `concept:conditional` hub node" gap listed in §7 below remains open; the probe confirms it is not yet minted.
+
+See `docs/audits/2026-05-12-concept-library-completeness-probe-operation-layer.md` for the full per-language coverage tables.
+
 ## What is still missing
 
-Honest gaps:
+Honest gaps, updated after the post-#597 hub-shrink and completeness-probe work:
 
-- **No `concept:conditional` hub node.** The concept-shapes catalog names six idioms, none of them a primitive conditional. Minting `concept:conditional` plus the per-language `if → concept:conditional` morphisms is the obvious next exhibit.
+- **No `concept:conditional` hub node.** Confirmed open by PR #626. The concept-shapes catalog names six idioms, none of them a primitive conditional. Minting `concept:conditional` plus the per-language `if → concept:conditional` morphisms is the obvious next exhibit.
 - **`rust:if` is missing `arity_shape`.** The Rust LSP mint is not yet aligned with the C11 and C# mints. The fix is to add `arity_shape: {kind:"named", slots:[cond, then_branch, else_branch]}` to `rust:if`'s spec; the `wp` clause already references those slot names.
 - **The functorial lift to terms is not a worked artifact.** Paper 13 states it; the `foo` exhibit transports contracts, not proofs. Transporting a `.proof` along a discharged morphism is the next menagerie exhibit.
 - **The broader op set: the per-language desugaring equation sets, the `desugar` rewriter, re-sugar search.** What is missing is the *within-language* collapse layer: minting each language's desugaring equation set (the macros, `foreach`/`using`/`??`/`switch`-expression/comprehension/`unless`/etc., one per surface op not already in `concept:core`), the `desugar`-to-core rewriter that drives them left to right (refusing when a language's macro set is not confluent and terminating), and the re-sugar search that recovers idiomatic surface forms as a cosmetic post-pass. The *cross-language* morphism layer is already `O(N)` and does not grow with the op set; only the within-language collapse layer is unbuilt. See [`protocol/specs/2026-05-11-desugaring-and-the-core-compression.md`](../../protocol/specs/2026-05-11-desugaring-and-the-core-compression.md).
 - **The engineering prior-art synthesis here is not in the After-X papers.** Paper 13 §0 names the *mathematical* prior art (Goguen, Mosses, Plotkin-Power, Reynolds, Mac Lane). The *engineering* prior art (MLIR dialects, McCarthy-Painter / CompCert correctness squares, Baez-Stay, univalent transport / Isabelle `transfer`, interlingua MT / the K framework) is collected here for the first time. A candidate for folding into paper 13 §4 later.
+- **The wp-as-formula spec (#613) and the gap-memento spec (#616) are referenced in the new §6.1 above but not yet cross-linked from §2 ("The mechanism, in brief").** The §2 description of discharge still reads as if Z3 is called directly against prose-wp fields; the wp-as-formula spec formalizes the wp transformer as a structured rule language and makes the discharge a real formula check. That section should be updated once the #613 impl PRs land and the prose can point at working code rather than a spec.
 
 ## See also
 
@@ -127,8 +174,11 @@ Honest gaps:
 - [Paper 17: After Babel, We Speak in Vectors Now](../papers/17-after-babel-we-speak-in-vectors-now.md): Leibniz, Frege, name-by-vector, substitutability as a discharged path.
 - [Paper 9: Lossy Boundary Compression](../papers/09-lossy-boundary-compression.md): the lossy-boundary discipline the bytecode-to-source recovery sits inside.
 - [Language Signature Protocol (LSP) v0.1.0](../../protocol/specs/2026-05-09-language-signature-protocol.md): the normative spec for `LanguageSignatureMemento`, `LanguageMorphismMemento`, the homomorphism obligation, and discharge. The `provekit mint language-morphism` and `provekit mint language-signature` subcommands implement it.
+- [wp-as-formula spec (PR #613)](../../protocol/specs/2026-05-13-wp-as-formula.md): formalizes the `wp` transformer as a structured rule language. The morphism discharge described in §2 ("prove portfolio: Z3, cvc5, Vampire, Coq") becomes a real formula check once this spec is implemented. Cross-language loss-composition = substitution + the `wp` rules; the budget-check is z3; the discharge becomes a real `∀Q. wp(concept,Q) ⇒ φ(wp(lang,Q))` check.
+- [Transport-gap and partial-morphism protocol (PR #616)](../../protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md): defines `TransportGapMemento`, `PartialMorphismMemento`, and `LossyMorphismMemento`. Operationalizes the exact/loudly-bounded-lossy/refuse trichotomy. The negative space (genuine divergences between language ops) becomes content-addressed and machine-readable.
 - [Concept Shape Catalog](../../menagerie/concept-shapes/README.md): the running cross-language node table (the six idioms, their shape CIDs, realizations, and discharged morphisms).
 - [The Abstraction Layer of the `concept:*` Transport Hub](../../protocol/specs/2026-05-15-concept-hub-abstraction-layer.md): the tier *above* the operation layer this explanation is about. Where the op layer hosts algebraic ops (`if`, `while`, `add`), the abstraction layer hosts patterns/protocols/capabilities (`dynamic-dispatch`, `closure`, `exception`, `reference`, `iterator`, `generic-instantiation`) as `concept:*` nodes, each realized per-language via a desugaring into that language's operation-layer term with a characterized loss record. Dynamic dispatch is the worked example: C's vtable and Python's MRO-dict are *both* lossy projections of `concept:dynamic-dispatch`, not the canonical thing.
+- Concept Library Completeness Probe (PR #626, `docs/audits/2026-05-12-concept-library-completeness-probe-operation-layer.md` when merged): the deterministic audit of operation-layer coverage over {C, Java, Python}. Summary: 2 real op-layer gaps (`concept:new`, `concept:throw`), 7 abstraction-tier shapes correctly showing zero coverage.
 - [Foo Algebraic Shape](../../menagerie/foo-algebraic-shape/README.md): the original one-node, four-lift exhibit (C, Rust, AArch64, x86-64 collapsing to one shape CID by canonicalizer discharge).
 
 T Savo
