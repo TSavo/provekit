@@ -10,6 +10,10 @@ description = "ProvekIt user-facing CLI: prove / verify / hash / dump / search /
 name = "provekit"
 path = "src/main.rs"
 
+[lib]
+name = "provekit_cli"
+path = "src/lib.rs"
+
 [dependencies]
 # Workspace-internal libs.
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }

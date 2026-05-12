@@ -213,4 +213,5 @@ mod tests {
         assert_eq!(c1, c2);
         assert!(c1.starts_with("blake3-512:"));
     }
+
 }

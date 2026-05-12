@@ -1,5 +1,8 @@
 package com.provekit.realize;
 
+import java.util.ArrayList;
+import java.util.List;
+
 final class JsonUtil {
     private JsonUtil() {}
 
@@ -98,5 +101,99 @@ final class JsonUtil {
 
     static String extractMethod(String json) {
         return decodeJsonStringField(json, "method");
+    }
+
+    /**
+     * Extract the JSON-RPC "params" value as a raw substring.
+     * Handles the case where "params" is a JSON object {...}.
+     * Returns the object content (including braces), or "{}" if not found.
+     */
+    static String extractParamsObject(String json) {
+        String key = "\"params\"";
+        int ki = json.indexOf(key);
+        if (ki < 0) return "{}";
+        int pos = ki + key.length();
+        while (pos < json.length()
+            && (json.charAt(pos) == ':' || json.charAt(pos) == ' ' || json.charAt(pos) == '\t')) {
+            pos++;
+        }
+        if (pos >= json.length() || json.charAt(pos) != '{') return "{}";
+        // Find the matching closing brace.
+        int depth = 0;
+        int start = pos;
+        while (pos < json.length()) {
+            char c = json.charAt(pos);
+            if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) { pos++; break; }
+            } else if (c == '"') {
+                // skip string content
+                pos++;
+                while (pos < json.length()) {
+                    char sc = json.charAt(pos);
+                    if (sc == '\\') { pos += 2; continue; }
+                    if (sc == '"') break;
+                    pos++;
+                }
+            }
+            pos++;
+        }
+        return json.substring(start, pos);
+    }
+
+    /**
+     * Decode a JSON array of strings from the given field name.
+     * Handles flat one-level arrays of quoted strings only.
+     * Returns an empty list if the field is missing or not an array.
+     */
+    static List<String> decodeJsonStringArray(String json, String field) {
+        String key = "\"" + field + "\"";
+        int ki = json.indexOf(key);
+        if (ki < 0) return List.of();
+        int pos = ki + key.length();
+        while (pos < json.length()
+            && (json.charAt(pos) == ':' || json.charAt(pos) == ' ' || json.charAt(pos) == '\t')) {
+            pos++;
+        }
+        if (pos >= json.length() || json.charAt(pos) != '[') return List.of();
+        pos++; // skip '['
+
+        List<String> result = new ArrayList<>();
+        while (pos < json.length() && json.charAt(pos) != ']') {
+            char c = json.charAt(pos);
+            if (c == '"') {
+                // parse quoted string
+                pos++;
+                StringBuilder sb = new StringBuilder();
+                while (pos < json.length()) {
+                    char ch = json.charAt(pos);
+                    if (ch == '"') { pos++; break; }
+                    if (ch == '\\') {
+                        pos++;
+                        if (pos < json.length()) {
+                            char esc = json.charAt(pos);
+                            switch (esc) {
+                                case '"' -> sb.append('"');
+                                case '\\' -> sb.append('\\');
+                                case 'n' -> sb.append('\n');
+                                case 'r' -> sb.append('\r');
+                                case 't' -> sb.append('\t');
+                                default -> sb.append(esc);
+                            }
+                        }
+                    } else {
+                        sb.append(ch);
+                    }
+                    pos++;
+                }
+                result.add(sb.toString());
+            } else if (c == ',' || c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                pos++;
+            } else {
+                pos++;
+            }
+        }
+        return result;
     }
 }
