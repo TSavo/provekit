@@ -598,6 +598,393 @@ const PINNED_APPLY_NODE_CID: &str =
     "blake3-512:e098642f2fdcc05ad1556a13fe0ff033426a8f04d26ca82f39a99d0d06cc831b8cc6c26a77e9f46f69a8794a8fec942e2a1545e2a7b15c99a2b10d434225a87d";
 
 // ============================================================
+// Compound-aware discharge tests (PR-F of #716).
+// ============================================================
+
+use std::collections::BTreeMap;
+use provekit_ir_types::{
+    AggregationStrategy, CompoundContractMemento, EvidenceMemento, EvidenceRef, LossRecord,
+    SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan, VerdictKind,
+};
+use crate::wp::{aggregate_conjunction, EvidenceVerdict, wp_compound};
+
+/// Build a minimal `SourceLocator` for test fixtures.
+fn test_locator() -> SourceLocator {
+    SourceLocator {
+        source_cid: "blake3-512:".to_string() + &"0".repeat(128),
+        span: SourceLocatorSpan {
+            start: SourceLocatorPoint { line: 1, col: 0 },
+            end: SourceLocatorPoint { line: 1, col: 10 },
+        },
+    }
+}
+
+/// Build a minimal `EvidenceMemento` with the given CID and predicate.
+fn make_evidence(cid: &str, predicate: IrFormula) -> EvidenceMemento {
+    EvidenceMemento {
+        cid: cid.to_string(),
+        confidence_basis_points: 10000,
+        extension_fields: BTreeMap::new(),
+        kind: "evidence".to_string(),
+        lifter_cid: "blake3-512:".to_string() + &"0".repeat(128),
+        predicate,
+        schema_version: "1".to_string(),
+        source_kind: SourceKind::TypeSignature,
+        source_locator: test_locator(),
+    }
+}
+
+/// Build a minimal `CompoundContractMemento` with given strategy and evidence refs.
+fn make_compound(
+    cid: &str,
+    strategy: AggregationStrategy,
+    evidence_refs: Vec<EvidenceRef>,
+) -> CompoundContractMemento {
+    CompoundContractMemento {
+        aggregation_strategy: strategy,
+        cid: cid.to_string(),
+        composed_post: prop("true"),
+        composed_pre: prop("true"),
+        evidences: evidence_refs,
+        function_term_cid: "blake3-512:".to_string() + &"0".repeat(128),
+        kind: "compound-contract".to_string(),
+        schema_version: "1".to_string(),
+    }
+}
+
+fn evidence_ref(cid: &str) -> EvidenceRef {
+    EvidenceRef {
+        evidence_cid: cid.to_string(),
+        weight_basis_points: 10000,
+    }
+}
+
+// ---- Test 1: degenerate compound (zero evidences) is vacuously exact ----
+
+#[test]
+fn wp_compound_empty_evidences_is_exact() {
+    let compound = make_compound("cid-empty", AggregationStrategy::Conjunction, vec![]);
+    let target = t_var("x");
+    let report = wp_compound(&compound, &target, &[], &base_resolver())
+        .expect("empty compound must succeed");
+
+    assert_eq!(report.compound_cid, "cid-empty");
+    assert_eq!(report.per_evidence_verdicts, vec![]);
+    assert_eq!(report.compound_verdict, VerdictKind::Exact);
+    assert!(report.composed_loss_record.0.is_empty(), "vacuous exact has no loss");
+}
+
+// ---- Test 2: single exact evidence ----
+
+#[test]
+fn wp_compound_single_exact_evidence() {
+    // wp(skip, Q) = Q; if evidence.predicate = Q, verdict is Exact.
+    let q = prop("Q");
+    let evidence = make_evidence("cid-e1", q.clone());
+    let compound = make_compound(
+        "cid-compound-1",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-e1")],
+    );
+    let target = t_op("skip", vec![]);
+
+    let report = wp_compound(&compound, &target, &[evidence], &base_resolver())
+        .expect("single exact");
+
+    assert_eq!(report.compound_verdict, VerdictKind::Exact);
+    assert_eq!(report.per_evidence_verdicts.len(), 1);
+    assert_eq!(report.per_evidence_verdicts[0].verdict, VerdictKind::Exact);
+    assert!(report.per_evidence_verdicts[0].loss_record.0.is_empty());
+}
+
+// ---- Test 3: all evidences exact → compound exact ----
+
+#[test]
+fn wp_compound_all_exact_yields_exact() {
+    let q = prop("Q");
+    let e1 = make_evidence("cid-e1", q.clone());
+    let e2 = make_evidence("cid-e2", q.clone());
+    let compound = make_compound(
+        "cid-compound-all-exact",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-e1"), evidence_ref("cid-e2")],
+    );
+    let target = t_op("skip", vec![]);
+
+    let report = wp_compound(&compound, &target, &[e1, e2], &base_resolver())
+        .expect("all exact");
+
+    assert_eq!(report.compound_verdict, VerdictKind::Exact);
+    assert!(report.per_evidence_verdicts.iter().all(|v| v.verdict == VerdictKind::Exact));
+}
+
+// ---- Test 4: one lossy evidence → compound loudly-bounded-lossy ----
+
+#[test]
+fn wp_compound_one_lossy_evidence_yields_lossy() {
+    // Target: uop_neg(x).  neg_contract has no `pre`, post = (result == neg(x)).
+    // wp(neg(x), Q_no_result_var) = Q  (Q[result := neg(x)] = Q when Q has no `result`)
+    // wp(neg(x), result == 0)     = neg(x) == 0  (substitution fires, result differs)
+    //
+    // Evidence 1: predicate = Q (no result var)   → wp(neg(x), Q) = Q      → Exact.
+    // Evidence 2: predicate = result == 0         → wp(neg(x), result==0) = neg(x)==0  → LoudlyBoundedLossy.
+    let q = prop("Q"); // no `result` var
+    let result_is_zero = atomic("=", vec![ir_var("result"), ir_const(0)]);
+
+    let exact_ev = make_evidence("cid-exact", q.clone());
+    let lossy_ev = make_evidence("cid-lossy", result_is_zero.clone());
+
+    let compound = make_compound(
+        "cid-compound-lossy",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-exact"), evidence_ref("cid-lossy")],
+    );
+    let target = t_op("uop_neg", vec![t_var("x")]);
+
+    let report =
+        wp_compound(&compound, &target, &[exact_ev, lossy_ev], &base_resolver())
+            .expect("lossy compound");
+
+    assert_eq!(report.compound_verdict, VerdictKind::LoudlyBoundedLossy);
+    // composed loss record must contain the divergence key
+    assert!(report.composed_loss_record.0.contains_key("structural_divergence"));
+    // per-evidence: first is exact, second is lossy
+    assert_eq!(report.per_evidence_verdicts[0].verdict, VerdictKind::Exact);
+    assert_eq!(report.per_evidence_verdicts[1].verdict, VerdictKind::LoudlyBoundedLossy);
+}
+
+// ---- Test 5: one refuse evidence → compound refuse ----
+
+#[test]
+fn wp_compound_one_refuse_yields_compound_refuse() {
+    // Use an opaque call evidence (wp returns Refused) and one exact evidence.
+    let opaque_resolver = MapResolver::default()
+        .with("add", add_contract())
+        .with("div", div_contract())
+        .with("uop_neg", neg_contract())
+        .with("bop_eq", eq_contract())
+        .with("if", if_contract())
+        .with("seq", seq_contract())
+        .with("return", return_contract())
+        .with("skip", skip_contract())
+        .with("opaque_call", opaque_call_contract("missing_fn"));
+
+    let q = prop("Q");
+    // This evidence's predicate will be evaluated via wp(opaque_call, Q).
+    // wp will return Err(WpError::Refused(OpaqueCall{..})) → Refuse verdict.
+    let opaque_target = t_op("opaque_call", vec![]);
+    let refuse_ev = make_evidence("cid-refuse", q.clone());
+
+    // Build compound with two evidences; use the opaque_call as the target.
+    // Both evidences use the same predicate Q. But we need to show that when
+    // wp returns Refused for the target term, a Refuse verdict is produced.
+    //
+    // Strategy: run wp_compound with the opaque target for a compound that
+    // has one evidence whose predicate is Q.
+    let compound = make_compound(
+        "cid-compound-refuse",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-refuse")],
+    );
+
+    let report = wp_compound(&compound, &opaque_target, &[refuse_ev], &opaque_resolver)
+        .expect("refuse compound result");
+
+    assert_eq!(report.compound_verdict, VerdictKind::Refuse);
+    assert!(report.composed_loss_record.0.is_empty(), "refuse has no loss");
+    assert_eq!(report.per_evidence_verdicts[0].verdict, VerdictKind::Refuse);
+}
+
+// ---- Test 6: any refuse dominates lossy under conjunction ----
+//
+// NOTE: wp_compound takes ONE target_term shared by all evidences. A Refuse
+// verdict is triggered by the target itself (loop CID / opaque call), which
+// means ALL evidences refuse together — you cannot get mixed Refuse+Lossy
+// verdicts from a single wp_compound call. The correct way to test the
+// "refuse dominates" aggregation rule is to call aggregate_conjunction
+// directly with synthetic EvidenceVerdict slices.
+
+#[test]
+fn wp_compound_refuse_dominates_lossy() {
+    // Synthesise one Refuse verdict and one LoudlyBoundedLossy verdict.
+    let lossy_loss = {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "structural_divergence".to_string(),
+            prop("divergence_formula"),
+        );
+        LossRecord(m)
+    };
+
+    let verdicts = vec![
+        EvidenceVerdict {
+            evidence_cid: "cid-lossy".to_string(),
+            verdict: VerdictKind::LoudlyBoundedLossy,
+            loss_record: lossy_loss.clone(),
+        },
+        EvidenceVerdict {
+            evidence_cid: "cid-refuse".to_string(),
+            verdict: VerdictKind::Refuse,
+            loss_record: LossRecord(BTreeMap::new()),
+        },
+    ];
+
+    let (compound_verdict, composed_loss) = aggregate_conjunction(&verdicts);
+
+    // Refuse must dominate.
+    assert_eq!(compound_verdict, VerdictKind::Refuse);
+    // Refuse compound carries no loss record.
+    assert!(composed_loss.0.is_empty(), "refuse has no loss");
+}
+
+// ---- Test 7: unimplemented strategy returns Err, not panic ----
+
+#[test]
+fn wp_compound_unimplemented_strategy_returns_err() {
+    let compound = make_compound(
+        "cid-best-confidence",
+        AggregationStrategy::BestConfidence,
+        vec![],
+    );
+    let target = t_var("x");
+    let err = wp_compound(&compound, &target, &[], &base_resolver())
+        .expect_err("BestConfidence must fail");
+    assert!(
+        matches!(err, WpError::UnimplementedAggregationStrategy { .. }),
+        "expected UnimplementedAggregationStrategy, got {err:?}"
+    );
+
+    let compound2 = make_compound(
+        "cid-lbd",
+        AggregationStrategy::LoudlyBoundedDisjunction,
+        vec![],
+    );
+    let err2 = wp_compound(&compound2, &target, &[], &base_resolver())
+        .expect_err("LoudlyBoundedDisjunction must fail");
+    assert!(
+        matches!(err2, WpError::UnimplementedAggregationStrategy { .. }),
+        "expected UnimplementedAggregationStrategy, got {err2:?}"
+    );
+}
+
+// ---- Test 8: Other strategy returns Err ----
+
+#[test]
+fn wp_compound_other_strategy_returns_err() {
+    let compound = make_compound(
+        "cid-other",
+        AggregationStrategy::Other("future-strategy-v2".to_string()),
+        vec![],
+    );
+    let target = t_var("x");
+    let err = wp_compound(&compound, &target, &[], &base_resolver())
+        .expect_err("Other strategy must fail");
+    match err {
+        WpError::UnimplementedAggregationStrategy { strategy } => {
+            assert_eq!(strategy, "future-strategy-v2");
+        }
+        other => panic!("expected UnimplementedAggregationStrategy, got {other:?}"),
+    }
+}
+
+// ---- Test 9: determinism — same inputs produce identical reports ----
+
+#[test]
+fn wp_compound_is_deterministic() {
+    let q = prop("Q");
+    let e1 = make_evidence("cid-e1", q.clone());
+    let e2 = make_evidence("cid-e2", q.clone());
+    let compound = make_compound(
+        "cid-determinism",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-e1"), evidence_ref("cid-e2")],
+    );
+    let target = t_op("skip", vec![]);
+
+    let r1 = wp_compound(&compound, &target, &[e1.clone(), e2.clone()], &base_resolver())
+        .expect("first run");
+    let r2 = wp_compound(&compound, &target, &[e1, e2], &base_resolver())
+        .expect("second run");
+
+    assert_eq!(r1, r2, "wp_compound must be deterministic");
+}
+
+// ---- Test 10: multi-evidence with all-exact — compound_cid matches ----
+
+#[test]
+fn wp_compound_report_carries_compound_cid() {
+    let q = prop("Q");
+    let e1 = make_evidence("cid-e1", q.clone());
+    let compound = make_compound(
+        "the-compound-cid",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-e1")],
+    );
+    let target = t_op("skip", vec![]);
+
+    let report = wp_compound(&compound, &target, &[e1], &base_resolver())
+        .expect("report");
+
+    assert_eq!(report.compound_cid, "the-compound-cid");
+    assert_eq!(report.per_evidence_verdicts[0].evidence_cid, "cid-e1");
+}
+
+// ---- Test 11: two lossy evidences — loss records union, not LWW ----
+//
+// Regression for the LWW bug in aggregate_conjunction (Opus review #726):
+// when two evidences both emit "structural_divergence", the last-write-wins
+// `BTreeMap::insert` silently dropped the first formula. The fix unions them
+// as `And { operands: [F1, F2] }`.
+//
+// Verification protocol: temporarily revert F1 (union) to LWW (plain insert)
+// and this test MUST fail — only F2 survives, not F1.
+
+#[test]
+fn wp_compound_multiple_lossy_evidences_union_loss_records() {
+    // uop_neg target. Two evidences with different predicates that both diverge
+    // from wp(uop_neg(x), predicate):
+    //   ev1: predicate = (result == 0)  → wp = (neg(x) == 0)  — diverges → F1 in loss
+    //   ev2: predicate = (result == 1)  → wp = (neg(x) == 1)  — diverges → F2 in loss
+    let result_is_zero = atomic("=", vec![ir_var("result"), ir_const(0)]);
+    let result_is_one  = atomic("=", vec![ir_var("result"), ir_const(1)]);
+
+    let ev1 = make_evidence("cid-lossy-1", result_is_zero.clone());
+    let ev2 = make_evidence("cid-lossy-2", result_is_one.clone());
+
+    let compound = make_compound(
+        "cid-compound-two-lossy",
+        AggregationStrategy::Conjunction,
+        vec![evidence_ref("cid-lossy-1"), evidence_ref("cid-lossy-2")],
+    );
+    let target = t_op("uop_neg", vec![t_var("x")]);
+
+    let report = wp_compound(&compound, &target, &[ev1, ev2], &base_resolver())
+        .expect("two-lossy compound");
+
+    assert_eq!(report.compound_verdict, VerdictKind::LoudlyBoundedLossy);
+
+    let structural = report
+        .composed_loss_record
+        .0
+        .get("structural_divergence")
+        .expect("structural_divergence dimension must be present");
+
+    // Must be a conjunction of BOTH evidence formulas, not just the last one.
+    match structural {
+        IrFormula::And { operands } => {
+            assert_eq!(
+                operands.len(),
+                2,
+                "union must be And of two formulas, not LWW singleton"
+            );
+        }
+        other => panic!(
+            "expected IrFormula::And (union of two divergence formulas), got {other:?}"
+        ),
+    }
+}
+
+// ============================================================
 // Helpers.
 // ============================================================
 
