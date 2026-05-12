@@ -92,7 +92,16 @@ COMMON_ALIASES = {
 }
 
 
-def op(slug, base, concept_operator=None, base_operator=None, renaming=None, aliases=None, patches=None, notes=""):
+def op(slug, base, concept_operator=None, base_operator=None, renaming=None, aliases=None, patches=None, sort_renames=None, notes=""):
+    """Define a concept hub op and its per-language discharge configuration.
+
+    sort_renames: per-language sort-name rename map, keyed by language id.
+    Each value is a dict mapping source sort name → concept sort name.
+    Example: {"java": {"Expr": "Value"}} renames java's Expr formal_sort to
+    match the hub's Value, so the morphism discharge passes.
+    Sort renames are injected into the operator_map (ctor-kind nodes use
+    operator_map for name resolution in normalize_node).
+    """
     return {
         "slug": slug,
         "concept_fn": f"concept:{slug}",
@@ -102,6 +111,7 @@ def op(slug, base, concept_operator=None, base_operator=None, renaming=None, ali
         "renaming": renaming or {},
         "aliases": aliases or {},
         "patches": patches or {},
+        "sort_renames": sort_renames or {},
         "notes": notes,
     }
 
@@ -146,7 +156,15 @@ OPS = [
     op("addr", ("c11", "op_addr_of.spec.json"), base_operator="addr_of"),
     op("new", ("csharp", "op_new.spec.json")),
     op("cast", ("c11", "op_cast.spec.json")),
-    op("throw", ("php", "op_throw.spec.json")),
+    op("throw", ("php", "op_throw.spec.json"),
+       sort_renames={
+           # java:throw and ts:throw declare formal_sorts=[Expr]; the hub (php-derived)
+           # uses [Value].  Both sorts name "the expression-typed value being thrown";
+           # the rename is a pure representation convention difference, not a semantic
+           # divergence.  Injected into operator_map so ctor-kind sort nodes are renamed.
+           "java": {"Expr": "Value"},
+           "typescript": {"Expr": "Value"},
+       }),
     op("postinc", ("c11", "op_post_inc.spec.json"), base_operator="post_inc"),
     op("postdec", ("c11", "op_post_dec.spec.json"), base_operator="post_dec"),
     op("preinc", ("c11", "op_pre_inc.spec.json"), base_operator="pre_inc"),
@@ -325,6 +343,12 @@ def operator_map_for(op_def, source_spec, language):
         out[source_operator] = concept_operator
     if out.get(source_operator, source_operator) != concept_operator:
         out[source_operator] = concept_operator
+    # Merge per-language sort renames into the operator map.
+    # formal_sorts entries have kind="ctor"; normalize_node maps ctor names via
+    # operator_map.  Sort renames must go here, not in representation_map (which
+    # only applies to kind="primitive" nodes).
+    lang_sort_renames = op_def.get("sort_renames", {}).get(language["id"], {})
+    out.update(lang_sort_renames)
     return out
 
 
@@ -351,6 +375,12 @@ KNOWN_DIVERGENCE_REASONS = {
     ("python", "le"): "python:le is polymorphic (dispatches on operand type); concept:le is integer-only",
     ("python", "gt"): "python:gt is polymorphic (dispatches on operand type); concept:gt is integer-only",
     ("typescript", "add"): "ts:+ is polymorphic (number | string concatenation); concept:add is integer-only",
+    # concept:new return_sort mismatch: java:new returns Ref (a heap-allocated object
+    # reference) while concept:new (csharp-derived) declares Expr.  Ref is the
+    # semantically correct sort for an allocation operation; csharp:new's Expr is an
+    # over-generalisation.  Transport refuses rather than masking the precision loss.
+    # Follow-up: fix csharp:new (and ts:new) to return Ref, then rebase concept:new.
+    ("java", "new"): "java:new returns sort Ref (heap-allocated reference); concept:new (csharp-derived) returns sort Expr (over-generalised). Ref is more precise for an allocation operation; concept:new base should be rebased to java:new. Refusal is loudly bounded per Supra omnia rectum. See #626 R3 follow-up.",
 }
 
 

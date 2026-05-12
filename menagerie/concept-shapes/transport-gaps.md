@@ -59,7 +59,7 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `concept:addr` | morphism_c11_addr_of_to_addr, morphism_zig_addr_to_addr |
 | `concept:new` | morphism_csharp_new_to_new |
 | `concept:cast` | morphism_c11_cast_to_cast |
-| `concept:throw` | morphism_php_throw_to_throw |
+| `concept:throw` | morphism_typescript_throw_to_throw, morphism_php_throw_to_throw, morphism_java_throw_to_throw |
 | `concept:postinc` | morphism_c11_post_inc_to_postinc |
 | `concept:postdec` | morphism_c11_post_dec_to_postdec |
 | `concept:preinc` | morphism_c11_pre_inc_to_preinc |
@@ -305,7 +305,7 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `zig` | `concept:new` | `op_new.spec.json` | no candidate source operation spec |
 | `ruby` | `concept:new` | `not-supported` | operation not in supported set for this language |
 | `php` | `concept:new` | `op_new.spec.json` | no candidate source operation spec |
-| `java` | `concept:new` | `op_new.spec.json` | return sort mismatch: got `{"kind":"ctor","name":"Ref","args":[]}` want `{"kind":"ctor","name":"Expr","args":[]}` |
+| `java` | `concept:new` | `op_new.spec.json` | java:new returns sort Ref (heap-allocated reference); concept:new (csharp-derived) returns sort Expr (over-generalised). Ref is more precise for an allocation operation; concept:new base should be rebased to java:new. Refusal is loudly bounded per Supra omnia rectum. See #626 R3 follow-up. |
 | `rust` | `concept:new` | `op_new.spec.json` | no candidate source operation spec |
 | `csharp` | `concept:cast` | `op_cast.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `go` | `concept:cast` | `op_cast.spec.json` | no candidate source operation spec |
@@ -320,10 +320,8 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `csharp` | `concept:throw` | `op_throw.spec.json` | no candidate source operation spec |
 | `go` | `concept:throw` | `not-supported` | operation not in supported set for this language |
 | `python` | `concept:throw` | `op_raise.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-signature","name":"Panic"}]}` want `{"effects":[{"kind":"effect-signature","name":"Panic"},{"kind":"effect-signature","name":"Panics"}]}` |
-| `typescript` | `concept:throw` | `op_throw.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Value","args":[]}]` |
 | `zig` | `concept:throw` | `op_panic.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Reason","args":[]}]` want `[{"kind":"ctor","name":"Value","args":[]}]` |
 | `ruby` | `concept:throw` | `op_raise.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-signature","name":"Panics"}]}` want `{"effects":[{"kind":"effect-signature","name":"Panic"},{"kind":"effect-signature","name":"Panics"}]}` |
-| `java` | `concept:throw` | `op_throw.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Value","args":[]}]` |
 | `rust` | `concept:throw` | `op_panic.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Reason","args":[]}]` want `[{"kind":"ctor","name":"Value","args":[]}]` |
 | `csharp` | `concept:postinc` | `op_postinc.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Int","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
 | `go` | `concept:postinc` | `not-supported` | operation not in supported set for this language |
