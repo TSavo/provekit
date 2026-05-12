@@ -61,9 +61,12 @@
 //! comparison `Atomic { name: "bop_eq", args: [..] }`, whichever the
 //! lifted source is).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-use provekit_ir_types::{IrFormula, IrTerm, LetBinding};
+use provekit_ir_types::{
+    AggregationStrategy, CompoundContractMemento, EvidenceMemento, IrFormula, IrTerm, LetBinding,
+    LossRecord, VerdictKind,
+};
 
 use crate::core::types::{Cid, SlotSort, Term};
 
@@ -362,6 +365,14 @@ pub enum WpError {
     /// load-bearing" from the others.
     #[error(transparent)]
     Refused(#[from] Refusal),
+    /// The compound's `aggregation_strategy` is spec'd but not implemented
+    /// in v0. Only `Conjunction` is wired; `BestConfidence`,
+    /// `LoudlyBoundedDisjunction`, and `Other` return this error.
+    #[error("aggregation strategy `{strategy}` is spec'd but not implemented in v0")]
+    UnimplementedAggregationStrategy {
+        /// The wire-format string of the strategy that was encountered.
+        strategy: String,
+    },
 }
 
 /// Compute `wp(t, Q)` — the weakest precondition of term `t` with
@@ -1082,6 +1093,200 @@ fn fresh_name(taken: &HashSet<String>, base: &str) -> String {
         }
         n += 1;
     }
+}
+
+// ============================================================
+// Compound-aware discharge (PR-F of #716).
+// ============================================================
+
+/// The verdict for one `EvidenceMemento` within a compound discharge.
+///
+/// Derived by running `wp(target_term, evidence.predicate, resolver)`:
+///
+/// - `Ok(formula)` where `formula == evidence.predicate` → `Exact`
+/// - `Ok(formula)` where `formula != evidence.predicate` → `LoudlyBoundedLossy`
+///   (structural divergence: wp produced a formula, but it differs from
+///   the evidence's asserted predicate)
+/// - `Err(WpError::Refused(_))` → `Refuse`
+/// - `Err(other)` → propagated as `Err`; the caller sees a hard error, not
+///   a verdict (this is a contract bug, not a "no memento" situation)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceVerdict {
+    /// The `EvidenceMemento.cid` of the evidence this verdict covers.
+    pub evidence_cid: String,
+    /// Per-evidence trichotomy verdict.
+    pub verdict: VerdictKind,
+    /// Non-empty iff `verdict == LoudlyBoundedLossy`. Key
+    /// `"structural_divergence"` maps to the formula wp actually produced
+    /// when it differed from the evidence predicate.
+    pub loss_record: LossRecord,
+}
+
+/// The compound discharge report returned by [`wp_compound`].
+///
+/// Spec: `protocol/specs/2026-05-13-compound-contract-memento.md` §2.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompoundDischargeReport {
+    /// The `CompoundContractMemento.cid` of the compound that was discharged.
+    pub compound_cid: String,
+    /// Per-evidence verdict, one entry per `EvidenceMemento` passed in.
+    pub per_evidence_verdicts: Vec<EvidenceVerdict>,
+    /// Compound-level trichotomy verdict derived from per-evidence verdicts
+    /// under `compound.aggregation_strategy` (§2.1).
+    pub compound_verdict: VerdictKind,
+    /// Union of per-evidence loss records for `LoudlyBoundedLossy` evidences.
+    /// Empty when `compound_verdict == Exact`.
+    pub composed_loss_record: LossRecord,
+}
+
+/// Discharge a `CompoundContractMemento` against `target_term`.
+///
+/// For each evidence in `evidences`, runs `wp(target_term, evidence.predicate,
+/// resolver)` and derives a per-evidence [`EvidenceVerdict`]. Then aggregates
+/// under `compound.aggregation_strategy` to produce the compound verdict.
+///
+/// # Evidence resolution
+///
+/// The caller is responsible for pre-resolving `CompoundContractMemento.evidences`
+/// (a `Vec<EvidenceRef>`, CIDs only) to full `EvidenceMemento` bytes before
+/// calling this function. The order of `evidences` need not match the order of
+/// `compound.evidences`; CIDs are used only for reporting.
+///
+/// # Aggregation strategies (v0)
+///
+/// Only `AggregationStrategy::Conjunction` is wired. Encountering
+/// `BestConfidence`, `LoudlyBoundedDisjunction`, or `Other` returns
+/// `Err(WpError::UnimplementedAggregationStrategy)` without panicking.
+///
+/// # Empty compounds (§5.2)
+///
+/// A compound with zero evidences is vacuously exact: compound verdict is
+/// `Exact`, composed loss record is empty.
+///
+/// # Hard errors vs verdicts
+///
+/// A per-evidence `wp` that returns `Err(WpError::Refused(_))` becomes a
+/// `Refuse` verdict for that evidence. Any other `WpError` is a contract
+/// bug and is propagated as `Err` to the caller (not converted to a verdict).
+pub fn wp_compound(
+    compound: &CompoundContractMemento,
+    target_term: &Term,
+    evidences: &[EvidenceMemento],
+    resolver: &dyn OpContractResolver,
+) -> Result<CompoundDischargeReport, WpError> {
+    // Guard: only Conjunction is wired in v0.
+    match &compound.aggregation_strategy {
+        AggregationStrategy::Conjunction => {}
+        other => {
+            return Err(WpError::UnimplementedAggregationStrategy {
+                strategy: String::from(other.clone()),
+            });
+        }
+    }
+
+    // Per-evidence discharge.
+    let mut per_evidence_verdicts: Vec<EvidenceVerdict> = Vec::with_capacity(evidences.len());
+
+    for evidence in evidences {
+        let ev = discharge_one_evidence(evidence, target_term, resolver)?;
+        per_evidence_verdicts.push(ev);
+    }
+
+    // Conjunction aggregation (spec §2.1).
+    let (compound_verdict, composed_loss_record) =
+        aggregate_conjunction(&per_evidence_verdicts);
+
+    Ok(CompoundDischargeReport {
+        compound_cid: compound.cid.clone(),
+        per_evidence_verdicts,
+        compound_verdict,
+        composed_loss_record,
+    })
+}
+
+/// Run wp for one evidence and return an `EvidenceVerdict`.
+///
+/// - `Err(WpError::Refused)` → `Refuse` verdict (principled refusal, not a bug).
+/// - `Err(other)` → propagated (contract bug; the caller surfaces it).
+/// - `Ok(formula) == evidence.predicate` → `Exact`.
+/// - `Ok(formula) != evidence.predicate` → `LoudlyBoundedLossy`.
+fn discharge_one_evidence(
+    evidence: &EvidenceMemento,
+    target_term: &Term,
+    resolver: &dyn OpContractResolver,
+) -> Result<EvidenceVerdict, WpError> {
+    match wp(target_term, &evidence.predicate, resolver) {
+        Err(WpError::Refused(_)) => Ok(EvidenceVerdict {
+            evidence_cid: evidence.cid.clone(),
+            verdict: VerdictKind::Refuse,
+            loss_record: LossRecord(BTreeMap::new()),
+        }),
+        Err(other) => Err(other),
+        Ok(computed) => {
+            if computed == evidence.predicate {
+                Ok(EvidenceVerdict {
+                    evidence_cid: evidence.cid.clone(),
+                    verdict: VerdictKind::Exact,
+                    loss_record: LossRecord(BTreeMap::new()),
+                })
+            } else {
+                // Structural divergence: wp succeeded but result differs.
+                let mut loss = BTreeMap::new();
+                loss.insert("structural_divergence".to_string(), computed);
+                Ok(EvidenceVerdict {
+                    evidence_cid: evidence.cid.clone(),
+                    verdict: VerdictKind::LoudlyBoundedLossy,
+                    loss_record: LossRecord(loss),
+                })
+            }
+        }
+    }
+}
+
+/// Conjunction aggregation rule (spec §2.1):
+///
+/// - all `Exact` → `Exact`
+/// - any `Refuse` → `Refuse` (regardless of other verdicts)
+/// - otherwise → `LoudlyBoundedLossy`, union of per-evidence loss records
+///
+/// Returns `(compound_verdict, composed_loss_record)`.
+fn aggregate_conjunction(
+    verdicts: &[EvidenceVerdict],
+) -> (VerdictKind, LossRecord) {
+    // Empty compound: vacuously exact (spec §5.2).
+    if verdicts.is_empty() {
+        return (VerdictKind::Exact, LossRecord(BTreeMap::new()));
+    }
+
+    let has_refuse = verdicts.iter().any(|v| v.verdict == VerdictKind::Refuse);
+    let has_lossy = verdicts
+        .iter()
+        .any(|v| v.verdict == VerdictKind::LoudlyBoundedLossy);
+    let all_exact = verdicts.iter().all(|v| v.verdict == VerdictKind::Exact);
+
+    if has_refuse {
+        // Any refuse makes the compound refuse; loss record is empty (refuse has no loss).
+        return (VerdictKind::Refuse, LossRecord(BTreeMap::new()));
+    }
+
+    if all_exact {
+        return (VerdictKind::Exact, LossRecord(BTreeMap::new()));
+    }
+
+    // has_lossy (and no refuse): compose loss records.
+    debug_assert!(has_lossy);
+    let mut composed: BTreeMap<String, IrFormula> = BTreeMap::new();
+    for v in verdicts {
+        if v.verdict == VerdictKind::LoudlyBoundedLossy {
+            for (k, formula) in &v.loss_record.0 {
+                // On key collision: last writer wins (all entries carry the
+                // same key "structural_divergence" in v0; future keys will
+                // be dimension-specific and collisions will not occur).
+                composed.insert(k.clone(), formula.clone());
+            }
+        }
+    }
+    (VerdictKind::LoudlyBoundedLossy, LossRecord(composed))
 }
 
 #[cfg(test)]
