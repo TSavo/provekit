@@ -32,7 +32,6 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
@@ -867,32 +866,38 @@ fn sanitize(s: &str) -> String {
 
 /// Convert a pretty-printed formula string into a kit Value tree.
 ///
-/// The kit's serializer expects a Formula AST; constructing one from a
-/// free-form string would require a parser that mirrors
-/// `provekit-ir-symbolic::parse`. To stay within the substrate and
-/// avoid forking the kit parser, we wrap the string into a
-/// single-atom Formula node:
+/// Uses `provekit_ir_symbolic::parse_expr` to parse the predicate string
+/// into a structured `Formula` AST, then serializes it via
+/// `provekit_ir_symbolic::serialize::formula_to_value`. The result is
+/// structurally identical to what the kit's authoring API (`gt`, `and_`,
+/// etc.) would produce, enabling proper parse/serialize round-trips and
+/// structural discharge.
 ///
-///     {"kind":"atomic","name":"<text>","args":[]}
+/// Operator mapping:
+///   `<`, `<=`, `>`, `>=`, `==`, `!=` map to the kit's atomic predicate
+///   names (including Unicode ≤/≥/≠ per `lte`/`gte`/`ne`).
 ///
-/// This is semantically lossy but is hashable and signable through the
-/// existing mint API, which is sufficient for the smoke test's
-/// transport demonstration. The lossiness is loudly labelled in
-/// report §8 as the "smoke-test formula encoding" gap.
+/// Falls back to the single-atom encoding for strings that cannot be
+/// parsed (e.g. free-form prose), so existing behaviour is preserved for
+/// non-expression contract text. The fallback is loudly labelled as lossy
+/// via an eprintln warning.
 fn formula_text_to_value(text: &str) -> Arc<Value> {
-    Value::object([
-        ("kind", Value::string("atomic")),
-        ("name", Value::string(text.to_string())),
-        ("args", Value::array(vec![])),
-    ])
+    match provekit_ir_symbolic::parse_expr::parse_expr(text) {
+        Ok(formula) => provekit_ir_symbolic::serialize::formula_to_value(&formula),
+        Err(e) => {
+            eprintln!(
+                "[smoke] formula_text_to_value: parse_expr({text:?}) failed ({e}); \
+                 falling back to single-atom encoding (loudly-bounded-lossy)"
+            );
+            // Fallback: single-atom shim (same as the prior stub behaviour).
+            Value::object([
+                ("kind", Value::string("atomic")),
+                ("name", Value::string(text.to_string())),
+                ("args", Value::array(vec![])),
+            ])
+        }
+    }
 }
-
-// Allow the kit's Rc-based Formula type to be referenced; we don't
-// construct it directly here but the import keeps the dependency
-// edge visible.
-#[allow(dead_code)]
-fn _ensure_kit_link(_: Rc<provekit_ir_symbolic::Formula>) {}
-
 /// Given a file's bytes and a 1-based line number, return (start, end) byte
 /// offsets for that line (exclusive end). Used to populate CodeSiteSpan.
 /// Falls back to (0, 0) if the line number is out of range.

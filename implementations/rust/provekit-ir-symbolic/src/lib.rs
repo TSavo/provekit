@@ -28,6 +28,7 @@ use std::rc::Rc;
 
 pub mod convert;
 pub mod parse;
+pub mod parse_expr;
 pub mod serialize;
 
 // Re-export serde types so consumers can use both authoring API and
