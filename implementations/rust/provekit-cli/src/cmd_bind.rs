@@ -225,6 +225,17 @@ pub fn run(args: BindArgs) -> u8 {
     // Rewrite output.
     match &args.rewrite {
         RewriteShape::Annotate => {
+            // annotate rewrites in-place in source-language syntax.
+            // Cross-language annotation is not supported in v0; use --rewrite=canonical.
+            if target_lang != source_lang {
+                eprintln!(
+                    "bind: --rewrite=annotate only supports same-language output; \
+                     got --target-language={target_lang} with source {source_lang}. \
+                     Use --rewrite=canonical for cross-language output. \
+                     (v0 gap: cross-language annotate not yet wired)"
+                );
+                return EXIT_USER_ERROR;
+            }
             apply_annotate_rewrite(&root, &src_files, &result, &args.mode, /*to_disk=*/ true);
         }
         RewriteShape::Canonical => {
@@ -845,11 +856,22 @@ fn inject_annotations(
             let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
 
             // Strip existing substrate-emitted block from output_lines.
+            // For `// concept:` lines, only strip if the line immediately after it
+            // (already in out_lines at `start`) was `// substrate-origin:`, confirming
+            // this is a substrate-emitted block. User-written `// concept:` lines that
+            // are not part of a substrate block are preserved.
             let mut start = out_lines.len();
             while start > 0 {
                 let prev = out_lines[start - 1].trim_start();
+                let next_in_out = out_lines.get(start).map(|s| s.trim_start()).unwrap_or("");
+                let is_substrate_concept = prev.starts_with("// concept:")
+                    && (next_in_out.starts_with("// substrate-origin:")
+                        || next_in_out.starts_with("// memento-cid:")
+                        || next_in_out.starts_with("// witness-inherited-from:")
+                        || next_in_out.starts_with("#[cfg_attr(any(),")
+                        || next_in_out.is_empty());
                 if prev.is_empty()
-                    || prev.starts_with("// concept:")
+                    || is_substrate_concept
                     || prev.starts_with("// substrate-origin:")
                     || prev.starts_with("// memento-cid:")
                     || prev.starts_with("// witness-inherited-from:")
@@ -921,9 +943,21 @@ fn inject_annotations(
             continue;
         }
         // Strip pre-existing substrate lines (idempotent re-injection).
+        // For `// concept:` lines, only strip if part of a 3-line substrate block
+        // (i.e., the next line is `// substrate-origin:`). User-written `// concept: <name>`
+        // annotations that are NOT followed by `// substrate-origin:` are preserved.
         let trimmed = line.trim_start();
-        if trimmed.starts_with("// concept:")
-            || trimmed.starts_with("// substrate-origin:")
+        if trimmed.starts_with("// concept:") {
+            // Check if next line is substrate-origin (marking this as a substrate block).
+            let next_is_substrate_origin = lines.get(i + 1)
+                .map(|l| l.trim_start().starts_with("// substrate-origin:"))
+                .unwrap_or(false);
+            if next_is_substrate_origin {
+                i += 1;
+                continue;
+            }
+            // User-written concept annotation — preserve it.
+        } else if trimmed.starts_with("// substrate-origin:")
             || trimmed.starts_with("// memento-cid:")
             || trimmed.starts_with("// witness-inherited-from:")
             || trimmed.starts_with("#[cfg_attr(any(), requires")
@@ -1211,8 +1245,11 @@ fn target_fn_def(
                 .map(|p| format!("long {p}"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            // Each function gets a uniquely-named top-level class to avoid
+            // "multiple top-level classes in one file" Java compiler errors.
+            let class_name = snake_to_pascal(fn_name) + "Transported";
             format!(
-                "final class Transported {{\n{annotations}\n{indent}public static long {fn_name}({param_list}) {{\n{body}\n{indent}}}\n}}\n"
+                "final class {class_name} {{\n{annotations}\n{indent}public static long {fn_name}({param_list}) {{\n{body}\n{indent}}}\n}}\n"
             )
         }
         "go" => {
@@ -1279,6 +1316,21 @@ fn lang_extension(lang: &str) -> &'static str {
         "php" => "php",
         _ => "rs",
     }
+}
+
+/// Convert a snake_case identifier to PascalCase for use as a Java class name.
+/// E.g. "deposit" -> "Deposit", "retry_send" -> "RetrySend".
+fn snake_to_pascal(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -1647,10 +1699,10 @@ fn extract_contract_attrs(attrs: &[syn::Attribute]) -> ExtractedContract {
                 // Parse the form: `any() , <kind>(<body>)` textually.
                 // This avoids the proc_macro2 dependency.
                 if let Some(rest) = tokens_str.strip_prefix("any ()") {
-                    let rest = rest.trim_start_matches(',').trim();
+                    let rest = rest.trim().trim_start_matches(',').trim();
                     parse_kind_body(rest, &mut out);
                 } else if let Some(rest) = tokens_str.strip_prefix("any()") {
-                    let rest = rest.trim_start_matches(',').trim();
+                    let rest = rest.trim().trim_start_matches(',').trim();
                     parse_kind_body(rest, &mut out);
                 }
             }
