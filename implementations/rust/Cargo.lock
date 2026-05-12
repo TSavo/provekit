@@ -2544,10 +2544,12 @@ version = "0.1.0"
 name = "smoke-test-e2e-driver"
 version = "0.1.0"
 dependencies = [
+ "libprovekit",
  "proc-macro2",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "provekit-proof-envelope",
  "quote",
  "serde",

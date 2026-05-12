@@ -13,8 +13,10 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 provekit-canonicalizer = { path = "../../../implementations/rust/provekit-canonicalizer" }
 provekit-ir-symbolic = { path = "../../../implementations/rust/provekit-ir-symbolic" }
+provekit-ir-types = { path = "../../../implementations/rust/provekit-ir-types" }
 provekit-claim-envelope = { path = "../../../implementations/rust/provekit-claim-envelope" }
 provekit-proof-envelope = { path = "../../../implementations/rust/provekit-proof-envelope" }
+libprovekit = { path = "../../../implementations/rust/libprovekit" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

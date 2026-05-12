@@ -2,7 +2,7 @@
 
 The eight-verb pipeline (Lift, Cluster, Name, Scope, Cluster, Identify, Realize, Witness) walking around a 200-line Rust fixture. Every contract in the rewritten output traces to one of three substrate sources: a lifted annotation, a lifted test assertion, or a wp_rule applied to a recognized term-shape. None of the contracts shown below were authored by the smoke-test driver author.
 
-Fixture root: `/Users/tsavo/provekit-main/.worktrees/smoke-test-e2e/menagerie/smoke-test-e2e`
+Fixture root: `/Users/tsavo/provekit-worktrees/pk-695-unstub/menagerie/smoke-test-e2e`
 
 ## 1. The fixture
 
@@ -59,11 +59,11 @@ Each binding is a `(code-site -> concept -> discharge verdict)` triple. The disc
 | `src/clamps.rs::clamp_pressure` | `UNNAMED-CONCEPT-1` | `empty` | `refuse(no contract recovered)` |
 | `src/option_handling.rs::first_or_default` | `UNNAMED-CONCEPT-2` | `annotation-lift` | `loudly-bounded-lossy(formula-string-transport (smoke-test single-atom encoding))` |
 | `src/option_handling.rs::safe_index` | `UNNAMED-CONCEPT-3` | `annotation-lift` | `loudly-bounded-lossy(formula-string-transport (smoke-test single-atom encoding))` |
-| `src/retry_with_backoff.rs::try_send_v1` | `concept:retry-with-bounded-attempts` | `algebra-synthesis[wp_rule.retry-with-bounded-attempts.v0]` | `loudly-bounded-lossy(structural-oracle (live libprovekit::wp evaluator not invoked from this driver; see report §8))` |
-| `src/retry_with_backoff.rs::try_send_v2` | `concept:retry-with-bounded-attempts` | `algebra-synthesis[wp_rule.retry-with-bounded-attempts.v0]` | `loudly-bounded-lossy(structural-oracle (live libprovekit::wp evaluator not invoked from this driver; see report §8))` |
+| `src/retry_with_backoff.rs::try_send_v1` | `concept:retry-with-bounded-attempts` | `algebra-synthesis[wp_rule.retry-with-bounded-attempts.v0]` | `exact` |
+| `src/retry_with_backoff.rs::try_send_v2` | `concept:retry-with-bounded-attempts` | `algebra-synthesis[wp_rule.retry-with-bounded-attempts.v0]` | `exact` |
 | `src/retry_with_backoff.rs::attempt_succeeds` | `UNNAMED-CONCEPT-4` | `empty` | `refuse(no contract recovered)` |
 | `src/validate_then_commit.rs::commit_balance_change` | `concept:guard-then-commit` | `test-lift` | `loudly-bounded-lossy(formula-string-transport (smoke-test single-atom encoding))` |
-| `src/validate_then_commit.rs::commit_inventory_change` | `concept:guard-then-commit` | `algebra-synthesis[wp_rule.guard-then-commit.v0]` | `loudly-bounded-lossy(structural-oracle (live libprovekit::wp evaluator not invoked from this driver; see report §8))` |
+| `src/validate_then_commit.rs::commit_inventory_change` | `concept:guard-then-commit` | `algebra-synthesis[wp_rule.guard-then-commit.v0]` | `exact` |
 
 ## 5. The propagation event
 
@@ -80,7 +80,7 @@ One unit-test assertion lifted into the substrate as a `WitnessMemento` and atta
 | Site | Pre-witness Origin | Pre-witness Verdict |
 |---|---|---|
 | `src/validate_then_commit.rs::commit_balance_change` | `test-lift` | `loudly-bounded-lossy(formula-string-transport (smoke-test single-atom encoding))` |
-| `src/validate_then_commit.rs::commit_inventory_change` | `algebra-synthesis[wp_rule.guard-then-commit.v0]` | `loudly-bounded-lossy(structural-oracle (live libprovekit::wp evaluator not invoked from this driver; see report §8))` |
+| `src/validate_then_commit.rs::commit_inventory_change` | `algebra-synthesis[wp_rule.guard-then-commit.v0]` | `exact` |
 
 **After the witness fires**: the concept-CID carries the obligation. Every binding to that shape-CID inherits a `#[cfg_attr(any(), witness(...))]` marker in the rewritten output. The propagated-to set is exactly the concept's site list.
 
@@ -147,7 +147,7 @@ The rewritten tree under `rewritten/` is itself a buildable Rust crate (`smoke-t
 - `src/retry_with_backoff.rs` -> `rewritten/src/retry_with_backoff.rs`
 - `src/validate_then_commit.rs` -> `rewritten/src/validate_then_commit.rs`
 
-Run `diff -u /Users/tsavo/provekit-main/.worktrees/smoke-test-e2e/menagerie/smoke-test-e2e/src/option_handling.rs /Users/tsavo/provekit-main/.worktrees/smoke-test-e2e/menagerie/smoke-test-e2e/rewritten/src/option_handling.rs` (etc) to see every line the substrate added.
+Run `diff -u /Users/tsavo/provekit-worktrees/pk-695-unstub/menagerie/smoke-test-e2e/src/option_handling.rs /Users/tsavo/provekit-worktrees/pk-695-unstub/menagerie/smoke-test-e2e/rewritten/src/option_handling.rs` (etc) to see every line the substrate added.
 
 ## 8. Zero-authoring receipt
 
@@ -168,7 +168,7 @@ Every contract in the rewritten output, with its substrate source traced back to
 ### Known transport losses
 
 - The driver's `formula_text_to_value` encoding wraps each pretty-printed contract string in a single-atom IR formula (`{kind:atomic, name:"<text>", args:[]}`). The mint envelope is signed correctly and the BLAKE3-512 CID is deterministic, but the formula is opaque to the kit's parse/serialize round-trip. Discharge verdict for these mints is `loudly-bounded-lossy(formula-string-transport)`. Closing this gap requires the upstream `provekit-ir-symbolic::parse` to accept the rewritten predicate strings; until then the smoke test's transport is signed-but-opaque.
-- The smoke-test driver does not invoke the live `libprovekit::wp` evaluator. Discharge verdicts on algebra-synthesis contracts are `loudly-bounded-lossy(structural-oracle)` rather than `exact`. The live evaluator is online (see `libprovekit/src/wp.rs` and `provekit-walk/src/wp.rs`); wiring the driver onto it is an integration step pending the wp-as-formula PR series completing its merge.
+- **[CLOSED — Stub 2]** The smoke-test driver now invokes the live `libprovekit::wp` evaluator for algebra-synthesis discharge. A `SmokeTestResolver` carries authored `wp_rule`s for `retry-loop` (`max_attempts >= 0 ∧ Q`) and `guard-then-commit` (`Q`). The evaluator reduces the rule against the postcondition placeholder and returns a ground formula; verdict is `exact`. The previously blocking condition (wp-as-formula PR series — PRs #619, #633, #663) is fully merged on main; this stub is now closed. Remaining loss on algebra-synthesis sites: the synthesized contract formula is still a single-atom shim (Stub 1 — `provekit-ir-symbolic::parse` round-trip not yet wired). The discharge ITSELF is exact; the formula encoding is the remaining open gap.
 - ConceptSiteMemento and ConceptAbstractionMemento are emitted with `schemaVersion: "stub-0"`. The canonical layered schema is being drafted (Opus agent `acd66a6b322284a3a` at the time of writing). The stub schema's keys (`siteFile`, `siteFn`, `conceptShapeCid`, `contractCid`, `dischargeVerdict`) match the emerging proposal so the migration to the canonical layered envelope is a renaming pass once the PR lands.
 
 ## 9. Open Karlton work

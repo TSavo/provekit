@@ -393,7 +393,7 @@ fn section_8_zero_authoring(s: &mut String, pass: &PassResult) {
     );
     let _ = writeln!(
         s,
-        "- The smoke-test driver does not invoke the live `libprovekit::wp` evaluator. Discharge verdicts on algebra-synthesis contracts are `loudly-bounded-lossy(structural-oracle)` rather than `exact`. The live evaluator is online (see `libprovekit/src/wp.rs` and `provekit-walk/src/wp.rs`); wiring the driver onto it is an integration step pending the wp-as-formula PR series completing its merge."
+        "- **[CLOSED — Stub 2]** The smoke-test driver now invokes the live `libprovekit::wp` evaluator for algebra-synthesis discharge. A `SmokeTestResolver` carries authored `wp_rule`s for `retry-loop` (`max_attempts >= 0 ∧ Q`) and `guard-then-commit` (`Q`). The evaluator reduces the rule against the postcondition placeholder and returns a ground formula; verdict is `exact`. The previously blocking condition (wp-as-formula PR series — PRs #619, #633, #663) is fully merged on main; this stub is now closed. Remaining loss on algebra-synthesis sites: the synthesized contract formula is still a single-atom shim (Stub 1 — `provekit-ir-symbolic::parse` round-trip not yet wired). The discharge ITSELF is exact; the formula encoding is the remaining open gap."
     );
     let _ = writeln!(
         s,
