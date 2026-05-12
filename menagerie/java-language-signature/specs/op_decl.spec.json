@@ -40,8 +40,7 @@
       "kind": "named",
       "slots": [
         {
-          "name": "name",
-          "slot_sort": "literal"
+          "name": "name"
         },
         {
           "name": "value"

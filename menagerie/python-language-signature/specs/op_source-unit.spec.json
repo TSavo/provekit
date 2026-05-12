@@ -48,8 +48,7 @@
           "name": "operational_term"
         }
       ]
-    },
-    "notes": "The bytes slot carries the original UTF-8 source as a string."
+    }
   },
   "effects": {
     "effects": []

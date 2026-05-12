@@ -41,11 +41,11 @@
       "slots": [
         {
           "name": "bytes",
+          "evaluation": "unevaluated",
           "slot_sort": "literal"
         },
         {
-          "name": "operational_term",
-          "slot_sort": "Stmt"
+          "name": "operational_term"
         }
       ]
     }

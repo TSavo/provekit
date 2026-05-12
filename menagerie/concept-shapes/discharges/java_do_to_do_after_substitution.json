@@ -1,0 +1,54 @@
+{
+  "kind": "algorithm",
+  "fn_name": "concept:do",
+  "formals": [
+    "body",
+    "cond"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "do",
+    "arity": [
+      "Stmt",
+      "Bool"
+    ],
+    "result": "Stmt",
+    "wp": "do body while cond; opaque until invariant memento is supplied",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        },
+        {
+          "name": "cond"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  }
+}

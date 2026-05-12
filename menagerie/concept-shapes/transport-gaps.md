@@ -41,14 +41,14 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `concept:ge` | morphism_c11_ge_to_ge, morphism_go_ge_to_ge, morphism_zig_ge_to_ge |
 | `concept:not` | morphism_c11_not_to_not, morphism_zig_not_to_not |
 | `concept:assign` | morphism_c11_assign_to_assign, morphism_typescript_assign_to_assign, morphism_zig_assign_to_assign |
-| `concept:decl` | morphism_c11_decl_to_decl |
+| `concept:decl` | morphism_c11_decl_to_decl, morphism_typescript_decl_to_decl, morphism_zig_decl_to_decl, morphism_java_decl_to_decl |
 | `concept:seq` | morphism_c11_seq_to_seq, morphism_csharp_seq_to_seq, morphism_python_seq_to_seq, morphism_zig_seq_to_seq, morphism_ruby_seq_to_seq, morphism_php_seq_to_seq, morphism_java_seq_to_seq, morphism_rust_seq_to_seq |
 | `concept:skip` | morphism_c11_skip_to_skip, morphism_csharp_skip_to_skip, morphism_zig_skip_to_skip, morphism_java_skip_to_skip, morphism_rust_skip_to_skip |
 | `concept:conditional` | morphism_c11_if_to_conditional, morphism_csharp_if_to_conditional, morphism_python_if_to_conditional, morphism_zig_if_to_conditional, morphism_ruby_if_to_conditional, morphism_rust_if_to_conditional |
 | `concept:ite` | morphism_c11_conditional_to_ite, morphism_java_ite_to_ite |
-| `concept:while` | morphism_c11_while_to_while |
-| `concept:do` | morphism_c11_do_to_do |
-| `concept:for` | morphism_c11_for_to_for, morphism_csharp_for_to_for |
+| `concept:while` | morphism_c11_while_to_while, morphism_csharp_while_to_while, morphism_python_while_to_while, morphism_zig_while_to_while, morphism_ruby_while_to_while, morphism_java_while_to_while, morphism_rust_while_to_while |
+| `concept:do` | morphism_c11_do_to_do, morphism_java_do_to_do |
+| `concept:for` | morphism_c11_for_to_for, morphism_csharp_for_to_for, morphism_java_for_to_for, morphism_rust_for_to_for |
 | `concept:break` | morphism_c11_break_to_break, morphism_csharp_break_to_break, morphism_typescript_break_to_break, morphism_zig_break_to_break, morphism_php_break_to_break, morphism_java_break_to_break |
 | `concept:continue` | morphism_c11_continue_to_continue, morphism_csharp_continue_to_continue, morphism_typescript_continue_to_continue, morphism_zig_continue_to_continue, morphism_php_continue_to_continue, morphism_java_continue_to_continue |
 | `concept:return` | morphism_c11_return_to_return, morphism_typescript_return_to_return, morphism_zig_return_to_return, morphism_java_return_to_return, morphism_rust_return_to_return |
@@ -64,7 +64,7 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `concept:postdec` | morphism_c11_post_dec_to_postdec |
 | `concept:preinc` | morphism_c11_pre_inc_to_preinc |
 | `concept:predec` | morphism_c11_pre_dec_to_predec |
-| `concept:source-unit` | morphism_c11_source_unit_to_source_unit |
+| `concept:source-unit` | morphism_c11_source_unit_to_source_unit, morphism_csharp_source_unit_to_source_unit, morphism_python_source_unit_to_source_unit, morphism_typescript_source_unit_to_source_unit, morphism_zig_source_unit_to_source_unit, morphism_ruby_source_unit_to_source_unit, morphism_php_source_unit_to_source_unit, morphism_java_source_unit_to_source_unit |
 
 ## Gaps
 
@@ -213,15 +213,12 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `php` | `concept:assign` | `op_assign.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `java` | `concept:assign` | `op_assign.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `rust` | `concept:assign` | `op_assign.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Place","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
-| `csharp` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Int","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
-| `go` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Identifier","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
+| `csharp` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Int","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
+| `go` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Identifier","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `python` | `concept:decl` | `op_decl.spec.json` | no candidate source operation spec |
-| `typescript` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
-| `zig` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `ruby` | `concept:decl` | `op_decl.spec.json` | no candidate source operation spec |
 | `php` | `concept:decl` | `op_decl.spec.json` | no candidate source operation spec |
-| `java` | `concept:decl` | `op_decl.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
-| `rust` | `concept:decl` | `op_let.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Pattern","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
+| `rust` | `concept:decl` | `op_let.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Pattern","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `go` | `concept:seq` | `op_seq.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `typescript` | `concept:seq` | `op_seq.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `go` | `concept:skip` | `op_skip.spec.json` | return sort mismatch: got `{"kind":"ctor","name":"Unit","args":[]}` want `{"kind":"ctor","name":"Stmt","args":[]}` |
@@ -242,15 +239,9 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `ruby` | `concept:ite` | `op_ternary.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `php` | `concept:ite` | `op_ternary.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Expr","args":[]}]` |
 | `rust` | `concept:ite` | `op_ite.spec.json` | wp mismatch: got `"expression conditional used by WP contracts"` want `"ternary expression selected by cond"` |
-| `csharp` | `concept:while` | `op_while.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"}]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"},{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
 | `go` | `concept:while` | `op_while.spec.json` | no candidate source operation spec |
-| `python` | `concept:while` | `op_while.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-signature","name":"OpaqueLoop"}]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"},{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
 | `typescript` | `concept:while` | `op_while.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `zig` | `concept:while` | `op_while.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-signature","name":"OpaqueLoop"}]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"},{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
-| `ruby` | `concept:while` | `op_while.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-signature","name":"OpaqueLoop"}]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"},{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
 | `php` | `concept:while` | `op_while.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `java` | `concept:while` | `op_while.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"},{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
-| `rust` | `concept:while` | `op_while.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"}]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"body.effects plus loop invariant obligations"},{"kind":"effect-polymorphic","rule":"union(body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
 | `csharp` | `concept:do` | `op_do.spec.json` | no candidate source operation spec |
 | `go` | `concept:do` | `not-supported` | operation not in supported set for this language |
 | `python` | `concept:do` | `not-supported` | operation not in supported set for this language |
@@ -258,7 +249,6 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `zig` | `concept:do` | `op_do.spec.json` | no candidate source operation spec |
 | `ruby` | `concept:do` | `not-supported` | operation not in supported set for this language |
 | `php` | `concept:do` | `not-supported` | operation not in supported set for this language |
-| `java` | `concept:do` | `op_do.spec.json` | wp mismatch: got `"do body while cond; opaque until invariant memento is supplied"` want `"do body once, then loop while cond"` |
 | `rust` | `concept:do` | `not-supported` | operation not in supported set for this language |
 | `go` | `concept:for` | `op_for.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Term","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `python` | `concept:for` | `op_for.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
@@ -266,8 +256,6 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `zig` | `concept:for` | `op_for.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `ruby` | `concept:for` | `op_for.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `php` | `concept:for` | `op_for.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Value","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Bool","args":[]},{"kind":"ctor","name":"Stmt","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `java` | `concept:for` | `op_for.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(init.effects, body.effects, step.effects)"},{"kind":"effect-polymorphic","rule":"union(init.effects, body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
-| `rust` | `concept:for` | `op_for.spec.json` | effect signature mismatch: got `{"effects":[{"kind":"effect-polymorphic","rule":"union(init.effects, body.effects, step.effects)"}]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"union(init.effects, body.effects, step.effects)"},{"kind":"effect-polymorphic","rule":"union(init.effects, body.effects, {Loop})"},{"kind":"effect-signature","name":"OpaqueLoop"},{"kind":"effect-signature","name":"Loop"}]}` |
 | `go` | `concept:break` | `op_break.spec.json` | no candidate source operation spec |
 | `python` | `concept:break` | `op_break.spec.json` | effect signature mismatch: got `{"effects":[]}` want `{"effects":[{"kind":"effect-polymorphic","rule":"control-transfer"},{"kind":"effect-signature","name":"Break"}]}` |
 | `ruby` | `concept:break` | `op_break.spec.json` | no candidate source operation spec |
@@ -389,14 +377,7 @@ Each gap records the structural reason for the mismatch with actual vs. expected
 | `php` | `concept:predec` | `op_predec.spec.json` | no candidate source operation spec |
 | `java` | `concept:predec` | `op_predec.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Expr","args":[]}]` want `[{"kind":"ctor","name":"LValue","args":[]}]` |
 | `rust` | `concept:predec` | `op_predec.spec.json` | no candidate source operation spec |
-| `csharp` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `go` | `concept:source-unit` | `op_source_unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Literal","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `python` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `typescript` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `zig` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `ruby` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `php` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
-| `java` | `concept:source-unit` | `op_source-unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` want `[{"kind":"ctor","name":"Expr","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
+| `go` | `concept:source-unit` | `op_source_unit.spec.json` | formal sort mismatch: got `[{"kind":"ctor","name":"Literal","args":[]},{"kind":"ctor","name":"Term","args":[]}]` want `[{"kind":"ctor","name":"String","args":[]},{"kind":"ctor","name":"Stmt","args":[]}]` |
 | `rust` | `concept:source-unit` | `op_source_unit.spec.json` | no candidate source operation spec |
 
 T Savo

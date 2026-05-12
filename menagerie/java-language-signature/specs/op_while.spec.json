@@ -40,12 +40,10 @@
       "kind": "named",
       "slots": [
         {
-          "name": "cond",
-          "slot_sort": "Bool"
+          "name": "cond"
         },
         {
-          "name": "body",
-          "slot_sort": "Stmt"
+          "name": "body"
         }
       ]
     }

@@ -57,8 +57,7 @@
           "name": "init"
         },
         {
-          "name": "cond",
-          "slot_sort": "Bool"
+          "name": "cond"
         },
         {
           "name": "step"

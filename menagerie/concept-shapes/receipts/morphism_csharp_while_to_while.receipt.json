@@ -1,0 +1,17 @@
+{
+  "schema_version": "1",
+  "kind": "MorphismDischargeReceipt",
+  "morphism_cid": "blake3-512:c3202b3a0b515cb6742b9aecfaef7ef9183fb36c90e1c1c5cfe4ad642d3d088f0f07d2db3ef0e5ab15f71080cccc2b709ffc1efc60d88a526ffe369bcf07f322",
+  "source_contract_cid": "blake3-512:9e17ea6aea8c466be983443fbb08356ca010183f8b695c02c40793fd80f7afb542d6925c304e4c3a38e053a22fa57ab89ebf3e8698b9536947f1c3a0bfd4e4a0",
+  "renaming_map": {},
+  "representation_map": {},
+  "operator_map": {},
+  "literal_map": {},
+  "after_substitution_cid": "blake3-512:94863385559536ea6264e7066cf3cecbfab7c3a0465b3f54e1261a13fa8757cf3ae5312aeffd1fee716388a515315d16850cf8ddb143b03ccf15214a43489254",
+  "shape_cid": "blake3-512:ed0b26e42d8648ea9095b701d243497a7c75eaf3d4dc96bc331094746fe6b4e58ee45b06b4abe19b871cc8addfefb5747a02e31b3041109e9728470b2a052276",
+  "discharged": true,
+  "method": "structural-wp-abstraction-and-effect-subset",
+  "signature": null,
+  "wp_abstracted": true,
+  "effect_subset_relaxed": true
+}
