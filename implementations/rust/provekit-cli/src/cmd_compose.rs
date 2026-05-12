@@ -458,6 +458,7 @@ impl WireFunctionContractMemento {
             canonical_bytes,
             cid,
             auto_minted_mementos: auto,
+            concept_hint: None,
         }
     }
 }

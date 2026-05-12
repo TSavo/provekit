@@ -22,6 +22,25 @@
 // The function's parameters define the universally-quantified
 // variables. `ret` (when used in #[ensures]) maps to the contract's
 // outBinding (default "out").
+//
+// NAMING ROUND-TRIP
+// -----------------
+// If the caller passes the raw source text via `lift_file_with_source`,
+// the lifter also scans lines immediately preceding each function for
+// a `// concept: <name>` annotation (or the `/// concept: <name>` doc
+// comment form) and attaches it to `ContractDecl::concept_hint`.
+//
+// Canonical annotation format (emitted by the substrate rewriter):
+//   // concept: retry-with-jitter
+// Doc-comment form (also accepted, idiomatic when users want IDE hover):
+//   /// concept: retry-with-jitter
+//
+// Placeholder names (`UNNAMED-CONCEPT-N`) are stored as-is; the
+// downstream binding step distinguishes them from human names.
+//
+// `concept_hint` is METADATA ONLY — it does NOT participate in
+// `canonical_bytes` / CID derivation.  Changing or removing the
+// annotation never rewrites the shape identity.
 
 use std::rc::Rc;
 
@@ -45,25 +64,45 @@ pub struct AdapterOutput {
     pub lifted: usize,
 }
 
+/// Lift all contract attributes found in `file`.
+///
+/// Equivalent to `lift_file_with_source(file, source_path, None)`.
 pub fn lift_file(file: &syn::File, source_path: &str) -> AdapterOutput {
+    lift_file_with_source(file, source_path, None)
+}
+
+/// Lift all contract attributes found in `file`, optionally scanning
+/// `source_text` for `// concept: <name>` annotations that precede each
+/// function.  When `source_text` is `None`, `concept_hint` is always `None`.
+pub fn lift_file_with_source(
+    file: &syn::File,
+    source_path: &str,
+    source_text: Option<&str>,
+) -> AdapterOutput {
+    let source_lines: Option<Vec<&str>> = source_text.map(|s| s.lines().collect());
     let mut out = AdapterOutput::default();
-    walk_items(&file.items, source_path, &mut out);
+    walk_items(&file.items, source_path, source_lines.as_deref(), &mut out);
     out
 }
 
-fn walk_items(items: &[syn::Item], source_path: &str, out: &mut AdapterOutput) {
+fn walk_items(
+    items: &[syn::Item],
+    source_path: &str,
+    source_lines: Option<&[&str]>,
+    out: &mut AdapterOutput,
+) {
     for item in items {
         match item {
-            syn::Item::Fn(f) => visit_fn(f, source_path, out),
+            syn::Item::Fn(f) => visit_fn(f, source_path, source_lines, out),
             syn::Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
-                    walk_items(items, source_path, out);
+                    walk_items(items, source_path, source_lines, out);
                 }
             }
             syn::Item::Impl(i) => {
                 for it in &i.items {
                     if let syn::ImplItem::Fn(f) = it {
-                        visit_impl_fn(f, source_path, out);
+                        visit_impl_fn(f, source_path, source_lines, out);
                     }
                 }
             }
@@ -72,24 +111,39 @@ fn walk_items(items: &[syn::Item], source_path: &str, out: &mut AdapterOutput) {
     }
 }
 
-fn visit_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
+fn visit_fn(
+    f: &syn::ItemFn,
+    source_path: &str,
+    source_lines: Option<&[&str]>,
+    out: &mut AdapterOutput,
+) {
     let attrs = &f.attrs;
     let name = f.sig.ident.to_string();
     if !any_contract_attr(attrs) {
         return;
     }
     out.seen += 1;
-    process(name, attrs, &f.sig, source_path, out);
+    // syn span lines are 1-based; subtract 1 for 0-based slice index.
+    let fn_line = f.sig.ident.span().start().line;
+    let concept_hint = concept_hint_from_span(fn_line, attrs, source_lines);
+    process(name, attrs, &f.sig, source_path, concept_hint, out);
 }
 
-fn visit_impl_fn(f: &syn::ImplItemFn, source_path: &str, out: &mut AdapterOutput) {
+fn visit_impl_fn(
+    f: &syn::ImplItemFn,
+    source_path: &str,
+    source_lines: Option<&[&str]>,
+    out: &mut AdapterOutput,
+) {
     let attrs = &f.attrs;
     let name = f.sig.ident.to_string();
     if !any_contract_attr(attrs) {
         return;
     }
     out.seen += 1;
-    process(name, attrs, &f.sig, source_path, out);
+    let fn_line = f.sig.ident.span().start().line;
+    let concept_hint = concept_hint_from_span(fn_line, attrs, source_lines);
+    process(name, attrs, &f.sig, source_path, concept_hint, out);
 }
 
 fn any_contract_attr(attrs: &[syn::Attribute]) -> bool {
@@ -113,11 +167,147 @@ fn classify_attr(a: &syn::Attribute) -> Option<Slot> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Concept-hint extraction (naming round-trip, lifter side)
+// ---------------------------------------------------------------------------
+
+/// Regex pattern for a concept annotation.  Matches:
+///   `// concept: <name>`   -- regular comment (via raw source scan)
+///   `/// concept: <name>`  -- doc comment (via #[doc = "..."] attribute)
+///
+/// Name grammar: starts with `[a-zA-Z]`, then `[a-zA-Z0-9\-:_]*`.
+/// Surrounding whitespace is trimmed.  Names containing spaces or other
+/// characters are rejected (returns None) rather than propagating garbage.
+const CONCEPT_ANNOTATION_PREFIX: &str = "concept:";
+
+/// Validate that `name` matches `[a-zA-Z][a-zA-Z0-9\-:_]*`.
+fn is_valid_concept_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        None => false,
+        Some(c) if !c.is_ascii_alphabetic() => false,
+        _ => chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == ':' || c == '_'),
+    }
+}
+
+/// Parse a single text line (stripped of its `//` or `///` prefix and
+/// surrounding whitespace) as a concept annotation.  Returns the concept
+/// name string if the line matches `concept: <valid-name>`, otherwise None.
+fn parse_concept_annotation(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let rest = trimmed.strip_prefix(CONCEPT_ANNOTATION_PREFIX)?;
+    let name = rest.trim();
+    if is_valid_concept_name(name) {
+        Some(name.to_string())
+    } else {
+        None
+    }
+}
+
+/// Extract a concept hint for the function whose first token is at
+/// `fn_line` (1-based, matching `proc_macro2::Span::start().line`).
+///
+/// Search order (first match wins):
+///
+/// 1. Doc attributes (`#[doc = "..."]`) on the function itself, scanned
+///    in reverse until a non-doc attribute or the start is reached.
+///    This catches `/// concept: <name>` written directly above the fn.
+///
+/// 2. Raw source lines immediately preceding the function (requires
+///    `source_lines` to be Some).  Scans backwards from `fn_line - 1`,
+///    skipping blank lines, until a `// concept:` line or a non-comment
+///    line is encountered.
+///
+/// Returns `None` if neither source is available or no matching annotation
+/// is found.
+fn concept_hint_from_span(
+    fn_line: usize,
+    attrs: &[syn::Attribute],
+    source_lines: Option<&[&str]>,
+) -> Option<String> {
+    // --- Path 1: doc attributes (/// concept: <name>) ---
+    // Scan ALL attrs in reverse; skip non-doc attrs, return first matching doc attr.
+    for attr in attrs.iter().rev() {
+        if !attr.path().is_ident("doc") {
+            continue;
+        }
+        // Extract the string value of the #[doc = "..."] attribute.
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(el) = &nv.value {
+                if let syn::Lit::Str(ls) = &el.lit {
+                    let text = ls.value();
+                    // `///` comments come through as `" concept: foo"` (leading space).
+                    if let Some(hint) = parse_concept_annotation(&text) {
+                        return Some(hint);
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Path 2: raw source lines (// concept: <name>) ---
+    let lines = source_lines?;
+    // fn_line is 1-based; the line AT that index in a 0-based slice is
+    // lines[fn_line - 1].  We want the lines BEFORE it.
+    if fn_line == 0 {
+        return None;
+    }
+    // Walk backwards from the line immediately before the fn definition.
+    let mut idx = fn_line.saturating_sub(2); // 0-based index of line fn_line-1
+    loop {
+        let raw = if idx < lines.len() { lines[idx] } else { break };
+        let trimmed = raw.trim();
+
+        if trimmed.is_empty() {
+            // Skip blank lines between comment and fn keyword.
+            if idx == 0 {
+                break;
+            }
+            idx -= 1;
+            continue;
+        }
+
+        // Skip attribute lines (#[...]) — they appear between the
+        // concept annotation and the `fn` keyword and must be stepped over.
+        if trimmed.starts_with("#[") || trimmed.starts_with("#![") {
+            if idx == 0 {
+                break;
+            }
+            idx -= 1;
+            continue;
+        }
+
+        // Accept both `// concept:` and `/// concept:`.
+        let rest = if let Some(r) = trimmed.strip_prefix("///") {
+            r
+        } else if let Some(r) = trimmed.strip_prefix("//") {
+            r
+        } else {
+            // Not a comment line; stop scanning.
+            break;
+        };
+
+        if let Some(hint) = parse_concept_annotation(rest) {
+            return Some(hint);
+        }
+
+        // It's a comment but not a concept annotation; keep scanning
+        // upward in case the annotation is on an earlier line.
+        if idx == 0 {
+            break;
+        }
+        idx -= 1;
+    }
+
+    None
+}
+
 fn process(
     name: String,
     attrs: &[syn::Attribute],
     sig: &syn::Signature,
     source_path: &str,
+    concept_hint: Option<String>,
     out: &mut AdapterOutput,
 ) {
     let mut params: Vec<(String, Sort)> = Vec::new();
@@ -194,6 +384,7 @@ fn process(
         inv,
         out_binding: "out".into(),
         evidence: None,
+        concept_hint,
     });
     out.lifted += 1;
 }
@@ -425,5 +616,112 @@ mod tests {
         let out = lift_file(&f, "test.rs");
         assert_eq!(out.lifted, 0);
         assert!(!out.warnings.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // Naming round-trip: concept_hint extraction
+    // ------------------------------------------------------------------
+
+    /// Human-supplied name is extracted from `// concept: retry-with-jitter`
+    /// immediately preceding the function.
+    #[test]
+    fn concept_hint_human_name_extracted() {
+        let src = "// concept: retry-with-jitter\n#[requires(x > 0)]\nfn retry(x: i64) -> i64 { x }\n";
+        let f = parse(src);
+        let out = lift_file_with_source(&f, "test.rs", Some(src));
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(
+            out.decls[0].concept_hint.as_deref(),
+            Some("retry-with-jitter"),
+            "expected human concept name"
+        );
+    }
+
+    /// Placeholder `UNNAMED-CONCEPT-N` is extracted verbatim — the downstream
+    /// binding step distinguishes it from a human name by the prefix.
+    #[test]
+    fn concept_hint_unnamed_placeholder_extracted() {
+        let src = "// concept: UNNAMED-CONCEPT-3\n#[requires(x > 0)]\nfn retry(x: i64) -> i64 { x }\n";
+        let f = parse(src);
+        let out = lift_file_with_source(&f, "test.rs", Some(src));
+        assert_eq!(out.lifted, 1);
+        assert_eq!(
+            out.decls[0].concept_hint.as_deref(),
+            Some("UNNAMED-CONCEPT-3"),
+            "expected UNNAMED placeholder to be preserved verbatim"
+        );
+    }
+
+    /// When no concept annotation is present, `concept_hint` is `None`.
+    #[test]
+    fn concept_hint_absent_returns_none() {
+        let src = "// some other comment\n#[requires(x > 0)]\nfn f(x: i64) -> i64 { x }\n";
+        let f = parse(src);
+        let out = lift_file_with_source(&f, "test.rs", Some(src));
+        assert_eq!(out.lifted, 1);
+        assert_eq!(
+            out.decls[0].concept_hint,
+            None,
+            "non-concept comment must not produce a hint"
+        );
+    }
+
+    /// A malformed annotation (`concept: foo bar` — space in name) is
+    /// ignored; `concept_hint` stays `None`.
+    #[test]
+    fn concept_hint_malformed_name_rejected() {
+        let src = "// concept: foo bar\n#[requires(x > 0)]\nfn f(x: i64) -> i64 { x }\n";
+        let f = parse(src);
+        let out = lift_file_with_source(&f, "test.rs", Some(src));
+        assert_eq!(out.lifted, 1);
+        assert_eq!(
+            out.decls[0].concept_hint,
+            None,
+            "malformed name (space) must be rejected"
+        );
+    }
+
+    /// Doc comment (`/// concept: <name>`) is also accepted, via the
+    /// `#[doc = "..."]` attribute path.
+    #[test]
+    fn concept_hint_doc_comment_form_accepted() {
+        let src = r#"
+            /// concept: retry-with-jitter
+            #[requires(x > 0)]
+            fn retry(x: i64) -> i64 { x }
+        "#;
+        let f = parse(src);
+        // source_text not needed for doc-comment path — attrs carry the value.
+        let out = lift_file_with_source(&f, "test.rs", Some(src));
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(
+            out.decls[0].concept_hint.as_deref(),
+            Some("retry-with-jitter"),
+            "doc-comment concept annotation must be extracted"
+        );
+    }
+
+    /// Regression: idiomatic Rust ordering is `[doc, requires]`; reverse iter
+    /// sees `[requires, doc]`.  The old `break` on `requires` caused the doc
+    /// attr to be silently skipped.  The fix changes `break` -> `continue` so
+    /// all attrs are scanned and the doc attr is found.
+    ///
+    /// This test MUST fail against pre-fix HEAD and pass after the fix.
+    #[test]
+    fn concept_hint_doc_above_requires_extracts_correctly() {
+        let src = r#"
+            /// concept: retry-with-jitter
+            #[requires(x > 0)]
+            fn retry(x: i32) -> i32 { x }
+        "#;
+        let f = parse(src);
+        // lift_file (no source_text) — mirrors the production caller in lift_pass.rs.
+        let out = lift_file(&f, "test.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(
+            out.decls[0].concept_hint.as_deref(),
+            Some("retry-with-jitter"),
+            "doc attr above #[requires] must be found despite non-doc attr in reverse iter"
+        );
     }
 }

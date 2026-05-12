@@ -1309,6 +1309,7 @@ pub(crate) fn memento_from_parts(
         canonical_bytes,
         cid,
         auto_minted_mementos: vec![],
+        concept_hint: None,
     }
 }
 

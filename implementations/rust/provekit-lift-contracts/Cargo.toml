@@ -9,5 +9,5 @@ description = "ProvekIt lift adapter: walk #[contracts::requires]/#[contracts::e
 [dependencies]
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 syn = { workspace = true }
-proc-macro2 = { workspace = true }
+proc-macro2 = { workspace = true, features = ["span-locations"] }
 quote = { workspace = true }

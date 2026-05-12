@@ -67,6 +67,9 @@ pub struct FunctionContractMemento {
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
+    /// Human-supplied concept name from a `// concept: <name>` annotation.
+    /// METADATA ONLY — does not affect CID.
+    pub concept_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -793,6 +796,7 @@ fn lift_function(stream: &FunctionStream) -> Result<FunctionContractMemento, Lif
         locus,
         canonical_bytes,
         cid,
+        concept_hint: None,
     })
 }
 

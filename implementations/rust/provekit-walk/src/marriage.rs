@@ -868,6 +868,7 @@ mod tests {
             canonical_bytes: vec![],
             cid: String::new(),
             auto_minted_mementos: vec![],
+            concept_hint: None,
         };
 
         let ast_contract = {
@@ -1081,6 +1082,7 @@ mod tests {
             auto_minted_mementos: vec![],
             formal_regions: vec![],
             return_region: None,
+            concept_hint: None,
         };
 
         let ast_contract = {

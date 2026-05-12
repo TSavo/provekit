@@ -199,6 +199,7 @@ fn composed_to_contract(
         canonical_bytes: composed.canonical_bytes.clone(),
         cid: composed.cid.clone(),
         auto_minted_mementos: vec![],
+        concept_hint: None,
     }
 }
 
