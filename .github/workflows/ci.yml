@@ -190,9 +190,11 @@ jobs:
             clang \
             cmake \
             cvc5 \
+            libclang-dev \
             libsodium-dev \
             libssl-dev \
             libyaml-dev \
+            llvm-dev \
             maven \
             nlohmann-json3-dev \
             php-cli \
@@ -577,8 +579,10 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            libclang-dev \
             libsodium-dev \
-            libssl-dev
+            libssl-dev \
+            llvm-dev
 
       - name: Set up Java (java)
         if: matrix.kit == 'java'

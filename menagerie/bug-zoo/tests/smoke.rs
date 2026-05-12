@@ -115,7 +115,7 @@ fn all_specimens_reports_current_shapes() {
     let reports = report["reports"].as_array().expect("reports is an array");
     assert_eq!(
         reports.len(),
-        3,
+        4,
         "bug zoo reports the current shape species"
     );
     assert!(
@@ -213,6 +213,49 @@ fn all_specimens_reports_current_shapes() {
             .unwrap()
             .len(),
         1
+    );
+
+    let ownership = reports
+        .iter()
+        .find(|entry| entry["id"] == "BZ-OWNERSHIP-001")
+        .expect("borrowed-pages-as-scratch species is reported");
+    assert_eq!(
+        ownership["missingEdge"],
+        "borrowed(buf) => not_aliased(dst, src)"
+    );
+    let ownership_languages = ownership["languages"].as_array().unwrap();
+    assert_eq!(ownership_languages.len(), 1);
+    assert_eq!(ownership_languages[0]["id"], "c");
+    assert_eq!(ownership_languages[0]["lab"]["provekitWorkflow"], "none");
+    assert_eq!(
+        ownership_languages[0]["proofIrCids"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1,
+        "one exhibit produces one ProofIR CID"
+    );
+    let ownership_composition = ownership_languages[0]["composition"].as_array().unwrap();
+    assert_eq!(
+        ownership_composition.len(),
+        2,
+        "exhibit and fixed composition checks"
+    );
+    assert!(
+        ownership_composition
+            .iter()
+            .any(|check| check["phase"] == "exhibit"
+                && check["provekitSignal"] == "red"
+                && check["provedBy"] == "provekit prove --formula"),
+        "exhibit check should carry a red provekit prove signal"
+    );
+    assert!(
+        ownership_composition
+            .iter()
+            .any(|check| check["phase"] == "fixed"
+                && check["provekitSignal"] == "green"
+                && check["provedBy"] == "provekit prove --formula"),
+        "fixed check should carry a green provekit prove signal"
     );
 }
 
