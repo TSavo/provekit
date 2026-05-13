@@ -3,6 +3,7 @@ package liftgo
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -224,11 +225,75 @@ func TestInitializeReportsDraftVersionAndCapabilities(t *testing.T) {
 	if result.Version != "0.1.0-draft" {
 		t.Fatalf("version must stay draft, got %q", result.Version)
 	}
+	if result.ProtocolVersion != "provekit-lift/1" {
+		t.Fatalf("protocol_version = %q, want provekit-lift/1", result.ProtocolVersion)
+	}
 	if result.Capabilities.EmitsSignedMementos {
 		t.Fatal("source lifter must not claim signed mementos")
 	}
 	if len(result.Capabilities.AuthoringSurfaces) != 1 || result.Capabilities.AuthoringSurfaces[0] != "go-source" {
 		t.Fatalf("authoring surfaces = %+v", result.Capabilities.AuthoringSurfaces)
+	}
+}
+
+func TestRPCProtocolLiftsFixture(t *testing.T) {
+	// Drive the RPC loop directly (no subprocess needed: RunRPC accepts io.Reader/io.Writer).
+	input := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":".","source_paths":["f.go"]}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`,
+	}, "\n") + "\n"
+
+	// Write a fixture file so lift has something to scan.
+	tmpDir := t.TempDir()
+	fixturePath := tmpDir + "/f.go"
+	if err := os.WriteFile(fixturePath, []byte(addSource), 0644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	var out bytes.Buffer
+	if err := RunRPC(strings.NewReader(input), &out); err != nil {
+		t.Fatalf("RunRPC: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 response lines, got %d: %s", len(lines), out.String())
+	}
+
+	// Line 0: initialize response.
+	var initResp map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &initResp); err != nil {
+		t.Fatalf("parse init response: %v", err)
+	}
+	result, _ := initResp["result"].(map[string]any)
+	if result["protocol_version"] != "provekit-lift/1" {
+		t.Fatalf("initialize protocol_version = %v, want provekit-lift/1", result["protocol_version"])
+	}
+
+	// Line 1: lift response.
+	var liftResp map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &liftResp); err != nil {
+		t.Fatalf("parse lift response: %v", err)
+	}
+	liftResult, _ := liftResp["result"].(map[string]any)
+	if liftResult == nil {
+		t.Fatalf("lift response has no result: %s", lines[1])
+	}
+	if liftResult["kind"] != "ir-document" {
+		t.Fatalf("lift result kind = %v, want ir-document", liftResult["kind"])
+	}
+	ir, _ := liftResult["ir"].([]any)
+	if len(ir) == 0 {
+		t.Fatalf("lift result ir is empty")
 	}
 }
 

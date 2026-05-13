@@ -102,7 +102,7 @@ func InitializeResult() InitResult {
 	return InitResult{
 		Name:            "provekit-lift-go-source",
 		Version:         Version,
-		ProtocolVersion: "pep/1.7.0",
+		ProtocolVersion: "provekit-lift/1",
 		Capabilities: Capabilities{
 			AuthoringSurfaces:   []string{"go-source"},
 			IRVersion:           IRVersion,
