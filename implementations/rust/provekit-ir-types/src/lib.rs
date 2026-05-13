@@ -1764,6 +1764,73 @@ impl OccurrenceKind {
     }
 }
 
+// ============================================================
+// Manual extension: PolicyMemento family (issue #798)
+// Source of truth:
+//   protocol/specs/2026-05-13-policy-memento.md §1, §3
+//
+// This block adds substrate-only policy declaration types. These types describe
+// content-addressed policy inputs; they do not evaluate a decision payload.
+//
+// Per the spec, `policy_kind` is the discriminator. The five canonical kinds
+// are closed over concrete structs. Extension kinds are accepted only when
+// namespaced as `<namespace>:<kind>` and carried by
+// `NamespacedExtensionPolicyMemento`; consumers that do not implement that
+// namespace must fail closed at evaluation time.
+// ============================================================
+
+pub type PolicyRule = serde_json::Value;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum PolicyMemento {
+    Threshold(ThresholdPolicyMemento),
+    Property(PropertyPolicyMemento),
+    Signature(SignaturePolicyMemento),
+    HumanAcceptance(HumanAcceptancePolicyMemento),
+    ProofGate(ProofGatePolicyMemento),
+    NamespacedExtension(NamespacedExtensionPolicyMemento),
+}
+
+impl<'de> Deserialize<'de> for PolicyMemento {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let policy_kind = value
+            .get("policy_kind")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| D::Error::custom("missing string policy_kind"))?;
+
+        match policy_kind {
+            "threshold" => serde_json::from_value(value)
+                .map(PolicyMemento::Threshold)
+                .map_err(D::Error::custom),
+            "property" => serde_json::from_value(value)
+                .map(PolicyMemento::Property)
+                .map_err(D::Error::custom),
+            "signature" => serde_json::from_value(value)
+                .map(PolicyMemento::Signature)
+                .map_err(D::Error::custom),
+            "human_acceptance" => serde_json::from_value(value)
+                .map(PolicyMemento::HumanAcceptance)
+                .map_err(D::Error::custom),
+            "proof_gate" => serde_json::from_value(value)
+                .map(PolicyMemento::ProofGate)
+                .map_err(D::Error::custom),
+            other if is_namespaced_policy_kind(other) => serde_json::from_value(value)
+                .map(PolicyMemento::NamespacedExtension)
+                .map_err(D::Error::custom),
+            other => Err(D::Error::custom(format!(
+                "unknown bare policy_kind `{other}`"
+            ))),
+        }
+    }
+}
+
 impl std::fmt::Display for OccurrenceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -2292,6 +2359,280 @@ fn serde_json_to_canonical_value(
         }
     }
 }
+
+fn is_namespaced_policy_kind(s: &str) -> bool {
+    let Some((namespace, kind)) = s.split_once(':') else {
+        return false;
+    };
+
+    is_policy_kind_segment(namespace) && is_policy_kind_segment(kind)
+}
+
+fn is_policy_kind_segment(segment: &str) -> bool {
+    let mut chars = segment.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThresholdPolicyMemento {
+    #[serde(rename = "admission_rule")]
+    pub admission_rule: PolicyRule,
+    #[serde(rename = "count_field_path")]
+    pub count_field_path: Vec<String>,
+    #[serde(rename = "decision_payload_schema")]
+    pub decision_payload_schema: serde_json::Value,
+    #[serde(rename = "input_requirements")]
+    pub input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    pub policy_kind: String,
+    #[serde(rename = "policy_version")]
+    pub policy_version: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "refusal_rule")]
+    pub refusal_rule: PolicyRule,
+    #[serde(rename = "score_field_path")]
+    pub score_field_path: Vec<String>,
+    #[serde(rename = "threshold_comparator")]
+    pub threshold_comparator: String,
+    #[serde(rename = "threshold_value")]
+    pub threshold_value: serde_json::Number,
+    #[serde(rename = "weight_field_path")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight_field_path: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PropertyPolicyMemento {
+    #[serde(rename = "admission_rule")]
+    pub admission_rule: PolicyRule,
+    #[serde(rename = "decision_payload_schema")]
+    pub decision_payload_schema: serde_json::Value,
+    #[serde(rename = "generator_cid")]
+    pub generator_cid: String,
+    #[serde(rename = "input_requirements")]
+    pub input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    pub policy_kind: String,
+    #[serde(rename = "policy_version")]
+    pub policy_version: String,
+    #[serde(rename = "property_cid")]
+    pub property_cid: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "refusal_rule")]
+    pub refusal_rule: PolicyRule,
+    #[serde(rename = "result_field_path")]
+    pub result_field_path: Vec<String>,
+    #[serde(rename = "shrinker_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shrinker_cid: Option<String>,
+    #[serde(rename = "success_criteria")]
+    pub success_criteria: PolicyRule,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignaturePolicyMemento {
+    #[serde(rename = "admission_rule")]
+    pub admission_rule: PolicyRule,
+    #[serde(rename = "allowed_signature_suites")]
+    pub allowed_signature_suites: Vec<String>,
+    #[serde(rename = "decision_payload_schema")]
+    pub decision_payload_schema: serde_json::Value,
+    #[serde(rename = "delegation_policy_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegation_policy_cid: Option<String>,
+    #[serde(rename = "input_requirements")]
+    pub input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    pub policy_kind: String,
+    #[serde(rename = "policy_version")]
+    pub policy_version: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "quorum_size")]
+    pub quorum_size: u64,
+    #[serde(rename = "refusal_rule")]
+    pub refusal_rule: PolicyRule,
+    #[serde(rename = "required_signers_cids")]
+    pub required_signers_cids: Vec<String>,
+    #[serde(rename = "signature_payload_schema")]
+    pub signature_payload_schema: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HumanAcceptancePolicyMemento {
+    #[serde(rename = "acceptance_record_schema")]
+    pub acceptance_record_schema: serde_json::Value,
+    #[serde(rename = "admission_rule")]
+    pub admission_rule: PolicyRule,
+    #[serde(rename = "conflict_policy_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_policy_cid: Option<String>,
+    #[serde(rename = "decision_payload_schema")]
+    pub decision_payload_schema: serde_json::Value,
+    #[serde(rename = "delegation_policy_cid")]
+    pub delegation_policy_cid: String,
+    #[serde(rename = "input_requirements")]
+    pub input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    pub policy_kind: String,
+    #[serde(rename = "policy_version")]
+    pub policy_version: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "refusal_rule")]
+    pub refusal_rule: PolicyRule,
+    #[serde(rename = "required_acceptances")]
+    pub required_acceptances: u64,
+    #[serde(rename = "reviewer_roster_cid")]
+    pub reviewer_roster_cid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProofGatePolicyMemento {
+    #[serde(rename = "admission_rule")]
+    pub admission_rule: PolicyRule,
+    #[serde(rename = "checker_cid")]
+    pub checker_cid: String,
+    #[serde(rename = "decision_payload_schema")]
+    pub decision_payload_schema: serde_json::Value,
+    #[serde(rename = "input_requirements")]
+    pub input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    pub policy_kind: String,
+    #[serde(rename = "policy_version")]
+    pub policy_version: String,
+    #[serde(rename = "proof_artifact_schema")]
+    pub proof_artifact_schema: serde_json::Value,
+    #[serde(rename = "proof_system")]
+    pub proof_system: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "refusal_rule")]
+    pub refusal_rule: PolicyRule,
+    #[serde(rename = "theorem_ref")]
+    pub theorem_ref: String,
+    #[serde(rename = "trusted_base_cid")]
+    pub trusted_base_cid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "NamespacedExtensionPolicyMementoWire")]
+pub struct NamespacedExtensionPolicyMemento {
+    #[serde(rename = "admission_rule")]
+    pub admission_rule: PolicyRule,
+    #[serde(rename = "decision_payload_schema")]
+    pub decision_payload_schema: serde_json::Value,
+    #[serde(rename = "input_requirements")]
+    pub input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    pub policy_kind: String,
+    #[serde(rename = "policy_version")]
+    pub policy_version: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "refusal_rule")]
+    pub refusal_rule: PolicyRule,
+    #[serde(flatten)]
+    pub extension_fields: BTreeMap<String, serde_json::Value>,
+}
+
+impl Serialize for NamespacedExtensionPolicyMemento {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        let mut fields = self.extension_fields.clone();
+        fields.insert("admission_rule".into(), self.admission_rule.clone());
+        fields.insert(
+            "decision_payload_schema".into(),
+            self.decision_payload_schema.clone(),
+        );
+        fields.insert("input_requirements".into(), self.input_requirements.clone());
+        fields.insert(
+            "policy_kind".into(),
+            serde_json::Value::String(self.policy_kind.clone()),
+        );
+        fields.insert(
+            "policy_version".into(),
+            serde_json::Value::String(self.policy_version.clone()),
+        );
+        fields.insert(
+            "provenance_cid".into(),
+            serde_json::Value::String(self.provenance_cid.clone()),
+        );
+        fields.insert("refusal_rule".into(), self.refusal_rule.clone());
+
+        fields.serialize(serializer).map_err(S::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct NamespacedExtensionPolicyMementoWire {
+    #[serde(rename = "admission_rule")]
+    admission_rule: PolicyRule,
+    #[serde(rename = "decision_payload_schema")]
+    decision_payload_schema: serde_json::Value,
+    #[serde(rename = "input_requirements")]
+    input_requirements: serde_json::Value,
+    #[serde(rename = "policy_kind")]
+    policy_kind: String,
+    #[serde(rename = "policy_version")]
+    policy_version: String,
+    #[serde(rename = "provenance_cid")]
+    provenance_cid: String,
+    #[serde(rename = "refusal_rule")]
+    refusal_rule: PolicyRule,
+    #[serde(flatten)]
+    extension_fields: BTreeMap<String, serde_json::Value>,
+}
+
+impl TryFrom<NamespacedExtensionPolicyMementoWire> for NamespacedExtensionPolicyMemento {
+    type Error = String;
+
+    fn try_from(wire: NamespacedExtensionPolicyMementoWire) -> Result<Self, Self::Error> {
+        if !is_namespaced_policy_kind(&wire.policy_kind) {
+            return Err(format!(
+                "extension policy_kind `{}` is not namespaced",
+                wire.policy_kind
+            ));
+        }
+
+        Ok(Self {
+            admission_rule: wire.admission_rule,
+            decision_payload_schema: wire.decision_payload_schema,
+            input_requirements: wire.input_requirements,
+            policy_kind: wire.policy_kind,
+            policy_version: wire.policy_version,
+            provenance_cid: wire.provenance_cid,
+            refusal_rule: wire.refusal_rule,
+            extension_fields: wire.extension_fields,
+        })
+    }
+}
+
+impl From<NamespacedExtensionPolicyMemento> for NamespacedExtensionPolicyMementoWire {
+    fn from(memento: NamespacedExtensionPolicyMemento) -> Self {
+        Self {
+            admission_rule: memento.admission_rule,
+            decision_payload_schema: memento.decision_payload_schema,
+            input_requirements: memento.input_requirements,
+            policy_kind: memento.policy_kind,
+            policy_version: memento.policy_version,
+            provenance_cid: memento.provenance_cid,
+            refusal_rule: memento.refusal_rule,
+            extension_fields: memento.extension_fields,
+        }
+    }
+}
+
+// ============================================================
+// End manual extension block -- PolicyMemento family (#798)
+// ============================================================
 
 // ============================================================
 // End manual extension block -- observation-wrapper memento (#804)
