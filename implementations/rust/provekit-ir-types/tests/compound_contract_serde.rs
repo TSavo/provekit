@@ -283,7 +283,10 @@ fn compound_empty_evidences_degenerate_round_trips() {
     let parsed: CompoundContractMemento = serde_json::from_str(&s).expect("parse");
     assert_eq!(parsed, c);
     assert!(parsed.evidences.is_empty());
-    assert_eq!(parsed.aggregation_strategy, AggregationStrategy::Conjunction);
+    assert_eq!(
+        parsed.aggregation_strategy,
+        AggregationStrategy::Conjunction
+    );
 }
 
 #[test]
@@ -364,7 +367,11 @@ fn compound_multi_evidence_round_trips() {
     assert_eq!(parsed, compound);
     assert_eq!(parsed.evidences.len(), 3);
     // Weight basis-points preserved.
-    let weights: Vec<u16> = parsed.evidences.iter().map(|e| e.weight_basis_points).collect();
+    let weights: Vec<u16> = parsed
+        .evidences
+        .iter()
+        .map(|e| e.weight_basis_points)
+        .collect();
     assert_eq!(weights, vec![10000, 9500, 6500]);
 }
 
@@ -491,7 +498,10 @@ fn compound_memento_from_spec_shape() {
     let parsed: CompoundContractMemento =
         serde_json::from_str(fixture).expect("parse spec fixture");
     assert_eq!(parsed.cid, COMPOUND_CID);
-    assert_eq!(parsed.aggregation_strategy, AggregationStrategy::Conjunction);
+    assert_eq!(
+        parsed.aggregation_strategy,
+        AggregationStrategy::Conjunction
+    );
     assert_eq!(parsed.kind, "compound-contract");
     assert_eq!(parsed.schema_version, "1");
     assert_eq!(parsed.function_term_cid, FN_CID);
