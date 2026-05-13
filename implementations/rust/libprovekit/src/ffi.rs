@@ -43,7 +43,9 @@ use std::ptr;
 use std::sync::Arc;
 
 use provekit_canonicalizer::Value;
-use provekit_ir_types::{IrFormula, Sort};
+use provekit_ir_types::{
+    composition_refusal_header_cid, CompositionRefusalMemento, IrFormula, Sort,
+};
 use serde::Deserialize;
 
 use crate::compose::{
@@ -248,7 +250,7 @@ enum FfiError {
     EffectsMismatch(usize),
     LengthMismatch { atoms: usize, effects: usize },
     ChainTooShort(usize),
-    ComposeRefused,
+    ComposeRefused(CompositionRefusalMemento),
 }
 
 impl FfiError {
@@ -267,8 +269,14 @@ impl FfiError {
             FfiError::ChainTooShort(n) => {
                 format!("chain has {n} atoms; compose_chain_contracts requires at least 2")
             }
-            FfiError::ComposeRefused => {
-                "compose_chain_contracts refused (impure inputs or non-result post)".to_string()
+            FfiError::ComposeRefused(refusal) => {
+                let cid = composition_refusal_header_cid(&refusal.header);
+                let refusal_json = serde_json::to_string(refusal)
+                    .unwrap_or_else(|e| format!(r#"{{"serialize_error":"{e}"}}"#));
+                format!(
+                    "compose_chain_contracts refused: cid={cid}; kind={}; detail={}; refusal={refusal_json}",
+                    refusal.header.failure_kind, refusal.header.failure_detail
+                )
             }
         }
     }
@@ -379,7 +387,7 @@ fn inner_compose(atoms_jcs: &str, effects_jcs: &str) -> Result<(String, String),
         })
         .collect();
 
-    let composed = compose_chain_contracts(&steps).map_err(|_| FfiError::ComposeRefused)?;
+    let composed = compose_chain_contracts(&steps).map_err(FfiError::ComposeRefused)?;
     let body_jcs = String::from_utf8(composed.canonical_bytes.clone())
         .map_err(|e| FfiError::Schema(format!("composed body not utf-8: {}", e)))?;
     Ok((composed.cid, body_jcs))

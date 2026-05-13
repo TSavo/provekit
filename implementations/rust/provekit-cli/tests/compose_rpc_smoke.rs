@@ -71,6 +71,14 @@ fn pure_identity_atom(fn_name: &str, formal: &str) -> JsonValue {
     })
 }
 
+fn impure_identity_atom(fn_name: &str, formal: &str) -> JsonValue {
+    let mut atom = pure_identity_atom(fn_name, formal);
+    atom["effects"] = json!({
+        "effects": [{"kind": "io"}]
+    });
+    atom
+}
+
 #[test]
 fn compose_rpc_returns_pinned_cid() {
     let bin = provekit_bin();
@@ -182,6 +190,86 @@ fn compose_rpc_returns_pinned_cid() {
         status.success(),
         "provekit compose --rpc exited non-zero: {status:?}"
     );
+}
+
+#[test]
+fn compose_rpc_impure_input_returns_refusal_memento_with_stable_cid() {
+    let bin = provekit_bin();
+    assert!(
+        bin.exists(),
+        "provekit binary missing at {}; run `cargo build -p provekit-cli` first",
+        bin.display()
+    );
+
+    let first = rpc_compose(json!([
+        pure_identity_atom("inner", "y"),
+        impure_identity_atom("outer", "x")
+    ]));
+    let second = rpc_compose(json!([
+        pure_identity_atom("inner", "y"),
+        impure_identity_atom("outer", "x")
+    ]));
+
+    for response in [&first, &second] {
+        let err = response.get("error").expect("impure compose returns error");
+        assert_eq!(err["kind"], json!("composition_refused"));
+        let refusal_cid = err["refusal_cid"]
+            .as_str()
+            .expect("error includes refusal_cid");
+        assert!(
+            refusal_cid.starts_with("blake3-512:"),
+            "refusal CID must be self-identifying, got {refusal_cid}"
+        );
+        assert_eq!(
+            err["refusal"]["header"]["cid"],
+            json!(refusal_cid),
+            "error must carry the durable refusal artifact"
+        );
+        assert_eq!(
+            err["refusal"]["header"]["failure_kind"],
+            json!("impure-input")
+        );
+    }
+
+    assert_eq!(
+        first["error"]["refusal_cid"], second["error"]["refusal_cid"],
+        "same impure input must produce deterministic refusal CID"
+    );
+}
+
+fn rpc_compose(atoms: JsonValue) -> JsonValue {
+    let bin = provekit_bin();
+    let mut child = Command::new(&bin)
+        .args(["compose", "--rpc"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("spawn provekit compose --rpc");
+
+    let mut stdin = child.stdin.take().expect("stdin pipe");
+    let stdout = child.stdout.take().expect("stdout pipe");
+    let mut reader = BufReader::new(stdout);
+
+    writeln!(
+        stdin,
+        "{}",
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "compose",
+            "params": {"atoms": atoms}
+        })
+    )
+    .unwrap();
+    let response = read_response(&mut reader);
+    drop(stdin);
+    let status = child.wait().expect("wait child");
+    assert!(
+        status.success(),
+        "provekit compose --rpc exited non-zero: {status:?}"
+    );
+    response
 }
 
 fn read_response<R: BufRead>(reader: &mut R) -> JsonValue {

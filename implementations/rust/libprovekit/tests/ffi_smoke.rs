@@ -103,6 +103,23 @@ fn build_inputs() -> (String, String) {
     (atoms.to_string(), effects.to_string())
 }
 
+fn build_impure_inputs() -> (String, String) {
+    let inner_body = pure_identity_body_json("inner", "y");
+    let mut outer_body = pure_identity_body_json("outer", "x");
+    outer_body["effects"] = json!([{"kind": "io"}]);
+
+    let atoms = json!([
+        { "memento": inner_body.clone(), "formalIdx": 0 },
+        { "memento": outer_body.clone(), "formalIdx": 0 },
+    ]);
+    let effects = json!([
+        inner_body.get("effects").cloned().unwrap_or(json!([])),
+        outer_body.get("effects").cloned().unwrap_or(json!([])),
+    ]);
+
+    (atoms.to_string(), effects.to_string())
+}
+
 #[test]
 fn rust_jcs_entrypoint_pins_cid() {
     let (atoms_jcs, effects_jcs) = build_inputs();
@@ -115,6 +132,41 @@ fn rust_jcs_entrypoint_pins_cid() {
         cid, PINNED_CID,
         "FFI-side composed CID must equal the Rust-side pinned CID; same algebra → same CID"
     );
+}
+
+#[test]
+fn rust_jcs_entrypoint_impure_input_returns_stable_refusal_cid() {
+    let (atoms_jcs, effects_jcs) = build_impure_inputs();
+    let first =
+        compose_chain_contracts_jcs(&atoms_jcs, &effects_jcs).expect_err("impure input refuses");
+    let second =
+        compose_chain_contracts_jcs(&atoms_jcs, &effects_jcs).expect_err("impure input refuses");
+
+    assert!(
+        first.contains("composition-refusal"),
+        "error must preserve the refusal artifact: {first}"
+    );
+    let first_cid = refusal_cid_from_error(&first);
+    let second_cid = refusal_cid_from_error(&second);
+    assert!(
+        first_cid.starts_with("blake3-512:"),
+        "refusal CID must be self-identifying, got {first_cid}"
+    );
+    assert_eq!(
+        first_cid, second_cid,
+        "same impure input must produce deterministic refusal CID"
+    );
+}
+
+fn refusal_cid_from_error(message: &str) -> String {
+    let (_, json) = message
+        .split_once("refusal=")
+        .expect("error includes serialized refusal");
+    let value: JsonValue = serde_json::from_str(json).expect("refusal JSON parses");
+    value["header"]["cid"]
+        .as_str()
+        .expect("refusal header cid")
+        .to_string()
 }
 
 #[test]
