@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_ir_types::{EvidenceMemento, SourceKind};
+use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::{lift_file_with_docstring_evidence, lift_file_with_sig_evidence};
 use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
 use provekit_walk::{
@@ -258,7 +258,7 @@ fn initialize_result() -> Value {
         "protocol_version": "pep/1.7.0",
         "capabilities": {
             "authoring_surfaces": ["rust", "rust-bind"],
-            "ir_version": "bind-ir/1.1.0",
+            "ir_version": "bind-ir/1.0.0",
             "emits_signed_mementos": false
         }
     })
@@ -392,7 +392,7 @@ fn contract_witnesses_by_function_symbol(
     rel: &str,
     source_bytes: &[u8],
 ) -> BTreeMap<String, Vec<Value>> {
-    let mut by_symbol: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut by_symbol: BTreeMap<String, Vec<(String, Value)>> = BTreeMap::new();
     for evidence in lift_file_with_sig_evidence(file, rel, source_bytes)
         .evidences
         .into_iter()
@@ -411,14 +411,19 @@ fn contract_witnesses_by_function_symbol(
         by_symbol
             .entry(symbol.to_string())
             .or_default()
-            .push(witness);
-    }
-
-    for witnesses in by_symbol.values_mut() {
-        witnesses.sort_by(stable_witness_order);
+            .push((evidence.cid.clone(), witness));
     }
 
     by_symbol
+        .into_iter()
+        .map(|(symbol, mut witnesses)| {
+            witnesses.sort_by(|a, b| a.0.cmp(&b.0));
+            (
+                symbol,
+                witnesses.into_iter().map(|(_, witness)| witness).collect(),
+            )
+        })
+        .collect()
 }
 
 fn evidence_function_symbol(evidence: &EvidenceMemento) -> Option<&str> {
@@ -435,11 +440,11 @@ fn bind_contract_witness_from_evidence(evidence: &EvidenceMemento) -> Option<Val
     let predicate_text = evidence
         .extension_fields
         .get("raw_text")
-        .and_then(|value| value.as_str());
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| ir_formula_to_text(&evidence.predicate));
     let mut extension_fields = evidence.extension_fields.clone();
-    extension_fields
-        .entry("role".to_string())
-        .or_insert_with(|| Value::String(role.clone()));
+    extension_fields.remove("role");
 
     Some(json!({
         "role": role,
@@ -489,29 +494,95 @@ fn evidence_role(evidence: &EvidenceMemento) -> Option<String> {
     }
 }
 
-fn stable_witness_order(a: &Value, b: &Value) -> std::cmp::Ordering {
-    witness_order_key(a).cmp(&witness_order_key(b))
+fn ir_formula_to_text(formula: &IrFormula) -> String {
+    match formula {
+        IrFormula::Atomic { name, args } if args.is_empty() => name.clone(),
+        IrFormula::Atomic { name, args } => {
+            let args = args
+                .iter()
+                .map(ir_term_to_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{name}({args})")
+        }
+        IrFormula::And { operands } => join_formula_operands(operands, " && "),
+        IrFormula::Or { operands } => join_formula_operands(operands, " || "),
+        IrFormula::Not { operands } => {
+            let inner = join_formula_operands(operands, ", ");
+            format!("!({inner})")
+        }
+        IrFormula::Implies { operands } => join_formula_operands(operands, " -> "),
+        IrFormula::Forall { name, body, .. } => {
+            format!("forall {name}. {}", ir_formula_to_text(body))
+        }
+        IrFormula::Exists { name, body, .. } => {
+            format!("exists {name}. {}", ir_formula_to_text(body))
+        }
+        IrFormula::Choice { var_name, body, .. } => {
+            format!("choice {var_name}. {}", ir_formula_to_text(body))
+        }
+        IrFormula::Substitute { target, var, term } => {
+            format!(
+                "{}[{} := {}]",
+                ir_formula_to_text(target),
+                var,
+                ir_term_to_text(term)
+            )
+        }
+        IrFormula::Apply { r#fn, args } => {
+            let args = args
+                .iter()
+                .map(ir_formula_to_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({args})", r#fn)
+        }
+    }
 }
 
-fn witness_order_key(value: &Value) -> (String, String, u64, u64, String) {
-    (
-        value
-            .get("source_kind")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        value
-            .get("role")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        value.get("line").and_then(|v| v.as_u64()).unwrap_or(0),
-        value.get("col").and_then(|v| v.as_u64()).unwrap_or(0),
-        value
-            .get("extension_fields")
-            .and_then(|v| serde_json::to_string(v).ok())
-            .unwrap_or_default(),
-    )
+fn join_formula_operands(operands: &[IrFormula], separator: &str) -> String {
+    operands
+        .iter()
+        .map(|operand| format!("({})", ir_formula_to_text(operand)))
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+fn ir_term_to_text(term: &IrTerm) -> String {
+    match term {
+        IrTerm::Var { name } => name.clone(),
+        IrTerm::Const { value, .. } => match value {
+            Value::String(s) => format!("{s:?}"),
+            _ => value.to_string(),
+        },
+        IrTerm::Ctor { name, args } => {
+            let args = args
+                .iter()
+                .map(ir_term_to_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{name}({args})")
+        }
+        IrTerm::Lambda {
+            param_name, body, ..
+        } => {
+            format!("lambda {param_name}. {}", ir_term_to_text(body))
+        }
+        IrTerm::Let { bindings, body } => {
+            let bindings = bindings
+                .iter()
+                .map(|binding| {
+                    format!(
+                        "{} = {}",
+                        binding.name,
+                        ir_term_to_text(&binding.bound_term)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("let {bindings} in {}", ir_term_to_text(body))
+        }
+    }
 }
 
 fn collect_rs_files(dir: &Path, visited: &mut std::collections::BTreeSet<PathBuf>) {
@@ -800,6 +871,12 @@ mod tests {
 
     #[test]
     fn bind_lift_marries_docstring_and_type_signature_evidence_as_witnesses() {
+        assert_eq!(
+            initialize_result()["capabilities"]["ir_version"],
+            "bind-ir/1.0.0",
+            "the Rust kit must not advertise a schema bump ahead of sibling kits"
+        );
+
         let root = temp_workspace("bind_lift_witnesses");
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
@@ -853,6 +930,31 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
                 .any(|w| w["source_kind"] == "type-signature"
                     && w["extension_fields"]["signature_position"] == "param:0"),
             "expected parameter type-signature evidence witness: {witnesses:#?}"
+        );
+        let return_type_witness = witnesses
+            .iter()
+            .find(|w| {
+                w["source_kind"] == "type-signature"
+                    && w["extension_fields"]["signature_position"] == "return"
+            })
+            .expect("return type-signature evidence witness");
+        let predicate_text = return_type_witness["predicate_text"]
+            .as_str()
+            .expect("type-signature witnesses must carry predicate_text");
+        assert!(
+            predicate_text.contains("is_some(result)")
+                && predicate_text.contains("is_none(result)")
+                && !predicate_text.contains("\"kind\""),
+            "type-signature predicate_text must be readable predicate text, not raw JSON: {predicate_text}"
+        );
+        assert!(
+            witnesses.iter().all(|w| {
+                w["extension_fields"]
+                    .as_object()
+                    .map(|fields| !fields.contains_key("role"))
+                    .unwrap_or(false)
+            }),
+            "bind witness wire entries must keep role top-level only: {witnesses:#?}"
         );
 
         let _ = fs::remove_dir_all(root);
