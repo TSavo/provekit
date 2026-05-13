@@ -171,6 +171,7 @@ pub fn run(args: BindArgs) -> u8 {
         }
     };
     let _registry_cid = plugin_registry.cid().to_string();
+    let sugar_plugins = args.plugins.payloads_for_kind("sugar");
 
     let root = args
         .root
@@ -370,6 +371,7 @@ pub fn run(args: BindArgs) -> u8 {
             &target_lang,
             /*to_disk=*/ true,
             &output_dir,
+            &sugar_plugins,
         ),
         RewriteShape::Invisible => {
             // Invisible: stream to stdout. Apply annotate-shape for same-language,
@@ -388,6 +390,7 @@ pub fn run(args: BindArgs) -> u8 {
                     &target_lang,
                     /*to_disk=*/ false,
                     &output_dir,
+                    &sugar_plugins,
                 )
             }
         }
@@ -450,6 +453,8 @@ pub struct BindingRecord {
     pub param_types: Vec<String>,
     pub return_type: String,
     pub site_memento_cid: String,
+    pub local_contract_cid: Option<String>,
+    pub contract_witnesses: Vec<crate::kit_dispatch::RealizeContractWitness>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -884,6 +889,8 @@ fn run_bind_engine(
         let verdict = discharge_verdict(&lift.term_shape, &origin);
 
         // Mint ConceptSiteMemento when we have a contract.
+        let mut local_contract_cid_for_binding: Option<String> = None;
+        let mut realize_witnesses_for_binding = Vec::new();
         let site_memento_cid = if let Some(local_cid) = &_contract_content_cid {
             let source_bytes = std::fs::read(root.join(&lift.file)).unwrap_or_default();
             let source_cid = blake3_512_of(&source_bytes);
@@ -891,6 +898,10 @@ fn run_bind_engine(
             let fn_term_cid = local_cid.clone();
             let binding_witnesses =
                 contract_witnesses_for_binding(lift, &origin, pre.as_deref(), post.as_deref());
+            realize_witnesses_for_binding = binding_witnesses
+                .iter()
+                .map(realize_contract_witness_from_contract_witness)
+                .collect();
             let site_evidences: Vec<EvidenceMemento> = binding_witnesses
                 .iter()
                 .map(|w| evidence_memento_from_contract_witness(w, &source_cid, &lifter_cid))
@@ -900,6 +911,7 @@ fn run_bind_engine(
                 .as_ref()
                 .map(|c| c.cid.clone())
                 .unwrap_or_else(|| local_cid.clone());
+            local_contract_cid_for_binding = Some(local_contract_cid.clone());
             if let Some(compound) = compound.as_ref() {
                 for evidence in &site_evidences {
                     let decision = promotion_decision_memento(
@@ -1063,6 +1075,8 @@ fn run_bind_engine(
             param_types: lift.param_types.clone(),
             return_type: lift.return_type.clone(),
             site_memento_cid,
+            local_contract_cid: local_contract_cid_for_binding,
+            contract_witnesses: realize_witnesses_for_binding,
         });
     }
 
@@ -1340,10 +1354,12 @@ fn apply_canonical_rewrite(
     target_lang: &str,
     to_disk: bool,
     output_dir: &Path,
+    sugar_plugins: &[serde_json::Value],
 ) -> Vec<String> {
-    let _ = mode; // The realize plugin owns mode-aware emission; bind passes
-                  // concept_name and lets the kit decide how to annotate.
-                  // Group bindings by file.
+    // The realize plugin owns mode-aware emission; bind passes the selected
+    // mode plus the married contract payload so the kit can choose target
+    // sugar without Rust knowing the target syntax.
+    // Group bindings by file.
     let mut by_file: BTreeMap<String, Vec<&BindingRecord>> = BTreeMap::new();
     for b in &result.bindings {
         by_file.entry(b.site_file.clone()).or_default().push(b);
@@ -1372,13 +1388,25 @@ fn apply_canonical_rewrite(
 
         for b in bindings {
             let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);
-            match crate::cmd_transport::realize_for_bind(
+            let contract_payload = b.local_contract_cid.as_ref().map(|local_contract_cid| {
+                crate::kit_dispatch::RealizeContractPayload {
+                    concept_site_cid: b.site_memento_cid.clone(),
+                    local_contract_cid: local_contract_cid.clone(),
+                    origin: b.origin.label(),
+                    discharge_verdict: discharge_verdict_label(&b.discharge_verdict),
+                    witnesses: b.contract_witnesses.clone(),
+                }
+            });
+            match crate::cmd_transport::realize_for_bind_with_contract(
                 target_lang,
                 &b.site_fn,
                 &b.param_names,
                 &b.param_types,
                 &b.return_type,
                 &concept_name,
+                Some(mode_label(mode)),
+                contract_payload,
+                sugar_plugins.to_vec(),
             ) {
                 Ok(r) => {
                     if r.is_stub {
@@ -2052,6 +2080,20 @@ fn contract_witnesses_for_binding(
     }
 }
 
+fn realize_contract_witness_from_contract_witness(
+    witness: &ContractWitness,
+) -> crate::kit_dispatch::RealizeContractWitness {
+    crate::kit_dispatch::RealizeContractWitness {
+        role: witness.role.clone(),
+        predicate: serde_json::to_value(&witness.predicate).unwrap_or(serde_json::Value::Null),
+        predicate_text: witness
+            .predicate_text
+            .clone()
+            .unwrap_or_else(|| serde_json::to_string(&witness.predicate).unwrap_or_default()),
+        source_kind: source_kind_label(&witness.source_kind),
+    }
+}
+
 fn synthesized_contract_witness<I>(
     role: &str,
     predicate_text: &str,
@@ -2481,6 +2523,14 @@ fn rewrite_label(r: &RewriteShape) -> &'static str {
         RewriteShape::Annotate => "annotate",
         RewriteShape::Canonical => "canonical",
         RewriteShape::Invisible => "invisible",
+    }
+}
+
+fn discharge_verdict_label(verdict: &DischargeVerdict) -> String {
+    match verdict {
+        DischargeVerdict::Exact => "exact".to_string(),
+        DischargeVerdict::LoudlyBoundedLossy { .. } => "loudly-bounded-lossy".to_string(),
+        DischargeVerdict::Refuse { .. } => "refuse".to_string(),
     }
 }
 

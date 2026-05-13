@@ -1,0 +1,56 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:eb878a4dd45a863bacdd6b86c9a0c32fac3d91be2a33a4ce3ffbbc0d372f2e5dbc074305bed7a51248b47ab0305ff63411428655cc3f015497b19ee6538bdf49",
+    "content": {
+      "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "witness:junit5-test",
+            "template": "assertNotNull(${symbol});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "domain_narrowing": {
+                "args": [],
+                "kind": "atomic",
+                "name": "witness_requires_test_execution"
+              },
+              "structural_divergence": {
+                "args": [],
+                "kind": "atomic",
+                "name": "witness_skeleton_requires_concrete_values"
+              }
+            }
+          },
+          "predicate_pattern": {
+            "args": [
+              {"kind": "var", "name": "${symbol}"},
+              {"kind": "const", "sort": {"kind": "primitive", "name": "Ref"}, "value": null}
+            ],
+            "kind": "atomic",
+            "name": "neq"
+          }
+        }
+      ],
+      "sugar_name": "junit5",
+      "target_language": "java"
+    },
+    "critical": false,
+    "kind": "sugar",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "JUnit 5 witness sugar for non-null clauses. The loss record is honest: this emits a disabled skeleton until concrete example values are supplied.",
+    "source_url": "menagerie/java-language-signature/specs/sugar/java-junit5.json"
+  }
+}

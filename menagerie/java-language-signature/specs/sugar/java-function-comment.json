@@ -1,0 +1,48 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:574800417e6f4f57e561dbe9c437adc691b2cd2369d964cbc329348cb715b161f3b38f6f7ccfd41537d033741488c081ec01b6f7cb3f04ba724b7003fa05a7b6",
+    "content": {
+      "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "comment:above",
+            "template": "// ${contract_role}: ${formula_pretty_print}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "structural_divergence": {
+                "args": [],
+                "kind": "atomic",
+                "name": "machine_uncheckable_prose"
+              }
+            }
+          },
+          "predicate_pattern": {
+            "args": [],
+            "kind": "atomic",
+            "name": "${any_formula}"
+          }
+        }
+      ],
+      "sugar_name": "function-comment",
+      "target_language": "java"
+    },
+    "critical": false,
+    "kind": "sugar",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "Java function-comment sugar for recoverable but machine-unchecked contract breadcrumbs.",
+    "source_url": "menagerie/java-language-signature/specs/sugar/java-function-comment.json"
+  }
+}

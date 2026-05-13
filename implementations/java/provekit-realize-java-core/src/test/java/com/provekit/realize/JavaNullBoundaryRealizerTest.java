@@ -112,4 +112,75 @@ public class JavaNullBoundaryRealizerTest {
         assertNull(output.closureWitnessCid());
         assertFalse(output.modifiedSource().contains("@Requires(\"email != null\")"));
     }
+
+    @Test
+    public void bindContractWitnessesEmitNotNullSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[type-signature]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", "non_null(name)", "type-signature"),
+                new ContractWitness("post", "non_null(out)", "type-signature")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "lookup",
+            java.util.List.of("name"),
+            java.util.List.of("String"),
+            "String",
+            "concept:lookup",
+            "monitor",
+            contract,
+            java.util.List.of(beanValidationSugar(), junitSugar(), commentSugar())
+        );
+
+        assertTrue(output.source().contains("import jakarta.validation.constraints.NotNull;"));
+        assertTrue(output.source().contains("import org.junit.jupiter.api.Disabled;"));
+        assertTrue(output.source().contains("import static org.junit.jupiter.api.Assertions.assertNotNull;"));
+        assertTrue(output.source().contains("@NotNull\n    public static String lookup(@NotNull String name)"));
+        assertTrue(output.source().contains("@Disabled(\"provekit witness skeleton requires concrete values\")"));
+        assertTrue(output.source().contains("Object name = null;"));
+        assertTrue(output.source().contains("assertNotNull(name);"));
+        assertTrue(output.source().contains("// requires: non_null(name)"));
+        assertTrue(output.source().contains("// ensures: non_null(out)"));
+        assertTrue(output.source().contains("// contract-cid: blake3-512:compound"));
+        assertTrue(output.source().contains("// contract-source: type-signature"));
+        assertTrue(output.observedLossRecord().contains("witness_requires_test_execution"));
+        assertTrue(output.observedLossRecord().contains("witness_skeleton_requires_concrete_values"));
+        assertTrue(output.observedLossRecord().contains("machine_uncheckable_prose"));
+        assertTrue(output.usedSugarsJson().contains("java-bean-validation"));
+        assertTrue(output.usedSugarsJson().contains("java-junit5"));
+        assertTrue(output.usedSugarsJson().contains("java-function-comment"));
+    }
+
+    private static String beanValidationSugar() {
+        return sugar(
+            "java-bean-validation",
+            "bean-validation",
+            "annotation:before-parameter",
+            "@NotNull",
+            "{}"
+        );
+    }
+
+    private static String junitSugar() {
+        return sugar(
+            "java-junit5",
+            "junit5",
+            "witness:junit5-test",
+            "assertNotNull(${symbol});",
+            "{\"domain_narrowing\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_requires_test_execution\"},\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_skeleton_requires_concrete_values\"}}"
+        );
+    }
+
+    private static String commentSugar() {
+        return "{\"header\":{\"cid\":\"java-function-comment\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"comment:above\",\"template\":\"// ${contract_role}: ${formula_pretty_print}\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"machine_uncheckable_prose\"}}},\"predicate_pattern\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"${any_formula}\"}}],\"sugar_name\":\"function-comment\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
+    }
+
+    private static String sugar(String cid, String name, String locator, String template, String loss) {
+        return "{\"header\":{\"cid\":\"" + cid + "\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"" + locator + "\",\"template\":\"" + template + "\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":" + loss + "},\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"" + name + "\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
+    }
 }

@@ -99,6 +99,35 @@ fn java_canonical_sugar_cid_self_consistent() {
 }
 
 #[test]
+fn java_bean_validation_sugar_cid_self_consistent() {
+    let path =
+        repo_root().join("menagerie/java-language-signature/specs/sugar/java-bean-validation.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:dbfbb31b64445c500281daf4577285a2f5ac1073336a1e8f9fcc7d745508d2eeba0e5974e5d258ce88998d19630119c9a06fa665764369e910e7d466fc742ca1",
+    );
+}
+
+#[test]
+fn java_junit5_sugar_cid_self_consistent() {
+    let path = repo_root().join("menagerie/java-language-signature/specs/sugar/java-junit5.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:eb878a4dd45a863bacdd6b86c9a0c32fac3d91be2a33a4ce3ffbbc0d372f2e5dbc074305bed7a51248b47ab0305ff63411428655cc3f015497b19ee6538bdf49",
+    );
+}
+
+#[test]
+fn java_function_comment_sugar_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/java-language-signature/specs/sugar/java-function-comment.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:574800417e6f4f57e561dbe9c437adc691b2cd2369d964cbc329348cb715b161f3b38f6f7ccfd41537d033741488c081ec01b6f7cb3f04ba724b7003fa05a7b6",
+    );
+}
+
+#[test]
 fn java_canonical_bodies_cid_self_consistent() {
     let path = repo_root()
         .join("menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json");

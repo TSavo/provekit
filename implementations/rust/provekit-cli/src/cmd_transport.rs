@@ -273,6 +273,9 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
         &target_term,
         &annotations,
         &concept_name,
+        None,
+        None,
+        Vec::new(),
     )?;
     stages.push(StageReport {
         stage: "realize",
@@ -1022,6 +1025,9 @@ pub struct RealizedSource {
     /// templates (everything except Java in v1.0.0), this is unconditionally
     /// true — the body is always a stub.
     pub is_stub: bool,
+    pub emitted_artifact_cid: Option<String>,
+    pub observed_loss_record: serde_json::Value,
+    pub used_sugars: Vec<serde_json::Value>,
 }
 
 /// Public-crate bridge for `cmd_bind`'s canonical-mode path.
@@ -1044,6 +1050,30 @@ pub fn realize_for_bind(
     return_type: &str,
     concept_name: &str,
 ) -> Result<RealizedSource, TransportCliError> {
+    realize_for_bind_with_contract(
+        language,
+        function,
+        params,
+        param_types,
+        return_type,
+        concept_name,
+        None,
+        None,
+        Vec::new(),
+    )
+}
+
+pub fn realize_for_bind_with_contract(
+    language: &str,
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    concept_name: &str,
+    mode: Option<&str>,
+    contract: Option<crate::kit_dispatch::RealizeContractPayload>,
+    sugar_plugins: Vec<serde_json::Value>,
+) -> Result<RealizedSource, TransportCliError> {
     // The bind path supplies signature info FROM THE LIFT KIT (param_types
     // and return_type carried through the bind-IR per
     // `2026-05-13-bind-ir-lift-result.md`). cmd_transport does NOT reparse
@@ -1059,6 +1089,9 @@ pub fn realize_for_bind(
         &Term::Unit,
         &annotations,
         concept_name,
+        mode,
+        contract,
+        sugar_plugins,
     )
 }
 fn realize_function(
@@ -1070,6 +1103,9 @@ fn realize_function(
     body: &Term,
     annotations: &ContractAnnotations,
     concept_name: &str,
+    mode: Option<&str>,
+    contract: Option<crate::kit_dispatch::RealizeContractPayload>,
+    sugar_plugins: Vec<serde_json::Value>,
 ) -> Result<RealizedSource, TransportCliError> {
     // Federation by construction (PEP 1.7.0 `kind = "realize"`): every
     // language's source emission lives in a per-language realize plugin.
@@ -1084,12 +1120,26 @@ fn realize_function(
     let _ = body; // body emission is the kit's responsibility
     let workspace_root =
         repo_root().unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    let sugar_cids = sugar_plugins
+        .iter()
+        .filter_map(|plugin| {
+            plugin
+                .get("header")
+                .and_then(|header| header.get("cid"))
+                .and_then(|cid| cid.as_str())
+                .map(str::to_string)
+        })
+        .collect();
     let request = crate::kit_dispatch::RealizeRequest {
         function: function.to_string(),
         params: params.to_vec(),
         param_types: param_types.to_vec(),
         return_type: return_type.to_string(),
         concept_name: concept_name.to_string(),
+        mode: mode.map(str::to_string),
+        contract,
+        sugar_cids,
+        sugar_plugins,
     };
     let realized = crate::kit_dispatch::dispatch_realize(&workspace_root, language, &request)
         .map_err(|e| {
@@ -1105,5 +1155,8 @@ fn realize_function(
         extension: Box::leak(realized.extension.into_boxed_str()),
         source: realized.source,
         is_stub: realized.is_stub,
+        emitted_artifact_cid: realized.emitted_artifact_cid,
+        observed_loss_record: realized.observed_loss_record,
+        used_sugars: realized.used_sugars,
     });
 }
