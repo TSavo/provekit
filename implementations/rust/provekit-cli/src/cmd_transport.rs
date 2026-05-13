@@ -1287,6 +1287,130 @@ pub fn realize_for_bind(
     )
 }
 
+// ---------------------------------------------------------------------------
+// Java plugin dispatch (federation by construction)
+// ---------------------------------------------------------------------------
+//
+// All Java surface emission is owned by `implementations/java/provekit-realize-java-core/`
+// per Sir's 2026-05-13 directive ("all java emitter code belongs in java").
+// cmd_transport delegates to that plugin via PEP 1.7.0 `provekit.plugin.invoke`:
+// it spawns `java -jar provekit-realize-java.jar --rpc` as a subprocess, writes a
+// single JSON-RPC request to stdin, reads one line from stdout, and parses the
+// `result.source` string.
+//
+// Discovery: PROVEKIT_REALIZE_JAVA_JAR env var if set, else the compile-time
+// path relative to CARGO_MANIFEST_DIR. The latter assumes a colocated source
+// tree; production installs MUST set the env var.
+
+fn java_realize_jar_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("PROVEKIT_REALIZE_JAVA_JAR") {
+        return std::path::PathBuf::from(p);
+    }
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../java/provekit-realize-java-core/target/provekit-realize-java.jar")
+}
+
+fn realize_via_java_plugin(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    concept_name: &str,
+) -> Result<RealizedSource, TransportCliError> {
+    use std::io::{BufRead, BufReader, Write as _};
+    use std::process::{Command, Stdio};
+
+    let jar = java_realize_jar_path();
+    if !jar.exists() {
+        return Err(TransportCliError::Refusal(format!(
+            "realize-time:java-plugin-missing provekit-realize-java.jar not found at {} \
+             (set PROVEKIT_REALIZE_JAVA_JAR or run `mvn package -pl provekit-realize-java-core -am -DskipTests`)",
+            jar.display()
+        )));
+    }
+
+    let params_json: Vec<Value> = params.iter().map(|s| Value::String(s.clone())).collect();
+    let param_types_json: Vec<Value> =
+        param_types.iter().map(|s| Value::String(s.clone())).collect();
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.invoke",
+        "params": {
+            "function": function,
+            "params": params_json,
+            "param_types": param_types_json,
+            "return_type": return_type,
+            "concept_name": concept_name,
+        },
+    });
+
+    let mut child = Command::new("java")
+        .args(["-jar", jar.to_str().expect("jar path utf-8"), "--rpc"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            TransportCliError::Refusal(format!(
+                "realize-time:java-plugin-spawn failed to spawn java plugin: {e}"
+            ))
+        })?;
+
+    {
+        let stdin = child.stdin.as_mut().expect("plugin stdin");
+        let request_str = serde_json::to_string(&request).expect("serialize request");
+        stdin
+            .write_all(request_str.as_bytes())
+            .and_then(|()| stdin.write_all(b"\n"))
+            .map_err(|e| {
+                TransportCliError::Refusal(format!(
+                    "realize-time:java-plugin-write failed to write request: {e}"
+                ))
+            })?;
+    }
+
+    let stdout = child.stdout.take().expect("plugin stdout");
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    reader.read_line(&mut line).map_err(|e| {
+        TransportCliError::Refusal(format!(
+            "realize-time:java-plugin-read failed to read response: {e}"
+        ))
+    })?;
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let v: Value = serde_json::from_str(line.trim()).map_err(|e| {
+        TransportCliError::Refusal(format!(
+            "realize-time:java-plugin-parse response not valid JSON: {e}; raw: {}",
+            line.trim()
+        ))
+    })?;
+    if let Some(err) = v.get("error") {
+        return Err(TransportCliError::Refusal(format!(
+            "realize-time:java-plugin-error plugin returned error: {err}"
+        )));
+    }
+    let source = v
+        .get("result")
+        .and_then(|r| r.get("source"))
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| {
+            TransportCliError::Refusal(format!(
+                "realize-time:java-plugin-shape missing result.source; raw: {}",
+                line.trim()
+            ))
+        })?
+        .to_string();
+
+    Ok(RealizedSource {
+        extension: "java",
+        source,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TargetStyle {
     Rust,
@@ -1325,6 +1449,18 @@ fn realize_function(
     annotations: &ContractAnnotations,
     concept_name: &str,
 ) -> Result<RealizedSource, TransportCliError> {
+    // Federation by construction: Java emission lives in the Java plugin
+    // (provekit-realize-java-core). cmd_transport delegates via JSON-RPC; the
+    // dead TargetStyle::Java match arms below remain only until follow-up
+    // cleanup removes them entirely. Plugin owns: stub bodies, type map,
+    // class wrapping, annotations, and body-template rendering per
+    // protocol/specs/2026-05-13-body-template-memento.md.
+    if language == "java" {
+        let _ = annotations; // annotations are emitted plugin-side
+        let _ = body; // body emission is plugin-side (template or stub)
+        return realize_via_java_plugin(function, params, param_types, return_type, concept_name);
+    }
+
     let style = style_for(language).ok_or_else(|| {
         TransportCliError::Refusal(format!(
             "realize-time:no-realizer no source realizer for target `{language}`"

@@ -834,25 +834,21 @@ fn run_bind_engine(
         kind: "v0-capability-gap".into(),
         detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
     });
-    // F6: Record stub-body gap when bindings exist.
+    // F6 (post body-template-memento, 2026-05-13): the previously-unconditional
+    // `bind-stub-body-emitted` gap with hardcoded count was a lie after the
+    // Java realize plugin began emitting real bodies for templated concepts
+    // (identity / bool-cell / unit per java-canonical-bodies v1.0.0). Per
+    // Supra omnia rectum, an inaccurate gap is worse than no gap.
     //
-    // In v0 the canonical-rewrite path has no full term graph; it delegates to
-    // `realize_for_bind` which always emits idiomatic stub bodies (panic/raise/todo).
-    // This gap record is the honest substrate disclosure: real lifted source bodies
-    // are NOT present in these outputs.  A future PR that wires the term graph to the
-    // canonical path should remove this gap kind and replace it with a "term-body-realized"
-    // kind.
-    if !bindings.is_empty() {
-        gaps.push(GapRecord {
-            kind: "bind-stub-body-emitted".into(),
-            detail: format!(
-                "canonical-rewrite emitted stub bodies for {n} binding(s): no real lifted term \
-                 graph available in v0; bodies are idiomatic language stubs \
-                 (panic/raise/todo/throw). Real bodies deferred to v1.",
-                n = bindings.len()
-            ),
-        });
-    }
+    // The accurate replacement (per-concept counted stub gap, threaded back
+    // from realize_for_bind's RealizedSource) is a follow-up: it requires
+    // each per-language realize plugin to signal real-vs-stub via the RPC
+    // response, then apply_canonical_rewrite aggregates the counts and
+    // emits one gap per concept that fell through.
+    //
+    // Until then, the absence of this gap is itself accurate substrate
+    // disclosure: trinity_roundtrip_test consumers should consult the
+    // emitted source files directly to count stub vs real bodies.
     Ok(EngineResult {
         bindings,
         concepts,

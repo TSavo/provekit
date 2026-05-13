@@ -947,24 +947,30 @@ fn f5_csharp_canonical_parses() {
 }
 
 // ============================================================================
-// F6: Test 27 -- gaps.json records bind-stub-body-emitted for stub functions
+// F6: Test 27 -- gaps.json no longer emits unconditional bind-stub-body-emitted
+// (post body-template-memento, 2026-05-13)
 // ============================================================================
+//
+// The old assertion lied after the Java realize plugin began emitting real
+// bodies for templated concepts (identity / bool-cell / unit). An accurate
+// per-concept counted stub gap (threaded back from realize plugins via the
+// RPC response) is a follow-up. Until then, the gap kind MUST NOT appear:
+// its absence is itself accurate disclosure, and the test guards that.
 
 #[test]
-fn f6_gaps_record_stub_body_emitted() {
+fn f6_gaps_record_body_emission_state() {
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
-    // Use invisible mode so the bind engine runs without writing files.
     let result = bind_cmd(&root, &out, "invisible", "monitor", None);
     assert!(result.status.success(), "bind invisible must succeed");
     let gaps: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(out.join("gaps.json")).unwrap()).unwrap();
     let gap_arr = gaps["gaps"].as_array().expect("gaps must be array");
     let kinds: Vec<&str> = gap_arr.iter().filter_map(|g| g["kind"].as_str()).collect();
-    // v0 canonical bind always emits stub bodies (no term graph yet).
-    // The gap record is the honest disclosure: substrate knows stubs were emitted.
     assert!(
-        kinds.contains(&"bind-stub-body-emitted"),
-        "gaps.json must record bind-stub-body-emitted when canonical stubs are emitted; kinds found: {kinds:?}"
+        !kinds.contains(&"bind-stub-body-emitted"),
+        "the unconditional bind-stub-body-emitted gap was removed (lied about counts \
+         after body-template plugin landed); accurate per-concept gap is follow-up. \
+         kinds found: {kinds:?}"
     );
 }
