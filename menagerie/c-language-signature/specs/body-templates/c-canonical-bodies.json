@@ -1,0 +1,270 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:44f18ea2725ec26196399f6511bf3887db52db3c0e1356e7e090ff41f893929e177df9786d6639d8015d08641dda54338f83e1bd24a07828b5bf6b33c0d7d329",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "assert",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "assert(${param0} > 0);\nreturn ${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_message": {
+                "args": [],
+                "head": "atomic",
+                "name": "assert-message-not-preserved-c-assert-no-message"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "bool-cell",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return !${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "identity",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "list",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "int64_t _sum = 0;\nfor (size_t _i = 0; _i < ${param0}_len; _i++) { _sum += ${param0}[_i]; }\nreturn _sum;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "length_param_convention": {
+                "args": [],
+                "head": "atomic",
+                "name": "list-length-passed-as-param0-name-underscore-len-convention"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "option",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param0} != NULL) ? *${param0} : -1;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "sentinel_for_none": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-none-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "option-bind",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (${param0} == NULL) return -1;\nif (*${param0} <= 0) return -1;\nreturn *${param0} * 2;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_doubling": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-bind-body-fixture-specific-doubling-not-canonical"
+              },
+              "sentinel_for_none": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-none-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "pair",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} + ${param1};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "pair_encoded_as_sum": {
+                "args": [],
+                "head": "atomic",
+                "name": "pair-encoded-as-sum-c-has-no-tuple-type"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "result",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param0} >= 0) ? ${param0} : -1;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "sentinel_for_err": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-err-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "result-bind",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (${param0} < 0) return -1;\nif (${param0} <= 0) return -1;\nreturn ${param0} * 2;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_doubling": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-bind-body-fixture-specific-doubling-not-canonical"
+              },
+              "sentinel_for_err": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-err-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "retry-loop",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "uint64_t _attempts = 0;\nwhile (1) {\n    _attempts++;\n    if (_attempts >= (uint64_t)${param0}) break;\n}\nreturn (int64_t)_attempts;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_loop_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "retry-loop-body-fixture-specific-not-canonical"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "tagged-union",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "switch (${param0}) {\n    case 0: return 0;\n    default: return ${param0};\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_match_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "tagged-union-match-body-fixture-specific-not-canonical"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "unit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0
+          }
+        }
+      ],
+      "target_language": "c",
+      "template_name": "c-canonical-bodies"
+    },
+    "critical": false,
+    "kind": "body-template",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "Canonical C body templates for the 12 trinity concepts. C has explicit heap management (lossless concept:free via free()), no native Option/Result/tuple, so option/result use -1 sentinel and pair is encoded as sum. Loss records are honest.",
+    "source_url": "menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json"
+  }
+}

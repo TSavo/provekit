@@ -105,3 +105,23 @@ fn java_canonical_bodies_cid_self_consistent() {
         "blake3-512:e9c5dd414a182211d5b85e3f2052d491e85c90db5ed29fb1145c7d1ad7f4e34f71de80c12a210202c6bd7efe26639da0e4e1c446beca786245d4a3dc6708204b",
     );
 }
+
+#[test]
+fn c_canonical_sugar_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/c-language-signature/specs/sugar/c-canonical.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:a67012722271aca3a882bc82fa7b92941453e750a65366534ea37ef8eef593921bb3aa33e6b0051bf64531962346014097ef9a99f14f7c3245de1beea6c076dc",
+    );
+}
+
+#[test]
+fn c_canonical_bodies_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:44f18ea2725ec26196399f6511bf3887db52db3c0e1356e7e090ff41f893929e177df9786d6639d8015d08641dda54338f83e1bd24a07828b5bf6b33c0d7d329",
+    );
+}

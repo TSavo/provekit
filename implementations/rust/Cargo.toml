@@ -53,6 +53,7 @@ members = [
     "examples/build_script_demo",
     "provekit-linkerd",
     "provekit-baseline-std",
+    "provekit-realize-c-core",
     "../../menagerie/bug-zoo",
     "../../menagerie/bridgeworks",
     "../../menagerie/supply-chain-rails",

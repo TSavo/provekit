@@ -1,0 +1,23 @@
+[package]
+name = "provekit-realize-c-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt PEP 1.7.0 realize plugin for C: lowers ProofIR to C source via JSON-RPC sidecar."
+
+[[bin]]
+name = "provekit-realize-c"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_realize_c_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
