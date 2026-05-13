@@ -4,8 +4,9 @@
  * Mirrors implementations/python/provekit-lift-py-tests/tests/test_daemon_protocol.py.
  *
  * Asserts:
- *   - initialize responds with name == "provekit-lsp-ts" and capabilities == ["parse"].
- *   - parse returns result.declarations as a JSON array (not a string).
+ *   - initialize responds with protocol_version == "provekit-lift/1" and capabilities object.
+ *   - lift returns result.kind == "ir-document" with ir array.
+ *   - parse (legacy) returns result.declarations as a JSON array (not a string).
  *   - parse returns result.callEdges as a JSON array.
  *   - With a contract-bearing fixture, each declaration has kind == "contract".
  *   - Empty source returns declarations == [] and callEdges == [].
@@ -16,6 +17,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,6 +60,16 @@ function buildSession(source: string, path: string): string {
   return msgs.map((m) => JSON.stringify(m)).join("\n") + "\n";
 }
 
+/** Build NDJSON for initialize -> lift -> shutdown. */
+function buildLiftSession(workspaceRoot: string, sourcePaths: string[]): string {
+  const msgs = [
+    { jsonrpc: "2.0", id: 10, method: "initialize", params: {} },
+    { jsonrpc: "2.0", id: 11, method: "lift", params: { workspace_root: workspaceRoot, source_paths: sourcePaths } },
+    { jsonrpc: "2.0", id: 12, method: "shutdown" },
+  ];
+  return msgs.map((m) => JSON.stringify(m)).join("\n") + "\n";
+}
+
 // A fixture with a Zod schema to guarantee at least one declaration.
 const ZOD_FIXTURE_SOURCE = `
 import { z } from "zod";
@@ -78,6 +91,7 @@ let emptyResponses: Record<string, unknown>[] = [];
 let unknownMethodResponses: Record<string, unknown>[] = [];
 let unsupportedLanguageResponses: Record<string, unknown>[] = [];
 let zodResponses2: Record<string, unknown>[] = [];   // second run for determinism
+let liftResponses: Record<string, unknown>[] = [];
 
 // Per-suite vitest timeout. Each individual test just reads cached data.
 const SUITE_TIMEOUT_MS = 60_000;
@@ -87,6 +101,13 @@ describe("daemon protocol conformance (provekit-lsp-ts)", () => {
     zodResponses = runLsp(buildSession(ZOD_FIXTURE_SOURCE, ZOD_FIXTURE_PATH));
     emptyResponses = runLsp(buildSession("// no contracts here\n", "empty.ts"));
     zodResponses2 = runLsp(buildSession(ZOD_FIXTURE_SOURCE, ZOD_FIXTURE_PATH));
+
+    // Write the Zod fixture to a temp file for the lift test.
+    const tmpFixtureDir = resolve(tmpdir(), `pk-lsp-ts-test-${Date.now()}`);
+    mkdirSync(tmpFixtureDir, { recursive: true });
+    const tmpFixturePath = resolve(tmpFixtureDir, "fixture.ts");
+    writeFileSync(tmpFixturePath, ZOD_FIXTURE_SOURCE, "utf8");
+    liftResponses = runLsp(buildLiftSession(tmpFixtureDir, ["fixture.ts"]));
 
     const unknownMsgs = [
       { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
@@ -110,13 +131,43 @@ describe("daemon protocol conformance (provekit-lsp-ts)", () => {
     );
   }, SUITE_TIMEOUT_MS);
 
-  it("initialize: name == provekit-lsp-ts and capabilities includes parse", () => {
+  it("initialize: name == provekit-lsp-ts and protocol_version == provekit-lift/1", () => {
     const initResp = zodResponses.find((r) => r.id === 1);
     expect(initResp).toBeDefined();
     const result = initResp!.result as Record<string, unknown>;
     expect(result.name).toBe("provekit-lsp-ts");
-    expect(Array.isArray(result.capabilities)).toBe(true);
-    expect(result.capabilities).toContain("parse");
+    expect(result.protocol_version).toBe("provekit-lift/1");
+    const caps = result.capabilities as Record<string, unknown>;
+    expect(Array.isArray(caps.authoring_surfaces)).toBe(true);
+    expect((caps.authoring_surfaces as string[]).includes("typescript-source")).toBe(true);
+    expect(caps.emits_signed_mementos).toBe(false);
+  });
+
+  it("lift: kind == ir-document with ir array", () => {
+    const initResp = liftResponses.find((r) => r.id === 10);
+    expect(initResp).toBeDefined();
+    const initResult = initResp!.result as Record<string, unknown>;
+    expect(initResult.protocol_version).toBe("provekit-lift/1");
+
+    const liftResp = liftResponses.find((r) => r.id === 11);
+    expect(liftResp).toBeDefined();
+    expect(liftResp!.error).toBeUndefined();
+    const liftResult = liftResp!.result as Record<string, unknown>;
+    expect(liftResult.kind).toBe("ir-document");
+    expect(Array.isArray(liftResult.ir)).toBe(true);
+    expect(Array.isArray(liftResult.callEdges)).toBe(true);
+    expect(Array.isArray(liftResult.diagnostics)).toBe(true);
+    expect(Array.isArray(liftResult.refusals)).toBe(true);
+  });
+
+  it("lift: zod fixture produces at least one ir entry with kind == contract", () => {
+    const liftResp = liftResponses.find((r) => r.id === 11);
+    const liftResult = liftResp!.result as Record<string, unknown>;
+    const ir = liftResult.ir as Record<string, unknown>[];
+    expect(ir.length).toBeGreaterThanOrEqual(1);
+    for (const entry of ir) {
+      expect(entry.kind).toBe("contract");
+    }
   });
 
   it("parse: declarations is a JSON array (not a string)", () => {
