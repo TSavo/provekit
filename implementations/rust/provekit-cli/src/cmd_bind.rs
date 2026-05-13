@@ -556,12 +556,23 @@ fn run_bind_engine(
         }
     }
 
-    // shape -> concept idx lookup
+    // shape -> concept idx lookup.
+    //
+    // NOTE on bucket-key vs shape-cid collisions: when two distinct concepts
+    // (different bucket_keys, e.g. different `// concept: X` annotations) share
+    // the same term-shape CID, this map can only hold ONE concept per shape.
+    // Before this fix, the second loop below used shape_to_concept blindly, so a
+    // later-registered concept could steal site_indices that belonged to an
+    // annotated function (concept:identity / concept:bool-cell were observed at
+    // 0 sites in the trinity fixture, triggering "below-threshold" gaps). The
+    // second loop now resolves concept_idx by the same bucket_key the first
+    // loop used (annotation > catalog > shape), and only falls back to this map
+    // when no key match exists.
     let mut shape_to_concept: BTreeMap<String, usize> = BTreeMap::new();
     for (ci, c) in concepts.iter().enumerate() {
-        shape_to_concept.insert(c.shape_cid.clone(), ci);
+        shape_to_concept.entry(c.shape_cid.clone()).or_insert(ci);
         for alias in &c.shape_cid_aliases {
-            shape_to_concept.insert(alias.clone(), ci);
+            shape_to_concept.entry(alias.clone()).or_insert(ci);
         }
     }
 
@@ -583,8 +594,21 @@ fn run_bind_engine(
 
     for lift in &raw_lifts {
         let shape_cid = lift.term_shape.shape_cid();
-        let concept_idx = *shape_to_concept
-            .get(&shape_cid)
+        // Re-derive bucket_key with the same priority the first loop used so we
+        // route THIS lift to the concept its annotation/catalog match created,
+        // not whichever concept happens to currently own its shape_cid in
+        // shape_to_concept.
+        let matched_catalog = catalog.match_shape(&shape_cid, &lift.term_shape);
+        let bucket_key = if let Some(human) = lift.concept_annotation.as_ref() {
+            format!("human:{human}")
+        } else if let Some(c) = matched_catalog {
+            format!("catalog:{}", c.id)
+        } else {
+            format!("shape:{shape_cid}")
+        };
+        let concept_idx = *key_to_concept_idx
+            .get(&bucket_key)
+            .or_else(|| shape_to_concept.get(&shape_cid))
             .expect("shape was clustered");
 
         // Contract origin priority: attribute > test > algebra-synthesis > empty.
