@@ -8,11 +8,14 @@ LLVM_CONFIG ?= $(shell command -v llvm-config 2>/dev/null || command -v /usr/loc
 
 BIN = provekit-walk-c
 TERM_BIN = provekit-c11-term-project
+BIND_BIN = provekit-bind-lift-c
 SRC = src/main.c src/walk.c src/wp.c src/lift.c src/contract.c src/conditional.c ../provekit-lift-core/src/core.c ../provekit-lift-core/src/parser.c ../provekit-lift-core/src/compile_context.c
 B3_SRC = $(B3_DIR)/blake3.c $(B3_DIR)/blake3_dispatch.c $(B3_DIR)/blake3_portable.c
 TERM_SRC = src/term_project_main.c src/wp.c src/lift.c src/c11_cursor_dispatch.generated.c $(B3_SRC)
+BIND_SRC = src/bind_lift_main.c $(B3_SRC)
 TEST_SH = tests/integration.sh
 TERM_TEST_SH = tests/term_project.sh
+BIND_TEST_SH = tests/bind_lift_rpc.sh
 
 ifneq ($(strip $(LLVM_CONFIG)),)
 CFLAGS += -DPK_C_ENABLE_CLANG_AST -I$(shell $(LLVM_CONFIG) --includedir)
@@ -24,7 +27,7 @@ endif
 
 .PHONY: all test clean
 
-all: $(BIN) $(TERM_BIN)
+all: $(BIN) $(TERM_BIN) $(BIND_BIN)
 
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS)
@@ -32,11 +35,16 @@ $(BIN): $(SRC)
 $(TERM_BIN): $(TERM_SRC)
 	$(CC) $(CFLAGS) -o $@ $(TERM_SRC) $(LDFLAGS)
 
-test: $(BIN) $(TERM_BIN) $(TEST_SH) $(TERM_TEST_SH)
+$(BIND_BIN): $(BIND_SRC)
+	$(CC) $(CFLAGS) -o $@ $(BIND_SRC) $(LDFLAGS)
+
+test: $(BIN) $(TERM_BIN) $(BIND_BIN) $(TEST_SH) $(TERM_TEST_SH) $(BIND_TEST_SH)
 	@chmod +x $(TEST_SH)
 	@$(TEST_SH)
 	@chmod +x $(TERM_TEST_SH)
 	@$(TERM_TEST_SH)
+	@chmod +x $(BIND_TEST_SH)
+	@$(BIND_TEST_SH)
 
 clean:
-	rm -rf $(BIN) $(TERM_BIN) $(BIN).dSYM $(TERM_BIN).dSYM
+	rm -rf $(BIN) $(TERM_BIN) $(BIND_BIN) $(BIN).dSYM $(TERM_BIN).dSYM $(BIND_BIN).dSYM
