@@ -1316,6 +1316,178 @@ pub struct CompoundContractMemento {
 // ============================================================
 
 // ============================================================
+// Manual extension: observation-wrapper memento (#804)
+// Source of truth:
+//   protocol/specs/2026-05-13-effect-occurrence-memento.md §1
+//   protocol/specs/2026-05-13-observation-wrapper-memento.md §1, §7
+//
+// This is substrate shape only. It records wrapper/object separation and
+// exposes fail-closed validation of the frame invariants. Runtime wrapper
+// emission and target syntax generation are intentionally out of scope.
+//
+// Locked JCS key order:
+//   EffectOccurrence:
+//     args, discharge_key, locator, occurrence_kind, role, signature_cid
+//   ObservationWrapperMemento:
+//     emitted_artifact_cid, mode, object_fcm_cid, observer_effects,
+//     preservation_claim_cid, provenance_cid, wrapper_fcm_cid
+// ============================================================
+
+/// A promoted semantic effect payload carried by `FunctionContractMemento.effects`.
+///
+/// This is the minimal substrate shape from
+/// `2026-05-13-effect-occurrence-memento.md` §1.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectOccurrence {
+    pub args: serde_json::Value,
+    #[serde(rename = "discharge_key")]
+    pub discharge_key: String,
+    pub locator: serde_json::Value,
+    #[serde(rename = "occurrence_kind")]
+    pub occurrence_kind: String,
+    pub role: String,
+    #[serde(rename = "signature_cid")]
+    pub signature_cid: String,
+}
+
+// NOTE: an earlier draft of this module declared a public
+// `FunctionContractMemento { effects }` stub. That name collides with the
+// real FCM surface (pre/post/formals/body) defined elsewhere; if a caller
+// deserialized a full FCM into the stub, serde would silently drop the
+// other fields and a subsequent reserialize would lose them. To avoid the
+// footgun, the wrapper-validation API now takes effect slices directly.
+// The caller is responsible for extracting effects from whatever
+// FCM-shaped object they hold.
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvariantViolation {
+    UnknownMode { mode: String },
+    UnimplementedExtensionMode { mode: String },
+    MissingPreservationClaim,
+    EmptyObserverEffects,
+    ObserverEffectOnObject { effect: EffectOccurrence },
+    ObserverEffectMissingFromWrapper { effect: EffectOccurrence },
+}
+
+/// Durable substrate object recording a wrapper relationship between an
+/// unchanged object function and a wrapper function that carries observer
+/// effects.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObservationWrapperMemento {
+    #[serde(rename = "emitted_artifact_cid")]
+    pub emitted_artifact_cid: String,
+    pub mode: String,
+    #[serde(rename = "object_fcm_cid")]
+    pub object_fcm_cid: String,
+    #[serde(rename = "observer_effects")]
+    pub observer_effects: Vec<EffectOccurrence>,
+    #[serde(rename = "preservation_claim_cid")]
+    pub preservation_claim_cid: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "wrapper_fcm_cid")]
+    pub wrapper_fcm_cid: String,
+}
+
+impl ObservationWrapperMemento {
+    /// Check the master-frame invariants for this wrapper against caller-supplied
+    /// effect surfaces. The caller passes the object-FCM and wrapper-FCM effect
+    /// arrays directly; this API intentionally avoids accepting an `FCM` struct
+    /// in order to remove the footgun of silently dropping non-`effects` fields.
+    ///
+    /// `allowed_extension_modes` is the caller's allowlist of namespaced extension
+    /// modes (e.g. `["acme:probe"]`). Per spec §7, unimplemented extension modes
+    /// MUST fail closed; passing `&[]` accepts only the core monitor/witness/dispatcher
+    /// modes. A namespaced mode that is well-formed but absent from the allowlist
+    /// returns `UnimplementedExtensionMode`.
+    pub fn validate(
+        &self,
+        object_effects: &[EffectOccurrence],
+        wrapper_effects: &[EffectOccurrence],
+        allowed_extension_modes: &[&str],
+    ) -> Result<(), InvariantViolation> {
+        match classify_mode(&self.mode, allowed_extension_modes) {
+            ModeClassification::Core | ModeClassification::AllowedExtension => {}
+            ModeClassification::UnknownExtension => {
+                return Err(InvariantViolation::UnimplementedExtensionMode {
+                    mode: self.mode.clone(),
+                });
+            }
+            ModeClassification::Unknown => {
+                return Err(InvariantViolation::UnknownMode {
+                    mode: self.mode.clone(),
+                });
+            }
+        }
+
+        if self.preservation_claim_cid.is_empty() {
+            return Err(InvariantViolation::MissingPreservationClaim);
+        }
+
+        // Spec CDDL: observer_effects = [+ effect-occurrence] (non-empty).
+        // The vacuous-truth case where the dual-invariant loops below pass on an
+        // empty list must be rejected explicitly.
+        if self.observer_effects.is_empty() {
+            return Err(InvariantViolation::EmptyObserverEffects);
+        }
+
+        for effect in &self.observer_effects {
+            if object_effects.iter().any(|object| object == effect) {
+                return Err(InvariantViolation::ObserverEffectOnObject {
+                    effect: effect.clone(),
+                });
+            }
+        }
+
+        for effect in &self.observer_effects {
+            if !wrapper_effects.iter().any(|wrapper| wrapper == effect) {
+                return Err(InvariantViolation::ObserverEffectMissingFromWrapper {
+                    effect: effect.clone(),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+enum ModeClassification {
+    /// Core wrapper-mode from the spec: monitor / witness / dispatcher.
+    Core,
+    /// Namespaced extension that the caller explicitly admitted via the allowlist.
+    AllowedExtension,
+    /// Well-formed `<namespace>:<kind>` shape but absent from the allowlist.
+    UnknownExtension,
+    /// Neither a core mode nor a well-formed namespaced extension.
+    Unknown,
+}
+
+fn classify_mode(mode: &str, allowed_extension_modes: &[&str]) -> ModeClassification {
+    if matches!(mode, "monitor" | "witness" | "dispatcher") {
+        return ModeClassification::Core;
+    }
+    // Spec: extension modes are `<namespace>:<kind>` with EXACTLY one
+    // colon, both segments non-empty. `a:b:c` is not a valid namespaced
+    // extension.
+    match mode.split_once(':') {
+        Some((namespace, extension))
+            if !namespace.is_empty() && !extension.is_empty() && !extension.contains(':') =>
+        {
+            if allowed_extension_modes.iter().any(|m| *m == mode) {
+                ModeClassification::AllowedExtension
+            } else {
+                ModeClassification::UnknownExtension
+            }
+        }
+        _ => ModeClassification::Unknown,
+    }
+}
+
+// ============================================================
+// End manual extension block -- observation-wrapper memento (#804)
+// ============================================================
+
+// ============================================================
 // MANUAL EXTENSION BLOCK -- DomainClaim normalization (PR-A)
 // Source of truth:
 //   protocol/specs/2026-05-13-domain-claim-normalization.md §1
