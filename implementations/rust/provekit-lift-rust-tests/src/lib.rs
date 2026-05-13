@@ -235,7 +235,14 @@ pub fn lift_file_with_evidence_and_skip(
     // for free-fn callees whose definition is visible in this syn::File.
     let fn_map: HashMap<String, &syn::ItemFn> = collect_non_test_fns(&file.items);
     let mut out = AdapterOutput::default();
-    walk_items_with_evidence(&file.items, source_path, &source_cid, skip, &fn_map, &mut out);
+    walk_items_with_evidence(
+        &file.items,
+        source_path,
+        &source_cid,
+        skip,
+        &fn_map,
+        &mut out,
+    );
     out
 }
 
@@ -845,8 +852,7 @@ fn evidence_memento_cid(
 ) -> String {
     // predicate as canonical Value: serialize IrFormula -> serde_json::Value
     // -> serde_json string -> parse into CValue via encode_jcs round-trip.
-    let pred_json = serde_json::to_value(predicate)
-        .expect("IrFormula must be serializable");
+    let pred_json = serde_json::to_value(predicate).expect("IrFormula must be serializable");
     let pred_cv = serde_json_to_cvalue(&pred_json);
 
     // extension_fields as sorted CValue object.
@@ -873,7 +879,10 @@ fn evidence_memento_cid(
         ("start", make_point(&source_locator.span.start)),
     ]);
     let locator_cv = CValue::object([
-        ("source_cid", CValue::string(source_locator.source_cid.clone())),
+        (
+            "source_cid",
+            CValue::string(source_locator.source_cid.clone()),
+        ),
         ("span", span_cv),
     ]);
 
@@ -1823,7 +1832,10 @@ mod tests {
         let f = parse(src);
         let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
         assert_eq!(out.evidences.len(), 1);
-        assert_eq!(out.evidences[0].source_kind, provekit_ir_types::SourceKind::TestAssertion);
+        assert_eq!(
+            out.evidences[0].source_kind,
+            provekit_ir_types::SourceKind::TestAssertion
+        );
     }
 
     #[test]
@@ -1841,8 +1853,16 @@ mod tests {
         assert_eq!(ev.schema_version, "1");
         assert_eq!(ev.confidence_basis_points, 10000);
         assert_eq!(ev.lifter_cid, AUTO_PROMOTE_LIFTER_CID);
-        assert!(ev.cid.starts_with("blake3-512:"), "cid should be blake3-512 prefixed, got: {}", ev.cid);
-        assert_eq!(ev.cid.len(), 11 + 128, "cid should be prefix + 128 hex chars");
+        assert!(
+            ev.cid.starts_with("blake3-512:"),
+            "cid should be blake3-512 prefixed, got: {}",
+            ev.cid
+        );
+        assert_eq!(
+            ev.cid.len(),
+            11 + 128,
+            "cid should be prefix + 128 hex chars"
+        );
     }
 
     #[test]
@@ -1857,7 +1877,9 @@ mod tests {
         let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
         assert_eq!(out.evidences.len(), 1);
         let ev = &out.evidences[0];
-        let name = ev.extension_fields.get("test_function_name")
+        let name = ev
+            .extension_fields
+            .get("test_function_name")
             .and_then(|v| v.as_str())
             .expect("test_function_name must be present");
         assert_eq!(name, "my_specific_test");
@@ -1875,7 +1897,9 @@ mod tests {
         let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
         assert_eq!(out.evidences.len(), 1);
         let ev = &out.evidences[0];
-        let symbol = ev.extension_fields.get("target_callsite_symbol")
+        let symbol = ev
+            .extension_fields
+            .get("target_callsite_symbol")
             .and_then(|v| v.as_str())
             .expect("target_callsite_symbol must be present");
         // Symbol is "<callee>@<file>:<line>:<col>".
@@ -1899,7 +1923,9 @@ mod tests {
         let ev = &out.evidences[0];
 
         // Field must be present.
-        let cid_val = ev.extension_fields.get("test_target_function_cid")
+        let cid_val = ev
+            .extension_fields
+            .get("test_target_function_cid")
             .and_then(|v| v.as_str())
             .expect("test_target_function_cid must be present in extension_fields");
 
@@ -1944,7 +1970,9 @@ mod tests {
         assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
         let ev = &out.evidences[0];
 
-        let cid_val = ev.extension_fields.get("test_target_function_cid")
+        let cid_val = ev
+            .extension_fields
+            .get("test_target_function_cid")
             .and_then(|v| v.as_str())
             .expect("test_target_function_cid must be present even for cross-crate callees");
 
@@ -2006,7 +2034,10 @@ mod tests {
         let expected_source_cid = provekit_canonicalizer::blake3_512_of(src_bytes);
         let out = lift_file_with_evidence(&f, "t.rs", src_bytes);
         assert_eq!(out.evidences.len(), 1);
-        assert_eq!(out.evidences[0].source_locator.source_cid, expected_source_cid);
+        assert_eq!(
+            out.evidences[0].source_locator.source_cid,
+            expected_source_cid
+        );
     }
 
     #[test]
@@ -2075,6 +2106,9 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1);
-        assert!(out.evidences.is_empty(), "lift_file should not populate evidences");
+        assert!(
+            out.evidences.is_empty(),
+            "lift_file should not populate evidences"
+        );
     }
 }

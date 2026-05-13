@@ -832,7 +832,9 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     // empty-set CID. Panic in CI (missing binary there is a CI config bug).
     if cset == EMPTY_SET_CID {
         panic_if_empty_set_cid_in_ci("rust");
-        eprintln!("rust kit: mint-self-contracts binary not built locally -- skipping pinning assertion");
+        eprintln!(
+            "rust kit: mint-self-contracts binary not built locally -- skipping pinning assertion"
+        );
         return;
     }
 

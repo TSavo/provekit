@@ -134,11 +134,9 @@ fn load_plugin_from_stdio_rpc(cmd_str: &str) -> Result<PluginMemento, LoadError>
             .map_err(|e| LoadError::RpcError {
                 detail: format!("write to plugin stdin failed: {e}"),
             })?;
-        stdin
-            .write_all(b"\n")
-            .map_err(|e| LoadError::RpcError {
-                detail: format!("write newline to plugin stdin failed: {e}"),
-            })?;
+        stdin.write_all(b"\n").map_err(|e| LoadError::RpcError {
+            detail: format!("write newline to plugin stdin failed: {e}"),
+        })?;
     }
 
     // Read one JSON line from child stdout.
@@ -147,9 +145,11 @@ fn load_plugin_from_stdio_rpc(cmd_str: &str) -> Result<PluginMemento, LoadError>
     })?;
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
-    reader.read_line(&mut line).map_err(|e| LoadError::RpcError {
-        detail: format!("read from plugin stdout failed: {e}"),
-    })?;
+    reader
+        .read_line(&mut line)
+        .map_err(|e| LoadError::RpcError {
+            detail: format!("read from plugin stdout failed: {e}"),
+        })?;
 
     // Kill child (we only need the describe response).
     let _ = child.kill();
@@ -199,7 +199,10 @@ fn parse_and_validate(raw: JsonValue) -> Result<PluginMemento, LoadError> {
     let header_raw = raw.get("header").ok_or_else(|| LoadError::ParseError {
         detail: "missing 'header' field".to_string(),
     })?;
-    let metadata_raw = raw.get("metadata").cloned().unwrap_or(JsonValue::Object(Default::default()));
+    let metadata_raw = raw
+        .get("metadata")
+        .cloned()
+        .unwrap_or(JsonValue::Object(Default::default()));
 
     // Deserialize envelope.
     let envelope: PluginEnvelope =

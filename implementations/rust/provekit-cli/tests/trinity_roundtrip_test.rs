@@ -101,13 +101,9 @@ fn read_gaps(out_dir: &Path) -> (String, Vec<GapEntry>) {
     let path = out_dir.join("gaps.json");
     let raw = fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("gaps.json missing at {}", path.display()));
-    let v: serde_json::Value =
-        serde_json::from_str(&raw).expect("gaps.json is not valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("gaps.json is not valid JSON");
 
-    let source_lang = v["source_lang"]
-        .as_str()
-        .unwrap_or("unknown")
-        .to_string();
+    let source_lang = v["source_lang"].as_str().unwrap_or("unknown").to_string();
 
     let gaps = v["gaps"]
         .as_array()
@@ -190,10 +186,7 @@ fn trinity_round_trip() {
     );
 
     let java_dir = out1.join("translated").join("java");
-    assert!(
-        java_dir.exists(),
-        "Leg 1 must produce translated/java/ dir"
-    );
+    assert!(java_dir.exists(), "Leg 1 must produce translated/java/ dir");
     let java_files: Vec<_> = fs::read_dir(&java_dir)
         .expect("read java dir")
         .filter_map(|e| e.ok())
@@ -207,17 +200,18 @@ fn trinity_round_trip() {
     let (leg1_src_lang, leg1_gaps) = read_gaps(&out1);
 
     // index.json sanity: total_bindings + verdict breakdown.
-    let idx1_raw = fs::read_to_string(out1.join("index.json"))
-        .expect("index.json missing after leg 1");
-    let idx1: serde_json::Value =
-        serde_json::from_str(&idx1_raw).expect("index.json invalid JSON");
+    let idx1_raw =
+        fs::read_to_string(out1.join("index.json")).expect("index.json missing after leg 1");
+    let idx1: serde_json::Value = serde_json::from_str(&idx1_raw).expect("index.json invalid JSON");
     let total1 = idx1["total_bindings"].as_u64().unwrap_or(0);
     assert!(
         total1 > 0,
         "Leg 1 index.json must record at least one binding"
     );
     let exact1 = idx1["verdicts"]["exact"].as_u64().unwrap_or(0);
-    let lossy1 = idx1["verdicts"]["loudly_bounded_lossy"].as_u64().unwrap_or(0);
+    let lossy1 = idx1["verdicts"]["loudly_bounded_lossy"]
+        .as_u64()
+        .unwrap_or(0);
     let refuse1 = idx1["verdicts"]["refuse"].as_u64().unwrap_or(0);
     assert_eq!(
         exact1 + lossy1 + refuse1,
@@ -337,7 +331,10 @@ fn trinity_round_trip() {
                 .collect();
             rs_files.append(&mut more);
         }
-        assert!(!rs_files.is_empty(), "fixture must contain at least one .rs source file");
+        assert!(
+            !rs_files.is_empty(),
+            "fixture must contain at least one .rs source file"
+        );
         rs_files.into_iter().next().unwrap().path()
     };
 
@@ -346,7 +343,7 @@ fn trinity_round_trip() {
         // Leg-3 must have run and its rust output must match the original fixture.
         let out3_dir = out3.as_ref().expect(
             "Branch 1 (empty loss) requires leg 3 to have run; \
-             out3 is None means python_dir was absent, which implies non-empty loss"
+             out3 is None means python_dir was absent, which implies non-empty loss",
         );
         let original_source = fs::read_to_string(&fixture_path).expect("read original fixture");
         let rust_out_dir = out3_dir.join("translated").join("rust");
@@ -359,7 +356,10 @@ fn trinity_round_trip() {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().map(|x| x == "rs").unwrap_or(false))
             .collect();
-        assert!(!rs_files.is_empty(), "Branch 1: leg 3 rust out dir must contain .rs files");
+        assert!(
+            !rs_files.is_empty(),
+            "Branch 1: leg 3 rust out dir must contain .rs files"
+        );
         let rust_back_source =
             fs::read_to_string(rs_files[0].path()).expect("read leg-3 rust output");
 
@@ -413,7 +413,12 @@ fn trinity_round_trip() {
             // boundary fired; the test accepts any of the three so the verdict
             // criterion ("at least as good as the current 4 entries") holds
             // across the rename.
-            let lift_boundary_kinds = ["source-language-not-supported", "kit-plugin-unavailable", "bind-lift-empty", "leg-3-not-reached"];
+            let lift_boundary_kinds = [
+                "source-language-not-supported",
+                "kit-plugin-unavailable",
+                "bind-lift-empty",
+                "leg-3-not-reached",
+            ];
             assert!(
                 lift_boundary_kinds.iter().any(|k| loss_kinds.contains(k)),
                 "v0 trinity round-trip MUST report a lift-boundary gap kind \
@@ -423,7 +428,11 @@ fn trinity_round_trip() {
                  expected one of: {:?}\n\
                  leg2_src_lang={:?} leg3_src_lang={:?}\n\
                  full composed_loss={:?}",
-                loss_kinds, lift_boundary_kinds, leg2_src_lang, leg3_src_lang, composed_loss
+                loss_kinds,
+                lift_boundary_kinds,
+                leg2_src_lang,
+                leg3_src_lang,
+                composed_loss
             );
         }
 

@@ -176,7 +176,10 @@ fn pipeline_kind_accepts_well_formed_namespaced_extension() {
     use provekit_ir_types::PipelineKind;
     let parsed: PipelineKind =
         serde_json::from_str("\"acme:benchmark\"").expect("parse namespaced");
-    assert_eq!(parsed, PipelineKind::Namespaced("acme:benchmark".to_string()));
+    assert_eq!(
+        parsed,
+        PipelineKind::Namespaced("acme:benchmark".to_string())
+    );
 }
 
 #[test]

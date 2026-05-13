@@ -33,8 +33,7 @@ const ABSTRACTION_CID: &str =
     "blake3-512:8e6429feab0ca0b075ec3d286aa1cb48689f2af913d70ba641d2fa4de797863\
      fa05e1b325221cc21259d9d27cbc86c88741d57d9364ec5b40a6fa2175f6e97e6";
 
-const LIFT_CID: &str =
-    "blake3-512:3a45695cab42636b693e5060a31e843cd7cca00cd296bc5ec540e1e56267724\
+const LIFT_CID: &str = "blake3-512:3a45695cab42636b693e5060a31e843cd7cca00cd296bc5ec540e1e56267724\
      0334516db15c9e8a1f152815e1f99bf0171495f8098ed5d3bf7e7e5014dece91e";
 
 const REALIZE_CID: &str =
@@ -49,8 +48,8 @@ const REALIZE_CID: &str =
 /// The envelope format is: {"memento": {...}, "cid": "<blake3-512:...>", "signature": {...}}.
 /// The "cid" field is compute_fixture_cid applied to the inner "memento" object.
 fn read_cid_from_envelope(path: &PathBuf) -> String {
-    let text = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"));
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"));
     let v: serde_json::Value =
         serde_json::from_str(&text).unwrap_or_else(|e| panic!("invalid JSON in {path:?}: {e}"));
     v["cid"]
@@ -62,8 +61,7 @@ fn read_cid_from_envelope(path: &PathBuf) -> String {
 /// Path to the catalog from this file's manifest directory.
 fn catalog_root() -> PathBuf {
     // CARGO_MANIFEST_DIR is .../implementations/rust/provekit-claim-envelope
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../menagerie/concept-shapes/catalog")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../menagerie/concept-shapes/catalog")
 }
 
 // ---------------------------------------------------------------------------

@@ -101,8 +101,14 @@ fn section_2_lift(s: &mut String, pass: &PassResult) {
             b.site_file,
             b.site_fn,
             short_cid(&b.shape_cid),
-            b.contract_cid.as_deref().map(short_cid).unwrap_or_else(|| "(empty)".into()),
-            b.contract_content_cid.as_deref().map(short_cid).unwrap_or_else(|| "(empty)".into()),
+            b.contract_cid
+                .as_deref()
+                .map(short_cid)
+                .unwrap_or_else(|| "(empty)".into()),
+            b.contract_content_cid
+                .as_deref()
+                .map(short_cid)
+                .unwrap_or_else(|| "(empty)".into()),
         );
     }
     let _ = writeln!(s);
@@ -157,7 +163,10 @@ fn section_4_bindings(s: &mut String, pass: &PassResult) {
         "Each binding is a `(code-site -> concept -> discharge verdict)` triple. The discharge verdict is computed by a structural oracle that respects the substrate's loss model:"
     );
     let _ = writeln!(s);
-    let _ = writeln!(s, "- `exact` if both shape and formula are losslessly transported.");
+    let _ = writeln!(
+        s,
+        "- `exact` if both shape and formula are losslessly transported."
+    );
     let _ = writeln!(
         s,
         "- `loudly-bounded-lossy(...)` when the shape transports exactly but the formula uses the smoke-test's single-atom encoding (see section 8)."
@@ -204,7 +213,11 @@ fn render_witness_event(s: &mut String, pass: &PassResult, w: &WitnessRecord) {
     let _ = writeln!(s, "### Witness event");
     let _ = writeln!(s);
     let _ = writeln!(s, "- Source: `{}`", w.source_location);
-    let _ = writeln!(s, "- Concept shape-CID: `{}`", short_cid(&w.concept_shape_cid));
+    let _ = writeln!(
+        s,
+        "- Concept shape-CID: `{}`",
+        short_cid(&w.concept_shape_cid)
+    );
     let _ = writeln!(s, "- Formula (substrate-pretty): `{}`", w.pretty_formula);
     let _ = writeln!(s);
     let _ = writeln!(
@@ -319,11 +332,20 @@ fn section_7_round_trip(s: &mut String, fixture_root: &Path) {
     let _ = writeln!(s);
     let _ = writeln!(s, "```rust");
     let _ = writeln!(s, "// concept: <name-or-UNNAMED-CONCEPT-N>");
-    let _ = writeln!(s, "// substrate-origin: <annotation-lift | test-lift | algebra-synthesis[rule-id]>");
+    let _ = writeln!(
+        s,
+        "// substrate-origin: <annotation-lift | test-lift | algebra-synthesis[rule-id]>"
+    );
     let _ = writeln!(s, "// memento-cid: <blake3-512:...>");
     let _ = writeln!(s, "#[cfg_attr(any(), requires(<pre>))]   // if pre present");
-    let _ = writeln!(s, "#[cfg_attr(any(), ensures(<post>))]   // if post present");
-    let _ = writeln!(s, "#[cfg_attr(any(), witness(<formula>))] // if inherited via propagation");
+    let _ = writeln!(
+        s,
+        "#[cfg_attr(any(), ensures(<post>))]   // if post present"
+    );
+    let _ = writeln!(
+        s,
+        "#[cfg_attr(any(), witness(<formula>))] // if inherited via propagation"
+    );
     let _ = writeln!(s, "// witness-inherited-from: <source-of-witness>");
     let _ = writeln!(s, "pub fn the_function(...) {{ ... }}");
     let _ = writeln!(s, "```");
@@ -334,10 +356,7 @@ fn section_7_round_trip(s: &mut String, fixture_root: &Path) {
     );
     let _ = writeln!(s);
     let diff_paths = [
-        (
-            "src/option_handling.rs",
-            "rewritten/src/option_handling.rs",
-        ),
+        ("src/option_handling.rs", "rewritten/src/option_handling.rs"),
         (
             "src/retry_with_backoff.rs",
             "rewritten/src/retry_with_backoff.rs",
@@ -443,11 +462,7 @@ fn section_9_open_karlton(s: &mut String, pass: &PassResult) {
                 format!("`{}::{}`", b.site_file, b.site_fn)
             })
             .unwrap_or_else(|| "(no sites)".into());
-        let _ = writeln!(
-            s,
-            "| `{}` | `{}` | {} |",
-            c.name, c.shape_cid, first
-        );
+        let _ = writeln!(s, "| `{}` | `{}` | {} |", c.name, c.shape_cid, first);
     }
     let _ = writeln!(s);
 }
@@ -458,7 +473,10 @@ fn section_10_naming_roundtrip(
     pass_2: &PassResult,
     renamed_pair: Option<&(String, String)>,
 ) {
-    let _ = writeln!(s, "## 10. The naming round-trip: how Karlton's second hard thing closes inline");
+    let _ = writeln!(
+        s,
+        "## 10. The naming round-trip: how Karlton's second hard thing closes inline"
+    );
     let _ = writeln!(s);
     let _ = writeln!(
         s,
@@ -514,7 +532,11 @@ fn section_10_naming_roundtrip(
         );
         let pre_sites = sites_for_shape(pass_1, shape_cid);
         for (file, fn_name) in &pre_sites {
-            let _ = writeln!(s, "  - binding at `{}::{}` reported under `UNNAMED-CONCEPT-N`", file, fn_name);
+            let _ = writeln!(
+                s,
+                "  - binding at `{}::{}` reported under `UNNAMED-CONCEPT-N`",
+                file, fn_name
+            );
         }
         let _ = writeln!(s);
         let _ = writeln!(s, "After pass 2:");
@@ -569,7 +591,9 @@ fn sites_for_shape(pass: &PassResult, shape_cid: &str) -> Vec<(String, String)> 
     let concept_idx_opt = pass.concepts.iter().position(|c| {
         c.shape_cid == shape_cid || c.shape_cid_aliases.iter().any(|a| a == shape_cid)
     });
-    let Some(ci) = concept_idx_opt else { return Vec::new() };
+    let Some(ci) = concept_idx_opt else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for idx in &pass.concepts[ci].site_indices {
         let b = &pass.bindings[*idx];

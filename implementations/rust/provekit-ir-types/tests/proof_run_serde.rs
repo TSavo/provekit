@@ -27,7 +27,8 @@ fn parse_proof_run() -> ProofRunMemento {
 }
 
 fn parse_stage_receipt() -> StageReceipt {
-    serde_json::from_str(STAGE_RECEIPT_FIXTURE_PLACEHOLDER_CID).expect("parse stage-receipt fixture")
+    serde_json::from_str(STAGE_RECEIPT_FIXTURE_PLACEHOLDER_CID)
+        .expect("parse stage-receipt fixture")
 }
 
 #[test]
@@ -50,7 +51,8 @@ fn proof_run_recompute_is_deterministic_and_elides_cid() {
     // because `cid` is elided.
     m.header.cid = "blake3-512:DIFFERENT_PLACEHOLDER".to_string();
     assert_eq!(
-        m.recompute_header_cid().expect("recompute with different placeholder"),
+        m.recompute_header_cid()
+            .expect("recompute with different placeholder"),
         computed
     );
 }

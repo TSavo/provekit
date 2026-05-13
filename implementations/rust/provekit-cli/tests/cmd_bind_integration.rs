@@ -39,7 +39,9 @@ fn copy_fixture_to_temp() -> PathBuf {
 
 fn copy_dir(src: &Path, dst: &Path) {
     let _ = fs::create_dir_all(dst);
-    let Ok(entries) = fs::read_dir(src) else { return };
+    let Ok(entries) = fs::read_dir(src) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name();
@@ -142,12 +144,19 @@ fn read_json_dir(dir: &Path) -> Vec<serde_json::Value> {
     fs::read_dir(dir)
         .unwrap_or_else(|err| panic!("read_dir({}): {err}", dir.display()))
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().extension().map(|ext| ext == "json").unwrap_or(false))
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .map(|ext| ext == "json")
+                .unwrap_or(false)
+        })
         .map(|entry| {
             let path = entry.path();
-            serde_json::from_str(&fs::read_to_string(&path).unwrap_or_else(|err| {
-                panic!("read {}: {err}", path.display())
-            }))
+            serde_json::from_str(
+                &fs::read_to_string(&path)
+                    .unwrap_or_else(|err| panic!("read {}: {err}", path.display())),
+            )
             .unwrap_or_else(|err| panic!("parse {}: {err}", path.display()))
         })
         .collect()
@@ -164,10 +173,7 @@ fn help_lists_bind_command() {
         .output()
         .expect("spawn provekit --help");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        out.status.success(),
-        "provekit --help failed:\n{stdout}"
-    );
+    assert!(out.status.success(), "provekit --help failed:\n{stdout}");
     assert!(
         stdout.lines().any(|l| {
             let t = l.trim_start();
@@ -192,10 +198,22 @@ fn annotate_monitor_injects_concept_and_monitor_attr() {
         String::from_utf8_lossy(&result.stderr)
     );
     let rewritten = fs::read_to_string(tmp.join("src").join("account.rs")).unwrap();
-    assert!(rewritten.contains("// concept:"), "must inject concept comment");
-    assert!(rewritten.contains("// substrate-origin:"), "must inject substrate-origin");
-    assert!(rewritten.contains("#[cfg_attr(any(), requires("), "must inject requires");
-    assert!(rewritten.contains("#[cfg_attr(any(), ensures("), "must inject ensures");
+    assert!(
+        rewritten.contains("// concept:"),
+        "must inject concept comment"
+    );
+    assert!(
+        rewritten.contains("// substrate-origin:"),
+        "must inject substrate-origin"
+    );
+    assert!(
+        rewritten.contains("#[cfg_attr(any(), requires("),
+        "must inject requires"
+    );
+    assert!(
+        rewritten.contains("#[cfg_attr(any(), ensures("),
+        "must inject ensures"
+    );
     assert!(
         rewritten.contains("provekit_monitor"),
         "monitor mode must inject provekit_monitor attribute"
@@ -237,8 +255,14 @@ fn canonical_monitor_rust_target_creates_translated_dir() {
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&root, &out, "canonical", "monitor", Some("rust"));
-    assert!(result.status.success(), "canonical+monitor+rust should succeed");
-    assert!(out.join("translated").join("rust").exists(), "translated/rust dir must be created");
+    assert!(
+        result.status.success(),
+        "canonical+monitor+rust should succeed"
+    );
+    assert!(
+        out.join("translated").join("rust").exists(),
+        "translated/rust dir must be created"
+    );
 }
 
 #[test]
@@ -261,7 +285,10 @@ fn canonical_emitter_java_creates_java_output_with_contract() {
         .collect();
     assert!(!java_files.is_empty(), "at least one .java file expected");
     let java_src = fs::read_to_string(java_files[0].path()).unwrap();
-    assert!(java_src.contains("concept:"), "Java output must carry concept annotation");
+    assert!(
+        java_src.contains("concept:"),
+        "Java output must carry concept annotation"
+    );
     // Java canonical+emitter must have emitter annotation.
     assert!(
         java_src.contains("provekit_emitter"),
@@ -280,7 +307,10 @@ fn canonical_witness_python_creates_python_output() {
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&root, &out, "canonical", "witness", Some("python"));
-    assert!(result.status.success(), "canonical+witness+python should succeed");
+    assert!(
+        result.status.success(),
+        "canonical+witness+python should succeed"
+    );
     let py_dir = out.join("translated").join("python");
     assert!(py_dir.exists(), "translated/python must exist");
     let py_files: Vec<_> = fs::read_dir(&py_dir)
@@ -290,7 +320,10 @@ fn canonical_witness_python_creates_python_output() {
         .collect();
     assert!(!py_files.is_empty(), "at least one .py file expected");
     let py_src = fs::read_to_string(py_files[0].path()).unwrap();
-    assert!(py_src.contains("# concept:"), "Python output must carry concept comment");
+    assert!(
+        py_src.contains("# concept:"),
+        "Python output must carry concept comment"
+    );
 }
 
 // ============================================================================
@@ -365,8 +398,16 @@ fn bind_writes_site_mementos_index_and_gaps() {
         if !site_files.is_empty() {
             let m: serde_json::Value =
                 serde_json::from_str(&fs::read_to_string(site_files[0].path()).unwrap()).unwrap();
-            assert_eq!(m["schemaVersion"].as_str().unwrap_or(""), "1", "memento schemaVersion must be 1");
-            assert_eq!(m["kind"].as_str().unwrap_or(""), "concept-site", "memento kind must be concept-site");
+            assert_eq!(
+                m["schemaVersion"].as_str().unwrap_or(""),
+                "1",
+                "memento schemaVersion must be 1"
+            );
+            assert_eq!(
+                m["kind"].as_str().unwrap_or(""),
+                "concept-site",
+                "memento kind must be concept-site"
+            );
         }
     }
 }
@@ -506,8 +547,7 @@ fn annotate_is_idempotent() {
         s.lines()
             .filter(|l| {
                 let t = l.trim_start();
-                !t.starts_with("// memento-cid:")
-                    && !t.starts_with("// substrate-origin:")
+                !t.starts_with("// memento-cid:") && !t.starts_with("// substrate-origin:")
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -584,7 +624,10 @@ fn python_canonical_carries_contract_comments() {
         .collect();
     assert!(!py_files.is_empty(), "python output required");
     let py_src = fs::read_to_string(py_files[0].path()).unwrap();
-    assert!(py_src.contains("# concept:"), "Python must carry concept comment");
+    assert!(
+        py_src.contains("# concept:"),
+        "Python must carry concept comment"
+    );
     assert!(
         py_src.contains("# @requires:") || py_src.contains("@requires"),
         "Python must carry contract annotation\n{py_src}"
@@ -609,44 +652,65 @@ fn canonical_multi_target_emission_smoke() {
     // Leg 1: Rust -> Java
     let out1 = tempfile::tempdir().expect("tempdir").into_path();
     let r1 = bind_cmd(&root, &out1, "canonical", "monitor", Some("java"));
-    assert!(r1.status.success(), "trinity leg 1 (Rust->Java) must succeed");
+    assert!(
+        r1.status.success(),
+        "trinity leg 1 (Rust->Java) must succeed"
+    );
     let java_dir = out1.join("translated").join("java");
     assert!(java_dir.exists(), "java dir must exist after leg 1");
-    let java_files: Vec<_> = fs::read_dir(&java_dir).unwrap()
+    let java_files: Vec<_> = fs::read_dir(&java_dir)
+        .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map(|x| x == "java").unwrap_or(false))
         .collect();
     assert!(!java_files.is_empty(), "java output required");
     let java_src = fs::read_to_string(java_files[0].path()).unwrap();
-    assert!(java_src.contains("concept:"), "java output must carry concept");
+    assert!(
+        java_src.contains("concept:"),
+        "java output must carry concept"
+    );
 
     // Leg 2: Rust -> Python (via the same hub)
     let out2 = tempfile::tempdir().expect("tempdir").into_path();
     let r2 = bind_cmd(&root, &out2, "canonical", "monitor", Some("python"));
-    assert!(r2.status.success(), "trinity leg 2 (Rust->Python) must succeed");
+    assert!(
+        r2.status.success(),
+        "trinity leg 2 (Rust->Python) must succeed"
+    );
     let py_dir = out2.join("translated").join("python");
     assert!(py_dir.exists(), "python dir must exist after leg 2");
-    let py_files: Vec<_> = fs::read_dir(&py_dir).unwrap()
+    let py_files: Vec<_> = fs::read_dir(&py_dir)
+        .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map(|x| x == "py").unwrap_or(false))
         .collect();
     assert!(!py_files.is_empty(), "python output required");
     let py_src = fs::read_to_string(py_files[0].path()).unwrap();
-    assert!(py_src.contains("concept:"), "python output must carry concept");
+    assert!(
+        py_src.contains("concept:"),
+        "python output must carry concept"
+    );
 
     // Leg 3: Rust -> Rust (same-language canonical refactor)
     let out3 = tempfile::tempdir().expect("tempdir").into_path();
     let r3 = bind_cmd(&root, &out3, "canonical", "monitor", Some("rust"));
-    assert!(r3.status.success(), "trinity leg 3 (Rust->Rust) must succeed");
+    assert!(
+        r3.status.success(),
+        "trinity leg 3 (Rust->Rust) must succeed"
+    );
     let rs_dir = out3.join("translated").join("rust");
     assert!(rs_dir.exists(), "rust canonical dir must exist after leg 3");
-    let rs_files: Vec<_> = fs::read_dir(&rs_dir).unwrap()
+    let rs_files: Vec<_> = fs::read_dir(&rs_dir)
+        .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map(|x| x == "rs").unwrap_or(false))
         .collect();
     assert!(!rs_files.is_empty(), "rust canonical output required");
     let rs_src = fs::read_to_string(rs_files[0].path()).unwrap();
-    assert!(rs_src.contains("concept:"), "rust canonical output must carry concept");
+    assert!(
+        rs_src.contains("concept:"),
+        "rust canonical output must carry concept"
+    );
 
     // Verify index.json from leg 1 records verdict breakdown.
     let idx: serde_json::Value =
@@ -654,7 +718,9 @@ fn canonical_multi_target_emission_smoke() {
     let total = idx["total_bindings"].as_u64().unwrap_or(0);
     assert!(total > 0, "trinity: index must record at least one binding");
     let exact = idx["verdicts"]["exact"].as_u64().unwrap_or(0);
-    let lossy = idx["verdicts"]["loudly_bounded_lossy"].as_u64().unwrap_or(0);
+    let lossy = idx["verdicts"]["loudly_bounded_lossy"]
+        .as_u64()
+        .unwrap_or(0);
     let refuse = idx["verdicts"]["refuse"].as_u64().unwrap_or(0);
     assert!(
         exact + lossy + refuse == total,
@@ -726,7 +792,10 @@ fn canonical_go_target_creates_go_output() {
         .collect();
     assert!(!go_files.is_empty(), "at least one .go file expected");
     let go_src = fs::read_to_string(go_files[0].path()).unwrap();
-    assert!(go_src.contains("concept:"), "Go output must carry concept annotation");
+    assert!(
+        go_src.contains("concept:"),
+        "Go output must carry concept annotation"
+    );
 }
 
 // ============================================================================
@@ -856,7 +925,9 @@ fn zig_check(path: &std::path::Path) -> Result<(), String> {
 
 /// Find the first file with the given extension under a directory.
 fn first_file_with_ext(dir: &std::path::Path, ext: &str) -> Option<std::path::PathBuf> {
-    fs::read_dir(dir).ok()?.flatten()
+    fs::read_dir(dir)
+        .ok()?
+        .flatten()
         .find(|e| e.path().extension().map(|x| x == ext).unwrap_or(false))
         .map(|e| e.path())
 }
@@ -907,7 +978,10 @@ fn f5_go_canonical_parses() {
     let dir = out.join("translated").join("go");
     let f = first_file_with_ext(&dir, "go").expect("no .go output");
     let src = fs::read_to_string(&f).unwrap();
-    let pkg_count = src.lines().filter(|l| l.trim_start() == "package main").count();
+    let pkg_count = src
+        .lines()
+        .filter(|l| l.trim_start() == "package main")
+        .count();
     assert_eq!(
         pkg_count, 1,
         "Go output must contain exactly one `package main` declaration, found {pkg_count}"

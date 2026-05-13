@@ -46,8 +46,8 @@ const REALIZE_CID: &str =
 /// The envelope format is: {"memento": {...}, "cid": "<blake3-512:...>", "signature": {...}}.
 /// The "cid" field is compute_fixture_cid applied to the inner "memento" object.
 fn read_cid_from_envelope(path: &PathBuf) -> String {
-    let text = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"));
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"));
     let v: serde_json::Value =
         serde_json::from_str(&text).unwrap_or_else(|e| panic!("invalid JSON in {path:?}: {e}"));
     v["cid"]
@@ -59,8 +59,7 @@ fn read_cid_from_envelope(path: &PathBuf) -> String {
 /// Path to the catalog from this file's manifest directory.
 fn catalog_root() -> PathBuf {
     // CARGO_MANIFEST_DIR is .../implementations/rust/provekit-claim-envelope
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../menagerie/concept-shapes/catalog")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../menagerie/concept-shapes/catalog")
 }
 
 // ---------------------------------------------------------------------------

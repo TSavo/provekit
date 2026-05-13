@@ -147,32 +147,50 @@ fn lex(input: &str) -> Result<Vec<Tok>, ExprParseError> {
             let two = (c, chars[i + 1]);
             match two {
                 ('|', '|') => {
-                    tokens.push(Tok { tok: Token::Or, pos: pos!() });
+                    tokens.push(Tok {
+                        tok: Token::Or,
+                        pos: pos!(),
+                    });
                     i += 2;
                     continue;
                 }
                 ('&', '&') => {
-                    tokens.push(Tok { tok: Token::And, pos: pos!() });
+                    tokens.push(Tok {
+                        tok: Token::And,
+                        pos: pos!(),
+                    });
                     i += 2;
                     continue;
                 }
                 ('<', '=') => {
-                    tokens.push(Tok { tok: Token::Lte, pos: pos!() });
+                    tokens.push(Tok {
+                        tok: Token::Lte,
+                        pos: pos!(),
+                    });
                     i += 2;
                     continue;
                 }
                 ('>', '=') => {
-                    tokens.push(Tok { tok: Token::Gte, pos: pos!() });
+                    tokens.push(Tok {
+                        tok: Token::Gte,
+                        pos: pos!(),
+                    });
                     i += 2;
                     continue;
                 }
                 ('=', '=') => {
-                    tokens.push(Tok { tok: Token::Eq, pos: pos!() });
+                    tokens.push(Tok {
+                        tok: Token::Eq,
+                        pos: pos!(),
+                    });
                     i += 2;
                     continue;
                 }
                 ('!', '=') => {
-                    tokens.push(Tok { tok: Token::Ne, pos: pos!() });
+                    tokens.push(Tok {
+                        tok: Token::Ne,
+                        pos: pos!(),
+                    });
                     i += 2;
                     continue;
                 }
@@ -183,27 +201,42 @@ fn lex(input: &str) -> Result<Vec<Tok>, ExprParseError> {
         // Single-char tokens.
         match c {
             '<' => {
-                tokens.push(Tok { tok: Token::Lt, pos: pos!() });
+                tokens.push(Tok {
+                    tok: Token::Lt,
+                    pos: pos!(),
+                });
                 i += 1;
                 continue;
             }
             '>' => {
-                tokens.push(Tok { tok: Token::Gt, pos: pos!() });
+                tokens.push(Tok {
+                    tok: Token::Gt,
+                    pos: pos!(),
+                });
                 i += 1;
                 continue;
             }
             '!' => {
-                tokens.push(Tok { tok: Token::Not, pos: pos!() });
+                tokens.push(Tok {
+                    tok: Token::Not,
+                    pos: pos!(),
+                });
                 i += 1;
                 continue;
             }
             '(' => {
-                tokens.push(Tok { tok: Token::LParen, pos: pos!() });
+                tokens.push(Tok {
+                    tok: Token::LParen,
+                    pos: pos!(),
+                });
                 i += 1;
                 continue;
             }
             ')' => {
-                tokens.push(Tok { tok: Token::RParen, pos: pos!() });
+                tokens.push(Tok {
+                    tok: Token::RParen,
+                    pos: pos!(),
+                });
                 i += 1;
                 continue;
             }
@@ -225,7 +258,10 @@ fn lex(input: &str) -> Result<Vec<Tok>, ExprParseError> {
                     position: start_pos,
                     literal: s,
                 })?;
-            tokens.push(Tok { tok: Token::Int(n), pos: start_pos });
+            tokens.push(Tok {
+                tok: Token::Int(n),
+                pos: start_pos,
+            });
             continue;
         }
 
@@ -243,7 +279,10 @@ fn lex(input: &str) -> Result<Vec<Tok>, ExprParseError> {
                     position: start_pos,
                     literal: s,
                 })?;
-            tokens.push(Tok { tok: Token::Int(n), pos: start_pos });
+            tokens.push(Tok {
+                tok: Token::Int(n),
+                pos: start_pos,
+            });
             continue;
         }
 
@@ -274,7 +313,10 @@ fn lex(input: &str) -> Result<Vec<Tok>, ExprParseError> {
                 "false" => Token::Bool(false),
                 _ => Token::Ident(s),
             };
-            tokens.push(Tok { tok, pos: start_pos });
+            tokens.push(Tok {
+                tok,
+                pos: start_pos,
+            });
             continue;
         }
 
@@ -318,9 +360,9 @@ impl<'a> FParser<'a> {
     }
 
     fn cur_pos(&self) -> usize {
-        self.peek().map(|t| t.pos).unwrap_or_else(|| {
-            self.tokens.last().map(|t| t.pos + 1).unwrap_or(0)
-        })
+        self.peek()
+            .map(|t| t.pos)
+            .unwrap_or_else(|| self.tokens.last().map(|t| t.pos + 1).unwrap_or(0))
     }
 
     // expr ::= or_expr
@@ -342,7 +384,13 @@ impl<'a> FParser<'a> {
     // and_expr ::= not_expr ('&&' not_expr)*
     fn and_expr(&mut self) -> Result<Rc<Formula>, ExprParseError> {
         let mut lhs = self.not_expr()?;
-        while matches!(self.peek(), Some(Tok { tok: Token::And, .. })) {
+        while matches!(
+            self.peek(),
+            Some(Tok {
+                tok: Token::And,
+                ..
+            })
+        ) {
             self.advance();
             let rhs = self.not_expr()?;
             lhs = and_(vec![lhs, rhs]);
@@ -352,7 +400,13 @@ impl<'a> FParser<'a> {
 
     // not_expr ::= '!' not_expr | atom_formula
     fn not_expr(&mut self) -> Result<Rc<Formula>, ExprParseError> {
-        if matches!(self.peek(), Some(Tok { tok: Token::Not, .. })) {
+        if matches!(
+            self.peek(),
+            Some(Tok {
+                tok: Token::Not,
+                ..
+            })
+        ) {
             self.advance();
             let inner = self.not_expr()?;
             Ok(not_(inner))
@@ -363,7 +417,13 @@ impl<'a> FParser<'a> {
 
     // atom_formula ::= '(' expr ')' | cmp_or_bare
     fn atom_formula(&mut self) -> Result<Rc<Formula>, ExprParseError> {
-        if matches!(self.peek(), Some(Tok { tok: Token::LParen, .. })) {
+        if matches!(
+            self.peek(),
+            Some(Tok {
+                tok: Token::LParen,
+                ..
+            })
+        ) {
             return self.paren_formula();
         }
         self.cmp_or_bare()
@@ -375,10 +435,10 @@ impl<'a> FParser<'a> {
         self.advance(); // consume '('
         let inner = self.expr()?;
         match self.advance() {
-            Some(Tok { tok: Token::RParen, .. }) => Ok(inner),
-            _ => Err(ExprParseError::UnmatchedParen {
-                position: open_pos,
-            }),
+            Some(Tok {
+                tok: Token::RParen, ..
+            }) => Ok(inner),
+            _ => Err(ExprParseError::UnmatchedParen { position: open_pos }),
         }
     }
 
@@ -388,9 +448,13 @@ impl<'a> FParser<'a> {
 
         let op = match self.peek() {
             Some(Tok { tok: Token::Lt, .. }) => Some("<"),
-            Some(Tok { tok: Token::Lte, .. }) => Some("\u{2264}"),
+            Some(Tok {
+                tok: Token::Lte, ..
+            }) => Some("\u{2264}"),
             Some(Tok { tok: Token::Gt, .. }) => Some(">"),
-            Some(Tok { tok: Token::Gte, .. }) => Some("\u{2265}"),
+            Some(Tok {
+                tok: Token::Gte, ..
+            }) => Some("\u{2265}"),
             Some(Tok { tok: Token::Eq, .. }) => Some("="),
             Some(Tok { tok: Token::Ne, .. }) => Some("\u{2260}"),
             _ => None,
@@ -420,12 +484,17 @@ impl<'a> FParser<'a> {
     // NOTE: '(' at term level is an error per this grammar subset.
     fn term_atom(&mut self) -> Result<Rc<Term>, ExprParseError> {
         match self.peek() {
-            Some(Tok { tok: Token::Int(n), .. }) => {
+            Some(Tok {
+                tok: Token::Int(n), ..
+            }) => {
                 let n = *n;
                 self.advance();
                 Ok(num(n))
             }
-            Some(Tok { tok: Token::Bool(b), .. }) => {
+            Some(Tok {
+                tok: Token::Bool(b),
+                ..
+            }) => {
                 let b = *b;
                 self.advance();
                 Ok(Rc::new(Term::Const {
@@ -433,7 +502,10 @@ impl<'a> FParser<'a> {
                     sort: Sort::bool(),
                 }))
             }
-            Some(Tok { tok: Token::Ident(name), .. }) => {
+            Some(Tok {
+                tok: Token::Ident(name),
+                ..
+            }) => {
                 let name = name.clone();
                 self.advance();
                 Ok(Rc::new(Term::Var { name }))
@@ -519,8 +591,7 @@ mod tests {
         let f1 = rt(s);
         let b1 = jcs(&f1);
         // Re-parse via the JSON parser to confirm structural identity.
-        let json: serde_json::Value =
-            serde_json::from_str(&b1).expect("JCS is valid JSON");
+        let json: serde_json::Value = serde_json::from_str(&b1).expect("JCS is valid JSON");
         let f2 = crate::parse::parse_formula(&json).expect("re-parse");
         let b2 = jcs(&f2);
         assert_eq!(b1, b2, "round-trip failed for {s:?}");

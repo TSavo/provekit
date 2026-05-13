@@ -545,7 +545,14 @@ pub fn run(args: ProveArgs) -> u8 {
         ..Default::default()
     };
     let runner = Runner::new(cfg);
-    let report = runner.run();
+    let run_artifact = match runner.run_with_proof_run() {
+        Ok(artifact) => artifact,
+        Err(error) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            return crate::EXIT_USER_ERROR;
+        }
+    };
+    let report = run_artifact.report;
 
     if args.out.json {
         let j = report_fmt::report_to_json(&report);

@@ -74,7 +74,9 @@ fn output_retrying_etxtbsy(cmd: &mut Command) -> std::process::Output {
         if !is_etxtbsy {
             return out;
         }
-        std::thread::sleep(std::time::Duration::from_millis(20 * u64::from(attempt + 1)));
+        std::thread::sleep(std::time::Duration::from_millis(
+            20 * u64::from(attempt + 1),
+        ));
     }
     cmd.output().expect("spawn provekit (final attempt)")
 }

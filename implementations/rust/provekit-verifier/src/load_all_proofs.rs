@@ -159,8 +159,10 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
                 continue;
             }
         }
-        // Rule 2: re-derive envelope CID. Branch on shape.
-        let derived = compute_envelope_cid(&env);
+        // Rule 2: re-derive the member identity. ProofRunMemento and
+        // StageReceipt are header-addressed artifacts, unlike older
+        // v1.2 mementos whose member identity is the envelope CID.
+        let derived = compute_member_cid(&env);
         if derived != *cid {
             pool.load_errors.push(LoadError {
                 proof_path: path.display().to_string(),
@@ -229,6 +231,19 @@ fn compute_envelope_cid(env: &Json) -> String {
     let value_tree = json_to_value(&stripped);
     let canonical = encode_jcs(&value_tree);
     blake3_512_of(canonical.as_bytes())
+}
+
+fn compute_member_cid(env: &Json) -> String {
+    let kind = env
+        .pointer("/header/kind")
+        .or_else(|| env.pointer("/envelope/header/kind"))
+        .and_then(|v| v.as_str());
+    if matches!(kind, Some("proof-run" | "stage-receipt")) {
+        if let Some(cid) = env.pointer("/header/cid").and_then(|v| v.as_str()) {
+            return cid.to_string();
+        }
+    }
+    compute_envelope_cid(env)
 }
 
 fn json_to_value(j: &Json) -> std::sync::Arc<Value> {

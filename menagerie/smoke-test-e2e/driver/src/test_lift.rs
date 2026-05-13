@@ -22,9 +22,16 @@ pub fn collect_witnesses(test_files: &[std::path::PathBuf]) -> Vec<(String, Stri
     // Returns Vec<(source_location, fn_name, formula_text)>.
     let mut out = Vec::new();
     for path in test_files {
-        let Ok(src) = std::fs::read_to_string(path) else { continue };
-        let Ok(file) = syn::parse_file(&src) else { continue };
-        let rel = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let Ok(src) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(file) = syn::parse_file(&src) else {
+            continue;
+        };
+        let rel = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         for item in &file.items {
             if let syn::Item::Fn(item_fn) = item {
                 let is_test = item_fn.attrs.iter().any(|a| a.path().is_ident("test"));
@@ -63,8 +70,9 @@ pub fn collect_witnesses(test_files: &[std::path::PathBuf]) -> Vec<(String, Stri
                                     // identifier with the post-binding
                                     // marker `out` and reduce to the
                                     // bare predicate after the relation.
-                                    let normalized =
-                                        rewrite_assert_to_post(body.split(',').next().unwrap_or(&body).trim());
+                                    let normalized = rewrite_assert_to_post(
+                                        body.split(',').next().unwrap_or(&body).trim(),
+                                    );
                                     out.push((format!("{}:{}", rel, ident), fn_name, normalized));
                                 }
                             }
@@ -143,7 +151,14 @@ fn guess_fn_under_test(body: &str) -> Option<String> {
     for c in body.chars() {
         if c.is_alphanumeric() || c == '_' {
             cur.push(c);
-        } else if c == '(' && !cur.is_empty() && cur.chars().next().map(|x| x.is_alphabetic()).unwrap_or(false) {
+        } else if c == '('
+            && !cur.is_empty()
+            && cur
+                .chars()
+                .next()
+                .map(|x| x.is_alphabetic())
+                .unwrap_or(false)
+        {
             if !is_reserved(&cur) {
                 return Some(cur);
             }
@@ -156,7 +171,10 @@ fn guess_fn_under_test(body: &str) -> Option<String> {
 }
 
 fn is_reserved(s: &str) -> bool {
-    matches!(s, "assert" | "let" | "if" | "for" | "while" | "return" | "match")
+    matches!(
+        s,
+        "assert" | "let" | "if" | "for" | "while" | "return" | "match"
+    )
 }
 
 /// Look up a post-condition derived from a unit-test assertion that

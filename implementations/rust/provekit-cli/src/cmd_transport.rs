@@ -222,14 +222,12 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
     // or any other language's source here under the architectural cut.
     // When no lift kit is registered for `source_language` we leave the
     // signature empty and let the realize kit emit a permissive stub.
-    let workspace_root = repo_root().unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    let workspace_root =
+        repo_root().unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
     let (annotations, param_types, return_type) =
         match crate::kit_dispatch::dispatch_bind_lift(&workspace_root, &source_language) {
             Ok(session) => {
-                let target = session
-                    .entries
-                    .iter()
-                    .find(|e| e.fn_name == args.function);
+                let target = session.entries.iter().find(|e| e.fn_name == args.function);
                 if let Some(entry) = target {
                     // attr_pre/attr_post are kept as Strings here; the
                     // realize plugin (PEP 1.7.0 `kind = "realize"`) consumes
@@ -247,10 +245,18 @@ fn run_inner(args: TransportArgs) -> Result<TransportReport, TransportCliError> 
                         },
                     )
                 } else {
-                    (ContractAnnotations::default(), Vec::new(), "i64".to_string())
+                    (
+                        ContractAnnotations::default(),
+                        Vec::new(),
+                        "i64".to_string(),
+                    )
                 }
             }
-            Err(_) => (ContractAnnotations::default(), Vec::new(), "i64".to_string()),
+            Err(_) => (
+                ContractAnnotations::default(),
+                Vec::new(),
+                "i64".to_string(),
+            ),
         };
 
     // Derive a stable concept binding for the `// concept: ...` comment.
@@ -906,7 +912,8 @@ fn type_to_str(ty: &syn::Type) -> String {
     match ty {
         syn::Type::Path(tp) => {
             let seg = tp.path.segments.last();
-            seg.map(|s| s.ident.to_string()).unwrap_or_else(|| "i64".to_string())
+            seg.map(|s| s.ident.to_string())
+                .unwrap_or_else(|| "i64".to_string())
         }
         syn::Type::Reference(r) => {
             let inner = type_to_str(r.elem.as_ref());
@@ -953,8 +960,8 @@ struct ContractAnnotations {
 fn derive_concept_comment(target_term: &Term) -> String {
     // Serialize to canonical JSON and hash the bytes. serde_json's default
     // serialization is deterministic for the same input value.
-    let json = serde_json::to_string(target_term)
-        .unwrap_or_else(|_| "<unserializable>".to_string());
+    let json =
+        serde_json::to_string(target_term).unwrap_or_else(|_| "<unserializable>".to_string());
     let mut h: u64 = 0xcbf29ce484222325; // FNV-1a 64-bit offset basis
     for b in json.bytes() {
         h ^= b as u64;
@@ -1074,8 +1081,9 @@ fn realize_function(
     // emits a `kit-plugin-unavailable` gap. Per Supra omnia rectum, kit
     // unavailability is a precise extension request, not a hidden error.
     let _ = annotations; // emission is the kit's responsibility
-    let _ = body;        // body emission is the kit's responsibility
-    let workspace_root = repo_root().unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    let _ = body; // body emission is the kit's responsibility
+    let workspace_root =
+        repo_root().unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
     let request = crate::kit_dispatch::RealizeRequest {
         function: function.to_string(),
         params: params.to_vec(),
@@ -1085,9 +1093,7 @@ fn realize_function(
     };
     let realized = crate::kit_dispatch::dispatch_realize(&workspace_root, language, &request)
         .map_err(|e| {
-            TransportCliError::Refusal(format!(
-                "realize-time:kit-plugin-unavailable {e}"
-            ))
+            TransportCliError::Refusal(format!("realize-time:kit-plugin-unavailable {e}"))
         })?;
     return Ok(RealizedSource {
         // The kit reports `extension`; fall back to a leak-free static
@@ -1100,5 +1106,4 @@ fn realize_function(
         source: realized.source,
         is_stub: realized.is_stub,
     });
-
 }

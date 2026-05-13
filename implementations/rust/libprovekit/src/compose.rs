@@ -39,8 +39,9 @@ use provekit_ir_types::{
     composition_refusal_compose_input_cid, composition_refusal_header_cid,
     composition_refusal_signature, AggregationStrategy, BlockingEffect, CompositionRefusalEnvelope,
     CompositionRefusalHeader, CompositionRefusalMemento, CompositionRefusalMetadata,
-    CompoundContractMemento, EffectOccurrence, EvidenceMemento, EvidenceRef, IrFormula, IrTerm, OccurrenceKind, OccurrenceRole,
-    Sort, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
+    CompoundContractMemento, EffectOccurrence, EvidenceMemento, EvidenceRef, IrFormula, IrTerm,
+    OccurrenceKind, OccurrenceRole, Sort, SourceKind, SourceLocator, SourceLocatorPoint,
+    SourceLocatorSpan,
 };
 
 /// CCP version tag carried inside the composed memento body. Bumped only
@@ -1146,7 +1147,8 @@ fn effect_occurrences_for_steps(steps: &[ChainStep<'_>]) -> Vec<EffectOccurrence
                 .iter()
                 .enumerate()
                 .map(move |(idx, effect)| {
-                    let occurrence_kind = OccurrenceKind::from_str(effect_occurrence_kind(effect)).expect("canonical effect kind");
+                    let occurrence_kind = OccurrenceKind::from_str(effect_occurrence_kind(effect))
+                        .expect("canonical effect kind");
                     let discharge_key = effect_discharge_key(effect);
                     EffectOccurrence {
                         args: effect_args_json(effect),

@@ -51,13 +51,17 @@ mod report;
 mod synthesize;
 mod test_lift;
 
-use algebra::{TermShape, FormulaShape};
+use algebra::{FormulaShape, TermShape};
 
 fn main() {
     let fixture_dir = locate_fixture_dir();
     eprintln!("[smoke] fixture dir: {}", fixture_dir.display());
 
-    let pass_1 = run_pass(&fixture_dir, /*pass_id=*/ 1, /*read_concept_comments=*/ false);
+    let pass_1 = run_pass(
+        &fixture_dir,
+        /*pass_id=*/ 1,
+        /*read_concept_comments=*/ false,
+    );
     eprintln!(
         "[smoke] pass 1 complete: {} sites, {} concepts ({} unnamed)",
         pass_1.bindings.len(),
@@ -69,7 +73,10 @@ fn main() {
     let rewritten_dir = fixture_dir.join("rewritten");
     let _ = fs::create_dir_all(&rewritten_dir);
     realize::write_rewritten(&fixture_dir, &rewritten_dir, &pass_1);
-    eprintln!("[smoke] pass 1 rewritten files at {}", rewritten_dir.display());
+    eprintln!(
+        "[smoke] pass 1 rewritten files at {}",
+        rewritten_dir.display()
+    );
 
     // Simulated human action: pick the first UNNAMED concept and replace
     // its name with `retry-with-jitter` in the rewritten source. This
@@ -96,7 +103,11 @@ fn main() {
     // name on the same shape-CID). The driver respects the comment as
     // substrate input and inherits the name onto every binding of that
     // shape-CID.
-    let pass_2 = run_pass(&rewritten_dir, /*pass_id=*/ 2, /*read_concept_comments=*/ true);
+    let pass_2 = run_pass(
+        &rewritten_dir,
+        /*pass_id=*/ 2,
+        /*read_concept_comments=*/ true,
+    );
     eprintln!(
         "[smoke] pass 2 complete: {} sites, {} concepts ({} unnamed)",
         pass_2.bindings.len(),
@@ -106,12 +117,7 @@ fn main() {
 
     // Write the final report. The report is the substrate speaking.
     let report_path = fixture_dir.join("report.md");
-    let report_md = report::render_report(
-        &fixture_dir,
-        &pass_1,
-        &pass_2,
-        renamed_pair.as_ref(),
-    );
+    let report_md = report::render_report(&fixture_dir, &pass_1, &pass_2, renamed_pair.as_ref());
     fs::write(&report_path, report_md).expect("write report.md");
     eprintln!("[smoke] report written: {}", report_path.display());
 }
@@ -120,7 +126,10 @@ fn main() {
 fn locate_fixture_dir() -> PathBuf {
     // CARGO_MANIFEST_DIR for the driver crate is .../smoke-test-e2e/driver.
     let driver_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    driver_dir.parent().expect("driver has a parent").to_path_buf()
+    driver_dir
+        .parent()
+        .expect("driver has a parent")
+        .to_path_buf()
 }
 
 // ===========================================================================
@@ -140,7 +149,10 @@ pub struct PassResult {
 
 impl PassResult {
     fn unnamed_count(&self) -> usize {
-        self.concepts.iter().filter(|c| c.name.starts_with("UNNAMED-CONCEPT-")).count()
+        self.concepts
+            .iter()
+            .filter(|c| c.name.starts_with("UNNAMED-CONCEPT-"))
+            .count()
     }
 }
 
@@ -188,7 +200,9 @@ impl ContractOrigin {
         match self {
             ContractOrigin::AttributeLift => "annotation-lift".into(),
             ContractOrigin::TestLift => "test-lift".into(),
-            ContractOrigin::AlgebraSynthesis { rule_id } => format!("algebra-synthesis[{}]", rule_id),
+            ContractOrigin::AlgebraSynthesis { rule_id } => {
+                format!("algebra-synthesis[{}]", rule_id)
+            }
             ContractOrigin::Empty => "empty".into(),
         }
     }
@@ -205,7 +219,9 @@ impl DischargeVerdict {
     pub fn label(&self) -> String {
         match self {
             DischargeVerdict::Exact => "exact".into(),
-            DischargeVerdict::LoudlyBoundedLossy { loss } => format!("loudly-bounded-lossy({})", loss),
+            DischargeVerdict::LoudlyBoundedLossy { loss } => {
+                format!("loudly-bounded-lossy({})", loss)
+            }
             DischargeVerdict::Refuse { reason } => format!("refuse({})", reason),
         }
     }
@@ -264,11 +280,7 @@ pub struct WitnessRecord {
 // run_pass: implements the eight verbs end-to-end on a source tree.
 // ===========================================================================
 
-fn run_pass(
-    source_root: &Path,
-    pass_id: u32,
-    read_concept_comments: bool,
-) -> PassResult {
+fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> PassResult {
     // Collect *.rs sources under src/ (and tests/ for the test lift).
     let src_dir = source_root.join("src");
     let tests_dir = source_root.join("tests");
@@ -301,7 +313,11 @@ fn run_pass(
                 continue;
             }
         };
-        let rel = path.strip_prefix(source_root).unwrap_or(path).display().to_string();
+        let rel = path
+            .strip_prefix(source_root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
         for item in &file.items {
             if let syn::Item::Fn(item_fn) = item {
                 let fn_name = item_fn.sig.ident.to_string();
@@ -373,7 +389,12 @@ fn run_pass(
                     Some(c.id.clone()),
                 )
             } else {
-                (format!("shape:{}", shape_cid), String::new(), NameSource::Auto, None)
+                (
+                    format!("shape:{}", shape_cid),
+                    String::new(),
+                    NameSource::Auto,
+                    None,
+                )
             };
 
         if !key_to_concept_idx.contains_key(&bucket_key) {
@@ -443,15 +464,14 @@ fn run_pass(
                 lift.attr_pre.clone(),
                 lift.attr_post.clone(),
             )
-        } else if let Some(test_post) = test_lift::lift_assertion_for_fn(&test_files, &lift.fn_name) {
-            (
-                ContractOrigin::TestLift,
-                None,
-                Some(test_post),
-            )
+        } else if let Some(test_post) = test_lift::lift_assertion_for_fn(&test_files, &lift.fn_name)
+        {
+            (ContractOrigin::TestLift, None, Some(test_post))
         } else if let Some(rule) = synthesize::wp_rule_for_shape(&shape_cid, &lift.term_shape) {
             (
-                ContractOrigin::AlgebraSynthesis { rule_id: rule.id.clone() },
+                ContractOrigin::AlgebraSynthesis {
+                    rule_id: rule.id.clone(),
+                },
                 rule.pre.clone(),
                 rule.post.clone(),
             )
@@ -622,8 +642,8 @@ fn run_pass(
                 discharge_kv.push(("discharge_receipt_cid", Value::string(drc.clone())));
             }
             // loss_record: serialize via serde_json then convert to Arc<Value>
-            let loss_json = serde_json::to_string(&discharge.loss_record)
-                .expect("LossRecord serialization");
+            let loss_json =
+                serde_json::to_string(&discharge.loss_record).expect("LossRecord serialization");
             let loss_v = json_to_value(&serde_json::from_str(&loss_json).expect("parse loss_json"));
             discharge_kv.push(("loss_record", loss_v));
             let discharge_v = Value::object(discharge_kv);
@@ -680,8 +700,14 @@ fn run_pass(
             // to confirm the pre-stamp header_v hash equals the struct's own cid.
             let rederived_cid = {
                 let cs_v = Value::object([
-                    ("function_term_cid", Value::string(memento.code_site.function_term_cid.clone())),
-                    ("source_cid", Value::string(memento.code_site.source_cid.clone())),
+                    (
+                        "function_term_cid",
+                        Value::string(memento.code_site.function_term_cid.clone()),
+                    ),
+                    (
+                        "source_cid",
+                        Value::string(memento.code_site.source_cid.clone()),
+                    ),
                     (
                         "span",
                         Value::object([
@@ -701,24 +727,38 @@ fn run_pass(
                 }
                 let rd_loss_json = serde_json::to_string(&memento.discharge.loss_record)
                     .expect("rederive LossRecord");
-                let rd_loss_v = json_to_value(
-                    &serde_json::from_str(&rd_loss_json).expect("rederive parse"),
-                );
+                let rd_loss_v =
+                    json_to_value(&serde_json::from_str(&rd_loss_json).expect("rederive parse"));
                 rd_discharge_kv.push(("loss_record", rd_loss_v));
                 let rd_discharge_v = Value::object(rd_discharge_kv);
                 let rd_prov_v = Value::object([
-                    ("clusterer_cid", Value::string(memento.provenance.clusterer_cid.clone())),
-                    ("discharger_cid", Value::string(memento.provenance.discharger_cid.clone())),
-                    ("lifter_cid", Value::string(memento.provenance.lifter_cid.clone())),
+                    (
+                        "clusterer_cid",
+                        Value::string(memento.provenance.clusterer_cid.clone()),
+                    ),
+                    (
+                        "discharger_cid",
+                        Value::string(memento.provenance.discharger_cid.clone()),
+                    ),
+                    (
+                        "lifter_cid",
+                        Value::string(memento.provenance.lifter_cid.clone()),
+                    ),
                 ]);
                 let mut rd_kv: Vec<(&str, Arc<Value>)> = Vec::new();
                 rd_kv.push(("code_site", cs_v));
                 rd_kv.push(("concept_cid", Value::string(memento.concept_cid.clone())));
                 rd_kv.push(("discharge", rd_discharge_v));
                 rd_kv.push(("kind", Value::string(memento.kind.clone())));
-                rd_kv.push(("local_contract_cid", Value::string(memento.local_contract_cid.clone())));
+                rd_kv.push((
+                    "local_contract_cid",
+                    Value::string(memento.local_contract_cid.clone()),
+                ));
                 rd_kv.push(("provenance", rd_prov_v));
-                rd_kv.push(("schemaVersion", Value::string(memento.schema_version.clone())));
+                rd_kv.push((
+                    "schemaVersion",
+                    Value::string(memento.schema_version.clone()),
+                ));
                 rd_kv.push(("witnesses", Value::array(vec![])));
                 let rd_header_v = Value::object(rd_kv);
                 blake3_512_of(encode_jcs(&rd_header_v).as_bytes())
@@ -737,8 +777,8 @@ fn run_pass(
                 &lift.fn_name,
             );
 
-            let memento_json = serde_json::to_string_pretty(&memento)
-                .expect("ConceptSiteMemento serialization");
+            let memento_json =
+                serde_json::to_string_pretty(&memento).expect("ConceptSiteMemento serialization");
             let _ = fs::write(
                 artifacts_dir.join(format!(
                     "pass{}_site_{}_{}.json",
@@ -839,7 +879,9 @@ fn list_rs_files(dir: &Path) -> Vec<PathBuf> {
     if !dir.exists() {
         return out;
     }
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let p = entry.path();
         if p.extension().and_then(|s| s.to_str()) == Some("rs") {
@@ -939,9 +981,7 @@ fn json_to_value(v: &serde_json::Value) -> Arc<Value> {
             }
         }
         serde_json::Value::String(s) => Value::string(s.clone()),
-        serde_json::Value::Array(arr) => {
-            Value::array(arr.iter().map(json_to_value).collect())
-        }
+        serde_json::Value::Array(arr) => Value::array(arr.iter().map(json_to_value).collect()),
         serde_json::Value::Object(map) => {
             let kv: Vec<(&str, Arc<Value>)> = map
                 .iter()
@@ -971,8 +1011,16 @@ fn validate_concept_site_memento(
 ) {
     // §5.1 CDDL shape check.
     let cid_re = regex_cid();
-    assert_eq!(kind, "concept-site", "[§5.1] kind mismatch at {}", site_label);
-    assert_eq!(schema_version, "1", "[§5.1] schemaVersion mismatch at {}", site_label);
+    assert_eq!(
+        kind, "concept-site",
+        "[§5.1] kind mismatch at {}",
+        site_label
+    );
+    assert_eq!(
+        schema_version, "1",
+        "[§5.1] schemaVersion mismatch at {}",
+        site_label
+    );
     assert!(
         cid_re(computed_cid),
         "[§5.1] computed_cid is not a valid blake3-512 CID at {}",
@@ -1028,7 +1076,10 @@ fn validate_concept_site_memento(
                 site_label
             );
             assert!(
-                refusal_reason.as_deref().map(|s| !s.is_empty()).unwrap_or(false),
+                refusal_reason
+                    .as_deref()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false),
                 "[§5.2] refuse verdict requires non-empty refusal_reason at {}",
                 site_label
             );

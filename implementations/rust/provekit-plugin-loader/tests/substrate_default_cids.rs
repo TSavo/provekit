@@ -40,10 +40,10 @@ fn repo_root() -> PathBuf {
 /// (the existing `cid` field is ignored by `compute_plugin_cid` per §6.1), and
 /// returns the recomputed CID.
 fn mint_cid_for(path: &PathBuf) -> String {
-    let raw = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    let root: serde_json::Value = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+    let raw =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let root: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
     let header_val = root
         .get("header")
         .unwrap_or_else(|| panic!("{}: missing top-level `header`", path.display()))
@@ -69,7 +69,8 @@ fn assert_self_consistent(path: PathBuf, pinned: &str) {
     let declared = declared_cid_for(&path);
     let minted = mint_cid_for(&path);
     assert_eq!(
-        declared, minted,
+        declared,
+        minted,
         "{}: declared cid does not match recomputed cid.\n  \
          declared = {declared}\n  \
          minted   = {minted}\n  \
@@ -77,7 +78,8 @@ fn assert_self_consistent(path: PathBuf, pinned: &str) {
         path.display()
     );
     assert_eq!(
-        declared, pinned,
+        declared,
+        pinned,
         "{}: cid drifted from the pin in this test file.\n  \
          pinned in test = {pinned}\n  \
          declared in file = {declared}\n  \
@@ -88,8 +90,8 @@ fn assert_self_consistent(path: PathBuf, pinned: &str) {
 
 #[test]
 fn java_canonical_sugar_cid_self_consistent() {
-    let path = repo_root()
-        .join("menagerie/java-language-signature/specs/sugar/java-canonical.json");
+    let path =
+        repo_root().join("menagerie/java-language-signature/specs/sugar/java-canonical.json");
     assert_self_consistent(
         path,
         "blake3-512:b7ad1160f00d892d310fb33ac3372a4ebb2f89fec563cab1719e7006ab3d7593aae2162b882aedbec1b97e44957240b3c7e8ab1675456f0539c4ad3f45d22a7b",
@@ -108,8 +110,8 @@ fn java_canonical_bodies_cid_self_consistent() {
 
 #[test]
 fn python_canonical_sugar_cid_self_consistent() {
-    let path = repo_root()
-        .join("menagerie/python-language-signature/specs/sugar/python-canonical.json");
+    let path =
+        repo_root().join("menagerie/python-language-signature/specs/sugar/python-canonical.json");
     assert_self_consistent(
         path,
         "blake3-512:611d311ef2679410a8daac0fcde13ca637d800930fa49abd21539619c7e9b1c4410b047750fcd2a5cec08e6a25fa070879611642e1807eb5e03bac70664383a8",
@@ -118,8 +120,9 @@ fn python_canonical_sugar_cid_self_consistent() {
 
 #[test]
 fn python_canonical_bodies_cid_self_consistent() {
-    let path = repo_root()
-        .join("menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json");
+    let path = repo_root().join(
+        "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json",
+    );
     assert_self_consistent(
         path,
         "blake3-512:fb35f2196ebca55a964e1829a5f0f2842a0d3de53406fcca504e93b0aa1e55c09b7735740c382564817d279146479d8e4a3963377ee42878c6bb979da44a5cc7",

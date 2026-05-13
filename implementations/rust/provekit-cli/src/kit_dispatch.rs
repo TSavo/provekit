@@ -365,7 +365,9 @@ fn rpc_lift(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
 
-    let mut child = command.spawn().map_err(|e| format!("spawn lift kit: {e}"))?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn lift kit: {e}"))?;
     let mut stdin = child
         .stdin
         .take()
@@ -450,9 +452,10 @@ fn decode_bind_lift_response(response: Value) -> Result<BindLiftResult, String> 
              bind expects bind-IR per 2026-05-13-bind-ir-lift-result.md)"
         ));
     }
-    let ir = response.get("ir").and_then(Value::as_array).ok_or_else(|| {
-        "ir-document missing `ir` array".to_string()
-    })?;
+    let ir = response
+        .get("ir")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "ir-document missing `ir` array".to_string())?;
     let mut entries: Vec<BindLiftEntry> = Vec::new();
     for v in ir {
         let entry_kind = v.get("kind").and_then(Value::as_str).unwrap_or("");
@@ -606,9 +609,9 @@ fn builtin_realize_candidates(workspace_root: &Path, target_lang: &str) -> Vec<R
     // a switch on `target_lang == "java"`.
     let impl_dir = workspace_root.join("implementations").join(target_lang);
     let realize_subdir = impl_dir.join(format!("provekit-realize-{target_lang}-core"));
-    let jar = realize_subdir.join("target").join(format!(
-        "provekit-realize-{target_lang}.jar"
-    ));
+    let jar = realize_subdir
+        .join("target")
+        .join(format!("provekit-realize-{target_lang}.jar"));
     if jar.exists() || jar.parent().map(|p| p.exists()).unwrap_or(false) {
         // Java/JVM jar convention.
         out.push(RealizeBuiltin {
@@ -717,9 +720,9 @@ fn invoke_realize(
     if let Some(err) = v.get("error") {
         return Err(format!("realize kit error: {err}"));
     }
-    let result = v.get("result").ok_or_else(|| {
-        format!("realize response missing result; raw={}", line.trim())
-    })?;
+    let result = v
+        .get("result")
+        .ok_or_else(|| format!("realize response missing result; raw={}", line.trim()))?;
     let source = result
         .get("source")
         .and_then(Value::as_str)
@@ -730,12 +733,15 @@ fn invoke_realize(
             )
         })?
         .to_string();
-    let is_stub = result.get("is_stub").and_then(Value::as_bool).ok_or_else(|| {
-        format!(
-            "realize response missing or non-boolean result.is_stub; raw={}",
-            line.trim()
-        )
-    })?;
+    let is_stub = result
+        .get("is_stub")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| {
+            format!(
+                "realize response missing or non-boolean result.is_stub; raw={}",
+                line.trim()
+            )
+        })?;
     let extension = result
         .get("extension")
         .and_then(Value::as_str)

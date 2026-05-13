@@ -159,8 +159,7 @@ fn profile_kind_rejects_bare_unknown() {
     // Per spec §3 + admissibility-spine namespaced-extensions rule, a bare
     // unknown profile_kind (no `:` separator) MUST fail closed at
     // deserialization, not silently become Other(s).
-    let result: Result<CanonicalizationProfileKind, _> =
-        serde_json::from_str("\"weird-kind\"");
+    let result: Result<CanonicalizationProfileKind, _> = serde_json::from_str("\"weird-kind\"");
     assert!(
         result.is_err(),
         "bare unknown profile_kind should fail closed, got {:?}",
@@ -180,8 +179,7 @@ fn profile_kind_accepts_well_formed_namespaced_extension() {
 
 #[test]
 fn unsupported_equivalence_policy_rejects_bare_unknown() {
-    let result: Result<UnsupportedEquivalencePolicy, _> =
-        serde_json::from_str("\"ignore\"");
+    let result: Result<UnsupportedEquivalencePolicy, _> = serde_json::from_str("\"ignore\"");
     assert!(
         result.is_err(),
         "bare unknown policy should fail closed, got {:?}",
@@ -191,14 +189,20 @@ fn unsupported_equivalence_policy_rejects_bare_unknown() {
 
 #[test]
 fn profile_kind_rejects_multi_colon() {
-    let result: Result<CanonicalizationProfileKind, _> =
-        serde_json::from_str("\"a:b:c\"");
-    assert!(result.is_err(), "multi-colon should fail closed, got {:?}", result);
+    let result: Result<CanonicalizationProfileKind, _> = serde_json::from_str("\"a:b:c\"");
+    assert!(
+        result.is_err(),
+        "multi-colon should fail closed, got {:?}",
+        result
+    );
 }
 
 #[test]
 fn unsupported_equivalence_policy_rejects_multi_colon() {
-    let result: Result<UnsupportedEquivalencePolicy, _> =
-        serde_json::from_str("\"a:b:c\"");
-    assert!(result.is_err(), "multi-colon should fail closed, got {:?}", result);
+    let result: Result<UnsupportedEquivalencePolicy, _> = serde_json::from_str("\"a:b:c\"");
+    assert!(
+        result.is_err(),
+        "multi-colon should fail closed, got {:?}",
+        result
+    );
 }

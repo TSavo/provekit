@@ -167,11 +167,18 @@ fn catalog_kind_rejects_bare_unknown_at_deserialization() {
 fn catalog_kind_accepts_well_formed_namespaced_extension() {
     let valid = serde_json::json!("acme:custom-catalog").to_string();
     let parsed: CatalogKind = serde_json::from_str(&valid).expect("parse");
-    assert_eq!(parsed, CatalogKind::Namespaced("acme:custom-catalog".to_string()));
+    assert_eq!(
+        parsed,
+        CatalogKind::Namespaced("acme:custom-catalog".to_string())
+    );
 }
 
 #[test]
 fn catalog_kind_rejects_multi_colon() {
     let result: Result<CatalogKind, _> = serde_json::from_str("\"a:b:c\"");
-    assert!(result.is_err(), "multi-colon should fail closed, got {:?}", result);
+    assert!(
+        result.is_err(),
+        "multi-colon should fail closed, got {:?}",
+        result
+    );
 }

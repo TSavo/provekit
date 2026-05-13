@@ -32,16 +32,14 @@ use provekit_cli::cmd_transport::realize_for_bind;
 fn trinity_src() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/trinity_roundtrip/src/lib.rs");
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("could not read trinity fixture: {e}"))
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("could not read trinity fixture: {e}"))
 }
 
 /// Path to the Java realize jar (built by Maven).
 fn java_jar() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // Relative to provekit-cli crate: ../../java/provekit-realize-java-core/target/...
-    manifest
-        .join("../../java/provekit-realize-java-core/target/provekit-realize-java.jar")
+    manifest.join("../../java/provekit-realize-java-core/target/provekit-realize-java.jar")
 }
 
 /// Serializes the one-time Maven build across parallel test threads.
@@ -62,11 +60,16 @@ fn ensure_jar_built() {
         return;
     }
 
-    let java_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../java");
+    let java_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../java");
 
     let status = Command::new("mvn")
-        .args(["package", "-pl", "provekit-realize-java-core", "-am", "-DskipTests"])
+        .args([
+            "package",
+            "-pl",
+            "provekit-realize-java-core",
+            "-am",
+            "-DskipTests",
+        ])
         .current_dir(&java_dir)
         .status()
         .unwrap_or_else(|e| panic!("failed to spawn mvn: {e}"));
@@ -87,7 +90,13 @@ fn ensure_jar_built() {
 }
 
 /// Send one provekit.plugin.invoke RPC to the Java plugin and return the source string.
-fn java_invoke(function: &str, params: &[&str], param_types: &[&str], return_type: &str, concept_name: &str) -> String {
+fn java_invoke(
+    function: &str,
+    params: &[&str],
+    param_types: &[&str],
+    return_type: &str,
+    concept_name: &str,
+) -> String {
     ensure_jar_built();
     let jar = java_jar();
 
@@ -150,12 +159,7 @@ fn java_invoke(function: &str, params: &[&str], param_types: &[&str], return_typ
 /// plugin invoked directly. Post-PR-#770 this is a tautological check that
 /// the dispatcher routes the same bytes the kit returns; it is retained as
 /// a regression test for the dispatcher contract.
-fn assert_byte_identical(
-    function: &str,
-    params: &[&str],
-    _source_text: &str,
-    concept_name: &str,
-) {
+fn assert_byte_identical(function: &str, params: &[&str], _source_text: &str, concept_name: &str) {
     // Post PR #779: the realize path goes through the kit dispatcher, which
     // resolves the Java realize jar via the substrate-convention filesystem
     // discovery (implementations/java/provekit-realize-java-core/target/...).
@@ -186,11 +190,16 @@ fn assert_byte_identical(
     let rust_src = &rust_result.source;
 
     let param_type_strs: Vec<&str> = param_types.iter().map(String::as_str).collect();
-    let java_src = java_invoke(function, params, &param_type_strs, return_type, concept_name);
+    let java_src = java_invoke(
+        function,
+        params,
+        &param_type_strs,
+        return_type,
+        concept_name,
+    );
 
     assert_eq!(
-        rust_src,
-        &java_src,
+        rust_src, &java_src,
         "byte-identical failure for {function}\n\
          Rust output:\n{rust_src}\n\
          Java output:\n{java_src}"
@@ -295,9 +304,15 @@ fn pep_describe_returns_valid_sugar_plugin() {
         "blake3-512:b7ad1160f00d892d310fb33ac3372a4ebb2f89fec563cab1719e7006ab3d7593aae2162b882aedbec1b97e44957240b3c7e8ab1675456f0539c4ad3f45d22a7b",
         "java-canonical plugin CID must match pinned value"
     );
-    assert!(!plugin.is_critical(), "java-canonical sugar is not critical");
     assert!(
-        plugin.header.protocol_versions.contains(&"pep/1.7.0".to_string()),
+        !plugin.is_critical(),
+        "java-canonical sugar is not critical"
+    );
+    assert!(
+        plugin
+            .header
+            .protocol_versions
+            .contains(&"pep/1.7.0".to_string()),
         "java-canonical must declare pep/1.7.0"
     );
 }

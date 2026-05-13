@@ -113,10 +113,14 @@ fn registry_lookup_by_kind_cid() {
     let kind = plugin.kind().to_string();
 
     let mut reg = PluginRegistry::new();
-    reg.register(plugin, "tests/fixtures/dummy-sugar.json").unwrap();
+    reg.register(plugin, "tests/fixtures/dummy-sugar.json")
+        .unwrap();
 
     let found = reg.lookup(&kind, &cid);
-    assert!(found.is_some(), "lookup({kind}, {cid}) should find the plugin");
+    assert!(
+        found.is_some(),
+        "lookup({kind}, {cid}) should find the plugin"
+    );
     assert_eq!(found.unwrap().cid(), cid);
 }
 
@@ -127,7 +131,8 @@ fn registry_memento_includes_loaded_cid() {
     let expected_cid = plugin.cid().to_string();
 
     let mut reg = PluginRegistry::new();
-    reg.register(plugin, "tests/fixtures/dummy-sugar.json").unwrap();
+    reg.register(plugin, "tests/fixtures/dummy-sugar.json")
+        .unwrap();
 
     let memento = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
     // §9.1: loaded must contain the plugin as a {kind, cid} entry.
@@ -137,7 +142,11 @@ fn registry_memento_includes_loaded_cid() {
     );
     // §9.1: load_order must contain the plugin as a {kind, cid, source} entry.
     assert!(
-        memento.header.load_order.iter().any(|e| e.cid == expected_cid),
+        memento
+            .header
+            .load_order
+            .iter()
+            .any(|e| e.cid == expected_cid),
         "load_order must include the plugin CID"
     );
     // §9.3: registry CID must be non-empty and well-formed.

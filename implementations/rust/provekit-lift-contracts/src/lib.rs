@@ -47,15 +47,15 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use syn::spanned::Spanned;
+use provekit_ir_symbolic::parse_expr::parse_expr;
 use provekit_ir_symbolic::{
     and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, or_, serialize::formula_to_value,
     str_const, ContractDecl, Formula, Int, Sort, Term,
 };
-use provekit_ir_symbolic::parse_expr::parse_expr;
 use provekit_ir_types::{
     EvidenceMemento, IrFormula, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
 };
+use syn::spanned::Spanned;
 
 /// The auto-promote sentinel lifter CID (128 hex zeros after the prefix).
 /// Used until PR-F wires the real lifter CID (compound spec §4.4).
@@ -154,12 +154,7 @@ fn walk_items_for_sig(
     }
 }
 
-fn visit_fn_sig(
-    f: &syn::ItemFn,
-    source_path: &str,
-    source_cid: &str,
-    out: &mut AdapterOutput,
-) {
+fn visit_fn_sig(f: &syn::ItemFn, source_path: &str, source_cid: &str, out: &mut AdapterOutput) {
     emit_sig_evidences(&f.sig, source_path, source_cid, out);
 }
 
@@ -378,11 +373,7 @@ fn classify_return_type(
     match output {
         syn::ReturnType::Default => {
             // `fn foo()` — implicit `()` return.
-            Some((
-                atomic_("true", vec![]),
-                "unit".to_string(),
-                vec![],
-            ))
+            Some((atomic_("true", vec![]), "unit".to_string(), vec![]))
         }
         syn::ReturnType::Type(_, ty) => classify_type(ty),
     }
@@ -418,10 +409,7 @@ fn classify_param_type(
                     "inner_type".to_string(),
                     serde_json::Value::String(inner_str),
                 ),
-                (
-                    "lifetime".to_string(),
-                    serde_json::Value::String(lifetime),
-                ),
+                ("lifetime".to_string(), serde_json::Value::String(lifetime)),
             ],
         ));
     }
@@ -487,10 +475,7 @@ fn classify_type(
                         "inner_type".to_string(),
                         serde_json::Value::String(inner_str),
                     ),
-                    (
-                        "lifetime".to_string(),
-                        serde_json::Value::String(lifetime),
-                    ),
+                    ("lifetime".to_string(), serde_json::Value::String(lifetime)),
                 ],
             ))
         }
@@ -499,30 +484,27 @@ fn classify_type(
             let last = tp.path.segments.last()?;
             let name = last.ident.to_string();
             let inner_arg: Option<String> = match &last.arguments {
-                syn::PathArguments::AngleBracketed(ab) => {
-                    ab.args.iter().find_map(|a| match a {
-                        syn::GenericArgument::Type(t) => Some(type_to_string(t)),
-                        _ => None,
-                    })
-                }
+                syn::PathArguments::AngleBracketed(ab) => ab.args.iter().find_map(|a| match a {
+                    syn::GenericArgument::Type(t) => Some(type_to_string(t)),
+                    _ => None,
+                }),
                 _ => None,
             };
             // Two-arg generic for Result.
-            let (ok_type, err_type): (Option<String>, Option<String>) =
-                match &last.arguments {
-                    syn::PathArguments::AngleBracketed(ab) => {
-                        let types: Vec<String> = ab
-                            .args
-                            .iter()
-                            .filter_map(|a| match a {
-                                syn::GenericArgument::Type(t) => Some(type_to_string(t)),
-                                _ => None,
-                            })
-                            .collect();
-                        (types.get(0).cloned(), types.get(1).cloned())
-                    }
-                    _ => (None, None),
-                };
+            let (ok_type, err_type): (Option<String>, Option<String>) = match &last.arguments {
+                syn::PathArguments::AngleBracketed(ab) => {
+                    let types: Vec<String> = ab
+                        .args
+                        .iter()
+                        .filter_map(|a| match a {
+                            syn::GenericArgument::Type(t) => Some(type_to_string(t)),
+                            _ => None,
+                        })
+                        .collect();
+                    (types.get(0).cloned(), types.get(1).cloned())
+                }
+                _ => (None, None),
+            };
 
             match name.as_str() {
                 "Option" => {
@@ -592,10 +574,7 @@ fn classify_type(
                         return Some((
                             atomic_("true", vec![]),
                             "bounded-primitive".to_string(),
-                            vec![(
-                                "inner_type".to_string(),
-                                serde_json::Value::String(name),
-                            )],
+                            vec![("inner_type".to_string(), serde_json::Value::String(name))],
                         ));
                     }
                     // Everything else: skip (conservative).
@@ -658,7 +637,11 @@ fn is_bare_generic(name: &str) -> bool {
     }
     // Single uppercase letter (T, V, E, etc.).
     if name.len() == 1 {
-        return name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+        return name
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false);
     }
     // Short common generic names used idiomatically.
     matches!(
@@ -954,7 +937,11 @@ fn try_parse_arguments_bullet(line: &str) -> Option<DocPattern> {
     let rest = rest.trim();
     let rest = rest.strip_prefix(':')?;
     let rest = rest.trim();
-    let tail = rest.strip_prefix("must be ")?.trim_end_matches('.').trim().to_string();
+    let tail = rest
+        .strip_prefix("must be ")?
+        .trim_end_matches('.')
+        .trim()
+        .to_string();
     if tail.is_empty() {
         return None;
     }
@@ -996,12 +983,20 @@ fn doc_pattern_to_formula(pattern: &DocPattern) -> Option<(Rc<Formula>, String, 
         DocPattern::ReturnsNoneIf { tail, .. } => {
             // Predicate: is_none(result)  — the condition is characterized via raw_text.
             let formula = atomic_("is_none", vec![make_var("result")]);
-            Some((formula, "returns_if".to_string(), format!("Returns None if {tail}")))
+            Some((
+                formula,
+                "returns_if".to_string(),
+                format!("Returns None if {tail}"),
+            ))
         }
         DocPattern::ReturnsSomeIf { tail, .. } => {
             // Predicate: is_some(result).
             let formula = atomic_("is_some", vec![make_var("result")]);
-            Some((formula, "returns_if".to_string(), format!("Returns Some(...) if {tail}")))
+            Some((
+                formula,
+                "returns_if".to_string(),
+                format!("Returns Some(...) if {tail}"),
+            ))
         }
         DocPattern::Requires { tail, .. } => {
             // Try parse_expr on the tail.
@@ -1091,10 +1086,7 @@ fn emit_doc_evidences(
             "pattern_kind".to_string(),
             serde_json::Value::String(pattern_kind),
         );
-        ext.insert(
-            "raw_text".to_string(),
-            serde_json::Value::String(raw_text),
-        );
+        ext.insert("raw_text".to_string(), serde_json::Value::String(raw_text));
 
         let ir_formula = formula_to_ir_formula(&formula);
         let cid = evidence_memento_cid(
@@ -1176,8 +1168,7 @@ fn evidence_memento_cid(
     source_kind: &SourceKind,
     source_locator: &SourceLocator,
 ) -> String {
-    let pred_json = serde_json::to_value(predicate)
-        .expect("IrFormula must be serializable");
+    let pred_json = serde_json::to_value(predicate).expect("IrFormula must be serializable");
     let pred_cv = serde_json_to_cvalue(&pred_json);
 
     let ext_entries: Vec<(String, Arc<CValue>)> = extension_fields
@@ -1765,7 +1756,8 @@ mod tests {
     /// immediately preceding the function.
     #[test]
     fn concept_hint_human_name_extracted() {
-        let src = "// concept: retry-with-jitter\n#[requires(x > 0)]\nfn retry(x: i64) -> i64 { x }\n";
+        let src =
+            "// concept: retry-with-jitter\n#[requires(x > 0)]\nfn retry(x: i64) -> i64 { x }\n";
         let f = parse(src);
         let out = lift_file_with_source(&f, "test.rs", Some(src));
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
@@ -1780,7 +1772,8 @@ mod tests {
     /// binding step distinguishes it from a human name by the prefix.
     #[test]
     fn concept_hint_unnamed_placeholder_extracted() {
-        let src = "// concept: UNNAMED-CONCEPT-3\n#[requires(x > 0)]\nfn retry(x: i64) -> i64 { x }\n";
+        let src =
+            "// concept: UNNAMED-CONCEPT-3\n#[requires(x > 0)]\nfn retry(x: i64) -> i64 { x }\n";
         let f = parse(src);
         let out = lift_file_with_source(&f, "test.rs", Some(src));
         assert_eq!(out.lifted, 1);
@@ -1799,8 +1792,7 @@ mod tests {
         let out = lift_file_with_source(&f, "test.rs", Some(src));
         assert_eq!(out.lifted, 1);
         assert_eq!(
-            out.decls[0].concept_hint,
-            None,
+            out.decls[0].concept_hint, None,
             "non-concept comment must not produce a hint"
         );
     }
@@ -1814,8 +1806,7 @@ mod tests {
         let out = lift_file_with_source(&f, "test.rs", Some(src));
         assert_eq!(out.lifted, 1);
         assert_eq!(
-            out.decls[0].concept_hint,
-            None,
+            out.decls[0].concept_hint, None,
             "malformed name (space) must be rejected"
         );
     }
@@ -1892,7 +1883,9 @@ mod tests {
             "type_shape must be 'option'"
         );
         assert_eq!(
-            ev.extension_fields.get("inner_type").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("inner_type")
+                .and_then(|v| v.as_str()),
             Some("i32"),
             "inner_type must be 'i32'"
         );
@@ -1939,7 +1932,9 @@ mod tests {
         let ev = ret_ev.unwrap();
         assert_eq!(ev.extension_fields["type_shape"].as_str(), Some("vec"));
         assert_eq!(
-            ev.extension_fields.get("element_type").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("element_type")
+                .and_then(|v| v.as_str()),
             Some("u8")
         );
     }
@@ -1977,14 +1972,21 @@ mod tests {
         let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
         // Find receiver evidences.
         let shared = out.evidences.iter().find(|e| {
-            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+            e.extension_fields
+                .get("type_shape")
+                .and_then(|v| v.as_str())
                 == Some("receiver-shared")
         });
         let exclusive = out.evidences.iter().find(|e| {
-            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+            e.extension_fields
+                .get("type_shape")
+                .and_then(|v| v.as_str())
                 == Some("receiver-exclusive")
         });
-        assert!(shared.is_some(), "expected receiver-shared evidence for &self");
+        assert!(
+            shared.is_some(),
+            "expected receiver-shared evidence for &self"
+        );
         assert!(
             exclusive.is_some(),
             "expected receiver-exclusive evidence for &mut self"
@@ -1998,7 +2000,9 @@ mod tests {
         let (f, bytes) = parse_bytes(src);
         let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
         let nz_ev = out.evidences.iter().find(|e| {
-            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+            e.extension_fields
+                .get("type_shape")
+                .and_then(|v| v.as_str())
                 == Some("non-zero")
                 && e.extension_fields
                     .get("signature_position")
@@ -2009,7 +2013,9 @@ mod tests {
         assert!(nz_ev.is_some(), "expected non-zero evidence for NonZeroU32");
         let ev = nz_ev.unwrap();
         assert_eq!(
-            ev.extension_fields.get("inner_type").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("inner_type")
+                .and_then(|v| v.as_str()),
             Some("NonZeroU32")
         );
         // source_kind must be TypeSignature.
@@ -2038,11 +2044,24 @@ mod tests {
         let shapes: Vec<&str> = out
             .evidences
             .iter()
-            .filter_map(|e| e.extension_fields.get("type_shape").and_then(|v| v.as_str()))
+            .filter_map(|e| {
+                e.extension_fields
+                    .get("type_shape")
+                    .and_then(|v| v.as_str())
+            })
             .collect();
-        assert!(shapes.contains(&"receiver-shared"), "missing receiver-shared");
-        assert!(shapes.contains(&"non-zero"), "missing non-zero for NonZeroU32");
-        assert!(shapes.contains(&"bounded-primitive"), "missing bounded-primitive for i32");
+        assert!(
+            shapes.contains(&"receiver-shared"),
+            "missing receiver-shared"
+        );
+        assert!(
+            shapes.contains(&"non-zero"),
+            "missing non-zero for NonZeroU32"
+        );
+        assert!(
+            shapes.contains(&"bounded-primitive"),
+            "missing bounded-primitive for i32"
+        );
         assert!(shapes.contains(&"option"), "missing option return evidence");
     }
 
@@ -2056,8 +2075,7 @@ mod tests {
         assert!(
             out.evidences.is_empty(),
             "bare generic T must produce no evidence; got: {:?}",
-            out
-                .evidences
+            out.evidences
                 .iter()
                 .map(|e| &e.extension_fields)
                 .collect::<Vec<_>>()
@@ -2072,14 +2090,25 @@ mod tests {
         let (f, bytes) = parse_bytes(src);
         let out = lift_file_with_sig_evidence(&f, "test.rs", &bytes);
         let prim_ev = out.evidences.iter().find(|e| {
-            e.extension_fields.get("type_shape").and_then(|v| v.as_str())
+            e.extension_fields
+                .get("type_shape")
+                .and_then(|v| v.as_str())
                 == Some("bounded-primitive")
         });
         let unit_ev = out.evidences.iter().find(|e| {
-            e.extension_fields.get("type_shape").and_then(|v| v.as_str()) == Some("unit")
+            e.extension_fields
+                .get("type_shape")
+                .and_then(|v| v.as_str())
+                == Some("unit")
         });
-        assert!(prim_ev.is_some(), "expected bounded-primitive evidence for i32 param");
-        assert!(unit_ev.is_some(), "expected unit evidence for implicit () return");
+        assert!(
+            prim_ev.is_some(),
+            "expected bounded-primitive evidence for i32 param"
+        );
+        assert!(
+            unit_ev.is_some(),
+            "expected unit evidence for implicit () return"
+        );
     }
 
     /// Evidence CIDs are deterministic: same source bytes = same CIDs.
@@ -2105,7 +2134,10 @@ mod tests {
         "#;
         let f = parse(src);
         let out = lift_file(&f, "test.rs");
-        assert!(out.evidences.is_empty(), "lift_file must not populate evidences");
+        assert!(
+            out.evidences.is_empty(),
+            "lift_file must not populate evidences"
+        );
     }
 
     /// Every evidence carries `function_symbol` (not `function_term_cid`) as a
@@ -2157,10 +2189,12 @@ mod tests {
                 .extension_fields
                 .get("return_type")
                 .and_then(|v| v.as_str())
-                .unwrap_or_else(|| panic!(
-                    "evidence missing return_type field; extension_fields = {:?}",
-                    ev.extension_fields
-                ));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "evidence missing return_type field; extension_fields = {:?}",
+                        ev.extension_fields
+                    )
+                });
             assert_eq!(
                 rt, "Option<i32>",
                 "return_type must be the function's written return type"
@@ -2180,10 +2214,12 @@ mod tests {
                 .extension_fields
                 .get("return_type")
                 .and_then(|v| v.as_str())
-                .unwrap_or_else(|| panic!(
-                    "evidence missing return_type; fields = {:?}",
-                    ev.extension_fields
-                ));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "evidence missing return_type; fields = {:?}",
+                        ev.extension_fields
+                    )
+                });
             assert_eq!(rt, "()", "implicit unit must render as '()'");
         }
     }
@@ -2282,7 +2318,11 @@ mod tests {
                         _ => None,
                     })
                     .collect();
-                assert!(names.contains(&"is_ok"), "predicate must contain is_ok; got {:?}", names);
+                assert!(
+                    names.contains(&"is_ok"),
+                    "predicate must contain is_ok; got {:?}",
+                    names
+                );
                 assert!(
                     names.contains(&"is_err"),
                     "predicate must contain is_err; got {:?}",
@@ -2314,12 +2354,19 @@ mod tests {
         "#;
         let (f, bytes) = parse_doc_bytes(src);
         let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
-        assert_eq!(out.evidences.len(), 1, "expected 1 evidence; got {:?}", out.evidences);
+        assert_eq!(
+            out.evidences.len(),
+            1,
+            "expected 1 evidence; got {:?}",
+            out.evidences
+        );
         let ev = &out.evidences[0];
         assert_eq!(ev.source_kind, provekit_ir_types::SourceKind::Docstring);
         assert_eq!(ev.confidence_basis_points, 7500);
         assert_eq!(
-            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("pattern_kind")
+                .and_then(|v| v.as_str()),
             Some("returns_if"),
         );
         // Predicate must be is_none(result).
@@ -2345,12 +2392,19 @@ mod tests {
         "#;
         let (f, bytes) = parse_doc_bytes(src);
         let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
-        assert_eq!(out.evidences.len(), 1, "expected 1 evidence; got {:?}", out.evidences);
+        assert_eq!(
+            out.evidences.len(),
+            1,
+            "expected 1 evidence; got {:?}",
+            out.evidences
+        );
         let ev = &out.evidences[0];
         assert_eq!(ev.source_kind, provekit_ir_types::SourceKind::Docstring);
         assert_eq!(ev.confidence_basis_points, 8000);
         assert_eq!(
-            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("pattern_kind")
+                .and_then(|v| v.as_str()),
             Some("requires"),
         );
         // Predicate should parse as x > 0.
@@ -2372,12 +2426,19 @@ mod tests {
         "#;
         let (f, bytes) = parse_doc_bytes(src);
         let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
-        assert_eq!(out.evidences.len(), 1, "expected 1 evidence; got {:?}", out.evidences);
+        assert_eq!(
+            out.evidences.len(),
+            1,
+            "expected 1 evidence; got {:?}",
+            out.evidences
+        );
         let ev = &out.evidences[0];
         assert_eq!(ev.source_kind, provekit_ir_types::SourceKind::Docstring);
         assert_eq!(ev.confidence_basis_points, 8000);
         assert_eq!(
-            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("pattern_kind")
+                .and_then(|v| v.as_str()),
             Some("panics_if"),
         );
     }
@@ -2431,13 +2492,20 @@ mod tests {
             "expected 2 evidences (returns_if + requires); got {:?}",
             out.evidences
                 .iter()
-                .map(|e| e.extension_fields.get("pattern_kind").and_then(|v| v.as_str()))
+                .map(|e| e
+                    .extension_fields
+                    .get("pattern_kind")
+                    .and_then(|v| v.as_str()))
                 .collect::<Vec<_>>()
         );
         let kinds: Vec<&str> = out
             .evidences
             .iter()
-            .filter_map(|e| e.extension_fields.get("pattern_kind").and_then(|v| v.as_str()))
+            .filter_map(|e| {
+                e.extension_fields
+                    .get("pattern_kind")
+                    .and_then(|v| v.as_str())
+            })
             .collect();
         assert!(kinds.contains(&"returns_if"), "missing returns_if evidence");
         assert!(kinds.contains(&"requires"), "missing requires evidence");
@@ -2456,11 +2524,18 @@ mod tests {
         "#;
         let (f, bytes) = parse_doc_bytes(src);
         let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
-        assert_eq!(out.evidences.len(), 1, "expected 1 arguments_must_be evidence; got {:?}", out.evidences);
+        assert_eq!(
+            out.evidences.len(),
+            1,
+            "expected 1 arguments_must_be evidence; got {:?}",
+            out.evidences
+        );
         let ev = &out.evidences[0];
         assert_eq!(ev.confidence_basis_points, 8500);
         assert_eq!(
-            ev.extension_fields.get("pattern_kind").and_then(|v| v.as_str()),
+            ev.extension_fields
+                .get("pattern_kind")
+                .and_then(|v| v.as_str()),
             Some("arguments_must_be"),
         );
     }
@@ -2494,8 +2569,15 @@ mod tests {
         "#;
         let (f, bytes) = parse_doc_bytes(src);
         let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
-        assert_eq!(out.evidences.len(), 1, "impl method docstring must be walked");
-        assert_eq!(out.evidences[0].source_kind, provekit_ir_types::SourceKind::Docstring);
+        assert_eq!(
+            out.evidences.len(),
+            1,
+            "impl method docstring must be walked"
+        );
+        assert_eq!(
+            out.evidences[0].source_kind,
+            provekit_ir_types::SourceKind::Docstring
+        );
     }
 
     /// B3 — `-> Vec<T>` emits predicate `is_finite_list(result)`.
@@ -2513,11 +2595,17 @@ mod tests {
         let ev = ret_ev.expect("expected a return evidence for Vec<u8>");
         match &ev.predicate {
             provekit_ir_types::IrFormula::Atomic { name, args } => {
-                assert_eq!(name, "is_finite_list", "Vec predicate must be is_finite_list; got {name}");
+                assert_eq!(
+                    name, "is_finite_list",
+                    "Vec predicate must be is_finite_list; got {name}"
+                );
                 assert_eq!(args.len(), 1, "is_finite_list must have 1 arg");
                 match &args[0] {
                     provekit_ir_types::IrTerm::Var { name: var_name } => {
-                        assert_eq!(var_name, "result", "arg must be Var(result); got {var_name}");
+                        assert_eq!(
+                            var_name, "result",
+                            "arg must be Var(result); got {var_name}"
+                        );
                     }
                     other => panic!("expected Var(result); got {:?}", other),
                 }

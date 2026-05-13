@@ -319,9 +319,12 @@ mod tests {
     #[test]
     fn by_kind_returns_all_of_kind() {
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./a.json").unwrap();
-        reg.register(dummy_memento("sugar", "blake3-512:bbb"), "./b.json").unwrap();
-        reg.register(dummy_memento("loss-function", "blake3-512:ccc"), "./c.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./a.json")
+            .unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:bbb"), "./b.json")
+            .unwrap();
+        reg.register(dummy_memento("loss-function", "blake3-512:ccc"), "./c.json")
+            .unwrap();
         assert_eq!(reg.by_kind("sugar").len(), 2);
         assert_eq!(reg.by_kind("loss-function").len(), 1);
         assert_eq!(reg.by_kind("lifter").len(), 0);
@@ -333,7 +336,7 @@ mod tests {
         let p = dummy_memento("sugar", "blake3-512:aaa");
         let r1 = reg.register(p.clone(), "./test.json").unwrap();
         let r2 = reg.register(p.clone(), "./test.json").unwrap();
-        assert!(r1);  // first registration
+        assert!(r1); // first registration
         assert!(!r2); // deduplicated
         assert_eq!(reg.all_in_order().len(), 1);
     }
@@ -342,28 +345,36 @@ mod tests {
     fn emit_registry_memento_round_trip() {
         use crate::types::LoadOrderEntry;
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json")
+            .unwrap();
         let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert!(!m.header.cid.is_empty());
         assert!(m.header.cid.starts_with("blake3-512:"));
         // loaded: [{kind, cid}] sorted by cid
-        assert_eq!(m.header.loaded, vec![LoadedEntry {
-            kind: "sugar".to_string(),
-            cid: "blake3-512:aaa".to_string(),
-        }]);
+        assert_eq!(
+            m.header.loaded,
+            vec![LoadedEntry {
+                kind: "sugar".to_string(),
+                cid: "blake3-512:aaa".to_string(),
+            }]
+        );
         // load_order: [{kind, cid, source}] in insertion order
-        assert_eq!(m.header.load_order, vec![LoadOrderEntry {
-            kind: "sugar".to_string(),
-            cid: "blake3-512:aaa".to_string(),
-            source: "./test.json".to_string(),
-        }]);
+        assert_eq!(
+            m.header.load_order,
+            vec![LoadOrderEntry {
+                kind: "sugar".to_string(),
+                cid: "blake3-512:aaa".to_string(),
+                source: "./test.json".to_string(),
+            }]
+        );
         assert_eq!(m.header.built_in_count, 0);
     }
 
     #[test]
     fn registry_cid_is_stable_across_calls() {
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json")
+            .unwrap();
         let m1 = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         let m2 = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert_eq!(m1.header.cid, m2.header.cid);
@@ -374,16 +385,25 @@ mod tests {
         // B2: loaded must be sorted by cid ascending, regardless of insertion order.
         use crate::types::LoadedEntry;
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:zzz"), "./z.json").unwrap();
-        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./a.json").unwrap();
-        reg.register(dummy_memento("sugar", "blake3-512:mmm"), "./m.json").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:zzz"), "./z.json")
+            .unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./a.json")
+            .unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:mmm"), "./m.json")
+            .unwrap();
         let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         // loaded must be sorted ascending
         let cids: Vec<&str> = m.header.loaded.iter().map(|e| e.cid.as_str()).collect();
-        assert_eq!(cids, vec!["blake3-512:aaa", "blake3-512:mmm", "blake3-512:zzz"]);
+        assert_eq!(
+            cids,
+            vec!["blake3-512:aaa", "blake3-512:mmm", "blake3-512:zzz"]
+        );
         // load_order must preserve insertion order
         let lo_cids: Vec<&str> = m.header.load_order.iter().map(|e| e.cid.as_str()).collect();
-        assert_eq!(lo_cids, vec!["blake3-512:zzz", "blake3-512:aaa", "blake3-512:mmm"]);
+        assert_eq!(
+            lo_cids,
+            vec!["blake3-512:zzz", "blake3-512:aaa", "blake3-512:mmm"]
+        );
     }
 
     #[test]
@@ -408,8 +428,10 @@ mod tests {
     #[test]
     fn builtin_count_tracks_register_builtin() {
         let mut reg = PluginRegistry::new();
-        reg.register(dummy_memento("sugar", "blake3-512:user"), "./user.json").unwrap();
-        reg.register_builtin(dummy_memento("loss-function", "blake3-512:builtin"), "").unwrap();
+        reg.register(dummy_memento("sugar", "blake3-512:user"), "./user.json")
+            .unwrap();
+        reg.register_builtin(dummy_memento("loss-function", "blake3-512:builtin"), "")
+            .unwrap();
         let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert_eq!(m.header.built_in_count, 1);
     }

@@ -10,8 +10,7 @@
 fn protocol_ir_cddl_parses_and_validates() {
     // Tests run with CWD = the crate dir (`implementations/rust/provekit-ir-codegen`).
     let path = "../../../protocol/provekit-ir.cddl";
-    let text = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     if let Err(e) = cddl::cddl_from_str(&text, true) {
         panic!("protocol/provekit-ir.cddl failed CDDL validation:\n{e}");
     }
