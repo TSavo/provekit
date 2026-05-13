@@ -36,7 +36,10 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_types::{
-    AggregationStrategy, CompoundContractMemento, EvidenceMemento, EvidenceRef, IrFormula, IrTerm,
+    composition_refusal_compose_input_cid, composition_refusal_header_cid,
+    composition_refusal_signature, AggregationStrategy, BlockingEffect, CompositionRefusalEnvelope,
+    CompositionRefusalHeader, CompositionRefusalMemento, CompositionRefusalMetadata,
+    CompoundContractMemento, EffectOccurrence, EvidenceMemento, EvidenceRef, IrFormula, IrTerm, OccurrenceKind, OccurrenceRole,
     Sort, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
 };
 
@@ -951,26 +954,366 @@ pub struct ChainStep<'a> {
     pub formal_idx: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompositionError {
+    ChainTooShort {
+        len: usize,
+    },
+    ImpureInput {
+        atom_index: usize,
+        atom_cid: String,
+    },
+    FormalIndexOutOfRange {
+        atom_index: usize,
+        formal_idx: usize,
+        formals_len: usize,
+        atom_cid: String,
+    },
+    MissingResultEquation {
+        atom_index: usize,
+        atom_cid: String,
+    },
+}
+
+impl CompositionError {
+    fn failure_kind(&self) -> &'static str {
+        match self {
+            Self::ImpureInput { .. } => "impure-input",
+            Self::ChainTooShort { .. } | Self::FormalIndexOutOfRange { .. } => "ordering-conflict",
+            Self::MissingResultEquation { .. } => "unsatisfiable-precondition",
+        }
+    }
+
+    fn failure_detail(&self) -> String {
+        match self {
+            Self::ChainTooShort { len } => {
+                format!("chain has {len} atoms; at least 2 atoms are required")
+            }
+            Self::ImpureInput {
+                atom_index,
+                atom_cid,
+            } => format!("impure atom {atom_cid} at chain index {atom_index}"),
+            Self::FormalIndexOutOfRange {
+                atom_index,
+                formal_idx,
+                formals_len,
+                atom_cid,
+            } => format!(
+                "atom {atom_cid} at chain index {atom_index} uses formal_idx {formal_idx}, but has {formals_len} formals"
+            ),
+            Self::MissingResultEquation {
+                atom_index,
+                atom_cid,
+            } => format!(
+                "atom {atom_cid} at chain index {atom_index} has no deterministic result equation"
+            ),
+        }
+    }
+}
+
 /// Compose a chain of pure function contracts left-to-right. Each
 /// step's contract receives the previous step's result at its
-/// `formal_idx`-th formal. Returns None if any contract is impure or
-/// the chain is shorter than 2 steps.
+/// `formal_idx`-th formal. Returns a canonical refusal memento if any
+/// contract is impure or the chain cannot be composed.
 ///
 /// Per CCP §2 + §9: this is the canonical primitive named in the spec.
 /// The chain's overall CID is derivable from its component CIDs in
 /// order; re-composing the same chain produces the same CID
 /// byte-for-byte. Cross-language consumers (C lifter via FFI, future
 /// JSON-RPC subprocess) call into this function.
-pub fn compose_chain_contracts(steps: &[ChainStep<'_>]) -> Option<ComposedFunctionContract> {
+pub fn compose_chain_contracts(
+    steps: &[ChainStep<'_>],
+) -> Result<ComposedFunctionContract, CompositionRefusalMemento> {
+    compose_chain_contracts_internal(steps)
+        .map_err(|error| composition_error_to_refusal(steps, error))
+}
+
+fn compose_chain_contracts_internal(
+    steps: &[ChainStep<'_>],
+) -> Result<ComposedFunctionContract, CompositionError> {
     if steps.len() < 2 {
-        return None;
+        return Err(CompositionError::ChainTooShort { len: steps.len() });
+    }
+    for (atom_index, step) in steps.iter().enumerate() {
+        if !step.contract.is_pure() {
+            return Err(CompositionError::ImpureInput {
+                atom_index,
+                atom_cid: step.contract.cid.clone(),
+            });
+        }
+    }
+    if steps[1].formal_idx >= steps[1].contract.formals.len() {
+        return Err(CompositionError::FormalIndexOutOfRange {
+            atom_index: 1,
+            formal_idx: steps[1].formal_idx,
+            formals_len: steps[1].contract.formals.len(),
+            atom_cid: steps[1].contract.cid.clone(),
+        });
+    }
+    if steps[0].contract.result_value().is_none() {
+        return Err(CompositionError::MissingResultEquation {
+            atom_index: 0,
+            atom_cid: steps[0].contract.cid.clone(),
+        });
     }
     let mut acc =
-        compose_function_contracts(steps[1].contract, steps[0].contract, steps[1].formal_idx)?;
-    for step in &steps[2..] {
-        acc = compose_with_composed(step.contract, &acc, step.formal_idx)?;
+        compose_function_contracts(steps[1].contract, steps[0].contract, steps[1].formal_idx)
+            .ok_or_else(|| CompositionError::MissingResultEquation {
+                atom_index: 0,
+                atom_cid: steps[0].contract.cid.clone(),
+            })?;
+    for (atom_index, step) in steps.iter().enumerate().skip(2) {
+        if step.formal_idx >= step.contract.formals.len() {
+            return Err(CompositionError::FormalIndexOutOfRange {
+                atom_index,
+                formal_idx: step.formal_idx,
+                formals_len: step.contract.formals.len(),
+                atom_cid: step.contract.cid.clone(),
+            });
+        }
+        acc = compose_with_composed(step.contract, &acc, step.formal_idx).ok_or_else(|| {
+            CompositionError::MissingResultEquation {
+                atom_index: atom_index - 1,
+                atom_cid: steps[atom_index - 1].contract.cid.clone(),
+            }
+        })?;
     }
-    Some(acc)
+    Ok(acc)
+}
+
+fn composition_error_to_refusal(
+    steps: &[ChainStep<'_>],
+    error: CompositionError,
+) -> CompositionRefusalMemento {
+    let atoms_cids: Vec<String> = steps.iter().map(|s| s.contract.cid.clone()).collect();
+    let effect_set_cids: Vec<String> = steps
+        .iter()
+        .map(|s| effect_set_cid(&s.contract.effects))
+        .collect();
+    let compose_input_cid =
+        composition_refusal_compose_input_cid(&atoms_cids, &effect_set_cids, CCP_VERSION);
+    let effect_occurrences = effect_occurrences_for_steps(steps);
+    let blocking_effects = blocking_effects_for_steps(steps);
+
+    let mut header = CompositionRefusalHeader {
+        atoms_cids,
+        blocking_effects: if blocking_effects.is_empty() {
+            None
+        } else {
+            Some(blocking_effects)
+        },
+        ccp_version: CCP_VERSION.to_string(),
+        cid: String::new(),
+        compose_input_cid,
+        effect_occurrences: if effect_occurrences.is_empty() {
+            None
+        } else {
+            Some(effect_occurrences)
+        },
+        effect_set_cids,
+        failure_detail: error.failure_detail(),
+        failure_kind: error.failure_kind().to_string(),
+        incompatible_pair: None,
+        kind: "composition-refusal".to_string(),
+        missing_memento_requirements: None,
+        schema_version: "1".to_string(),
+    };
+    header.cid = composition_refusal_header_cid(&header);
+    let metadata = CompositionRefusalMetadata::default();
+    let signature = composition_refusal_signature(&header, &metadata);
+    CompositionRefusalMemento {
+        envelope: CompositionRefusalEnvelope {
+            declared_at: "1970-01-01T00:00:00Z".to_string(),
+            signature,
+            signer: "substrate:libprovekit".to_string(),
+        },
+        header,
+        metadata,
+    }
+}
+
+fn effect_set_cid(effect_set: &EffectSet) -> String {
+    cid_of_value(&effect_set.to_value())
+}
+
+fn effect_occurrences_for_steps(steps: &[ChainStep<'_>]) -> Vec<EffectOccurrence> {
+    steps
+        .iter()
+        .flat_map(|step| {
+            step.contract
+                .effects
+                .effects
+                .iter()
+                .enumerate()
+                .map(move |(idx, effect)| {
+                    let occurrence_kind = OccurrenceKind::from_str(effect_occurrence_kind(effect)).expect("canonical effect kind");
+                    let discharge_key = effect_discharge_key(effect);
+                    EffectOccurrence {
+                        args: effect_args_json(effect),
+                        discharge_key,
+                        locator: serde_json::json!({
+                            "atom_cid": step.contract.cid,
+                            "effect_index": idx,
+                        }),
+                        occurrence_kind,
+                        // Per EffectOccurrence #793 spec §2: declared-effects-of-the-contract
+                        // carry role "body". The composer doesn't see a narrower position
+                        // unless the producing lifter records it.
+                        role: OccurrenceRole::Body,
+                        signature_cid: cid_of_value(&effect.to_value()),
+                    }
+                })
+        })
+        .collect()
+}
+
+fn blocking_effects_for_steps(steps: &[ChainStep<'_>]) -> Vec<BlockingEffect> {
+    steps
+        .iter()
+        .flat_map(|step| {
+            step.contract
+                .effects
+                .effects
+                .iter()
+                .map(move |effect| BlockingEffect {
+                    atom_cid: step.contract.cid.clone(),
+                    classification: effect_classification(effect).to_string(),
+                    discharge_key: effect_discharge_key(effect),
+                    occurrence_kind: effect_occurrence_kind(effect).to_string(),
+                })
+        })
+        .collect()
+}
+
+/// Canonical occurrence-kind labels per `EffectOccurrence` spec §3 (#793).
+/// MUST be PascalCase; CCP refusal mementos that compose with the
+/// EffectOccurrence type need byte-identical kind names.
+fn effect_occurrence_kind(effect: &Effect) -> &'static str {
+    match effect {
+        Effect::Reads { .. } => "Reads",
+        Effect::Writes { .. } => "Writes",
+        Effect::Io => "Io",
+        Effect::Unsafe => "Unsafe",
+        Effect::Panics => "Panics",
+        Effect::UnresolvedCall { .. } => "UnresolvedCall",
+        Effect::OpaqueLoop { .. } => "OpaqueLoop",
+        Effect::EarlyReturn { .. } => "EarlyReturn",
+        Effect::ClosureCapture { .. } => "ClosureCapture",
+        Effect::PinnedReference { .. } => "PinnedReference",
+        Effect::RawPointerProvenance { .. } => "RawPointerProvenance",
+        Effect::AtomicAccess { .. } => "AtomicAccess",
+        Effect::PossibleAliasing { .. } => "PossibleAliasing",
+        Effect::Drop { .. } => "Drop",
+    }
+}
+
+/// Per-occurrence classification per `2026-05-06-effect-discharge-classification.md`
+/// and `EffectOccurrence` spec §4 (#793). The blocking-effect record carries this
+/// so refusal consumers can see WHY a given effect blocked composition, not just
+/// that some effect did.
+///
+/// - `block` (UnconditionallyBlocked): Reads/Writes/Io/Panics/Unsafe at v1
+/// - `memento-required`: OpaqueLoop / UnresolvedCall / EarlyReturn / ClosureCapture
+///   / PinnedReference / RawPointerProvenance / PossibleAliasing / non-trivial Drop
+///   / AtomicAccess with `ordering: None`
+/// - `informational-dischargeable`: AtomicAccess with concrete `ordering`
+fn effect_classification(effect: &Effect) -> &'static str {
+    match effect {
+        Effect::Reads { .. }
+        | Effect::Writes { .. }
+        | Effect::Io
+        | Effect::Unsafe
+        | Effect::Panics => "block",
+        Effect::OpaqueLoop { .. }
+        | Effect::UnresolvedCall { .. }
+        | Effect::EarlyReturn { .. }
+        | Effect::ClosureCapture { .. }
+        | Effect::PinnedReference { .. }
+        | Effect::RawPointerProvenance { .. }
+        | Effect::PossibleAliasing { .. }
+        | Effect::Drop { .. } => "memento-required",
+        Effect::AtomicAccess { ordering, .. } => {
+            if ordering.is_some() {
+                "informational-dischargeable"
+            } else {
+                "memento-required"
+            }
+        }
+    }
+}
+
+/// Canonical discharge-key shape per `EffectOccurrence` spec §3 (#793).
+/// Format: `<occurrence-kind-lowercase-segment>:<payload-segments>`. The
+/// segments here match the §3 examples (e.g. `read:x`, `opaque-loop:<cid>`,
+/// `raw-pointer-provenance:<target>:<mut>`) so a refusal memento composes
+/// byte-identically with an EffectOccurrence minted by a lifter.
+fn effect_discharge_key(effect: &Effect) -> String {
+    match effect {
+        Effect::Reads { target } => format!("read:{target}"),
+        Effect::Writes { target } => format!("write:{target}"),
+        Effect::Io => "io".to_string(),
+        Effect::Unsafe => "unsafe".to_string(),
+        Effect::Panics => "panic".to_string(),
+        Effect::UnresolvedCall { name } => format!("unresolved-call:{name}"),
+        Effect::OpaqueLoop { loop_cid } => format!("opaque-loop:{loop_cid}"),
+        Effect::EarlyReturn { try_cid } => format!("early-return:{try_cid}"),
+        Effect::ClosureCapture {
+            body_fn_cid,
+            n_captures,
+        } => format!("closure-capture:{body_fn_cid}:{n_captures}"),
+        Effect::PinnedReference { target } => format!("pinned-reference:{target}"),
+        Effect::RawPointerProvenance { target, mutable } => {
+            format!(
+                "raw-pointer-provenance:{target}:{}",
+                if *mutable { "mut" } else { "const" }
+            )
+        }
+        Effect::AtomicAccess {
+            target,
+            kind,
+            ordering,
+        } => format!(
+            "atomic:{target}:{}:{}",
+            kind.as_str(),
+            ordering.as_deref().unwrap_or("null")
+        ),
+        Effect::PossibleAliasing { formals } => format!("possible-aliasing:{}", formals.join(",")),
+        Effect::Drop { name } => format!("drop:{name}"),
+    }
+}
+
+fn effect_args_json(effect: &Effect) -> serde_json::Value {
+    match effect {
+        Effect::Reads { target }
+        | Effect::Writes { target }
+        | Effect::PinnedReference { target } => serde_json::json!({ "target": target }),
+        Effect::Io | Effect::Unsafe | Effect::Panics => serde_json::json!({}),
+        Effect::UnresolvedCall { name } | Effect::Drop { name } => {
+            serde_json::json!({ "name": name })
+        }
+        Effect::OpaqueLoop { loop_cid } => serde_json::json!({ "loop_cid": loop_cid }),
+        Effect::EarlyReturn { try_cid } => serde_json::json!({ "try_cid": try_cid }),
+        Effect::ClosureCapture {
+            body_fn_cid,
+            n_captures,
+        } => serde_json::json!({
+            "body_fn_cid": body_fn_cid,
+            "n_captures": n_captures,
+        }),
+        Effect::RawPointerProvenance { target, mutable } => {
+            serde_json::json!({ "target": target, "mutable": mutable })
+        }
+        Effect::AtomicAccess {
+            target,
+            kind,
+            ordering,
+        } => serde_json::json!({
+            "target": target,
+            "kind": kind.as_str(),
+            "ordering": ordering,
+        }),
+        Effect::PossibleAliasing { formals } => serde_json::json!({ "formals": formals }),
+    }
 }
 
 fn find_namespaced_result(formula: &IrFormula) -> Option<IrTerm> {
@@ -1083,9 +1426,7 @@ pub fn jcs_bytes_of_value(v: &Value) -> Vec<u8> {
 // `libprovekit::compose::substitute_in_formula` keep working.
 // ============================================================
 
-pub use crate::wp::{
-    free_vars_formula, free_vars_term, substitute_in_formula, substitute_in_term,
-};
+pub use crate::wp::{free_vars_formula, free_vars_term, substitute_in_formula, substitute_in_term};
 
 // ============================================================
 // DomainClaim projection for FunctionContractMemento (PR-B of #717)
@@ -1213,24 +1554,15 @@ fn evidence_cid(
             "confidence_basis_points".to_string(),
             Value::integer(i64::from(confidence_basis_points)),
         ),
-        (
-            "extension_fields".to_string(),
-            Value::object(ext_entries),
-        ),
+        ("extension_fields".to_string(), Value::object(ext_entries)),
         ("kind".to_string(), Value::string("evidence".to_string())),
         (
             "lifter_cid".to_string(),
             Value::string(lifter_cid.to_string()),
         ),
         ("predicate".to_string(), formula_to_canonical(predicate)),
-        (
-            "schemaVersion".to_string(),
-            Value::string("1".to_string()),
-        ),
-        (
-            "source_kind".to_string(),
-            Value::string(source_kind_str),
-        ),
+        ("schemaVersion".to_string(), Value::string("1".to_string())),
+        ("source_kind".to_string(), Value::string(source_kind_str)),
         ("source_locator".to_string(), sloc_value),
     ]);
 
@@ -1299,10 +1631,7 @@ fn compound_cid(
             "kind".to_string(),
             Value::string("compound-contract".to_string()),
         ),
-        (
-            "schemaVersion".to_string(),
-            Value::string("1".to_string()),
-        ),
+        ("schemaVersion".to_string(), Value::string("1".to_string())),
     ]);
 
     cid_of_value(&header)
@@ -1486,10 +1815,14 @@ mod fcm_auto_promote_tests {
         IrFormula::Atomic {
             name: ">=".to_string(),
             args: vec![
-                IrTerm::Var { name: "x".to_string() },
+                IrTerm::Var {
+                    name: "x".to_string(),
+                },
                 IrTerm::Const {
                     value: serde_json::Value::Number(serde_json::Number::from(0)),
-                    sort: Sort::Primitive { name: "Int".to_string() },
+                    sort: Sort::Primitive {
+                        name: "Int".to_string(),
+                    },
                 },
             ],
         }
@@ -1500,8 +1833,12 @@ mod fcm_auto_promote_tests {
         IrFormula::Atomic {
             name: ">=".to_string(),
             args: vec![
-                IrTerm::Var { name: "result".to_string() },
-                IrTerm::Var { name: "x".to_string() },
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
+                IrTerm::Var {
+                    name: "x".to_string(),
+                },
             ],
         }
     }
@@ -1521,7 +1858,10 @@ mod fcm_auto_promote_tests {
         );
         let (_ev, compound) = promote_fcm_to_compound(&fcm);
         assert_eq!(compound.evidences.len(), 1);
-        assert_eq!(compound.aggregation_strategy, AggregationStrategy::Conjunction);
+        assert_eq!(
+            compound.aggregation_strategy,
+            AggregationStrategy::Conjunction
+        );
         assert_eq!(compound.kind, "compound-contract");
         assert_eq!(compound.schema_version, "1");
         assert_eq!(compound.function_term_cid, "blake3-512:aaaa");
@@ -1622,7 +1962,9 @@ mod fcm_auto_promote_tests {
 
         // The compound's evidence ref CID is a valid blake3-512 CID.
         assert!(
-            compound.evidences[0].evidence_cid.starts_with("blake3-512:"),
+            compound.evidences[0]
+                .evidence_cid
+                .starts_with("blake3-512:"),
             "evidence CID should be a valid blake3-512 CID"
         );
 
@@ -1679,7 +2021,10 @@ mod fcm_auto_promote_tests {
             .extension_fields
             .get("auto_promoted_from")
             .expect("auto_promoted_from must be present");
-        assert_eq!(from, &serde_json::Value::String("blake3-512:abcd".to_string()));
+        assert_eq!(
+            from,
+            &serde_json::Value::String("blake3-512:abcd".to_string())
+        );
     }
 
     // ----------------------------------------------------------------
@@ -1698,8 +2043,7 @@ mod fcm_auto_promote_tests {
         let (_ev, compound) = promote_fcm_to_compound(&fcm);
 
         let json1 = serde_json::to_string(&compound).expect("serialize");
-        let deser: CompoundContractMemento =
-            serde_json::from_str(&json1).expect("deserialize");
+        let deser: CompoundContractMemento = serde_json::from_str(&json1).expect("deserialize");
         let json2 = serde_json::to_string(&deser).expect("re-serialize");
 
         assert_eq!(json1, json2, "round-trip must produce identical bytes");
@@ -1771,7 +2115,8 @@ mod fcm_auto_promote_tests {
         let (_ev, compound) = promote_fcm_to_compound(&fcm);
 
         // Recompute CID via serde path: serialize → remove cid → canonical → CID.
-        let mut as_value = serde_json::to_value(&compound).expect("CompoundContractMemento serializes");
+        let mut as_value =
+            serde_json::to_value(&compound).expect("CompoundContractMemento serializes");
         as_value
             .as_object_mut()
             .expect("CompoundContractMemento serializes as object")

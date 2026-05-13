@@ -379,7 +379,7 @@ fn inner_compose(atoms_jcs: &str, effects_jcs: &str) -> Result<(String, String),
         })
         .collect();
 
-    let composed = compose_chain_contracts(&steps).ok_or(FfiError::ComposeRefused)?;
+    let composed = compose_chain_contracts(&steps).map_err(|_| FfiError::ComposeRefused)?;
     let body_jcs = String::from_utf8(composed.canonical_bytes.clone())
         .map_err(|e| FfiError::Schema(format!("composed body not utf-8: {}", e)))?;
     Ok((composed.cid, body_jcs))

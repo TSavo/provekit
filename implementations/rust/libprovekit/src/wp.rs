@@ -352,7 +352,9 @@ pub enum WpError {
     /// meta-var for a slot the op does not have (or that was classified
     /// value-typed), or `apply`s something that is not a slot
     /// transformer at all.
-    #[error("op `{op}`: wp_rule applies `{fn_name}`, which is not a Stmt-slot transformer of this op")]
+    #[error(
+        "op `{op}`: wp_rule applies `{fn_name}`, which is not a Stmt-slot transformer of this op"
+    )]
     MalformedRule {
         /// The op name.
         op: String,
@@ -608,12 +610,24 @@ fn reduce_formula<R: OpContractResolver + ?Sized>(
         IrFormula::Forall { name, sort, body } => Ok(IrFormula::Forall {
             name,
             sort,
-            body: Box::new(reduce_formula(*body, q, stmt_transformers, op_name, resolver)?),
+            body: Box::new(reduce_formula(
+                *body,
+                q,
+                stmt_transformers,
+                op_name,
+                resolver,
+            )?),
         }),
         IrFormula::Exists { name, sort, body } => Ok(IrFormula::Exists {
             name,
             sort,
-            body: Box::new(reduce_formula(*body, q, stmt_transformers, op_name, resolver)?),
+            body: Box::new(reduce_formula(
+                *body,
+                q,
+                stmt_transformers,
+                op_name,
+                resolver,
+            )?),
         }),
         IrFormula::Choice {
             var_name,
@@ -622,7 +636,13 @@ fn reduce_formula<R: OpContractResolver + ?Sized>(
         } => Ok(IrFormula::Choice {
             var_name,
             sort,
-            body: Box::new(reduce_formula(*body, q, stmt_transformers, op_name, resolver)?),
+            body: Box::new(reduce_formula(
+                *body,
+                q,
+                stmt_transformers,
+                op_name,
+                resolver,
+            )?),
         }),
         // `substitute { target, var, term }` — reduce the target first
         // (so the postcondition placeholder becomes `q` and any nested
@@ -643,7 +663,8 @@ fn reduce_formula<R: OpContractResolver + ?Sized>(
                 });
             }
             let slot_name = &r#fn[SLOT_TRANSFORMER_PREFIX.len()..];
-            let Some((_, slot_term)) = stmt_transformers.iter().find(|(n, _)| n == slot_name) else {
+            let Some((_, slot_term)) = stmt_transformers.iter().find(|(n, _)| n == slot_name)
+            else {
                 return Err(WpError::MalformedRule {
                     op: op_name.to_string(),
                     fn_name: r#fn,
@@ -1193,8 +1214,7 @@ pub fn wp_compound(
     }
 
     // Conjunction aggregation (spec §2.1).
-    let (compound_verdict, composed_loss_record) =
-        aggregate_conjunction(&per_evidence_verdicts);
+    let (compound_verdict, composed_loss_record) = aggregate_conjunction(&per_evidence_verdicts);
 
     Ok(CompoundDischargeReport {
         compound_cid: compound.cid.clone(),
@@ -1250,9 +1270,7 @@ fn discharge_one_evidence(
 /// - otherwise → `LoudlyBoundedLossy`, union of per-evidence loss records
 ///
 /// Returns `(compound_verdict, composed_loss_record)`.
-pub(crate) fn aggregate_conjunction(
-    verdicts: &[EvidenceVerdict],
-) -> (VerdictKind, LossRecord) {
+pub(crate) fn aggregate_conjunction(verdicts: &[EvidenceVerdict]) -> (VerdictKind, LossRecord) {
     // Empty compound: vacuously exact (spec §5.2).
     if verdicts.is_empty() {
         return (VerdictKind::Exact, LossRecord(BTreeMap::new()));

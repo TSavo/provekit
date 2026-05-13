@@ -18,11 +18,11 @@
 use std::sync::Arc;
 
 use libprovekit::compose::{
-    build_value, cid_of_value, compose_chain_contracts, jcs_bytes_of_value, ChainStep, EffectSet,
-    FunctionContractMemento, Locus,
+    build_value, cid_of_value, compose_chain_contracts, jcs_bytes_of_value, ChainStep, Effect,
+    EffectSet, FunctionContractMemento, Locus,
 };
 use provekit_canonicalizer::Value;
-use provekit_ir_types::{IrFormula, IrTerm, Sort};
+use provekit_ir_types::{composition_refusal_header_cid, IrFormula, IrTerm, Sort};
 
 /// Build a trivial pure FunctionContractMemento whose post is
 /// `result = <formal>`. The result-equation is the algebraic input that
@@ -88,6 +88,26 @@ fn pure_identity_contract(fn_name: &str, formal: &str) -> FunctionContractMement
     }
 }
 
+fn impure_identity_contract(fn_name: &str, formal: &str) -> FunctionContractMemento {
+    let mut contract = pure_identity_contract(fn_name, formal);
+    contract.effects.add(Effect::Io);
+    let value: Arc<Value> = build_value(
+        &contract.fn_name,
+        &contract.formals,
+        &contract.formal_sorts,
+        &contract.return_sort,
+        &contract.pre,
+        &contract.post,
+        contract.body_cid.as_deref(),
+        &contract.effects,
+        &contract.locus,
+        &contract.auto_minted_mementos,
+    );
+    contract.canonical_bytes = jcs_bytes_of_value(&value);
+    contract.cid = cid_of_value(&value);
+    contract
+}
+
 #[test]
 fn compose_chain_two_pure_atoms_pins_cid() {
     let inner = pure_identity_contract("inner", "y");
@@ -124,4 +144,42 @@ fn compose_chain_two_pure_atoms_pins_cid() {
         composed.cid, PINNED_CID,
         "composed CID drifted; algebra must not change without a CCP version bump"
     );
+}
+
+#[test]
+fn compose_chain_impure_input_returns_stable_refusal_memento() {
+    let inner = pure_identity_contract("inner", "y");
+    let outer = impure_identity_contract("outer", "x");
+
+    let chain = vec![
+        ChainStep {
+            contract: &inner,
+            formal_idx: 0,
+        },
+        ChainStep {
+            contract: &outer,
+            formal_idx: 0,
+        },
+    ];
+
+    let refusal = compose_chain_contracts(&chain).expect_err("impure input refuses");
+    assert_eq!(refusal.header.failure_kind, "impure-input");
+    assert_eq!(refusal.header.kind, "composition-refusal");
+    assert_eq!(refusal.header.schema_version, "1");
+    assert_eq!(
+        refusal
+            .header
+            .blocking_effects
+            .as_ref()
+            .expect("impure refusal has blocking effects")[0]
+            .atom_cid,
+        outer.cid
+    );
+    assert_eq!(
+        composition_refusal_header_cid(&refusal.header),
+        refusal.header.cid
+    );
+
+    let refusal2 = compose_chain_contracts(&chain).expect_err("impure input refuses again");
+    assert_eq!(refusal.header.cid, refusal2.header.cid);
 }
