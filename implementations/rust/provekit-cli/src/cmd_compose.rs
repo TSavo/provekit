@@ -57,7 +57,9 @@ use libprovekit::compose::{
     CCP_VERSION,
 };
 use provekit_canonicalizer::Value;
-use provekit_ir_types::{IrFormula, Sort};
+use provekit_ir_types::{
+    composition_refusal_header_cid, CompositionRefusalMemento, IrFormula, Sort,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
@@ -175,6 +177,12 @@ fn serve_loop<R: BufRead, W: Write>(reader: &mut R, writer: &mut W) -> u8 {
                         if let Some(cid) = err.atom_cid {
                             envelope.insert("atom_cid".into(), JsonValue::from(cid));
                         }
+                        if let Some(cid) = err.refusal_cid {
+                            envelope.insert("refusal_cid".into(), JsonValue::from(cid));
+                        }
+                        if let Some(refusal) = err.refusal {
+                            envelope.insert("refusal".into(), refusal);
+                        }
                         json!({
                             "jsonrpc": "2.0",
                             "id": id,
@@ -224,6 +232,8 @@ struct RpcError {
     message: String,
     kind: &'static str,
     atom_cid: Option<String>,
+    refusal_cid: Option<String>,
+    refusal: Option<JsonValue>,
 }
 
 impl RpcError {
@@ -233,15 +243,8 @@ impl RpcError {
             message: message.into(),
             kind: "bad_request",
             atom_cid: None,
-        }
-    }
-
-    fn refused(kind: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            code: ERR_COMPOSE_REFUSED,
-            message: message.into(),
-            kind,
-            atom_cid: None,
+            refusal_cid: None,
+            refusal: None,
         }
     }
 
@@ -251,6 +254,29 @@ impl RpcError {
             message: message.into(),
             kind,
             atom_cid: Some(atom_cid),
+            refusal_cid: None,
+            refusal: None,
+        }
+    }
+
+    fn composition_refused(refusal: CompositionRefusalMemento) -> Self {
+        let cid = composition_refusal_header_cid(&refusal.header);
+        let refusal_value = serde_json::to_value(&refusal).unwrap_or_else(|e| {
+            json!({
+                "serialize_error": e.to_string(),
+                "header": {"cid": cid}
+            })
+        });
+        Self {
+            code: ERR_COMPOSE_REFUSED,
+            message: format!(
+                "composition refused: cid={cid}; kind={}; detail={}",
+                refusal.header.failure_kind, refusal.header.failure_detail
+            ),
+            kind: "composition_refused",
+            atom_cid: None,
+            refusal_cid: Some(cid),
+            refusal: Some(refusal_value),
         }
     }
 }
@@ -301,13 +327,6 @@ fn handle_compose(params: JsonValue) -> Result<JsonValue, RpcError> {
                 ));
             }
         }
-        if !contract.is_pure() {
-            return Err(RpcError::refused_with_atom(
-                "impure_input",
-                format!("atom {i} ({}) has non-empty effect set", contract.fn_name),
-                contract.cid.clone(),
-            ));
-        }
         formal_idxs.push(wire_atom.formal_idx.unwrap_or(0));
         contracts.push(contract);
     }
@@ -321,18 +340,15 @@ fn handle_compose(params: JsonValue) -> Result<JsonValue, RpcError> {
         })
         .collect();
 
-    let composed = compose_chain_contracts(&steps).ok_or_else(|| {
-        RpcError::refused(
-            "composition_refused",
-            "compose_chain_contracts returned None (impure input, formal index out of range, or missing result equation)",
-        )
-    })?;
+    let composed = compose_chain_contracts(&steps).map_err(RpcError::composition_refused)?;
 
     let body_jcs = String::from_utf8(composed.canonical_bytes.clone()).map_err(|e| RpcError {
         code: ERR_INTERNAL,
         message: format!("composed bytes are not utf-8 JCS: {e}"),
         kind: "internal_error",
         atom_cid: None,
+        refusal_cid: None,
+        refusal: None,
     })?;
 
     Ok(json!({

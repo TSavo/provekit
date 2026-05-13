@@ -28,6 +28,7 @@ pub use libprovekit::compose::{
     EffectSet, EmptyOpacityPool, FunctionContractMemento, Locus, OpacityError,
     OpacityMementoLookup, PinInvariantMementoView,
 };
+pub use provekit_ir_types::CompositionRefusalMemento;
 
 // ---- AST builders ----
 

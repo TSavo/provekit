@@ -18,7 +18,8 @@ use std::collections::HashMap;
 use syn::Expr;
 
 use crate::contract::{
-    compose_chain_contracts, ChainStep, ComposedFunctionContract, FunctionContractMemento,
+    compose_chain_contracts, ChainStep, ComposedFunctionContract, CompositionRefusalMemento,
+    FunctionContractMemento,
 };
 
 /// One method-call in a detected chain. The receiver is the implicit
@@ -54,7 +55,8 @@ pub fn detect_method_chain(expr: &Expr) -> Option<Vec<MethodCallStep>> {
 }
 
 /// Compose an iterator chain by looking up each step's contract in
-/// the registry. Returns None if any contract is missing or impure.
+/// the registry. Returns Ok(None) if any contract is missing, and
+/// propagates the canonical refusal memento if composition is refused.
 ///
 /// All chain steps use formal_idx = 0 because methods are normalized
 /// as `method:foo(receiver, args)` per the lifter (paper 07
@@ -63,13 +65,15 @@ pub fn detect_method_chain(expr: &Expr) -> Option<Vec<MethodCallStep>> {
 pub fn compose_method_chain(
     chain: &[MethodCallStep],
     registry: &HashMap<String, FunctionContractMemento>,
-) -> Option<ComposedFunctionContract> {
+) -> Result<Option<ComposedFunctionContract>, CompositionRefusalMemento> {
     if chain.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let mut contracts: Vec<&FunctionContractMemento> = Vec::with_capacity(chain.len());
     for step in chain {
-        let contract = registry.get(&step.method_name)?;
+        let Some(contract) = registry.get(&step.method_name) else {
+            return Ok(None);
+        };
         contracts.push(contract);
     }
     let steps: Vec<ChainStep<'_>> = contracts
@@ -79,7 +83,7 @@ pub fn compose_method_chain(
             formal_idx: 0,
         })
         .collect();
-    compose_chain_contracts(&steps)
+    compose_chain_contracts(&steps).map(Some)
 }
 
 #[cfg(test)]
@@ -156,13 +160,15 @@ mod tests {
         registry.insert("sum".to_string(), double);
 
         let chain = detect_method_chain(&parse_expr("v.iter().map(f).sum()")).unwrap();
-        let composed = compose_method_chain(&chain, &registry).expect("compose succeeds");
+        let composed = compose_method_chain(&chain, &registry)
+            .expect("compose does not refuse")
+            .expect("compose succeeds");
         assert!(composed.cid.starts_with("blake3-512:"));
         // The chain has 3 steps → 3 component CIDs.
         assert_eq!(composed.component_cids.len(), 3);
 
         // Re-composition is deterministic.
-        let composed2 = compose_method_chain(&chain, &registry).unwrap();
+        let composed2 = compose_method_chain(&chain, &registry).unwrap().unwrap();
         assert_eq!(composed.cid, composed2.cid);
         assert_eq!(composed.canonical_bytes, composed2.canonical_bytes);
     }
@@ -171,6 +177,6 @@ mod tests {
     fn compose_method_chain_returns_none_on_missing_contract() {
         let registry: HashMap<String, FunctionContractMemento> = HashMap::new();
         let chain = detect_method_chain(&parse_expr("v.iter().sum()")).unwrap();
-        assert!(compose_method_chain(&chain, &registry).is_none());
+        assert!(compose_method_chain(&chain, &registry).unwrap().is_none());
     }
 }
