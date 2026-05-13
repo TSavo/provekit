@@ -76,6 +76,7 @@ def handle_initialize(msg_id: Any) -> None:
                     "authoring_surfaces": ["python-source"],
                     "ir_version": "v1.1.0",
                     "emits_signed_mementos": False,
+                    "parse": True,
                 },
             },
         }
