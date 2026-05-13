@@ -947,24 +947,43 @@ fn f5_csharp_canonical_parses() {
 }
 
 // ============================================================================
-// F6: Test 27 -- gaps.json records bind-stub-body-emitted for stub functions
+// F6 (post #766/#767/#768): gaps.json records bind-stub-body-emitted PER
+// CONCEPT for every concept whose body fell through to the language stub.
+// Annotate-rewrite path does NOT emit stub bodies (in-place source rewrite),
+// so this test exercises a cross-language canonical rewrite where the
+// realizer reports is_stub for each binding.
 // ============================================================================
 
 #[test]
-fn f6_gaps_record_stub_body_emitted() {
+fn f6_gaps_record_stub_body_emitted_per_concept() {
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
-    // Use invisible mode so the bind engine runs without writing files.
-    let result = bind_cmd(&root, &out, "invisible", "monitor", None);
-    assert!(result.status.success(), "bind invisible must succeed");
+    // Canonical Rust→Go forces the realize path for every binding, and none
+    // of the Go templates exist in v1.0.0, so every concept must produce a
+    // per-concept `bind-stub-body-emitted` gap entry.
+    let result = bind_cmd(&root, &out, "canonical", "monitor", Some("go"));
+    assert!(result.status.success(), "bind canonical → go must succeed");
     let gaps: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(out.join("gaps.json")).unwrap()).unwrap();
     let gap_arr = gaps["gaps"].as_array().expect("gaps must be array");
-    let kinds: Vec<&str> = gap_arr.iter().filter_map(|g| g["kind"].as_str()).collect();
-    // v0 canonical bind always emits stub bodies (no term graph yet).
-    // The gap record is the honest disclosure: substrate knows stubs were emitted.
+    let stub_entries: Vec<&serde_json::Value> = gap_arr
+        .iter()
+        .filter(|g| g["kind"].as_str() == Some("bind-stub-body-emitted"))
+        .collect();
     assert!(
-        kinds.contains(&"bind-stub-body-emitted"),
-        "gaps.json must record bind-stub-body-emitted when canonical stubs are emitted; kinds found: {kinds:?}"
+        !stub_entries.is_empty(),
+        "gaps.json must record at least one per-concept bind-stub-body-emitted entry; \
+         no Go body templates exist in v1.0.0 so every concept should emit one. \
+         Got: {:?}",
+        gap_arr
     );
+    // Each entry must name a specific concept in its detail (not the old
+    // single-record-with-count-of-bindings shape).
+    for entry in &stub_entries {
+        let detail = entry["detail"].as_str().unwrap_or("");
+        assert!(
+            detail.contains("concept '"),
+            "bind-stub-body-emitted entry must name a specific concept; got: {detail}"
+        );
+    }
 }
