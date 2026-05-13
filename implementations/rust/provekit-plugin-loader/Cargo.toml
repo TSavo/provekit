@@ -14,6 +14,10 @@ path = "src/lib.rs"
 name = "provekit-plugin-loader-stub-rpc"
 path = "src/bin/stub_rpc_server.rs"
 
+[[bin]]
+name = "mint-plugin-cid"
+path = "src/bin/mint_plugin_cid.rs"
+
 [dependencies]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
