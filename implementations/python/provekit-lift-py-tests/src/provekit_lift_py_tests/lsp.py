@@ -2,11 +2,13 @@
 #
 # provekit.lsp: Language Server Protocol plugin for Python.
 #
-# Implements the ProvekIt LSP plugin protocol: NDJSON over stdio.
+# Implements the ProvekIt lift plugin protocol (provekit-lift/1): NDJSON over stdio.
 # Messages:
 #   { "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} }
-#   { "jsonrpc": "2.0", "id": 2, "method": "parse", "params": { "path": "...", "source": "..." } }
+#   { "jsonrpc": "2.0", "id": 2, "method": "lift", "params": { "workspace_root": "...", "source_paths": [...] } }
 #   { "jsonrpc": "2.0", "id": 3, "method": "shutdown" }
+#
+# Legacy parse method is retained for backward compatibility.
 #
 # The plugin walks Python source, lifts contracts, and returns IR JSON.
 
@@ -69,7 +71,12 @@ def handle_initialize(msg_id: Any) -> None:
             "result": {
                 "name": "provekit-lsp-python",
                 "version": "0.1.0",
-                "capabilities": ["parse"],
+                "protocol_version": "provekit-lift/1",
+                "capabilities": {
+                    "authoring_surfaces": ["python-source"],
+                    "ir_version": "v1.1.0",
+                    "emits_signed_mementos": False,
+                },
             },
         }
     )
