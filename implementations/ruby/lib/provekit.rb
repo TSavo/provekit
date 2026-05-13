@@ -14,6 +14,7 @@
 #   Provekit::ContractSet   - contractSetCid computation.
 
 require_relative "provekit/blake3"
+require_relative "provekit/version"
 require_relative "provekit/ir"
 require_relative "provekit/cbor"
 require_relative "provekit/signing"

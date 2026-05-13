@@ -38,7 +38,7 @@ module Provekit
       { kind: :var, name: name }
     end
 
-      def self.num(value)
+    def self.num(value)
       { kind: :const, value: value.to_i, sort: PrimitiveSort.Int }
     end
 

@@ -25,7 +25,7 @@ Gem::Specification.new do |s|
 
   s.required_ruby_version = ">= 3.0"
 
-  s.files = Dir["lib/**/*.rb"] + Dir["ext/**/*.{c,h,rb}"]
+  s.files = Dir["lib/**/*.rb"] + Dir["ext/**/*.{c,h,rb}"] + Dir["bin/*"] + ["README.md", "manifest.json"]
   s.extensions = ["ext/provekit_blake3/extconf.rb"]
   s.require_paths = ["lib"]
 

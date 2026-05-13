@@ -1,0 +1,15 @@
+{
+  "name": "provekit-ruby",
+  "version": "0.1.0",
+  "protocol_version": "provekit-plugin/1.7.0",
+  "kit_cid": "blake3-512:df3bd324caec5f9e818bb2f0a8d44ac923a9136f923a946f525023001637832a21a21ac32145c5c27de71c3f429e9ae6cf2d5f1a163d654df717d620169b9322",
+  "language": "ruby",
+  "command": ["bundle", "exec", "bin/provekit-ruby-plugin", "--rpc"],
+  "supported_verbs": ["lift_source", "realize_concept"],
+  "supported_sugar_cids": [
+    "provekit:sugar:ruby:sorbet-sigs:v1",
+    "provekit:sugar:ruby:dry-validation:v1",
+    "provekit:sugar:ruby:contracts-ruby:v1",
+    "provekit:sugar:ruby:comment-roles:v1"
+  ]
+}

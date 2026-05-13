@@ -16,4 +16,10 @@ Rake::TestTask.new(:test => :compile) do |t|
   t.pattern = "test/test_*.rb"
 end
 
+task :spec do
+  sh RbConfig.ruby, "vendor/rspec-lite/bin/rspec"
+end
+
+task test: :spec
+
 task default: :test
