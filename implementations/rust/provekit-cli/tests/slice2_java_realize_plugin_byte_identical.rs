@@ -156,6 +156,15 @@ fn assert_byte_identical(
     _source_text: &str,
     concept_name: &str,
 ) {
+    // Post PR #779: the realize path goes through the kit dispatcher, which
+    // resolves the Java realize jar via the substrate-convention filesystem
+    // discovery (implementations/java/provekit-realize-java-core/target/...).
+    // The dispatcher cleanly refuses with kit-plugin-unavailable when the jar
+    // is missing. Build it via Maven before the test exercises the path so the
+    // byte-identical assertion has a real comparand. Same one-shot build the
+    // pep_describe test already uses; ensure_jar_built serializes concurrent
+    // threads via a OnceLock<Mutex>.
+    ensure_jar_built();
     let param_strings: Vec<String> = params.iter().map(|s| s.to_string()).collect();
     // Bind-time signature info is supplied by the lift kit per
     // `2026-05-13-bind-ir-lift-result.md`. The slice 2 fixture used to
