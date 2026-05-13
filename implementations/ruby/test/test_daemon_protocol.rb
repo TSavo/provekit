@@ -3,8 +3,9 @@
 # Smoke test: protocol conformance of the provekit-lsp-ruby binary.
 #
 # Asserts:
-#   - The binary responds to initialize/parse/shutdown.
-#   - parse response has result.declarations as a JSON array, not a string.
+#   - initialize responds with protocol_version == "provekit-lift/1".
+#   - lift returns result.kind == "ir-document" with ir array.
+#   - parse (legacy) response has result.declarations as a JSON array, not a string.
 #   - parse response has result.callEdges as a JSON array.
 #   - Each declaration in a non-empty result is an object with kind=="contract".
 #   - Byte-determinism: two runs on the same input produce identical output.
@@ -60,7 +61,66 @@ class TestDaemonProtocol < Minitest::Test
     assert init_resp, "Expected id 1 not found. Available ids: #{responses.map { |r| r['id'] }}"
     result = init_resp["result"]
     assert_equal "provekit-lsp-ruby", result["name"]
-    assert_includes result["capabilities"], "parse"
+    assert_equal "provekit-lift/1", result["protocol_version"],
+                 "expected protocol_version == 'provekit-lift/1'"
+    caps = result["capabilities"]
+    assert_instance_of Hash, caps, "capabilities should be a Hash"
+    assert_includes caps["authoring_surfaces"], "ruby-source"
+    assert_equal false, caps["emits_signed_mementos"]
+  end
+
+  def test_lift_ir_document_shape
+    # Write a fixture file then exercise the lift method.
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      fixture_path = File.join(dir, "fixture.rb")
+      File.write(fixture_path, FIXTURE_SOURCE)
+
+      msgs = [
+        { jsonrpc: "2.0", id: 10, method: "initialize", params: {} },
+        { jsonrpc: "2.0", id: 11, method: "lift",
+          params: { workspace_root: dir, source_paths: ["fixture.rb"] } },
+        { jsonrpc: "2.0", id: 12, method: "shutdown" },
+      ]
+      ndjson = msgs.map { |m| JSON.generate(m) }.join("\n") + "\n"
+      responses = run_lsp(ndjson)
+
+      lift_resp = responses.find { |r| r["id"] == 11 }
+      assert lift_resp, "Expected lift id 11 not found. Available ids: #{responses.map { |r| r['id'] }}"
+      refute lift_resp["error"], "lift returned error: #{lift_resp.inspect}"
+      result = lift_resp["result"]
+      assert_equal "ir-document", result["kind"]
+      assert_instance_of Array, result["ir"]
+      assert_instance_of Array, result["callEdges"]
+      assert_equal [], result["callEdges"]
+      assert_instance_of Array, result["diagnostics"]
+      assert_instance_of Array, result["refusals"]
+    end
+  end
+
+  def test_lift_ir_contains_contract_entries
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      fixture_path = File.join(dir, "fixture.rb")
+      File.write(fixture_path, FIXTURE_SOURCE)
+
+      msgs = [
+        { jsonrpc: "2.0", id: 10, method: "initialize", params: {} },
+        { jsonrpc: "2.0", id: 11, method: "lift",
+          params: { workspace_root: dir, source_paths: ["fixture.rb"] } },
+        { jsonrpc: "2.0", id: 12, method: "shutdown" },
+      ]
+      ndjson = msgs.map { |m| JSON.generate(m) }.join("\n") + "\n"
+      responses = run_lsp(ndjson)
+
+      lift_resp = responses.find { |r| r["id"] == 11 }
+      result = lift_resp["result"]
+      ir = result["ir"]
+      assert ir.length >= 1, "Expected at least one IR entry from contract-bearing fixture"
+      ir.each do |entry|
+        assert_equal "contract", entry["kind"], "IR entry kind should be 'contract'"
+      end
+    end
   end
 
   def test_parse_declarations_is_array
