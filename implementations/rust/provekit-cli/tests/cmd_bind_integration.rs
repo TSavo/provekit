@@ -19,6 +19,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use provekit_ir_types::{PromotionDecisionMemento, PromotionGate, PromotionResult};
+
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
 }
@@ -114,6 +116,87 @@ for line in sys.stdin:
     root
 }
 
+fn copy_fixture_with_three_evidence_manifest() -> PathBuf {
+    let root = copy_fixture_to_temp();
+    let kit_path = root.join("bind-lift-kit.py");
+    let shape_cid = format!("blake3-512:{}", "1".repeat(128));
+    let script = format!(
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+SHAPE_CID = {shape_cid:?}
+
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method")
+    request_id = request.get("id")
+    if method == "initialize":
+        result = {{}}
+    elif method == "lift":
+        result = {{
+            "kind": "ir-document",
+            "diagnostics": [],
+            "ir": [{{
+                "kind": "bind-lift-entry",
+                "file": "src/account.rs",
+                "fn_name": "deposit",
+                "fn_line": 14,
+                "concept_annotation": "deposit-then-balance",
+                "param_names": ["balance", "amount"],
+                "param_types": ["i64", "i64"],
+                "return_type": "i64",
+                "term_shape": {{"kind": "body", "stmts": [{{"kind": "opaque"}}]}},
+                "term_shape_cid": SHAPE_CID,
+                "witnesses": [
+                    {{
+                        "role": "pre",
+                        "predicate_text": "amount > 0",
+                        "source_kind": "type-signature",
+                        "line": 14,
+                        "col": 20
+                    }},
+                    {{
+                        "role": "post",
+                        "predicate_text": "out >= balance",
+                        "source_kind": "docstring",
+                        "line": 13,
+                        "col": 0
+                    }},
+                    {{
+                        "role": "post",
+                        "predicate_text": "out == balance + amount",
+                        "source_kind": "test-assertion",
+                        "line": 7,
+                        "col": 8
+                    }}
+                ]
+            }}]
+        }}
+    elif method == "shutdown":
+        result = {{}}
+    else:
+        print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "error": {{"message": "unknown method"}}}}), flush=True)
+        continue
+    print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "result": result}}), flush=True)
+    if method == "shutdown":
+        break
+"#
+    );
+    fs::write(&kit_path, script).expect("write bind lift kit");
+    let manifest_dir = root.join(".provekit").join("lift").join("rust");
+    fs::create_dir_all(&manifest_dir).expect("create lift manifest dir");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"test-bind-lift-three-evidence\"\ncommand = [\"python3\", \"{}\"]\n",
+            kit_path.display()
+        ),
+    )
+    .expect("write lift manifest");
+    root
+}
+
 fn bind_cmd(
     root: &Path,
     out: &Path,
@@ -189,7 +272,7 @@ fn help_lists_bind_command() {
 
 #[test]
 fn annotate_monitor_injects_concept_and_monitor_attr() {
-    let tmp = copy_fixture_to_temp();
+    let tmp = copy_fixture_with_bind_lift_manifest();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&tmp, &out, "annotate", "monitor", None);
     assert!(
@@ -222,7 +305,7 @@ fn annotate_monitor_injects_concept_and_monitor_attr() {
 
 #[test]
 fn annotate_emitter_injects_emitter_attribute() {
-    let tmp = copy_fixture_to_temp();
+    let tmp = copy_fixture_with_bind_lift_manifest();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&tmp, &out, "annotate", "emitter", None);
     assert!(result.status.success(), "annotate+emitter should succeed");
@@ -235,7 +318,7 @@ fn annotate_emitter_injects_emitter_attribute() {
 
 #[test]
 fn annotate_witness_injects_witness_attribute() {
-    let tmp = copy_fixture_to_temp();
+    let tmp = copy_fixture_with_bind_lift_manifest();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&tmp, &out, "annotate", "witness", None);
     assert!(result.status.success(), "annotate+witness should succeed");
@@ -252,7 +335,7 @@ fn annotate_witness_injects_witness_attribute() {
 
 #[test]
 fn canonical_monitor_rust_target_creates_translated_dir() {
-    let root = fixture_root();
+    let root = copy_fixture_with_bind_lift_manifest();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&root, &out, "canonical", "monitor", Some("rust"));
     assert!(
@@ -368,7 +451,7 @@ fn invisible_witness_does_not_modify_source() {
 
 #[test]
 fn bind_writes_site_mementos_index_and_gaps() {
-    let root = fixture_root();
+    let root = copy_fixture_with_bind_lift_manifest();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&root, &out, "invisible", "monitor", None);
     assert!(result.status.success(), "invisible+monitor should succeed");
@@ -469,6 +552,69 @@ fn bind_writes_evidence_and_compound_contracts() {
         }),
         "ConceptSiteMemento.local_contract_cid must point at a compound contract CID"
     );
+}
+
+#[test]
+fn bind_mints_promotion_decisions_for_admitted_evidence() {
+    let root = copy_fixture_with_three_evidence_manifest();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "invisible", "monitor", None);
+    assert!(
+        result.status.success(),
+        "invisible+monitor should succeed\nstderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let evidence_docs = read_json_dir(&out.join("evidence"));
+    assert_eq!(
+        evidence_docs.len(),
+        3,
+        "fixture should admit exactly three EvidenceMementos"
+    );
+
+    let promotion_dir = out.join("promotion-decisions");
+    assert!(
+        promotion_dir.exists(),
+        "promotion-decisions/ must be written"
+    );
+    let promotion_docs = read_json_dir(&promotion_dir);
+    assert_eq!(
+        promotion_docs.len(),
+        evidence_docs.len(),
+        "bind must mint one PromotionDecisionMemento per admitted evidence field"
+    );
+
+    for doc in promotion_docs {
+        let decision: PromotionDecisionMemento =
+            serde_json::from_value(doc).expect("parse PromotionDecisionMemento");
+        decision
+            .validate()
+            .expect("promotion decisions must carry non-empty evidence_cids");
+        assert_eq!(
+            decision.header.cid,
+            decision
+                .recompute_header_cid()
+                .expect("recompute header cid"),
+            "header.cid must match recomputed CID"
+        );
+        let serialized = serde_json::to_string(&decision).expect("serialize promotion decision");
+        let round_trip: PromotionDecisionMemento =
+            serde_json::from_str(&serialized).expect("deserialize promotion decision");
+        assert_eq!(decision, round_trip, "promotion decision must round-trip");
+        assert_eq!(decision.header.kind, "promotion-decision");
+        assert_eq!(decision.header.schema_version, "1");
+        assert_eq!(decision.header.result, PromotionResult::Admitted);
+        assert_eq!(decision.header.gate, PromotionGate::Proof);
+        assert_eq!(
+            decision.header.decision_payload["result"].as_str(),
+            Some("admitted")
+        );
+        assert_eq!(
+            decision.header.evidence_cids.len(),
+            1,
+            "each per-field admission should cite the admitted evidence CID"
+        );
+    }
 }
 
 // ============================================================================
@@ -1200,7 +1346,7 @@ fn f5_csharp_canonical_parses() {
 
 #[test]
 fn f6_gaps_record_stub_body_emitted_per_concept() {
-    let root = fixture_root();
+    let root = copy_fixture_with_bind_lift_manifest();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     // Canonical Rust→Go forces the realize path for every binding, and none
     // of the Go templates exist in v1.0.0, so every concept must produce a

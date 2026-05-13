@@ -21,6 +21,8 @@
 // Output layout:
 //   .provekit/bindings/evidence/<cid>.json — one EvidenceMemento per contract source
 //   .provekit/bindings/contracts/<cid>.json — one CompoundContractMemento per local contract
+//   .provekit/bindings/policies/<cid>.json — bind-default-policy PolicyMemento
+//   .provekit/bindings/promotion-decisions/<cid>.json — one admission record per evidence
 //   .provekit/bindings/sites/<cid>.json   — one ConceptSiteMemento per match
 //   .provekit/bindings/index.json         — summary map
 //   .provekit/bindings/gaps.json          — coverage gaps / deferred capabilities
@@ -44,7 +46,9 @@ use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
     AggregationStrategy, CodeSite, CodeSiteSpan, CompoundContractMemento, ConceptSiteMemento,
     ConceptSiteProvenance, Discharge, EvidenceMemento, EvidenceRef, IrFormula, LossRecord,
-    SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
+    PolicyMemento, PromotionDecisionEnvelope, PromotionDecisionHeader, PromotionDecisionMemento,
+    PromotionDecisionMetadata, PromotionGate, PromotionResult, ProofGatePolicyMemento, SourceKind,
+    SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -291,6 +295,16 @@ pub fn run(args: BindArgs) -> u8 {
             serde_json::to_string_pretty(evidence).unwrap_or_default(),
         );
     }
+    let _ = std::fs::create_dir_all(output_dir.join("policies"));
+    for (policy_cid, policy) in &result.policies {
+        let path = output_dir
+            .join("policies")
+            .join(format!("{}.json", safe_filename(policy_cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(policy).unwrap_or_default(),
+        );
+    }
     let _ = std::fs::create_dir_all(output_dir.join("contracts"));
     for contract in &result.compound_contracts {
         let path = output_dir
@@ -299,6 +313,16 @@ pub fn run(args: BindArgs) -> u8 {
         let _ = std::fs::write(
             &path,
             serde_json::to_string_pretty(contract).unwrap_or_default(),
+        );
+    }
+    let _ = std::fs::create_dir_all(output_dir.join("promotion-decisions"));
+    for decision in &result.promotion_decisions {
+        let path = output_dir
+            .join("promotion-decisions")
+            .join(format!("{}.json", safe_filename(&decision.header.cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(decision).unwrap_or_default(),
         );
     }
     let _ = std::fs::create_dir_all(output_dir.join("sites"));
@@ -406,7 +430,9 @@ pub struct EngineResult {
     pub bindings: Vec<BindingRecord>,
     pub concepts: Vec<ConceptRecord>,
     pub evidence_mementos: Vec<EvidenceMemento>,
+    pub policies: BTreeMap<String, PolicyMemento>,
     pub compound_contracts: Vec<CompoundContractMemento>,
+    pub promotion_decisions: Vec<PromotionDecisionMemento>,
     pub site_mementos: Vec<ConceptSiteMemento>,
     pub gaps: Vec<GapRecord>,
 }
@@ -761,12 +787,17 @@ fn run_bind_engine(
     // ---- Verb 4: SCOPE + Verb 6: IDENTIFY + Verb 7: REALIZE ----------------
     let mut bindings: Vec<BindingRecord> = Vec::new();
     let mut evidence_mementos: Vec<EvidenceMemento> = Vec::new();
+    let mut policies: BTreeMap<String, PolicyMemento> = BTreeMap::new();
     let mut compound_contracts: Vec<CompoundContractMemento> = Vec::new();
+    let mut promotion_decisions: Vec<PromotionDecisionMemento> = Vec::new();
     let mut site_mementos: Vec<ConceptSiteMemento> = Vec::new();
 
     let lifter_cid = blake3_512_of(b"provekit-cli/bind-v0/lifter");
     let clusterer_cid = blake3_512_of(b"provekit-cli/bind-v0/clusterer");
     let discharger_cid = blake3_512_of(b"provekit-cli/bind-v0/discharger");
+    let bind_default_policy = bind_default_policy_memento(&lifter_cid);
+    let bind_default_policy_cid = policy_memento_cid(&bind_default_policy);
+    policies.insert(bind_default_policy_cid.clone(), bind_default_policy);
 
     for lift in &raw_lifts {
         let shape_cid = lift.term_shape.shape_cid();
@@ -869,6 +900,24 @@ fn run_bind_engine(
                 .as_ref()
                 .map(|c| c.cid.clone())
                 .unwrap_or_else(|| local_cid.clone());
+            if let Some(compound) = compound.as_ref() {
+                for evidence in &site_evidences {
+                    let decision = promotion_decision_memento(
+                        &local_cid,
+                        &compound.cid,
+                        evidence,
+                        &bind_default_policy_cid,
+                        &lifter_cid,
+                    )
+                    .map_err(|err| {
+                        format!(
+                            "promotion decision failed for evidence {} into {}: {err}",
+                            evidence.cid, compound.cid
+                        )
+                    })?;
+                    promotion_decisions.push(decision);
+                }
+            }
             evidence_mementos.extend(site_evidences);
             if let Some(compound) = compound {
                 compound_contracts.push(compound);
@@ -1052,7 +1101,9 @@ fn run_bind_engine(
         bindings,
         concepts,
         evidence_mementos,
+        policies,
         compound_contracts,
+        promotion_decisions,
         site_mementos,
         gaps,
     })
@@ -2105,6 +2156,108 @@ fn evidence_memento_cid(
         ("source_locator", source_locator_to_value(source_locator)),
     ]);
     blake3_512_of(encode_jcs(&header).as_bytes())
+}
+
+fn bind_default_policy_memento(lifter_cid: &str) -> PolicyMemento {
+    PolicyMemento::ProofGate(ProofGatePolicyMemento {
+        admission_rule: serde_json::json!({
+            "result": "admitted",
+            "requires": ["non-empty evidence_cids"]
+        }),
+        checker_cid: lifter_cid.to_string(),
+        decision_payload_schema: serde_json::json!({
+            "type": "object",
+            "required": ["evidence_count", "gate_evaluated", "result"]
+        }),
+        input_requirements: serde_json::json!({
+            "evidence_cids": "non-empty",
+            "candidate_cid": "required",
+            "promoted_cid": "required"
+        }),
+        policy_kind: "proof_gate".to_string(),
+        policy_version: "bind-default-policy".to_string(),
+        proof_artifact_schema: serde_json::json!({
+            "kind": "bind-admission"
+        }),
+        proof_system: "provekit-bind".to_string(),
+        provenance_cid: lifter_cid.to_string(),
+        refusal_rule: serde_json::json!({
+            "result": "rejected"
+        }),
+        theorem_ref: "bind-default-policy".to_string(),
+        trusted_base_cid: lifter_cid.to_string(),
+    })
+}
+
+fn policy_memento_cid(policy: &PolicyMemento) -> String {
+    let json = serde_json::to_value(policy).expect("PolicyMemento must serialize");
+    let value = json_to_value(&json);
+    blake3_512_of(encode_jcs(&value).as_bytes())
+}
+
+fn promotion_decision_memento(
+    candidate_cid: &str,
+    promoted_cid: &str,
+    evidence: &EvidenceMemento,
+    policy_cid: &str,
+    decider_cid: &str,
+) -> Result<PromotionDecisionMemento, String> {
+    let gate = promotion_gate_for_evidence(evidence);
+    let gate_label = promotion_gate_label(&gate);
+    let mut decision = PromotionDecisionMemento {
+        envelope: PromotionDecisionEnvelope {
+            declared_at: "2026-05-13T00:00:00.000Z".to_string(),
+            signature: String::new(),
+            signer: decider_cid.to_string(),
+        },
+        header: PromotionDecisionHeader {
+            candidate_cid: candidate_cid.to_string(),
+            cid: String::new(),
+            decider_cid: decider_cid.to_string(),
+            decision_payload: serde_json::json!({
+                "evidence_count": 1,
+                "gate_evaluated": gate_label,
+                "result": "admitted"
+            }),
+            evidence_cids: vec![evidence.cid.clone()],
+            gate,
+            kind: "promotion-decision".to_string(),
+            policy_cid: policy_cid.to_string(),
+            promoted_cid: promoted_cid.to_string(),
+            result: PromotionResult::Admitted,
+            schema_version: "1".to_string(),
+        },
+        metadata: PromotionDecisionMetadata {
+            counterexample_cids: None,
+            note: Some(format!(
+                "bind admitted {} evidence into compound contract",
+                source_kind_label(&evidence.source_kind)
+            )),
+            source_url: None,
+        },
+    };
+    decision.header.cid = decision
+        .recompute_header_cid()
+        .map_err(|err| err.to_string())?;
+    decision.validate().map_err(|err| err.to_string())?;
+    Ok(decision)
+}
+
+fn promotion_gate_for_evidence(evidence: &EvidenceMemento) -> PromotionGate {
+    match &evidence.source_kind {
+        SourceKind::NativeSurface => PromotionGate::Human,
+        _ => PromotionGate::Proof,
+    }
+}
+
+fn promotion_gate_label(gate: &PromotionGate) -> &'static str {
+    match gate {
+        PromotionGate::Human => "human",
+        PromotionGate::Proof => "proof",
+        PromotionGate::Property => "property",
+        PromotionGate::Threshold => "threshold",
+        PromotionGate::Other(_) => "other",
+    }
 }
 
 fn compound_contract_memento(
