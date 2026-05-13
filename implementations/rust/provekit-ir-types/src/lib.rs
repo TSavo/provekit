@@ -2698,6 +2698,62 @@ impl TryFrom<String> for CatalogKind {
     }
 }
 
+// ============================================================
+// Manual extension: canonicalization-profile memento (#803)
+// Source of truth:
+//   protocol/specs/2026-05-13-canonicalization-profile-memento.md §1
+//
+// This block adds the substrate-only declaration shape for
+// CanonicalizationProfileMemento. It intentionally does not execute,
+// parse, or validate any canonicalization rule language. Rule descriptors
+// declare documented behavior by id/version and optional payload CIDs;
+// higher layers decide whether and how to run those rules.
+//
+// Per JCS canonicalization (2026-04-30-canonicalization-grammar.md),
+// serde field order MUST equal the locked alphabetical order from the
+// spec §1 inside each object. Optional rule fields are omitted from the
+// serialized JSON when None. Required rule lists are emitted as arrays,
+// including empty arrays.
+// ============================================================
+
+/// Scope of a canonicalization profile.
+///
+/// Wire format: a bare JSON string. Bare unknowns fail closed at
+/// deserialization; namespaced extensions (`<namespace>:<kind>`) are
+/// carried as `Namespaced(String)` per the spec §3 namespaced-extensions
+/// rule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum CanonicalizationProfileKind {
+    IrFormula,
+    ConceptShape,
+    FunctionContract,
+    Namespaced(String),
+}
+
+impl TryFrom<String> for CanonicalizationProfileKind {
+    type Error = CanonicalizationExtensionError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        match s.as_str() {
+            "ir-formula" => Ok(CanonicalizationProfileKind::IrFormula),
+            "concept-shape" => Ok(CanonicalizationProfileKind::ConceptShape),
+            "function-contract" => Ok(CanonicalizationProfileKind::FunctionContract),
+            _ => match s.split_once(':') {
+                // Spec §3: extension labels are `<namespace>:<kind>` with
+                // EXACTLY one colon, both segments non-empty.
+                Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
+                    Ok(CanonicalizationProfileKind::Namespaced(s))
+                }
+                _ => Err(CanonicalizationExtensionError {
+                    field: "profile_kind",
+                    raw: s,
+                }),
+            },
+        }
+    }
+}
+
 impl From<CatalogKind> for String {
     fn from(k: CatalogKind) -> String {
         match k {
@@ -2705,6 +2761,17 @@ impl From<CatalogKind> for String {
             CatalogKind::Policy => "policy".to_string(),
             CatalogKind::Realization => "realization".to_string(),
             CatalogKind::Namespaced(s) => s,
+        }
+    }
+}
+
+impl From<CanonicalizationProfileKind> for String {
+    fn from(k: CanonicalizationProfileKind) -> String {
+        match k {
+            CanonicalizationProfileKind::IrFormula => "ir-formula".to_string(),
+            CanonicalizationProfileKind::ConceptShape => "concept-shape".to_string(),
+            CanonicalizationProfileKind::FunctionContract => "function-contract".to_string(),
+            CanonicalizationProfileKind::Namespaced(s) => s,
         }
     }
 }
@@ -2723,6 +2790,73 @@ impl std::fmt::Display for CatalogKindError {
             f,
             "unrecognized catalog kind {:?}: not a canonical value (concept-shapes / policy / realization) and not a well-formed `<namespace>:<kind>` extension",
             self.raw
+        )
+    }
+}
+
+/// Behavior when a canonicalizer sees an equivalence class it does not
+/// understand.
+///
+/// Wire format: a bare JSON string. Bare unknowns fail closed at
+/// deserialization; namespaced extensions are carried as
+/// `Namespaced(String)`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum UnsupportedEquivalencePolicy {
+    Preserve,
+    Refuse,
+    Namespaced(String),
+}
+
+impl TryFrom<String> for UnsupportedEquivalencePolicy {
+    type Error = CanonicalizationExtensionError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        match s.as_str() {
+            "preserve" => Ok(UnsupportedEquivalencePolicy::Preserve),
+            "refuse" => Ok(UnsupportedEquivalencePolicy::Refuse),
+            _ => match s.split_once(':') {
+                // Spec §3: extension labels are `<namespace>:<kind>` with
+                // EXACTLY one colon, both segments non-empty.
+                Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
+                    Ok(UnsupportedEquivalencePolicy::Namespaced(s))
+                }
+                _ => Err(CanonicalizationExtensionError {
+                    field: "unsupported_equivalence_policy",
+                    raw: s,
+                }),
+            },
+        }
+    }
+}
+
+impl From<UnsupportedEquivalencePolicy> for String {
+    fn from(p: UnsupportedEquivalencePolicy) -> String {
+        match p {
+            UnsupportedEquivalencePolicy::Preserve => "preserve".to_string(),
+            UnsupportedEquivalencePolicy::Refuse => "refuse".to_string(),
+            UnsupportedEquivalencePolicy::Namespaced(s) => s,
+        }
+    }
+}
+
+/// Returned when a `CanonicalizationProfileKind` or
+/// `UnsupportedEquivalencePolicy` string is neither a reserved value nor a
+/// well-formed `<namespace>:<kind>` extension. Per spec §3 +
+/// admissibility-spine namespaced-extensions rule, bare unknowns fail
+/// closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalizationExtensionError {
+    pub field: &'static str,
+    pub raw: String,
+}
+
+impl std::fmt::Display for CanonicalizationExtensionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unrecognized {} value {:?}: not a reserved label and not a well-formed `<namespace>:<kind>` extension",
+            self.field, self.raw
         )
     }
 }
@@ -2849,6 +2983,68 @@ impl std::error::Error for DuplicateInSetError {}
 
 // ============================================================
 // End manual extension block -- CatalogSnapshotMemento (#802)
+// ============================================================
+
+impl std::error::Error for CanonicalizationExtensionError {}
+
+/// A documented canonicalization behavior declaration.
+///
+/// Locked JCS key order:
+///   description, language_signature_cid (omitted when absent),
+///   reference_cid (omitted when absent), rule_id,
+///   rule_payload (omitted when absent), rule_version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CanonicalizationRuleDescriptor {
+    pub description: String,
+    #[serde(rename = "language_signature_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_signature_cid: Option<String>,
+    #[serde(rename = "reference_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_cid: Option<String>,
+    #[serde(rename = "rule_id")]
+    pub rule_id: String,
+    #[serde(rename = "rule_payload")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule_payload: Option<serde_json::Value>,
+    #[serde(rename = "rule_version")]
+    pub rule_version: String,
+}
+
+/// Declaration of the conservative canonicalization profile applied before
+/// a substrate object is content-addressed.
+///
+/// Source of truth: protocol/specs/2026-05-13-canonicalization-profile-memento.md §1
+///
+/// Locked JCS key order:
+///   alpha_equivalence_rules, binder_normalization_rules,
+///   formal_name_normalization_rules, formula_canonicalization_rules,
+///   profile_kind, profile_version, provenance_cid, sort_alias_rules,
+///   unsupported_equivalence_policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CanonicalizationProfileMemento {
+    #[serde(rename = "alpha_equivalence_rules")]
+    pub alpha_equivalence_rules: Vec<CanonicalizationRuleDescriptor>,
+    #[serde(rename = "binder_normalization_rules")]
+    pub binder_normalization_rules: Vec<CanonicalizationRuleDescriptor>,
+    #[serde(rename = "formal_name_normalization_rules")]
+    pub formal_name_normalization_rules: Vec<CanonicalizationRuleDescriptor>,
+    #[serde(rename = "formula_canonicalization_rules")]
+    pub formula_canonicalization_rules: Vec<CanonicalizationRuleDescriptor>,
+    #[serde(rename = "profile_kind")]
+    pub profile_kind: CanonicalizationProfileKind,
+    #[serde(rename = "profile_version")]
+    pub profile_version: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "sort_alias_rules")]
+    pub sort_alias_rules: Vec<CanonicalizationRuleDescriptor>,
+    #[serde(rename = "unsupported_equivalence_policy")]
+    pub unsupported_equivalence_policy: UnsupportedEquivalencePolicy,
+}
+
+// ============================================================
+// End manual extension block -- canonicalization-profile memento (#803)
 // ============================================================
 
 // ============================================================
