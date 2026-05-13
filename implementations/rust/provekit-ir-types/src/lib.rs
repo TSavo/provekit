@@ -425,7 +425,7 @@ pub enum IrFormula {
         sort: Sort,
         body: Box<IrFormula>,
     },
-    /// `substitute` — an explicit, capture-avoiding, single-variable
+    /// `substitute` - an explicit, capture-avoiding, single-variable
     /// substitution on a formula: `target` with `var` replaced by `term`.
     /// This is `Q[result_value := value_expr]` written as a node. It is
     /// needed because in a `wp_rule` schema the `target` is the
@@ -439,7 +439,7 @@ pub enum IrFormula {
         term: IrTerm,
         var: String,
     },
-    /// `apply` — application of a slot-transformer meta-variable
+    /// `apply` - application of a slot-transformer meta-variable
     /// (`wp_<slot>`) to one formula argument: `apply(wp_<slot>, X)` is
     /// "the weakest precondition of the term plugged into slot `<slot>`,
     /// with respect to X." When the evaluator instantiates `wp_<slot>`
@@ -1794,6 +1794,202 @@ impl ObservationWrapperMemento {
     }
 }
 
+// ============================================================
+// Manual extension: promotion-decision memento (issue #791)
+// Source of truth:
+//   protocol/specs/2026-05-13-promotion-decision-memento.md §1 and §4
+//
+// This block adds the substrate-only PromotionDecisionMemento. It carries
+// CIDs and structured decision payloads, but does not interpret source
+// language syntax or perform evidence extraction.
+//
+// `header.cid` is DERIVED from JCS(header without cid) and BLAKE3-512.
+// `evidence_cids` are sorted for CID derivation as required by §4.
+// ============================================================
+
+/// Envelope layer for a `PromotionDecisionMemento`.
+///
+/// Locked JCS key order: declaredAt, signature, signer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromotionDecisionEnvelope {
+    #[serde(rename = "declaredAt")]
+    pub declared_at: String,
+    pub signature: String,
+    pub signer: String,
+}
+
+/// Promotion gate label. Canonical labels are known, and namespaced
+/// extensions are carried as strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum PromotionGate {
+    Human,
+    Proof,
+    Property,
+    Threshold,
+    Other(String),
+}
+
+impl From<String> for PromotionGate {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "human" => PromotionGate::Human,
+            "proof" => PromotionGate::Proof,
+            "property" => PromotionGate::Property,
+            "threshold" => PromotionGate::Threshold,
+            _ => PromotionGate::Other(s),
+        }
+    }
+}
+
+impl From<PromotionGate> for String {
+    fn from(gate: PromotionGate) -> String {
+        match gate {
+            PromotionGate::Human => "human".to_string(),
+            PromotionGate::Proof => "proof".to_string(),
+            PromotionGate::Property => "property".to_string(),
+            PromotionGate::Threshold => "threshold".to_string(),
+            PromotionGate::Other(s) => s,
+        }
+    }
+}
+
+/// Promotion result. The v1 CDDL closes this set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromotionResult {
+    #[serde(rename = "admitted")]
+    Admitted,
+    #[serde(rename = "rejected")]
+    Rejected,
+    #[serde(rename = "deferred")]
+    Deferred,
+}
+
+/// Header layer for a `PromotionDecisionMemento`.
+///
+/// Locked JCS key order:
+///   candidate_cid, cid, decider_cid, decision_payload, evidence_cids,
+///   gate, kind, policy_cid, promoted_cid, result, schemaVersion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromotionDecisionHeader {
+    #[serde(rename = "candidate_cid")]
+    pub candidate_cid: String,
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    #[serde(rename = "decider_cid")]
+    pub decider_cid: String,
+    #[serde(rename = "decision_payload")]
+    pub decision_payload: serde_json::Value,
+    #[serde(rename = "evidence_cids")]
+    pub evidence_cids: Vec<String>,
+    pub gate: PromotionGate,
+    /// MUST be "promotion-decision".
+    pub kind: String,
+    #[serde(rename = "policy_cid")]
+    pub policy_cid: String,
+    #[serde(rename = "promoted_cid")]
+    pub promoted_cid: String,
+    pub result: PromotionResult,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+}
+
+/// Metadata layer for a `PromotionDecisionMemento`.
+///
+/// Locked JCS key order: counterexample_cids, note, source_url.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct PromotionDecisionMetadata {
+    #[serde(rename = "counterexample_cids")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counterexample_cids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(rename = "source_url")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+}
+
+/// A content-addressed promotion decision connecting a candidate,
+/// evidence set, policy, decider, and promoted artifact.
+///
+/// Locked JCS key order: envelope, header, metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromotionDecisionMemento {
+    pub envelope: PromotionDecisionEnvelope,
+    pub header: PromotionDecisionHeader,
+    pub metadata: PromotionDecisionMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromotionDecisionCanonicalizationError {
+    message: String,
+}
+
+impl PromotionDecisionCanonicalizationError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for PromotionDecisionCanonicalizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PromotionDecisionCanonicalizationError {}
+
+impl From<serde_json::Error> for PromotionDecisionCanonicalizationError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::new(err.to_string())
+    }
+}
+
+impl PromotionDecisionMemento {
+    /// Serialize the whole memento through the repo JCS encoder.
+    pub fn to_jcs_string(&self) -> Result<String, PromotionDecisionCanonicalizationError> {
+        let json = serde_json::to_value(self)?;
+        let canonical = serde_json_to_canonical_value(&json)?;
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    /// Recompute `header.cid` per §4.
+    pub fn recompute_header_cid(&self) -> Result<String, PromotionDecisionCanonicalizationError> {
+        let mut header = serde_json::to_value(&self.header)?;
+        let serde_json::Value::Object(ref mut object) = header else {
+            return Err(PromotionDecisionCanonicalizationError::new(
+                "promotion header did not serialize as an object",
+            ));
+        };
+
+        object.remove("cid");
+        if let Some(serde_json::Value::Array(evidence_cids)) = object.get_mut("evidence_cids") {
+            evidence_cids.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+        }
+
+        let canonical = serde_json_to_canonical_value(&header)?;
+        let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+
+    /// Check load-time invariants per spec §1 CDDL.
+    ///
+    /// `evidence_cids` is declared as `[+ cid]` (non-empty) in the spec.
+    /// An evidence-free promotion would contradict the master-frame
+    /// admissibility-spine framing (#796): every irreversible substrate
+    /// claim needs a memento that says what was observed. Empty evidence
+    /// is no evidence; admission MUST fail closed.
+    pub fn validate(&self) -> Result<(), PromotionDecisionInvariantError> {
+        if self.header.evidence_cids.is_empty() {
+            return Err(PromotionDecisionInvariantError::EmptyEvidenceCids);
+        }
+        Ok(())
+    }
+}
+
 enum ModeClassification {
     /// Core wrapper-mode from the spec: monitor / witness / dispatcher.
     Core,
@@ -1826,8 +2022,67 @@ fn classify_mode(mode: &str, allowed_extension_modes: &[&str]) -> ModeClassifica
     }
 }
 
+/// Returned when a `PromotionDecisionMemento` violates a load-time
+/// invariant per `2026-05-13-promotion-decision-memento.md` §1.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromotionDecisionInvariantError {
+    /// Spec §1 CDDL: `evidence_cids: [+ cid]` (non-empty). The master
+    /// frame requires every admission to cite what was observed.
+    EmptyEvidenceCids,
+}
+
+impl std::fmt::Display for PromotionDecisionInvariantError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyEvidenceCids => f.write_str(
+                "PromotionDecisionMemento: evidence_cids is empty (spec §1 CDDL requires [+ cid]; admissibility-spine #796 forbids evidence-free admission)",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PromotionDecisionInvariantError {}
+
+fn serde_json_to_canonical_value(
+    value: &serde_json::Value,
+) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, PromotionDecisionCanonicalizationError> {
+    use provekit_canonicalizer::Value as CanonicalValue;
+
+    match value {
+        serde_json::Value::Null => Ok(CanonicalValue::null()),
+        serde_json::Value::Bool(b) => Ok(CanonicalValue::boolean(*b)),
+        serde_json::Value::Number(n) => {
+            let Some(integer) = n.as_i64() else {
+                return Err(PromotionDecisionCanonicalizationError::new(format!(
+                    "unsupported non-i64 JSON number in promotion decision: {n}"
+                )));
+            };
+            Ok(CanonicalValue::integer(integer))
+        }
+        serde_json::Value::String(s) => Ok(CanonicalValue::string(s.clone())),
+        serde_json::Value::Array(items) => {
+            let converted = items
+                .iter()
+                .map(serde_json_to_canonical_value)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(CanonicalValue::array(converted))
+        }
+        serde_json::Value::Object(object) => {
+            let converted = object
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), serde_json_to_canonical_value(value)?)))
+                .collect::<Result<Vec<_>, PromotionDecisionCanonicalizationError>>()?;
+            Ok(CanonicalValue::object(converted))
+        }
+    }
+}
+
 // ============================================================
 // End manual extension block -- observation-wrapper memento (#804)
+// ============================================================
+
+// ============================================================
+// End manual extension block -- promotion-decision memento
 // ============================================================
 
 // ============================================================
