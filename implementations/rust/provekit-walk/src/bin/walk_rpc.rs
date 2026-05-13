@@ -19,11 +19,14 @@
 // and pull back proof.ir bytes ready for the substrate's lift / mint /
 // linker pipeline.
 
+use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use provekit_ir_types::{EvidenceMemento, SourceKind};
+use provekit_lift_contracts::{lift_file_with_docstring_evidence, lift_file_with_sig_evidence};
 use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
 use provekit_walk::{
     build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
@@ -255,7 +258,7 @@ fn initialize_result() -> Value {
         "protocol_version": "pep/1.7.0",
         "capabilities": {
             "authoring_surfaces": ["rust", "rust-bind"],
-            "ir_version": "bind-ir/1.0.0",
+            "ir_version": "bind-ir/1.1.0",
             "emits_signed_mementos": false
         }
     })
@@ -340,6 +343,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             .display()
             .to_string()
             .replace('\\', "/");
+        let witnesses_by_symbol =
+            contract_witnesses_by_function_symbol(&file, &rel, src.as_bytes());
 
         for item in &file.items {
             if let syn::Item::Fn(item_fn) = item {
@@ -350,6 +355,11 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 let term_shape = term_shape_for_fn(item_fn);
                 let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
                 let (param_names, param_types, return_type) = fn_signature(item_fn);
+                let function_symbol = format!("{fn_name}@{rel}");
+                let witnesses = witnesses_by_symbol
+                    .get(&function_symbol)
+                    .cloned()
+                    .unwrap_or_default();
 
                 entries.push(json!({
                     "kind": "bind-lift-entry",
@@ -364,6 +374,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "return_type": return_type,
                     "term_shape": cvalue_to_json(&term_shape),
                     "term_shape_cid": term_shape_cid,
+                    "witnesses": witnesses,
                 }));
             }
         }
@@ -374,6 +385,133 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         "ir": entries,
         "diagnostics": diagnostics,
     }))
+}
+
+fn contract_witnesses_by_function_symbol(
+    file: &syn::File,
+    rel: &str,
+    source_bytes: &[u8],
+) -> BTreeMap<String, Vec<Value>> {
+    let mut by_symbol: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for evidence in lift_file_with_sig_evidence(file, rel, source_bytes)
+        .evidences
+        .into_iter()
+        .chain(
+            lift_file_with_docstring_evidence(file, rel, source_bytes)
+                .evidences
+                .into_iter(),
+        )
+    {
+        let Some(symbol) = evidence_function_symbol(&evidence) else {
+            continue;
+        };
+        let Some(witness) = bind_contract_witness_from_evidence(&evidence) else {
+            continue;
+        };
+        by_symbol
+            .entry(symbol.to_string())
+            .or_default()
+            .push(witness);
+    }
+
+    for witnesses in by_symbol.values_mut() {
+        witnesses.sort_by(stable_witness_order);
+    }
+
+    by_symbol
+}
+
+fn evidence_function_symbol(evidence: &EvidenceMemento) -> Option<&str> {
+    evidence
+        .extension_fields
+        .get("function_symbol")
+        .and_then(|value| value.as_str())
+}
+
+fn bind_contract_witness_from_evidence(evidence: &EvidenceMemento) -> Option<Value> {
+    let role = evidence_role(evidence)?;
+    let source_kind: String = evidence.source_kind.clone().into();
+    let predicate = serde_json::to_value(&evidence.predicate).ok()?;
+    let predicate_text = evidence
+        .extension_fields
+        .get("raw_text")
+        .and_then(|value| value.as_str());
+    let mut extension_fields = evidence.extension_fields.clone();
+    extension_fields
+        .entry("role".to_string())
+        .or_insert_with(|| Value::String(role.clone()));
+
+    Some(json!({
+        "role": role,
+        "predicate": predicate,
+        "predicate_text": predicate_text,
+        "source_kind": source_kind,
+        "confidence_basis_points": evidence.confidence_basis_points,
+        "line": evidence.source_locator.span.start.line as u64,
+        "col": evidence.source_locator.span.start.col as u64,
+        "extension_fields": extension_fields,
+    }))
+}
+
+fn evidence_role(evidence: &EvidenceMemento) -> Option<String> {
+    if let Some(role) = evidence
+        .extension_fields
+        .get("role")
+        .and_then(|value| value.as_str())
+        .filter(|role| !role.trim().is_empty())
+    {
+        return Some(role.trim().to_string());
+    }
+
+    match &evidence.source_kind {
+        SourceKind::Docstring => evidence
+            .extension_fields
+            .get("pattern_kind")
+            .and_then(|value| value.as_str())
+            .and_then(|pattern_kind| match pattern_kind {
+                "requires" | "arguments_must_be" => Some("pre".to_string()),
+                "returns_if" => Some("post".to_string()),
+                "panics_if" => Some("panic".to_string()),
+                _ => None,
+            }),
+        SourceKind::TypeSignature => evidence
+            .extension_fields
+            .get("signature_position")
+            .and_then(|value| value.as_str())
+            .map(|position| {
+                if position == "return" {
+                    "post".to_string()
+                } else {
+                    "pre".to_string()
+                }
+            }),
+        _ => None,
+    }
+}
+
+fn stable_witness_order(a: &Value, b: &Value) -> std::cmp::Ordering {
+    witness_order_key(a).cmp(&witness_order_key(b))
+}
+
+fn witness_order_key(value: &Value) -> (String, String, u64, u64, String) {
+    (
+        value
+            .get("source_kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        value
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        value.get("line").and_then(|v| v.as_u64()).unwrap_or(0),
+        value.get("col").and_then(|v| v.as_u64()).unwrap_or(0),
+        value
+            .get("extension_fields")
+            .and_then(|v| serde_json::to_string(v).ok())
+            .unwrap_or_default(),
+    )
 }
 
 fn collect_rs_files(dir: &Path, visited: &mut std::collections::BTreeSet<PathBuf>) {
@@ -652,4 +790,81 @@ fn shape_of_expr(expr: &syn::Expr) -> std::sync::Arc<CValue> {
 fn cvalue_to_json(v: &CValue) -> Value {
     let s = encode_jcs(v);
     serde_json::from_str(&s).unwrap_or(Value::Null)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn bind_lift_marries_docstring_and_type_signature_evidence_as_witnesses() {
+        let root = temp_workspace("bind_lift_witnesses");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+/// Requires amount > 0
+/// Returns Some(...) if amount > 0
+/// Panics if amount == 0
+pub fn wrap_positive(amount: usize) -> Option<usize> {
+    Some(amount)
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let entry = entries
+            .iter()
+            .find(|entry| entry["fn_name"] == "wrap_positive")
+            .expect("wrap_positive entry");
+        let witnesses = entry["witnesses"].as_array().expect("witnesses array");
+
+        assert!(
+            witnesses.iter().any(|w| w["source_kind"] == "docstring"
+                && w["role"] == "pre"
+                && w["extension_fields"]["pattern_kind"] == "requires"),
+            "expected Requires docstring evidence to be married as a pre witness: {witnesses:#?}"
+        );
+        assert!(
+            witnesses.iter().any(|w| w["source_kind"] == "docstring"
+                && w["role"] == "post"
+                && w["extension_fields"]["pattern_kind"] == "returns_if"),
+            "expected Returns docstring evidence to be married as a post witness: {witnesses:#?}"
+        );
+        assert!(
+            witnesses.iter().any(|w| w["source_kind"] == "docstring"
+                && w["role"] == "panic"
+                && w["extension_fields"]["pattern_kind"] == "panics_if"),
+            "expected Panics docstring evidence to be preserved under the panic role: {witnesses:#?}"
+        );
+        assert!(
+            witnesses
+                .iter()
+                .any(|w| w["source_kind"] == "type-signature"
+                    && w["extension_fields"]["signature_position"] == "param:0"),
+            "expected parameter type-signature evidence witness: {witnesses:#?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn temp_workspace(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
+        fs::create_dir_all(&root).expect("create temp workspace");
+        root
+    }
 }

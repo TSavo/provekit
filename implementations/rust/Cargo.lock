@@ -2174,6 +2174,7 @@ dependencies = [
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-types",
+ "provekit-lift-contracts",
  "provekit-proof-envelope",
  "quote",
  "serde_json",
