@@ -87,7 +87,10 @@ final class SugarRealizer {
         boolean isStub = bodyTemplate.isEmpty();
         String bodyContent = bodyTemplate
                 .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
-        String body = "        " + bodyContent + "\n";
+        // Multi-line templates: each internal line gets the same 8-space
+        // method-body indent. Single-line bodies are unaffected (no \n).
+        String indentedBody = bodyContent.replace("\n", "\n        ");
+        String body = "        " + indentedBody + "\n";
 
         String source = "final class " + className + " {\n"
                 + annotationPrefix
