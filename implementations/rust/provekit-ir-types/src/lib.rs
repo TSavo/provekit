@@ -2306,6 +2306,211 @@ fn serde_json_to_canonical_value(
 // ============================================================
 
 // ============================================================
+// Manual extension: CatalogSnapshotMemento substrate primitive (#802)
+// Source of truth:
+//   protocol/specs/2026-05-13-catalog-snapshot-memento.md §1, §3
+//
+// This block intentionally models only the durable artifact and the
+// canonical set-CID helper. Snapshot replay and catalog pull-protocols
+// live outside this crate.
+//
+// Per JCS canonicalization, serde field order MUST equal alphabetical
+// order. The struct fields below are ordered exactly as the spec lists
+// the canonical map keys.
+// ============================================================
+
+/// The catalog namespace named by a `CatalogSnapshotMemento`.
+///
+/// Wire format: a bare JSON string. The three reserved labels are carried
+/// as named variants; extension catalogs round-trip through `Namespaced`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum CatalogKind {
+    ConceptShapes,
+    Policy,
+    Realization,
+    /// Namespaced extension catalog kind, e.g. `acme:custom-shapes`.
+    /// MUST be of the form `<namespace>:<kind>` with both segments
+    /// non-empty. Bare unknowns fail closed at deserialization.
+    Namespaced(String),
+}
+
+impl TryFrom<String> for CatalogKind {
+    type Error = CatalogKindError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        match s.as_str() {
+            "concept-shapes" => Ok(CatalogKind::ConceptShapes),
+            "policy" => Ok(CatalogKind::Policy),
+            "realization" => Ok(CatalogKind::Realization),
+            _ => match s.split_once(':') {
+                // Spec: extension labels are `<namespace>:<kind>` with
+                // EXACTLY one colon, both segments non-empty.
+                Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
+                    Ok(CatalogKind::Namespaced(s))
+                }
+                _ => Err(CatalogKindError {
+                    raw: s,
+                }),
+            },
+        }
+    }
+}
+
+impl From<CatalogKind> for String {
+    fn from(k: CatalogKind) -> String {
+        match k {
+            CatalogKind::ConceptShapes => "concept-shapes".to_string(),
+            CatalogKind::Policy => "policy".to_string(),
+            CatalogKind::Realization => "realization".to_string(),
+            CatalogKind::Namespaced(s) => s,
+        }
+    }
+}
+
+/// Error returned when a `CatalogKind` string is neither a canonical
+/// value nor a well-formed namespaced extension. The spec requires
+/// extensions to use `<namespace>:<kind>` form; bare unknowns fail closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogKindError {
+    pub raw: String,
+}
+
+impl std::fmt::Display for CatalogKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unrecognized catalog kind {:?}: not a canonical value (concept-shapes / policy / realization) and not a well-formed `<namespace>:<kind>` extension",
+            self.raw
+        )
+    }
+}
+
+impl std::error::Error for CatalogKindError {}
+
+/// The first snapshot for a catalog kind.
+///
+/// Locked JCS key order:
+///   admitted_member_set_cid, catalog_kind, catalog_root_cid, genesis,
+///   policy_set_cid, promotion_decision_set_cid, provenance_cid,
+///   signature, signer_cid, snapshot_time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogSnapshotGenesis {
+    #[serde(rename = "admitted_member_set_cid")]
+    pub admitted_member_set_cid: Cid,
+    #[serde(rename = "catalog_kind")]
+    pub catalog_kind: CatalogKind,
+    #[serde(rename = "catalog_root_cid")]
+    pub catalog_root_cid: Cid,
+    pub genesis: String,
+    #[serde(rename = "policy_set_cid")]
+    pub policy_set_cid: Cid,
+    #[serde(rename = "promotion_decision_set_cid")]
+    pub promotion_decision_set_cid: Cid,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: Cid,
+    pub signature: String,
+    #[serde(rename = "signer_cid")]
+    pub signer_cid: Cid,
+    #[serde(rename = "snapshot_time")]
+    pub snapshot_time: String,
+}
+
+/// A non-genesis snapshot for a catalog kind.
+///
+/// Locked JCS key order:
+///   admitted_member_set_cid, catalog_kind, catalog_root_cid,
+///   parent_snapshot_cid, policy_set_cid, promotion_decision_set_cid,
+///   provenance_cid, signature, signer_cid, snapshot_time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogSnapshotSuccessor {
+    #[serde(rename = "admitted_member_set_cid")]
+    pub admitted_member_set_cid: Cid,
+    #[serde(rename = "catalog_kind")]
+    pub catalog_kind: CatalogKind,
+    #[serde(rename = "catalog_root_cid")]
+    pub catalog_root_cid: Cid,
+    #[serde(rename = "parent_snapshot_cid")]
+    pub parent_snapshot_cid: Cid,
+    #[serde(rename = "policy_set_cid")]
+    pub policy_set_cid: Cid,
+    #[serde(rename = "promotion_decision_set_cid")]
+    pub promotion_decision_set_cid: Cid,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: Cid,
+    pub signature: String,
+    #[serde(rename = "signer_cid")]
+    pub signer_cid: Cid,
+    #[serde(rename = "snapshot_time")]
+    pub snapshot_time: String,
+}
+
+/// The catalog snapshot memento union.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CatalogSnapshotMemento {
+    Genesis(CatalogSnapshotGenesis),
+    Successor(CatalogSnapshotSuccessor),
+}
+
+/// Compute the canonical CID for a set field in a catalog snapshot.
+///
+/// The input slice is sorted in-place by the UTF-8 bytes of each CID
+/// string, encoded as a JCS JSON array of strings, then hashed with the
+/// repository's BLAKE3-512 self-identifying CID helper.
+///
+/// Per the spec these are SET CIDs: duplicate strings violate the set
+/// abstraction and MUST be rejected before hashing. The function takes
+/// `&[Cid]` (immutable) and returns `Err(DuplicateInSetError)` when any
+/// CID appears more than once. The caller may not assume the input slice
+/// is mutated.
+pub fn canonical_set_cid(cids: &[Cid]) -> Result<Cid, DuplicateInSetError> {
+    let mut sorted: Vec<&Cid> = cids.iter().collect();
+    sorted.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+
+    // Reject duplicates: a set cannot contain the same element twice. After
+    // sorting, duplicates appear as adjacent pairs.
+    for window in sorted.windows(2) {
+        if window[0] == window[1] {
+            return Err(DuplicateInSetError {
+                cid: window[0].clone(),
+            });
+        }
+    }
+
+    let values = sorted
+        .iter()
+        .map(|cid| provekit_canonicalizer::Value::string((*cid).clone()))
+        .collect();
+    let jcs = provekit_canonicalizer::encode_jcs(&provekit_canonicalizer::Value::array(values));
+    Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+}
+
+/// Error returned when `canonical_set_cid` finds a duplicate CID in its
+/// input. Per spec these arrays are SET CIDs; multisets are not admissible.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateInSetError {
+    /// The CID that appeared at least twice in the input slice.
+    pub cid: Cid,
+}
+
+impl std::fmt::Display for DuplicateInSetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "duplicate CID in canonical set: {} (per spec these are set CIDs; multisets are not admissible)",
+            self.cid
+        )
+    }
+}
+
+impl std::error::Error for DuplicateInSetError {}
+
+// ============================================================
+// End manual extension block -- CatalogSnapshotMemento (#802)
+// ============================================================
+
+// ============================================================
 // MANUAL EXTENSION BLOCK -- DomainClaim normalization (PR-A)
 // Source of truth:
 //   protocol/specs/2026-05-13-domain-claim-normalization.md §1
