@@ -141,14 +141,14 @@ def build_shape_specs() -> dict[str, dict]:
     request_post = operation_contract(
         "http-request",
         ["HttpMethod", "Url", "HeaderMap", "Optional<ByteStreamOrBytes>"],
-        "HttpRequest",
+        "HttpResponse",
         [
             {"name": "method"},
             {"name": "url"},
             {"name": "headers"},
             {"name": "body"},
         ],
-        "Constructs an HTTP request from method, concept:url, concept:header-map, and an absent body or body carried as concept:byte-stream or raw bytes.",
+        "Performs the HTTP request and returns concept:http-response. May raise an http error or refuse along any of the documented loss dimensions. Library callsites like libcurl perform, Java HttpClient send, Python urllib.request.urlopen, JS fetch, Python requests.get, and Rust reqwest::get all bind to this operation and produce response data.",
     )
     request_post["loss_record"] = loss_record(HTTP_REQUEST_LOSS_DIMS, "concept:http-request")
 
@@ -195,7 +195,7 @@ def build_shape_specs() -> dict[str, dict]:
             "concept:http-request",
             ["method", "url", "headers", "body"],
             ["HttpMethod", "Url", "HeaderMap", "Optional<ByteStreamOrBytes>"],
-            "HttpRequest",
+            "HttpResponse",
             request_pre,
             request_post,
             {"effects": [{"kind": "effect-signature", "name": "NetworkRequest"}]},

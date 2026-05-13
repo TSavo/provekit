@@ -263,8 +263,8 @@
       }
     },
     "operator": "http-request",
-    "result": "HttpRequest",
-    "wp_note": "Constructs an HTTP request from method, concept:url, concept:header-map, and an absent body or body carried as concept:byte-stream or raw bytes."
+    "result": "HttpResponse",
+    "wp_note": "Performs the HTTP request and returns concept:http-response. May raise an http error or refuse along any of the documented loss dimensions. Library callsites like libcurl perform, Java HttpClient send, Python urllib.request.urlopen, JS fetch, Python requests.get, and Rust reqwest::get all bind to this operation and produce response data."
   },
   "pre": {
     "args": [
@@ -341,6 +341,6 @@
   "return_sort": {
     "args": [],
     "kind": "ctor",
-    "name": "HttpRequest"
+    "name": "HttpResponse"
   }
 }

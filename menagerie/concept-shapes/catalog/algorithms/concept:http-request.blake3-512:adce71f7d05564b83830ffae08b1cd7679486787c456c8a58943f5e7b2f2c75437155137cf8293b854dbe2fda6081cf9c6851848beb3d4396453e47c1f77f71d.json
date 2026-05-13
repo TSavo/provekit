@@ -330,8 +330,8 @@
         }
       },
       "operator": "http-request",
-      "result": "HttpRequest",
-      "wp_note": "Constructs an HTTP request from method, concept:url, concept:header-map, and an absent body or body carried as concept:byte-stream or raw bytes."
+      "result": "HttpResponse",
+      "wp_note": "Performs the HTTP request and returns concept:http-response. May raise an http error or refuse along any of the documented loss dimensions. Library callsites like libcurl perform, Java HttpClient send, Python urllib.request.urlopen, JS fetch, Python requests.get, and Rust reqwest::get all bind to this operation and produce response data."
     },
     "effects": {
       "effects": [
@@ -345,13 +345,13 @@
     "return_sort": {
       "args": [],
       "kind": "ctor",
-      "name": "HttpRequest"
+      "name": "HttpResponse"
     }
   },
-  "cid": "blake3-512:4bba4395e8ce6a46ed110bd89cb5e45f42e89c6e67af063a4eaf9b69d8963ef63baae83be27b97681ebee46c39172472cba39a6547cdcc08a30ac47f57b89684",
+  "cid": "blake3-512:adce71f7d05564b83830ffae08b1cd7679486787c456c8a58943f5e7b2f2c75437155137cf8293b854dbe2fda6081cf9c6851848beb3d4396453e47c1f77f71d",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "esTHqVhDEnpwWSY9ZWx3bV2V4/T7ebdEkt0mAHHesyUFuRLJs/3RUrgrSrAmI5kO0PTAcYKrToSeim2U31oEAA=="
+    "sig_b64": "R27yk/jHgb9XJO0v8tO33ZRvKtktIfO4gu5+l0cJl3I0qmelWG26fuN6SLIM+7JlftCPZP6OEHbut3UQ2g59AQ=="
   }
 }

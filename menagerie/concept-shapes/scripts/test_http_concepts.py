@@ -24,6 +24,19 @@ class HttpConceptShapeTests(unittest.TestCase):
             sorted(request["post"]["loss_record"]),
             sorted(http.HTTP_REQUEST_LOSS_DIMS),
         )
+        # Bridge B P1 guard: concept:http-request is the executing operation,
+        # not a request-object constructor. Library callsites like libcurl
+        # perform, Java HttpClient send, and Python urllib.request.urlopen all
+        # produce HttpResponse data; if the concept ever regresses to returning
+        # HttpRequest, Bridges C and D cannot honestly tag those callsites.
+        self.assertEqual(request["return_sort"]["name"], "HttpResponse")
+        self.assertEqual(request["post"]["result"], "HttpResponse")
+        # The NetworkRequest effect must travel with this concept; without it
+        # the substrate has no way to flag the operation as effectful.
+        self.assertIn(
+            {"kind": "effect-signature", "name": "NetworkRequest"},
+            request["effects"]["effects"],
+        )
 
         allowed_methods = request["pre"]["args"][1]["args"]
         self.assertEqual(

@@ -199,7 +199,7 @@ Bridge B mints the HTTP request and response concept shapes used by later HTTP s
 
 | Concept | Shape CID | Notes |
 | --- | --- | --- |
-| `concept:http-request` | `blake3-512:4bba4395e8ce6a46ed110bd89cb5e45f42e89c6e67af063a4eaf9b69d8963ef63baae83be27b97681ebee46c39172472cba39a6547cdcc08a30ac47f57b89684` | method, URL, headers, optional stream or bytes body |
+| `concept:http-request` | `blake3-512:adce71f7d05564b83830ffae08b1cd7679486787c456c8a58943f5e7b2f2c75437155137cf8293b854dbe2fda6081cf9c6851848beb3d4396453e47c1f77f71d` | method, URL, headers, optional stream or bytes body |
 | `concept:http-response` | `blake3-512:42438adf303fb5d9a27fb29ae39e318d3799951a528115fdaa9e4c3ac7f95d4b069d15a4b1348e05535f738fad141b060d91896181533a897bd7464eee058cf9` | status, headers, stream or bytes body |
 | `concept:url` | `blake3-512:ec39f4820bdac0fc1bfb60e30d7348e2273a89b0f13f7fd3be49b03d206026e5a1f9414aca64ac639aee6ec789dbbd2045309146d118e66c8bccd5b8be654463` | parsed URL component carrier |
 | `concept:header-map` | `blake3-512:53cb0113c4211d9c326868d5901d0c7e699f4ae23078bea4de54086c1cd59e92ca2accbd5986db0643b7689ea57011e3ed33514614f3626d774fd5cbf011cab7` | duplicate-preserving header multimap |
