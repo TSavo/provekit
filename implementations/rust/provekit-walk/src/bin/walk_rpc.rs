@@ -551,6 +551,8 @@ fn join_formula_operands(operands: &[IrFormula], separator: &str) -> String {
 fn ir_term_to_text(term: &IrTerm) -> String {
     match term {
         IrTerm::Var { name } => name.clone(),
+        // Human-readable compatibility text for predicate_text only. The
+        // authoritative predicate remains the structured IrFormula above.
         IrTerm::Const { value, .. } => match value {
             Value::String(s) => format!("{s:?}"),
             _ => value.to_string(),
