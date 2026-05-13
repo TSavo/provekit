@@ -20,10 +20,20 @@ class HttpConceptShapeTests(unittest.TestCase):
             ["method", "url", "headers", "body"],
         )
         self.assertEqual(request["post"]["operator"], "http-request")
+        # loss_dimensions lives at the top level of the algorithm shape as
+        # catalog metadata (the named axes along which realizations may
+        # diverge), sorted for byte stability. Per-realization values live
+        # on RealizationDesugaringMemento / LossyMorphismMemento; the shape
+        # carries only the names.
         self.assertEqual(
-            sorted(request["post"]["loss_record"]),
+            request["loss_dimensions"],
             sorted(http.HTTP_REQUEST_LOSS_DIMS),
         )
+        # Bridge B Opus-review N1 guard: loss_record must NOT be nested inside
+        # post. That placement is schema-novel and no Rust reader consumes it.
+        # Loss values belong on LossyMorphismMemento (Rust LossRecord at
+        # provekit-ir-types/src/lib.rs L508), not on the abstract shape.
+        self.assertNotIn("loss_record", request["post"])
         # Bridge B P1 guard: concept:http-request is the executing operation,
         # not a request-object constructor. Library callsites like libcurl
         # perform, Java HttpClient send, and Python urllib.request.urlopen all
@@ -48,9 +58,10 @@ class HttpConceptShapeTests(unittest.TestCase):
         self.assertEqual(response["formals"], ["status", "headers", "body"])
         self.assertEqual(response["post"]["operator"], "http-response")
         self.assertEqual(
-            sorted(response["post"]["loss_record"]),
+            response["loss_dimensions"],
             sorted(http.HTTP_RESPONSE_LOSS_DIMS),
         )
+        self.assertNotIn("loss_record", response["post"])
 
     def test_supporting_shapes_are_minimal_operation_contract_specs(self):
         specs = http.build_shape_specs()
@@ -61,8 +72,19 @@ class HttpConceptShapeTests(unittest.TestCase):
             self.assertEqual(spec["pre"], {"args": [], "kind": "atomic", "name": "true"})
             self.assertEqual(spec["effects"], {"effects": []})
 
-    def test_specs_do_not_add_top_level_schema_fields(self):
-        allowed = {
+    def test_specs_do_not_add_top_level_schema_fields_beyond_loss_dimensions(self):
+        """Top-level fields are the canonical algorithm-shape set plus
+        the new optional `loss_dimensions` catalog-metadata field.
+
+        `loss_dimensions: List[String]` carries only the named axes along
+        which realizations may diverge; concrete per-realization values
+        live on RealizationDesugaringMemento / LossyMorphismMemento (Rust
+        type LossRecord at provekit-ir-types/src/lib.rs L508). Shapes
+        without divergence dimensions (url, header-map, byte-stream) omit
+        the field; algorithm shapes that document divergence (http-request,
+        http-response) include it.
+        """
+        core = {
             "effects",
             "fn_name",
             "formal_sorts",
@@ -72,8 +94,14 @@ class HttpConceptShapeTests(unittest.TestCase):
             "pre",
             "return_sort",
         }
-        for spec in http.build_shape_specs().values():
-            self.assertEqual(set(spec), allowed)
+        optional = {"loss_dimensions"}
+        for slug, spec in http.build_shape_specs().items():
+            extra = set(spec) - core
+            self.assertTrue(
+                extra.issubset(optional),
+                f"{slug} carries unknown top-level fields {extra - optional}",
+            )
+            self.assertTrue(core.issubset(set(spec)), f"{slug} is missing core fields {core - set(spec)}")
 
     def test_examples_cover_requested_language_surfaces(self):
         examples = http.build_examples_md()

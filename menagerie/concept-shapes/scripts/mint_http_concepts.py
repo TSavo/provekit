@@ -77,8 +77,9 @@ def shape_spec(
     pre: dict,
     post: dict,
     effects: dict | None = None,
+    loss_dimensions: list[str] | None = None,
 ) -> dict:
-    return {
+    spec: dict = {
         "effects": effects or {"effects": []},
         "fn_name": fn_name,
         "formal_sorts": [ctor(sort) for sort in formal_sorts],
@@ -88,16 +89,15 @@ def shape_spec(
         "pre": pre,
         "return_sort": ctor(return_sort),
     }
-
-
-def loss_record(dimensions: list[str], concept_name: str) -> dict:
-    out = {}
-    for dimension in dimensions:
-        out[dimension] = atomic(
-            "http_loss_dimension_requires_realization_policy",
-            [const(concept_name, "String"), const(dimension, "String")],
-        )
-    return out
+    if loss_dimensions is not None:
+        # `loss_dimensions` is catalog metadata: the named axes along which
+        # different realizations of this concept may diverge. The concrete
+        # per-realization loss values live on RealizationDesugaringMemento
+        # / LossyMorphismMemento (Rust type LossRecord at
+        # provekit-ir-types/src/lib.rs L508). The concept shape carries
+        # only the dimension names, sorted for byte stability.
+        spec["loss_dimensions"] = sorted(loss_dimensions)
+    return spec
 
 
 def build_shape_specs() -> dict[str, dict]:
@@ -148,9 +148,14 @@ def build_shape_specs() -> dict[str, dict]:
             {"name": "headers"},
             {"name": "body"},
         ],
-        "Performs the HTTP request and returns concept:http-response. May raise an http error or refuse along any of the documented loss dimensions. Library callsites like libcurl perform, Java HttpClient send, Python urllib.request.urlopen, JS fetch, Python requests.get, and Rust reqwest::get all bind to this operation and produce response data.",
+        (
+            "Performs the HTTP request and returns concept:http-response. May raise an http error or refuse along any documented loss dimension. "
+            "Library callsites like libcurl perform, Java HttpClient send, Python urllib.request.urlopen, JS fetch, Python requests.get, and Rust reqwest::get all bind to this operation and produce response data. "
+            "Loss dimensions (catalog metadata): "
+            + ", ".join(sorted(HTTP_REQUEST_LOSS_DIMS))
+            + ". Per-realization values for these dimensions live on the LossyMorphismMemento / RealizationDesugaringMemento for each (concept, language, library) cell, not on this shape."
+        ),
     )
-    request_post["loss_record"] = loss_record(HTTP_REQUEST_LOSS_DIMS, "concept:http-request")
 
     response_pre = atomic("http_status_code", [var("status")])
     response_post = operation_contract(
@@ -162,9 +167,13 @@ def build_shape_specs() -> dict[str, dict]:
             {"name": "headers"},
             {"name": "body"},
         ],
-        "Constructs an HTTP response from status, concept:header-map, and body bytes or a concept:byte-stream.",
+        (
+            "Constructs an HTTP response from status, concept:header-map, and body bytes or a concept:byte-stream. "
+            "Loss dimensions (catalog metadata): "
+            + ", ".join(sorted(HTTP_RESPONSE_LOSS_DIMS))
+            + ". Per-realization values live on the morphism mementos for each (concept, language, library) cell, not on this shape."
+        ),
     )
-    response_post["loss_record"] = loss_record(HTTP_RESPONSE_LOSS_DIMS, "concept:http-response")
 
     return {
         "url": shape_spec(
@@ -199,6 +208,7 @@ def build_shape_specs() -> dict[str, dict]:
             request_pre,
             request_post,
             {"effects": [{"kind": "effect-signature", "name": "NetworkRequest"}]},
+            HTTP_REQUEST_LOSS_DIMS,
         ),
         "http-response": shape_spec(
             "concept:http-response",
@@ -208,6 +218,7 @@ def build_shape_specs() -> dict[str, dict]:
             response_pre,
             response_post,
             {"effects": [{"kind": "effect-signature", "name": "NetworkResponse"}]},
+            HTTP_RESPONSE_LOSS_DIMS,
         ),
     }
 

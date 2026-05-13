@@ -1,0 +1,85 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:http-response",
+    "formals": [
+      "status",
+      "headers",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "HttpStatus"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "HeaderMap"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "ByteStreamOrBytes"
+      }
+    ],
+    "pre": {
+      "args": [
+        {
+          "kind": "var",
+          "name": "status"
+        }
+      ],
+      "kind": "atomic",
+      "name": "http_status_code"
+    },
+    "post": {
+      "arity": [
+        "HttpStatus",
+        "HeaderMap",
+        "ByteStreamOrBytes"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "status"
+          },
+          {
+            "name": "headers"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "http-response",
+      "result": "HttpResponse",
+      "wp_note": "Constructs an HTTP response from status, concept:header-map, and body bytes or a concept:byte-stream. Loss dimensions (catalog metadata): body-decoding, header-case-sensitivity, streaming-body. Per-realization values live on the morphism mementos for each (concept, language, library) cell, not on this shape."
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "NetworkResponse"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "HttpResponse"
+    }
+  },
+  "cid": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "yARxSHHxHxjYs3BTGKvLC2INoNtC1d6et27RlKViMjikwFCp/hk9hVT9DOvYkYwIqY5yIEZXwB6/egneiKSoDQ=="
+  }
+}
