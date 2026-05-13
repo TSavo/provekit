@@ -1,0 +1,23 @@
+[package]
+name = "provekit-realize-rust-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt PEP 1.7.0 realize plugin for Rust: lowers ProofIR to Rust source via JSON-RPC sidecar."
+
+[[bin]]
+name = "provekit-realize-rust"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_realize_rust_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

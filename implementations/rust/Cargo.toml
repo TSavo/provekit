@@ -43,6 +43,7 @@ members = [
     "provekit-lift-asm-aarch64",
     "provekit-lift-native-surfaces",
     "provekit-linker",
+    "provekit-realize-rust-core",
     "provekit-lsp",
     "provekit-lsp-rust",
     "provekit-build",

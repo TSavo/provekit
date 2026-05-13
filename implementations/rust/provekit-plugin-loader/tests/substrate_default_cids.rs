@@ -105,3 +105,23 @@ fn java_canonical_bodies_cid_self_consistent() {
         "blake3-512:e9c5dd414a182211d5b85e3f2052d491e85c90db5ed29fb1145c7d1ad7f4e34f71de80c12a210202c6bd7efe26639da0e4e1c446beca786245d4a3dc6708204b",
     );
 }
+
+#[test]
+fn rust_canonical_sugar_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/rust-language-signature/specs/sugar/rust-canonical.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:666480f85eafb36d750c4fef4e5df42e33740ceb1f8e0bff2c82743beeccb0aff11d0a65e1c05827782d5c1023b853e5a2cccc3755d5a161c07668e4e7a5ae4a",
+    );
+}
+
+#[test]
+fn rust_canonical_bodies_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:39bf0c5b81d7769d60e82326a36daeb66241c7527e4ac542b1ce9e4ab40cb19a25a4e4b25e406106341f1c414f7ccc3b7523fab4aa3ee34ddc751f036d26e949",
+    );
+}

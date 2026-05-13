@@ -1,0 +1,169 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:666480f85eafb36d750c4fef4e5df42e33740ceb1f8e0bff2c82743beeccb0aff11d0a65e1c05827782d5c1023b853e5a2cccc3755d5a161c07668e4e7a5ae4a",
+    "content": {
+      "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # requires: ${lhs} == ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "eq"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # ensures: ${lhs} == ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "ensures_eq"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # ensures: ${lhs} > ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "ensures_gt"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "op:inline",
+            "template": "drop(${val});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "op_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${val}"}
+            ],
+            "head": "free"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # requires: ${lhs} >= ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "ge"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # requires: ${lhs} > ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "gt"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # requires: ${lhs} <= ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "le"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-method",
+            "template": "// # requires: ${lhs} < ${rhs}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "lt"
+          }
+        }
+      ],
+      "sugar_name": "canonical",
+      "target_language": "rust"
+    },
+    "critical": false,
+    "kind": "sugar",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "Canonical Rust sugar dict for ProvekIt. Two pattern shapes: predicate_pattern entries emit contract-clause comment annotations (requires/ensures); op_pattern entries emit op-level lowering (e.g., concept:free -> drop(${val})). Rust has native RAII drop semantics so concept:free is lossless.",
+    "source_url": "menagerie/rust-language-signature/specs/sugar/rust-canonical.json"
+  }
+}
