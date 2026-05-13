@@ -145,25 +145,48 @@ fn java_invoke(function: &str, params: &[&str], param_types: &[&str], return_typ
         .to_string()
 }
 
-/// Run one byte-identical assertion: Rust realize_for_bind vs Java plugin.
+/// Run one byte-identical assertion: cmd_transport's realize_for_bind (which
+/// dispatches through the Java realize plugin under PR #770) vs the same
+/// plugin invoked directly. Post-PR-#770 this is a tautological check that
+/// the dispatcher routes the same bytes the kit returns; it is retained as
+/// a regression test for the dispatcher contract.
 fn assert_byte_identical(
     function: &str,
     params: &[&str],
-    source_text: &str,
+    _source_text: &str,
     concept_name: &str,
 ) {
+    // Post PR #779: the realize path goes through the kit dispatcher, which
+    // resolves the Java realize jar via the substrate-convention filesystem
+    // discovery (implementations/java/provekit-realize-java-core/target/...).
+    // The dispatcher cleanly refuses with kit-plugin-unavailable when the jar
+    // is missing. Build it via Maven before the test exercises the path so the
+    // byte-identical assertion has a real comparand. Same one-shot build the
+    // pep_describe test already uses; ensure_jar_built serializes concurrent
+    // threads via a OnceLock<Mutex>.
+    ensure_jar_built();
     let param_strings: Vec<String> = params.iter().map(|s| s.to_string()).collect();
+    // Bind-time signature info is supplied by the lift kit per
+    // `2026-05-13-bind-ir-lift-result.md`. The slice 2 fixture used to
+    // re-derive these via `parse_rust_fn_types`; that helper was retired
+    // in PR #770. The fixture deliberately uses uniform `long` params so
+    // the test still exercises the byte-identical realize path.
+    let param_types: Vec<String> = params.iter().map(|_| "i64".to_string()).collect();
+    let return_type = "i64";
 
-    let rust_result = realize_for_bind("java", function, &param_strings, source_text, concept_name)
-        .unwrap_or_else(|e| panic!("realize_for_bind failed for {function}: {e}"));
+    let rust_result = realize_for_bind(
+        "java",
+        function,
+        &param_strings,
+        &param_types,
+        return_type,
+        concept_name,
+    )
+    .unwrap_or_else(|e| panic!("realize_for_bind failed for {function}: {e}"));
     let rust_src = &rust_result.source;
 
-    // Extract param_types from what realize_for_bind used internally.
-    // parse_rust_fn_types is pub so we can call it directly.
-    let (param_types, return_type) = provekit_cli::cmd_transport::parse_rust_fn_types(source_text, function);
     let param_type_strs: Vec<&str> = param_types.iter().map(String::as_str).collect();
-
-    let java_src = java_invoke(function, params, &param_type_strs, &return_type, concept_name);
+    let java_src = java_invoke(function, params, &param_type_strs, return_type, concept_name);
 
     assert_eq!(
         rust_src,

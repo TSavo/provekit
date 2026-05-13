@@ -43,6 +43,7 @@ mod cmd_verify_protocol;
 mod cmd_version;
 mod cmd_witness;
 mod cmd_plugin;
+mod kit_dispatch;
 mod lift_plugin;
 mod project_config;
 mod prompts;

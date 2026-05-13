@@ -195,14 +195,6 @@ pub fn run(args: BindArgs) -> u8 {
         }
     };
 
-    if source_lang != "rust" {
-        eprintln!(
-            "bind: v0 supports Rust source only; detected or specified lang '{source_lang}'. \
-             Multi-lang dispatch is recorded in gaps.json."
-        );
-        // Fall through: still create gaps.json so callers know what's missing.
-    }
-
     let target_lang = args
         .target_language
         .clone()
@@ -218,49 +210,66 @@ pub fn run(args: BindArgs) -> u8 {
         );
     }
 
-    // Collect source files.
-    let src_dir = root.join("src");
-    let scan_root = if src_dir.is_dir() { &src_dir } else { &root };
-    let src_files = collect_rs_files(scan_root);
-    let test_files = collect_rs_files(&root.join("tests"));
+    // Verb 1 (Lift) is plugin-dispatched (PEP 1.7.0 kind = "lift"). cmd_bind
+    // owns the eight-verb pipeline but NOT any source-language AST.
+    let lift_session = crate::kit_dispatch::dispatch_bind_lift(&root, &source_lang);
+    let raw_lifts: Vec<RawLift> = match &lift_session {
+        Ok(session) => session
+            .entries
+            .iter()
+            .map(raw_lift_from_kit_entry)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    // Distinct source files referenced by the kit; used by the rewrite
+    // verbs (which read the same files the kit listed but treat them as
+    // OPAQUE TEXT — no AST visit happens in cmd_bind).
+    let src_files: Vec<PathBuf> = {
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        let mut out: Vec<PathBuf> = Vec::new();
+        for lift in &raw_lifts {
+            if seen.insert(lift.file.clone()) {
+                out.push(root.join(&lift.file));
+            }
+        }
+        out
+    };
 
-    if src_files.is_empty() {
-        eprintln!(
-            "bind: no Rust source files found under {}",
-            scan_root.display()
-        );
-        // Emit a real gap record so callers know WHY nothing was produced.
-        // When source_lang is non-Rust, record the source-language-not-supported gap
-        // so composed loss in round-trip tests contains real (not synthetic) evidence.
-        let mut early_gaps: Vec<GapRecord> = Vec::new();
-        if source_lang != "rust" {
-            early_gaps.push(GapRecord {
-                kind: "source-language-not-supported".into(),
+    if raw_lifts.is_empty() {
+        // Loudly-bounded-lossy: either no lift kit, or the kit found no
+        // functions. Record an honest gap and exit zero so downstream
+        // composers can characterize the boundary per Supra omnia rectum.
+        let _ = std::fs::create_dir_all(&output_dir);
+        let mut gaps: Vec<GapRecord> = Vec::new();
+        if let Err(err) = &lift_session {
+            gaps.push(GapRecord {
+                kind: "kit-plugin-unavailable".into(),
                 detail: format!(
-                    "no full lifter for {source_lang} in v0; bind engine is Rust-only. \
-                     Round-trip through {source_lang} is loudly-bounded-lossy at this boundary. \
-                     Full {source_lang} lifter deferred to v1."
+                    "no `kind = \"lift\"` plugin available for source language `{source_lang}`: {err}. \
+                     The bind pipeline cannot Verb 1 (Lift) without a kit; this leg is \
+                     loudly-bounded-lossy at the lift boundary. Author or build a plugin per \
+                     2026-05-13-bind-ir-lift-result.md to close this gap."
+                ),
+            });
+        } else {
+            gaps.push(GapRecord {
+                kind: "bind-lift-empty".into(),
+                detail: format!(
+                    "lift plugin for `{source_lang}` returned zero bind-lift entries under {}",
+                    root.display()
                 ),
             });
         }
-        let _ = std::fs::create_dir_all(&output_dir);
-        let gaps = build_gaps_doc(&source_lang, &early_gaps);
+        let gaps_doc = build_gaps_doc(&source_lang, &gaps);
         let _ = std::fs::write(
             output_dir.join("gaps.json"),
-            serde_json::to_string_pretty(&gaps).unwrap_or_default(),
+            serde_json::to_string_pretty(&gaps_doc).unwrap_or_default(),
         );
         return EXIT_OK;
     }
 
-    // Run the engine.
-    let result = match run_bind_engine(
-        &root,
-        &src_files,
-        &test_files,
-        &source_lang,
-        args.threshold,
-        args.quiet,
-    ) {
+    // Run the engine over the lifted entries (Verbs 2 through 7).
+    let result = match run_bind_engine(&root, raw_lifts, &source_lang, args.threshold, args.quiet) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("bind: engine error: {e}");
@@ -386,6 +395,9 @@ pub struct BindingRecord {
     pub discharge_verdict: DischargeVerdict,
     pub pretty_pre: Option<String>,
     pub pretty_post: Option<String>,
+    pub param_names: Vec<String>,
+    pub param_types: Vec<String>,
+    pub return_type: String,
     pub site_memento_cid: String,
 }
 
@@ -445,6 +457,32 @@ struct RawLift {
     attr_post: Option<String>,
     concept_annotation: Option<String>,
     term_shape: TermShape,
+    param_names: Vec<String>,
+    param_types: Vec<String>,
+    return_type: String,
+}
+
+/// Convert one PEP 1.7.0 `bind-lift-entry` (returned by a `kind = "lift"`
+/// plugin per `2026-05-13-bind-ir-lift-result.md`) into the engine-internal
+/// `RawLift` shape. This is the ONLY entry point through which lift data
+/// reaches the eight-verb engine; there is no language-specific path.
+fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLift {
+    RawLift {
+        file: entry.file.clone(),
+        fn_name: entry.fn_name.clone(),
+        fn_line: entry.fn_line as usize,
+        attr_pre: entry.attr_pre.clone(),
+        attr_post: entry.attr_post.clone(),
+        concept_annotation: entry.concept_annotation.clone(),
+        term_shape: TermShape::from_kit(entry.term_shape.clone(), entry.term_shape_cid.clone()),
+        param_names: entry.param_names.clone(),
+        param_types: entry.param_types.clone(),
+        return_type: if entry.return_type.is_empty() {
+            "()".to_string()
+        } else {
+            entry.return_type.clone()
+        },
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -453,70 +491,18 @@ struct RawLift {
 
 fn run_bind_engine(
     root: &Path,
-    src_files: &[PathBuf],
-    test_files: &[PathBuf],
+    raw_lifts: Vec<RawLift>,
     source_lang: &str,
     threshold: usize,
     quiet: bool,
 ) -> Result<EngineResult, String> {
-    // v0: Rust only. Record gap for anything else.
+    let _ = source_lang; // The engine no longer branches on source_lang; the
+                         // lift kit handled all language-specific extraction
+                         // upstream. Kept in the signature for diagnostics.
+    let _ = quiet;
     let mut gaps: Vec<GapRecord> = Vec::new();
-    if source_lang != "rust" {
-        gaps.push(GapRecord {
-            kind: "v0-lang-gap".into(),
-            detail: format!(
-                "multi-lang lift_plugin dispatch not yet wired; source_lang={source_lang} \
-                 deferred to v1"
-            ),
-        });
-        return Ok(EngineResult {
-            bindings: vec![],
-            concepts: vec![],
-            site_mementos: vec![],
-            gaps,
-        });
-    }
 
     let signer_seed: Ed25519Seed = [0x42; 32]; // v0: deterministic seed
-
-    // ---- Verb 1: LIFT -------------------------------------------------------
-    let mut raw_lifts: Vec<RawLift> = Vec::new();
-    for path in src_files {
-        let src =
-            std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        let file = match syn::parse_file(&src) {
-            Ok(f) => f,
-            Err(e) => {
-                if !quiet {
-                    eprintln!("bind: parse error in {}: {e}", path.display());
-                }
-                continue;
-            }
-        };
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .display()
-            .to_string();
-        for item in &file.items {
-            if let syn::Item::Fn(item_fn) = item {
-                let fn_name = item_fn.sig.ident.to_string();
-                let line = line_for_fn(&src, &fn_name);
-                let attr_contract = extract_contract_attrs(&item_fn.attrs);
-                let concept_comment = extract_concept_annotation(&src, &fn_name);
-                let term_shape = TermShape::from_fn(item_fn);
-                raw_lifts.push(RawLift {
-                    file: rel.clone(),
-                    fn_name,
-                    fn_line: line,
-                    attr_pre: attr_contract.pre,
-                    attr_post: attr_contract.post,
-                    concept_annotation: concept_comment,
-                    term_shape,
-                });
-            }
-        }
-    }
 
     // ---- Verb 2 + 5: CLUSTER ------------------------------------------------
     let mut concepts: Vec<ConceptRecord> = Vec::new();
@@ -593,13 +579,13 @@ fn run_bind_engine(
         }
     }
 
-    // Collect test witnesses.
-    let test_witnesses = collect_test_witnesses(test_files);
-    // Map fn_name -> post text.
-    let test_post_map: BTreeMap<String, String> = test_witnesses
-        .into_iter()
-        .map(|(_, fn_name, formula)| (fn_name, formula))
-        .collect();
+    // Test-derived contracts: lift kits may emit `bind-test-witness-entry`
+    // alongside `bind-lift-entry` per `2026-05-13-bind-ir-lift-result.md` §1.2
+    // (deferred to a follow-up entry kind). v0 disables the test-witness
+    // contract-origin tier in cmd_bind itself; the test_post_map remains an
+    // empty lookup so the priority chain (attribute > test > algebra > empty)
+    // still terminates correctly.
+    let test_post_map: BTreeMap<String, String> = BTreeMap::new();
 
     // ---- Verb 4: SCOPE + Verb 6: IDENTIFY + Verb 7: REALIZE ----------------
     let mut bindings: Vec<BindingRecord> = Vec::new();
@@ -823,6 +809,9 @@ fn run_bind_engine(
             discharge_verdict: verdict,
             pretty_pre: pre,
             pretty_post: post,
+            param_names: lift.param_names.clone(),
+            param_types: lift.param_types.clone(),
+            return_type: lift.return_type.clone(),
             site_memento_cid,
         });
     }
@@ -1099,6 +1088,8 @@ fn apply_canonical_rewrite(
     to_disk: bool,
     output_dir: &Path,
 ) -> Vec<String> {
+    let _ = mode; // The realize plugin owns mode-aware emission; bind passes
+                  // concept_name and lets the kit decide how to annotate.
     // Group bindings by file.
     let mut by_file: BTreeMap<String, Vec<&BindingRecord>> = BTreeMap::new();
     for b in &result.bindings {
@@ -1113,125 +1104,60 @@ fn apply_canonical_rewrite(
     // Track concepts whose realized body was a stub. Deduplicated + sorted at
     // the end so the gap-emission caller produces one gap per affected concept.
     let mut stub_concepts: BTreeSet<String> = BTreeSet::new();
+    let mut kit_unavailable = false;
+    let mut kit_unavailable_detail = String::new();
+    let mut file_extension: Option<String> = None;
 
     for (rel_file, bindings) in &by_file {
-        let in_path = root.join(rel_file);
-        let Ok(orig) = std::fs::read_to_string(&in_path) else {
-            continue;
-        };
-
-        // Parse functions from source; for each bound function, emit a
-        // realized target-language snippet. Unbound functions are skipped
-        // (coverage gap already recorded).
-        let file = match syn::parse_file(&orig) {
-            Ok(f) => f,
-            Err(_) => continue,
-        };
-
-        let mut by_fn: BTreeMap<String, &BindingRecord> = BTreeMap::new();
-        for b in bindings {
-            by_fn.insert(b.site_fn.clone(), b);
-        }
-
-        // F2: use target-language comment prefix (not always `//`).
-        let cmt = comment_prefix_for(target_lang);
-
-        // F1: emit file-level header exactly once per output file.
-        // Go needs `package main`, PHP needs `<?php`, others need nothing.
-        let file_header = crate::cmd_transport::realize_file_header(target_lang);
-
         let mut chunks: Vec<String> = Vec::new();
-        // File-level header (may be empty) comes first.
-        if !file_header.is_empty() {
-            chunks.push(file_header);
-        }
-        chunks.push(format!(
-            "{cmt} canonical rewrite: {rel_file} -> {target_lang}\n"
-        ));
+        // Language-neutral file header. Per-language pre/post-amble (e.g.
+        // Go `package main`, PHP `<?php`) is the realize kit's
+        // responsibility under federation by construction.
+        chunks.push(format!("// canonical rewrite: {rel_file} -> {target_lang}\n"));
 
-        for item in &file.items {
-            if let syn::Item::Fn(item_fn) = item {
-                let fn_name = item_fn.sig.ident.to_string();
-                let params: Vec<String> = item_fn
-                    .sig
-                    .inputs
-                    .iter()
-                    .filter_map(|arg| match arg {
-                        syn::FnArg::Typed(pt) => {
-                            if let syn::Pat::Ident(pi) = pt.pat.as_ref() {
-                                Some(pi.ident.to_string())
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
-                    .collect();
-
-                if let Some(b) = by_fn.get(&fn_name) {
-                    let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);
-                    // Delegate to ORP realize_for_bind; fall back to emit_target_stub if
-                    // the ORP realizer refuses (e.g. unsupported language).
-                    let realized_chunk = match crate::cmd_transport::realize_for_bind(
-                        target_lang,
-                        &fn_name,
-                        &params,
-                        &orig,
-                        &concept_name,
-                    ) {
-                        Ok(r) => {
-                            // Per body-template-memento.md §5: when the realizer's body fell
-                            // through to the language stub (no body-template matched), record
-                            // the concept so the caller emits a per-concept
-                            // `bind-stub-body-emitted` gap entry.
-                            if r.is_stub {
-                                stub_concepts.insert(concept_name.to_string());
-                            }
-                            // Prepend bind-specific metadata (substrate-origin, memento-cid,
-                            // contract annotations, runtime-mode) before the ORP-generated snippet.
-                            let meta = build_bind_meta_comment(target_lang, &concept_name, b, mode);
-                            format!("{meta}\n{}", r.source)
-                        }
-                        Err(_) => {
-                            // ORP refused (unsupported language or parse error); fall back
-                            // to the annotation-level stub so output is never empty. This is
-                            // also a stub path — record the concept.
-                            stub_concepts.insert(concept_name.to_string());
-                            emit_target_stub(target_lang, &fn_name, &params, b, &concept_name, mode)
-                        }
-                    };
-                    chunks.push(realized_chunk);
-                } else {
-                    // Coverage gap: no binding for this function.
-                    chunks.push(format!(
-                        "{cmt} bind:canonical:gap: fn {fn_name} has no concept binding for {target_lang}\n"
-                    ));
+        for b in bindings {
+            let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);
+            match crate::cmd_transport::realize_for_bind(
+                target_lang,
+                &b.site_fn,
+                &b.param_names,
+                &b.param_types,
+                &b.return_type,
+                &concept_name,
+            ) {
+                Ok(r) => {
+                    if r.is_stub {
+                        stub_concepts.insert(concept_name.to_string());
+                    }
+                    if file_extension.is_none() && !r.extension.is_empty() {
+                        file_extension = Some(r.extension.to_string());
+                    }
+                    chunks.push(r.source);
+                }
+                Err(e) => {
+                    kit_unavailable = true;
+                    if kit_unavailable_detail.is_empty() {
+                        kit_unavailable_detail = format!("{e}");
+                    }
+                    stub_concepts.insert(concept_name.to_string());
                 }
             }
         }
 
-        // F1: emit file-level footer exactly once per output file (currently empty for all langs).
-        let file_footer = crate::cmd_transport::realize_file_footer(target_lang);
-        if !file_footer.is_empty() {
-            chunks.push(file_footer);
-        }
-
         let output_src = chunks.join("\n");
-
         if to_disk {
-            // Write to .provekit/bindings/translated/<lang>/<file>
             let file_name = Path::new(rel_file)
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_file.replace('/', "_"));
-            let out_path = translated_dir.join(format!(
-                "{}.{}",
-                file_name.trim_end_matches(".rs"),
-                lang_extension(target_lang)
-            ));
+            let stem = file_name
+                .rsplit_once('.')
+                .map(|(s, _)| s.to_string())
+                .unwrap_or(file_name.clone());
+            let ext = file_extension.as_deref().unwrap_or(target_lang);
+            let out_path = translated_dir.join(format!("{stem}.{ext}"));
             let _ = std::fs::write(out_path, &output_src);
         } else {
-            // Invisible: stream to stdout.
             print!("{output_src}");
         }
     }
@@ -1244,351 +1170,27 @@ fn apply_canonical_rewrite(
             .display()
             .to_string();
         if !by_file.contains_key(&rel) && !to_disk {
-            let cmt = comment_prefix_for(target_lang);
-            println!("{cmt} bind:canonical:no-bindings:{rel}");
+            println!("// bind:canonical:no-bindings:{rel}");
         }
+    }
+
+    if kit_unavailable {
+        eprintln!(
+            "bind: realize kit unavailable for `{target_lang}`: {kit_unavailable_detail}. \
+             Every bound concept was recorded as a stub. Author or build a \
+             `kind = \"realize\"` plugin for `{target_lang}` to close this gap."
+        );
     }
 
     // BTreeSet → sorted Vec for deterministic gap-record output order.
     stub_concepts.into_iter().collect()
 }
 
-/// Return the line-comment prefix for the target language.
-///
-/// Python and Ruby use `#` for comments; `//` is the floor-division operator
-/// and would produce a syntax error. All other supported languages use `//`.
-fn comment_prefix_for(target_lang: &str) -> &'static str {
-    match target_lang {
-        "python" | "ruby" => "#",
-        _ => "//",
-    }
-}
-
-/// Fallback stub emitter used when ORP `realize_for_bind` refuses (e.g. an
-/// unsupported target language). Emits bind-level annotations without real
-/// body realization. Canonical mode always tries `realize_for_bind` first;
-/// this path is only taken on refusal.
-fn emit_target_stub(
-    target_lang: &str,
-    fn_name: &str,
-    params: &[String],
-    binding: &BindingRecord,
-    concept_name: &str,
-    mode: &RuntimeMode,
-) -> String {
-    // Build annotation block for the target language.
-    let ann = build_target_annotations(target_lang, concept_name, binding, mode);
-    let stub_body = target_stub_body(target_lang);
-    let fn_def = target_fn_def(target_lang, fn_name, params, &ann, &stub_body);
-    fn_def
-}
-
-/// Build language-appropriate annotation prefix for a function.
-fn build_target_annotations(
-    target_lang: &str,
-    concept_name: &str,
-    binding: &BindingRecord,
-    mode: &RuntimeMode,
-) -> String {
-    let mut lines: Vec<String> = Vec::new();
-
-    // concept comment (universal)
-    let comment_prefix = match target_lang {
-        "python" | "ruby" => "#",
-        _ => "//",
-    };
-    lines.push(format!("{comment_prefix} concept: {concept_name}"));
-    lines.push(format!(
-        "{comment_prefix} substrate-origin: {}",
-        binding.origin.label()
-    ));
-    if !binding.site_memento_cid.is_empty() {
-        lines.push(format!(
-            "{comment_prefix} memento-cid: {}",
-            binding.site_memento_cid
-        ));
-    }
-
-    // Contract attributes in target-language syntax.
-    // F3: Zig does NOT use Rust `#[cfg_attr(...)]` syntax; give it `// @provekit:` comments.
-    if let Some(pre) = &binding.pretty_pre {
-        match target_lang {
-            "rust" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
-            "zig" => lines.push(format!("// @requires: {pre}")),
-            "java" | "csharp" => lines.push(format!("/* @requires: {pre} */")),
-            "python" | "ruby" => lines.push(format!("# @requires: {pre}")),
-            _ => lines.push(format!("// @requires: {pre}")),
-        }
-    }
-    if let Some(post) = &binding.pretty_post {
-        match target_lang {
-            "rust" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
-            "zig" => lines.push(format!("// @ensures: {post}")),
-            "java" | "csharp" => lines.push(format!("/* @ensures: {post} */")),
-            "python" | "ruby" => lines.push(format!("# @ensures: {post}")),
-            _ => lines.push(format!("// @ensures: {post}")),
-        }
-    }
-
-    // Mode attribute.
-    match mode {
-        RuntimeMode::Monitor => match target_lang {
-            "rust" => lines.push(format!(
-                "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
-            )),
-            "zig" => lines.push(format!(
-                "// @provekit_monitor(concept = \"{concept_name}\")"
-            )),
-            "java" => lines.push(format!(
-                "// @provekit_monitor(concept = \"{concept_name}\")"
-            )),
-            "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
-            _ => lines.push(format!(
-                "// @provekit_monitor(concept = \"{concept_name}\")"
-            )),
-        },
-        RuntimeMode::Emitter => match target_lang {
-            "rust" => lines.push(format!(
-                "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
-            )),
-            "zig" => lines.push(format!(
-                "// @provekit_emitter(concept = \"{concept_name}\")"
-            )),
-            _ => lines.push(format!(
-                "// @provekit_emitter(concept = \"{concept_name}\")"
-            )),
-        },
-        RuntimeMode::Witness => match target_lang {
-            "rust" => lines.push(format!(
-                "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
-            )),
-            "zig" => lines.push(format!(
-                "// @provekit_witness(concept = \"{concept_name}\")"
-            )),
-            _ => lines.push(format!(
-                "// @provekit_witness(concept = \"{concept_name}\")"
-            )),
-        },
-    }
-
-    lines.join("\n")
-}
-
-/// Build bind-specific metadata comment block to prepend before an ORP-realized
-/// snippet. Carries substrate-origin, memento-cid, contract annotations from
-/// the binding record, and the runtime-mode attribute. The ORP realizer may also
-/// emit concept+contract lines in its own prefix; the bind-layer ones here ensure
-/// provenance is always present even when ORP cannot re-lift contracts from source.
-fn build_bind_meta_comment(
-    target_lang: &str,
-    concept_name: &str,
-    binding: &BindingRecord,
-    mode: &RuntimeMode,
-) -> String {
-    let comment_prefix = match target_lang {
-        "python" | "ruby" => "#",
-        _ => "//",
-    };
-    let mut lines: Vec<String> = Vec::new();
-    lines.push(format!(
-        "{comment_prefix} substrate-origin: {}",
-        binding.origin.label()
-    ));
-    if !binding.site_memento_cid.is_empty() {
-        lines.push(format!(
-            "{comment_prefix} memento-cid: {}",
-            binding.site_memento_cid
-        ));
-    }
-    // Contract annotations from the binding record (pre/post as pretty-printed strings).
-    // These come from the bind engine's own lift pass, which is authoritative for the
-    // source language. ORP may also emit contract lines in its prefix; these ensure
-    // they are always present.
-    // F3: Zig does NOT use Rust `#[cfg_attr(...)]` syntax.
-    if let Some(pre) = &binding.pretty_pre {
-        match target_lang {
-            "rust" => lines.push(format!("#[cfg_attr(any(), requires({pre}))]")),
-            "zig" => lines.push(format!("// @requires: {pre}")),
-            "java" | "csharp" => lines.push(format!("/* @requires: {pre} */")),
-            "python" | "ruby" => lines.push(format!("# @requires: {pre}")),
-            _ => lines.push(format!("// @requires: {pre}")),
-        }
-    }
-    if let Some(post) = &binding.pretty_post {
-        match target_lang {
-            "rust" => lines.push(format!("#[cfg_attr(any(), ensures({post}))]")),
-            "zig" => lines.push(format!("// @ensures: {post}")),
-            "java" | "csharp" => lines.push(format!("/* @ensures: {post} */")),
-            "python" | "ruby" => lines.push(format!("# @ensures: {post}")),
-            _ => lines.push(format!("// @ensures: {post}")),
-        }
-    }
-    match mode {
-        RuntimeMode::Monitor => match target_lang {
-            "rust" => lines.push(format!(
-                "#[cfg_attr(any(), provekit_monitor(concept = \"{concept_name}\"))]"
-            )),
-            "java" => lines.push(format!(
-                "// @provekit_monitor(concept = \"{concept_name}\")"
-            )),
-            "python" => lines.push(format!("# @provekit_monitor(concept = \"{concept_name}\")")),
-            _ => lines.push(format!(
-                "{comment_prefix} @provekit_monitor(concept = \"{concept_name}\")"
-            )),
-        },
-        RuntimeMode::Emitter => match target_lang {
-            "rust" => lines.push(format!(
-                "#[cfg_attr(any(), provekit_emitter(concept = \"{concept_name}\"))]"
-            )),
-            _ => lines.push(format!(
-                "{comment_prefix} @provekit_emitter(concept = \"{concept_name}\")"
-            )),
-        },
-        RuntimeMode::Witness => match target_lang {
-            "rust" => lines.push(format!(
-                "#[cfg_attr(any(), provekit_witness(concept = \"{concept_name}\"))]"
-            )),
-            _ => lines.push(format!(
-                "{comment_prefix} @provekit_witness(concept = \"{concept_name}\")"
-            )),
-        },
-    }
-    lines.join("\n")
-}
-
-/// Emit a language-appropriate stub body (the actual term realization is
-/// handled by ORP when the full Term graph is available).
-fn target_stub_body(target_lang: &str) -> String {
-    match target_lang {
-        "python" => "    raise NotImplementedError(\"provekit-bind: canonical stub\")".into(),
-        "java" => {
-            "        throw new UnsupportedOperationException(\"provekit-bind: canonical stub\");"
-                .into()
-        }
-        "go" => "    panic(\"provekit-bind: canonical stub\")".into(),
-        "ruby" => "  raise NotImplementedError, \"provekit-bind: canonical stub\"".into(),
-        _ => "    unimplemented!(\"provekit-bind: canonical stub\")".into(),
-    }
-}
-
-/// Emit a full function definition in the target language, with annotations.
-fn target_fn_def(
-    target_lang: &str,
-    fn_name: &str,
-    params: &[String],
-    annotations: &str,
-    body: &str,
-) -> String {
-    let indent = match target_lang {
-        "java" | "csharp" => "    ",
-        _ => "",
-    };
-    match target_lang {
-        "rust" | "zig" => {
-            let param_list = params
-                .iter()
-                .map(|p| format!("{p}: i64"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{annotations}\n{indent}pub fn {fn_name}({param_list}) -> i64 {{\n{body}\n}}\n")
-        }
-        "python" => {
-            let param_list = params.join(", ");
-            format!("{annotations}\ndef {fn_name}({param_list}):\n{body}\n")
-        }
-        "java" => {
-            let param_list = params
-                .iter()
-                .map(|p| format!("long {p}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            // Each function gets a uniquely-named top-level class to avoid
-            // "multiple top-level classes in one file" Java compiler errors.
-            let class_name = snake_to_pascal(fn_name) + "Transported";
-            format!(
-                "final class {class_name} {{\n{annotations}\n{indent}public static long {fn_name}({param_list}) {{\n{body}\n{indent}}}\n}}\n"
-            )
-        }
-        "go" => {
-            let param_list = params
-                .iter()
-                .map(|p| format!("{p} int64"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{annotations}\nfunc {fn_name}({param_list}) int64 {{\n{body}\n}}\n")
-        }
-        "csharp" => {
-            let param_list = params
-                .iter()
-                .map(|p| format!("long {p}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(
-                "public static class Transported {{\n{annotations}\n{indent}public static long {fn_name}({param_list}) {{\n{body}\n{indent}}}\n}}\n"
-            )
-        }
-        "typescript" => {
-            let param_list = params
-                .iter()
-                .map(|p| format!("{p}: number"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(
-                "{annotations}\nexport function {fn_name}({param_list}): number {{\n{body}\n}}\n"
-            )
-        }
-        "ruby" => {
-            let param_list = params.join(", ");
-            format!("{annotations}\ndef {fn_name}({param_list})\n{body}\nend\n")
-        }
-        "php" => {
-            let param_list = params
-                .iter()
-                .map(|p| format!("${p}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("<?php\n{annotations}\nfunction {fn_name}({param_list}) {{\n{body}\n}}\n")
-        }
-        _ => {
-            // Fallback: Rust-style.
-            let param_list = params
-                .iter()
-                .map(|p| format!("{p}: i64"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{annotations}\npub fn {fn_name}({param_list}) -> i64 {{\n{body}\n}}\n")
-        }
-    }
-}
-
-fn lang_extension(lang: &str) -> &'static str {
-    match lang {
-        "python" => "py",
-        "java" => "java",
-        "go" => "go",
-        "csharp" => "cs",
-        "typescript" => "ts",
-        "zig" => "zig",
-        "ruby" => "rb",
-        "php" => "php",
-        _ => "rs",
-    }
-}
-
-/// Convert a snake_case identifier to PascalCase for use as a Java class name.
-/// E.g. "deposit" -> "Deposit", "retry_send" -> "RetrySend".
-fn snake_to_pascal(s: &str) -> String {
-    s.split('_')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-            }
-        })
-        .collect()
-}
+// Note: language-specific emit helpers (comment_prefix_for, emit_target_stub,
+// build_target_annotations, build_bind_meta_comment, target_stub_body,
+// target_fn_def, lang_extension, snake_to_pascal) MOVED OUT of cmd_bind under
+// the PR #770 architectural cut. Per-language emission is now the realize
+// kit's responsibility, dispatched through crate::kit_dispatch::dispatch_realize.
 
 // ============================================================================
 // v0 stubs: algebra / cluster / discharge / attrs (labeled)
@@ -1596,191 +1198,66 @@ fn snake_to_pascal(s: &str) -> String {
 
 // ---- Term shape (v0 stub — production uses provekit-ir-symbolic) ------------
 
-struct TermShape {
-    root: ShapeNode,
-}
-
-#[allow(dead_code)]
-enum ShapeNode {
-    Body(Vec<ShapeNode>),
-    If {
-        cond: Box<ShapeNode>,
-        then_branch: Box<ShapeNode>,
-        else_branch: Option<Box<ShapeNode>>,
-    },
-    While {
-        cond: Box<ShapeNode>,
-        body: Box<ShapeNode>,
-    },
-    For {
-        body: Box<ShapeNode>,
-    },
-    Exit,
-    Assign,
-    Let,
-    Rel {
-        op: String,
-    },
-    Bin {
-        op: String,
-    },
-    Call,
-    Block(Vec<ShapeNode>),
-    Opaque,
+/// Structural fingerprint of a function body emitted by the lift kit.
+///
+/// `value` is the JSON shape per `2026-05-13-bind-ir-lift-result.md` §2;
+/// `cid_cached` is the kit's reported `term_shape_cid` (used directly so a
+/// kit's CID derivation is canonical for the cluster bucket).
+#[derive(Debug, Clone)]
+pub struct TermShape {
+    value: serde_json::Value,
+    cid_cached: String,
 }
 
 impl TermShape {
-    fn from_fn(item_fn: &syn::ItemFn) -> Self {
-        let stmts = item_fn.block.stmts.iter().map(shape_of_stmt).collect();
-        TermShape {
-            root: ShapeNode::Body(stmts),
+    pub fn from_kit(value: serde_json::Value, cid: String) -> Self {
+        Self {
+            value,
+            cid_cached: cid,
         }
     }
 
     fn shape_cid(&self) -> String {
-        let v = node_to_value(&self.root);
-        blake3_512_of(encode_jcs(&v).as_bytes())
+        self.cid_cached.clone()
     }
 
+    /// Coarse classification used by the v0 catalog. Operates on the kit's
+    /// JSON shape: zero language knowledge, only structural patterns over
+    /// the bind-IR canonical labels.
     fn classify(&self) -> &'static str {
-        classify_node(&self.root)
+        classify_value(&self.value)
     }
 }
 
-fn shape_of_stmt(stmt: &syn::Stmt) -> ShapeNode {
-    match stmt {
-        syn::Stmt::Expr(e, _) => shape_of_expr(e),
-        syn::Stmt::Local(l) => {
-            let _ = l;
-            ShapeNode::Let
-        }
-        _ => ShapeNode::Opaque,
+/// Classification over the bind-IR JSON shape per
+/// `2026-05-13-bind-ir-lift-result.md`. Operates purely on canonical labels
+/// emitted by the lift kit; no language knowledge.
+fn classify_value(value: &serde_json::Value) -> &'static str {
+    let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    if kind != "body" {
+        return "unknown";
     }
-}
-
-fn shape_of_expr(expr: &syn::Expr) -> ShapeNode {
-    match expr {
-        syn::Expr::If(e) => ShapeNode::If {
-            cond: Box::new(shape_of_expr(&e.cond)),
-            then_branch: Box::new(ShapeNode::Block(
-                e.then_branch.stmts.iter().map(shape_of_stmt).collect(),
-            )),
-            else_branch: e
-                .else_branch
-                .as_ref()
-                .map(|(_, else_expr)| Box::new(shape_of_expr(else_expr))),
-        },
-        syn::Expr::While(e) => ShapeNode::While {
-            cond: Box::new(shape_of_expr(&e.cond)),
-            body: Box::new(ShapeNode::Block(
-                e.body.stmts.iter().map(shape_of_stmt).collect(),
-            )),
-        },
-        syn::Expr::ForLoop(e) => ShapeNode::For {
-            body: Box::new(ShapeNode::Block(
-                e.body.stmts.iter().map(shape_of_stmt).collect(),
-            )),
-        },
-        syn::Expr::Return(_) | syn::Expr::Break(_) | syn::Expr::Continue(_) => ShapeNode::Exit,
-        syn::Expr::Assign(_) => ShapeNode::Assign,
-        syn::Expr::Binary(e) => {
-            let op = match &e.op {
-                syn::BinOp::Add(_) | syn::BinOp::AddAssign(_) => "+",
-                syn::BinOp::Sub(_) | syn::BinOp::SubAssign(_) => "-",
-                syn::BinOp::Mul(_) | syn::BinOp::MulAssign(_) => "*",
-                syn::BinOp::Div(_) | syn::BinOp::DivAssign(_) => "/",
-                syn::BinOp::Rem(_) | syn::BinOp::RemAssign(_) => "%",
-                syn::BinOp::Eq(_) => "==",
-                syn::BinOp::Ne(_) => "!=",
-                syn::BinOp::Lt(_) => "<",
-                syn::BinOp::Le(_) => "<=",
-                syn::BinOp::Gt(_) => ">",
-                syn::BinOp::Ge(_) => ">=",
-                _ => "opaque-op",
-            };
-            let is_rel = matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=");
-            if is_rel {
-                ShapeNode::Rel { op: op.to_string() }
-            } else {
-                ShapeNode::Bin { op: op.to_string() }
-            }
+    let stmts = value
+        .get("stmts")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.as_slice())
+        .unwrap_or(&[]);
+    let mut has_loop = false;
+    let mut has_if = false;
+    for s in stmts {
+        let k = s.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        match k {
+            "while" | "for" => has_loop = true,
+            "if" => has_if = true,
+            _ => {}
         }
-        syn::Expr::Call(_) | syn::Expr::MethodCall(_) => ShapeNode::Call,
-        syn::Expr::Block(b) => ShapeNode::Block(b.block.stmts.iter().map(shape_of_stmt).collect()),
-        _ => ShapeNode::Opaque,
     }
-}
-
-fn node_to_value(node: &ShapeNode) -> Arc<Value> {
-    match node {
-        ShapeNode::Body(stmts) => Value::object([
-            ("kind", Value::string("body")),
-            (
-                "stmts",
-                Value::array(stmts.iter().map(node_to_value).collect()),
-            ),
-        ]),
-        ShapeNode::If {
-            cond,
-            then_branch,
-            else_branch,
-        } => {
-            let mut kv: Vec<(&str, Arc<Value>)> = Vec::new();
-            kv.push(("kind", Value::string("if")));
-            kv.push(("cond", node_to_value(cond)));
-            kv.push(("then", node_to_value(then_branch)));
-            if let Some(e) = else_branch {
-                kv.push(("else", node_to_value(e)));
-            }
-            Value::object(kv)
-        }
-        ShapeNode::While { cond, body } => Value::object([
-            ("kind", Value::string("while")),
-            ("cond", node_to_value(cond)),
-            ("body", node_to_value(body)),
-        ]),
-        ShapeNode::For { body } => Value::object([
-            ("kind", Value::string("for")),
-            ("body", node_to_value(body)),
-        ]),
-        ShapeNode::Exit => Value::object([("kind", Value::string("exit"))]),
-        ShapeNode::Assign => Value::object([("kind", Value::string("assign"))]),
-        ShapeNode::Let => Value::object([("kind", Value::string("let"))]),
-        ShapeNode::Rel { op } => Value::object([
-            ("kind", Value::string("rel")),
-            ("op", Value::string(op.clone())),
-        ]),
-        ShapeNode::Bin { op } => Value::object([
-            ("kind", Value::string("bin")),
-            ("op", Value::string(op.clone())),
-        ]),
-        ShapeNode::Call => Value::object([("kind", Value::string("call"))]),
-        ShapeNode::Block(stmts) => Value::object([
-            ("kind", Value::string("block")),
-            (
-                "stmts",
-                Value::array(stmts.iter().map(node_to_value).collect()),
-            ),
-        ]),
-        ShapeNode::Opaque => Value::object([("kind", Value::string("opaque"))]),
-    }
-}
-
-fn classify_node(node: &ShapeNode) -> &'static str {
-    match node {
-        ShapeNode::Body(stmts) => {
-            let has_while = stmts.iter().any(|s| matches!(s, ShapeNode::While { .. }));
-            let has_for = stmts.iter().any(|s| matches!(s, ShapeNode::For { .. }));
-            let has_if = stmts.iter().any(|s| matches!(s, ShapeNode::If { .. }));
-            if has_while || has_for {
-                "retry-loop"
-            } else if has_if {
-                "guard-then-commit"
-            } else {
-                "unknown"
-            }
-        }
-        _ => "unknown",
+    if has_loop {
+        "retry-loop"
+    } else if has_if {
+        "guard-then-commit"
+    } else {
+        "unknown"
     }
 }
 
@@ -1941,257 +1418,11 @@ fn discharge_verdict(shape: &TermShape, origin: &ContractOrigin) -> DischargeVer
 
 // ---- Attribute lifter (v0 stub) --------------------------------------------
 
-struct ExtractedContract {
-    pre: Option<String>,
-    post: Option<String>,
-}
-
-fn extract_contract_attrs(attrs: &[syn::Attribute]) -> ExtractedContract {
-    let mut out = ExtractedContract {
-        pre: None,
-        post: None,
-    };
-    for attr in attrs {
-        if let Some(name) = attr.path().get_ident().map(|i| i.to_string()) {
-            if let syn::Meta::List(l) = &attr.meta {
-                let text = normalize_ws(&l.tokens.to_string());
-                match name.as_str() {
-                    "requires" => {
-                        if out.pre.is_none() {
-                            out.pre = Some(text);
-                        }
-                    }
-                    "ensures" => {
-                        if out.post.is_none() {
-                            out.post = Some(text);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if attr.path().is_ident("cfg_attr") {
-            if let syn::Meta::List(l) = &attr.meta {
-                let tokens_str = l.tokens.to_string();
-                // Parse the form: `any() , <kind>(<body>)` textually.
-                // This avoids the proc_macro2 dependency.
-                if let Some(rest) = tokens_str.strip_prefix("any ()") {
-                    let rest = rest.trim().trim_start_matches(',').trim();
-                    parse_kind_body(rest, &mut out);
-                } else if let Some(rest) = tokens_str.strip_prefix("any()") {
-                    let rest = rest.trim().trim_start_matches(',').trim();
-                    parse_kind_body(rest, &mut out);
-                }
-            }
-        }
-    }
-    out
-}
-
-fn parse_kind_body(s: &str, out: &mut ExtractedContract) {
-    // s is like `requires(max_attempts >= 0)` or `ensures(out >= 0)`.
-    for kind in ["requires", "ensures"] {
-        if let Some(rest) = s.strip_prefix(kind) {
-            let rest = rest.trim_start();
-            if rest.starts_with('(') && rest.ends_with(')') {
-                let body = normalize_ws(&rest[1..rest.len() - 1]);
-                match kind {
-                    "requires" => {
-                        if out.pre.is_none() {
-                            out.pre = Some(body);
-                        }
-                    }
-                    "ensures" => {
-                        if out.post.is_none() {
-                            out.post = Some(body);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-fn extract_concept_annotation(src: &str, fn_name: &str) -> Option<String> {
-    let needle = format!("fn {fn_name}(");
-    let lines: Vec<&str> = src.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        if line.contains(&needle) {
-            let mut j = i;
-            while j > 0 {
-                let prev = lines[j - 1].trim_start();
-                if let Some(rest) = prev.strip_prefix("// concept:") {
-                    let trimmed = rest.trim().to_string();
-                    if trimmed.starts_with("UNNAMED-CONCEPT-") {
-                        return None;
-                    }
-                    return Some(trimmed);
-                }
-                if prev.starts_with("#[")
-                    || prev.starts_with("// substrate-origin:")
-                    || prev.starts_with("// memento-cid:")
-                    || prev.starts_with("// witness-inherited-from:")
-                {
-                    j -= 1;
-                    continue;
-                }
-                break;
-            }
-            return None;
-        }
-    }
-    None
-}
-
-// ---- Test-lift (v0 stub) ---------------------------------------------------
-
-fn collect_test_witnesses(test_files: &[PathBuf]) -> Vec<(String, String, String)> {
-    let mut out = Vec::new();
-    for path in test_files {
-        let Ok(src) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let Ok(file) = syn::parse_file(&src) else {
-            continue;
-        };
-        let rel = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        for item in &file.items {
-            if let syn::Item::Fn(item_fn) = item {
-                let is_test = item_fn.attrs.iter().any(|a| a.path().is_ident("test"));
-                if !is_test {
-                    continue;
-                }
-                let mut let_map: BTreeMap<String, String> = BTreeMap::new();
-                for stmt in &item_fn.block.stmts {
-                    if let syn::Stmt::Local(local) = stmt {
-                        if let Some(name) = pat_to_ident(&local.pat) {
-                            if let Some(init) = &local.init {
-                                if let Some(callee) = call_target(&init.expr) {
-                                    let_map.insert(name, callee);
-                                }
-                            }
-                        }
-                    }
-                }
-                for stmt in &item_fn.block.stmts {
-                    if let syn::Stmt::Macro(m) = stmt {
-                        if let Some(ident) = m.mac.path.get_ident() {
-                            let s = ident.to_string();
-                            if s == "assert" || s == "assert_eq" || s == "assert_ne" {
-                                let body = m.mac.tokens.to_string();
-                                let lhs = first_ident_before_relop(&body);
-                                let target = lhs
-                                    .as_deref()
-                                    .and_then(|k| let_map.get(k).cloned())
-                                    .or_else(|| guess_fn_under_test(&body));
-                                if let Some(fn_name) = target {
-                                    let normalized = rewrite_assert_to_post(
-                                        body.split(',').next().unwrap_or(&body).trim(),
-                                    );
-                                    out.push((format!("{rel}:{s}"), fn_name, normalized));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
-fn pat_to_ident(pat: &syn::Pat) -> Option<String> {
-    if let syn::Pat::Ident(p) = pat {
-        Some(p.ident.to_string())
-    } else {
-        None
-    }
-}
-
-fn call_target(expr: &syn::Expr) -> Option<String> {
-    match expr {
-        syn::Expr::Call(c) => {
-            if let syn::Expr::Path(p) = c.func.as_ref() {
-                p.path.segments.last().map(|s| s.ident.to_string())
-            } else {
-                None
-            }
-        }
-        syn::Expr::MethodCall(m) => Some(m.method.to_string()),
-        _ => None,
-    }
-}
-
-fn first_ident_before_relop(s: &str) -> Option<String> {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    let mut last: Option<String> = None;
-    let mut cur = String::new();
-    while i < bytes.len() {
-        let c = bytes[i] as char;
-        if c.is_alphanumeric() || c == '_' {
-            cur.push(c);
-        } else {
-            if !cur.is_empty() {
-                last = Some(std::mem::take(&mut cur));
-            }
-            let two = if i + 1 < bytes.len() {
-                std::str::from_utf8(&bytes[i..i + 2]).unwrap_or("")
-            } else {
-                ""
-            };
-            if matches!(two, ">=" | "<=" | "==" | "!=") {
-                return last;
-            }
-            if matches!(c, '>' | '<') {
-                return last;
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-fn guess_fn_under_test(body: &str) -> Option<String> {
-    let mut cur = String::new();
-    for c in body.chars() {
-        if c.is_alphanumeric() || c == '_' {
-            cur.push(c);
-        } else if c == '('
-            && !cur.is_empty()
-            && cur
-                .chars()
-                .next()
-                .map(|x| x.is_alphabetic())
-                .unwrap_or(false)
-        {
-            if !matches!(
-                cur.as_str(),
-                "assert" | "let" | "if" | "for" | "while" | "return" | "match"
-            ) {
-                return Some(cur);
-            }
-            cur.clear();
-        } else {
-            cur.clear();
-        }
-    }
-    None
-}
-
-fn rewrite_assert_to_post(s: &str) -> String {
-    for op in [">=", "<=", "==", "!=", ">", "<"].iter() {
-        if let Some(pos) = s.find(op) {
-            let (_, rhs) = s.split_at(pos);
-            return format!("out {rhs}");
-        }
-    }
-    s.to_string()
-}
+// Note: extract_contract_attrs, extract_concept_annotation, collect_test_witnesses,
+// and their helpers MOVED OUT of cmd_bind. Per the architectural cut
+// (`2026-05-13-bind-ir-lift-result.md`), all source-AST visiting is a lift kit
+// responsibility. The Rust kit implementation lives in provekit-walk's
+// `walk_rpc` binary as the `lift` JSON-RPC method.
 
 // ============================================================================
 // Output documents
@@ -2351,57 +1582,69 @@ fn print_summary(result: &EngineResult) {
 ///
 /// Returns `Ok(lang)` or `Err(message)` so `run()` can hard-fail with a clear gap record
 /// rather than silently assuming Rust and producing empty output.
+/// Detect the source language by probing the kit registry — substrate-wide
+/// filesystem convention (`.provekit/lift/<lang>/manifest.toml` or a
+/// built-in kit binary under `implementations/<lang>/`) rather than a
+/// hard-coded extension list. Returns `Ok(lang)` for the first kit found
+/// or `Err(message)` so `run()` can hard-fail with a clear gap record.
 fn resolve_lang_detect(root: &Path) -> Result<String, String> {
-    // Check for Rust indicators.
-    if root.join("Cargo.toml").exists() {
-        return Ok("rust".to_string());
+    if let Some(lang) = crate::kit_dispatch::detect_lift_language(root) {
+        return Ok(lang);
     }
+    // Fallback heuristic: probe for a known project manifest OR a known
+    // source-file extension. This is filesystem probing, not language
+    // semantics: when a lift kit IS available for that language (PATH,
+    // env override, or in-repo built-in) the kit_dispatch resolver picks
+    // it up. The probe here only chooses WHICH language to ask about.
+    for (lang, marker) in [
+        ("rust", "Cargo.toml"),
+        ("java", "pom.xml"),
+        ("python", "pyproject.toml"),
+    ] {
+        if root.join(marker).exists() {
+            return Ok(lang.to_string());
+        }
+    }
+    // Extension-based last resort. Each row is "language -> first-matched
+    // extension". Substrate-wide convention, not CLI semantics.
+    let extensions: &[(&str, &str)] = &[
+        ("rust", "rs"),
+        ("java", "java"),
+        ("python", "py"),
+        ("go", "go"),
+        ("typescript", "ts"),
+        ("csharp", "cs"),
+        ("ruby", "rb"),
+        ("php", "php"),
+        ("zig", "zig"),
+    ];
+    let mut dirs_to_scan: Vec<PathBuf> = vec![root.to_path_buf()];
     if root.join("src").is_dir() {
-        // Check if src/ contains .rs files.
-        if let Ok(entries) = std::fs::read_dir(root.join("src")) {
-            for e in entries.flatten() {
-                if e.path().extension().map(|x| x == "rs").unwrap_or(false) {
-                    return Ok("rust".to_string());
+        dirs_to_scan.push(root.join("src"));
+    }
+    for dir in &dirs_to_scan {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let ext = entry
+                    .path()
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if ext.is_empty() {
+                    continue;
+                }
+                for (lang, marker_ext) in extensions {
+                    if &ext == *marker_ext {
+                        return Ok((*lang).to_string());
+                    }
                 }
             }
         }
     }
-    // Check root for *.rs files.
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for e in entries.flatten() {
-            if e.path().extension().map(|x| x == "rs").unwrap_or(false) {
-                return Ok("rust".to_string());
-            }
-        }
-    }
-
-    // Check for Java indicators.
-    if root.join("pom.xml").exists() || root.join("build.gradle").exists() {
-        return Ok("java".to_string());
-    }
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for e in entries.flatten() {
-            if e.path().extension().map(|x| x == "java").unwrap_or(false) {
-                return Ok("java".to_string());
-            }
-        }
-    }
-
-    // Check for Python indicators.
-    if root.join("pyproject.toml").exists() || root.join("setup.py").exists() {
-        return Ok("python".to_string());
-    }
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for e in entries.flatten() {
-            if e.path().extension().map(|x| x == "py").unwrap_or(false) {
-                return Ok("python".to_string());
-            }
-        }
-    }
-
     Err(format!(
-        "cannot determine source language from {}; directory contains no recognised source files \
-         (.rs / Cargo.toml, .java / pom.xml / build.gradle, .py / pyproject.toml / setup.py). \
+        "cannot determine source language from {}; no kit registered under .provekit/lift/ or \
+         implementations/<lang>/ and no common project manifest or source file detected. \
          Use --lang=<language> to specify explicitly.",
         root.display()
     ))
@@ -2412,19 +1655,6 @@ fn resolve_lang(lang: &str, root: &Path) -> Result<String, String> {
         return Ok(lang.to_string());
     }
     resolve_lang_detect(root)
-}
-
-fn collect_rs_files(dir: &Path) -> Vec<PathBuf> {
-    if !dir.is_dir() {
-        return vec![];
-    }
-    let walker = walkdir::WalkDir::new(dir).max_depth(8);
-    walker
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|x| x == "rs").unwrap_or(false))
-        .map(|e| e.path().to_path_buf())
-        .collect()
 }
 
 fn line_for_fn(src: &str, fn_name: &str) -> usize {

@@ -32,3 +32,4 @@ pub struct OutputFlags {
 }
 
 pub mod cmd_transport;
+pub mod kit_dispatch;

@@ -266,16 +266,23 @@ fn trinity_round_trip() {
         out3 = Some(out3_dir);
         gaps3
     } else {
-        // Leg 2 couldn't produce python output.  Verify it recorded a real gap.
+        // Leg 2 couldn't produce python output. Verify it recorded a real gap.
+        // Post-PR-770 the gap kind is `kit-plugin-unavailable` (no lift kit for
+        // Java available to bind); the old gap kind `source-language-not-supported`
+        // was retired when language detection moved into kit_dispatch. Either
+        // kind is a legitimate "lift boundary is loudly-bounded-lossy" record.
         let (leg2_gap_lang, leg2_real_gaps) = read_gaps(&out2);
-        let has_real_gap = leg2_real_gaps
-            .iter()
-            .any(|g| g.kind == "source-language-not-supported");
+        let has_real_gap = leg2_real_gaps.iter().any(|g| {
+            g.kind == "source-language-not-supported"
+                || g.kind == "kit-plugin-unavailable"
+                || g.kind == "bind-lift-empty"
+        });
         assert!(
             has_real_gap,
             "Leg 2 produced no translated/python/ dir but also recorded no \
-             source-language-not-supported gap in gaps.json — this is a substrate \
-             bug: bind must either produce output OR record why it can't. \
+             source-language-not-supported / kit-plugin-unavailable / \
+             bind-lift-empty gap in gaps.json — this is a substrate bug: bind \
+             must either produce output OR record why it can't. \
              leg2 source_lang={:?}, leg2 gaps={:?}",
             leg2_gap_lang, leg2_real_gaps
         );
@@ -399,15 +406,24 @@ fn trinity_round_trip() {
         // `if src_files.is_empty() && source_lang != "rust"` block).
         // If that emission breaks, this assertion catches it — that's the protocol.
         if leg2_src_lang != "rust" || leg3_src_lang != "rust" {
+            // Post-PR-770 the lift-boundary gap kind is `kit-plugin-unavailable`
+            // (kit registration is now the substrate seam, per PEP 1.7.0 and
+            // `2026-05-13-bind-ir-lift-result.md`). `source-language-not-supported`
+            // and `bind-lift-empty` are also legitimate kinds depending on which
+            // boundary fired; the test accepts any of the three so the verdict
+            // criterion ("at least as good as the current 4 entries") holds
+            // across the rename.
+            let lift_boundary_kinds = ["source-language-not-supported", "kit-plugin-unavailable", "bind-lift-empty", "leg-3-not-reached"];
             assert!(
-                loss_kinds.contains("source-language-not-supported"),
-                "v0 trinity round-trip MUST report source-language-not-supported gap \
+                lift_boundary_kinds.iter().any(|k| loss_kinds.contains(k)),
+                "v0 trinity round-trip MUST report a lift-boundary gap kind \
                  for non-Rust legs (emitted by bind's gaps.json, not synthetic injection). \
                  This assertion fails if the gap-emission pipeline in cmd_bind breaks.\n\
                  got kinds: {:?}\n\
+                 expected one of: {:?}\n\
                  leg2_src_lang={:?} leg3_src_lang={:?}\n\
                  full composed_loss={:?}",
-                loss_kinds, leg2_src_lang, leg3_src_lang, composed_loss
+                loss_kinds, lift_boundary_kinds, leg2_src_lang, leg3_src_lang, composed_loss
             );
         }
 
