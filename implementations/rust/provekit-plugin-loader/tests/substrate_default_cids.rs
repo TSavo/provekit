@@ -125,3 +125,22 @@ fn python_canonical_bodies_cid_self_consistent() {
         "blake3-512:fb35f2196ebca55a964e1829a5f0f2842a0d3de53406fcca504e93b0aa1e55c09b7735740c382564817d279146479d8e4a3963377ee42878c6bb979da44a5cc7",
     );
 }
+
+#[test]
+fn c_canonical_sugar_cid_self_consistent() {
+    let path = repo_root().join("menagerie/c-language-signature/specs/sugar/c-canonical.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:d1c75065f168ddd510c5c66ce3c8ad4278a803758e002e2f97d8b265172a006705ec96b9d0f4bf16edac22565709a4b741b01e9e56bccaab6c372bb177acd538",
+    );
+}
+
+#[test]
+fn c_canonical_bodies_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:8ef55920ab677d4fb44260ed9993295585fd76cc7df67c28673424a2cf49c2f76164e4cc9f1f2739a063ed2f27cb11cd34024c54a6cdfa9af2828e9946d1ff0e",
+    );
+}
