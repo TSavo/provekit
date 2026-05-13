@@ -1,40 +1,66 @@
 package com.provekit.realize;
 
+import com.provekit.ir.Jcs;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
- * Emits a canonical Java stub method wrapped in a per-function class.
+ * Emits canonical Java method bodies and stubs for the bind canonical-rewrite path.
  *
- * Mirrors cmd_transport.rs `realize_function` for TargetStyle::Java with
- * is_stub=true (the bind path where no term graph is available yet).
+ * Per the federation-by-construction directive ("all java emitter code belongs in java"),
+ * this class is the SOLE owner of Java surface emission. cmd_transport.rs dispatches to
+ * this class via the JSON-RPC plugin protocol; Rust holds no Java syntax.
  *
- * Output format (per cmd_transport.rs Java branch):
+ * Output shape (per cmd_transport.rs Java branch, byte-identical):
  * <pre>
  * final class {PascalFn}Transported {
  *     // concept: {conceptName}
  *     public static {returnType} {function}({typedParams}) {
- *         throw new UnsupportedOperationException("provekit-bind canonical: {conceptName}");
+ *         {body}
  *     }
  * }
  * </pre>
  *
- * Slice 2: contract annotations (requires/ensures) are NOT emitted here;
- * those require contract lifting from source, which is out of scope for
- * the stub path.
+ * Where {body} is rendered from the body-template plugin (loaded from
+ * classpath resource `com/provekit/realize/java-canonical-bodies.json`,
+ * sourced from `menagerie/java-language-signature/specs/body-templates/`)
+ * when an entry matches the binding's concept_name + signature_guard.
+ * When no entry matches, the language stub falls through:
+ *   `throw new UnsupportedOperationException("provekit-bind canonical: <concept>");`
  */
 final class SugarRealizer {
 
     /**
-     * Emit a Java stub for a single function.
+     * Realization result: the emitted Java source plus a flag indicating
+     * whether the body came from a body-template (real body, `is_stub=false`)
+     * or fell through to the language stub (`is_stub=true`).
+     *
+     * Carried through to the JSON-RPC response so the caller (cmd_bind) can
+     * emit accurate per-concept `bind-stub-body-emitted` gap entries per
+     * `2026-05-13-body-template-memento.md` §5.
+     */
+    record Realization(String source, boolean isStub) {}
+
+    /**
+     * Emit a Java method for a single function. Body source comes from the
+     * body-template plugin when a matching entry exists; otherwise an
+     * idiomatic stub is emitted.
      *
      * @param function    Rust snake_case function name (e.g. "wrap_identity")
      * @param params      Parameter names in order (e.g. ["x"])
      * @param paramTypes  Source-language (Rust) type strings (e.g. ["i64"])
      * @param returnType  Source-language return type string (e.g. "i64")
-     * @param conceptName Concept binding name (e.g. "UNNAMED-CONCEPT-a777b12569a16b07")
-     * @return Java source string, byte-identical to realize_for_bind("java", ...)
+     * @param conceptName Concept binding name (e.g. "identity")
+     * @return Realization carrying source + is_stub flag.
      */
-    static String emitStub(
+    static Realization emitStub(
             String function,
             List<String> params,
             List<String> paramTypes,
@@ -56,17 +82,20 @@ final class SugarRealizer {
         // annotation_prefix for Java: top_indent = "    "
         String annotationPrefix = "    // concept: " + conceptName + "\n";
 
-        // stub body: 8 spaces indent
-        String stubBody = "        throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");\n";
+        // Body: try body-template first, fall through to language stub.
+        Optional<String> bodyTemplate = bodyTemplateFor(conceptName, params);
+        boolean isStub = bodyTemplate.isEmpty();
+        String bodyContent = bodyTemplate
+                .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
+        String body = "        " + bodyContent + "\n";
 
-        // Format matches cmd_transport.rs line 1474-1476:
-        // "final class {class_name} {{\n{annotation_prefix}    public static {mapped_return} {function}({typed_param_list}) {{\n{body_str}    }}\n}}\n"
-        return "final class " + className + " {\n"
+        String source = "final class " + className + " {\n"
                 + annotationPrefix
                 + "    public static " + mappedReturn + " " + function + "(" + typedParamList + ") {\n"
-                + stubBody
+                + body
                 + "    }\n"
                 + "}\n";
+        return new Realization(source, isStub);
     }
 
     /**
@@ -102,5 +131,117 @@ final class SugarRealizer {
             if (part.length() > 1) sb.append(part.substring(1));
         }
         return sb.toString();
+    }
+
+    // -----------------------------------------------------------------------
+    // Body-template loading per protocol/specs/2026-05-13-body-template-memento.md
+    // -----------------------------------------------------------------------
+
+    /**
+     * Cached body-template entries, loaded lazily on first call from the
+     * classpath resource `com/provekit/realize/java-canonical-bodies.json`.
+     * The resource is sourced from
+     * `menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json`
+     * at build time (see pom.xml resource configuration).
+     */
+    private static volatile List<BodyTemplateEntry> ENTRIES_CACHE = null;
+
+    /**
+     * One body-template entry per spec §2.
+     */
+    private record BodyTemplateEntry(
+            String conceptName,
+            String templateKind,
+            String template,
+            Integer minParams,
+            Integer maxParams) {}
+
+    /**
+     * Render a body string for the given concept + signature, or empty when
+     * no entry matches (caller falls back to the language stub).
+     *
+     * Selection per spec §2.2: exact concept_name match + signature_guard
+     * pass (min_params <= |params| <= max_params when present). Substitution
+     * per §2.3: ${param0}, ${param1}, ... ${param_count}. Unbound placeholders
+     * refuse-match.
+     */
+    static Optional<String> bodyTemplateFor(String conceptName, List<String> params) {
+        List<BodyTemplateEntry> entries = entries();
+        for (BodyTemplateEntry e : entries) {
+            if (!e.conceptName().equals(conceptName)) continue;
+            if (e.minParams() != null && params.size() < e.minParams()) continue;
+            if (e.maxParams() != null && params.size() > e.maxParams()) continue;
+            if (!"verbatim".equals(e.templateKind())) continue;
+            String rendered = e.template();
+            for (int i = 0; i < params.size(); i++) {
+                rendered = rendered.replace("${param" + i + "}", params.get(i));
+            }
+            rendered = rendered.replace("${param_count}", Integer.toString(params.size()));
+            if (rendered.contains("${")) {
+                // Unbound placeholder: refuse-match per spec §2.1.
+                continue;
+            }
+            return Optional.of(rendered);
+        }
+        return Optional.empty();
+    }
+
+    private static List<BodyTemplateEntry> entries() {
+        List<BodyTemplateEntry> cached = ENTRIES_CACHE;
+        if (cached != null) return cached;
+        synchronized (SugarRealizer.class) {
+            if (ENTRIES_CACHE != null) return ENTRIES_CACHE;
+            ENTRIES_CACHE = loadEntriesFromResource();
+            return ENTRIES_CACHE;
+        }
+    }
+
+    private static List<BodyTemplateEntry> loadEntriesFromResource() {
+        try (InputStream in = SugarRealizer.class.getResourceAsStream("java-canonical-bodies.json")) {
+            if (in == null) {
+                // Resource absent: degrade to "no entries" (callers get language stub).
+                return List.of();
+            }
+            String raw;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                raw = reader.lines().collect(Collectors.joining("\n"));
+            }
+            Jcs.Json root = Jcs.parse(raw);
+            if (!(root instanceof Jcs.Obj rootObj)) return List.of();
+            Jcs.Json header = rootObj.get("header");
+            if (!(header instanceof Jcs.Obj headerObj)) return List.of();
+            Jcs.Json content = headerObj.get("content");
+            if (!(content instanceof Jcs.Obj contentObj)) return List.of();
+            Jcs.Json entriesJson = contentObj.get("entries");
+            if (!(entriesJson instanceof Jcs.Arr entriesArr)) return List.of();
+
+            List<BodyTemplateEntry> out = new ArrayList<>();
+            for (Jcs.Json item : entriesArr.values()) {
+                if (!(item instanceof Jcs.Obj itemObj)) continue;
+                String conceptName = itemObj.stringFieldOrNull("concept_name");
+                if (conceptName == null) continue;
+
+                Jcs.Json template = itemObj.get("emission_template");
+                if (!(template instanceof Jcs.Obj templateObj)) continue;
+                String kind = templateObj.stringFieldOrNull("kind");
+                String tmpl = templateObj.stringFieldOrNull("template");
+                if (kind == null || tmpl == null) continue;
+
+                Integer minParams = null;
+                Integer maxParams = null;
+                Jcs.Json guard = itemObj.get("signature_guard");
+                if (guard instanceof Jcs.Obj guardObj) {
+                    Jcs.Json minJ = guardObj.get("min_params");
+                    Jcs.Json maxJ = guardObj.get("max_params");
+                    if (minJ instanceof Jcs.Num minN) minParams = (int) minN.value();
+                    if (maxJ instanceof Jcs.Num maxN) maxParams = (int) maxN.value();
+                }
+                out.add(new BodyTemplateEntry(conceptName, kind, tmpl, minParams, maxParams));
+            }
+            return out;
+        } catch (IOException e) {
+            // I/O failure: degrade to "no entries"; stubs will emit.
+            return List.of();
+        }
     }
 }

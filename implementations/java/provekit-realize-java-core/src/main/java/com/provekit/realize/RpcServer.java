@@ -38,8 +38,9 @@ public final class RpcServer {
                 // PEP 1.7.0 methods
                 case "provekit.plugin.describe" -> sendResponse(id, describeResult());
                 case "provekit.plugin.invoke" -> {
-                    String source = handleInvoke(line);
-                    sendResponse(id, "{\"source\":" + JsonUtil.quoted(source) + "}");
+                    // handleInvoke returns a full JSON object: {"source":..., "is_stub":...}
+                    String resultObj = handleInvoke(line);
+                    sendResponse(id, resultObj);
                 }
                 case "provekit.plugin.shutdown" -> {
                     sendResponse(id, "null");
@@ -73,7 +74,11 @@ public final class RpcServer {
      *   return_type   - source-language return type string
      *   concept_name  - concept binding name for annotation + stub body
      *
-     * Returns: Java stub source string.
+     * Returns: JSON object with `source` (Java string) and `is_stub` (boolean).
+     * `is_stub=true` means the body fell through to the language stub
+     * (no body-template matched); `is_stub=false` means a body-template
+     * entry rendered a real body. cmd_bind uses this to emit accurate
+     * per-concept `bind-stub-body-emitted` gap entries per body-template-memento.md §5.
      */
     private String handleInvoke(String line) {
         // Extract the inner params object to avoid ambiguity with the RPC "params" key.
@@ -83,7 +88,10 @@ public final class RpcServer {
         String conceptName = JsonUtil.decodeJsonStringField(paramsObj, "concept_name");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
-        return SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName);
+        SugarRealizer.Realization r =
+                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName);
+        return "{\"source\":" + JsonUtil.quoted(r.source())
+                + ",\"is_stub\":" + (r.isStub() ? "true" : "false") + "}";
     }
 
     /**

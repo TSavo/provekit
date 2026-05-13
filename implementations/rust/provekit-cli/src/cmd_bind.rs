@@ -29,7 +29,7 @@
 //   loudly-bounded-lossy   — annotation/test-lift (structural shim)
 //   refuse                 — no contract recovered or wp-error
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -284,14 +284,11 @@ pub fn run(args: BindArgs) -> u8 {
         output_dir.join("index.json"),
         serde_json::to_string_pretty(&index).unwrap_or_default(),
     );
-    let gaps = build_gaps_doc(&source_lang, &result.gaps);
-    let _ = std::fs::write(
-        output_dir.join("gaps.json"),
-        serde_json::to_string_pretty(&gaps).unwrap_or_default(),
-    );
 
-    // Rewrite output.
-    match &args.rewrite {
+    // Rewrite output. Canonical-rewrite returns the set of concepts whose body
+    // fell through to the language stub so we can emit per-concept gap entries
+    // per `body-template-memento.md` §5.
+    let stub_concepts: Vec<String> = match &args.rewrite {
         RewriteShape::Annotate => {
             // annotate rewrites in-place in source-language syntax.
             // Cross-language annotation is not supported in v0; use --rewrite=canonical.
@@ -307,18 +304,17 @@ pub fn run(args: BindArgs) -> u8 {
             apply_annotate_rewrite(
                 &root, &src_files, &result, &args.mode, /*to_disk=*/ true,
             );
+            Vec::new()
         }
-        RewriteShape::Canonical => {
-            apply_canonical_rewrite(
-                &root,
-                &src_files,
-                &result,
-                &args.mode,
-                &target_lang,
-                /*to_disk=*/ true,
-                &output_dir,
-            );
-        }
+        RewriteShape::Canonical => apply_canonical_rewrite(
+            &root,
+            &src_files,
+            &result,
+            &args.mode,
+            &target_lang,
+            /*to_disk=*/ true,
+            &output_dir,
+        ),
         RewriteShape::Invisible => {
             // Invisible: stream to stdout. Apply annotate-shape for same-language,
             // canonical for cross-language.
@@ -326,6 +322,7 @@ pub fn run(args: BindArgs) -> u8 {
                 apply_annotate_rewrite(
                     &root, &src_files, &result, &args.mode, /*to_disk=*/ false,
                 );
+                Vec::new()
             } else {
                 apply_canonical_rewrite(
                     &root,
@@ -335,10 +332,30 @@ pub fn run(args: BindArgs) -> u8 {
                     &target_lang,
                     /*to_disk=*/ false,
                     &output_dir,
-                );
+                )
             }
         }
+    };
+
+    // Augment gaps with per-concept `bind-stub-body-emitted` entries for
+    // every concept whose body fell through during canonical rewrite, per
+    // `body-template-memento.md` §5. Then write gaps.json with the augmented
+    // set. When every concept matched a body-template, no entries are added.
+    let mut augmented_gaps = result.gaps.clone();
+    for concept in &stub_concepts {
+        augmented_gaps.push(GapRecord {
+            kind: "bind-stub-body-emitted".into(),
+            detail: format!(
+                "canonical-rewrite fell through to language stub for concept '{concept}'; \
+                 no body-template matched. Author a body-template entry to close this gap."
+            ),
+        });
     }
+    let gaps_doc = build_gaps_doc(&source_lang, &augmented_gaps);
+    let _ = std::fs::write(
+        output_dir.join("gaps.json"),
+        serde_json::to_string_pretty(&gaps_doc).unwrap_or_default(),
+    );
 
     // Print summary.
     if !args.quiet {
@@ -834,25 +851,14 @@ fn run_bind_engine(
         kind: "v0-capability-gap".into(),
         detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
     });
-    // F6: Record stub-body gap when bindings exist.
-    //
-    // In v0 the canonical-rewrite path has no full term graph; it delegates to
-    // `realize_for_bind` which always emits idiomatic stub bodies (panic/raise/todo).
-    // This gap record is the honest substrate disclosure: real lifted source bodies
-    // are NOT present in these outputs.  A future PR that wires the term graph to the
-    // canonical path should remove this gap kind and replace it with a "term-body-realized"
-    // kind.
-    if !bindings.is_empty() {
-        gaps.push(GapRecord {
-            kind: "bind-stub-body-emitted".into(),
-            detail: format!(
-                "canonical-rewrite emitted stub bodies for {n} binding(s): no real lifted term \
-                 graph available in v0; bodies are idiomatic language stubs \
-                 (panic/raise/todo/throw). Real bodies deferred to v1.",
-                n = bindings.len()
-            ),
-        });
-    }
+    // F6 (post body-template-memento, #766/#767/#768): the unconditional
+    // `bind-stub-body-emitted` gap with hardcoded binding count was a lie
+    // once the Java realize plugin began emitting real bodies for templated
+    // concepts. The accurate replacement is per-concept gap emission done
+    // AFTER `apply_canonical_rewrite` returns (see the main cmd_bind flow).
+    // The engine itself can't emit these gaps because it doesn't know which
+    // concepts' bodies will fall through to a stub — that's known only after
+    // each binding's realize_for_bind call reports its `is_stub` kind.
     Ok(EngineResult {
         bindings,
         concepts,
@@ -1077,6 +1083,13 @@ fn inject_annotations(
 ///
 /// When `to_disk` is true, writes to `.provekit/bindings/translated/<lang>/`.
 /// When false (invisible), streams to stdout.
+/// Apply the canonical rewrite (delegating Java emission to the realize plugin
+/// when target_lang == "java"; other languages still use the inline path).
+///
+/// Returns the set of concept names (sorted, deduplicated) whose realized
+/// body fell through to the language stub — i.e. no body-template matched.
+/// Caller emits one `bind-stub-body-emitted` gap per name per §5 of
+/// `2026-05-13-body-template-memento.md`.
 fn apply_canonical_rewrite(
     root: &Path,
     src_files: &[PathBuf],
@@ -1085,7 +1098,7 @@ fn apply_canonical_rewrite(
     target_lang: &str,
     to_disk: bool,
     output_dir: &Path,
-) {
+) -> Vec<String> {
     // Group bindings by file.
     let mut by_file: BTreeMap<String, Vec<&BindingRecord>> = BTreeMap::new();
     for b in &result.bindings {
@@ -1096,6 +1109,10 @@ fn apply_canonical_rewrite(
     if to_disk {
         let _ = std::fs::create_dir_all(&translated_dir);
     }
+
+    // Track concepts whose realized body was a stub. Deduplicated + sorted at
+    // the end so the gap-emission caller produces one gap per affected concept.
+    let mut stub_concepts: BTreeSet<String> = BTreeSet::new();
 
     for (rel_file, bindings) in &by_file {
         let in_path = root.join(rel_file);
@@ -1163,6 +1180,13 @@ fn apply_canonical_rewrite(
                         &concept_name,
                     ) {
                         Ok(r) => {
+                            // Per body-template-memento.md §5: when the realizer's body fell
+                            // through to the language stub (no body-template matched), record
+                            // the concept so the caller emits a per-concept
+                            // `bind-stub-body-emitted` gap entry.
+                            if r.is_stub {
+                                stub_concepts.insert(concept_name.to_string());
+                            }
                             // Prepend bind-specific metadata (substrate-origin, memento-cid,
                             // contract annotations, runtime-mode) before the ORP-generated snippet.
                             let meta = build_bind_meta_comment(target_lang, &concept_name, b, mode);
@@ -1170,7 +1194,9 @@ fn apply_canonical_rewrite(
                         }
                         Err(_) => {
                             // ORP refused (unsupported language or parse error); fall back
-                            // to the annotation-level stub so output is never empty.
+                            // to the annotation-level stub so output is never empty. This is
+                            // also a stub path — record the concept.
+                            stub_concepts.insert(concept_name.to_string());
                             emit_target_stub(target_lang, &fn_name, &params, b, &concept_name, mode)
                         }
                     };
@@ -1222,6 +1248,9 @@ fn apply_canonical_rewrite(
             println!("{cmt} bind:canonical:no-bindings:{rel}");
         }
     }
+
+    // BTreeSet → sorted Vec for deterministic gap-record output order.
+    stub_concepts.into_iter().collect()
 }
 
 /// Return the line-comment prefix for the target language.
