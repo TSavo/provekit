@@ -77,7 +77,10 @@ fn exact_wire_deserializes() {
     assert_eq!(c.input_cid, INPUT_CID);
     assert_eq!(c.truth_cid, TRUTH_CID);
     assert_eq!(c.verdict.kind, VerdictKind::Exact);
-    assert_eq!(c.verdict.discharge_receipt_cid.as_deref(), Some(RECEIPT_CID));
+    assert_eq!(
+        c.verdict.discharge_receipt_cid.as_deref(),
+        Some(RECEIPT_CID)
+    );
     assert!(c.verdict.refusal_reason.is_none());
     assert!(c.verdict.loss_record.0.is_empty());
     assert_eq!(c.provenance.signer, SIGNER);
@@ -126,7 +129,10 @@ const LOUDLY_LOSSY_FIXTURE: &str = r#"{
 fn loudly_lossy_wire_deserializes() {
     let c: DomainClaim = serde_json::from_str(LOUDLY_LOSSY_FIXTURE).expect("parse lossy");
     assert_eq!(c.verdict.kind, VerdictKind::LoudlyBoundedLossy);
-    assert_eq!(c.verdict.discharge_receipt_cid.as_deref(), Some(RECEIPT_CID));
+    assert_eq!(
+        c.verdict.discharge_receipt_cid.as_deref(),
+        Some(RECEIPT_CID)
+    );
     assert!(c.verdict.refusal_reason.is_none());
     assert_eq!(c.verdict.loss_record.0.len(), 1);
     assert!(c.verdict.loss_record.0.contains_key("domain_narrowing"));

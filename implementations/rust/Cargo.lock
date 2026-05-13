@@ -1780,6 +1780,7 @@ dependencies = [
 name = "provekit-ir-types"
 version = "0.1.0"
 dependencies = [
+ "provekit-canonicalizer",
  "serde",
  "serde_json",
 ]

@@ -75,20 +75,24 @@ fn python_add_gap_deserializes_from_spec_shape() {
     assert!(m.reason.is_some());
     assert!(m.reason_note.is_some());
     assert_eq!(m.resolution_options.len(), 2);
-    assert_eq!(m.resolution_options[0].option_kind, ResolutionOptionKind::PartialMorphism);
+    assert_eq!(
+        m.resolution_options[0].option_kind,
+        ResolutionOptionKind::PartialMorphism
+    );
     assert_eq!(m.resolution_options[0].status, OptionStatus::Recommended);
-    assert_eq!(m.resolution_options[1].option_kind, ResolutionOptionKind::AcceptPermanent);
+    assert_eq!(
+        m.resolution_options[1].option_kind,
+        ResolutionOptionKind::AcceptPermanent
+    );
     assert_eq!(m.resolution_options[1].status, OptionStatus::Deferred);
     assert!(m.signature.is_none());
 }
 
 #[test]
 fn python_add_gap_round_trips() {
-    let m: TransportGapMemento =
-        serde_json::from_str(PYTHON_ADD_GAP_JSON).expect("parse");
+    let m: TransportGapMemento = serde_json::from_str(PYTHON_ADD_GAP_JSON).expect("parse");
     let serialized = serde_json::to_string(&m).expect("serialize");
-    let m2: TransportGapMemento =
-        serde_json::from_str(&serialized).expect("re-parse");
+    let m2: TransportGapMemento = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(m, m2);
 }
 
@@ -123,7 +127,10 @@ fn no_such_concept_op_gap_deserializes() {
         serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse no-such-concept-op gap");
 
     assert_eq!(m.gap_kind, GapKind::NoSuchConceptOp);
-    assert!(m.target_op_cid.is_none(), "target_op_cid must be absent for no-such-concept-op");
+    assert!(
+        m.target_op_cid.is_none(),
+        "target_op_cid must be absent for no-such-concept-op"
+    );
     assert_eq!(m.source_lang, "go");
     assert!(m.reason.is_some());
     let reason = m.reason.as_ref().unwrap();
@@ -132,18 +139,15 @@ fn no_such_concept_op_gap_deserializes() {
 
 #[test]
 fn no_such_concept_op_gap_round_trips() {
-    let m: TransportGapMemento =
-        serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse");
+    let m: TransportGapMemento = serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse");
     let serialized = serde_json::to_string(&m).expect("serialize");
-    let m2: TransportGapMemento =
-        serde_json::from_str(&serialized).expect("re-parse");
+    let m2: TransportGapMemento = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(m, m2);
 }
 
 #[test]
 fn no_such_concept_op_omits_target_op_cid_when_none() {
-    let m: TransportGapMemento =
-        serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse");
+    let m: TransportGapMemento = serde_json::from_str(NO_CONCEPT_OP_GAP_JSON).expect("parse");
     let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
     assert!(
         v.get("target_op_cid").is_none(),
@@ -229,7 +233,10 @@ fn python_add_partial_morphism_deserializes() {
     assert_eq!(m.fn_name, "partial-morphism:python:add:to:concept:add");
     assert_eq!(m.kind, "PartialMorphismMemento");
     assert_eq!(m.schema_version, "1");
-    assert_eq!(m.homomorphism_obligation.kind, "wp-refinement-under-precondition");
+    assert_eq!(
+        m.homomorphism_obligation.kind,
+        "wp-refinement-under-precondition"
+    );
     assert!(m.gap_memento_cid.is_some());
     assert!(m.signature.is_none());
     // Confirm validity_precondition parsed
@@ -241,20 +248,16 @@ fn python_add_partial_morphism_deserializes() {
 
 #[test]
 fn partial_morphism_round_trips() {
-    let m: PartialMorphismMemento =
-        serde_json::from_str(PYTHON_ADD_PARTIAL_JSON).expect("parse");
+    let m: PartialMorphismMemento = serde_json::from_str(PYTHON_ADD_PARTIAL_JSON).expect("parse");
     let serialized = serde_json::to_string(&m).expect("serialize");
-    let m2: PartialMorphismMemento =
-        serde_json::from_str(&serialized).expect("re-parse");
+    let m2: PartialMorphismMemento = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(m, m2);
 }
 
 #[test]
 fn partial_morphism_omits_signature_when_none() {
-    let m: PartialMorphismMemento =
-        serde_json::from_str(PYTHON_ADD_PARTIAL_JSON).expect("parse");
-    let v: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    let m: PartialMorphismMemento = serde_json::from_str(PYTHON_ADD_PARTIAL_JSON).expect("parse");
+    let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
     assert!(
         v.get("signature").is_none(),
         "signature must be absent in serialized JSON when None"
@@ -303,7 +306,10 @@ fn python_add_lossy_morphism_deserializes() {
     assert_eq!(m.kind, "LossyMorphismMemento");
     assert_eq!(m.schema_version, "1");
     assert_eq!(m.coarsening_kind, "quotient-target-sort");
-    assert_eq!(m.homomorphism_obligation.kind, "wp-refinement-into-coarsening");
+    assert_eq!(
+        m.homomorphism_obligation.kind,
+        "wp-refinement-into-coarsening"
+    );
     assert!(m.gap_memento_cid.is_none());
     assert!(m.signature.is_none());
     // Confirm loss dimensions
@@ -323,20 +329,16 @@ fn python_add_lossy_morphism_deserializes() {
 
 #[test]
 fn lossy_morphism_round_trips() {
-    let m: LossyMorphismMemento =
-        serde_json::from_str(PYTHON_ADD_LOSSY_JSON).expect("parse");
+    let m: LossyMorphismMemento = serde_json::from_str(PYTHON_ADD_LOSSY_JSON).expect("parse");
     let serialized = serde_json::to_string(&m).expect("serialize");
-    let m2: LossyMorphismMemento =
-        serde_json::from_str(&serialized).expect("re-parse");
+    let m2: LossyMorphismMemento = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(m, m2);
 }
 
 #[test]
 fn lossy_morphism_omits_gap_memento_cid_when_none() {
-    let m: LossyMorphismMemento =
-        serde_json::from_str(PYTHON_ADD_LOSSY_JSON).expect("parse");
-    let v: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    let m: LossyMorphismMemento = serde_json::from_str(PYTHON_ADD_LOSSY_JSON).expect("parse");
+    let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
     assert!(
         v.get("gap_memento_cid").is_none(),
         "gap_memento_cid must be absent in serialized JSON when None"
@@ -377,12 +379,27 @@ fn gap_reason_source_supported_false_round_trips() {
 fn divergent_tag_named_variant_serializes_to_spec_string() {
     // Each named variant must serialize to its spec-defined kebab string, NOT "null".
     let cases: &[(DivergentSemanticsTag, &str)] = &[
-        (DivergentSemanticsTag::TruncatedVsFlooredModulo, "\"truncated-vs-floored-modulo\""),
-        (DivergentSemanticsTag::BoundedVsUnboundedInteger, "\"bounded-vs-unbounded-integer\""),
-        (DivergentSemanticsTag::IntegerVsTrueDivision, "\"integer-vs-true-division\""),
-        (DivergentSemanticsTag::OverflowBehavior, "\"overflow-behavior\""),
+        (
+            DivergentSemanticsTag::TruncatedVsFlooredModulo,
+            "\"truncated-vs-floored-modulo\"",
+        ),
+        (
+            DivergentSemanticsTag::BoundedVsUnboundedInteger,
+            "\"bounded-vs-unbounded-integer\"",
+        ),
+        (
+            DivergentSemanticsTag::IntegerVsTrueDivision,
+            "\"integer-vs-true-division\"",
+        ),
+        (
+            DivergentSemanticsTag::OverflowBehavior,
+            "\"overflow-behavior\"",
+        ),
         (DivergentSemanticsTag::RoundingMode, "\"rounding-mode\""),
-        (DivergentSemanticsTag::ShortCircuitVsEager, "\"short-circuit-vs-eager\""),
+        (
+            DivergentSemanticsTag::ShortCircuitVsEager,
+            "\"short-circuit-vs-eager\"",
+        ),
     ];
     for (tag, expected) in cases {
         let json = serde_json::to_string(tag).unwrap();
@@ -407,10 +424,12 @@ fn divergent_tag_spec_string_deserializes_to_named_variant() {
 
     let tag2: DivergentSemanticsTag =
         serde_json::from_str("\"bounded-vs-unbounded-integer\"").unwrap();
-    assert!(matches!(tag2, DivergentSemanticsTag::BoundedVsUnboundedInteger));
+    assert!(matches!(
+        tag2,
+        DivergentSemanticsTag::BoundedVsUnboundedInteger
+    ));
 
-    let tag3: DivergentSemanticsTag =
-        serde_json::from_str("\"integer-vs-true-division\"").unwrap();
+    let tag3: DivergentSemanticsTag = serde_json::from_str("\"integer-vs-true-division\"").unwrap();
     assert!(matches!(tag3, DivergentSemanticsTag::IntegerVsTrueDivision));
 
     let tag4: DivergentSemanticsTag = serde_json::from_str("\"overflow-behavior\"").unwrap();
