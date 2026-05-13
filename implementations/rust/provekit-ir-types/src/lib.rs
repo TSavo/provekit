@@ -3417,6 +3417,187 @@ impl std::fmt::Display for InvalidReceiptError {
     }
 }
 
+// ============================================================
+// NOTE: Manual extension block -- PipelineMemento and RunMemento (#799)
+// ============================================================
+//
+// Generic replayable run graph substrate per
+// protocol/specs/2026-05-13-pipeline-runmemento.md §1.
+//
+// This block defines durable artifact shapes only. It intentionally does not
+// execute pipelines, schedule runs, resolve CIDs, or replay stage receipts.
+//
+// Key-order rule: struct field names mirror the CDDL key names exactly in
+// locked JCS alphabetical order.
+//
+// TODO(#792): Express ProofRunMemento as the verifier PipelineMemento profile.
+
+/// The `pipeline_kind` scalar for a `PipelineMemento`.
+///
+/// Known pipeline kinds are reserved by the generic spec. Namespaced extension
+/// kinds are represented as `Namespaced("<namespace>:<kind>")` so this
+/// substrate type can carry profile-defined pipelines without hard-coding
+/// registry support here. Bare unknowns fail closed at deserialization
+/// per spec §3 + admissibility-spine namespaced-extensions rule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum PipelineKind {
+    Bind,
+    Compose,
+    Link,
+    Promotion,
+    Realization,
+    Transport,
+    Verifier,
+    Namespaced(String),
+}
+
+impl TryFrom<String> for PipelineKind {
+    type Error = PipelineKindError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        match s.as_str() {
+            "bind" => Ok(PipelineKind::Bind),
+            "compose" => Ok(PipelineKind::Compose),
+            "link" => Ok(PipelineKind::Link),
+            "promotion" => Ok(PipelineKind::Promotion),
+            "realization" => Ok(PipelineKind::Realization),
+            "transport" => Ok(PipelineKind::Transport),
+            "verifier" => Ok(PipelineKind::Verifier),
+            _ => match s.split_once(':') {
+                // Spec: extension labels are `<namespace>:<kind>` with
+                // EXACTLY one colon. `a:b:c` is not a valid namespaced
+                // extension; both segments must be non-empty AND the
+                // kind segment must not itself contain a colon.
+                Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
+                    Ok(PipelineKind::Namespaced(s))
+                }
+                _ => Err(PipelineKindError { raw: s }),
+            },
+        }
+    }
+}
+
+impl From<PipelineKind> for String {
+    fn from(kind: PipelineKind) -> String {
+        match kind {
+            PipelineKind::Bind => "bind".to_string(),
+            PipelineKind::Compose => "compose".to_string(),
+            PipelineKind::Link => "link".to_string(),
+            PipelineKind::Promotion => "promotion".to_string(),
+            PipelineKind::Realization => "realization".to_string(),
+            PipelineKind::Transport => "transport".to_string(),
+            PipelineKind::Verifier => "verifier".to_string(),
+            PipelineKind::Namespaced(s) => s,
+        }
+    }
+}
+
+/// Returned when a `pipeline_kind` string is neither a canonical
+/// pipeline (bind / compose / link / promotion / realization / transport /
+/// verifier) nor a well-formed `<namespace>:<kind>` extension. Per spec
+/// §3 + admissibility-spine namespaced-extensions rule, bare unknowns
+/// MUST fail closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PipelineKindError {
+    pub raw: String,
+}
+
+impl std::fmt::Display for PipelineKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unrecognized pipeline_kind {:?}: not a canonical pipeline and not a well-formed `<namespace>:<kind>` extension",
+            self.raw
+        )
+    }
+}
+
+impl std::error::Error for PipelineKindError {}
+
+/// The terminal `verdict` scalar for a `RunMemento`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RunVerdict {
+    #[serde(rename = "failed")]
+    Failed,
+    #[serde(rename = "refused")]
+    Refused,
+    #[serde(rename = "succeeded")]
+    Succeeded,
+}
+
+/// A pipeline vocabulary memento.
+///
+/// Locked JCS key order:
+///   accepted_input_kinds, emitted_output_kinds, failure_kinds,
+///   pipeline_kind, pipeline_version, provenance_cid, stage_vocabulary
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineMemento {
+    #[serde(rename = "accepted_input_kinds")]
+    pub accepted_input_kinds: Vec<String>,
+    #[serde(rename = "emitted_output_kinds")]
+    pub emitted_output_kinds: Vec<String>,
+    #[serde(rename = "failure_kinds")]
+    pub failure_kinds: Vec<String>,
+    #[serde(rename = "pipeline_kind")]
+    pub pipeline_kind: PipelineKind,
+    #[serde(rename = "pipeline_version")]
+    pub pipeline_version: String,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "stage_vocabulary")]
+    pub stage_vocabulary: Vec<String>,
+}
+
+/// A generic replayable run memento.
+///
+/// Locked JCS key order:
+///   input_cids, output_cids, pipeline_cid, plugin_registry_cid,
+///   predecessor_run_cids, provenance_cid, stage_receipt_cids, verdict
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunMemento {
+    #[serde(rename = "input_cids")]
+    pub input_cids: Vec<String>,
+    #[serde(rename = "output_cids")]
+    pub output_cids: Vec<String>,
+    #[serde(rename = "pipeline_cid")]
+    pub pipeline_cid: String,
+    #[serde(rename = "plugin_registry_cid")]
+    pub plugin_registry_cid: String,
+    #[serde(rename = "predecessor_run_cids")]
+    pub predecessor_run_cids: Vec<String>,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    #[serde(rename = "stage_receipt_cids")]
+    pub stage_receipt_cids: Vec<String>,
+    pub verdict: RunVerdict,
+}
+
+/// Generic validation failures for `RunMemento` and `PipelineMemento`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationError {
+    /// The run does not provide one stage receipt CID per pipeline stage.
+    StageReceiptLengthMismatch { expected: usize, actual: usize },
+    /// A pipeline / run array declared `[+ ...]` in the spec is empty.
+    /// `field` names which array.
+    EmptyRequiredArray { field: &'static str },
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StageReceiptLengthMismatch { expected, actual } => write!(
+                f,
+                "stage_receipt_cids length mismatch: expected {expected}, got {actual}"
+            ),
+            Self::EmptyRequiredArray { field } => write!(
+                f,
+                "{field} is empty (spec §1 CDDL requires [+ ...] non-empty)"
+            ),
+        }
+    }
+}
+
 impl std::error::Error for InvalidReceiptError {}
 
 impl ObligationReceiptMemento {
@@ -3468,7 +3649,6 @@ impl ObligationReceiptMemento {
                 return Err(InvalidReceiptError::UnknownReceiptKind(other.to_string()));
             }
         }
-
         Ok(())
     }
 
@@ -3507,6 +3687,78 @@ impl ObligationReceiptMemento {
             receipt_kind: self.receipt_kind.clone(),
             verdict: self.verdict.clone(),
         }
+    }
+}
+
+impl std::error::Error for ValidationError {}
+
+impl PipelineMemento {
+    /// Check load-time invariants per spec §1.1.
+    ///
+    /// All four arrays are declared `[+ ...]` in the CDDL:
+    /// `accepted_input_kinds`, `emitted_output_kinds`, `failure_kinds`,
+    /// `stage_vocabulary`. An empty pipeline cannot accept any input,
+    /// emit any output, fail in any declared way, or run any stage; it
+    /// is not a valid pipeline declaration.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.accepted_input_kinds.is_empty() {
+            return Err(ValidationError::EmptyRequiredArray {
+                field: "accepted_input_kinds",
+            });
+        }
+        if self.emitted_output_kinds.is_empty() {
+            return Err(ValidationError::EmptyRequiredArray {
+                field: "emitted_output_kinds",
+            });
+        }
+        if self.failure_kinds.is_empty() {
+            return Err(ValidationError::EmptyRequiredArray {
+                field: "failure_kinds",
+            });
+        }
+        if self.stage_vocabulary.is_empty() {
+            return Err(ValidationError::EmptyRequiredArray {
+                field: "stage_vocabulary",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl RunMemento {
+    /// Validate generic run shape against the resolved pipeline vocabulary.
+    ///
+    /// This substrate method only checks invariants available from the two
+    /// mementos themselves. CID resolution, plugin registry checks, stage
+    /// receipt body checks, and replay are higher-layer responsibilities.
+    ///
+    /// Enforces:
+    /// 1. The pipeline itself validates (non-empty required arrays).
+    /// 2. `input_cids` is non-empty (spec §1.2 CDDL `[+ cid]`).
+    /// 3. `stage_receipt_cids` is non-empty (spec §1.2 CDDL `[+ cid]`).
+    /// 4. `stage_receipt_cids.len() == pipeline.stage_vocabulary.len()`.
+    pub fn validate(&self, pipeline: &PipelineMemento) -> Result<(), ValidationError> {
+        pipeline.validate()?;
+
+        if self.input_cids.is_empty() {
+            return Err(ValidationError::EmptyRequiredArray {
+                field: "input_cids",
+            });
+        }
+        if self.stage_receipt_cids.is_empty() {
+            return Err(ValidationError::EmptyRequiredArray {
+                field: "stage_receipt_cids",
+            });
+        }
+
+        let expected = pipeline.stage_vocabulary.len();
+        let actual = self.stage_receipt_cids.len();
+
+        if actual != expected {
+            return Err(ValidationError::StageReceiptLengthMismatch { expected, actual });
+        }
+
+        Ok(())
     }
 }
 
@@ -3790,4 +4042,8 @@ mod composition_refusal_tests {
 
 // ============================================================
 // End manual extension block -- CompositionRefusalMemento
+// ============================================================
+
+// ============================================================
+// End manual extension block -- PipelineMemento and RunMemento (#799)
 // ============================================================
