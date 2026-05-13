@@ -14,6 +14,7 @@
 //   - Java output carries contract annotation syntax (contract-annotated demo)
 //   - gaps.json records v0-capability-gap and v0-orp-delegation-gap entries
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -51,6 +52,66 @@ fn copy_dir(src: &Path, dst: &Path) {
     }
 }
 
+fn copy_fixture_with_bind_lift_manifest() -> PathBuf {
+    let root = copy_fixture_to_temp();
+    let kit_path = root.join("bind-lift-kit.py");
+    let shape_cid = format!("blake3-512:{}", "0".repeat(128));
+    let script = format!(
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+SHAPE_CID = {shape_cid:?}
+
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method")
+    request_id = request.get("id")
+    if method == "initialize":
+        result = {{}}
+    elif method == "lift":
+        result = {{
+            "kind": "ir-document",
+            "diagnostics": [],
+            "ir": [{{
+                "kind": "bind-lift-entry",
+                "file": "src/account.rs",
+                "fn_name": "deposit",
+                "fn_line": 14,
+                "attr_pre": "amount > 0",
+                "attr_post": "out >= 0",
+                "concept_annotation": "deposit-then-balance",
+                "param_names": ["balance", "amount"],
+                "param_types": ["i64", "i64"],
+                "return_type": "i64",
+                "term_shape": {{"kind": "body", "stmts": [{{"kind": "opaque"}}]}},
+                "term_shape_cid": SHAPE_CID
+            }}]
+        }}
+    elif method == "shutdown":
+        result = {{}}
+    else:
+        print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "error": {{"message": "unknown method"}}}}), flush=True)
+        continue
+    print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "result": result}}), flush=True)
+    if method == "shutdown":
+        break
+"#
+    );
+    fs::write(&kit_path, script).expect("write bind lift kit");
+    let manifest_dir = root.join(".provekit").join("lift").join("rust");
+    fs::create_dir_all(&manifest_dir).expect("create lift manifest dir");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"test-bind-lift\"\ncommand = [\"python3\", \"{}\"]\n",
+            kit_path.display()
+        ),
+    )
+    .expect("write lift manifest");
+    root
+}
+
 fn bind_cmd(
     root: &Path,
     out: &Path,
@@ -75,6 +136,21 @@ fn bind_cmd(
         cmd.arg("--target-language").arg(lang);
     }
     cmd.output().expect("spawn provekit bind")
+}
+
+fn read_json_dir(dir: &Path) -> Vec<serde_json::Value> {
+    fs::read_dir(dir)
+        .unwrap_or_else(|err| panic!("read_dir({}): {err}", dir.display()))
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().map(|ext| ext == "json").unwrap_or(false))
+        .map(|entry| {
+            let path = entry.path();
+            serde_json::from_str(&fs::read_to_string(&path).unwrap_or_else(|err| {
+                panic!("read {}: {err}", path.display())
+            }))
+            .unwrap_or_else(|err| panic!("parse {}: {err}", path.display()))
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -293,6 +369,65 @@ fn bind_writes_site_mementos_index_and_gaps() {
             assert_eq!(m["kind"].as_str().unwrap_or(""), "concept-site", "memento kind must be concept-site");
         }
     }
+}
+
+#[test]
+fn bind_writes_evidence_and_compound_contracts() {
+    let root = copy_fixture_with_bind_lift_manifest();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "invisible", "monitor", None);
+    assert!(
+        result.status.success(),
+        "invisible+monitor should succeed\nstderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let evidence_dir = out.join("evidence");
+    assert!(evidence_dir.exists(), "evidence/ must be written");
+    let evidence_docs = read_json_dir(&evidence_dir);
+    assert!(
+        evidence_docs.iter().any(|doc| {
+            doc["kind"].as_str() == Some("evidence")
+                && doc["source_kind"].as_str() == Some("annotation")
+                && doc["extension_fields"]["role"].as_str() == Some("pre")
+        }),
+        "annotation precondition must be promoted to EvidenceMemento: {evidence_docs:?}"
+    );
+
+    let contracts_dir = out.join("contracts");
+    assert!(contracts_dir.exists(), "contracts/ must be written");
+    let contract_docs = read_json_dir(&contracts_dir);
+    let compound_cids: BTreeSet<String> = contract_docs
+        .iter()
+        .filter(|doc| doc["kind"].as_str() == Some("compound-contract"))
+        .filter_map(|doc| doc["cid"].as_str().map(str::to_string))
+        .collect();
+    assert!(
+        !compound_cids.is_empty(),
+        "bind must write CompoundContractMemento records: {contract_docs:?}"
+    );
+    assert!(
+        contract_docs.iter().any(|doc| {
+            doc["kind"].as_str() == Some("compound-contract")
+                && doc["evidences"]
+                    .as_array()
+                    .map(|evidences| !evidences.is_empty())
+                    .unwrap_or(false)
+        }),
+        "compound contracts must reference evidence CIDs: {contract_docs:?}"
+    );
+
+    let site_docs = read_json_dir(&out.join("sites"));
+    assert!(
+        site_docs.iter().any(|doc| {
+            doc["kind"].as_str() == Some("concept-site")
+                && doc["local_contract_cid"]
+                    .as_str()
+                    .map(|cid| compound_cids.contains(cid))
+                    .unwrap_or(false)
+        }),
+        "ConceptSiteMemento.local_contract_cid must point at a compound contract CID"
+    );
 }
 
 // ============================================================================
