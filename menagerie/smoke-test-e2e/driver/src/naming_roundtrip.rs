@@ -46,9 +46,7 @@ pub fn apply_human_naming(
     // pass.bindings's site_file is relative to the source root used by
     // the pass; pass 1 sources are the fixture root, so rewritten path
     // is rewritten/src/<basename>.
-    let basename = site_file
-        .strip_prefix("src/")
-        .unwrap_or(site_file.as_str());
+    let basename = site_file.strip_prefix("src/").unwrap_or(site_file.as_str());
     let target_path: PathBuf = rewritten_dir.join("src").join(basename);
 
     // Read, replace `// concept: <UNNAMED-CONCEPT-N>` with the human name.

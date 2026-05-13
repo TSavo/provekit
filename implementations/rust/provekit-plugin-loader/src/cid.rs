@@ -37,8 +37,14 @@ pub fn compute_plugin_cid(header: &PluginHeader) -> String {
         ("critical", Value::boolean(header.critical)),
         ("kind", Value::string(header.kind.clone())),
         ("protocol_versions", Value::array(pv_values)),
-        ("provenance_cid", Value::string(header.provenance_cid.clone())),
-        ("schemaVersion", Value::string(header.schema_version.clone())),
+        (
+            "provenance_cid",
+            Value::string(header.provenance_cid.clone()),
+        ),
+        (
+            "schemaVersion",
+            Value::string(header.schema_version.clone()),
+        ),
         ("version", Value::string(header.version.clone())),
     ]);
 
@@ -48,7 +54,10 @@ pub fn compute_plugin_cid(header: &PluginHeader) -> String {
 /// Compute the failure-memento CID per §8.3.
 pub fn compute_failure_cid(header: &PluginLoadFailureMementoHeader) -> String {
     let input_v = Value::object([
-        ("declared_source", Value::string(header.declared_source.clone())),
+        (
+            "declared_source",
+            Value::string(header.declared_source.clone()),
+        ),
         ("failure_at", Value::string(header.failure_at.clone())),
         ("kind", Value::string("plugin-load-failure".to_string())),
         ("plugin_kind", Value::string(header.plugin_kind.clone())),
@@ -136,7 +145,10 @@ pub fn compute_registry_cid(header: &PluginRegistryMementoHeader) -> String {
     // JCS key order: built_in_count, failures, kind, load_order, loaded,
     //                runtime_protocol_versions, schemaVersion, sealed_at
     let input_v = Value::object([
-        ("built_in_count", Value::integer(header.built_in_count as i64)),
+        (
+            "built_in_count",
+            Value::integer(header.built_in_count as i64),
+        ),
         ("failures", Value::array(failures_v)),
         ("kind", Value::string("plugin-registry".to_string())),
         ("load_order", Value::array(load_order_v)),
@@ -213,5 +225,4 @@ mod tests {
         assert_eq!(c1, c2);
         assert!(c1.starts_with("blake3-512:"));
     }
-
 }

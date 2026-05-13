@@ -304,5 +304,9 @@ fn classify_matches_section_4_table() {
 fn occurrence_kind_rejects_multi_colon() {
     // Spec: extension labels are `<namespace>:<kind>` with EXACTLY one colon.
     let result: Result<OccurrenceKind, _> = serde_json::from_str("\"a:b:c\"");
-    assert!(result.is_err(), "multi-colon should fail closed, got {:?}", result);
+    assert!(
+        result.is_err(),
+        "multi-colon should fail closed, got {:?}",
+        result
+    );
 }

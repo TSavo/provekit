@@ -1292,7 +1292,7 @@ fn apply_canonical_rewrite(
 ) -> Vec<String> {
     let _ = mode; // The realize plugin owns mode-aware emission; bind passes
                   // concept_name and lets the kit decide how to annotate.
-    // Group bindings by file.
+                  // Group bindings by file.
     let mut by_file: BTreeMap<String, Vec<&BindingRecord>> = BTreeMap::new();
     for b in &result.bindings {
         by_file.entry(b.site_file.clone()).or_default().push(b);
@@ -1315,7 +1315,9 @@ fn apply_canonical_rewrite(
         // Language-neutral file header. Per-language pre/post-amble (e.g.
         // Go `package main`, PHP `<?php`) is the realize kit's
         // responsibility under federation by construction.
-        chunks.push(format!("// canonical rewrite: {rel_file} -> {target_lang}\n"));
+        chunks.push(format!(
+            "// canonical rewrite: {rel_file} -> {target_lang}\n"
+        ));
 
         for b in bindings {
             let concept_name = name_for_annotation(&result.concepts[b.concept_idx].name);

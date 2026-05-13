@@ -1288,18 +1288,22 @@ impl ParametricRealizationMemento {
             self.type_variables.iter().map(String::as_str).collect();
         for slot in &self.required_sort_morphism_slots {
             if !known.contains(slot.source_type_variable.as_str()) {
-                return Err(ParametricRealizationError::SlotReferencesUnknownTypeVariable {
-                    slot_name: slot.slot_name.clone(),
-                    variable: slot.source_type_variable.clone(),
-                    side: "source",
-                });
+                return Err(
+                    ParametricRealizationError::SlotReferencesUnknownTypeVariable {
+                        slot_name: slot.slot_name.clone(),
+                        variable: slot.source_type_variable.clone(),
+                        side: "source",
+                    },
+                );
             }
             if !known.contains(slot.target_type_variable.as_str()) {
-                return Err(ParametricRealizationError::SlotReferencesUnknownTypeVariable {
-                    slot_name: slot.slot_name.clone(),
-                    variable: slot.target_type_variable.clone(),
-                    side: "target",
-                });
+                return Err(
+                    ParametricRealizationError::SlotReferencesUnknownTypeVariable {
+                        slot_name: slot.slot_name.clone(),
+                        variable: slot.target_type_variable.clone(),
+                        side: "target",
+                    },
+                );
             }
         }
         Ok(())
@@ -2064,9 +2068,7 @@ impl OccurrenceKind {
                 // colon and both segments non-empty. Bare leading/trailing
                 // colons (`:kind`, `acme:`) and multi-colon strings
                 // (`a:b:c`) are malformed and not extensions.
-                Some((ns, kind))
-                    if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') =>
-                {
+                Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
                     Some(OccurrenceKind::Extension(extension.to_string()))
                 }
                 _ => None,
@@ -3001,9 +3003,7 @@ impl TryFrom<String> for CatalogKind {
                 Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
                     Ok(CatalogKind::Namespaced(s))
                 }
-                _ => Err(CatalogKindError {
-                    raw: s,
-                }),
+                _ => Err(CatalogKindError { raw: s }),
             },
         }
     }
@@ -4102,7 +4102,6 @@ pub struct CompositionRefusalEnvelope {
     pub signature: String,
     pub signer: String,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockingEffect {

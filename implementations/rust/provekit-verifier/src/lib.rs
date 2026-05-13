@@ -51,10 +51,12 @@ pub mod solvers;
 pub mod types;
 
 pub use domain_claim_verifier::{
-    verify_claim, verify_claims, ClaimOutcome, ClaimReport, TrichotomyError,
-    validate_trichotomy,
+    validate_trichotomy, verify_claim, verify_claims, ClaimOutcome, ClaimReport, TrichotomyError,
 };
-pub use runner::{Runner, RunnerConfig, SolverStats, TierStats};
+pub use runner::{
+    ProofRunArtifact, ProofRunArtifactError, Runner, RunnerConfig, SolverStats, TierStats,
+    VERIFIER_STAGE_VOCABULARY,
+};
 pub use solvers::{
     DispatchConfig, PortfolioMode, SolveResult, Solver, SolverConfig, SolverHandle, SolverPlan,
     SolversConfig, StubSolver, SubprocessSolver,

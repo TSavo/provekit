@@ -18,9 +18,9 @@ use std::collections::HashMap;
 
 use libprovekit::core::types::{Cid, Term};
 use libprovekit::wp::{wp, OpContractInfo, OpContractResolver};
-use provekit_ir_types::IrFormula;
 use provekit_ir_symbolic::convert::formula_to_ir;
 use provekit_ir_symbolic::parse_expr::parse_expr;
+use provekit_ir_types::IrFormula;
 
 use crate::algebra::TermShape;
 use crate::{ContractOrigin, DischargeVerdict};
@@ -56,9 +56,7 @@ pub fn wp_rule_for_shape(_shape_cid: &str, shape: &TermShape) -> Option<WpRule> 
             // us choosing the post for the specific function. The rule
             // is registered once and fires structurally.
             pre: Some("max_attempts >= 0".into()),
-            post: Some(
-                "(out == true) || (out == false)".into(),
-            ),
+            post: Some("(out == true) || (out == false)".into()),
         }),
         "guard-then-commit" => Some(WpRule {
             id: "wp_rule.guard-then-commit.v0".into(),
@@ -180,7 +178,8 @@ pub fn discharge_for_shape(shape: &TermShape, origin: &ContractOrigin) -> Discha
             reason: "no contract recovered".into(),
         },
         (ContractOrigin::AttributeLift, _) => DischargeVerdict::LoudlyBoundedLossy {
-            loss: "no wp rule for annotation-lifted contract (structural discharge not attempted)".into(),
+            loss: "no wp rule for annotation-lifted contract (structural discharge not attempted)"
+                .into(),
         },
         (ContractOrigin::TestLift, _) => DischargeVerdict::LoudlyBoundedLossy {
             loss: "no wp rule for test-lifted contract (structural discharge not attempted)".into(),
@@ -211,11 +210,9 @@ pub fn discharge_for_shape(shape: &TermShape, origin: &ContractOrigin) -> Discha
                     // encoding (Stub 1) but the evaluator path itself is live.
                     DischargeVerdict::Exact
                 }
-                Err(libprovekit::wp::WpError::Refused(r)) => {
-                    DischargeVerdict::LoudlyBoundedLossy {
-                        loss: format!("wp-refused: {}", r),
-                    }
-                }
+                Err(libprovekit::wp::WpError::Refused(r)) => DischargeVerdict::LoudlyBoundedLossy {
+                    loss: format!("wp-refused: {}", r),
+                },
                 Err(e) => DischargeVerdict::Refuse {
                     reason: format!("wp-error: {}", e),
                 },

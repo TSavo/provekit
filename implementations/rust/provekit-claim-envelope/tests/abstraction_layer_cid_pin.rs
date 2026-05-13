@@ -110,7 +110,10 @@ const DYNAMIC_DISPATCH_CID: &str =
 fn dynamic_dispatch_cid_stable() {
     let cid = cid_of_json(DYNAMIC_DISPATCH_CANONICAL);
     println!("concept:dynamic-dispatch CID = {cid}");
-    assert_eq!(cid, DYNAMIC_DISPATCH_CID, "concept:dynamic-dispatch CID must be pinned");
+    assert_eq!(
+        cid, DYNAMIC_DISPATCH_CID,
+        "concept:dynamic-dispatch CID must be pinned"
+    );
 }
 
 #[test]
@@ -131,7 +134,10 @@ const DOUBLE_DISPATCH_CID: &str =
 fn double_dispatch_cid_stable() {
     let cid = cid_of_json(DOUBLE_DISPATCH_CANONICAL);
     println!("concept:double-dispatch CID = {cid}");
-    assert_eq!(cid, DOUBLE_DISPATCH_CID, "concept:double-dispatch CID must be pinned");
+    assert_eq!(
+        cid, DOUBLE_DISPATCH_CID,
+        "concept:double-dispatch CID must be pinned"
+    );
 }
 
 #[test]
@@ -279,19 +285,30 @@ fn loss_record_dim_count(canonical: &str) -> usize {
 /// Count the args array of the structural_divergence formula.
 fn sd_arg_count(canonical: &str) -> usize {
     let j: Json = serde_json::from_str(canonical).expect("parse");
-    let sd = j.pointer("/loss_record/structural_divergence").expect("structural_divergence present");
+    let sd = j
+        .pointer("/loss_record/structural_divergence")
+        .expect("structural_divergence present");
     array_len(sd.pointer("/args").unwrap_or(&Json::Null))
 }
 
 #[test]
 fn projection_distance_law_dimension_counts_strict_ordering() {
-    let c_dims  = loss_record_dim_count(DD_C11_CANONICAL);
-    let j_dims  = loss_record_dim_count(DD_JAVA_CANONICAL);
+    let c_dims = loss_record_dim_count(DD_C11_CANONICAL);
+    let j_dims = loss_record_dim_count(DD_JAVA_CANONICAL);
     let rb_dims = loss_record_dim_count(DD_RUBY_CANONICAL);
 
-    assert_eq!(c_dims, 3, "C MUST have 3 loss dimensions (structural + domain + ub)");
-    assert_eq!(j_dims, 2, "Java MUST have 2 loss dimensions (structural + domain)");
-    assert_eq!(rb_dims, 1, "Ruby MUST have 1 loss dimension (structural only)");
+    assert_eq!(
+        c_dims, 3,
+        "C MUST have 3 loss dimensions (structural + domain + ub)"
+    );
+    assert_eq!(
+        j_dims, 2,
+        "Java MUST have 2 loss dimensions (structural + domain)"
+    );
+    assert_eq!(
+        rb_dims, 1,
+        "Ruby MUST have 1 loss dimension (structural only)"
+    );
 
     assert!(
         c_dims > j_dims,
@@ -305,13 +322,22 @@ fn projection_distance_law_dimension_counts_strict_ordering() {
 
 #[test]
 fn projection_distance_law_structural_divergence_complexity_strict_ordering() {
-    let c_args  = sd_arg_count(DD_C11_CANONICAL);
-    let j_args  = sd_arg_count(DD_JAVA_CANONICAL);
+    let c_args = sd_arg_count(DD_C11_CANONICAL);
+    let j_args = sd_arg_count(DD_JAVA_CANONICAL);
     let rb_args = sd_arg_count(DD_RUBY_CANONICAL);
 
-    assert_eq!(c_args,  3, "C structural_divergence MUST have 3 args (2 index + 1 cast)");
-    assert_eq!(j_args,  2, "Java structural_divergence MUST have 2 args (2 itab-method)");
-    assert_eq!(rb_args, 1, "Ruby structural_divergence MUST have 1 arg (1 raise)");
+    assert_eq!(
+        c_args, 3,
+        "C structural_divergence MUST have 3 args (2 index + 1 cast)"
+    );
+    assert_eq!(
+        j_args, 2,
+        "Java structural_divergence MUST have 2 args (2 itab-method)"
+    );
+    assert_eq!(
+        rb_args, 1,
+        "Ruby structural_divergence MUST have 1 arg (1 raise)"
+    );
 
     assert!(
         c_args > j_args,
@@ -325,8 +351,8 @@ fn projection_distance_law_structural_divergence_complexity_strict_ordering() {
 
 #[test]
 fn projection_distance_law_c_has_ub_introduction_others_do_not() {
-    let c_j: Json  = serde_json::from_str(DD_C11_CANONICAL).expect("parse c11");
-    let j_j: Json  = serde_json::from_str(DD_JAVA_CANONICAL).expect("parse java");
+    let c_j: Json = serde_json::from_str(DD_C11_CANONICAL).expect("parse c11");
+    let j_j: Json = serde_json::from_str(DD_JAVA_CANONICAL).expect("parse java");
     let rb_j: Json = serde_json::from_str(DD_RUBY_CANONICAL).expect("parse ruby");
 
     assert!(
@@ -403,13 +429,27 @@ fn scan_for_dup_keys(json_str: &str) -> Result<(), String> {
             write!(f, "any JSON value")
         }
 
-        fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> { Ok(()) }
-        fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> { Ok(()) }
-        fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> { Ok(()) }
-        fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<(), E> { Ok(()) }
-        fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> { Ok(()) }
-        fn visit_none<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
-        fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
+        fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_none<E: serde::de::Error>(self) -> Result<(), E> {
+            Ok(())
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> {
+            Ok(())
+        }
 
         fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
             d.deserialize_any(AnyVisitor)

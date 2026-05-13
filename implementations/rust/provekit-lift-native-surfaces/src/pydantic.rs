@@ -136,7 +136,13 @@ pub fn lift_pydantic_file(source: &str, source_cid: &str) -> Vec<EvidenceMemento
                     v.push(int_const(n));
                     v
                 });
-                build_memento(10000, ext, predicate, SourceKind::NativeSurface, locator.clone())
+                build_memento(
+                    10000,
+                    ext,
+                    predicate,
+                    SourceKind::NativeSurface,
+                    locator.clone(),
+                )
             };
 
             if let Some(n) = args.ge {
@@ -248,7 +254,10 @@ mod tests {
     fn test_pydantic_field_ge_recognition() {
         let src = "    age: int = Field(ge=0, le=120)\n";
         let mementos = lift_pydantic_file(src, FAKE_CID);
-        assert!(!mementos.is_empty(), "expected mementos for Field(ge=, le=)");
+        assert!(
+            !mementos.is_empty(),
+            "expected mementos for Field(ge=, le=)"
+        );
         assert_eq!(mementos[0].source_kind, SourceKind::NativeSurface);
         assert_eq!(mementos[0].kind, "evidence");
     }
@@ -286,7 +295,9 @@ mod tests {
             let back: EvidenceMemento = serde_json::from_str(&json).expect("must deserialize");
             assert_eq!(back.cid, m.cid);
             assert!(back.extension_fields.contains_key("surface_name"));
-            assert!(back.extension_fields.contains_key("target_function_or_field"));
+            assert!(back
+                .extension_fields
+                .contains_key("target_function_or_field"));
             assert!(back.extension_fields.contains_key("original_text"));
         }
     }
@@ -312,14 +323,12 @@ mod tests {
         // Both should wrap in len(self)
         for m in &mementos {
             match &m.predicate {
-                IrFormula::Atomic { args, .. } => {
-                    match &args[0] {
-                        provekit_ir_types::IrTerm::Ctor { name, .. } => {
-                            assert_eq!(name, "len");
-                        }
-                        other => panic!("expected Ctor(len, ...), got {:?}", other),
+                IrFormula::Atomic { args, .. } => match &args[0] {
+                    provekit_ir_types::IrTerm::Ctor { name, .. } => {
+                        assert_eq!(name, "len");
                     }
-                }
+                    other => panic!("expected Ctor(len, ...), got {:?}", other),
+                },
                 other => panic!("expected Atomic, got {:?}", other),
             }
         }

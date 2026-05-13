@@ -2146,6 +2146,7 @@ dependencies = [
 name = "provekit-verifier"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "libprovekit",
  "provekit-canonicalizer",
  "provekit-claim-envelope",

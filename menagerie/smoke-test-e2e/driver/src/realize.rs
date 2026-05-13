@@ -27,11 +27,7 @@ use std::path::Path;
 
 use crate::{BindingRecord, ConceptRecord, ContractOrigin, PassResult, WitnessRecord};
 
-pub fn write_rewritten(
-    fixture_root: &Path,
-    rewritten_dir: &Path,
-    pass: &PassResult,
-) {
+pub fn write_rewritten(fixture_root: &Path, rewritten_dir: &Path, pass: &PassResult) {
     // Group bindings by file so we rewrite each source once.
     let mut by_file: BTreeMap<String, Vec<&BindingRecord>> = BTreeMap::new();
     for b in &pass.bindings {
@@ -81,8 +77,14 @@ pub fn write_rewritten(
     if cargo_in.exists() {
         if let Ok(orig) = fs::read_to_string(&cargo_in) {
             let modified = orig
-                .replace("name = \"smoke-test-e2e\"", "name = \"smoke-test-e2e-rewritten\"")
-                .replace("name = \"smoke_test_e2e\"", "name = \"smoke_test_e2e_rewritten\"");
+                .replace(
+                    "name = \"smoke-test-e2e\"",
+                    "name = \"smoke-test-e2e-rewritten\"",
+                )
+                .replace(
+                    "name = \"smoke_test_e2e\"",
+                    "name = \"smoke_test_e2e_rewritten\"",
+                );
             let _ = fs::write(rewritten_dir.join("Cargo.toml"), modified);
         }
     }
@@ -92,7 +94,9 @@ pub fn write_rewritten(
 
     for (rel_file, bindings) in &by_file {
         let in_path = fixture_root.join(rel_file);
-        let Ok(orig) = fs::read_to_string(&in_path) else { continue };
+        let Ok(orig) = fs::read_to_string(&in_path) else {
+            continue;
+        };
 
         let header = format!(
             "// rewritten by smoke-test-e2e-driver pass {}\n//\n// Every contract attribute and concept annotation below was emitted\n// by the substrate. None were written by the driver author. See\n// report.md \u{00A7}8 for the per-line origin trace.\n\n",
@@ -100,7 +104,12 @@ pub fn write_rewritten(
         );
 
         let mut rewritten = header.clone();
-        rewritten.push_str(&rewrite_source(&orig, bindings, &pass.concepts, &witness_by_shape));
+        rewritten.push_str(&rewrite_source(
+            &orig,
+            bindings,
+            &pass.concepts,
+            &witness_by_shape,
+        ));
 
         let out_path = if rel_file.starts_with("src/") {
             src_out_dir.join(rel_file.trim_start_matches("src/"))
@@ -174,7 +183,11 @@ fn rewrite_source(
                 }
 
                 let concept = &concepts[b.concept_idx];
-                out_lines.push(format!("{}// concept: {}", indent, name_for_annotation(&concept.name)));
+                out_lines.push(format!(
+                    "{}// concept: {}",
+                    indent,
+                    name_for_annotation(&concept.name)
+                ));
 
                 // Origin trace as a comment so the rewritten output is
                 // self-describing.
@@ -253,7 +266,11 @@ fn parse_fn_name(line: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn name_for_annotation(name: &str) -> String {

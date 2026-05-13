@@ -7,8 +7,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{
-    EffectOccurrence, InvariantViolation, ObservationWrapperMemento, OccurrenceKind,
-    OccurrenceRole,
+    EffectOccurrence, InvariantViolation, ObservationWrapperMemento, OccurrenceKind, OccurrenceRole,
 };
 use serde_json::{json, Value as Json};
 

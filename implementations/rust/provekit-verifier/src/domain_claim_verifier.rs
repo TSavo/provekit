@@ -100,49 +100,81 @@ pub enum TrichotomyError {
 impl std::fmt::Display for TrichotomyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ExactWithLoss { kit_cid, input_cid, truth_cid } => write!(
+            Self::ExactWithLoss {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=exact but loss_record is \
                  non-empty (spec §1.2 requires loss_record empty for exact). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::ExactMissingReceipt { kit_cid, input_cid, truth_cid } => write!(
+            Self::ExactMissingReceipt {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=exact but \
                  discharge_receipt_cid is absent (spec §1.2 requires it present for exact). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::ExactWithRefusalReason { kit_cid, input_cid, truth_cid } => write!(
+            Self::ExactWithRefusalReason {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=exact but \
                  refusal_reason is present (spec §1.2 requires it absent for exact). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::LossyWithoutLoss { kit_cid, input_cid, truth_cid } => write!(
+            Self::LossyWithoutLoss {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=loudly-bounded-lossy but \
                  loss_record is empty (spec §1.2 requires it non-empty for loudly-bounded-lossy). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::LossyMissingReceipt { kit_cid, input_cid, truth_cid } => write!(
+            Self::LossyMissingReceipt {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=loudly-bounded-lossy but \
                  discharge_receipt_cid is absent (spec §1.2 requires it present). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::LossyWithRefusalReason { kit_cid, input_cid, truth_cid } => write!(
+            Self::LossyWithRefusalReason {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=loudly-bounded-lossy but \
                  refusal_reason is present (spec §1.2 requires it absent). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::RefuseWithReceipt { kit_cid, input_cid, truth_cid } => write!(
+            Self::RefuseWithReceipt {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=refuse but \
                  discharge_receipt_cid is present (spec §1.2 requires it absent for refuse). \
                  k={kit_cid} I={input_cid} t={truth_cid}"
             ),
-            Self::RefuseMissingReason { kit_cid, input_cid, truth_cid } => write!(
+            Self::RefuseMissingReason {
+                kit_cid,
+                input_cid,
+                truth_cid,
+            } => write!(
                 f,
                 "trichotomy violation: k(I)=t claim has kind=refuse but \
                  refusal_reason is absent (spec §1.2 requires it present for refuse). \
@@ -390,7 +422,9 @@ pub fn verify_claims(claims: &[DomainClaim]) -> ClaimReport {
                 truth_cid,
                 discharge_receipt_cid,
             } => {
-                report.exact.push((kit_cid, input_cid, truth_cid, discharge_receipt_cid));
+                report
+                    .exact
+                    .push((kit_cid, input_cid, truth_cid, discharge_receipt_cid));
             }
             ClaimOutcome::LoudlyBoundedLossy {
                 kit_cid,
@@ -399,7 +433,13 @@ pub fn verify_claims(claims: &[DomainClaim]) -> ClaimReport {
                 discharge_receipt_cid,
                 loss_record,
             } => {
-                report.lossy.push((kit_cid, input_cid, truth_cid, discharge_receipt_cid, loss_record));
+                report.lossy.push((
+                    kit_cid,
+                    input_cid,
+                    truth_cid,
+                    discharge_receipt_cid,
+                    loss_record,
+                ));
             }
             ClaimOutcome::Refuse {
                 kit_cid,
@@ -407,7 +447,9 @@ pub fn verify_claims(claims: &[DomainClaim]) -> ClaimReport {
                 truth_cid,
                 refusal_reason,
             } => {
-                report.gaps.push((kit_cid, input_cid, truth_cid, refusal_reason));
+                report
+                    .gaps
+                    .push((kit_cid, input_cid, truth_cid, refusal_reason));
             }
             ClaimOutcome::Invalid(e) => {
                 report.invalid.push(e);
@@ -585,7 +627,10 @@ mod tests {
     fn exact_with_loss_is_invalid() {
         let mut v = exact_verdict();
         let mut map = BTreeMap::new();
-        map.insert("domain_narrowing".to_string(), IrFormula::And { operands: vec![] });
+        map.insert(
+            "domain_narrowing".to_string(),
+            IrFormula::And { operands: vec![] },
+        );
         v.loss_record = LossRecord(map);
         let claim = make_claim(v);
         let report = verify_claims(std::slice::from_ref(&claim));
@@ -605,7 +650,10 @@ mod tests {
         let report = verify_claims(std::slice::from_ref(&claim));
         assert_eq!(report.invalid.len(), 1);
         assert!(
-            matches!(&report.invalid[0], TrichotomyError::ExactMissingReceipt { .. }),
+            matches!(
+                &report.invalid[0],
+                TrichotomyError::ExactMissingReceipt { .. }
+            ),
             "wrong error variant: {:?}",
             report.invalid[0]
         );
@@ -619,7 +667,10 @@ mod tests {
         let report = verify_claims(std::slice::from_ref(&claim));
         assert_eq!(report.invalid.len(), 1);
         assert!(
-            matches!(&report.invalid[0], TrichotomyError::ExactWithRefusalReason { .. }),
+            matches!(
+                &report.invalid[0],
+                TrichotomyError::ExactWithRefusalReason { .. }
+            ),
             "wrong error variant: {:?}",
             report.invalid[0]
         );
@@ -647,7 +698,10 @@ mod tests {
         let report = verify_claims(std::slice::from_ref(&claim));
         assert_eq!(report.invalid.len(), 1);
         assert!(
-            matches!(&report.invalid[0], TrichotomyError::LossyMissingReceipt { .. }),
+            matches!(
+                &report.invalid[0],
+                TrichotomyError::LossyMissingReceipt { .. }
+            ),
             "wrong error variant: {:?}",
             report.invalid[0]
         );
@@ -665,7 +719,10 @@ mod tests {
         let report = verify_claims(std::slice::from_ref(&claim));
         assert_eq!(report.invalid.len(), 1);
         assert!(
-            matches!(&report.invalid[0], TrichotomyError::RefuseWithReceipt { .. }),
+            matches!(
+                &report.invalid[0],
+                TrichotomyError::RefuseWithReceipt { .. }
+            ),
             "wrong error variant: {:?}",
             report.invalid[0]
         );
@@ -679,7 +736,10 @@ mod tests {
         let report = verify_claims(std::slice::from_ref(&claim));
         assert_eq!(report.invalid.len(), 1);
         assert!(
-            matches!(&report.invalid[0], TrichotomyError::RefuseMissingReason { .. }),
+            matches!(
+                &report.invalid[0],
+                TrichotomyError::RefuseMissingReason { .. }
+            ),
             "wrong error variant: {:?}",
             report.invalid[0]
         );
@@ -692,15 +752,25 @@ mod tests {
     #[test]
     fn loss_records_aggregated_in_lossy_bucket() {
         let mut map = BTreeMap::new();
-        map.insert("domain_narrowing".to_string(), IrFormula::And { operands: vec![] });
-        map.insert("ub_introduction".to_string(), IrFormula::And { operands: vec![] });
+        map.insert(
+            "domain_narrowing".to_string(),
+            IrFormula::And { operands: vec![] },
+        );
+        map.insert(
+            "ub_introduction".to_string(),
+            IrFormula::And { operands: vec![] },
+        );
         let mut v = lossy_verdict();
         v.loss_record = LossRecord(map.clone());
         let claim = make_claim(v);
         let report = verify_claims(std::slice::from_ref(&claim));
         assert_eq!(report.lossy.len(), 1);
         let (_, _, _, _, lr) = &report.lossy[0];
-        assert_eq!(lr.0.len(), 2, "both loss dimensions should be in the record");
+        assert_eq!(
+            lr.0.len(),
+            2,
+            "both loss dimensions should be in the record"
+        );
         assert!(lr.0.contains_key("domain_narrowing"));
         assert!(lr.0.contains_key("ub_introduction"));
     }
@@ -733,10 +803,7 @@ mod tests {
 
     #[test]
     fn all_discharged_true_when_no_gaps_or_invalid() {
-        let claims = vec![
-            make_claim(exact_verdict()),
-            make_claim(lossy_verdict()),
-        ];
+        let claims = vec![make_claim(exact_verdict()), make_claim(lossy_verdict())];
         let report = verify_claims(&claims);
         assert!(report.all_discharged());
     }
@@ -745,10 +812,7 @@ mod tests {
     fn invalid_claim_sets_all_discharged_false() {
         let mut v = exact_verdict();
         v.discharge_receipt_cid = None; // trigger ExactMissingReceipt
-        let claims = vec![
-            make_claim(exact_verdict()),
-            make_claim(v),
-        ];
+        let claims = vec![make_claim(exact_verdict()), make_claim(v)];
         let report = verify_claims(&claims);
         assert!(!report.all_discharged());
         assert_eq!(report.invalid.len(), 1);
@@ -825,7 +889,10 @@ mod tests {
             CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge,
         };
         let mut map = BTreeMap::new();
-        map.insert("domain_narrowing".to_string(), IrFormula::And { operands: vec![] });
+        map.insert(
+            "domain_narrowing".to_string(),
+            IrFormula::And { operands: vec![] },
+        );
 
         let m = ConceptSiteMemento {
             concept_cid: "blake3-512:tttt000000000000000000000000000000000000000000000000000000000000\
@@ -945,22 +1012,28 @@ mod tests {
 
     #[test]
     fn bare_fcm_returns_unbound_contract_error() {
-        use provekit_ir_types::{DomainClaimConversionError, IrFormula};
         use libprovekit::compose::{EffectSet, FunctionContractMemento, Locus};
         use provekit_ir_types::Sort;
+        use provekit_ir_types::{DomainClaimConversionError, IrFormula};
 
         let fcm = FunctionContractMemento {
             fn_name: "my_fn".to_string(),
             formals: vec![],
             formal_sorts: vec![],
             formal_regions: vec![],
-            return_sort: Sort::Primitive { name: "bool".to_string() },
+            return_sort: Sort::Primitive {
+                name: "bool".to_string(),
+            },
             return_region: None,
             pre: IrFormula::And { operands: vec![] },
             post: IrFormula::And { operands: vec![] },
             body_cid: None,
             effects: EffectSet::empty(),
-            locus: Locus { file: Some("test.rs".to_string()), line: 1, col: 0 },
+            locus: Locus {
+                file: Some("test.rs".to_string()),
+                line: 1,
+                col: 0,
+            },
             canonical_bytes: vec![],
             cid: "blake3-512:000000".to_string(),
             auto_minted_mementos: vec![],

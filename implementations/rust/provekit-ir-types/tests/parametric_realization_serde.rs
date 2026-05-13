@@ -125,7 +125,9 @@ fn realization_plan_round_trips_and_recomputes_cid() {
 
 #[test]
 fn parametric_realization_rejects_empty_type_variables() {
-    use provekit_ir_types::{ParametricRealizationError, ParametricRealizationMemento, SlotDescriptor};
+    use provekit_ir_types::{
+        ParametricRealizationError, ParametricRealizationMemento, SlotDescriptor,
+    };
     let m = ParametricRealizationMemento {
         body_template_cids: vec![],
         concept_pattern: serde_json::json!({}),
@@ -141,7 +143,10 @@ fn parametric_realization_rejects_empty_type_variables() {
         target_pattern: serde_json::json!({}),
         type_variables: vec![],
     };
-    assert_eq!(m.validate(), Err(ParametricRealizationError::EmptyTypeVariables));
+    assert_eq!(
+        m.validate(),
+        Err(ParametricRealizationError::EmptyTypeVariables)
+    );
 }
 
 #[test]
@@ -166,7 +171,9 @@ fn parametric_realization_rejects_empty_required_slots() {
 
 #[test]
 fn parametric_realization_rejects_slot_referencing_unknown_type_variable() {
-    use provekit_ir_types::{ParametricRealizationError, ParametricRealizationMemento, SlotDescriptor};
+    use provekit_ir_types::{
+        ParametricRealizationError, ParametricRealizationMemento, SlotDescriptor,
+    };
     let m = ParametricRealizationMemento {
         body_template_cids: vec![],
         concept_pattern: serde_json::json!({}),
@@ -184,19 +191,19 @@ fn parametric_realization_rejects_slot_referencing_unknown_type_variable() {
     };
     assert_eq!(
         m.validate(),
-        Err(ParametricRealizationError::SlotReferencesUnknownTypeVariable {
-            slot_name: "s".to_string(),
-            variable: "UnknownU".to_string(),
-            side: "target",
-        })
+        Err(
+            ParametricRealizationError::SlotReferencesUnknownTypeVariable {
+                slot_name: "s".to_string(),
+                variable: "UnknownU".to_string(),
+                side: "target",
+            }
+        )
     );
 }
 
 #[test]
 fn realization_plan_validates_against_matching_realization() {
-    use provekit_ir_types::{
-        ParametricRealizationMemento, RealizationPlanMemento, SlotDescriptor,
-    };
+    use provekit_ir_types::{ParametricRealizationMemento, RealizationPlanMemento, SlotDescriptor};
     let realization = ParametricRealizationMemento {
         body_template_cids: vec![],
         concept_pattern: serde_json::json!({}),
@@ -231,7 +238,8 @@ fn realization_plan_validates_against_matching_realization() {
         sort_morphism_cids: vec!["blake3-512:m1".to_string(), "blake3-512:m2".to_string()],
         total_loss_record: serde_json::json!({}),
     };
-    plan.validate_against(&realization).expect("matching counts");
+    plan.validate_against(&realization)
+        .expect("matching counts");
 }
 
 #[test]
@@ -270,7 +278,9 @@ fn realization_plan_rejects_sort_morphism_count_mismatch() {
         ],
         total_loss_record: serde_json::json!({}),
     };
-    let err = plan.validate_against(&realization).expect_err("count mismatch");
+    let err = plan
+        .validate_against(&realization)
+        .expect_err("count mismatch");
     assert_eq!(
         err,
         RealizationPlanError::SortMorphismCountMismatch {

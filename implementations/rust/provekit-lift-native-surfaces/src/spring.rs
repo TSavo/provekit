@@ -85,10 +85,8 @@ fn re_negative_or_zero() -> &'static Regex {
 
 /// Extract `min=N` from a @Size attribute body.
 fn parse_size_attr(body: &str) -> (Option<i64>, Option<i64>) {
-    let re_min_attr =
-        Regex::new(r"min\s*=\s*(-?\d+)").unwrap();
-    let re_max_attr =
-        Regex::new(r"max\s*=\s*(-?\d+)").unwrap();
+    let re_min_attr = Regex::new(r"min\s*=\s*(-?\d+)").unwrap();
+    let re_max_attr = Regex::new(r"max\s*=\s*(-?\d+)").unwrap();
     let min = re_min_attr
         .captures(body)
         .and_then(|c| c[1].parse::<i64>().ok());
@@ -147,10 +145,7 @@ pub fn lift_spring_file(source: &str, source_cid: &str) -> Vec<EvidenceMemento> 
         if re_notnull().is_match(line) {
             let ext = native_ext("spring", &target, line.trim());
             // ≠(self, null)
-            let predicate = atomic(
-                "≠",
-                vec![var("self"), str_const("null")],
-            );
+            let predicate = atomic("≠", vec![var("self"), str_const("null")]);
             out.push(build_memento(
                 10000,
                 ext,
@@ -395,7 +390,9 @@ mod tests {
         assert_eq!(back.confidence_basis_points, 10000);
         // extension_fields must contain the three mandatory keys
         assert!(back.extension_fields.contains_key("surface_name"));
-        assert!(back.extension_fields.contains_key("target_function_or_field"));
+        assert!(back
+            .extension_fields
+            .contains_key("target_function_or_field"));
         assert!(back.extension_fields.contains_key("original_text"));
     }
 

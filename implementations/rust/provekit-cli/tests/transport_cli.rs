@@ -182,8 +182,11 @@ fn transport_go_source_file_refuses_with_no_lifter_message() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let src_dir = tempfile::tempdir().expect("temp source dir");
     let src = src_dir.path().join("example.go");
-    fs::write(&src, "package main\nfunc add(x, y int) int { return x + y }\n")
-        .expect("write example.go");
+    fs::write(
+        &src,
+        "package main\nfunc add(x, y int) int { return x + y }\n",
+    )
+    .expect("write example.go");
 
     let out_dir = tempfile::tempdir().expect("temp output dir");
     let output = Command::new(provekit_bin())
@@ -240,8 +243,7 @@ fn transport_go_term_json_to_concept_resolves_seq_morphism() {
         ]
     });
     let src = src_dir.path().join("go_seq.json");
-    fs::write(&src, serde_json::to_string_pretty(&term_json).unwrap())
-        .expect("write go_seq.json");
+    fs::write(&src, serde_json::to_string_pretty(&term_json).unwrap()).expect("write go_seq.json");
 
     let out_dir = tempfile::tempdir().expect("temp output dir");
     let output = Command::new(provekit_bin())
