@@ -498,6 +498,31 @@ pub struct RealizeRequest {
     pub param_types: Vec<String>,
     pub return_type: String,
     pub concept_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract: Option<RealizeContractPayload>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sugar_cids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sugar_plugins: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RealizeContractPayload {
+    pub concept_site_cid: String,
+    pub local_contract_cid: String,
+    pub origin: String,
+    pub discharge_verdict: String,
+    pub witnesses: Vec<RealizeContractWitness>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RealizeContractWitness {
+    pub role: String,
+    pub predicate: Value,
+    pub predicate_text: String,
+    pub source_kind: String,
 }
 
 #[derive(Debug, Clone)]
@@ -505,6 +530,14 @@ pub struct RealizedSource {
     pub extension: String,
     pub source: String,
     pub is_stub: bool,
+    pub emitted_artifact_cid: Option<String>,
+    pub observed_loss_record: Value,
+    pub used_sugars: Vec<Value>,
+    /// Raw `observation_wrapper_emission_record` from the kit response, present
+    /// when mode ∈ {witness, monitor, dispatcher} and the kit emitted a wrapper
+    /// FCM. Expected fields: wrapper_fcm_cid, observer_effects,
+    /// preservation_claim_cid.
+    pub observation_wrapper_emission_record: Option<Value>,
 }
 
 /// Dispatch a realize call for `target_lang`. Returns `Err(KitUnavailable)`
@@ -677,13 +710,7 @@ fn invoke_realize(
         .spawn()
         .map_err(|e| format!("spawn realize kit: {e}"))?;
 
-    let params = json!({
-        "function": request.function,
-        "params": request.params,
-        "param_types": request.param_types,
-        "return_type": request.return_type,
-        "concept_name": request.concept_name,
-    });
+    let params = realize_request_params(request);
     let req = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -747,11 +774,55 @@ fn invoke_realize(
         .and_then(Value::as_str)
         .map(str::to_string)
         .unwrap_or_else(|| extension_from_convention(target_lang));
+    let emitted_artifact_cid = result
+        .get("emitted_artifact_cid")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let observed_loss_record = result
+        .get("observed_loss_record")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let used_sugars = result
+        .get("used_sugars")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    // Nit: used_sugars ⊆ cited_sugar_cids subset check.
+    // If the kit returns a sugar CID that was not cited in the request, the
+    // call is unauthorized. Fail with a descriptive error so the caller can
+    // emit a CompositionRefusalMemento with failure_kind "ext:unauthorized-sugar".
+    for used in &used_sugars {
+        if let Some(used_cid) = used
+            .get("header")
+            .and_then(|h| h.get("cid"))
+            .and_then(Value::as_str)
+            .or_else(|| used.as_str())
+        {
+            if !request.sugar_cids.iter().any(|c| c == used_cid) {
+                return Err(format!(
+                    "ext:unauthorized-sugar: kit returned sugar CID {used_cid:?} \
+                     not in cited set {:?}",
+                    request.sugar_cids
+                ));
+            }
+        }
+    }
+    let observation_wrapper_emission_record = result
+        .get("observation_wrapper_emission_record")
+        .cloned();
     Ok(RealizedSource {
         extension,
         source,
         is_stub,
+        emitted_artifact_cid,
+        observed_loss_record,
+        used_sugars,
+        observation_wrapper_emission_record,
     })
+}
+
+fn realize_request_params(request: &RealizeRequest) -> Value {
+    serde_json::to_value(request).expect("serialize realize request params")
 }
 
 /// Filesystem-level extension hint. NOT language semantics: cmd_transport
@@ -821,4 +892,60 @@ pub fn detect_lift_language(workspace_root: &Path) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn realize_request_params_include_contract_mode_and_loss_payload() {
+        let request = RealizeRequest {
+            function: "lookup".to_string(),
+            params: vec!["name".to_string()],
+            param_types: vec!["String".to_string()],
+            return_type: "String".to_string(),
+            concept_name: "concept:lookup".to_string(),
+            mode: Some("monitor".to_string()),
+            contract: Some(RealizeContractPayload {
+                concept_site_cid: "blake3-512:site".to_string(),
+                local_contract_cid: "blake3-512:compound".to_string(),
+                origin: "evidence-lift[type-signature]".to_string(),
+                discharge_verdict: "exact".to_string(),
+                witnesses: vec![RealizeContractWitness {
+                    role: "pre".to_string(),
+                    predicate: json!({
+                        "args": [
+                            {"kind": "var", "name": "name"},
+                            {"kind": "const", "sort": {"kind": "primitive", "name": "Ref"}, "value": null}
+                        ],
+                        "kind": "atomic",
+                        "name": "neq"
+                    }),
+                    predicate_text: "non_null(name)".to_string(),
+                    source_kind: "type-signature".to_string(),
+                }],
+            }),
+            sugar_cids: vec!["blake3-512:sugar".to_string()],
+            sugar_plugins: vec![json!({"header": {"kind": "sugar"}})],
+        };
+
+        let params = realize_request_params(&request);
+
+        assert_eq!(params["mode"], "monitor");
+        assert!(params.get("total_loss_record").is_none());
+        assert_eq!(params["contract"]["concept_site_cid"], "blake3-512:site");
+        assert_eq!(
+            params["contract"]["local_contract_cid"],
+            "blake3-512:compound"
+        );
+        assert_eq!(params["contract"]["witnesses"][0]["role"], "pre");
+        assert_eq!(
+            params["contract"]["witnesses"][0]["predicate_text"],
+            "non_null(name)"
+        );
+        assert_eq!(params["sugar_plugins"][0]["header"]["kind"], "sugar");
+        assert_eq!(params["sugar_cids"][0], "blake3-512:sugar");
+    }
 }
