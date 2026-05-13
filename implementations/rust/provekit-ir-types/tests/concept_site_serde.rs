@@ -90,7 +90,10 @@ fn exact_deserializes_from_spec_shape() {
     assert_eq!(m.discharge.method, "wp+witness");
     assert_eq!(m.discharge.verdict, "exact");
     assert!(m.discharge.refusal_reason.is_none());
-    assert_eq!(m.discharge.discharge_receipt_cid.as_deref(), Some(RECEIPT_CID));
+    assert_eq!(
+        m.discharge.discharge_receipt_cid.as_deref(),
+        Some(RECEIPT_CID)
+    );
     assert!(m.discharge.loss_record.0.is_empty());
 
     assert_eq!(m.provenance.lifter_cid, LIFTER_CID);
@@ -334,7 +337,8 @@ fn loss_record_multidim_round_trips() {
     };
     loss.0.insert("domain_narrowing".into(), f_true.clone());
     loss.0.insert("effect_divergence".into(), f_false.clone());
-    loss.0.insert("structural_divergence".into(), f_true.clone());
+    loss.0
+        .insert("structural_divergence".into(), f_true.clone());
     loss.0.insert("ub_introduction".into(), f_false.clone());
     loss.0.insert("value_divergence".into(), f_true.clone());
 

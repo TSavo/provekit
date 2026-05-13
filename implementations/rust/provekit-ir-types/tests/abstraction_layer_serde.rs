@@ -23,8 +23,7 @@
 use std::collections::BTreeMap;
 
 use provekit_ir_types::{
-    AbstractionSlot, ConceptAbstractionMemento, IrFormula, LossRecord,
-    RealizationDesugaringMemento,
+    AbstractionSlot, ConceptAbstractionMemento, IrFormula, LossRecord, RealizationDesugaringMemento,
 };
 
 // ================================================================
@@ -87,11 +86,9 @@ fn dynamic_dispatch_deserializes_from_spec_shape() {
 
 #[test]
 fn dynamic_dispatch_round_trips() {
-    let m1: ConceptAbstractionMemento =
-        serde_json::from_str(DYNAMIC_DISPATCH_JSON).expect("parse");
+    let m1: ConceptAbstractionMemento = serde_json::from_str(DYNAMIC_DISPATCH_JSON).expect("parse");
     let serialized = serde_json::to_string(&m1).expect("serialize");
-    let m2: ConceptAbstractionMemento =
-        serde_json::from_str(&serialized).expect("re-parse");
+    let m2: ConceptAbstractionMemento = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(m1, m2);
 }
 
@@ -119,10 +116,22 @@ fn concept_abstraction_optional_fields_absent_when_none() {
     };
 
     let json = serde_json::to_string(&m).expect("serialize");
-    assert!(!json.contains("contract_note"), "contract_note must be absent when None");
-    assert!(!json.contains("superseded_by"), "superseded_by must be absent when None");
-    assert!(!json.contains("refines"), "refines must be absent when None");
-    assert!(!json.contains("variadic"), "variadic must be absent when None");
+    assert!(
+        !json.contains("contract_note"),
+        "contract_note must be absent when None"
+    );
+    assert!(
+        !json.contains("superseded_by"),
+        "superseded_by must be absent when None"
+    );
+    assert!(
+        !json.contains("refines"),
+        "refines must be absent when None"
+    );
+    assert!(
+        !json.contains("variadic"),
+        "variadic must be absent when None"
+    );
 }
 
 // ================================================================
@@ -181,11 +190,9 @@ fn double_dispatch_deserializes_from_spec_shape() {
 
 #[test]
 fn double_dispatch_round_trips() {
-    let m1: ConceptAbstractionMemento =
-        serde_json::from_str(DOUBLE_DISPATCH_JSON).expect("parse");
+    let m1: ConceptAbstractionMemento = serde_json::from_str(DOUBLE_DISPATCH_JSON).expect("parse");
     let serialized = serde_json::to_string(&m1).expect("serialize");
-    let m2: ConceptAbstractionMemento =
-        serde_json::from_str(&serialized).expect("re-parse");
+    let m2: ConceptAbstractionMemento = serde_json::from_str(&serialized).expect("re-parse");
     assert_eq!(m1, m2);
 }
 
@@ -402,8 +409,15 @@ fn realization_c_deserializes_and_round_trips() {
     assert_eq!(m.direction, "left-to-right");
     assert_eq!(m.target_lang, "c11");
     assert!(m.pre.is_some(), "c11 realization has a pre-condition");
-    assert!(m.discharge_receipt.is_none(), "discharge_receipt absent in PR1");
-    assert_eq!(m.effects, Vec::<String>::new(), "effects must be empty slice");
+    assert!(
+        m.discharge_receipt.is_none(),
+        "discharge_receipt absent in PR1"
+    );
+    assert_eq!(
+        m.effects,
+        Vec::<String>::new(),
+        "effects must be empty slice"
+    );
 
     // structural_divergence, domain_narrowing AND ub_introduction all set for C (heaviest end)
     assert!(
@@ -492,8 +506,7 @@ fn realization_effects_always_present_in_json() {
     // effects: [] is a required field; it must appear in the serialized JSON
     // even when the Vec is empty. This test guards against accidental
     // `#[serde(skip_serializing_if = "Vec::is_empty")]` on that field.
-    let m: RealizationDesugaringMemento =
-        serde_json::from_str(DD_TO_RUBY_JSON).expect("parse");
+    let m: RealizationDesugaringMemento = serde_json::from_str(DD_TO_RUBY_JSON).expect("parse");
     let json = serde_json::to_string(&m).expect("serialize");
     assert!(
         json.contains("\"effects\":"),
@@ -519,7 +532,10 @@ fn loss_record_structural_divergence_round_trips() {
     let lr = LossRecord(map);
 
     let json = serde_json::to_string(&lr).expect("serialize");
-    assert!(json.contains("structural_divergence"), "structural_divergence must appear in JSON");
+    assert!(
+        json.contains("structural_divergence"),
+        "structural_divergence must appear in JSON"
+    );
 
     let lr2: LossRecord = serde_json::from_str(&json).expect("re-parse");
     assert_eq!(lr, lr2);

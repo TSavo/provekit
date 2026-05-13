@@ -428,9 +428,9 @@ pub struct AbstractionSlot {
 /// one-or-more via a successor mint with `refines = <PR1 schema CID>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConceptAbstractionMemento {
-    pub kind: String,      // must be "concept-abstraction"
+    pub kind: String, // must be "concept-abstraction"
     pub operator: String,
-    pub tier: String,      // must be "abstraction"
+    pub tier: String, // must be "abstraction"
     pub slots: Vec<AbstractionSlot>,
     #[serde(rename = "formal_sorts")]
     pub formal_sorts: Vec<String>,
@@ -470,7 +470,7 @@ pub struct RealizationPost {
 /// NOTE: `discharge_receipt` is optional in PR1. PR2 tightens to required.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RealizationDesugaringMemento {
-    pub kind: String,            // must be "equation"
+    pub kind: String, // must be "equation"
     #[serde(rename = "fn_name")]
     pub fn_name: String,
     pub formals: Vec<String>,
@@ -479,8 +479,8 @@ pub struct RealizationDesugaringMemento {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pre: Option<IrFormula>,
     pub post: RealizationPost,
-    pub role: String,            // must be "abstraction-realization"
-    pub direction: String,       // must be "left-to-right"
+    pub role: String,      // must be "abstraction-realization"
+    pub direction: String, // must be "left-to-right"
     #[serde(rename = "target_lang")]
     pub target_lang: String,
     #[serde(rename = "loss_record")]
@@ -488,7 +488,7 @@ pub struct RealizationDesugaringMemento {
     #[serde(rename = "discharge_receipt")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discharge_receipt: Option<String>,
-    pub effects: Vec<String>,    // always [] for the equation itself; never skip
+    pub effects: Vec<String>, // always [] for the equation itself; never skip
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refines: Option<String>,
 }
@@ -737,7 +737,7 @@ pub struct TransportGapMemento {
     pub fn_name: String,
     #[serde(rename = "gap_kind")]
     pub gap_kind: GapKind,
-    pub kind: String,           // must be "TransportGapMemento"
+    pub kind: String, // must be "TransportGapMemento"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<GapReason>,
     #[serde(rename = "reason_note")]
@@ -791,7 +791,7 @@ pub struct PartialMorphismMemento {
     pub gap_memento_cid: Option<String>,
     #[serde(rename = "homomorphism_obligation")]
     pub homomorphism_obligation: PartialHomomorphismObligation,
-    pub kind: String,           // must be "PartialMorphismMemento"
+    pub kind: String, // must be "PartialMorphismMemento"
     #[serde(rename = "literal_map")]
     pub literal_map: serde_json::Value,
     #[serde(rename = "operator_map")]
@@ -844,7 +844,7 @@ pub struct LossyMorphismMemento {
     pub gap_memento_cid: Option<String>,
     #[serde(rename = "homomorphism_obligation")]
     pub homomorphism_obligation: LossyHomomorphismObligation,
-    pub kind: String,           // must be "LossyMorphismMemento"
+    pub kind: String, // must be "LossyMorphismMemento"
     #[serde(rename = "literal_map")]
     pub literal_map: serde_json::Value,
     pub loss: LossRecord,
@@ -1185,7 +1185,9 @@ impl From<AggregationStrategy> for String {
         match s {
             AggregationStrategy::Conjunction => "conjunction".to_string(),
             AggregationStrategy::BestConfidence => "best-confidence".to_string(),
-            AggregationStrategy::LoudlyBoundedDisjunction => "loudly-bounded-disjunction".to_string(),
+            AggregationStrategy::LoudlyBoundedDisjunction => {
+                "loudly-bounded-disjunction".to_string()
+            }
             AggregationStrategy::Other(s) => s,
         }
     }
@@ -1565,4 +1567,224 @@ impl TryFrom<&ConceptSiteMemento> for DomainClaim {
 
 // ============================================================
 // End manual extension block -- DomainClaim normalization (PR-A)
+// ============================================================
+
+// ============================================================
+// MANUAL EXTENSION BLOCK -- ObligationReceiptMemento substrate (#800)
+// Source of truth:
+//   protocol/specs/2026-05-13-obligation-receipt-memento.md §1, §3.7
+//
+// This is a substrate-only outcome record. It describes a backend result
+// after that backend has run; it does not invoke solvers, parse backend
+// artifacts, or encode promotion/admission policy.
+//
+// Optional CID fields are explicit JSON nulls when absent so the durable
+// wire shape is stable. Serde field order is locked to the JCS alphabetical
+// key order used for CID construction.
+// ============================================================
+
+/// A durable substrate record for one proof-obligation backend outcome.
+///
+/// Locked JCS key order:
+///   `artifact_cids`, `backend_cid`, `backend_version`,
+///   `counterexample_cid`, `input_formula_cid`, `model_or_trace_cid`,
+///   `obligation_cid`, `provenance_cid`, `receipt_kind`,
+///   `tactic_script_cid`, `verdict`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObligationReceiptMemento {
+    /// Durable proof, witness, log, transcript, or related artifact CIDs.
+    #[serde(rename = "artifact_cids")]
+    pub artifact_cids: Vec<String>,
+    /// Backend, solver, checker, tactic engine, or verifier-stage CID.
+    #[serde(rename = "backend_cid")]
+    pub backend_cid: String,
+    /// Backend-reported version string.
+    #[serde(rename = "backend_version")]
+    pub backend_version: String,
+    /// Counterexample artifact CID when this is a counterexample receipt.
+    #[serde(rename = "counterexample_cid")]
+    pub counterexample_cid: Option<String>,
+    /// CID of the canonical formula handed to the backend.
+    #[serde(rename = "input_formula_cid")]
+    pub input_formula_cid: String,
+    /// Optional model, proof trace, partial trace, log, or transcript CID.
+    #[serde(rename = "model_or_trace_cid")]
+    pub model_or_trace_cid: Option<String>,
+    /// CID of the obligation whose outcome is recorded.
+    #[serde(rename = "obligation_cid")]
+    pub obligation_cid: String,
+    /// CID of the receipt-production provenance record.
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: String,
+    /// One of the canonical receipt kinds in §3.7.
+    #[serde(rename = "receipt_kind")]
+    pub receipt_kind: String,
+    /// Tactic or proof-script artifact CID when this is a tactic receipt.
+    #[serde(rename = "tactic_script_cid")]
+    pub tactic_script_cid: Option<String>,
+    /// Backend or synthesis verdict string.
+    pub verdict: String,
+}
+
+/// Validation failures for the §3.7 receipt-kind, verdict, and artifact matrix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvalidReceiptError {
+    /// The receipt kind has no known matrix row in this substrate crate.
+    UnknownReceiptKind(String),
+    /// The verdict is not allowed for this receipt kind.
+    InvalidVerdictForKind {
+        receipt_kind: String,
+        verdict: String,
+    },
+    /// A CID field required by the matrix is absent.
+    MissingRequiredCidField {
+        receipt_kind: String,
+        field: &'static str,
+    },
+    /// A CID field forbidden by the matrix is present.
+    ForbiddenCidField {
+        receipt_kind: String,
+        field: &'static str,
+    },
+    /// `backend-disagreement` requires citations to the disagreeing receipts.
+    MissingDisagreementArtifacts,
+}
+
+impl std::fmt::Display for InvalidReceiptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownReceiptKind(kind) => {
+                write!(f, "unknown obligation receipt kind: {kind:?}")
+            }
+            Self::InvalidVerdictForKind {
+                receipt_kind,
+                verdict,
+            } => write!(
+                f,
+                "invalid obligation receipt verdict {verdict:?} for receipt_kind {receipt_kind:?}"
+            ),
+            Self::MissingRequiredCidField {
+                receipt_kind,
+                field,
+            } => write!(
+                f,
+                "missing required CID field {field:?} for receipt_kind {receipt_kind:?}"
+            ),
+            Self::ForbiddenCidField {
+                receipt_kind,
+                field,
+            } => write!(
+                f,
+                "forbidden CID field {field:?} is present for receipt_kind {receipt_kind:?}"
+            ),
+            Self::MissingDisagreementArtifacts => write!(
+                f,
+                "backend-disagreement receipts require non-empty artifact_cids citing the disagreeing receipts"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for InvalidReceiptError {}
+
+impl ObligationReceiptMemento {
+    /// Validate the normative §3.7 receipt-kind × verdict × artifact matrix.
+    ///
+    /// This method deliberately stays substrate-only: it checks field
+    /// presence and allowed labels, but it does not invoke solvers or inspect
+    /// backend-specific artifact formats.
+    pub fn validate(&self) -> Result<(), InvalidReceiptError> {
+        match self.receipt_kind.as_str() {
+            "discharged" => {
+                self.require_verdict_in(&["unsat", "sat"])?;
+                self.forbid_cid("counterexample_cid", self.counterexample_cid.is_some())?;
+                if self.verdict == "sat" {
+                    self.require_cid("model_or_trace_cid", self.model_or_trace_cid.is_some())?;
+                }
+            }
+            "counterexample" => {
+                self.require_verdict_in(&["sat"])?;
+                self.require_cid("counterexample_cid", self.counterexample_cid.is_some())?;
+            }
+            "tactic" => {
+                self.require_verdict_in(&["unsat", "unknown"])?;
+                self.require_cid("tactic_script_cid", self.tactic_script_cid.is_some())?;
+                self.forbid_cid("counterexample_cid", self.counterexample_cid.is_some())?;
+            }
+            "inconclusive" => {
+                self.require_verdict_in(&[
+                    "unknown",
+                    "timeout",
+                    "budget-exhausted",
+                    "backend-disagreement",
+                ])?;
+                if self.verdict == "backend-disagreement" && self.artifact_cids.is_empty() {
+                    return Err(InvalidReceiptError::MissingDisagreementArtifacts);
+                }
+                self.forbid_cid("counterexample_cid", self.counterexample_cid.is_some())?;
+                self.forbid_cid("tactic_script_cid", self.tactic_script_cid.is_some())?;
+            }
+            "refused" => {
+                if self.verdict != "malformed-artifact" && !is_namespaced_extension(&self.verdict) {
+                    return Err(self.invalid_verdict());
+                }
+                self.forbid_cid("counterexample_cid", self.counterexample_cid.is_some())?;
+                self.forbid_cid("model_or_trace_cid", self.model_or_trace_cid.is_some())?;
+                self.forbid_cid("tactic_script_cid", self.tactic_script_cid.is_some())?;
+            }
+            other => {
+                return Err(InvalidReceiptError::UnknownReceiptKind(other.to_string()));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn require_verdict_in(&self, allowed: &[&str]) -> Result<(), InvalidReceiptError> {
+        if allowed.iter().any(|allowed| *allowed == self.verdict) {
+            Ok(())
+        } else {
+            Err(self.invalid_verdict())
+        }
+    }
+
+    fn require_cid(&self, field: &'static str, present: bool) -> Result<(), InvalidReceiptError> {
+        if present {
+            Ok(())
+        } else {
+            Err(InvalidReceiptError::MissingRequiredCidField {
+                receipt_kind: self.receipt_kind.clone(),
+                field,
+            })
+        }
+    }
+
+    fn forbid_cid(&self, field: &'static str, present: bool) -> Result<(), InvalidReceiptError> {
+        if present {
+            Err(InvalidReceiptError::ForbiddenCidField {
+                receipt_kind: self.receipt_kind.clone(),
+                field,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    fn invalid_verdict(&self) -> InvalidReceiptError {
+        InvalidReceiptError::InvalidVerdictForKind {
+            receipt_kind: self.receipt_kind.clone(),
+            verdict: self.verdict.clone(),
+        }
+    }
+}
+
+fn is_namespaced_extension(value: &str) -> bool {
+    let Some((namespace, name)) = value.split_once('/') else {
+        return false;
+    };
+    !namespace.is_empty() && !name.is_empty()
+}
+
+// ============================================================
+// End manual extension block -- ObligationReceiptMemento substrate (#800)
 // ============================================================
