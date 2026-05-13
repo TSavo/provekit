@@ -1,8 +1,8 @@
 <?php
 /** ProvekIt PHP LSP daemon: parses PHP source, extracts contracts + call edges.
  *  Mirrors the Go LSP (`provekit-lsp-go`).
- *  Methods: initialize, parse, shutdown.
- *  Response shape: declarations + callEdges.
+ *  Protocol: provekit-lift/1 over stdio.
+ *  Methods: initialize, lift, parse (legacy), shutdown.
  */
 
 declare(strict_types=1);
@@ -44,10 +44,18 @@ class AnnotationScanner
 
             // @provekit-contract
             if (preg_match('#^//\s*@provekit-contract#', $trimmed)) {
-                if ($funcName) {
+                // Look ahead up to 10 lines for the function definition.
+                $target = $funcName;
+                for ($j = $i + 1; $j < min($i + 10, count($lines)); $j++) {
+                    if (preg_match('/\bfunction\s+(\w+)\b/', $lines[$j], $fm)) {
+                        $target = $fm[1];
+                        break;
+                    }
+                }
+                if ($target) {
                     $declarations[] = [
                         'kind' => 'contract',
-                        'name' => $funcName,
+                        'name' => $target,
                         'outBinding' => 'out',
                         'post' => ['kind' => 'atomic', 'name' => 'true', 'args' => []],
                     ];
@@ -167,8 +175,63 @@ while (($line = fgets($stdin)) !== false) {
         match ($method) {
             'initialize' => send(json_encode([
                 'jsonrpc' => '2.0', 'id' => $id,
-                'result' => ['name' => 'provekit-lsp-php', 'version' => '1.0.0', 'capabilities' => []],
+                'result' => [
+                    'name'             => 'provekit-lsp-php',
+                    'version'          => '1.0.0',
+                    'protocol_version' => 'provekit-lift/1',
+                    'capabilities'     => [
+                        'authoring_surfaces'    => ['php-source'],
+                        'ir_version'            => 'v1.1.0',
+                        'emits_signed_mementos' => false,
+                    ],
+                ],
             ])),
+
+            'lift' => (function () use ($id, $params) {
+                $workspaceRoot = $params['workspace_root'] ?? '.';
+                $sourcePaths   = $params['source_paths'] ?? [];
+
+                if (!is_array($sourcePaths) || empty($sourcePaths)) {
+                    send(json_encode([
+                        'jsonrpc' => '2.0', 'id' => $id,
+                        'error' => ['code' => -32602, 'message' => 'lift: source_paths must be a non-empty array'],
+                    ]));
+                    return;
+                }
+
+                $ir          = [];
+                $diagnostics = [];
+
+                foreach ($sourcePaths as $sp) {
+                    $fullPath = $sp && $sp[0] === '/'
+                        ? $sp
+                        : rtrim($workspaceRoot, '/') . '/' . $sp;
+                    if (!is_file($fullPath) || !str_ends_with($fullPath, '.php')) {
+                        continue;
+                    }
+                    $source = @file_get_contents($fullPath);
+                    if ($source === false) {
+                        $diagnostics[] = ['kind' => 'read-error', 'path' => $fullPath];
+                        continue;
+                    }
+                    $scanned = AnnotationScanner::scan($source, $fullPath);
+                    foreach ($scanned['declarations'] as $decl) {
+                        $ir[] = $decl;
+                    }
+                }
+
+                send(json_encode([
+                    'jsonrpc' => '2.0', 'id' => $id,
+                    'result' => [
+                        'kind'          => 'ir-document',
+                        'ir'            => $ir,
+                        'callEdges'     => [],
+                        'diagnostics'   => $diagnostics,
+                        'opacityReport' => [],
+                        'refusals'      => [],
+                    ],
+                ]));
+            })(),
 
             'parse' => (function () use ($id, $params) {
                 $path = $params['path'] ?? '';
