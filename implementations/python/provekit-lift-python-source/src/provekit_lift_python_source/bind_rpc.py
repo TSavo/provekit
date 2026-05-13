@@ -6,22 +6,19 @@ import sys
 import traceback
 from typing import Any
 
-from .compiler import compile_ir_document
-from .lifter import lift_paths
+from .bind_lifter import lift_paths
 
-SURFACE = "python-source"
-VERSION = "0.1.0-draft"
+VERSION = "0.1.0"
 
 
 def initialize_result() -> dict[str, Any]:
     return {
-        "name": "provekit-lift-python-source",
+        "name": "provekit-lift-python-bind",
         "version": VERSION,
         "protocol_version": "pep/1.7.0",
-        "dialect": SURFACE,
         "capabilities": {
-            "authoring_surfaces": [SURFACE],
-            "ir_version": "v1.1.0",
+            "authoring_surfaces": ["python", "python-bind"],
+            "ir_version": "bind-ir/1.0.0",
             "emits_signed_mementos": False,
         },
     }
@@ -51,25 +48,20 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return {"jsonrpc": "2.0", "id": msg_id, "result": initialize_result()}
     if method == "lift":
         return _lift(msg_id, params)
-    if method == "compile":
-        return _compile(msg_id, params)
     if method == "shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
 
 
 def _lift(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
-    surface = params.get("surface", SURFACE)
-    if surface != SURFACE:
-        return _error(msg_id, 1003, f"SURFACE_NOT_SUPPORTED: {surface}")
-
     source_paths = params.get("source_paths")
-    if not isinstance(source_paths, list) or not source_paths:
-        return _error(msg_id, -32602, "source_paths must be a non-empty array")
-
-    paths = [str(path) for path in source_paths if str(path)]
+    paths: list[str]
+    if isinstance(source_paths, list):
+        paths = [str(path) for path in source_paths if str(path)]
+    else:
+        paths = ["."]
     if not paths:
-        return _error(msg_id, -32602, "source_paths must contain strings")
+        paths = ["."]
 
     result = lift_paths(str(params.get("workspace_root", ".")), paths)
     return {
@@ -78,24 +70,7 @@ def _lift(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
         "result": {
             "kind": "ir-document",
             "ir": result.ir,
-            "callEdges": [],
             "diagnostics": result.diagnostics,
-            "opacityReport": result.opacity_report,
-            "refusals": result.refusals,
-        },
-    }
-
-
-def _compile(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
-    ir = params.get("ir")
-    if not isinstance(ir, list):
-        return _error(msg_id, -32602, "ir must be an array")
-    return {
-        "jsonrpc": "2.0",
-        "id": msg_id,
-        "result": {
-            "kind": "compiled-formula",
-            "body": compile_ir_document(ir),
         },
     }
 
@@ -115,14 +90,14 @@ def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rpc", action="store_true", help="run JSON-RPC over stdio")
-    parser.add_argument("--bind-rpc", action="store_true", help="run bind JSON-RPC over stdio")
+    parser.add_argument("--rpc", action="store_true", help="run bind JSON-RPC over stdio")
+    parser.add_argument("--bind-rpc", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.bind_rpc:
-        from .bind_rpc import run_rpc as run_bind_rpc
-
-        run_bind_rpc()
-    elif args.rpc:
+    if args.rpc or args.bind_rpc:
         run_rpc()
     else:
         parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
