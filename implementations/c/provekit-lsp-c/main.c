@@ -2,16 +2,18 @@
 /*
  * provekit-lsp-c — NDJSON LSP plugin for C.
  *
- * Protocol (provekit-lsp-plugin/1 over stdio):
+ * Protocol (provekit-lift/1 over stdio):
  *
  *   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
- *   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
+ *   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
  *   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
  *
- * For parse: scans the source using the shared C lift core and lifts to the
- * shared parse result shape.
+ * Legacy parse method is retained for backward compatibility.
  *
- * Wire shape matches implementations/go/cmd/provekit-lsp-go/main.go.
+ * For lift/parse: scans the source using the shared C lift core and lifts to
+ * the provekit-lift/1 ir-document shape.
+ *
+ * Wire shape matches implementations/go/provekit-lift-go/rpc.go.
  *
  * Build:
  *   make
@@ -29,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/stat.h>
 #include "provekit/c_lift_core.h"
 
 /* -----------------------------------------------------------------------
@@ -260,10 +263,14 @@ static void send_error(const char *id, int code, const char *message) {
 }
 
 static void handle_initialize(const char *id) {
-    /* Per wire shape: {name, version, capabilities:["parse"]} */
+    /* provekit-lift/1 wire shape */
     send_response(id,
-        "{\"capabilities\":[\"parse\"],"
+        "{\"capabilities\":{"
+        "\"authoring_surfaces\":[\"c-source\"],"
+        "\"emits_signed_mementos\":false,"
+        "\"ir_version\":\"v1.1.0\"},"
         "\"name\":\"provekit-lsp-c\","
+        "\"protocol_version\":\"provekit-lift/1\","
         "\"version\":\"0.1.0\"}");
 }
 
@@ -343,6 +350,280 @@ static void handle_parse(const char *id, const char *json_line) {
     pk_c_lift_result_free(result_obj);
 }
 
+/* Extract strings from a JSON array field in a flat JSON object line.
+ * Returns a NULL-terminated array of malloc'd strings; caller frees each
+ * element and the array pointer. Returns NULL on error or missing field.
+ *
+ * Only handles simple string arrays: ["a","b","c"] — no nesting. */
+static char **json_extract_str_array(const char *json, const char *field,
+                                     size_t *out_count) {
+    char needle[256];
+    snprintf(needle, sizeof(needle), "\"%s\"", field);
+
+    const char *p = strstr(json, needle);
+    if (!p) return NULL;
+    p += strlen(needle);
+    while (*p == ':' || *p == ' ' || *p == '\t') p++;
+    if (*p != '[') return NULL;
+    p++; /* skip '[' */
+
+    /* Count elements first */
+    size_t count = 0;
+    const char *scan = p;
+    while (*scan && *scan != ']') {
+        while (*scan == ' ' || *scan == '\t' || *scan == ',') scan++;
+        if (*scan == '"') { count++; scan++; while (*scan && *scan != '"') { if (*scan == '\\') scan++; scan++; } if (*scan == '"') scan++; }
+        else if (*scan != ']') break;
+    }
+
+    if (count == 0) {
+        *out_count = 0;
+        char **empty = (char **)malloc(sizeof(char *));
+        if (!empty) return NULL;
+        empty[0] = NULL;
+        return empty;
+    }
+
+    char **result = (char **)malloc((count + 1) * sizeof(char *));
+    if (!result) return NULL;
+
+    size_t idx = 0;
+    while (*p && *p != ']' && idx < count) {
+        while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        if (*p != '"') break;
+        p++;
+        Buf elem;
+        buf_init(&elem);
+        while (*p && *p != '"') {
+            if (*p == '\\' && *(p+1)) {
+                p++;
+                switch (*p) {
+                    case '"':  buf_append_char(&elem, '"');  break;
+                    case '\\': buf_append_char(&elem, '\\'); break;
+                    case 'n':  buf_append_char(&elem, '\n'); break;
+                    case 'r':  buf_append_char(&elem, '\r'); break;
+                    case 't':  buf_append_char(&elem, '\t'); break;
+                    default:   buf_append_char(&elem, *p);  break;
+                }
+            } else {
+                buf_append_char(&elem, *p);
+            }
+            p++;
+        }
+        if (*p == '"') p++;
+        result[idx++] = elem.data;
+        elem.data = NULL;
+        buf_free(&elem);
+    }
+    result[idx] = NULL;
+    *out_count = idx;
+    return result;
+}
+
+/* Read entire file contents into a malloc'd string. Returns NULL on error. */
+static char *read_file(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return NULL;
+
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    rewind(f);
+
+    if (sz < 0) { fclose(f); return NULL; }
+    char *buf = (char *)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return NULL; }
+    size_t got = fread(buf, 1, (size_t)sz, f);
+    buf[got] = '\0';
+    fclose(f);
+    return buf;
+}
+
+/* Build the ir-document JSON from a merged pk_c_lift_result.
+ * The "ir" array contains the contract declarations (same objects
+ * that parse returns in "declarations"). callEdges/diagnostics/
+ * opacityReport/refusals pass through as-is. */
+static char *build_ir_document(const pk_c_lift_result *r) {
+    /* ir-document shape:
+     * {"kind":"ir-document","ir":[...],"callEdges":[],"diagnostics":[...],"opacityReport":[...],"refusals":[...]}
+     */
+    const char *prefix = "{\"kind\":\"ir-document\",\"ir\":";
+    const char *call_edges_key  = ",\"callEdges\":";
+    const char *diagnostics_key = ",\"diagnostics\":";
+    const char *opacity_key     = ",\"opacityReport\":";
+    const char *refusals_key    = ",\"refusals\":";
+
+    /* We borrow the declarations array for "ir". callEdges always empty
+     * (C LSP cannot compute contract CIDs). */
+    const pk_c_json_array empty = {NULL, 0, 0};
+
+    size_t len = 0;
+    /* Manually sum lengths — mirror pk_c_lift_result_to_json logic */
+    len += strlen(prefix);
+    /* declarations array */
+    len += 1; /* '[' */
+    for (size_t i = 0; i < r->declarations.len; i++) {
+        if (i > 0) len += 1; /* ',' */
+        len += strlen(r->declarations.items[i]);
+    }
+    len += 1; /* ']' */
+    len += strlen(call_edges_key) + 2; /* "[]" */
+    len += strlen(diagnostics_key);
+    len += 1;
+    for (size_t i = 0; i < r->diagnostics.len; i++) {
+        if (i > 0) len += 1;
+        len += strlen(r->diagnostics.items[i]);
+    }
+    len += 1;
+    len += strlen(opacity_key);
+    len += 1;
+    for (size_t i = 0; i < r->opacity_report.len; i++) {
+        if (i > 0) len += 1;
+        len += strlen(r->opacity_report.items[i]);
+    }
+    len += 1;
+    len += strlen(refusals_key);
+    len += 1;
+    for (size_t i = 0; i < r->refusals.len; i++) {
+        if (i > 0) len += 1;
+        len += strlen(r->refusals.items[i]);
+    }
+    len += 1; /* '}' */
+    len += 1; /* NUL */
+    (void)empty;
+
+    char *json = (char *)malloc(len);
+    if (!json) return NULL;
+    char *dst = json;
+
+    /* prefix + ir array */
+    dst += sprintf(dst, "%s", prefix);
+    *dst++ = '[';
+    for (size_t i = 0; i < r->declarations.len; i++) {
+        if (i > 0) *dst++ = ',';
+        size_t slen = strlen(r->declarations.items[i]);
+        memcpy(dst, r->declarations.items[i], slen);
+        dst += slen;
+    }
+    *dst++ = ']';
+
+    /* callEdges always empty */
+    dst += sprintf(dst, "%s", call_edges_key);
+    *dst++ = '['; *dst++ = ']';
+
+    /* diagnostics */
+    dst += sprintf(dst, "%s", diagnostics_key);
+    *dst++ = '[';
+    for (size_t i = 0; i < r->diagnostics.len; i++) {
+        if (i > 0) *dst++ = ',';
+        size_t slen = strlen(r->diagnostics.items[i]);
+        memcpy(dst, r->diagnostics.items[i], slen);
+        dst += slen;
+    }
+    *dst++ = ']';
+
+    /* opacityReport */
+    dst += sprintf(dst, "%s", opacity_key);
+    *dst++ = '[';
+    for (size_t i = 0; i < r->opacity_report.len; i++) {
+        if (i > 0) *dst++ = ',';
+        size_t slen = strlen(r->opacity_report.items[i]);
+        memcpy(dst, r->opacity_report.items[i], slen);
+        dst += slen;
+    }
+    *dst++ = ']';
+
+    /* refusals */
+    dst += sprintf(dst, "%s", refusals_key);
+    *dst++ = '[';
+    for (size_t i = 0; i < r->refusals.len; i++) {
+        if (i > 0) *dst++ = ',';
+        size_t slen = strlen(r->refusals.items[i]);
+        memcpy(dst, r->refusals.items[i], slen);
+        dst += slen;
+    }
+    *dst++ = ']';
+
+    *dst++ = '}';
+    *dst = '\0';
+    return json;
+}
+
+/* Parse a single C source path and merge its results into `merged`.
+ * Returns 0 on success, -1 on error. */
+static int lift_single_path(const char *path, pk_c_lift_result *merged) {
+    char *source = read_file(path);
+    if (!source) return -1;
+
+    pk_c_source_facts *facts = pk_c_parse_source(path, source);
+    free(source);
+    if (!facts) return -1;
+
+    pk_c_lift_result *r = pk_c_lift_result_new();
+    if (!r) { pk_c_source_facts_free(facts); return -1; }
+
+    for (size_t i = 0; i < facts->n_functions; i++) {
+        if (facts->functions[i].has_contract_annotation) {
+            if (add_contract_decl(r, facts->functions[i].name) != 0) {
+                pk_c_lift_result_free(r);
+                pk_c_source_facts_free(facts);
+                return -1;
+            }
+        }
+    }
+    if (facts->extraction_result) {
+        for (size_t i = 0; i < facts->extraction_result->diagnostics.len; i++) {
+            pk_c_lift_result_add_diagnostic(r, facts->extraction_result->diagnostics.items[i]);
+        }
+    }
+    pk_c_source_facts_free(facts);
+
+    int rc = pk_c_lift_result_extend(merged, r);
+    pk_c_lift_result_free(r);
+    return rc;
+}
+
+static void handle_lift(const char *id, const char *json_line) {
+    size_t n_paths = 0;
+    char **source_paths = json_extract_str_array(json_line, "source_paths", &n_paths);
+
+    if (!source_paths || n_paths == 0) {
+        free(source_paths);
+        send_error(id, -32602, "lift: missing or empty params.source_paths");
+        return;
+    }
+
+    pk_c_lift_result *merged = pk_c_lift_result_new();
+    if (!merged) {
+        for (size_t i = 0; source_paths[i]; i++) free(source_paths[i]);
+        free(source_paths);
+        send_error(id, -32603, "lift: out of memory");
+        return;
+    }
+
+    for (size_t i = 0; i < n_paths; i++) {
+        if (source_paths[i] && source_paths[i][0]) {
+            struct stat st;
+            if (stat(source_paths[i], &st) == 0 && S_ISREG(st.st_mode)) {
+                /* Ignore per-file errors; aggregate what we can. */
+                lift_single_path(source_paths[i], merged);
+            }
+        }
+        free(source_paths[i]);
+    }
+    free(source_paths);
+
+    char *doc = build_ir_document(merged);
+    pk_c_lift_result_free(merged);
+
+    if (!doc) {
+        send_error(id, -32603, "lift: out of memory");
+        return;
+    }
+
+    send_response(id, doc);
+    free(doc);
+}
+
 static void handle_shutdown(const char *id) {
     send_response(id, "null");
 }
@@ -384,6 +665,8 @@ int main(int argc, char **argv) {
             send_error(safe_id, -32700, "parse error: could not extract method");
         } else if (strcmp(method, "initialize") == 0) {
             handle_initialize(safe_id);
+        } else if (strcmp(method, "lift") == 0) {
+            handle_lift(safe_id, line);
         } else if (strcmp(method, "parse") == 0) {
             handle_parse(safe_id, line);
         } else if (strcmp(method, "shutdown") == 0) {
