@@ -1,0 +1,70 @@
+{
+  "fn_name": "gap:csharp:postinc:to:concept:postinc",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "LValue"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "postinc",
+        "result": "Int",
+        "wp": "target++ (read then increment)"
+      },
+      "want": {
+        "arity": [
+          "LValue"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "postinc",
+        "result": "Expr",
+        "wp_note": "postfix increment expression yielding the previous value"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:fa64ce5d5d65a7428273ba1c4718136fcd31b6dc8d4933cbf8fd692e218805736360f27eda2d1a3878ea176fd07b8399166d14a5aa7f35d3b7eb9147dfcc32b1",
+  "target_concept_op": "concept:postinc",
+  "target_op_cid": "blake3-512:be615743882f980a2fde0ca6ec3250305c28e2fac1fe4d17accd1790d62af7992ff80282f6507335b959ccceaa32a047f1845b8a9e96a54d20b3766d46589aee"
+}

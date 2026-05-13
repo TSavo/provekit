@@ -1,0 +1,127 @@
+{
+  "fn_name": "gap:csharp:ite:to:concept:ite",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union branch value effects"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Bool",
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "name": "then_expr"
+            },
+            {
+              "name": "else_expr"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ite",
+        "result": "Int",
+        "wp": "cond ? then_expr : else_expr (if-then-else expression)"
+      },
+      "want": {
+        "arity": [
+          "Bool",
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "name": "then_expr"
+            },
+            {
+              "name": "else_expr"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ite",
+        "result": "Expr",
+        "wp_note": "ternary expression selected by cond"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:a9940f225e12ccad73343382113c3d7533856a89739c41c67eb0b3442dd8f0b935d722e36c2ca8a6e3538f245b8a300402faf12d1ff646ea9c9e273aa35acae4",
+  "target_concept_op": "concept:ite",
+  "target_op_cid": "blake3-512:3c87b90507933effd400bd2ddc2e15430f55dcbd466f351b7bb96140015bd228faf54efe31032114d4d5dd255188c8d1dcf202b2267fa09db0560d40c1ec5bab"
+}

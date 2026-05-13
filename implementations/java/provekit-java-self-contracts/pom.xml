@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.provekit</groupId>
+        <artifactId>provekit-lift-java-parent</artifactId>
+        <version>0.1.0</version>
+    </parent>
+    <artifactId>provekit-java-self-contracts</artifactId>
+    <packaging>jar</packaging>
+
+    <description>
+        Java peer self-contracts orchestrator. Walks the kit's canonical
+        contract slabs, mints each contract as a signed memento via
+        provekit-claim-envelope, bundles them into a deterministic .proof
+        envelope, and exposes the result over the lift-plugin protocol
+        (pep/1.7.0) on stdio. Mirrors the rust / csharp / cpp / go
+        peer orchestrators.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-ir</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-claim-envelope</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Shade plugin: produce a self-contained jar with all
+                dependencies (BouncyCastle + provekit-claim-envelope)
+                relocated into a single artifact. The lift-plugin manifest
+                spawns this jar with `java -jar` so it must run with no
+                classpath assistance from the caller.
+
+                BouncyCastle ships with a JCE signature on bcprov-jdk18on;
+                shading mixes its META-INF/*.SF/*.DSA/*.RSA entries with the
+                non-signed classes which breaks signature verification at
+                load time. We strip those signature files (the BC code we
+                use is the non-JCE provider classes, no signature check).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <finalName>provekit-java-self-contracts</finalName>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.provekit.selfcontracts.Main</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

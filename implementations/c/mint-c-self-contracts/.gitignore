@@ -1,0 +1,3 @@
+# Build artifacts
+src/*.o
+mint-c-self-contracts

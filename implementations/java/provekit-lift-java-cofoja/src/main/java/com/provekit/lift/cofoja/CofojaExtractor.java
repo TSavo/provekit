@@ -7,37 +7,36 @@ import com.github.javaparser.ast.expr.*;
 import com.provekit.lift.*;
 
 public class CofojaExtractor implements Extractor {
+    private static final String PACKAGE_NAME = "com.google.java.contract";
+    private static final Set<String> ANNOTATIONS = Set.of("Requires", "Ensures", "Invariant");
+    private static final Set<String> COMPETING_PACKAGES = Set.of("com.provekit.contract");
+
     public String name() { return "cofoja"; }
 
     public List<ContractDecl> extract(CompilationUnit cu, String rawSource) {
         List<ContractDecl> out = new ArrayList<>();
         for (TypeDeclaration<?> type : cu.getTypes()) {
             for (BodyDeclaration<?> member : type.getMembers()) {
-                if (member instanceof MethodDeclaration m) extractMethod(m, out);
+                if (member instanceof MethodDeclaration method) extractMethod(cu, method, out);
             }
         }
         return out;
     }
 
-    private void extractMethod(MethodDeclaration method, List<ContractDecl> out) {
+    private void extractMethod(CompilationUnit cu, MethodDeclaration method, List<ContractDecl> out) {
         String symbol = method.getNameAsString();
         List<String> pres = new ArrayList<>(), posts = new ArrayList<>(), invs = new ArrayList<>();
         for (AnnotationExpr ann : method.getAnnotations()) {
-            String name = simpleName(ann.getNameAsString());
-            switch (name) {
+            if (!AnnotationSupport.belongsToFamily(cu, ann, PACKAGE_NAME, ANNOTATIONS, COMPETING_PACKAGES)) continue;
+            switch (simpleName(ann.getNameAsString())) {
                 case "Requires" -> extractString(ann).ifPresent(s -> pres.add(toIr(s)));
                 case "Ensures" -> extractString(ann).ifPresent(s -> posts.add(toIr(s)));
                 case "Invariant" -> extractString(ann).ifPresent(s -> invs.add(toIr(s)));
             }
         }
-        if (!pres.isEmpty()||!posts.isEmpty()||!invs.isEmpty()) {
+        if (!pres.isEmpty() || !posts.isEmpty() || !invs.isEmpty()) {
             out.add(new ContractDecl(symbol, pres, posts, invs));
         }
-    }
-
-    private String simpleName(String fq) {
-        int dot = fq.lastIndexOf('.');
-        return dot >= 0 ? fq.substring(dot + 1) : fq;
     }
 
     private Optional<String> extractString(AnnotationExpr ann) {
@@ -57,9 +56,11 @@ public class CofojaExtractor implements Extractor {
     }
 
     private String toIr(String expr) {
-        String e = expr.trim();
-        return "{\"kind\":\"atomic\",\"name\":\"cofoja_predicate\",\"args\":[{\"kind\":\"const\",\"value\":\""+esc(e)+"\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}]}";
+        return ContractExpressionParser.parseOrFallback(expr, "cofoja_predicate");
     }
 
-    private String esc(String s) { return s.replace("\\","\\\\").replace("\"","\\\""); }
+    private String simpleName(String fq) {
+        int dot = fq.lastIndexOf('.');
+        return dot >= 0 ? fq.substring(dot + 1) : fq;
+    }
 }

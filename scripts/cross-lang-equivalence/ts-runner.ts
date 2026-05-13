@@ -1,4 +1,4 @@
-// Cross-language equivalence runner — TypeScript path.
+// Cross-language equivalence runner: TypeScript path.
 //
 // Usage: tsx ts-runner.ts <fixture-name>
 // Emits: compact JSON of the Declaration[] for the named fixture.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// ResolveTargetStage — Stage 3. Hash-looks up the bridge target CID
+// ResolveTargetStage: Stage 3. Hash-looks up the bridge target CID
 // in the pool and returns the resolved property memento contents.
 
 #pragma once

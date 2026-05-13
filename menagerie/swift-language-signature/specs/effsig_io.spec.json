@@ -1,0 +1,12 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "swift:effect-signature:IO",
+  "sorts": [
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_io.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

@@ -1,0 +1,67 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:staticprop",
+    "formals": [
+      "class",
+      "property"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "staticprop",
+      "arity": [
+        "String",
+        "String"
+      ],
+      "result": "Value",
+      "wp": "static property fetch",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "class"
+          },
+          {
+            "name": "property",
+            "slot_sort": "identifier"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:b3a090296291991850f0ab10fca368e70cdf6f800edd0c75f1af8655a4d05a206f10657f26d3a4bc91974316122597f005b841584afe40f26aed1a59957aa202",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "HRYuOsi/8OFG7NGw6zjDkFMpFNqtIyAR4d3mtUrumlZ2cB5oQeVuuJZo9TNn0MfY2ZEIPdhQGR2k1X8FYPSAAg=="
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:addr",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "LValue"
+    }
+  ],
+  "formals": [
+    "target"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "LValue"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "addr",
+    "result": "Ptr",
+    "wp": "address-of expression yielding a pointer to target"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Ptr"
+  }
+}

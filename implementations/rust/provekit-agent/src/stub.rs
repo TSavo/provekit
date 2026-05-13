@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Stub agent — canned responses for tests + CI. Required so the
+// Stub agent: canned responses for tests + CI. Required so the
 // verification loops can be exercised without network or a real
 // coding-agent installation.
 //
@@ -17,11 +17,11 @@
 // contract by phrase.
 
 use crate::{
-    AgentError, AgentProvenance, ContractCandidate, FilePatch, FixContext, FixResult,
-    MustContext, ProposeContext, ProvekitAgent,
+    AgentError, AgentProvenance, ContractCandidate, FilePatch, FixContext, FixResult, MustContext,
+    ProposeContext, ProvekitAgent,
 };
 
-/// Stub agent — returns canned ContractCandidates for every request.
+/// Stub agent: returns canned ContractCandidates for every request.
 /// Use in CI and during development; never as a default in production
 /// (the user should always pick a real backend explicitly).
 #[derive(Debug, Clone, Default)]

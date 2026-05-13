@@ -43,7 +43,7 @@ import type { AdapterOutput, ContractDecl, AdapterWarning } from "../types.js";
 
 const ADAPTER = "class-validator";
 
-/** Public adapter entry point — mirrors the Rust adapter's `lift_file`. */
+/** Public adapter entry point: mirrors the Rust adapter's `lift_file`. */
 export function liftFile(sourceFile: ts.SourceFile, sourcePath: string): AdapterOutput {
   const decls: ContractDecl[] = [];
   const warnings: AdapterWarning[] = [];
@@ -200,7 +200,7 @@ function liftDecorator(
     name = expr.expression.text;
     argNodes = expr.arguments;
   } else if (ts.isIdentifier(expr)) {
-    // Bare `@IsInt` — legal class-validator usage (rare but supported).
+    // Bare `@IsInt`: legal class-validator usage (rare but supported).
     name = expr.text;
     argNodes = [];
   } else {
@@ -288,7 +288,7 @@ function liftDecorator(
       return ok([atom("<", subject, intConst(0))]);
     }
 
-    // Type predicates — encode as kit-Ctors. The kind-of from the static
+    // Type predicates: encode as kit-Ctors. The kind-of from the static
     // type is already emitted at the property level; these decorators
     // tighten it (e.g., @IsInt on a `number` field).
     case "IsInt": {
@@ -301,6 +301,9 @@ function liftDecorator(
       return ok([ctorPred("is_boolean", [subject])]);
     }
     case "IsString": {
+      if (isStringSort) {
+        return ok([]);
+      }
       return ok([ctorPred("is_string", [subject])]);
     }
     case "IsDate": {
@@ -313,7 +316,7 @@ function liftDecorator(
       return ok([ctorPred("is_object", [subject])]);
     }
 
-    // String formats — kit-defined Ctors. The verifier reports them as
+    // String formats: kit-defined Ctors. The verifier reports them as
     // undecidable when discharged via Z3 with no native semantics; that's
     // the honest v0 outcome and matches the zod adapter's encoding.
     case "IsEmail": {
@@ -382,7 +385,7 @@ function liftDecorator(
       void propName;
       return ok([]);
 
-    // Unknown / custom validators — fail loudly per the zod adapter pattern.
+    // Unknown / custom validators: fail loudly per the zod adapter pattern.
     default:
       return {
         kind: "skip",

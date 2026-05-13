@@ -4,13 +4,13 @@ This is the production prompt for deriving invariants at a single log statement 
 
 ## Template Variables
 
-- `{{TARGET_FILE}}` — the source file containing the target log statement
-- `{{TARGET_FUNCTION}}` — the function name
-- `{{TARGET_LINE}}` — the line number
-- `{{TARGET_STATEMENT}}` — the log statement code
-- `{{IMPORT_SOURCES}}` — full source of depth-1 imports
-- `{{EXISTING_CONTRACTS}}` — all existing proven contracts (for target file, imports, and transitive deps)
-- `{{CALLING_CONTEXT}}` — what is known about callers of this function
+- `{{TARGET_FILE}}`: the source file containing the target log statement
+- `{{TARGET_FUNCTION}}`: the function name
+- `{{TARGET_LINE}}`: the line number
+- `{{TARGET_STATEMENT}}`: the log statement code
+- `{{IMPORT_SOURCES}}`: full source of depth-1 imports
+- `{{EXISTING_CONTRACTS}}`: all existing proven contracts (for target file, imports, and transitive deps)
+- `{{CALLING_CONTEXT}}`: what is known about callers of this function
 
 ## Prompt
 
@@ -49,12 +49,12 @@ function applyDiscount(price: number, discount: number): number {
 ```
 
 **Step 1: What does this function promise?**
-- The name says "apply discount" — the result should be a valid discounted price.
+- The name says "apply discount": the result should be a valid discounted price.
 - It caps discount at 50%, so the result should be at least 50% of the original.
 
 **Step 2: What does it assume?**
 - `price` should be positive? The code doesn't check.
-- `discount` should be non-negative? The code doesn't check — it only caps the top.
+- `discount` should be non-negative? The code doesn't check: it only caps the top.
 
 **Step 3: What can go wrong?**
 - Negative discount → the result is MORE than the original price. That's a bug.
@@ -86,7 +86,7 @@ function applyDiscount(price: number, discount: number): number {
 ```smt2
 ; PRINCIPLE: P3
 ; LINE: 3
-; applyDiscount is public — caller can pass any price
+; applyDiscount is public: caller can pass any price
 (declare-const price Real)
 (declare-const discount Real)
 (declare-const capped_discount Real)
@@ -131,7 +131,7 @@ Notice how each block:
 - Tags with `; PRINCIPLE: P<N>` or `[NEW]`
 - Tags with `; LINE: <number>` matching the line being verified
 - Has a comment explaining what it checks and what sat/unsat means
-- Is self-contained — Z3 can run it independently
+- Is self-contained: Z3 can run it independently
 
 #### Worked Example: Modeling a State Machine
 
@@ -155,7 +155,7 @@ function processOrder(order: Order, action: string): void {
 ; Code transition: action=="approve" sets state to 2, unconditionally
 (assert (= action 1))
 (assert (= next_state 2))
-; Bug: the current state is "cancelled" (4) — this should be impossible
+; Bug: the current state is "cancelled" (4): this should be impossible
 (assert (= current_state 4))
 ; No guard in the code prevents this
 (check-sat)
@@ -167,36 +167,36 @@ function processOrder(order: Order, action: string): void {
 **Mistake 1: Vacuous assertion.** Declaring a variable and asserting something about it without modeling code.
 
 ```smt2
-; BAD — this proves nothing
+; BAD: this proves nothing
 (declare-const x Int)
 (assert (< x 0))
 (check-sat)
-; sat — of course an unconstrained integer can be negative. So what?
+; sat: of course an unconstrained integer can be negative. So what?
 ```
 
 **Mistake 2: No code model.** The block doesn't reflect any actual code behavior.
 
 ```smt2
-; BAD — this isn't about the code, it's just a logical puzzle
+; BAD: this isn't about the code, it's just a logical puzzle
 (declare-const a Int)
 (declare-const b Int)
 (assert (> a b))
 (assert (> b a))
 (check-sat)
-; unsat — mathematically obvious but tells us nothing about the code
+; unsat: mathematically obvious but tells us nothing about the code
 ```
 
 **Mistake 3: Invented constraints.** Adding bounds the code doesn't have.
 
 ```smt2
-; BAD — where does 1000000 come from? The code has no such limit
+; BAD: where does 1000000 come from? The code has no such limit
 (declare-const amount Int)
 (assert (> amount 1000000))
 (check-sat)
-; sat — but this isn't a bug, it's an invented ceiling
+; sat: but this isn't a bug, it's an invented ceiling
 ```
 
-**The rule:** Every `(assert ...)` must correspond to something in the code — a condition, an assignment, a function call's effect, a type constraint. If you can't point to the line of code that produces the constraint, don't write it.
+**The rule:** Every `(assert ...)` must correspond to something in the code: a condition, an assignment, a function call's effect, a type constraint. If you can't point to the line of code that produces the constraint, don't write it.
 
 ### Verification Principles
 
@@ -295,12 +295,12 @@ If the same function can be invoked multiple times on the same input, analyze wh
 
 #### 5. Semantic Correctness
 
-Beyond precondition violations, check whether the computed values are meaningful in the domain. A function might execute without error but produce a result that is semantically wrong — a refund that exceeds the payment, a price that is negative, a date in the past.
+Beyond precondition violations, check whether the computed values are meaningful in the domain. A function might execute without error but produce a result that is semantically wrong: a refund that exceeds the payment, a price that is negative, a date in the past.
 
 **Teaching example:** A `calculate_discount(original_price, discount_percent)` that doesn't cap the discount:
 
 ```smt2
-; discount_percent is unchecked — can it exceed 100?
+; discount_percent is unchecked: can it exceed 100?
 (declare-const original_price Real)
 (declare-const discount_percent Real)
 (declare-const final_price Real)
@@ -315,7 +315,7 @@ Beyond precondition violations, check whether the computed values are meaningful
 
 #### 6. Boundary and Degenerate Input Analysis
 
-Functions that process collections or accumulate values can receive empty inputs, zero-valued inputs, or single-element inputs. The code may execute without error but produce a degenerate result — a zero total, an empty output, a no-op that still mutates state. These are often unintended behaviors that mask logical errors upstream.
+Functions that process collections or accumulate values can receive empty inputs, zero-valued inputs, or single-element inputs. The code may execute without error but produce a degenerate result: a zero total, an empty output, a no-op that still mutates state. These are often unintended behaviors that mask logical errors upstream.
 
 **Teaching example:** A `finalize_invoice(line_items)` function that sums line items and marks the invoice as finalized:
 
@@ -367,7 +367,7 @@ Division, modular arithmetic, and subtraction can produce undefined or unexpecte
 ; compute_average divides total by count
 (declare-const total Real)
 (declare-const count Int)
-; count comes from len(items) — what if items is empty?
+; count comes from len(items): what if items is empty?
 (assert (= count 0))
 ; Division by zero is undefined
 ; The code: average = total / count
@@ -378,7 +378,7 @@ Division, modular arithmetic, and subtraction can produce undefined or unexpecte
 
 #### When to tag [NEW]
 
-The existing principles cover specific bug classes. If a violation genuinely doesn't fit ANY of them, tag it `[NEW]`. Do NOT stretch a principle to fit — that defeats the classification system. Novel patterns are valuable. They grow the verification system.
+The existing principles cover specific bug classes. If a violation genuinely doesn't fit ANY of them, tag it `[NEW]`. Do NOT stretch a principle to fit: that defeats the classification system. Novel patterns are valuable. They grow the verification system.
 
 **When in doubt:** if you have to argue why a principle applies, it's `[NEW]`.
 
@@ -411,7 +411,7 @@ A file descriptor opened but never closed on an error path. This is NOT P3 or P4
 
 #### [NEW] Example: State Machine Constraint
 
-An order transitions from "cancelled" to "approved" — an invalid state transition. This is NOT P1 (precondition propagation). The constraint is the state machine definition itself.
+An order transitions from "cancelled" to "approved": an invalid state transition. This is NOT P1 (precondition propagation). The constraint is the state machine definition itself.
 
 **Teaching example:** `approveOrder(order)` sets `state = "approved"` without checking that the current state is "submitted":
 
@@ -423,7 +423,7 @@ An order transitions from "cancelled" to "approved" — an invalid state transit
 ; Valid transitions to "approved": only from "submitted" (1)
 ; Code transition: approveOrder unconditionally sets state = 2
 (assert (= next_state 2))
-; The current state is "cancelled" (4) — should be impossible to approve
+; The current state is "cancelled" (4): should be impossible to approve
 (assert (= current_state 4))
 ; No guard in the code prevents this
 (check-sat)
@@ -502,16 +502,16 @@ Then produce:
 
 **REACHABLE VIOLATIONS:** For every gap between what the code should do and what it does do, produce a satisfiability check demonstrating the violation is reachable. Frame as: actual code guarantees + violation condition → expect sat.
 
-**CRITICAL: No vacuous violations.** Every block MUST model at least one code transition — an assignment, a computation, a function call's effect on state. A block that only declares an unconstrained variable and asserts a condition on it proves nothing. Every `(assert ...)` must trace back to actual code.
+**CRITICAL: No vacuous violations.** Every block MUST model at least one code transition: an assignment, a computation, a function call's effect on state. A block that only declares an unconstrained variable and asserts a condition on it proves nothing. Every `(assert ...)` must trace back to actual code.
 
 Every SMT-LIB block must:
 - Be wrapped in ```smt2 fences
 - Include `(check-sat)` at the end
 - Tag with `; PRINCIPLE: P<N>` or `; PRINCIPLE: [NEW]`
 - Tag with `; LINE: <number>` matching the signal's line number
-- Tag with `; REASON: <one or two short sentences>` that states WHY this invariant should hold, referencing specific lines/variables in the code — not a restatement of the claim, not a paraphrase of the SMT-LIB. If you cannot state a reason that cites the code, do not emit the block.
+- Tag with `; REASON: <one or two short sentences>` that states WHY this invariant should hold, referencing specific lines/variables in the code: not a restatement of the claim, not a paraphrase of the SMT-LIB. If you cannot state a reason that cites the code, do not emit the block.
 - Include a comment explaining what it checks and what sat/unsat means
-- Be self-contained — Z3 can run it independently without any other block
+- Be self-contained: Z3 can run it independently without any other block
 
 ### Binding Metadata
 
@@ -522,7 +522,7 @@ declare, it must know which line and which expression in the source file
 the constant stands for. Without this mapping, Z3's verdict cannot be
 checked against runtime behaviour, and the proof is unactionable.
 
-After each `smt2` block, emit a `bindings` block — one JSON record per
+After each `smt2` block, emit a `bindings` block: one JSON record per
 declared constant:
 
 ```bindings
@@ -534,24 +534,24 @@ declared constant:
 
 Field by field:
 
-- `smt_constant` — exactly the name you used in `(declare-const X ...)`.
+- `smt_constant`: exactly the name you used in `(declare-const X ...)`.
   No renaming, no close-enough. If your block says
   `(declare-const netAmount Real)`, the binding's `smt_constant` is
   `netAmount`.
-- `source_line` — the 1-indexed line in the target file where the value
+- `source_line`: the 1-indexed line in the target file where the value
   appears. Line 1 is the first line of the file. The validator checks
   this against the file's length and will reject lines out of range.
-- `source_expr` — a substring of the source that appears on `source_line`.
+- `source_expr`: a substring of the source that appears on `source_line`.
   This is a sanity-check hint, not an AST node. `a / b` matches
   `const q = a / b;` after whitespace normalization. `orderTotal` matches
   a line that declares `const orderTotal = items.sum(...)`. Short
-  fragments are fine — you're proving to the validator that you know
+  fragments are fine: you're proving to the validator that you know
   which line, not writing a parser.
-- `sort` — the sort string you used in `(declare-const X SORT)`. Must
+- `sort`: the sort string you used in `(declare-const X SORT)`. Must
   match exactly (`Int`, `Real`).
 
 **Abstract constants.** Sometimes a constant doesn't correspond to any
-single source line — you introduced it to reason about a derived quantity,
+single source line: you introduced it to reason about a derived quantity,
 a phantom witness, or a loop iteration counter that exists only in the
 model. For these, emit `"source_line": 0, "source_expr": "<abstract>"`.
 The validator treats abstracts as untestable and skips them rather than
@@ -566,7 +566,7 @@ without a constant is a parsing error downstream.
 its own `bindings` block immediately following it. Blocks are paired by
 position, not by label.
 
-Worked example — a proven property and its bindings, together:
+Worked example: a proven property and its bindings, together:
 
 ```smt2
 ; PRINCIPLE: P2

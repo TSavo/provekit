@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """
-Echo agent — reference ProvekIt agent plugin.
+Echo agent: reference ProvekIt agent plugin.
 
 Demonstrates the JSON-RPC over stdio protocol defined by
 protocol/specs/2026-04-30-agent-plugin-protocol.md.
@@ -19,7 +19,7 @@ import sys
 
 NAME = "echo-agent"
 VERSION = "0.1.0"
-PROTOCOL_VERSION = "provekit-agent/1"
+PROTOCOL_VERSION = "pep/1.7.0"
 
 # Canonical IR-JSON for `out >= 0`, used as the safe fallback contract.
 NONNEG_POST = (

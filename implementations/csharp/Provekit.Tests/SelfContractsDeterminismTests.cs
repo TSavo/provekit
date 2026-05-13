@@ -8,7 +8,7 @@
 //
 // IMPORTANT: Provekit.IR.Collector is process-global static. This test
 // shares the "CollectorSerial" collection with any other test that calls
-// BeginCollecting/Finish, so xUnit serializes them — guaranteeing no
+// BeginCollecting/Finish, so xUnit serializes them: guaranteeing no
 // cross-test collector pollution.
 //
 // No CID value pin yet: first run establishes the CID via the
@@ -33,14 +33,17 @@ public class SelfContractsDeterminismTests
         Directory.CreateDirectory(tmp2);
         try
         {
-            var (cid1, count1, files1) = Program.MintOneRun(tmp1, verbose: false);
-            var (cid2, count2, files2) = Program.MintOneRun(tmp2, verbose: false);
+            var (cid1, contractSetCid1, count1, files1) = Program.MintOneRun(tmp1, verbose: false);
+            var (cid2, contractSetCid2, count2, files2) = Program.MintOneRun(tmp2, verbose: false);
 
             Assert.Equal(cid1, cid2);
+            Assert.Equal(contractSetCid1, contractSetCid2);
             Assert.Equal(count1, count2);
             Assert.Equal(files1, files2);
             Assert.StartsWith("blake3-512:", cid1);
             Assert.Equal(139, cid1.Length);
+            Assert.StartsWith("blake3-512:", contractSetCid1);
+            Assert.Equal(139, contractSetCid1.Length);
 
             // Cross-check: the .proof file actually exists and its filename is the CID.
             var path1 = Path.Combine(tmp1, $"{cid1}.proof");

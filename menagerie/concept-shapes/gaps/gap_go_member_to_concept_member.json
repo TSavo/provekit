@@ -1,0 +1,99 @@
+{
+  "fn_name": "gap:go:member:to:concept:member",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Identifier"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "LValue"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "FieldName"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Term",
+          "Identifier"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "base",
+              "slot_sort": "Term"
+            },
+            {
+              "name": "field",
+              "slot_sort": "Identifier"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "member",
+        "result": "Term",
+        "wp": "selector expression x.f"
+      },
+      "want": {
+        "arity": [
+          "LValue",
+          "FieldName"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "base"
+            },
+            {
+              "name": "field",
+              "slot_sort": "identifier"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "member",
+        "result": "LValue",
+        "wp_note": "field lvalue projection"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"FieldName\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:f09d65ce575ee0b7e4bc2b825d003d9488da536489bc9a77fc6839f2fdf3b9fd0959cf9f253e3ce107277f590eeac335d80dd28fc47b4a5de5083ce610d59c9b",
+  "target_concept_op": "concept:member",
+  "target_op_cid": "blake3-512:8c9f60571f0b644a09ef99ae2779927221cd61a7ba20000c0c933ac01b3fa4b1c41658df47404b49a0ef50006fd04139e7dd90f6352d3fc1aeb9b1c6c3677271"
+}

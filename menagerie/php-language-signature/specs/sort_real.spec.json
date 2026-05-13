@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "php:Real",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Real",
+    "description": "PHP floating-point values."
+  }
+}

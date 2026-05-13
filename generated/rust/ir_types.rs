@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// GENERATED FILE — DO NOT EDIT
+// GENERATED FILE: DO NOT EDIT
 // Source: protocol/provekit-ir.cddl
 // Generator: provekit-ir-codegen
 

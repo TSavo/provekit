@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:b8a40ec2291a515b73888cdb59fd87e8fb032042193e12b93cb105401383701528ba0cc7571a148c277795206b0662bcf99f53fdb96254976636e99047c7b333",
+  "name": "c11:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:29004b6aa5186996e03e7a7d0615aeefb1d147b1b2ce29aa476052c294578271c0f4b09d32c19cf5f458ced8cf0839c0f229d0bd7b131bd5c5fbbf44d8e25f35",
+      "name": "c11:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:786af5f3033d4bcb976140d677166038e48a0905318e9d8ab7445d14f4986f22f38ce1d9924ac538fa020901b782c6e6fa4f3abe4016fa384947af727f0e415d",
+          "name": "c11:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:e479b5f1dc12fab1f500a9f7e0e22679dcd9c030b8f128d0aadc8b4e0bb15cbdba34655942c8f8dcbeb70be422646889a1b62c071d772d6717dcb28518aabf05",
+          "name": "c11:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:27e6a7cdb6abe2524c913852a5cb224f7ba132b08cd03de355516c90addb8ec49f047464cef79a7f0eb4a831850a9cb4f94efca5bed88b8dc0f582a205d8a876",
+          "name": "c11:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:e479b5f1dc12fab1f500a9f7e0e22679dcd9c030b8f128d0aadc8b4e0bb15cbdba34655942c8f8dcbeb70be422646889a1b62c071d772d6717dcb28518aabf05",
+      "name": "c11:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

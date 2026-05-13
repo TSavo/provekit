@@ -1,0 +1,50 @@
+{
+  "kind": "algorithm",
+  "fn_name": "swift:throw",
+  "formals": [
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "throw",
+    "arity": [
+      "Value"
+    ],
+    "result": "Stmt",
+    "wp": "throw is modeled as panics in the canonical effect schema",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
+  },
+  "locus": "menagerie/swift-language-signature/README.md"
+}

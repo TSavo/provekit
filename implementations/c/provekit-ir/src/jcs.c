@@ -82,12 +82,67 @@ static void emit_formula_wrapper2(pk_buffer *buf, void *ctx) {
 /* Sort                                                                    */
 /* ----------------------------------------------------------------------- */
 
+/* Emit a Sort array (used for FunctionSort.args). */
+typedef struct { pk_sort **args; size_t n; } sort_array_ctx;
+
+static void emit_sort(pk_buffer *buf, pk_sort *s);
+
+static void emit_sort_array_fn(pk_buffer *buf, void *ctx) {
+    sort_array_ctx *c = (sort_array_ctx *)ctx;
+    pk_buffer_append_char(buf, '[');
+    for (size_t i = 0; i < c->n; i++) {
+        if (i > 0) pk_buffer_append_char(buf, ',');
+        emit_sort(buf, c->args[i]);
+    }
+    pk_buffer_append_char(buf, ']');
+}
+
+static void emit_sort_wrapper(pk_buffer *buf, void *ctx) {
+    emit_sort(buf, (pk_sort *)ctx);
+}
+
 static void emit_sort(pk_buffer *buf, pk_sort *s) {
-    pk_field fields[] = {
-        {"kind",  (void (*)(pk_buffer *, void *))emit_string, "primitive"},
-        {"name",  (void (*)(pk_buffer *, void *))emit_string, s->name},
-    };
-    emit_object(buf, fields, 2);
+    switch (s->kind) {
+        case PK_SORT_PRIMITIVE: {
+            /* Locked key order: kind, name (already alphabetical). */
+            pk_field fields[] = {
+                {"kind", (void (*)(pk_buffer *, void *))emit_string, "primitive"},
+                {"name", (void (*)(pk_buffer *, void *))emit_string, s->data.primitive.name},
+            };
+            emit_object(buf, fields, 2);
+            break;
+        }
+        case PK_SORT_FUNCTION: {
+            /* Locked key order: kind, args, return — alphabetical via JCS. */
+            sort_array_ctx args_ctx = { s->data.function.args, s->data.function.n_args };
+            pk_field fields[] = {
+                {"args",   emit_sort_array_fn, &args_ctx},
+                {"kind",   (void (*)(pk_buffer *, void *))emit_string, "function"},
+                {"return", emit_sort_wrapper, s->data.function.ret},
+            };
+            emit_object(buf, fields, 3);
+            break;
+        }
+        case PK_SORT_DEPENDENT: {
+            /* Locked key order: kind, name, indexVar, indexSort (JCS-alphabetical). */
+            pk_field fields[] = {
+                {"indexSort", emit_sort_wrapper, s->data.dependent.index_sort},
+                {"indexVar",  (void (*)(pk_buffer *, void *))emit_string, s->data.dependent.index_var},
+                {"kind",      (void (*)(pk_buffer *, void *))emit_string, "dependent"},
+                {"name",      (void (*)(pk_buffer *, void *))emit_string, s->data.dependent.name},
+            };
+            emit_object(buf, fields, 4);
+            break;
+        }
+        case PK_SORT_REGION: {
+            pk_field fields[] = {
+                {"kind", (void (*)(pk_buffer *, void *))emit_string, "region"},
+                {"name", (void (*)(pk_buffer *, void *))emit_string, s->data.region.name},
+            };
+            emit_object(buf, fields, 2);
+            break;
+        }
+    }
 }
 
 void pk_emit_sort(pk_buffer *buf, pk_sort *s) {

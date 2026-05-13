@@ -1,0 +1,11 @@
+name = "bridgeworks-c-witness-lowerer"
+version = "0.1.0"
+protocol_version = "provekit-orp/1"
+command = ["./kit-rpc/run-bridgeworks-c-lowerer.sh"]
+working_dir = "."
+
+[capabilities]
+kits = ["c"]
+modes = ["witness"]
+obligation_kinds = ["predicate"]
+predicates = ["checked_add_u8.postcondition"]

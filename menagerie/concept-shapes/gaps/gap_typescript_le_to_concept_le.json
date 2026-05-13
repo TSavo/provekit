@@ -1,0 +1,96 @@
+{
+  "fn_name": "gap:typescript:le:to:concept:le",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "le",
+        "result": "Expr",
+        "wp": "TypeScript binary operator <="
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "le",
+        "result": "Bool",
+        "wp_note": "integer less-than-or-equal comparison"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "typescript",
+  "source_op_cid": "blake3-512:926347bb38d711b8a4dbb38f0cc1adbbd639086ef91d82a87fe564a1b91b57d1705b3e66dad2075ede4dfd9e01c7a935b2f1e1dc7fc027ccc81ba961a87db7b4",
+  "target_concept_op": "concept:le",
+  "target_op_cid": "blake3-512:456f76c76a128069bd4970d4009e5f7e0d8938e009c2b096cd9612a6b50e2b4eac33d4c09d36e31bd7925c2ba8c3bf152b80ed559100740ceafeb8dad8be0985"
+}

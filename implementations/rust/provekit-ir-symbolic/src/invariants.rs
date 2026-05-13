@@ -131,7 +131,10 @@ pub fn invariants() {
         ContractArgs {
             post: Some(forall(Int(), |x| {
                 let let_expr = let_term(
-                    vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+                    vec![provekit_ir_symbolic::LetBinding {
+                        name: "x".into(),
+                        bound_term: num(1),
+                    }],
                     x,
                 );
                 atomic_("roundTrips", vec![let_expr])
@@ -154,7 +157,7 @@ pub fn invariants() {
         "choice_has_var_name",
         ContractArgs {
             post: Some(forall(Int(), |x| {
-                let c = choice("x".into(), Int(), |_v| {
+                let _c = choice("x".into(), Int(), |_v| {
                     atomic_(">", vec![x.clone(), num(0)])
                 });
                 atomic_("roundTrips", vec![make_var("choice_result")])
@@ -173,9 +176,7 @@ pub fn invariants() {
         "choice_has_sort",
         ContractArgs {
             post: Some(forall(String_(), |s| {
-                let _c = choice("x".into(), String_(), |_v| {
-                    atomic_("true", vec![])
-                });
+                let _c = choice("x".into(), String_(), |_v| atomic_("true", vec![]));
                 atomic_("roundTrips", vec![s])
             })),
             ..Default::default()
@@ -196,7 +197,7 @@ pub fn invariants() {
         "quantifier_has_sort",
         ContractArgs {
             post: Some(forall(Int(), |v| {
-                let q = forall(Int(), |inner| atomic_(">", vec![inner.clone(), num(0)]));
+                let _q = forall(Int(), |inner| atomic_(">", vec![inner.clone(), num(0)]));
                 // Quantifier formula is valid - verify it contains the bound var
                 atomic_("roundTrips", vec![v])
             })),
@@ -217,7 +218,7 @@ pub fn invariants() {
         "kit_not_arity_eq_one",
         ContractArgs {
             post: Some(forall(Int(), |_n| {
-                let f = not_(atomic_("true", vec![]));
+                let _f = not_(atomic_("true", vec![]));
                 // Verify not produces a valid formula
                 atomic_("roundTrips", vec![make_var("not_result")])
             })),
@@ -234,10 +235,7 @@ pub fn invariants() {
         "kit_implies_arity_eq_two",
         ContractArgs {
             post: Some(forall(Int(), |_n| {
-                let _f = implies(
-                    atomic_("true", vec![]),
-                    atomic_("true", vec![]),
-                );
+                let _f = implies(atomic_("true", vec![]), atomic_("true", vec![]));
                 // Implies formula is constructed
                 atomic_("roundTrips", vec![make_var("implies_result")])
             })),
@@ -275,7 +273,7 @@ pub fn invariants() {
         "atomic_has_name",
         ContractArgs {
             post: Some(forall(Int(), |n| {
-                let f = atomic_("=", vec![n.clone(), num(0)]);
+                let _f = atomic_("=", vec![n.clone(), num(0)]);
                 // Verify atomic formula construction
                 atomic_("roundTrips", vec![n])
             })),
@@ -292,7 +290,7 @@ pub fn invariants() {
         "atomic_has_args",
         ContractArgs {
             post: Some(forall(Int(), |n| {
-                let f = atomic_("=", vec![n.clone(), num(0)]);
+                let _f = atomic_("=", vec![n.clone(), num(0)]);
                 atomic_("roundTrips", vec![n])
             })),
             ..Default::default()

@@ -116,18 +116,16 @@ fn run() -> Result<(), String> {
     let args = parse_args()?;
 
     if !args.go_proof.exists() {
-        return Err(format!("go .proof not found at {}", args.go_proof.display()));
+        return Err(format!(
+            "go .proof not found at {}",
+            args.go_proof.display()
+        ));
     }
-    fs::create_dir_all(&args.project_dir).map_err(|e| {
-        format!(
-            "create project_dir {}: {e}",
-            args.project_dir.display()
-        )
-    })?;
+    fs::create_dir_all(&args.project_dir)
+        .map_err(|e| format!("create project_dir {}: {e}", args.project_dir.display()))?;
     let cache_dir = args.project_dir.join(".provekit").join("cache");
-    fs::create_dir_all(&cache_dir).map_err(|e| {
-        format!("create cache_dir {}: {e}", cache_dir.display())
-    })?;
+    fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("create cache_dir {}: {e}", cache_dir.display()))?;
 
     println!("=== {label} ===", label = args.label);
 
@@ -142,9 +140,8 @@ fn run() -> Result<(), String> {
                 .file_name()
                 .ok_or("go .proof has no filename")?,
         );
-    copy_file(&args.go_proof, &go_dst).map_err(|e| {
-        format!("copy go .proof to {}: {e}", go_dst.display())
-    })?;
+    copy_file(&args.go_proof, &go_dst)
+        .map_err(|e| format!("copy go .proof to {}: {e}", go_dst.display()))?;
     if args.print_cids {
         let go_cid = args
             .go_proof
@@ -238,8 +235,7 @@ fn run() -> Result<(), String> {
     //
     // The verifier's enumerate_callsites stage finds the parseInt
     // ctor; resolve_target gives parseInt's pre. The handshake
-    // discovers that the arg_term is itself the validateInput ctor —
-    // looks up validateInput in pool.bridges_by_symbol → the Go
+    // discovers that the arg_term is itself the validateInput ctor: // looks up validateInput in pool.bridges_by_symbol → the Go
     // contract memento → its `post` formula. That post and the
     // parseInt pre are the (producer-post, consumer-pre) pair the
     // Tier 1 / Tier 2 / Tier 3 ladder exercises.
@@ -317,12 +313,15 @@ fn run() -> Result<(), String> {
         mint_seed: Some([0x44; 32]),
         mint_producer_id: Some("rust-verifier@1.0".into()),
         solvers_config: None,
+        extra_projects: Vec::new(),
     };
     let runner = Runner::new(cfg);
     let (report, stats) = runner.run_with_tiers();
 
-    println!("  callsites:  total={} discharged={} violations={}",
-        report.total_callsites, report.discharged, report.violations);
+    println!(
+        "  callsites:  total={} discharged={} violations={}",
+        report.total_callsites, report.discharged, report.violations
+    );
     println!("  tier-stats: hash={} cache={} vacuous={} z3+mint={} residue={} violations={} z3-invocations={}",
         stats.discharged_by_hash,
         stats.discharged_by_cache,
@@ -341,17 +340,16 @@ fn run() -> Result<(), String> {
                 if e.path().extension().and_then(|s| s.to_str()) == Some("proof") {
                     found += 1;
                     if args.print_cids {
-                        println!(
-                            "  cache memento: {}",
-                            e.file_name().to_string_lossy()
-                        );
+                        println!("  cache memento: {}", e.file_name().to_string_lossy());
                     }
                 }
             }
         }
         if found > 0 {
-            println!("  cache:      {found} signed implication memento(s) in {}",
-                cache_dir.display());
+            println!(
+                "  cache:      {found} signed implication memento(s) in {}",
+                cache_dir.display()
+            );
         }
     }
 

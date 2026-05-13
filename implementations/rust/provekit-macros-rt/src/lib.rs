@@ -141,7 +141,7 @@ pub fn registered_implements() -> impl Iterator<Item = &'static ImplementRegistr
 
 #[doc(hidden)]
 pub mod __priv {
+    pub use super::{ContractRegistration, ImplementRegistration, VerifyTarget};
     pub use inventory;
     pub use provekit_ir_symbolic;
-    pub use super::{ContractRegistration, ImplementRegistration, VerifyTarget};
 }

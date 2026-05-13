@@ -44,7 +44,7 @@ using namespace provekit::canonicalizer;
 namespace {
 
 // Build the canonical AST for `x > 0` (x = de Bruijn 0, sort Int).
-// Construction order doesn't matter — the encoder sorts keys per §7.3.
+// Construction order doesn't matter: the encoder sorts keys per §7.3.
 ValuePtr make_fixture() {
     auto int_sort = Value::object({
         {"kind", Value::string("primitive")},
@@ -135,7 +135,7 @@ int main() {
         for (const char* sym : unicode_predicates) {
             auto v = Value::string(sym);
             std::string encoded = encode_jcs(*v);
-            // Encoded form is "<sym>" — the input plus surrounding quotes.
+            // Encoded form is "<sym>": the input plus surrounding quotes.
             std::string expected = std::string("\"") + sym + "\"";
             std::string label = std::string("unicode predicate round-trip: ") + sym;
             if (!check(label.c_str(), encoded == expected, encoded, expected)) {
@@ -166,10 +166,10 @@ int main() {
 
     std::printf("\n");
     if (failures == 0) {
-        std::printf("CONFORMANCE OK — C++ canonicalizer matches the protocol spec.\n");
+        std::printf("CONFORMANCE OK: C++ canonicalizer matches the protocol spec.\n");
         return 0;
     }
-    std::printf("CONFORMANCE FAILED — %d check(s) didn't match the spec.\n", failures);
+    std::printf("CONFORMANCE FAILED: %d check(s) didn't match the spec.\n", failures);
     std::printf("This is either a C++ bug OR a SPEC HOLE. Investigate both.\n");
     return 1;
 }

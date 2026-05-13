@@ -10,7 +10,7 @@
 // Honest scope:
 //   MintedEnvelope.Cid is BLAKE3-512 of the unsigned canonical bytes
 //   (length 139, "blake3-512:" prefix, 128 hex). The producer signature
-//   verifies under the signer pubkey — verification is asserted at the
+//   verifies under the signer pubkey: verification is asserted at the
 //   integration layer, not the IR.
 
 using static Provekit.IR.Predicates;

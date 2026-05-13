@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-cli — user-facing CLI binary.
+// provekit-cli: user-facing CLI binary.
 //
 // Pure routing crate: parses argv via clap, dispatches into the
 // existing workspace crates (canonicalizer, proof-envelope,
@@ -20,19 +20,31 @@ use clap::{Parser, Subcommand};
 
 mod cmd_agent;
 mod cmd_ask;
+mod cmd_bind;
+mod cmd_ci;
+mod cmd_compose;
 mod cmd_dump;
 mod cmd_fix;
 mod cmd_hash;
 mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
+mod cmd_link;
+mod cmd_lower;
 mod cmd_mint;
 mod cmd_must;
+mod cmd_package;
+mod cmd_plugin;
+mod cmd_proof;
+mod cmd_protocol;
 mod cmd_prove;
 mod cmd_search;
+mod cmd_transport;
 mod cmd_verify_protocol;
 mod cmd_version;
 mod cmd_witness;
+mod kit_dispatch;
+mod lift_plugin;
 mod project_config;
 mod prompts;
 mod protocol;
@@ -70,10 +82,33 @@ pub struct OutputFlags {
     pub quiet: bool,
 }
 
+/// PEP 1.7.0 plugin flags.  Embed in any subcommand that participates in the
+/// plugin registry (§7 / §9).  The registry seals once per run; every output's
+/// provenance MUST cite the registry CID (§9.4).
+///
+/// Flag catalogue (§7):
+///   --plugin <kind>:<source>     canonical form
+///   --sugar <source>             alias for --plugin sugar:<source>
+///   --loss-fn <source>           alias for --plugin loss-function:<source>
+///   --lifter <source>            alias for --plugin lift:<source>  (wire kind = "lift")
+///   --no-default-plugins         suppress ALL built-in plugin registration
+///   --no-default-plugin <kind>   suppress built-ins for one kind
+///   --strict-plugins             promote every plugin load failure to a refuse
+///   --plugin-registry-out <path> write PluginRegistryMemento to <path> after sealing
+pub use cmd_plugin::PluginFlags;
+
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Run the six-stage verifier: load proofs, enumerate callsites, solve obligations, report.
     Prove(ProveArgs),
+    /// Work with .proof artifacts: hash, inspect, check conformance.
+    Proof(cmd_proof::ProofArgs),
+    /// Work with protocol catalog evolution artifacts.
+    Protocol(cmd_protocol::ProtocolArgs),
+    /// Inspect package artifacts and supply-chain receipt inputs.
+    Package(cmd_package::PackageArgs),
+    /// Check content-addressed CI protocol artifacts.
+    Ci(cmd_ci::CiArgs),
     /// Same as `prove`. Reserved for a future split.
     Verify(ProveArgs),
     /// Look up a formula by content. Parses an IR-JSON formula file, hashes it, reports the CID.
@@ -96,6 +131,8 @@ enum Cmd {
     AgentLift(cmd_lift::AgentLiftArgs),
     /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
     Mint(cmd_mint::MintArgs),
+    /// Lower witness plans, or IR-JSON formulas from stdin to solver dialects.
+    Lower(cmd_lower::LowerArgs),
     /// Translate an English description to a verified ProvekIt contract via the configured agent.
     Must(cmd_must::MustArgs),
     /// Hand the configured agent a bug; verify a fix in a sandbox; report.
@@ -109,17 +146,58 @@ enum Cmd {
     VerifyProtocol(VerifyProtocolArgs),
     /// Print CLI version and the protocol catalog CID it declares conformance to.
     Version(VersionArgs),
+    /// Linker pass: derive bridges from (contracts ∪ call-edges), emit LinkBundle.
+    /// Per spec protocol/specs/2026-05-03-bridge-linkage-protocol.md R2-R5.
+    Link(LinkArgs),
+    /// Transport an accepted source program through the concept hub to a target algebra/source.
+    Transport(cmd_transport::TransportArgs),
+    /// Alias for `transport` when the intent is a source-language port.
+    Migrate(cmd_transport::TransportArgs),
+    /// JSON-RPC subprocess transport for the canonical compose primitive.
+    /// Per spec protocol/specs/2026-05-09-contract-composition-protocol.md §6.3.
+    /// Reads JSON-RPC requests on stdin, writes responses on stdout.
+    Compose(ComposeArgs),
+    /// Bind concept contracts to source code: lift, cluster, name, scope, identify, realize, witness.
+    /// Implements the eight-verb pipeline (paper 20 §9) against arbitrary user code.
+    /// --rewrite={annotate,canonical,invisible} --mode={witness,emitter,monitor} --target-language=<lang>
+    Bind(cmd_bind::BindArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
 pub struct ProveArgs {
     /// Project root to scan for .proof files. Defaults to the current directory.
     pub project: Option<PathBuf>,
+    /// Prove one IR-JSON formula directly. The formula is valid when the solver
+    /// reports UNSAT for its negation; invalid formulas exit with verification
+    /// failure and report the counterexample status.
+    #[arg(long, conflicts_with = "kit")]
+    pub formula: Option<PathBuf>,
     /// Path to z3 binary (default: "z3" on PATH).
     #[arg(long, default_value = "z3")]
     pub z3: String,
+    /// Artifact bytes to verify against a package release proof/receipt.
+    #[arg(long, requires = "proof")]
+    pub artifact: Option<PathBuf>,
+    /// Package release proof/receipt naming the expected binaryCid.
+    #[arg(long)]
+    pub proof: Option<PathBuf>,
+    /// Consumer policy proof/receipt used for policy admission checks.
+    #[arg(long, requires = "proof")]
+    pub policy: Option<PathBuf>,
+    /// Kit conformance gate: verify the named kit's lifter implements the
+    /// canonical lift-plugin-protocol contracts (C1-C8). When set, the six-stage
+    /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
+    /// each verifier in `provekit-self-contracts::lift_plugin_protocol` is run
+    /// against the captured RPC messages.
+    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
+    #[arg(long, conflicts_with = "project")]
+    pub kit: Option<String>,
     #[command(flatten)]
     pub out: OutputFlags,
+    /// Additional project directories whose .proof files should also be loaded
+    /// (e.g., an OpenAPI spec project for cross-kit verification).
+    #[arg(long = "with", num_args = 0..)]
+    pub with: Vec<String>,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -190,8 +268,11 @@ pub struct InitArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct LiftArgs {
-    /// Source file to lift (currently informational; the lift implementation lives in TS).
-    pub file: Option<PathBuf>,
+    /// Project root to lift. Defaults to the current directory.
+    pub project: Option<PathBuf>,
+    /// Ask the configured lifter to report native contract identities without full ProofIR lowering.
+    #[arg(long)]
+    pub identify_only: bool,
     #[command(flatten)]
     pub out: OutputFlags,
 }
@@ -204,7 +285,7 @@ pub struct VerifyProtocolArgs {
     /// Also verify the signed catalog attestation (Ed25519 signature
     /// over the catalog's CID by the ProvekIt Foundation Root Key).
     /// Default uses the embedded `foundation-v0.pub` and embedded
-    /// `catalog-signature-v1.3.1.json`; override via `--pubkey-file`
+    /// `catalog-signature-v1.4.0.json`; override via `--pubkey-file`
     /// and `--signature-file`.
     #[arg(long)]
     pub signed: bool,
@@ -238,6 +319,31 @@ pub struct WitnessArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct VersionArgs {
+    #[command(subcommand)]
+    pub cmd: Option<cmd_version::VersionCmd>,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct ComposeArgs {
+    /// Speak JSON-RPC over stdin / stdout. Required today; the only
+    /// transport the CCP §6.3 binding mode defines.
+    #[arg(long)]
+    pub rpc: bool,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct LinkArgs {
+    /// Project root. Must contain rust-callee/ and go-caller/ subdirs.
+    /// Defaults to current directory.
+    pub project: Option<PathBuf>,
+    /// Path to the go lsp binary (default: searches PATH for provekit-lsp-go,
+    /// then falls back to `go run <project-root>/go-caller/`).
+    #[arg(long)]
+    pub go_lsp_bin: Option<String>,
     #[command(flatten)]
     pub out: OutputFlags,
 }
@@ -246,6 +352,10 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let code = match cli.cmd {
         Cmd::Prove(a) | Cmd::Verify(a) => cmd_prove::run(a),
+        Cmd::Proof(a) => cmd_proof::run(a),
+        Cmd::Protocol(a) => cmd_protocol::run(a),
+        Cmd::Package(a) => cmd_package::run(a),
+        Cmd::Ci(a) => cmd_ci::run(a),
         Cmd::Ask(a) => cmd_ask::run(a),
         Cmd::Search(a) => cmd_search::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
@@ -255,12 +365,17 @@ fn main() -> ExitCode {
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::AgentLift(a) => cmd_lift::run_agent(a),
         Cmd::Mint(a) => cmd_mint::run(a),
+        Cmd::Lower(a) => cmd_lower::run(a),
         Cmd::Must(a) => cmd_must::run(a),
         Cmd::Fix(a) => cmd_fix::run(a),
         Cmd::Witness(a) => cmd_witness::run(a),
         Cmd::Agent(a) => cmd_agent::run(a),
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
+        Cmd::Link(a) => cmd_link::run(a),
+        Cmd::Transport(a) | Cmd::Migrate(a) => cmd_transport::run(a),
+        Cmd::Compose(a) => cmd_compose::run(a),
+        Cmd::Bind(a) => cmd_bind::run(a),
     };
     ExitCode::from(code)
 }

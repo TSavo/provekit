@@ -20,7 +20,10 @@ fn lambda_emits_coq_fun() {
     assert!(result.is_ok(), "compile failed: {:?}", result.err());
     let compiled = result.unwrap();
     let coq_code = compiled.body;
-    assert!(coq_code.contains("fun (x : Z)"), "Expected Coq lambda syntax");
+    assert!(
+        coq_code.contains("fun (x : Z)"),
+        "Expected Coq lambda syntax"
+    );
     assert!(coq_code.contains("42"), "Expected body in output");
 }
 
@@ -76,6 +79,275 @@ fn lambda_produces_valid_coq_syntax() {
     assert!(coq_code.contains("Goal"), "Expected Goal");
 }
 
+// ----------------------------------------------------------------------------
+// FunctionSort + DependentSort (issue #331)
+//
+// Soundness rationale: Coq is the portfolio seat that covers higher-order and
+// dependent types. FunctionSort maps to Coq's `->` (with parenthesization for
+// right-associative correctness on nested function args); DependentSort maps
+// to a Π-type `forall <var> : <index_sort>, <name> <var>` (instantiated form,
+// matching the `Vec n` example in the issue body).
+//
+// "Round-trip" interpretation: the Coq compiler is emit-only: there is no
+// Coq parser. So round-trip here means (a) IR JSON serde round-trips, and
+// (b) emission is deterministic byte-for-byte across calls. Surface-shape
+// assertions cover the actual translation.
+// ----------------------------------------------------------------------------
+
+#[test]
+fn function_sort_in_forall_emits_coq_arrow() {
+    let ir = json!({
+        "kind": "forall",
+        "name": "f",
+        "sort": {
+            "kind": "function",
+            "args": [{"kind": "primitive", "name": "Int"}],
+            "return": {"kind": "primitive", "name": "Bool"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let result = compiler.compile(&ir, DIALECT);
+    assert!(result.is_ok(), "compile failed: {:?}", result.err());
+    let coq_code = result.unwrap().body;
+    assert!(
+        coq_code.contains("forall f : Z -> bool"),
+        "Expected Coq forall over function type, got:\n{}",
+        coq_code
+    );
+}
+
+#[test]
+fn function_sort_multi_arg_curries_left_to_right() {
+    // (Int, Int) -> Bool  =>  Z -> Z -> bool   (right-associative, equivalent shape)
+    let ir = json!({
+        "kind": "forall",
+        "name": "g",
+        "sort": {
+            "kind": "function",
+            "args": [
+                {"kind": "primitive", "name": "Int"},
+                {"kind": "primitive", "name": "Int"}
+            ],
+            "return": {"kind": "primitive", "name": "Bool"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(
+        coq_code.contains("forall g : Z -> Z -> bool"),
+        "Expected curried multi-arg arrow, got:\n{}",
+        coq_code
+    );
+}
+
+#[test]
+fn function_sort_higher_order_arg_is_parenthesized() {
+    // `(Int -> Int) -> Bool` differs from `Int -> Int -> Bool` in Coq.
+    // The arg position is itself a Function, so it MUST be parenthesized.
+    let ir = json!({
+        "kind": "forall",
+        "name": "hof",
+        "sort": {
+            "kind": "function",
+            "args": [
+                {
+                    "kind": "function",
+                    "args": [{"kind": "primitive", "name": "Int"}],
+                    "return": {"kind": "primitive", "name": "Int"}
+                }
+            ],
+            "return": {"kind": "primitive", "name": "Bool"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(
+        coq_code.contains("forall hof : (Z -> Z) -> bool"),
+        "Higher-order arg must be parenthesized for soundness, got:\n{}",
+        coq_code
+    );
+    // Negative check: the unparenthesized form would be wrong.
+    assert!(
+        !coq_code.contains("forall hof : Z -> Z -> bool"),
+        "Must NOT collapse parens on a function-typed arg"
+    );
+}
+
+#[test]
+fn lambda_over_function_sort_emits_coq_fun() {
+    let ir = json!({
+        "kind": "lambda",
+        "paramName": "f",
+        "paramSort": {
+            "kind": "function",
+            "args": [{"kind": "primitive", "name": "Int"}],
+            "return": {"kind": "primitive", "name": "Int"}
+        },
+        "body": {"kind": "var", "name": "f"}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(
+        coq_code.contains("fun (f : Z -> Z)"),
+        "Expected Coq fun over function sort, got:\n{}",
+        coq_code
+    );
+}
+
+#[test]
+fn dependent_sort_emits_coq_pi_type() {
+    // DependentSort `Vec` indexed by `n : Int`  =>  forall n : Z, Vec n
+    let ir = json!({
+        "kind": "forall",
+        "name": "v",
+        "sort": {
+            "kind": "dependent",
+            "name": "Vec",
+            "indexVar": "n",
+            "indexSort": {"kind": "primitive", "name": "Int"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(
+        coq_code.contains("forall n : Z, Vec n"),
+        "Expected Coq Π-type with instantiated index, got:\n{}",
+        coq_code
+    );
+}
+
+#[test]
+fn dependent_sort_in_lambda_param_position() {
+    let ir = json!({
+        "kind": "lambda",
+        "paramName": "v",
+        "paramSort": {
+            "kind": "dependent",
+            "name": "Vec",
+            "indexVar": "n",
+            "indexSort": {"kind": "primitive", "name": "Int"}
+        },
+        "body": {"kind": "var", "name": "v"}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(
+        coq_code.contains("fun (v : forall n : Z, Vec n)"),
+        "Expected lambda binder over Π-type, got:\n{}",
+        coq_code
+    );
+}
+
+#[test]
+fn dependent_sort_in_function_arg_position_is_parenthesized() {
+    // Coq's `forall` extends maximally to the right, so an unparenthesized
+    // DependentSort in a FunctionSort argument silently re-scopes the binder:
+    //   `forall n : Z, Vec n -> bool`     parses as   `forall n : Z, (Vec n -> bool)`
+    //   `(forall n : Z, Vec n) -> bool`   is the intended type
+    // The emitter must wrap Sort::Dependent in parens whenever it sits in
+    // function-argument position. Three reviewers (chatgpt-codex / Copilot /
+    // CodeRabbit) flagged this on PR #364; positive + negative assertions.
+    let ir = json!({
+        "kind": "forall",
+        "name": "f",
+        "sort": {
+            "kind": "function",
+            "args": [
+                {"kind": "dependent", "name": "Vec", "indexVar": "n",
+                 "indexSort": {"kind": "primitive", "name": "Int"}}
+            ],
+            "return": {"kind": "primitive", "name": "Bool"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(
+        coq_code.contains("(forall n : Z, Vec n) -> bool"),
+        "Expected parenthesized Π-type in arg position, got:\n{}",
+        coq_code
+    );
+    assert!(
+        !coq_code.contains("forall n : Z, Vec n -> bool"),
+        "Unparenthesized Π-type leaks binder into function arrow:\n{}",
+        coq_code
+    );
+}
+
+#[test]
+fn function_sort_serde_roundtrip() {
+    // IR JSON -> Sort -> IR JSON: byte-identical via canonical serde.
+    let original = json!({
+        "kind": "function",
+        "args": [
+            {"kind": "primitive", "name": "Int"},
+            {
+                "kind": "function",
+                "args": [{"kind": "primitive", "name": "Bool"}],
+                "return": {"kind": "primitive", "name": "Int"}
+            }
+        ],
+        "return": {"kind": "primitive", "name": "Bool"}
+    });
+    let parsed: provekit_ir_types::Sort =
+        serde_json::from_value(original.clone()).expect("FunctionSort deserialization");
+    let reemitted = serde_json::to_value(&parsed).expect("FunctionSort serialization");
+    assert_eq!(
+        original, reemitted,
+        "FunctionSort IR JSON did not round-trip"
+    );
+}
+
+#[test]
+fn dependent_sort_serde_roundtrip() {
+    let original = json!({
+        "kind": "dependent",
+        "name": "Vec",
+        "indexVar": "n",
+        "indexSort": {"kind": "primitive", "name": "Int"}
+    });
+    let parsed: provekit_ir_types::Sort =
+        serde_json::from_value(original.clone()).expect("DependentSort deserialization");
+    let reemitted = serde_json::to_value(&parsed).expect("DependentSort serialization");
+    assert_eq!(
+        original, reemitted,
+        "DependentSort IR JSON did not round-trip"
+    );
+}
+
+#[test]
+fn coq_emission_is_deterministic_for_new_sorts() {
+    // Two compile calls on the same IR must produce byte-identical Coq output;
+    // any nondeterminism (HashMap iteration etc.) would break the conformance
+    // gate that pins compiler output by hash.
+    let ir = json!({
+        "kind": "forall",
+        "name": "f",
+        "sort": {
+            "kind": "function",
+            "args": [
+                {
+                    "kind": "function",
+                    "args": [{"kind": "primitive", "name": "Int"}],
+                    "return": {"kind": "primitive", "name": "Int"}
+                },
+                {"kind": "dependent", "name": "Vec", "indexVar": "k",
+                 "indexSort": {"kind": "primitive", "name": "Int"}}
+            ],
+            "return": {"kind": "primitive", "name": "Bool"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let a = compiler.compile(&ir, DIALECT).unwrap().body;
+    let b = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert_eq!(a, b, "Coq emission must be byte-deterministic");
+}
+
 #[test]
 fn let_with_multiple_bindings() {
     let ir = json!({
@@ -93,5 +365,9 @@ fn let_with_multiple_bindings() {
     let coq_code = compiled.body;
     // Should have two let bindings
     let let_count = coq_code.matches("let").count();
-    assert!(let_count >= 2, "Expected at least 2 let occurrences, got {}", let_count);
+    assert!(
+        let_count >= 2,
+        "Expected at least 2 let occurrences, got {}",
+        let_count
+    );
 }

@@ -1,0 +1,75 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:add",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "no_signed_overflow",
+    "args": [
+      {
+        "kind": "op",
+        "name": "add",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "add",
+    "arity": [
+      "Int",
+      "Int"
+    ],
+    "result": "Int",
+    "wp": "mathematical integer addition when no overflow holds",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Trap"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

@@ -13,8 +13,8 @@
 // Tier 3 unsat we mint+cache a fresh implication memento PER SOLVER
 // so the lattice records each independent witness.
 
-use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -22,6 +22,7 @@ use std::time::Duration;
 use crate::formula_rewrite;
 
 use rayon::prelude::*;
+use serde_json::json;
 use serde_json::Value as Json;
 
 use crate::handshake::{
@@ -32,9 +33,39 @@ use crate::solvers::{
 };
 use crate::types::{CallSite, MementoPool, ObligationVerdict, Report};
 use crate::{
-    enumerate_callsites, instantiate, load_all_proofs, report as report_stage, resolve_target,
-    smt_emitter,
+    call_edge_loader, enumerate_callsites, instantiate, load_all_proofs, report as report_stage,
+    resolve_target, smt_emitter,
 };
+
+pub const VERIFIER_STAGE_VOCABULARY: &[&str] = &[
+    "load_all_proofs",
+    "enumerate_callsites",
+    "resolve_target",
+    "instantiate",
+    "smt_emit",
+    "solve_obligation",
+    "report",
+];
+
+const RUN_SIGNER_SEED: [u8; 32] = [0x72; 32];
+
+#[derive(Debug, Clone)]
+pub struct ProofRunArtifact {
+    pub report: Report,
+    pub stats: TierStats,
+    pub memento: provekit_ir_types::ProofRunMemento,
+    pub stage_receipts: Vec<provekit_ir_types::StageReceipt>,
+    pub bundle_cid: String,
+    pub bundle_path: PathBuf,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProofRunArtifactError {
+    #[error("proof-run artifact: {0}")]
+    Build(String),
+    #[error("proof-run artifact io: {0}")]
+    Io(#[from] std::io::Error),
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct RunnerConfig {
@@ -53,6 +84,10 @@ pub struct RunnerConfig {
     /// `.provekit/config.toml` discovery (used by tests and the
     /// multi-solver demo).
     pub solvers_config: Option<SolversConfig>,
+    /// Additional project directories whose .proof files should
+    /// also be loaded (e.g., OpenAPI spec project for cross-kit
+    /// verification).
+    pub extra_projects: Vec<PathBuf>,
 }
 
 /// Per-solver telemetry, surfaced in the report alongside the legacy
@@ -121,9 +156,258 @@ impl Runner {
         report
     }
 
+    pub fn run_with_proof_run(&self) -> Result<ProofRunArtifact, ProofRunArtifactError> {
+        let input_artifact_cids = discover_input_artifact_cids(&self.cfg);
+        let proof_envelope_cid = input_artifact_cids
+            .iter()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| placeholder_cid("empty-proof-inputs"));
+        let link_bundle_cid =
+            discover_named_artifact_cid(&self.cfg.project_root, "link-bundle.json")
+                .unwrap_or_else(|| placeholder_cid("absent-link-bundle"));
+        let plugin_registry_cid =
+            discover_named_artifact_cid(&self.cfg.project_root, "plugin-registry.json")
+                .unwrap_or_else(|| placeholder_cid("absent-plugin-registry"));
+
+        let mut stages = Vec::new();
+        let mut report = Report::default();
+
+        let load_stage = StageCapture::start(
+            "load_all_proofs",
+            input_artifact_cids.iter().cloned().collect(),
+        );
+        let mut pool = load_all_proofs::run(&self.cfg.project_root);
+        for extra in &self.cfg.extra_projects {
+            let extra_pool = load_all_proofs::run(extra);
+            pool.merge(extra_pool);
+        }
+        let loaded_cids = sorted_keys(&pool.mementos);
+        let load_diagnostics: Vec<Json> = pool
+            .load_errors
+            .iter()
+            .map(|e| json!({"kind": "load-error", "proof_path": e.proof_path, "reason": e.reason}))
+            .collect();
+        stages.push(load_stage.finish(
+            loaded_cids.clone(),
+            Vec::new(),
+            load_diagnostics,
+            if pool.load_errors.is_empty() {
+                provekit_ir_types::StageVerdict::Ok
+            } else {
+                provekit_ir_types::StageVerdict::Warned
+            },
+        )?);
+
+        let enumerate_stage = StageCapture::start("enumerate_callsites", loaded_cids.clone());
+        let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
+        let obligations = call_edge_loader::process_call_edges(&call_edges, &pool);
+        for (source_cid, target_cid, locus) in &obligations {
+            let file = locus
+                .as_ref()
+                .and_then(|l| l.get("file"))
+                .and_then(|f| f.as_str())
+                .unwrap_or("<unknown>");
+            report.call_edges.push(crate::types::ResolvedCallEdge {
+                source_contract_cid: source_cid.clone(),
+                target_contract_cid: target_cid.clone(),
+                file: file.to_string(),
+            });
+        }
+        let callsites = enumerate_callsites::run(&pool);
+        let callsite_property_cids: Vec<String> =
+            callsites.iter().map(|cs| cs.property_cid.clone()).collect();
+        stages.push(enumerate_stage.finish(
+            sorted(callsite_property_cids),
+            Vec::new(),
+            vec![json!({"kind": "stage-summary", "callsites": callsites.len(), "call_edges": obligations.len()})],
+            provekit_ir_types::StageVerdict::Ok,
+        )?);
+
+        let n_hash = AtomicUsize::new(0);
+        let n_cache = AtomicUsize::new(0);
+        let n_vacuous = AtomicUsize::new(0);
+        let n_solved = AtomicUsize::new(0);
+        let n_residue = AtomicUsize::new(0);
+        let n_disagree = AtomicUsize::new(0);
+        let n_invoc = AtomicUsize::new(0);
+        let invs_sink: Mutex<Vec<SolverInvocation>> = Mutex::new(vec![]);
+        let minted_sink = Mutex::new(Vec::new());
+
+        let fanout_input = sorted(
+            callsites
+                .iter()
+                .map(|cs| cs.property_cid.clone())
+                .chain(loaded_cids.iter().cloned())
+                .collect(),
+        );
+        let fanout_started = iso_now();
+        let per_results: Vec<(CallSite, ObligationVerdict, String)> = callsites
+            .par_iter()
+            .map(|cs| {
+                work_one(
+                    cs,
+                    &pool,
+                    &self.plan,
+                    &self.registry,
+                    &self.cfg,
+                    &n_hash,
+                    &n_cache,
+                    &n_vacuous,
+                    &n_solved,
+                    &n_residue,
+                    &n_disagree,
+                    &n_invoc,
+                    &invs_sink,
+                    &minted_sink,
+                )
+            })
+            .collect();
+        let fanout_finished = iso_now();
+
+        let minted = minted_sink.into_inner().unwrap_or_default();
+        for (cid, envelope) in minted.iter() {
+            pool.insert(cid.clone(), envelope.clone());
+        }
+        let output_artifact_cids = sorted(minted.iter().map(|(cid, _)| cid.clone()).collect());
+
+        for stage_name in [
+            "resolve_target",
+            "instantiate",
+            "smt_emit",
+            "solve_obligation",
+        ] {
+            stages.push(make_stage_receipt(
+                stage_name,
+                fanout_input.clone(),
+                output_artifact_cids.clone(),
+                Vec::new(),
+                vec![json!({"kind": "stage-summary", "callsites": callsites.len()})],
+                fanout_started.clone(),
+                fanout_finished.clone(),
+                if callsites.is_empty() {
+                    provekit_ir_types::StageVerdict::Skipped
+                } else {
+                    provekit_ir_types::StageVerdict::Ok
+                },
+            )?);
+        }
+
+        let report_stage_capture = StageCapture::start("report", sorted_keys(&pool.mementos));
+        let mut violations = 0usize;
+        for (cs, verdict, reason) in per_results {
+            if verdict != ObligationVerdict::Discharged {
+                violations += 1;
+            }
+            report_stage::add_callsite(&cs, verdict, &reason, &mut report);
+        }
+        report_stage::add_load_errors(&pool.load_errors, &mut report);
+
+        let invs = invs_sink.into_inner().unwrap_or_default();
+        let mut per_solver: BTreeMap<String, SolverStats> = BTreeMap::new();
+        for inv in &invs {
+            let r = &inv.result;
+            let entry = per_solver.entry(r.solver_name.clone()).or_default();
+            entry.version = r.solver_version.clone();
+            entry.wall_clock += r.wall_clock;
+            match r.verdict {
+                ObligationVerdict::Discharged => entry.discharged += 1,
+                ObligationVerdict::Unsatisfied => entry.unsatisfied += 1,
+                ObligationVerdict::Undecidable => entry.undecidable += 1,
+                ObligationVerdict::Disagreement => entry.undecidable += 1,
+            }
+            if r.timed_out {
+                entry.timeouts += 1;
+            }
+        }
+
+        let stats = TierStats {
+            discharged_by_hash: n_hash.load(Ordering::Relaxed),
+            discharged_by_cache: n_cache.load(Ordering::Relaxed),
+            vacuous_discharge: n_vacuous.load(Ordering::Relaxed),
+            solved_and_minted: n_solved.load(Ordering::Relaxed),
+            residue: n_residue.load(Ordering::Relaxed),
+            violations,
+            disagreements: n_disagree.load(Ordering::Relaxed),
+            solver_invocations: n_invoc.load(Ordering::Relaxed),
+            per_solver,
+        };
+        stages.push(report_stage_capture.finish(
+            Vec::new(),
+            Vec::new(),
+            vec![json!({"kind": "stage-summary", "total_callsites": report.total_callsites, "violations": report.violations})],
+            if report.violations == 0 {
+                provekit_ir_types::StageVerdict::Ok
+            } else {
+                provekit_ir_types::StageVerdict::Refused
+            },
+        )?);
+
+        let stage_receipt_cids = stages.iter().map(|s| s.header.cid.clone()).collect();
+        let mut run_inputs: Vec<String> = input_artifact_cids.into_iter().collect();
+        run_inputs.push(link_bundle_cid.clone());
+        run_inputs.push(plugin_registry_cid.clone());
+        run_inputs = sorted(run_inputs);
+        let run_verdict = if report.violations == 0 && pool.load_errors.is_empty() {
+            provekit_ir_types::ProofRunVerdict::Admissible
+        } else if report.violations > 0 {
+            provekit_ir_types::ProofRunVerdict::Refused
+        } else {
+            provekit_ir_types::ProofRunVerdict::Partial
+        };
+        let memento = make_proof_run_memento(
+            stage_receipt_cids,
+            run_inputs,
+            output_artifact_cids,
+            proof_envelope_cid,
+            link_bundle_cid,
+            plugin_registry_cid,
+            run_verdict,
+        )?;
+        let (bundle_cid, bundle_path) =
+            write_proof_run_bundle(&self.cfg.project_root, &memento, &stages)?;
+
+        Ok(ProofRunArtifact {
+            report,
+            stats,
+            memento,
+            stage_receipts: stages,
+            bundle_cid,
+            bundle_path,
+        })
+    }
+
     pub fn run_with_tiers(&self) -> (Report, TierStats) {
         let mut report = Report::default();
         let mut pool = load_all_proofs::run(&self.cfg.project_root);
+
+        // Load contracts from extra project dirs (e.g., OpenAPI spec)
+        for extra in &self.cfg.extra_projects {
+            let extra_pool = load_all_proofs::run(extra);
+            pool.merge(extra_pool);
+        }
+
+        // Load and process call edges
+        let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
+        let obligations = call_edge_loader::process_call_edges(&call_edges, &pool);
+
+        // Report resolved call-edge obligations using the single
+        // `obligations` computation above (do not call process_call_edges
+        // a second time: it's an O(callgraph) walk over all loaded
+        // mementos).
+        for (source_cid, target_cid, locus) in &obligations {
+            let file = locus
+                .as_ref()
+                .and_then(|l| l.get("file"))
+                .and_then(|f| f.as_str())
+                .unwrap_or("<unknown>");
+            report.call_edges.push(crate::types::ResolvedCallEdge {
+                source_contract_cid: source_cid.clone(),
+                target_contract_cid: target_cid.clone(),
+                file: file.to_string(),
+            });
+        }
+
         let callsites = enumerate_callsites::run(&pool);
 
         let n_hash = AtomicUsize::new(0);
@@ -227,9 +511,281 @@ impl Runner {
     }
 }
 
-fn build_plan_and_registry(
-    cfg: &RunnerConfig,
-) -> (SolverPlan, HashMap<String, SolverHandle>) {
+struct StageCapture {
+    stage_name: String,
+    input_cids: Vec<String>,
+    started_at: String,
+}
+
+impl StageCapture {
+    fn start(stage_name: &str, input_cids: Vec<String>) -> Self {
+        Self {
+            stage_name: stage_name.to_string(),
+            input_cids: sorted(input_cids),
+            started_at: iso_now(),
+        }
+    }
+
+    fn finish(
+        self,
+        output_cids: Vec<String>,
+        refusal_cids: Vec<String>,
+        diagnostics: Vec<Json>,
+        verdict: provekit_ir_types::StageVerdict,
+    ) -> Result<provekit_ir_types::StageReceipt, ProofRunArtifactError> {
+        make_stage_receipt(
+            &self.stage_name,
+            self.input_cids,
+            output_cids,
+            refusal_cids,
+            diagnostics,
+            self.started_at,
+            iso_now(),
+            verdict,
+        )
+    }
+}
+
+fn make_stage_receipt(
+    stage_name: &str,
+    input_cids: Vec<String>,
+    output_cids: Vec<String>,
+    refusal_cids: Vec<String>,
+    diagnostics: Vec<Json>,
+    started_at: String,
+    finished_at: String,
+    verdict: provekit_ir_types::StageVerdict,
+) -> Result<provekit_ir_types::StageReceipt, ProofRunArtifactError> {
+    let mut receipt = provekit_ir_types::StageReceipt {
+        envelope: unsigned_envelope(&finished_at),
+        header: provekit_ir_types::StageReceiptHeader {
+            cid: "blake3-512:PENDING".into(),
+            diagnostics,
+            finished_at,
+            input_cids: sorted(input_cids),
+            kind: "stage-receipt".into(),
+            output_cids: sorted(output_cids),
+            refusal_cids: sorted(refusal_cids),
+            schema_version: "1".into(),
+            stage_name: stage_name.into(),
+            started_at,
+            verdict,
+        },
+        metadata: provekit_ir_types::StageReceiptMetadata::default(),
+    };
+    receipt.header.cid = receipt
+        .recompute_header_cid()
+        .map_err(|e| ProofRunArtifactError::Build(e.to_string()))?;
+    receipt.envelope.signature = sign_header_metadata(&receipt.header, &receipt.metadata)?;
+    Ok(receipt)
+}
+
+fn make_proof_run_memento(
+    stage_receipt_cids: Vec<String>,
+    input_artifact_cids: Vec<String>,
+    output_artifact_cids: Vec<String>,
+    proof_envelope_cid: String,
+    link_bundle_cid: String,
+    plugin_registry_cid: String,
+    verdict: provekit_ir_types::ProofRunVerdict,
+) -> Result<provekit_ir_types::ProofRunMemento, ProofRunArtifactError> {
+    let sealed_at = iso_now();
+    let mut memento = provekit_ir_types::ProofRunMemento {
+        envelope: unsigned_envelope(&sealed_at),
+        header: provekit_ir_types::ProofRunHeader {
+            cid: "blake3-512:PENDING".into(),
+            input_artifact_cids: sorted(input_artifact_cids),
+            input_run_cids: Vec::new(),
+            kind: "proof-run".into(),
+            link_bundle_cid,
+            output_artifact_cids: sorted(output_artifact_cids),
+            plugin_registry_cid,
+            proof_envelope_cid,
+            schema_version: "1".into(),
+            sealed_at,
+            stage_receipt_cids,
+            verdict,
+            // TODO(#799): replace this deterministic vocabulary hash with
+            // VerifierPipelineMemento once that substrate artifact lands.
+            verifier_pipeline_cid: verifier_pipeline_placeholder_cid(),
+        },
+        metadata: provekit_ir_types::ProofRunMetadata {
+            note: Some("provekit-verifier run receipt".into()),
+            source_url: None,
+        },
+    };
+    memento.header.cid = memento
+        .recompute_header_cid()
+        .map_err(|e| ProofRunArtifactError::Build(e.to_string()))?;
+    memento.envelope.signature = sign_header_metadata(&memento.header, &memento.metadata)?;
+    Ok(memento)
+}
+
+fn write_proof_run_bundle(
+    project_root: &Path,
+    memento: &provekit_ir_types::ProofRunMemento,
+    stages: &[provekit_ir_types::StageReceipt],
+) -> Result<(String, PathBuf), ProofRunArtifactError> {
+    use provekit_proof_envelope::{build_proof_envelope, ProofEnvelopeInput};
+
+    let mut members = BTreeMap::new();
+    members.insert(
+        memento.header.cid.clone(),
+        memento
+            .to_jcs_string()
+            .map_err(|e| ProofRunArtifactError::Build(e.to_string()))?
+            .into_bytes(),
+    );
+    for stage in stages {
+        members.insert(
+            stage.header.cid.clone(),
+            stage
+                .to_jcs_string()
+                .map_err(|e| ProofRunArtifactError::Build(e.to_string()))?
+                .into_bytes(),
+        );
+    }
+
+    let signer = provekit_proof_envelope::ed25519_pubkey_string(&RUN_SIGNER_SEED);
+    let signer_cid = provekit_canonicalizer::blake3_512_of(signer.as_bytes());
+    let built = build_proof_envelope(&ProofEnvelopeInput {
+        name: "@provekit/verifier-run".into(),
+        version: "1.0.0".into(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid,
+        signer_seed: RUN_SIGNER_SEED,
+        declared_at: iso_now(),
+    });
+    let out_dir = project_root.join(".provekit").join("runs");
+    std::fs::create_dir_all(&out_dir)?;
+    let hex = built.cid.trim_start_matches("blake3-512:");
+    let path = out_dir.join(format!("{hex}.proof"));
+    std::fs::write(&path, built.bytes)?;
+    Ok((built.cid, path))
+}
+
+fn unsigned_envelope(declared_at: &str) -> provekit_ir_types::ProofRunEnvelope {
+    provekit_ir_types::ProofRunEnvelope {
+        declared_at: declared_at.to_string(),
+        signature: String::new(),
+        signer: provekit_proof_envelope::ed25519_pubkey_string(&RUN_SIGNER_SEED),
+    }
+}
+
+fn sign_header_metadata<H: serde::Serialize, M: serde::Serialize>(
+    header: &H,
+    metadata: &M,
+) -> Result<String, ProofRunArtifactError> {
+    let payload = json!({ "header": header, "metadata": metadata });
+    let canonical = json_to_canonical(&payload)?;
+    let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+    Ok(provekit_proof_envelope::ed25519_sign_string(
+        &RUN_SIGNER_SEED,
+        jcs.as_bytes(),
+    ))
+}
+
+fn verifier_pipeline_placeholder_cid() -> String {
+    let vocabulary = Json::Array(
+        VERIFIER_STAGE_VOCABULARY
+            .iter()
+            .map(|s| Json::String((*s).to_string()))
+            .collect(),
+    );
+    let canonical = json_to_canonical(&vocabulary).expect("stage vocabulary canonicalizes");
+    let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+    provekit_canonicalizer::blake3_512_of(jcs.as_bytes())
+}
+
+fn discover_input_artifact_cids(cfg: &RunnerConfig) -> BTreeSet<String> {
+    let mut cids = BTreeSet::new();
+    collect_proof_file_cids(&cfg.project_root, &mut cids);
+    for extra in &cfg.extra_projects {
+        collect_proof_file_cids(extra, &mut cids);
+    }
+    cids
+}
+
+fn collect_proof_file_cids(root: &Path, out: &mut BTreeSet<String>) {
+    if !root.exists() {
+        return;
+    }
+    for entry in walkdir::WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if entry.path().extension().and_then(|s| s.to_str()) != Some("proof") {
+            continue;
+        }
+        if let Ok(bytes) = std::fs::read(entry.path()) {
+            out.insert(provekit_canonicalizer::blake3_512_of(&bytes));
+        }
+    }
+}
+
+fn discover_named_artifact_cid(project_root: &Path, name: &str) -> Option<String> {
+    let path = project_root.join(name);
+    std::fs::read(path)
+        .ok()
+        .map(|bytes| provekit_canonicalizer::blake3_512_of(&bytes))
+}
+
+fn placeholder_cid(label: &str) -> String {
+    provekit_canonicalizer::blake3_512_of(format!("provekit-verifier:{label}:v1").as_bytes())
+}
+
+fn sorted(mut values: Vec<String>) -> Vec<String> {
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn sorted_keys(map: &BTreeMap<String, Json>) -> Vec<String> {
+    map.keys().cloned().collect()
+}
+
+fn iso_now() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+fn json_to_canonical(
+    value: &Json,
+) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, ProofRunArtifactError> {
+    use provekit_canonicalizer::Value as CanonicalValue;
+    match value {
+        Json::Null => Ok(CanonicalValue::null()),
+        Json::Bool(b) => Ok(CanonicalValue::boolean(*b)),
+        Json::Number(n) => {
+            let Some(i) = n.as_i64() else {
+                return Err(ProofRunArtifactError::Build(format!(
+                    "unsupported JSON number in proof-run signing payload: {n}"
+                )));
+            };
+            Ok(CanonicalValue::integer(i))
+        }
+        Json::String(s) => Ok(CanonicalValue::string(s.clone())),
+        Json::Array(items) => Ok(CanonicalValue::array(
+            items
+                .iter()
+                .map(json_to_canonical)
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        Json::Object(object) => Ok(CanonicalValue::object(
+            object
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), json_to_canonical(value)?)))
+                .collect::<Result<Vec<_>, ProofRunArtifactError>>()?,
+        )),
+    }
+}
+
+fn build_plan_and_registry(cfg: &RunnerConfig) -> (SolverPlan, HashMap<String, SolverHandle>) {
     if let Some(sc) = &cfg.solvers_config {
         return (SolverPlan::from_config(sc), registry::build(sc));
     }
@@ -288,33 +844,42 @@ fn work_one(
 
     let consumer_pre = resolved.ir_formula.as_ref();
     let consumer_pre_hash = consumer_pre.map(formula_hash);
-    let producer_post = locate_producer_post(
-        &cs.arg_term,
-        &pool.mementos,
-        &pool.bridges_by_symbol,
-    );
+    let producer_post = locate_producer_post(&cs.arg_term, &pool.mementos, &pool.bridges_by_symbol);
 
     // Tier 0: Memento IS verification. Look up the formula CID in the pool.
     // The hash IS the boundary: we verify by hash lookup, not by solving.
     if let Some(pre_formula) = consumer_pre {
         if let Some(memento) = pool.verify(pre_formula) {
             n_hash.fetch_add(1, Ordering::Relaxed);
-            let memento_cid = memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let memento_cid = memento
+                .get("cid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             return (
                 cs.clone(),
                 ObligationVerdict::Discharged,
-                format!("tier0: memento-is-verification (cid={})", short(memento_cid)),
+                format!(
+                    "tier0: memento-is-verification (cid={})",
+                    short(memento_cid)
+                ),
             );
         }
-        
+
         // Tier 0b: Sub-formula composition. If parts of the formula are
         // already verified, note them for partial discharge.
         let verified_subs = pool.find_verified_subformulas(pre_formula);
         if !verified_subs.is_empty() {
             // TODO: In v1, use verified_subs to build a reduced obligation
             // for the solver. For now, we just note it in telemetry.
-            let sub_cids: Vec<String> = verified_subs.into_iter().map(|(cid, _)| short(&cid)).collect();
-            eprintln!("info: formula has {} verified sub-formulas: {}", sub_cids.len(), sub_cids.join(", "));
+            let sub_cids: Vec<String> = verified_subs
+                .into_iter()
+                .map(|(cid, _)| short(&cid))
+                .collect();
+            eprintln!(
+                "info: formula has {} verified sub-formulas: {}",
+                sub_cids.len(),
+                sub_cids.join(", ")
+            );
         }
     }
 
@@ -329,12 +894,19 @@ fn work_one(
                 return (
                     cs.clone(),
                     ObligationVerdict::Discharged,
-                    format!("tier0c: implication proven direct (memento {})", short(&memento_cid)),
+                    format!(
+                        "tier0c: implication proven direct (memento {})",
+                        short(&memento_cid)
+                    ),
                 );
             }
             crate::types::ImplicationResult::ProvenTransitive { path } => {
                 n_hash.fetch_add(1, Ordering::Relaxed);
-                let path_str = path.iter().map(|s| short(s)).collect::<Vec<_>>().join(" → ");
+                let path_str = path
+                    .iter()
+                    .map(|s| short(s))
+                    .collect::<Vec<_>>()
+                    .join(" → ");
                 return (
                     cs.clone(),
                     ObligationVerdict::Discharged,
@@ -357,7 +929,10 @@ fn work_one(
             return (
                 cs.clone(),
                 ObligationVerdict::Discharged,
-                format!("tier1: hash equality (post == pre, hash={})", short(pre_hash)),
+                format!(
+                    "tier1: hash equality (post == pre, hash={})",
+                    short(pre_hash)
+                ),
             );
         }
         if let Some(cache_dir) = &cfg.cache_dir {
@@ -366,7 +941,10 @@ fn work_one(
                 return (
                     cs.clone(),
                     ObligationVerdict::Discharged,
-                    format!("tier2: cache hit (implication memento {})", short(&impl_cid)),
+                    format!(
+                        "tier2: cache hit (implication memento {})",
+                        short(&impl_cid)
+                    ),
                 );
             }
         }
@@ -377,9 +955,7 @@ fn work_one(
     let formula_for_dispatch: Option<Json>;
     let used_implication_form: bool;
 
-    if let (Some((post_formula, _)), Some(pre_formula)) =
-        (producer_post.as_ref(), consumer_pre)
-    {
+    if let (Some((post_formula, _)), Some(pre_formula)) = (producer_post.as_ref(), consumer_pre) {
         used_implication_form = true;
         let implication = match build_implication_obligation(post_formula, pre_formula) {
             Ok(f) => f,
@@ -404,7 +980,10 @@ fn work_one(
                     format!("tier3a: tactic discharged ({reason})"),
                 );
             }
-            formula_rewrite::TacticResult::Reduced { new_formula, reason: _ } => {
+            formula_rewrite::TacticResult::Reduced {
+                new_formula,
+                reason: _,
+            } => {
                 // Use the reduced formula for SMT emission
                 smt = match smt_emitter::emit(&new_formula) {
                     Ok(s) => s,
@@ -462,8 +1041,7 @@ fn work_one(
         formula_for_dispatch = Some(ob.ir_formula);
     }
 
-    let (verdict, reason, invs) =
-        run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
+    let (verdict, reason, invs) = run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
 
     n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
 
@@ -484,10 +1062,8 @@ fn work_one(
         ) {
             for inv in &invs {
                 if inv.result.verdict == ObligationVerdict::Discharged {
-                    let prover_tag = format!(
-                        "{}@{}",
-                        inv.result.solver_name, inv.result.solver_version
-                    );
+                    let prover_tag =
+                        format!("{}@{}", inv.result.solver_name, inv.result.solver_version);
                     match mint_and_cache(
                         cache_dir,
                         seed,
@@ -537,13 +1113,8 @@ fn short(s: &str) -> String {
     format!("blake3-512:{take}...")
 }
 
-fn build_implication_obligation(
-    post_formula: &Json,
-    pre_formula: &Json,
-) -> Result<Json, String> {
-    let post_obj = post_formula
-        .as_object()
-        .ok_or("post is not an object")?;
+fn build_implication_obligation(post_formula: &Json, pre_formula: &Json) -> Result<Json, String> {
+    let post_obj = post_formula.as_object().ok_or("post is not an object")?;
     let pre_obj = pre_formula.as_object().ok_or("pre is not an object")?;
     if post_obj.get("kind").and_then(|v| v.as_str()) != Some("forall") {
         return Err("post is not a forall".into());
@@ -559,15 +1130,12 @@ fn build_implication_obligation(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or("pre forall name missing")?;
-    let sort = post_obj
-        .get("sort")
-        .cloned()
-        .unwrap_or_else(|| {
-            pre_obj
-                .get("sort")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({"kind":"primitive","name":"Int"}))
-        });
+    let sort = post_obj.get("sort").cloned().unwrap_or_else(|| {
+        pre_obj
+            .get("sort")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"kind":"primitive","name":"Int"}))
+    });
     let post_body = post_obj.get("body").cloned().ok_or("post body missing")?;
     let pre_body = pre_obj.get("body").cloned().ok_or("pre body missing")?;
 
@@ -589,7 +1157,6 @@ fn build_implication_obligation(
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Mint an implication memento and cache it to disk.
 /// Returns (cid, envelope_json) so the caller can insert into the pool.
 #[allow(clippy::too_many_arguments)]
@@ -615,38 +1182,11 @@ fn mint_and_cache(
     let pubkey = ed25519_pubkey_string(seed);
     let _ = (post_formula, pre_formula);
 
-    let mut body_kvs: Vec<(String, std::sync::Arc<Value>)> = vec![
-        ("antecedentHash".into(), Value::string(post_hash.to_string())),
-        ("consequentHash".into(), Value::string(pre_hash.to_string())),
-        ("antecedentCid".into(), Value::string("blake3-512:0000".to_string())),
-        ("consequentCid".into(), Value::string("blake3-512:0000".to_string())),
-        ("antecedentSlot".into(), Value::string("post".to_string())),
-        ("consequentSlot".into(), Value::string("pre".to_string())),
-        ("prover".into(), Value::string(prover_tag.to_string())),
-        ("proverRunMs".into(), Value::integer(prover_run_ms)),
-        ("producerPubkey".into(), Value::string(pubkey.clone())),
-    ];
-    if !smt_lib_input.is_empty() {
-        body_kvs.push((
-            "smtLibInput".into(),
-            Value::string(smt_lib_input.to_string()),
-        ));
-    }
-    body_kvs.push(("proofWitness".into(), Value::string("(unsat)".to_string())));
-
-    let body = std::sync::Arc::new(Value::Object(body_kvs));
-
-    let evidence = Value::object([
-        ("kind", Value::string("implication")),
-        (
-            "schema",
-            Value::string(
-                "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c08",
-            ),
-        ),
-        ("body", body),
-    ]);
-
+    // Layered shape (v1.2). The verifier's own implication-extension
+    // mint emits the same `{envelope, header, metadata}` shape that
+    // `provekit-claim-envelope::mint_implication` produces; mirroring
+    // it inline keeps the runner free of an extra runtime dep on the
+    // claim-envelope crate.
     let bh = Value::object([
         ("antecedentHash", Value::string(post_hash.to_string())),
         ("consequentHash", Value::string(pre_hash.to_string())),
@@ -654,39 +1194,87 @@ fn mint_and_cache(
     let binding_hash = blake3_512_of(encode_jcs(&bh).as_bytes());
     let property_hash = implication_property_hash(post_hash, pre_hash);
 
-    let mut input_cids = vec![
-        "blake3-512:0000".to_string(),
-        "blake3-512:0000".to_string(),
-    ];
+    let mut input_cids = vec!["blake3-512:0000".to_string(), "blake3-512:0000".to_string()];
     input_cids.sort();
-    let cids_arr: Vec<std::sync::Arc<Value>> =
-        input_cids.into_iter().map(Value::string).collect();
+    let cids_arr: Vec<std::sync::Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
 
-    let unsigned_v = Value::object([
-        ("schemaVersion", Value::string("1")),
+    // Header: schemaVersion / kind / cid + kind-specific REQUIRED.
+    // The header CID hashes the substrate-load-bearing claim content
+    // (antecedent/consequent hashes + slots).
+    let header_content = Value::object([
+        ("antecedentHash", Value::string(post_hash.to_string())),
+        ("consequentHash", Value::string(pre_hash.to_string())),
+        (
+            "antecedentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
+        (
+            "consequentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
+        ("antecedentSlot", Value::string("post".to_string())),
+        ("consequentSlot", Value::string("pre".to_string())),
+    ]);
+    let header_cid = blake3_512_of(encode_jcs(&header_content).as_bytes());
+
+    let header = Value::object([
+        ("schemaVersion", Value::string("2")),
+        ("kind", Value::string("implication")),
+        ("cid", Value::string(header_cid)),
+        ("antecedentHash", Value::string(post_hash.to_string())),
+        ("consequentHash", Value::string(pre_hash.to_string())),
+        (
+            "antecedentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
+        (
+            "consequentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
+        ("antecedentSlot", Value::string("post".to_string())),
+        ("consequentSlot", Value::string("pre".to_string())),
+        ("verdict", Value::string("holds")),
         ("bindingHash", Value::string(binding_hash)),
         ("propertyHash", Value::string(property_hash.clone())),
-        ("verdict", Value::string("holds")),
-        ("producedBy", Value::string(producer_id.to_string())),
-        ("producedAt", Value::string(now.to_string())),
         ("inputCids", Value::array(cids_arr)),
-        ("evidence", evidence),
     ]);
-    let unsigned_canonical = encode_jcs(&unsigned_v);
-    let cid = blake3_512_of(unsigned_canonical.as_bytes());
-    let producer_sig = ed25519_sign_string(seed, unsigned_canonical.as_bytes());
 
-    let mut entries = match unsigned_v.as_ref() {
-        Value::Object(kvs) => kvs.clone(),
-        _ => unreachable!("envelope is an object"),
-    };
-    entries.push(("cid".into(), Value::string(cid.clone())));
-    entries.push((
-        "producerSignature".into(),
-        Value::string(producer_sig),
-    ));
-    let signed_v = std::sync::Arc::new(Value::Object(entries));
-    let final_canonical = encode_jcs(&signed_v).into_bytes();
+    let mut metadata_kvs: Vec<(String, std::sync::Arc<Value>)> = vec![
+        ("producedBy".into(), Value::string(producer_id.to_string())),
+        ("producedAt".into(), Value::string(now.to_string())),
+        ("prover".into(), Value::string(prover_tag.to_string())),
+        ("proverRunMs".into(), Value::integer(prover_run_ms)),
+        ("producerPubkey".into(), Value::string(pubkey.clone())),
+    ];
+    if !smt_lib_input.is_empty() {
+        metadata_kvs.push((
+            "smtLibInput".into(),
+            Value::string(smt_lib_input.to_string()),
+        ));
+    }
+    metadata_kvs.push(("proofWitness".into(), Value::string("(unsat)".to_string())));
+    let metadata = std::sync::Arc::new(Value::Object(metadata_kvs));
+
+    // Sign over JCS({header, metadata}) per spec §2 R2.
+    let signing_msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
+    let signing_bytes = encode_jcs(&signing_msg);
+    let producer_sig = ed25519_sign_string(seed, signing_bytes.as_bytes());
+
+    // Envelope CID is blake3_512(JCS(envelope-with-signature)).
+    let envelope = Value::object([
+        ("signer", Value::string(pubkey.clone())),
+        ("declaredAt", Value::string(now.to_string())),
+        ("signature", Value::string(producer_sig)),
+    ]);
+    let envelope_jcs = encode_jcs(&envelope);
+    let cid = blake3_512_of(envelope_jcs.as_bytes());
+
+    let memento = Value::object([
+        ("envelope", envelope),
+        ("header", header),
+        ("metadata", metadata),
+    ]);
+    let final_canonical = encode_jcs(&memento).into_bytes();
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     members.insert(cid.clone(), final_canonical.clone());
@@ -716,9 +1304,9 @@ fn mint_and_cache(
     let fname = format!("{}-{}.proof", property_hash, safe_prover);
     let path = cache_dir.join(fname);
     std::fs::write(path, built.bytes)?;
-    
+
     // Convert the canonicalizer Value back to serde_json for pool insertion
     let envelope_json: Json = serde_json::from_slice(&final_canonical)?;
-    
+
     Ok((cid, envelope_json))
 }

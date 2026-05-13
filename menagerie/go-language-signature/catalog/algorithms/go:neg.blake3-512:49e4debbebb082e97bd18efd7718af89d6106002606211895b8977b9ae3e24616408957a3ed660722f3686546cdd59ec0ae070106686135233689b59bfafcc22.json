@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:neg",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:neg",
+      "arity": [
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "integer arithmetic negation",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:49e4debbebb082e97bd18efd7718af89d6106002606211895b8977b9ae3e24616408957a3ed660722f3686546cdd59ec0ae070106686135233689b59bfafcc22",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "E2Dm/REgW75+j8w7fzUx+Bz750l+OHoTkQ3wRJngYjxtlMZEfIJB0EiNp/IMWVogk6xRft1kOCtSLK6ahD/XCw=="
+  }
+}

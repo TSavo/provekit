@@ -1,10 +1,87 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pipeline types. Mirrors implementations/cpp/.../verifier/types.hpp.
+//
+// Shape compatibility: a memento envelope is either the v1.1 flat
+// shape (top-level `evidence`/`bindingHash`/`producerSignature`/...) or
+// the v1.2 layered shape (top-level `envelope`/`header`/`metadata`).
+// The accessors `memento_kind` and `memento_body` paper over the cut so
+// the rest of the verifier doesn't have to branch.
 
 use std::collections::BTreeMap;
 
+use libprovekit::compose::{OpacityMementoLookup, PinInvariantMementoView};
+use serde::Serialize;
 use serde_json::Value as Json;
+
+/// Return the kind discriminator of a memento, regardless of shape:
+///
+/// * v1.2 layered: `header.kind`
+/// * v1.1 flat:    `evidence.kind`
+pub fn memento_kind(envelope: &Json) -> Option<&str> {
+    if envelope.get("envelope").is_some() {
+        envelope
+            .pointer("/header/kind")
+            .or_else(|| envelope.pointer("/envelope/header/kind"))
+            .and_then(|v| v.as_str())
+    } else {
+        envelope.pointer("/evidence/kind").and_then(|v| v.as_str())
+    }
+}
+
+/// Return the substrate-relevant inner object of a memento (the
+/// container of kind-specific fields), regardless of shape:
+///
+/// * v1.2 layered: `header`
+/// * v1.1 flat:    `evidence.body`
+///
+/// Note: for v1.1, formula references like `preHash`/`antecedentHash`
+/// live under `evidence.body`; under v1.2 they live in `metadata`. Use
+/// `memento_body_field` for those lookups.
+pub fn memento_body(envelope: &Json) -> Option<&Json> {
+    if envelope.get("envelope").is_some() {
+        envelope
+            .get("header")
+            .or_else(|| envelope.pointer("/envelope/header"))
+    } else {
+        envelope.pointer("/evidence/body")
+    }
+}
+
+/// Look up a body-tier field that the verifier needs (formula-hash
+/// references and similar) regardless of shape:
+///
+/// * v1.2 layered: prefer `header.<field>` (substrate-load-bearing
+///   bridge/contract/implication kind-specific fields), then fall back
+///   to `metadata.<field>` (per-formula derived hashes like preHash).
+/// * v1.1 flat:    `evidence.body.<field>` (legacy flat).
+///
+/// This single helper covers both the substrate references the
+/// verifier indexes by (antecedentHash / consequentHash on
+/// implications, sourceSymbol on bridges) and the convenience hashes
+/// (preHash / postHash / invHash) that ride in metadata under v1.2.
+pub fn memento_body_field<'a>(envelope: &'a Json, field: &str) -> Option<&'a Json> {
+    if envelope.get("envelope").is_some() {
+        envelope
+            .pointer("/header")
+            .and_then(|h| h.get(field))
+            .or_else(|| envelope.pointer("/metadata").and_then(|m| m.get(field)))
+            .or_else(|| {
+                envelope
+                    .pointer("/envelope/header")
+                    .and_then(|h| h.get(field))
+            })
+            .or_else(|| {
+                envelope
+                    .pointer("/envelope/metadata")
+                    .and_then(|m| m.get(field))
+            })
+    } else {
+        envelope
+            .pointer("/evidence/body")
+            .and_then(|b| b.get(field))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct LoadError {
@@ -37,6 +114,43 @@ pub struct MementoPool {
     /// last-writer-wins to silently swap them.
     pub bundle_members: BTreeMap<String, std::collections::BTreeSet<String>>,
     pub load_errors: Vec<LoadError>,
+    /// Contract CID -> contract name (indexed during load)
+    pub cid_to_name: BTreeMap<String, String>,
+    /// Contract name -> CID (reverse index)
+    pub name_to_cid: BTreeMap<String, String>,
+
+    // ---- Opacity discharge indexes (issue #384 B.5) ----
+    //
+    // These maps are indexed during `insert()` when a memento of the
+    // corresponding discharge kind is loaded. The substrate's
+    // `compose_function_contracts_checked` queries these via the
+    // `OpacityMementoLookup` impl below.
+    /// loopCid (from header.loopCid of a LoopInvariantMemento) ->
+    /// memento CID. Populated when a "loop-invariant" kind memento is
+    /// inserted. Spec: protocol/specs/2026-05-05-loop-invariant-memento.md
+    pub loop_cid_to_memento: BTreeMap<String, String>,
+
+    /// tryCid (from header.tryCid of a TryBranchMemento) -> memento CID.
+    /// Populated when a "try-branch" kind memento is inserted.
+    /// Spec: protocol/specs/2026-05-05-try-branch-memento.md
+    pub try_cid_to_memento: BTreeMap<String, String>,
+
+    /// bodyFnCid (from header.bodyFnCid of a ClosureBindingMemento) ->
+    /// memento CID. Populated when a "closure-binding" kind memento is
+    /// inserted. Spec: protocol/specs/2026-05-05-closure-binding-memento.md
+    pub body_fn_cid_to_memento: BTreeMap<String, String>,
+
+    /// AliasingMemento discharge index: (formal_a, formal_b) ->
+    /// memento CID. Populated when an "aliasing-memento" kind memento is
+    /// inserted. The key is the sorted pair of formal parameter names.
+    pub aliasing_pair_to_memento: BTreeMap<(String, String), String>,
+
+    /// Composite key "functionCid\x00target" -> memento CID. Populated
+    /// when a "pin-invariant" kind memento is inserted. The composite
+    /// key ensures the memento is anchored to both the function contract
+    /// and the pinned parameter name.
+    /// Spec: protocol/specs/2026-05-05-pin-invariant-memento.md
+    pub pin_invariant_to_memento: BTreeMap<String, String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -75,17 +189,15 @@ impl MementoPool {
         let _ant_memento = self.verify_by_hash(antecedent_cid)?;
         let _con_memento = self.verify_by_hash(consequent_cid)?;
 
-        // Scan for implication mementos that link these two
-        for (_, envelope) in &self.mementos {
-            if let Some(evidence) = envelope.get("evidence") {
-                if evidence.get("kind").and_then(|v| v.as_str()) == Some("implication") {
-                    if let Some(body) = evidence.get("body") {
-                        let ant = body.get("antecedentHash").and_then(|v| v.as_str());
-                        let con = body.get("consequentHash").and_then(|v| v.as_str());
-                        if ant == Some(antecedent_cid) && con == Some(consequent_cid) {
-                            return Some(envelope);
-                        }
-                    }
+        // Scan for implication mementos that link these two.
+        // Shape-agnostic: under v1.2 these references live in the
+        // metadata; under v1.1 they live in evidence.body.
+        for envelope in self.mementos.values() {
+            if memento_kind(envelope) == Some("implication") {
+                let ant = memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str());
+                let con = memento_body_field(envelope, "consequentHash").and_then(|v| v.as_str());
+                if ant == Some(antecedent_cid) && con == Some(consequent_cid) {
+                    return Some(envelope);
                 }
             }
         }
@@ -95,24 +207,28 @@ impl MementoPool {
     /// Check if P → Q via transitive chaining.
     /// If P → R and R → Q are both in the pool, then P → Q.
     /// Uses BFS on the implication graph.
-    pub fn implies_transitive(&self, antecedent_cid: &str, consequent_cid: &str) -> Option<Vec<String>> {
+    pub fn implies_transitive(
+        &self,
+        antecedent_cid: &str,
+        consequent_cid: &str,
+    ) -> Option<Vec<String>> {
         if antecedent_cid == consequent_cid {
             return Some(vec![antecedent_cid.to_string()]);
         }
 
-        // Build implication graph adjacency list on-the-fly
+        // Build implication graph adjacency list on-the-fly.
+        // Shape-agnostic per the body/header accessors.
         let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (_, envelope) in &self.mementos {
-            if let Some(evidence) = envelope.get("evidence") {
-                if evidence.get("kind").and_then(|v| v.as_str()) == Some("implication") {
-                    if let Some(body) = evidence.get("body") {
-                        if let (Some(ant), Some(con)) = (
-                            body.get("antecedentHash").and_then(|v| v.as_str()),
-                            body.get("consequentHash").and_then(|v| v.as_str()),
-                        ) {
-                            graph.entry(ant.to_string()).or_default().push(con.to_string());
-                        }
-                    }
+        for envelope in self.mementos.values() {
+            if memento_kind(envelope) == Some("implication") {
+                if let (Some(ant), Some(con)) = (
+                    memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str()),
+                    memento_body_field(envelope, "consequentHash").and_then(|v| v.as_str()),
+                ) {
+                    graph
+                        .entry(ant.to_string())
+                        .or_default()
+                        .push(con.to_string());
                 }
             }
         }
@@ -158,7 +274,11 @@ impl MementoPool {
         // 2. Direct implication
         if let Some(memento) = self.verify_implication(antecedent_cid, consequent_cid) {
             return ImplicationResult::ProvenDirect {
-                memento_cid: memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                memento_cid: memento
+                    .get("cid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
             };
         }
 
@@ -174,24 +294,151 @@ impl MementoPool {
     /// The .proof protocol IS the cache: storing a memento IS caching
     /// the verification result.
     pub fn insert(&mut self, memento_cid: String, envelope: Json) {
-        // Index by the formula hashes referenced in the evidence
-        if let Some(evidence) = envelope.get("evidence") {
-            if let Some(body) = evidence.get("body") {
-                // Contract evidence: preHash/postHash/invHash
-                for field in &["preHash", "postHash", "invHash"] {
-                    if let Some(hash) = body.get(field).and_then(|v| v.as_str()) {
-                        self.formula_to_memento.insert(hash.to_string(), memento_cid.clone());
+        // Index by the formula hashes referenced in the body. Layout
+        // depends on shape; `memento_body_field` papers over the cut.
+        // Contract: preHash/postHash/invHash (in metadata under v1.2,
+        //           in evidence.body under v1.1).
+        // Implication: antecedentHash/consequentHash (in header under
+        //           v1.2, in evidence.body under v1.1).
+        for field in &[
+            "preHash",
+            "postHash",
+            "invHash",
+            "antecedentHash",
+            "consequentHash",
+        ] {
+            if let Some(hash) = memento_body_field(&envelope, field).and_then(|v| v.as_str()) {
+                self.formula_to_memento
+                    .insert(hash.to_string(), memento_cid.clone());
+            }
+        }
+        self.mementos.insert(memento_cid.clone(), envelope);
+
+        // Index by contract name for cross-kit resolution.
+        // Gate on memento kind: only contract-shaped mementos carry a
+        // contractName/name that's a stable cross-kit identifier. Other
+        // kinds (implication, etc.) sometimes have a header.name field
+        // but it's not a contract identity, so indexing them would
+        // mis-resolve call edges.
+        let env_for_name = self.mementos.get(&memento_cid);
+        let is_contract = env_for_name.and_then(memento_kind) == Some("contract");
+        if is_contract {
+            let name = env_for_name
+                .and_then(|env| {
+                    env.pointer("/header/contractName")
+                        .or_else(|| env.pointer("/header/name"))
+                        .or_else(|| env.pointer("/evidence/body/contractName"))
+                        .or_else(|| env.pointer("/evidence/body/name"))
+                })
+                .and_then(|v| v.as_str());
+
+            if let Some(n) = name {
+                let n = n.to_string();
+                // Detect collisions: same contract name, different CIDs.
+                // Across merged projects this can happen when two
+                // independent kits emit the same contract name. Keep the
+                // first insertion (winner-keeps-it) and surface the
+                // collision in load_errors so the verifier surfaces it.
+                if let Some(existing) = self.name_to_cid.get(&n) {
+                    if existing != &memento_cid {
+                        self.load_errors.push(LoadError {
+                            proof_path: memento_cid.clone(),
+                            reason: format!(
+                                "duplicate contract name `{n}` resolves to two CIDs: {existing} (kept) and {memento_cid} (dropped)"
+                            ),
+                        });
                     }
-                }
-                // Implication evidence: antecedentHash/consequentHash
-                for field in &["antecedentHash", "consequentHash"] {
-                    if let Some(hash) = body.get(field).and_then(|v| v.as_str()) {
-                        self.formula_to_memento.insert(hash.to_string(), memento_cid.clone());
-                    }
+                } else {
+                    self.cid_to_name.insert(memento_cid.clone(), n.clone());
+                    self.name_to_cid.insert(n, memento_cid.clone());
                 }
             }
         }
-        self.mementos.insert(memento_cid, envelope);
+
+        // ---- Opacity discharge indexing (issue #384 B.5) ----
+        // Index discharge mementos by their opacity-site CID fields so that
+        // OpacityMementoLookup queries are O(log n) BTreeMap lookups rather
+        // than a full pool scan.
+        //
+        // Both v1.1 flat (evidence.body.*) and v1.2 layered (header.*) shapes
+        // are covered by memento_body_field / memento_kind.
+        let kind = self
+            .mementos
+            .get(&memento_cid)
+            .and_then(|e| memento_kind(e))
+            .map(str::to_string);
+        match kind.as_deref() {
+            Some("loop-invariant") => {
+                // header.loopCid (v1.2) or evidence.body.loopCid (v1.1)
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let Some(loop_cid) =
+                        memento_body_field(env, "loopCid").and_then(|v| v.as_str())
+                    {
+                        self.loop_cid_to_memento
+                            .entry(loop_cid.to_string())
+                            .or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            Some("try-branch") => {
+                // header.tryCid (v1.2) or evidence.body.tryCid (v1.1)
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let Some(try_cid) =
+                        memento_body_field(env, "tryCid").and_then(|v| v.as_str())
+                    {
+                        self.try_cid_to_memento
+                            .entry(try_cid.to_string())
+                            .or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            Some("closure-binding") => {
+                // header.bodyFnCid (v1.2) or evidence.body.bodyFnCid (v1.1)
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let Some(body_fn_cid) =
+                        memento_body_field(env, "bodyFnCid").and_then(|v| v.as_str())
+                    {
+                        self.body_fn_cid_to_memento
+                            .entry(body_fn_cid.to_string())
+                            .or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            Some("aliasing-memento") => {
+                // header.formal_a and header.formal_b (v1.2) or evidence.body.formal_a/formal_b (v1.1)
+                // Index by the sorted (formal_a, formal_b) pair
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let (Some(formal_a), Some(formal_b)) = (
+                        memento_body_field(env, "formal_a").and_then(|v| v.as_str()),
+                        memento_body_field(env, "formal_b").and_then(|v| v.as_str()),
+                    ) {
+                        let mut pair = (formal_a.to_string(), formal_b.to_string());
+                        // Sort the pair for canonical ordering
+                        if pair.0 > pair.1 {
+                            pair = (pair.1, pair.0);
+                        }
+                        self.aliasing_pair_to_memento
+                            .entry(pair)
+                            .or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            Some("pin-invariant") => {
+                // header.functionCid + header.pinnedTarget -> composite key
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    let function_cid =
+                        memento_body_field(env, "functionCid").and_then(|v| v.as_str());
+                    let target = memento_body_field(env, "pinnedTarget").and_then(|v| v.as_str());
+                    if let (Some(fc), Some(t)) = (function_cid, target) {
+                        let key = format!("{}\x00{}", fc, t);
+                        self.pin_invariant_to_memento
+                            .entry(key)
+                            .or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Sub-formula composition: walk the formula DAG and return all
@@ -234,6 +481,128 @@ impl MementoPool {
         }
 
         verified
+    }
+
+    /// Merge another pool into this one.
+    ///
+    /// Collision policy: for keys that already exist in `self`, the
+    /// existing value wins (insert-only-if-absent). Cross-project merges
+    /// must not silently overwrite earlier-loaded resolutions; surface
+    /// collisions via `load_errors` so the verifier reports them.
+    pub fn merge(&mut self, other: Self) {
+        for (cid, env) in other.mementos {
+            self.mementos.entry(cid).or_insert(env);
+        }
+        for (k, v) in other.formula_to_memento {
+            if let Some(existing) = self.formula_to_memento.get(&k) {
+                if existing != &v {
+                    self.load_errors.push(LoadError {
+                        proof_path: v.clone(),
+                        reason: format!(
+                            "merge collision for formula `{k}`: kept `{existing}`, dropped `{v}`"
+                        ),
+                    });
+                }
+            } else {
+                self.formula_to_memento.insert(k, v);
+            }
+        }
+        for (k, v) in other.bridges_by_symbol {
+            self.bridges_by_symbol.entry(k).or_insert(v);
+        }
+        for (k, vs) in other.bundle_members {
+            self.bundle_members.entry(k).or_default().extend(vs);
+        }
+        self.load_errors.extend(other.load_errors);
+        for (k, v) in other.cid_to_name {
+            self.cid_to_name.entry(k).or_insert(v);
+        }
+        for (k, v) in other.name_to_cid {
+            if let Some(existing) = self.name_to_cid.get(&k) {
+                if existing != &v {
+                    self.load_errors.push(LoadError {
+                        proof_path: v.clone(),
+                        reason: format!(
+                            "merge collision for contract name `{k}`: kept `{existing}`, dropped `{v}`"
+                        ),
+                    });
+                }
+            } else {
+                self.name_to_cid.insert(k, v);
+            }
+        }
+        // Opacity discharge indexes: first-insertion wins (same policy as
+        // other single-valued indexes). Collisions on these keys mean two
+        // proofs supply different discharge mementos for the same opacity
+        // site: keep the first, let the substrate use whichever it loaded
+        // first.
+        for (k, v) in other.loop_cid_to_memento {
+            self.loop_cid_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.try_cid_to_memento {
+            self.try_cid_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.body_fn_cid_to_memento {
+            self.body_fn_cid_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.aliasing_pair_to_memento {
+            self.aliasing_pair_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.pin_invariant_to_memento {
+            self.pin_invariant_to_memento.entry(k).or_insert(v);
+        }
+    }
+}
+
+/// `MementoPool` implements `OpacityMementoLookup` so that
+/// `compose_function_contracts_checked` in `libprovekit` can query
+/// whether a discharge memento is present for a given opacity site CID.
+///
+/// Each lookup is an O(log n) BTreeMap probe against the three
+/// opacity-discharge indexes populated by `MementoPool::insert()`.
+impl OpacityMementoLookup for MementoPool {
+    fn has_loop_invariant(&self, loop_cid: &str) -> bool {
+        self.loop_cid_to_memento.contains_key(loop_cid)
+    }
+    fn has_try_branch(&self, try_cid: &str) -> bool {
+        self.try_cid_to_memento.contains_key(try_cid)
+    }
+    fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
+        self.body_fn_cid_to_memento.contains_key(body_fn_cid)
+    }
+    fn has_drop_contract(&self, _type_name: &str) -> bool {
+        // No drop-contract discharge memento kind is specified yet
+        // (follow-up to issue #384). Return false so the substrate
+        // refuses composition rather than silently assuming the drop
+        // is effect-free. Wire this to a real index once the
+        // drop-contract memento spec lands under protocol/specs/.
+        false
+    }
+    fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool {
+        // Check if the pool has an aliasing memento for this pair of formals.
+        // Canonicalize by sorting the pair.
+        let mut pair = (formal_a.to_string(), formal_b.to_string());
+        if pair.0 > pair.1 {
+            pair = (pair.1, pair.0);
+        }
+        self.aliasing_pair_to_memento.contains_key(&pair)
+    }
+    fn lookup_pin_invariant(
+        &self,
+        function_cid: &str,
+        target: &str,
+    ) -> Option<PinInvariantMementoView> {
+        let key = format!("{}\x00{}", function_cid, target);
+        let memento_cid = self.pin_invariant_to_memento.get(&key)?;
+        let memento = self.mementos.get(memento_cid)?;
+        let invariant = memento_body_field(memento, "invariant")?
+            .as_str()?
+            .to_string();
+        Some(PinInvariantMementoView {
+            function_cid: function_cid.to_string(),
+            pinned_target: target.to_string(),
+            invariant,
+        })
     }
 }
 
@@ -283,8 +652,10 @@ pub fn compute_formula_cid(formula: &Json) -> String {
                 Value::array(v)
             }
             Json::Object(map) => {
-                let entries: Vec<(String, _)> =
-                    map.iter().map(|(k, v)| (k.clone(), json_to_value(v))).collect();
+                let entries: Vec<(String, _)> = map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), json_to_value(v)))
+                    .collect();
                 std::sync::Arc::new(Value::Object(entries))
             }
         }
@@ -355,6 +726,13 @@ pub struct ReportRow {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedCallEdge {
+    pub source_contract_cid: String,
+    pub target_contract_cid: String,
+    pub file: String,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Report {
     pub total_callsites: usize,
@@ -362,6 +740,7 @@ pub struct Report {
     pub violations: usize,
     pub rows: Vec<ReportRow>,
     pub load_errors: Vec<LoadError>,
+    pub call_edges: Vec<ResolvedCallEdge>,
 }
 
 #[cfg(test)]
@@ -400,7 +779,8 @@ mod tests {
         let result = pool.can_implies(p, r);
         assert!(
             matches!(result, ImplicationResult::ProvenTransitive { .. }),
-            "Expected transitive proof for P → R, got {:?}", result
+            "Expected transitive proof for P → R, got {:?}",
+            result
         );
     }
 
@@ -416,7 +796,8 @@ mod tests {
         let result = pool.can_implies(p, q);
         assert!(
             matches!(result, ImplicationResult::ProvenDirect { .. }),
-            "Expected direct proof, got {:?}", result
+            "Expected direct proof, got {:?}",
+            result
         );
     }
 
@@ -429,7 +810,8 @@ mod tests {
         let result = pool.can_implies(p, p);
         assert!(
             matches!(result, ImplicationResult::ProvenReflexive),
-            "Expected reflexive proof, got {:?}", result
+            "Expected reflexive proof, got {:?}",
+            result
         );
     }
 
@@ -443,7 +825,96 @@ mod tests {
         let result = pool.can_implies(p, q);
         assert!(
             matches!(result, ImplicationResult::Unknown),
-            "Expected unknown, got {:?}", result
+            "Expected unknown, got {:?}",
+            result
         );
+    }
+
+    // ---- PinInvariantMemento round-trip (real pool) ----
+
+    fn make_pin_invariant_memento(
+        cid: &str,
+        function_cid: &str,
+        target: &str,
+        invariant: &str,
+    ) -> Json {
+        json!({
+            "cid": cid,
+            "envelope": {
+                "signer": "ed25519:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "declaredAt": "2026-05-05T00:00:00Z",
+                "signature": "ed25519:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "header": {
+                "schemaVersion": "1",
+                "kind": "pin-invariant",
+                "cid": cid,
+                "functionCid": function_cid,
+                "pinnedTarget": target
+            },
+            "metadata": {
+                "invariant": invariant
+            }
+        })
+    }
+
+    #[test]
+    fn pin_invariant_insert_lookup_roundtrip() {
+        let mut pool = MementoPool::default();
+        let fc = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let m_cid = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string();
+        pool.insert(
+            m_cid.clone(),
+            make_pin_invariant_memento(&m_cid, fc, "pin", "0 <= state"),
+        );
+        let view = pool.lookup_pin_invariant(fc, "pin");
+        assert!(view.is_some(), "expected Some after insert");
+        let v = view.unwrap();
+        assert_eq!(v.pinned_target, "pin");
+        assert!(!v.invariant.is_empty());
+        assert_eq!(v.function_cid, fc);
+    }
+
+    #[test]
+    fn pin_invariant_cross_function_cid_mismatch() {
+        let mut pool = MementoPool::default();
+        let fc_a = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let fc_b = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let m_cid = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string();
+        pool.insert(
+            m_cid.clone(),
+            make_pin_invariant_memento(&m_cid, fc_a, "pin", "0 <= state"),
+        );
+        // Same target "pin" but different function CID: should NOT match
+        let view = pool.lookup_pin_invariant(fc_b, "pin");
+        assert!(view.is_none(), "cross-function-CID lookup must return None");
+    }
+
+    #[test]
+    fn pin_invariant_v11_flat_shape_roundtrip() {
+        // v1.1 flat shape: no envelope wrapper, fields live in evidence.body.
+        // This exercises the fallback path in memento_body_field that reads
+        // from /evidence/body instead of /header and /metadata.
+        let mut pool = MementoPool::default();
+        let fc = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let m_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let flat_memento = json!({
+            "cid": m_cid,
+            "evidence": {
+                "kind": "pin-invariant",
+                "body": {
+                    "functionCid": fc,
+                    "pinnedTarget": "pin",
+                    "invariant": "state >= 0"
+                }
+            }
+        });
+        pool.insert(m_cid.to_string(), flat_memento);
+        let view = pool.lookup_pin_invariant(fc, "pin");
+        assert!(view.is_some(), "v1.1 flat memento must be found via lookup");
+        let v = view.unwrap();
+        assert_eq!(v.pinned_target, "pin");
+        assert_eq!(v.invariant, "state >= 0");
+        assert_eq!(v.function_cid, fc);
     }
 }

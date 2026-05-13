@@ -1,0 +1,18 @@
+[package]
+name = "provekit-bridgeworks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Bridgeworks Menagerie runner for vertical cross-domain contract chains."
+workspace = "../../implementations/rust"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+
+[[bin]]
+name = "provekit-bridgeworks"
+path = "src/main.rs"

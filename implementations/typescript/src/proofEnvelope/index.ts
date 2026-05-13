@@ -1,5 +1,5 @@
 /**
- * .proof file format — protocol-level binary distribution artifact.
+ * .proof file format: protocol-level binary distribution artifact.
  *
  * Spec: protocol/specs/2026-04-30-proof-file-format.md
  *

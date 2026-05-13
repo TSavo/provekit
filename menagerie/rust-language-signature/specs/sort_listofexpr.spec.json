@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:ListOfExpr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "ListOfExpr",
+    "description": "Finite ordered expression lists"
+  }
+}

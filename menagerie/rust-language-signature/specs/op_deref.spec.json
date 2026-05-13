@@ -1,0 +1,42 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:deref",
+  "formals": [
+    "ref"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Ref",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Place",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "deref",
+    "arity": [
+      "Ref"
+    ],
+    "result": "Place",
+    "wp": "safe reference dereference"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "MemRead"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

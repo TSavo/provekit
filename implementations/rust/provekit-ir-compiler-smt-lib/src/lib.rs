@@ -115,6 +115,17 @@ fn validate_formula(formula: &provekit_ir_types::IrFormula) -> Result<(), String
         provekit_ir_types::IrFormula::Forall { body, .. }
         | provekit_ir_types::IrFormula::Exists { body, .. }
         | provekit_ir_types::IrFormula::Choice { body, .. } => validate_formula(body),
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term; `libprovekit::wp` eliminates them before any formula reaches
+        // the SMT-LIB backend. Reaching this arm means a `wp_rule` schema was
+        // handed to the solver without instantiation.
+        provekit_ir_types::IrFormula::Substitute { .. }
+        | provekit_ir_types::IrFormula::Apply { .. } => Err(
+            "wp-rule schema node (substitute/apply) reached the SMT-LIB validator; \
+             it must be reduced via libprovekit::wp before solving"
+                .to_string(),
+        ),
     }
 }
 
@@ -122,10 +133,13 @@ fn validate_formula(formula: &provekit_ir_types::IrFormula) -> Result<(), String
 /// `compile_to_parts`. Also accepts bare terms (lambda, let, etc.) for
 /// backward compatibility with the historical verifier emitter.
 pub fn emit(ir_formula: &Json) -> Result<String, String> {
-    let kind = ir_formula.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    let kind = ir_formula
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if is_term_kind(kind) {
-        let term: provekit_ir_types::Term = serde_json::from_value(ir_formula.clone())
-            .map_err(|e| format!("{e}"))?;
+        let term: provekit_ir_types::Term =
+            serde_json::from_value(ir_formula.clone()).map_err(|e| format!("{e}"))?;
         validate_term(&term)?;
         Ok(generated::emit_term(&term))
     } else {
@@ -142,9 +156,125 @@ pub fn emit(ir_formula: &Json) -> Result<String, String> {
 /// Compile to (preamble, body, free_vars). Pure; no I/O.
 pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
     let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
-        .map_err(|e| CompileError::MalformedIr(e.to_string().into()))?;
-    validate_formula(&formula).map_err(|e| CompileError::MalformedIr(e.into()))?;
+        .map_err(|e| CompileError::MalformedIr(e.to_string()))?;
+    validate_formula(&formula).map_err(CompileError::MalformedIr)?;
     Ok(generated::compile_formula(&formula))
 }
 
+pub fn compile_asserted_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
+    let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
+        .map_err(|e| CompileError::MalformedIr(e.to_string()))?;
+    validate_formula(&formula).map_err(CompileError::MalformedIr)?;
+    Ok(generated::compile_asserted_formula(&formula))
+}
 
+pub fn emit_asserted(ir_formula: &Json) -> Result<String, String> {
+    compile_asserted_to_parts(ir_formula)
+        .map(|c| {
+            let mut s = c.preamble;
+            s.push_str(&c.body);
+            s
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn functionsort_quantifier_emits_opacity_entry() {
+        // forall (f: Function) . true: FunctionSort in quantifier
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "f",
+            "sort": { "kind": "function", "args": [], "return": { "kind": "primitive", "name": "Bool" } },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 1);
+        assert_eq!(
+            result.opacity_manifest.opacities[0].reason_code,
+            "predicate_quantification"
+        );
+        assert!(result.body.contains("(true)"));
+    }
+
+    #[test]
+    fn dependent_sort_quantifier_emits_opacity_entry() {
+        // exists (n: Dependent) . true: DependentSort in quantifier
+        let ir = serde_json::json!({
+            "kind": "exists",
+            "name": "n",
+            "sort": { "kind": "dependent", "name": "Vec<n>", "indexVar": "n", "indexSort": { "kind": "primitive", "name": "Int" } },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 1);
+        assert_eq!(
+            result.opacity_manifest.opacities[0].reason_code,
+            "dependent_type"
+        );
+        assert!(result.body.contains("(true)"));
+    }
+
+    #[test]
+    fn primitive_sort_quantifier_no_opacity() {
+        // forall (x: Int) . x >= 0: Int is supported
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "x",
+            "sort": { "kind": "primitive", "name": "Int" },
+            "body": { "kind": "atomic", "name": ">=", "args": [
+                { "kind": "var", "name": "x" },
+                { "kind": "const", "value": 0, "sort": { "kind": "primitive", "name": "Int" } }
+            ]}
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert!(result.opacity_manifest.opacities.is_empty());
+        assert!(result.body.contains("(forall ((x Int))"));
+    }
+
+    #[test]
+    fn opacity_manifest_has_correct_envelope() {
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "f",
+            "sort": { "kind": "function", "args": [], "return": { "kind": "primitive", "name": "Bool" } },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        let manifest = &result.opacity_manifest;
+        assert_eq!(manifest.protocol_version, "ir-compiler-protocol/2");
+        assert_eq!(manifest.compiler, "smt-lib-v2.6");
+        assert!(!manifest.compiler_version.is_empty());
+    }
+
+    #[test]
+    fn opacity_entries_sorted_by_position_cid() {
+        // Two quantifiers over opaque sorts: entries should be sorted.
+        let ir = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                { "kind": "forall", "name": "f",
+                  "sort": { "kind": "function", "args": [], "return": { "kind": "primitive", "name": "Bool" } },
+                  "body": { "kind": "atomic", "name": "true", "args": [] } },
+                { "kind": "exists", "name": "n",
+                  "sort": { "kind": "dependent", "name": "Vec<n>", "indexVar": "n", "indexSort": { "kind": "primitive", "name": "Int" } },
+                  "body": { "kind": "atomic", "name": "true", "args": [] } }
+            ]
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 2);
+        let cids: Vec<&str> = result
+            .opacity_manifest
+            .opacities
+            .iter()
+            .map(|e| e.position_cid.as_str())
+            .collect();
+        assert!(
+            cids[0] <= cids[1],
+            "opacities must be sorted by positionCid"
+        );
+    }
+}

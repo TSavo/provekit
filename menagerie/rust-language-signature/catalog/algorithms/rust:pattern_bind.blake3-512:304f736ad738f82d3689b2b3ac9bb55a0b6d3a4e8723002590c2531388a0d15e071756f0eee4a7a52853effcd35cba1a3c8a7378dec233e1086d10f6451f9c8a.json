@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:pattern_bind",
+    "formals": [
+      "name"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "pattern_bind",
+      "arity": [
+        "Value"
+      ],
+      "result": "Pattern",
+      "wp": "binding pattern"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Pattern",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:304f736ad738f82d3689b2b3ac9bb55a0b6d3a4e8723002590c2531388a0d15e071756f0eee4a7a52853effcd35cba1a3c8a7378dec233e1086d10f6451f9c8a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "odMGZVScTjX+kAEWPrwZmegCoj8uOVMHTsuivAeIi+kpjll6XjyFShaLGAq8CNXLB70u6YDecW20zxjqaK1+Cw=="
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "function": "foo",
+    "kind": "function-effects",
+    "effects": [],
+    "locus": {
+      "path": "/tmp/pk-c11-gold/menagerie/c11-language-signature/example/foo.c",
+      "line": 1,
+      "column": 12
+    }
+  }
+]

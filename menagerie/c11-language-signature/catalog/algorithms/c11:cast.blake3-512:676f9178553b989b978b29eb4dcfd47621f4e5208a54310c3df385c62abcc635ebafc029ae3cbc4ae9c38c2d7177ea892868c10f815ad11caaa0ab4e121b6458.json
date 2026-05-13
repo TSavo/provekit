@@ -1,0 +1,67 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:cast",
+    "formals": [
+      "target_type",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "cast",
+      "arity": [
+        "Expr",
+        "Expr"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target_type",
+            "slot_sort": "type"
+          },
+          {
+            "name": "value"
+          }
+        ]
+      },
+      "result": "Expr",
+      "wp": "C cast expression preserving explicit target type and lifted child value"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:676f9178553b989b978b29eb4dcfd47621f4e5208a54310c3df385c62abcc635ebafc029ae3cbc4ae9c38c2d7177ea892868c10f815ad11caaa0ab4e121b6458",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "hx0lxy67ByjblH+n5CXO5gH+fBCkQIWvEF6qBgZ3yefKJ1kNdHyW4hOYTqptHJLOT8IsXpOc40hWHosu8hygDg=="
+  }
+}

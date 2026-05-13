@@ -1,0 +1,12 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "rust:effect-signature:Async",
+  "sorts": [
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_op_suspend.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

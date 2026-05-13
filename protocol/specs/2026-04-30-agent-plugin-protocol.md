@@ -1,6 +1,8 @@
 # Agent Plugin Protocol (`provekit-agent/1`)
 
-Status: v1.2.0 normative. Listed in the v1.2.0 catalog under property key `agent-plugin-protocol`. CID is computed from the bytes of this file (raw-bytes BLAKE3-512); see the catalog at `protocol/specs/2026-04-30-protocol-catalog.json` for the value.
+**LEGACY-RETAINED.** The protocol identifier `provekit-agent/1` is SUPERSEDED by `pep/1.7.0` per `protocol/specs/2026-05-12-plugin-protocol.md` §0.4 (the Plugin Extension Protocol rename). This spec's `content`-payload normative shape REMAINS authoritative for `kind = "agent"` mementos under `pep/1.7.0`; the kind-specific message shapes (proposal envelope, verification invocation, error model) defined in the sections below are unchanged and continue to govern the `content` field of any `pep/1.7.0` memento with `kind = "agent"`. ONLY the protocol-version token at the wire layer changes: producers MUST emit `protocol_version = "pep/1.7.0"` (single-token wire field) or `protocol_versions = ["pep/1.7.0"]` (plugin-memento array form). Runtimes accept legacy `provekit-agent/1` for one migration minor version per the plugin-protocol spec §0.4; that acceptance window ends with the next minor bump.
+
+Status: v1.2.0 normative for `content`-payload shape under `kind = "agent"`. Wire protocol-version token renamed under `pep/1.7.0` (see above). Listed in the v1.2.0 catalog under property key `agent-plugin-protocol`. CID is computed from the bytes of this file (raw-bytes BLAKE3-512); see the catalog at `protocol/specs/2026-04-30-protocol-catalog.json` for the value.
 
 ## Why
 

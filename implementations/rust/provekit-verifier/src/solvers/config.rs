@@ -6,7 +6,7 @@
 //   [solvers]
 //   default = "z3"                            # OR
 //   chain = ["z3", "cvc5"]                    # OR
-//   portfolio = ["z3", "cvc5", "bitwuzla"]    # OR
+//   portfolio = ["maude", "z3", "cvc5", "bitwuzla"]    # OR
 //   mode = "first-wins"  or  "consensus"
 //
 //   [solvers.z3]
@@ -14,6 +14,14 @@
 //   ir_compiler = "smt-lib-v2.6"
 //   timeout_seconds = 5
 //   flags = ["-T:5"]
+//
+//   [solvers.maude]
+//   binary = "maude"
+//   ir_compiler = "maude"
+//   ceta_gate = true
+//   ceta_binary = "ceta"
+//   termination_prover = "aprove"
+//   confluence_checker = "csi"
 //
 //   [solvers.dispatch]
 //   "strings" = "cvc5"
@@ -47,10 +55,30 @@ pub struct SolverConfig {
     pub timeout_seconds: Option<u64>,
     #[serde(default)]
     pub flags: Vec<String>,
+    /// Enables the certified termination and confluence gate used by
+    /// Maude before a reduce-based equality can be trusted.
+    #[serde(default)]
+    pub ceta_gate: bool,
+    /// Path to the CeTA checker binary.
+    #[serde(default = "default_ceta_binary")]
+    pub ceta_binary: String,
+    /// Path to a termination prover that emits a CPF certificate.
+    #[serde(default = "default_termination_prover")]
+    pub termination_prover: String,
+    /// Path to a confluence checker that emits a CPF certificate.
+    #[serde(default = "default_confluence_checker")]
+    pub confluence_checker: String,
     /// Optional version pin to surface in the report and in minted
     /// implication-memento `body.prover` strings. Defaults to `0`.
     #[serde(default = "default_version")]
     pub version: String,
+    /// Optional path to a Lake project that has Mathlib pinned and
+    /// cached. Used by the Lean adapter as its working directory.
+    #[serde(default)]
+    pub lake_project: Option<String>,
+    /// Optional elan toolchain passed as `+toolchain` to lake and lean.
+    #[serde(default)]
+    pub lean_toolchain: Option<String>,
 }
 
 fn default_ir_compiler() -> String {
@@ -59,28 +87,38 @@ fn default_ir_compiler() -> String {
 fn default_version() -> String {
     "0".into()
 }
+fn default_ceta_binary() -> String {
+    "ceta".into()
+}
+fn default_termination_prover() -> String {
+    "aprove".into()
+}
+fn default_confluence_checker() -> String {
+    "csi".into()
+}
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PortfolioMode {
+    #[default]
     FirstWins,
     Consensus,
 }
 
-impl Default for PortfolioMode {
-    fn default() -> Self {
-        Self::FirstWins
-    }
-}
-
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct DispatchConfig {
+    #[serde(rename = "equational-theory", default)]
+    pub equational_theory: Option<String>,
     #[serde(default)]
     pub strings: Option<String>,
     #[serde(default)]
     pub bitvectors: Option<String>,
     #[serde(rename = "linear-arithmetic", default)]
     pub linear_arithmetic: Option<String>,
+    #[serde(rename = "dependent-type", default)]
+    pub dependent_type: Option<String>,
+    #[serde(rename = "categorical-structure", default)]
+    pub categorical_structure: Option<String>,
     #[serde(default)]
     pub default: Option<String>,
 }
@@ -116,8 +154,8 @@ impl SolversConfig {
         if !path.exists() {
             return Ok(None);
         }
-        let body = std::fs::read_to_string(&path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let body =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         Self::from_toml(&body).map(Some)
     }
 

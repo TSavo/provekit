@@ -33,7 +33,7 @@
 //           assert_palindrome("racecar");
 //           assert_palindrome("level");
 //       }
-//   Lift to: ONE memento per call site, body = the helper's lifted
+//   Lift to: ONE memento per helper call site, body = the helper's lifted
 //   assertion with the formal parameter substituted by the literal
 //   argument at the call. Helper is defined IN THE SAME `syn::File`.
 //   Helpers with multiple statements, multiple params, or non-liftable
@@ -46,7 +46,7 @@
 //           assert_<...>;
 //           ...
 //       }
-//   Lift to: ONE memento, body = and_(...) of all liftable atoms.
+//   Lift to: ONE memento per assertion producer callsite.
 //   When ANY top-level statement is not a liftable assert (let, side-
 //   effecting call, branching), the whole pattern SKIPS , Layer 0 will
 //   then see each assert independently. We deliberately require every
@@ -65,10 +65,10 @@
 //   - Pattern 1 wraps with `Formula::Quantifier { name: <loop var ident> }`
 //     (NOT the kit's `_xN` placeholder) so the canonical IR is stable
 //     across runs.
-//   - Pattern 2 contract names: "<test>::call::<i>" zero-indexed in
-//     source order. Same call expression in two tests dedups at mint.
-//   - Pattern 3 contract name: just "<test>" (no ::N suffix). Marks the
-//     test as conjunctively characterized.
+//   - Pattern 2 contract names use the helper callsite:
+//     "<helper>@<file>:<line>:<col>".
+//   - Pattern 3 contract names use each assertion producer callsite:
+//     "<callee>@<file>:<line>:<col>".
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -79,9 +79,10 @@ use provekit_ir_symbolic::{
 };
 
 use crate::{
-    is_assertion_macro_pub, lift_assertion_macro_pub, path_to_string_pub, translate_term_pub,
-    LiftWarning,
+    callsite_contract_name_pub, is_assertion_macro_pub, lift_assertion_macro_at_callsites_pub,
+    lift_assertion_macro_pub, path_to_string_pub, translate_term_pub, BoundCall, LiftWarning,
 };
+use syn::spanned::Spanned;
 
 /// Output of a Layer 2 pass over a `syn::File`. Carries the same
 /// shape as Layer 0's `AdapterOutput` so the dispatcher can fold it
@@ -337,9 +338,7 @@ fn classify_for_loop(
         out.warnings.push(LiftWarning {
             source_path: source_path.into(),
             item_name: test_name.into(),
-            reason:
-                "layer2 bounded-loop: nested for-loop detected; deferred to Layer 2.5"
-                    .into(),
+            reason: "layer2 bounded-loop: nested for-loop detected; deferred to Layer 2.5".into(),
         });
         return;
     }
@@ -385,8 +384,9 @@ fn classify_for_loop(
         }
     };
 
-    let inner_formula = match lift_assertion_macro_pub(&mac) {
-        Ok(f) => f,
+    let bindings: BTreeMap<String, BoundCall> = BTreeMap::new();
+    let parts = match lift_assertion_macro_at_callsites_pub(&mac, source_path, &bindings) {
+        Ok(parts) => parts,
         Err(e) => {
             out.bounded_loop_skipped += 1;
             out.warnings.push(LiftWarning {
@@ -398,34 +398,36 @@ fn classify_for_loop(
         }
     };
 
-    // Build forall x:Int. (lo <= x AND x </<= hi) -> inner.
-    let var_term = make_var(var_name.clone());
-    let lower = gte(var_term.clone(), lo_term);
-    let upper = if inclusive {
-        lte(var_term.clone(), hi_term)
-    } else {
-        lt(var_term.clone(), hi_term)
-    };
-    let antecedent = and_(vec![lower, upper]);
-    let body_formula = connective_("implies", vec![antecedent, inner_formula]);
+    for part in parts {
+        let var_term = make_var(var_name.clone());
+        let lower = gte(var_term.clone(), lo_term.clone());
+        let upper = if inclusive {
+            lte(var_term.clone(), hi_term.clone())
+        } else {
+            lt(var_term.clone(), hi_term.clone())
+        };
+        let antecedent = and_(vec![lower, upper]);
+        let body_formula = connective_("implies", vec![antecedent, part.formula]);
 
-    let quantified = Rc::new(Formula::Quantifier {
-        kind: "forall".into(),
-        name: var_name,
-        sort: Int(),
-        body: body_formula,
-    });
+        let quantified = Rc::new(Formula::Quantifier {
+            kind: "forall".into(),
+            name: var_name.clone(),
+            sort: Int(),
+            body: body_formula,
+        });
 
-    out.decls.push(ContractDecl {
-        name: test_name.to_string(),
-        pre: None,
-        post: None,
-        inv: Some(quantified),
-        out_binding: "out".into(),
-    evidence: None,
-    });
-    out.lifted += 1;
-    out.bounded_loop_lifted += 1;
+        out.decls.push(ContractDecl {
+            name: part.name,
+            pre: None,
+            post: None,
+            inv: Some(quantified),
+            out_binding: "out".into(),
+            evidence: None,
+            concept_hint: None,
+        });
+        out.lifted += 1;
+        out.bounded_loop_lifted += 1;
+    }
 }
 
 fn has_nested_for_loop(stmt: &syn::Stmt) -> bool {
@@ -501,6 +503,7 @@ struct HelperCall {
     helper_name: String,
     /// The single argument expression at the call site.
     arg: syn::Expr,
+    span: proc_macro2::Span,
 }
 
 /// If every top-level statement is a call to a known helper, return the
@@ -537,6 +540,7 @@ fn collect_helper_calls(
         calls.push(HelperCall {
             helper_name: callee,
             arg,
+            span: call.span(),
         });
     }
     Some(calls)
@@ -551,9 +555,9 @@ fn classify_helper_inlining(
 ) {
     out.claimed_tests.insert(test_name.to_string());
 
-    for (i, call) in calls.iter().enumerate() {
+    for call in calls {
         out.seen += 1;
-        let memento_name = format!("{test_name}::call::{i}");
+        let memento_name = callsite_contract_name_pub(&call.helper_name, source_path, call.span);
         let helper = helpers
             .get(&call.helper_name)
             .expect("helper presence verified by collect_helper_calls");
@@ -600,7 +604,8 @@ fn classify_helper_inlining(
             post: None,
             inv: Some(inlined),
             out_binding: "out".into(),
-        evidence: None,
+            evidence: None,
+            concept_hint: None,
         });
         out.lifted += 1;
         out.helper_inlined_lifted += 1;
@@ -644,7 +649,11 @@ fn subst_var_in_formula(f: &Rc<Formula>, formal: &str, actual: &Rc<Term>) -> Rc<
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             // Don't substitute under a shadowing binder.
             if var_name == formal {
                 f.clone()
@@ -674,7 +683,11 @@ fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> 
                 args: new_args,
             })
         }
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == formal {
                 t.clone() // shadowed
             } else {
@@ -704,8 +717,15 @@ fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> 
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_var_in_term(body, formal, actual) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_var_in_term(body, formal, actual)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -723,15 +743,16 @@ fn classify_characterization(
     out.claimed_tests.insert(test_name.to_string());
     out.seen += 1;
 
-    let mut atoms: Vec<Rc<Formula>> = Vec::new();
+    let bindings: BTreeMap<String, BoundCall> = BTreeMap::new();
+    let mut parts = Vec::new();
     let mut skipped_atoms: Vec<String> = Vec::new();
     for (i, m) in macs.iter().enumerate() {
-        match lift_assertion_macro_pub(m) {
-            Ok(f) => atoms.push(f),
+        match lift_assertion_macro_at_callsites_pub(m, source_path, &bindings) {
+            Ok(mut lifted) => parts.append(&mut lifted),
             Err(e) => skipped_atoms.push(format!("#{i}: {e}")),
         }
     }
-    if atoms.len() < 2 {
+    if parts.len() < 2 {
         // Not enough liftable atoms to call this a characterization.
         // Drop the claim so Layer 0 can still try the individual asserts.
         out.claimed_tests.remove(test_name);
@@ -741,31 +762,33 @@ fn classify_characterization(
             item_name: test_name.into(),
             reason: format!(
                 "layer2 characterization: only {} of {} asserts were liftable; releasing to layer 0",
-                atoms.len(),
+                parts.len(),
                 macs.len()
             ),
         });
         return;
     }
 
-    let body = and_(atoms);
-    out.decls.push(ContractDecl {
-        name: test_name.to_string(),
-        pre: None,
-        post: None,
-        inv: Some(body),
-        out_binding: "out".into(),
-    evidence: None,
-    });
-    out.lifted += 1;
-    out.characterization_lifted += 1;
+    for part in parts {
+        out.decls.push(ContractDecl {
+            name: part.name,
+            pre: None,
+            post: None,
+            inv: Some(part.formula),
+            out_binding: "out".into(),
+            evidence: None,
+            concept_hint: None,
+        });
+        out.lifted += 1;
+        out.characterization_lifted += 1;
+    }
 
     if !skipped_atoms.is_empty() {
         out.warnings.push(LiftWarning {
             source_path: source_path.into(),
             item_name: test_name.into(),
             reason: format!(
-                "layer2 characterization: {} atoms skipped from conjunction: {}",
+                "layer2 characterization: {} atoms skipped from callsite lift: {}",
                 skipped_atoms.len(),
                 skipped_atoms.join("; ")
             ),
@@ -785,13 +808,32 @@ mod tests {
         syn::parse_file(src).unwrap()
     }
 
+    fn assert_callsite_name(name: &str, callee: &str) {
+        let prefix = format!("{callee}@t.rs:");
+        assert!(
+            name.starts_with(&prefix),
+            "expected `{name}` to start with `{prefix}`"
+        );
+        let rest = &name[prefix.len()..];
+        let parts: Vec<_> = rest.split(':').collect();
+        assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
+        assert!(parts[0].parse::<usize>().unwrap() > 0);
+        parts[1].parse::<usize>().unwrap();
+        assert!(
+            !name.starts_with("squares_are_nonneg")
+                && !name.starts_with("palindromes")
+                && !name.starts_with("three_facts"),
+            "old test-owned name leaked: {name}"
+        );
+    }
+
     #[test]
     fn pattern1_bounded_loop_lifts_to_forall_implies() {
         let src = r#"
             #[test]
             fn squares_are_nonneg() {
                 for x in 0..100 {
-                    assert!(x >= 0);
+                    assert!(square(x) >= 0);
                 }
             }
         "#;
@@ -800,6 +842,7 @@ mod tests {
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_eq!(out.bounded_loop_lifted, 1);
         assert!(out.claimed_tests.contains("squares_are_nonneg"));
+        assert_callsite_name(&out.decls[0].name, "square");
         let inv = out.decls[0].inv.as_ref().unwrap();
         match &**inv {
             Formula::Quantifier { kind, name, .. } => {
@@ -816,13 +859,14 @@ mod tests {
             #[test]
             fn inclusive() {
                 for x in 0..=10 {
-                    assert!(x >= 0);
+                    assert!(bounded(x) >= 0);
                 }
             }
         "#;
         let f = parse(src);
         let out = lift_file_layer2(&f, "t.rs");
         assert_eq!(out.lifted, 1);
+        assert_callsite_name(&out.decls[0].name, "bounded");
     }
 
     #[test]
@@ -879,12 +923,14 @@ mod tests {
         assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
         assert_eq!(out.helper_inlined_lifted, 2);
         let names: Vec<_> = out.decls.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"palindromes::call::0"));
-        assert!(names.contains(&"palindromes::call::1"));
+        assert_eq!(names.len(), 2);
+        for name in names {
+            assert_callsite_name(name, "assert_palindrome");
+        }
     }
 
     #[test]
-    fn pattern3_characterization_lifts_to_conjunction() {
+    fn pattern3_characterization_lifts_per_callsite() {
         let src = r#"
             #[test]
             fn three_facts() {
@@ -895,15 +941,12 @@ mod tests {
         "#;
         let f = parse(src);
         let out = lift_file_layer2(&f, "t.rs");
-        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
-        assert_eq!(out.characterization_lifted, 1);
-        let inv = out.decls[0].inv.as_ref().unwrap();
-        match &**inv {
-            Formula::Connective { kind, operands } => {
-                assert_eq!(kind, "and");
-                assert_eq!(operands.len(), 3);
-            }
-            _ => panic!("expected and"),
+        assert_eq!(out.lifted, 3, "warnings: {:?}", out.warnings);
+        assert_eq!(out.characterization_lifted, 3);
+        let names: Vec<_> = out.decls.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names.len(), 3);
+        for name in names {
+            assert_callsite_name(name, "f");
         }
     }
 

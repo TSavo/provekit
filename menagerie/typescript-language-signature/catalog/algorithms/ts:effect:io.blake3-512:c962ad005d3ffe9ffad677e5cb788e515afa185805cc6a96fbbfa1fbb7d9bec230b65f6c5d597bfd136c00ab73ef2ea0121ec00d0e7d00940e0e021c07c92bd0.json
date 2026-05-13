@@ -1,0 +1,47 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ts:effect:io",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "io-effect",
+      "arity": [],
+      "result": "Unit",
+      "wp": "record IO or network interaction",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 0
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Io"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#effects"
+  },
+  "cid": "blake3-512:c962ad005d3ffe9ffad677e5cb788e515afa185805cc6a96fbbfa1fbb7d9bec230b65f6c5d597bfd136c00ab73ef2ea0121ec00d0e7d00940e0e021c07c92bd0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "tWI1Onshf20zO0gPwmxkcQSU7MJhss7ADzaeY6Ky+uEriPP1/6itO9f5AqVkfI2F5629aBlaFZLmz7AwFdM0Aw=="
+  }
+}

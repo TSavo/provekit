@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-ts-self-contracts — TypeScript peer-implementation orchestrator.
+// mint-ts-self-contracts: TypeScript peer-implementation orchestrator.
 //
 // 1. Walks every .invariant.ts file in implementations/typescript/src/
 //    (one per public-API source file).
@@ -15,7 +15,7 @@
 // The repo's other tsx-driven binaries (`bin/provekit.cjs`,
 // `bin/provekit-lift.cjs`) are currently broken on Node 25 because
 // @ipld/dag-cbor is ESM-only and tsx's CJS bridge can't resolve it.
-// Vitest's Vite loader handles ESM cleanly — that's the working
+// Vitest's Vite loader handles ESM cleanly: that's the working
 // invocation:
 //
 //   pnpm vitest run implementations/typescript/src/bin/mint-ts-self-contracts.test.ts
@@ -27,6 +27,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { mintContract } from "../claimEnvelope/mint.js";
+import { contractCidFromArgs, computeContractSetCid } from "../claimEnvelope/cid.js";
 import { buildProofEnvelope } from "../proofEnvelope/index.js";
 import { generateKeypair } from "../producerKeys/index.js";
 import { computeCid } from "../canonicalizer/hash.js";
@@ -50,6 +51,7 @@ import { invariants as proofResolverInvariants } from "../proofResolver/index.in
 import { invariants as liftInvariants } from "../lift/index.invariant.js";
 import { invariants as zodAdapterInvariants } from "../lift/adapters/zod.invariant.js";
 import { invariants as vitestTestsAdapterInvariants } from "../lift/adapters/vitest-tests.invariant.js";
+import { invariants as crossKitBridgesInvariants } from "../lift/cross-kit-bridges.invariant.js";
 
 export const PRODUCED_BY = "@provekit/ts-self-contracts@1.0";
 export const DECLARED_AT = "2026-04-30T18:00:00.000Z";
@@ -126,6 +128,11 @@ const SLABS: InvariantSource[] = [
     path: "implementations/typescript/src/lift/adapters/vitest-tests.ts",
     fn: vitestTestsAdapterInvariants,
   },
+  {
+    label: "cross-kit-bridges",
+    path: "implementations/typescript/src/lift/cross-kit-bridges.ts",
+    fn: crossKitBridgesInvariants,
+  },
 ];
 
 interface AuthoredSlab {
@@ -150,6 +157,7 @@ function authorAllInvariants(): AuthoredSlab[] {
 
 export interface MintResult {
   cid: string;
+  contractSetCid: string;
   bytesLen: number;
   path: string;
   memberCount: number;
@@ -158,7 +166,7 @@ export interface MintResult {
 }
 
 /**
- * Mint all 13 .invariant.ts slabs as signed mementos, register no
+ * Mint all 14 .invariant.ts slabs as signed mementos, register no
  * bridges (TS dogfood's symbolic surface has no closed-loop bridge to
  * register the way Rust's parse_formula does), bundle into a `.proof`,
  * write to `<outDir>/<full-cid>.proof`, return the result.
@@ -173,7 +181,7 @@ export function runMintSelfContracts(outDir: string): MintResult {
 
   const slabs = authorAllInvariants();
 
-  // Foundation key — identical to Rust's [0x42; 32] test seed. Same key
+  // Foundation key: identical to Rust's [0x42; 32] test seed. Same key
   // means same signature for the same canonical-encoded payload across
   // peer impls (where the hashed bytes themselves match across impls).
   const seed = Buffer.alloc(32, 0x42);
@@ -183,6 +191,7 @@ export function runMintSelfContracts(outDir: string): MintResult {
   const seenNames = new Set<string>();
   const perSourceCounts: { label: string; count: number }[] = [];
   let total = 0;
+  const contentCids: string[] = [];
 
   for (const slab of slabs) {
     perSourceCounts.push({
@@ -198,7 +207,7 @@ export function runMintSelfContracts(outDir: string): MintResult {
       }
       seenNames.add(d.name);
 
-      const env = mintContract({
+      const mintArgs = {
         producedBy: PRODUCED_BY,
         producedAt: DECLARED_AT,
         privateKey,
@@ -208,11 +217,16 @@ export function runMintSelfContracts(outDir: string): MintResult {
         ...(d.post !== undefined ? { post: d.post } : {}),
         ...(d.inv !== undefined ? { inv: d.inv } : {}),
         authoring: {
-          producerKind: "kit-author",
+          producerKind: "kit-author" as const,
           author: PRODUCED_BY,
           note: `self-contract from ${slab.source.path}`,
         },
-      });
+      };
+      // Compute signer-independent content CID BEFORE minting (spec #94).
+      const contentCid = contractCidFromArgs(mintArgs);
+      contentCids.push(contentCid);
+
+      const env = mintContract(mintArgs);
       members.set(env.cid, env);
     }
   }
@@ -234,11 +248,13 @@ export function runMintSelfContracts(outDir: string): MintResult {
   if (!built.cid.startsWith("blake3-512:")) {
     throw new Error("internal: cid missing blake3-512 prefix");
   }
+  const contractSetCid = computeContractSetCid(contentCids);
   const path = join(outDir, `${built.cid}.proof`);
   writeFileSync(path, Buffer.from(built.bytes));
 
   return {
     cid: built.cid,
+    contractSetCid,
     bytesLen: built.bytes.length,
     path,
     memberCount: members.size,
@@ -284,12 +300,15 @@ export function main(argv: string[]): number {
   console.log(`  members:            ${mintB.memberCount}`);
   console.log(`  total contracts:    ${mintB.totalContracts}`);
   console.log(`  catalog CID:        ${mintB.cid}`);
+  console.log(`  contractSetCid:     ${mintB.contractSetCid}`);
 
-  if (mintA.cid !== mintB.cid) {
+  if (mintA.cid !== mintB.cid || mintA.contractSetCid !== mintB.contractSetCid) {
     console.error("");
     console.error("ERROR: byte-determinism check FAILED:");
-    console.error(`  run A CID: ${mintA.cid}`);
-    console.error(`  run B CID: ${mintB.cid}`);
+    console.error(`  run A CID:              ${mintA.cid}`);
+    console.error(`  run B CID:              ${mintB.cid}`);
+    console.error(`  run A contractSetCid:   ${mintA.contractSetCid}`);
+    console.error(`  run B contractSetCid:   ${mintB.contractSetCid}`);
     rmSync(detDir, { recursive: true, force: true });
     return 2;
   }

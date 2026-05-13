@@ -4,7 +4,7 @@
 // Spec: RFC 8949 §4.2.1 ("Core Deterministic Encoding").
 //
 // All expected byte sequences are derived BY HAND from RFC 8949 §3 +
-// §4.2.1 — no reference impl consulted. Two impls converging on these
+// §4.2.1: no reference impl consulted. Two impls converging on these
 // bytes is the conformance proof.
 
 #include <cassert>
@@ -124,9 +124,9 @@ int main() {
 
     std::printf("\n");
     if (failures == 0) {
-        std::printf("CBOR CONFORMANCE OK — encoder matches RFC 8949 §4.2.1.\n");
+        std::printf("CBOR CONFORMANCE OK: encoder matches RFC 8949 §4.2.1.\n");
         return 0;
     }
-    std::printf("CBOR CONFORMANCE FAILED — %d check(s) didn't match the spec.\n", failures);
+    std::printf("CBOR CONFORMANCE FAILED: %d check(s) didn't match the spec.\n", failures);
     return 1;
 }

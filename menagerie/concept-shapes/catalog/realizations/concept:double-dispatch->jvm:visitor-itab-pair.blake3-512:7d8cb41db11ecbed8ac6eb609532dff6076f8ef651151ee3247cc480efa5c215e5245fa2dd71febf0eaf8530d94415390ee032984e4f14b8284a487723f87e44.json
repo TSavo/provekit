@@ -1,0 +1,245 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:double-dispatch->jvm:visitor-itab-pair",
+    "formals": [
+      "receiver",
+      "secondary",
+      "method_name",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Name",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:double-dispatch",
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          },
+          {
+            "kind": "var",
+            "name": "method_name"
+          },
+          {
+            "kind": "var",
+            "name": "args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "concept:call",
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "secondary"
+              },
+              {
+                "kind": "op",
+                "name": "c11:concat-name",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "visit_",
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "Name"
+                    }
+                  },
+                  {
+                    "kind": "op",
+                    "name": "concept:type-of",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "var",
+                "name": "secondary"
+              },
+              {
+                "kind": "var",
+                "name": "args"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:cons",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "op",
+                "name": "concept:cons",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "secondary"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "receiver"
+              },
+              {
+                "kind": "const",
+                "value": "accept",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Name"
+                }
+              },
+              {
+                "kind": "var",
+                "name": "secondary"
+              }
+            ]
+          },
+          {
+            "kind": "op",
+            "name": "concept:itab-method",
+            "args": [
+              {
+                "kind": "var",
+                "name": "secondary"
+              },
+              {
+                "kind": "op",
+                "name": "c11:concat-name",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "visit_",
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "Name"
+                    }
+                  },
+                  {
+                    "kind": "op",
+                    "name": "concept:type-of",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "visitor_accept_visit_itab_pair_indirection"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "receiver"
+          },
+          {
+            "kind": "var",
+            "name": "secondary"
+          }
+        ],
+        "kind": "atomic",
+        "name": "visitable_and_visitor_sets_fixed_at_interface_declaration"
+      }
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "pre": {
+      "kind": "connective",
+      "op": "and",
+      "operands": [
+        {
+          "kind": "atomic",
+          "name": "implements_visitable",
+          "args": [
+            {
+              "kind": "var",
+              "name": "receiver"
+            }
+          ]
+        },
+        {
+          "kind": "atomic",
+          "name": "implements_visitor",
+          "args": [
+            {
+              "kind": "var",
+              "name": "secondary"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "cid": "blake3-512:7d8cb41db11ecbed8ac6eb609532dff6076f8ef651151ee3247cc480efa5c215e5245fa2dd71febf0eaf8530d94415390ee032984e4f14b8284a487723f87e44",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

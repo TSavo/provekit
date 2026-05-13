@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:effect:unsafe",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "effect:unsafe",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Unit",
+      "wp": "Use the unsafe package"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#effects"
+  },
+  "cid": "blake3-512:9af51e248f764c5f8191a05d8154464e7ba8071dabf03a88ea14b804fff4de7df45c2c06def9330fe7e1e4f73ef9fd85be7b5d9cf5a6c918db5fda0630005f1b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "5MPQIHVON1FZ+Gd49GRa3bZ502NoQj3eDsXtsDbIBfDgG3IIdU+c/RqUzlfU00ivHj/t0JU52o0sVXiMUCQVAA=="
+  }
+}

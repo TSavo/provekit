@@ -1,0 +1,50 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "morphism:c11:conditional:to:concept:ite",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
+  "formals": [
+    "source_contract"
+  ],
+  "input_cids": [
+    "blake3-512:2acf875b4f735918479586850d58f90ac4dc827e9ae7c2a586055e0752f291f1c9a7c7bf7d8cf69cd645e84edfead5459c3d67df934c31cc1c95736b6016a2aa",
+    "blake3-512:3c87b90507933effd400bd2ddc2e15430f55dcbd466f351b7bb96140015bd228faf54efe31032114d4d5dd255188c8d1dcf202b2267fa09db0560d40c1ec5bab"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction-and-effect-subset",
+      "source": "blake3-512:2acf875b4f735918479586850d58f90ac4dc827e9ae7c2a586055e0752f291f1c9a7c7bf7d8cf69cd645e84edfead5459c3d67df934c31cc1c95736b6016a2aa",
+      "target": "blake3-512:3c87b90507933effd400bd2ddc2e15430f55dcbd466f351b7bb96140015bd228faf54efe31032114d4d5dd255188c8d1dcf202b2267fa09db0560d40c1ec5bab"
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {
+      "conditional": "ite"
+    },
+    "renaming_map": {
+      "when_false": "else_expr",
+      "when_true": "then_expr"
+    },
+    "representation_map": {},
+    "source_contract_cid": "blake3-512:2acf875b4f735918479586850d58f90ac4dc827e9ae7c2a586055e0752f291f1c9a7c7bf7d8cf69cd645e84edfead5459c3d67df934c31cc1c95736b6016a2aa",
+    "target_shape_cid": "blake3-512:3c87b90507933effd400bd2ddc2e15430f55dcbd466f351b7bb96140015bd228faf54efe31032114d4d5dd255188c8d1dcf202b2267fa09db0560d40c1ec5bab"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
+}

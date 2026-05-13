@@ -1,0 +1,126 @@
+{
+  "fn_name": "gap:go:call:to:concept:call",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "UnresolvedCall"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Call"
+          },
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects or unresolved_call when unavailable"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Identifier"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "FnContract"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "ListOfExpr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Identifier",
+          "Term"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "callee",
+              "slot_sort": "Identifier"
+            },
+            {
+              "name": "args",
+              "slot_sort": "Term"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "call",
+        "result": "Term",
+        "wp": "Go function or method call"
+      },
+      "want": {
+        "arity": [
+          "FnContract",
+          "ListOf<Expr>"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "callee"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "call",
+        "result": "Stmt",
+        "wp_note": "callee pre under bound args implies callee post under caller state"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:3137f76279e614d0918d10c0fa6deddc86b51840a7a0eb8299203d43d6f3ef57f6af048934b64cd22904dea1d242088b094a4679a010a9bd535e35be6461743e",
+  "target_concept_op": "concept:call",
+  "target_op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c"
+}

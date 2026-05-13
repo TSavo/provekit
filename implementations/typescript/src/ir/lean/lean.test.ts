@@ -3,7 +3,7 @@
  *
  * Mirrors the SMT translator's coverage with stable string-equality checks
  * over the rendered Lean output. Tests assert the exact Lean source the
- * translator emits — not equivalence — so any unintended drift in render
+ * translator emits: not equivalence: so any unintended drift in render
  * shape surfaces as a failed test.
  */
 
@@ -45,7 +45,7 @@ function ctor(name: string, args: IrTerm[], sort: Sort): IrTerm {
 // Per-node-kind emission
 // ---------------------------------------------------------------------------
 
-describe("emitLean — per node kind", () => {
+describe("emitLean: per node kind", () => {
   it("emits forall with sort and binder", () => {
     const f = forAll(Int, (x) => A.equal(x, x));
     expect(emitLean(f)).toBe("∀ (_x0 : Int), (_x0 = _x0)");
@@ -119,7 +119,7 @@ describe("emitLean — per node kind", () => {
 // Quantifier nesting + binder name preservation
 // ---------------------------------------------------------------------------
 
-describe("emitLean — quantifier scoping", () => {
+describe("emitLean: quantifier scoping", () => {
   it("preserves distinct binder names under nesting", () => {
     const f = forAll(Int, (x) => forAll(Int, (y) => A.lessThan(x, y)));
     expect(emitLean(f)).toBe(
@@ -157,7 +157,7 @@ describe("emitLean — quantifier scoping", () => {
 // Sort mapping + structured errors
 // ---------------------------------------------------------------------------
 
-describe("emitLean — sort mapping", () => {
+describe("emitLean: sort mapping", () => {
   it("maps Bool/Int/String to Lean built-ins", () => {
     expect(emitLean(forAll(Bool, () => A.equal(1, 1)))).toContain("Bool");
     expect(emitLean(forAll(Int, () => A.equal(1, 1)))).toContain("Int");
@@ -184,7 +184,7 @@ describe("emitLean — sort mapping", () => {
   });
 
   it("throws LeanUnsupportedError for function sort", () => {
-    const fnSort: Sort = { kind: "function", domain: [Int], range: Bool };
+    const fnSort: Sort = { kind: "function", args: [Int], return: Bool };
     const f: IrFormula = {
       kind: "forall", name: "_x0", sort: fnSort, body: { kind: "atomic", name: "true", args: [] },
     };
@@ -196,7 +196,7 @@ describe("emitLean — sort mapping", () => {
 // Constant literals
 // ---------------------------------------------------------------------------
 
-describe("emitLean — constants", () => {
+describe("emitLean: constants", () => {
   it("renders integer literals", () => {
     expect(emitLean(A.equal(1, 1))).toBe("(1 = 1)");
   });
@@ -319,10 +319,10 @@ describe("emitLeanTheorem", () => {
 });
 
 // ---------------------------------------------------------------------------
-// sorts module — direct API
+// sorts module: direct API
 // ---------------------------------------------------------------------------
 
-describe("lean/sorts — emitSort", () => {
+describe("lean/sorts: emitSort", () => {
   it("maps each built-in primitive name correctly", () => {
     expect(emitSort(Int)).toBe("Int");
     expect(emitSort(Bool)).toBe("Bool");
@@ -333,14 +333,14 @@ describe("lean/sorts — emitSort", () => {
     expect(emitSort(cents)).toBe("Cents");
   });
 
-  it("Real maps to Real (Mathlib symbol — emitted as identifier; documented divergence)", () => {
+  it("Real maps to Real (Mathlib symbol: emitted as identifier; documented divergence)", () => {
     // The current sorts table maps Real -> "Real". Plain Lean has no Real;
     // a kit using Real must either depend on Mathlib or shadow it.
     expect(emitSort(Real)).toBe("Real");
   });
 });
 
-describe("lean/sorts — collectUserSorts", () => {
+describe("lean/sorts: collectUserSorts", () => {
   it("ignores built-in sorts", () => {
     const out = new Set<string>();
     collectUserSorts(Int, out);
@@ -356,7 +356,7 @@ describe("lean/sorts — collectUserSorts", () => {
   });
 });
 
-describe("lean/sorts — isBuiltInPrimitive", () => {
+describe("lean/sorts: isBuiltInPrimitive", () => {
   it("recognizes built-ins", () => {
     expect(isBuiltInPrimitive("Int")).toBe(true);
     expect(isBuiltInPrimitive("Bool")).toBe(true);
@@ -369,10 +369,10 @@ describe("lean/sorts — isBuiltInPrimitive", () => {
 });
 
 // ---------------------------------------------------------------------------
-// declarations module — direct API
+// declarations module: direct API
 // ---------------------------------------------------------------------------
 
-describe("lean/declarations — collectDeclarations", () => {
+describe("lean/declarations: collectDeclarations", () => {
   it("collects user sorts from quantifier sorts", () => {
     const f = forAll(cents, (x) => A.equal(x, x));
     const decls = collectDeclarations([f]);
@@ -400,7 +400,7 @@ describe("lean/declarations — collectDeclarations", () => {
   });
 });
 
-describe("lean/declarations — emitters", () => {
+describe("lean/declarations: emitters", () => {
   it("emitSortDeclarations renders one axiom-of-Type line per user sort", () => {
     const decls = collectDeclarations([forAll(cents, (x) => A.equal(x, x))]);
     expect(emitSortDeclarations(decls)).toEqual(["axiom Cents : Type"]);
@@ -440,7 +440,7 @@ describe("emitFormula (direct emit module)", () => {
 // Structural sanity
 // ---------------------------------------------------------------------------
 
-describe("emitLean — structural sanity", () => {
+describe("emitLean: structural sanity", () => {
   it("output has balanced parentheses", () => {
     const f = forAll(Int, (x) =>
       exists(Int, (y) => and(A.lessThan(x, y), implies(A.equal(x, 0), A.equal(y, 1)))),
@@ -462,7 +462,7 @@ describe("emitLean — structural sanity", () => {
   });
 });
 
-describe("emitLean — null constant rejection", () => {
+describe("emitLean: null constant rejection", () => {
   it("throws when emitting a null const", () => {
     const f: IrFormula = {
       kind: "atomic",
@@ -476,7 +476,7 @@ describe("emitLean — null constant rejection", () => {
   });
 });
 
-describe("emitLean — true/false predicate args", () => {
+describe("emitLean: true/false predicate args", () => {
   it("emits atomic 'true' with no args as the literal True", () => {
     const f: IrFormula = { kind: "atomic", name: "true", args: [] };
     expect(emitLean(f)).toBe("True");

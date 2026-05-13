@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:break",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Unit"
+    }
+  ],
+  "formals": [
+    "unit"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Unit"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "break",
+    "result": "Stmt",
+    "wp": "break current loop/switch"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
+  }
+}

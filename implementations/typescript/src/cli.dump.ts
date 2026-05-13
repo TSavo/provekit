@@ -1,5 +1,5 @@
 /**
- * `provekit dump` — inspect a binary `.proof` file.
+ * `provekit dump`: inspect a binary `.proof` file.
  *
  * A `.proof` file is deterministic CBOR (per protocol/specs/2026-04-30-proof-file-format.md).
  * Without an inspection tool, the format is hostile. This command:
@@ -18,8 +18,8 @@
  *   --json         Emit a single JSON document instead of human-readable formatting
  *
  * Exit codes:
- *   0 — file decoded successfully and all CIDs match
- *   1 — decode failed or any CID mismatch (fail-closed; matches spec rules 1-2)
+ *   0: file decoded successfully and all CIDs match
+ *   1: decode failed or any CID mismatch (fail-closed; matches spec rules 1-2)
  */
 
 import { readFileSync } from "node:fs";
@@ -51,7 +51,7 @@ function parseDumpFlags(argv: string[]): { filePath: string | null; flags: DumpF
 }
 
 function printDumpHelp(): void {
-  process.stderr.write(`provekit dump — inspect a .proof file
+  process.stderr.write(`provekit dump: inspect a .proof file
 
 Usage:
   provekit dump <file>.proof [--no-members] [--json]

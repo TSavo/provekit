@@ -1,0 +1,95 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:for",
+    "formals": [
+      "init",
+      "cond",
+      "post",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:for",
+      "arity": [
+        "Term",
+        "Term",
+        "Term",
+        "Term"
+      ],
+      "result": "Term",
+      "wp": "Go for loop; opaque_loop effect required until invariant memento exists",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "init",
+            "slot_sort": "Term"
+          },
+          {
+            "name": "cond",
+            "slot_sort": "Term"
+          },
+          {
+            "name": "post",
+            "slot_sort": "Term"
+          },
+          {
+            "name": "body",
+            "slot_sort": "Term"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "OpaqueLoop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:f73cd608b4b23f91b699a3e05f4df2e68f78eb305e082af120c97478ad281bcb2f8664a77c2dae8fea551dd8a6767ef7b905526f7d3706771626f4d7e0707e6e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "yEFpk3SZTkejfUBDMU0uOgaY12lKGqy/z8TCQ5hXXiyQgpf/p/y2bdinTcN6hKl4xMTwtJa3902waF/Ues6sDA=="
+  }
+}

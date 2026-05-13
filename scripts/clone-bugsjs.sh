@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/clone-bugsjs.sh — shallow-clone the 10 BugsJS project forks.
+# scripts/clone-bugsjs.sh: shallow-clone the 10 BugsJS project forks.
 #
 # BugsJS publishes per-project forks of mature Node.js projects with
 # `Bug-N-{original,fix,test,full}` tags. The harvest pipeline reads these

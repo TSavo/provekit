@@ -1,0 +1,46 @@
+{
+  "kind": "algorithm",
+  "fn_name": "go:not",
+  "formals": [
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "go:not",
+    "arity": [
+      "Bool"
+    ],
+    "result": "Bool",
+    "wp": "logical negation",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value",
+          "slot_sort": "Bool"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/go-language-signature/README.md#operations"
+}

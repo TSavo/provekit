@@ -1,0 +1,86 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:option-bind->python:optional-and-then",
+    "formals": [
+      "T",
+      "U"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "T",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "U",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:option-bind",
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "U"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:optional-and-then",
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:none-check-chain",
+            "args": [
+              {
+                "kind": "const",
+                "value": "if opt is None: return None",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "NoneGuard",
+                  "args": []
+                }
+              },
+              {
+                "kind": "const",
+                "value": "return f(opt)",
+                "sort": {
+                  "kind": "ctor",
+                  "name": "BindBody",
+                  "args": []
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "Python has no native Option monad; typing.Optional[T] is T | None (type annotation only); monadic bind must be a user-defined function or inline if-check; >>= operator does not exist in Python; bind is not a method on any standard type",
+      "domain_narrowing": "the None-check conflates option:None with null/absent sentinel; programs where None is a valid T value break the monadic abstraction; realization domain narrowed to programs where None is used exclusively as the absent marker and not as a valid domain value",
+      "ub_introduction": "none: Python has no undefined behavior; None checks are always safe; no memory corruption",
+      "effect_divergence": "none: the None-check pattern has no effects beyond returning a value; f is called at most once; no resource acquisition or I/O",
+      "value_divergence": "none: bind(Some(v), f) == f(v) and bind(None, f) == None hold exactly under the None-check pattern; monadic laws satisfied in the non-narrowed domain"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:bcd76761cca4b600690110b9761234ab82f6edfc8eb70b0ea0f1c2930f0298a9eed9fe247d58fe4d51d8e61661c625ec1ef38aecd917b308bf5f4354037d9b74",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

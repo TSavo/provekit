@@ -1,0 +1,51 @@
+name: Protocol / spec design
+description: Design or modification of a canonical RPC protocol or substrate spec.
+title: "[protocol:<name>] <short title>"
+labels: ["draft"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For RPC contract design: lift, parse, bridge-linkage, linker-daemon, bundle-attestation, substrate-layers.
+        Tag with the matching `protocol:<name>` label and any relevant `component:*` labels.
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options:
+        - lift
+        - parse
+        - bridge-linkage
+        - linker-daemon
+        - bundle-attestation
+        - substrate-layers
+        - new-protocol
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: Architectural claim
+      description: One-paragraph claim of what this design enables or fixes.
+    validations:
+      required: true
+  - type: textarea
+    id: rpc-shape
+    attributes:
+      label: RPC shape (request / response)
+      description: Concrete wire shape. JSON Schema or example messages preferred.
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Contracts (pre / post / inv)
+      description: Canonical contracts the substrate enforces. Mirror the C1-C8 pattern in `provekit-self-contracts`.
+  - type: textarea
+    id: kit-impact
+    attributes:
+      label: Kit-side impact
+      description: What changes in each of the 11 kits' implementations? List per kit if non-uniform.
+  - type: textarea
+    id: spec-link
+    attributes:
+      label: Spec
+      description: Link to or draft the normative spec under `protocol/specs/`.

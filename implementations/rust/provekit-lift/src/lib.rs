@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-lift — workspace lift toolchain.
+// provekit-lift: workspace lift toolchain.
 //
 // Walks a Rust workspace (or single crate), parses every `.rs` file
 // with syn, dispatches each parsed file to all registered adapters,
@@ -37,14 +37,24 @@
 //   wires through the bin `cargo-provekit-lift`. We also ship a plain
 //   `provekit-lift` bin for direct invocation.
 
+use base64::Engine;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use base64::Engine;
 
 use provekit_canonicalizer::blake3_512_of;
-use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
+use provekit_claim_envelope::{
+    compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
+    MintContractArgs,
+};
 use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
-use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
+
+pub mod call_edges;
+pub use call_edges::{
+    extract_call_edges_from_file, mint_call_edge, CallEdgeMemento, CallSiteLocus,
+};
 
 pub use provekit_lift_contracts as adapter_contracts;
 pub use provekit_lift_creusot as adapter_creusot;
@@ -78,6 +88,9 @@ pub struct AdapterWarning {
 #[derive(Debug, Default)]
 pub struct LiftReport {
     pub decls: Vec<ContractDecl>,
+    /// Call-edge mementos extracted per spec #114 §1 R1.
+    /// One memento per call site within a contracted function.
+    pub call_edges: Vec<CallEdgeMemento>,
     pub adapter_reports: Vec<AdapterReport>,
     pub files_scanned: usize,
     pub parse_errors: Vec<(String, String)>,
@@ -159,14 +172,18 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut l2_char_lifted = 0usize;
     let mut l2_char_skipped = 0usize;
 
-    for path in enumerate_rs_files(root) {
+    // Retain (path_str, parsed_file) so the second pass (call-edge extraction)
+    // can re-use them without re-parsing. Only successfully parsed files are kept.
+    let mut parsed_files: Vec<(String, syn::File)> = Vec::new();
+
+    for (rel_posix, abs_path) in enumerate_rs_files(root) {
         report.files_scanned += 1;
-        let bytes = match std::fs::read(&path) {
+        let bytes = match std::fs::read(&abs_path) {
             Ok(b) => b,
             Err(e) => {
                 report
                     .parse_errors
-                    .push((path.display().to_string(), format!("read: {e}")));
+                    .push((rel_posix.clone(), format!("read: {e}")));
                 continue;
             }
         };
@@ -179,11 +196,17 @@ pub fn lift_path(root: &Path) -> LiftReport {
             Err(e) => {
                 report
                     .parse_errors
-                    .push((path.display().to_string(), format!("parse: {e}")));
+                    .push((rel_posix.clone(), format!("parse: {e}")));
                 continue;
             }
         };
-        let path_str = path.display().to_string();
+        // Use the relative POSIX path (not the absolute host path) as the
+        // path_str passed to every adapter and to call-edge extraction.
+        // This is the fix for cross-platform CID non-determinism: absolute
+        // paths embed the machine's directory prefix; relative POSIX paths
+        // are identical for identical source trees on any host.
+        let path_str = rel_posix.clone();
+        parsed_files.push((path_str.clone(), file.clone()));
 
         // Adapter: proptest.
         let p_out = adapter_proptest::lift_file(&file, &path_str);
@@ -407,11 +430,97 @@ pub fn lift_path(root: &Path) -> LiftReport {
         l2_char_lifted,
         l2_char_skipped,
     );
+
+    // --- Second pass: call-edge extraction (spec #114 §1 R1) ----------------
+    //
+    // Build a signer-independent name → contractCid map from all lifted decls.
+    // This covers the full compilation unit; cross-crate callees won't appear
+    // here and will produce targetContractCid: null edges.
+    let contract_cid_map: BTreeMap<String, String> = {
+        let mut map = BTreeMap::new();
+        for d in &report.decls {
+            // Compute the signer-independent content CID using a minimal
+            // MintContractArgs (only the content-bearing fields matter;
+            // signer_seed, produced_at, etc. do not affect the CID per spec #94).
+            let args = MintContractArgs {
+                contract_name: d.name.clone(),
+                pre: d.pre.as_deref().map(formula_to_value),
+                post: d.post.as_deref().map(formula_to_value),
+                inv: d.inv.as_deref().map(formula_to_value),
+                out_binding: d.out_binding.clone(),
+                produced_by: "provekit-lift".into(),
+                produced_at: "2026-01-01T00:00:00.000Z".into(),
+                input_cids: vec![],
+                authoring: Authoring::Lift {
+                    lifter: "provekit-lift".into(),
+                    evidence: String::new(),
+                    source_cid: None,
+                },
+                signer_seed: [0u8; 32],
+            };
+            let ccid = compute_contract_cid(&args);
+            // If the same name was lifted multiple times (e.g. semantic dedup),
+            // use the first; they'll produce the same CID anyway.
+            map.entry(d.name.clone()).or_insert(ccid);
+        }
+        map
+    };
+
+    for (path_str, parsed_file) in &parsed_files {
+        let edges = extract_call_edges_from_file(parsed_file, path_str, &contract_cid_map);
+        report.call_edges.extend(edges);
+    }
+
     report
 }
 
-fn enumerate_rs_files(root: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
+/// Directory names that are never part of a Rust workspace's source tree.
+/// Any directory whose name matches one of these is skipped entirely,
+/// at any depth, on any host platform.
+const IGNORED_DIRS: &[&str] = &[
+    "target",
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".DS_Store",
+    ".idea",
+    ".vscode",
+];
+
+/// Normalize `path` to a canonical, relative POSIX path rooted at `root`.
+///
+/// Rules (per spec #120 Locus, "File field semantics"):
+/// - The result is relative to `root` (no leading `/`, no drive letters).
+/// - Separators are forward slashes only.
+/// - Any leading `./` is stripped.
+/// - Paths that escape `root` (via `..`) are rejected; `None` is returned.
+fn to_relative_posix(root: &Path, path: &Path) -> Option<String> {
+    // Use `strip_prefix` to get a path relative to root.  Both `root` and
+    // `path` come from walkdir which emits descendants of root, so
+    // `strip_prefix` will succeed unless something unusual happened.
+    let rel = path.strip_prefix(root).ok()?;
+    // Convert separators to forward slashes (defensive on Windows too).
+    let posix = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    // Reject empty (root itself) or any escaped path.
+    if posix.is_empty() || posix.starts_with("..") {
+        return None;
+    }
+    Some(posix)
+}
+
+/// Walk `root` for `.rs` source files, applying:
+///  - Ignore-list filtering (build artifacts, VCS dirs, IDE noise).
+///  - Deterministic lexicographic sort by relative POSIX path (byte order).
+///
+/// Returns a list of `(relative_posix_path, absolute_pathbuf)` pairs sorted
+/// so that identical source trees produce identical output regardless of
+/// host-filesystem readdir ordering (macOS APFS vs Linux ext4).
+pub fn enumerate_rs_files(root: &Path) -> Vec<(String, PathBuf)> {
+    let mut out: Vec<(String, PathBuf)> = Vec::new();
     if !root.exists() {
         return out;
     }
@@ -419,20 +528,25 @@ fn enumerate_rs_files(root: &Path) -> Vec<PathBuf> {
         .follow_links(false)
         .into_iter()
         .filter_entry(|e| {
-            // Skip target/ and .git/ unconditionally.
+            // Skip ignored directories at any depth.
             let n = e.file_name().to_string_lossy();
-            !(n == "target" || n == ".git" || n == "node_modules")
+            !IGNORED_DIRS.iter().any(|&ig| n == ig)
         })
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file() {
             if let Some(ext) = entry.path().extension() {
                 if ext == "rs" {
-                    out.push(entry.path().to_path_buf());
+                    if let Some(rel) = to_relative_posix(root, entry.path()) {
+                        out.push((rel, entry.path().to_path_buf()));
+                    }
                 }
             }
         }
     }
+    // Sort lexicographically by the relative POSIX path (raw byte order,
+    // locale-independent) so walk order is deterministic across platforms.
+    out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
 
@@ -440,6 +554,11 @@ fn enumerate_rs_files(root: &Path) -> Vec<PathBuf> {
 pub struct MintOutput {
     pub bytes: Vec<u8>,
     pub cid: String,
+    /// Signer-independent trust anchor per spec #94.
+    /// contractSetCid = blake3-512(JCS(<sorted contractCids>))
+    /// where contractCids are content-only hashes:
+    ///   contractCid = blake3-512(JCS({name, outBinding, pre?, post?, inv?}))
+    pub contract_set_cid: String,
     pub member_count: usize,
     /// Map from contract name to its minted memento CID. Names that
     /// collide on identical canonical IR (semantic dedup) collapse to
@@ -461,12 +580,11 @@ pub enum LiftMintError {
 /// canonical IR encodes to the same byte string mint to the same CID
 /// and collapse to one member. Names that disagree on the IR fail
 /// loud (the lattice should not silently accept contradiction).
-pub fn mint_proof(
-    decls: &[ContractDecl],
-    opts: &LiftOptions,
-) -> Result<MintOutput, LiftMintError> {
+pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutput, LiftMintError> {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
+    // Signer-independent content CIDs for contractSetCid computation (spec #94).
+    let mut content_cids: Vec<String> = Vec::new();
     let mut deduplicated = 0usize;
 
     for d in decls {
@@ -486,11 +604,13 @@ pub fn mint_proof(
             },
             signer_seed: opts.signer_seed,
         };
+        // Compute signer-independent content CID BEFORE minting (spec #94).
+        let ccid = compute_contract_cid(&args);
         let m = mint_contract(&args).map_err(|e| LiftMintError::Mint(e.to_string()))?;
 
         if let Some(prev_cid) = contract_cids.get(&d.name) {
             if prev_cid == &m.cid {
-                // Same name, identical IR — semantic dedup.
+                // Same name, identical IR: semantic dedup.
                 deduplicated += 1;
                 continue;
             } else {
@@ -498,6 +618,7 @@ pub fn mint_proof(
             }
         }
 
+        content_cids.push(ccid);
         contract_cids.insert(d.name.clone(), m.cid.clone());
         // If the CID itself already exists (different name, same IR),
         // members map collapses on insert; count as dedup.
@@ -507,6 +628,9 @@ pub fn mint_proof(
             members.insert(m.cid, m.canonical_bytes);
         }
     }
+
+    // Compute contractSetCid per spec #94 §1.
+    let contract_set_cid = compute_contract_set_cid(content_cids);
 
     let signer_pubkey = ed25519_pubkey_string(&opts.signer_seed);
     let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
@@ -525,6 +649,7 @@ pub fn mint_proof(
     Ok(MintOutput {
         bytes: built.bytes,
         cid: built.cid,
+        contract_set_cid,
         member_count: members.len(),
         contract_cids,
         deduplicated,
@@ -594,7 +719,7 @@ pub fn parse_cli_flags(args: impl IntoIterator<Item = String>) -> CliFlags {
 
 fn print_help() {
     println!(
-        "provekit-lift — promote existing Rust annotations to signed contracts.\n\n\
+        "provekit-lift: promote existing Rust annotations to signed contracts.\n\n\
          USAGE:\n  \
            cargo provekit-lift [--workspace <dir>] [--target-dir <dir>] [--quiet]\n  \
            provekit-lift     [--workspace <dir>] [--target-dir <dir>] [--quiet]\n\n\
@@ -646,7 +771,7 @@ fn run_rpc_mode() -> i32 {
                     Ok((_report, minted, path)) => {
                         let bytes = std::fs::read(&path).unwrap_or_default();
                         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"bytes_base64":b64}});
+                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"contract_set_cid":minted.contract_set_cid,"bytes_base64":b64}});
                         let _ = writeln!(stdout, "{resp}");
                     }
                     Err(e) => {
@@ -683,10 +808,7 @@ pub fn run_cli(flags: CliFlags) -> i32 {
     match lift_and_mint(&workspace, &out_dir, &opts) {
         Ok((report, minted, path)) => {
             if !flags.quiet {
-                println!(
-                    "provekit-lift: scanned {} .rs files",
-                    report.files_scanned
-                );
+                println!("provekit-lift: scanned {} .rs files", report.files_scanned);
                 for ar in &report.adapter_reports {
                     println!(
                         "  adapter `{}`: seen {}, lifted {}, skipped {}",
@@ -753,7 +875,7 @@ fn sqrt(x: i64) -> i64 {{ x }}
         .unwrap();
         let b = dir.join("b.rs");
         let mut f = std::fs::File::create(&b).unwrap();
-        // Same property, expressed identically — should dedup.
+        // Same property, expressed identically: should dedup.
         writeln!(
             f,
             r#"
@@ -799,9 +921,14 @@ proptest! {{
     #[test]
     fn cli_flags_parse() {
         let flags = parse_cli_flags(
-            ["--workspace".into(), "/a".into(), "--target-dir".into(), "/b".into()]
-                .into_iter()
-                .collect::<Vec<String>>(),
+            [
+                "--workspace".into(),
+                "/a".into(),
+                "--target-dir".into(),
+                "/b".into(),
+            ]
+            .into_iter()
+            .collect::<Vec<String>>(),
         );
         assert_eq!(flags.workspace.as_deref(), Some(Path::new("/a")));
         assert_eq!(flags.target_dir.as_deref(), Some(Path::new("/b")));
@@ -819,11 +946,188 @@ proptest! {{
         );
         assert_eq!(flags.workspace.as_deref(), Some(Path::new("/a")));
     }
-}
 
-// ---------------------------------------------------------------------------
-// Tiny tempdir shim so we don't pull a new workspace dep just for tests.
-// ---------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Determinism tests (spec #120 §"File field semantics" + §11 manifesto).
+    //
+    // Two instances of the SAME source tree at DIFFERENT absolute paths MUST
+    // produce byte-identical contractSetCid.  This is the empirical gate for
+    // cross-platform federated trust: different machines will always have
+    // different absolute paths, but the relative POSIX path within the project
+    // root is identical.
+    // -----------------------------------------------------------------------
+
+    /// Write a richer fixture: two .rs files in a nested sub-directory, a
+    /// target/ directory with a dummy file that must NOT be lifted, and a
+    /// .DS_Store file that must NOT be lifted.
+    fn write_determinism_fixture(dir: &Path) {
+        // Create nested source layout.
+        let sub = dir.join("src").join("nested");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let mut f = std::fs::File::create(sub.join("alpha.rs")).unwrap();
+        writeln!(
+            f,
+            r#"
+#[requires(x > 0)]
+#[ensures(ret > 0)]
+fn positive(x: i64) -> i64 {{ x }}
+"#
+        )
+        .unwrap();
+
+        let mut f = std::fs::File::create(sub.join("beta.rs")).unwrap();
+        writeln!(
+            f,
+            r#"
+#[requires(n >= 0)]
+#[ensures(ret >= 0)]
+fn nonneg(n: i64) -> i64 {{ n }}
+"#
+        )
+        .unwrap();
+
+        // A top-level file too.
+        let mut f = std::fs::File::create(dir.join("lib.rs")).unwrap();
+        writeln!(
+            f,
+            r#"
+#[requires(a != 0)]
+#[ensures(ret != 0)]
+fn nonzero(a: i64) -> i64 {{ a }}
+"#
+        )
+        .unwrap();
+
+        // Build artifact directory: must be filtered.
+        let target = dir.join("target").join("release");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("artifact.rs"), b"fn build_artifact() {}").unwrap();
+
+        // macOS noise file: must be filtered.
+        std::fs::write(dir.join(".DS_Store"), b"").unwrap();
+    }
+
+    /// Empirical cross-machine determinism test.
+    ///
+    /// Lifts the same fixture from TWO different absolute roots (simulating
+    /// two machines with different directory prefixes) and asserts that
+    /// `contract_set_cid` and bundle `cid` are byte-identical.
+    #[test]
+    fn contract_set_cid_is_identical_across_different_absolute_roots() {
+        let td1 = tempdir_compat::TempDir::new("provekit-det-machine1").unwrap();
+        let td2 = tempdir_compat::TempDir::new("provekit-det-machine2").unwrap();
+
+        write_determinism_fixture(td1.path());
+        write_determinism_fixture(td2.path());
+
+        // Sanity: the two roots must NOT be the same directory.
+        assert_ne!(
+            td1.path(),
+            td2.path(),
+            "test requires two distinct temp dirs"
+        );
+
+        let opts = LiftOptions::default();
+
+        let report1 = lift_path(td1.path());
+        let report2 = lift_path(td2.path());
+
+        // Both should have lifted the same number of contracts.
+        assert_eq!(
+            report1.decls.len(),
+            report2.decls.len(),
+            "declaration count must match across roots"
+        );
+
+        let mint1 = mint_proof(&report1.decls, &opts).expect("mint1");
+        let mint2 = mint_proof(&report2.decls, &opts).expect("mint2");
+
+        assert_eq!(
+            mint1.contract_set_cid, mint2.contract_set_cid,
+            "contractSetCid must be byte-identical across different absolute roots \
+             (simulates cross-machine CID stability)"
+        );
+        assert_eq!(
+            mint1.cid, mint2.cid,
+            "bundle CID must be byte-identical across different absolute roots"
+        );
+    }
+
+    /// Assert that target/ and .DS_Store artifacts are NOT in the lifted set.
+    #[test]
+    fn target_dir_and_ds_store_are_excluded() {
+        let td = tempdir_compat::TempDir::new("provekit-det-ignore").unwrap();
+        write_determinism_fixture(td.path());
+
+        let report = lift_path(td.path());
+
+        // Only 3 files (lib.rs, alpha.rs, beta.rs) should have been scanned;
+        // target/release/artifact.rs and .DS_Store must be excluded.
+        assert_eq!(
+            report.files_scanned, 3,
+            "expected 3 .rs files scanned; got {}. target/ or .DS_Store pollution?",
+            report.files_scanned
+        );
+    }
+
+    /// Assert that file paths embedded in call-edge loci are relative POSIX
+    /// paths, not absolute paths.
+    #[test]
+    fn call_edge_loci_use_relative_posix_paths() {
+        let td = tempdir_compat::TempDir::new("provekit-det-locus").unwrap();
+        write_determinism_fixture(td.path());
+
+        let report = lift_path(td.path());
+
+        for edge in &report.call_edges {
+            let file = &edge.call_site_locus.file;
+            assert!(
+                !file.starts_with('/'),
+                "call-edge locus file must be relative, got absolute: {file}"
+            );
+            // No Windows drive letters.
+            assert!(
+                !file.chars().nth(1).map_or(false, |c| c == ':'),
+                "call-edge locus file must not contain drive letter: {file}"
+            );
+            // No backslashes.
+            assert!(
+                !file.contains('\\'),
+                "call-edge locus file must use forward slashes only: {file}"
+            );
+        }
+
+        // enumerate_rs_files returns (rel_posix, abs): verify the posix strings too.
+        let entries = enumerate_rs_files(td.path());
+        for (rel, _) in &entries {
+            assert!(
+                !rel.starts_with('/'),
+                "enumerate_rs_files returned absolute path: {rel}"
+            );
+            assert!(
+                !rel.contains('\\'),
+                "enumerate_rs_files returned backslash: {rel}"
+            );
+        }
+    }
+
+    /// Assert enumerate_rs_files output is sorted lexicographically.
+    #[test]
+    fn enumerate_rs_files_is_sorted() {
+        let td = tempdir_compat::TempDir::new("provekit-det-sort").unwrap();
+        write_determinism_fixture(td.path());
+
+        let entries = enumerate_rs_files(td.path());
+        let paths: Vec<&str> = entries.iter().map(|(r, _)| r.as_str()).collect();
+        let mut sorted = paths.clone();
+        sorted.sort();
+        assert_eq!(
+            paths, sorted,
+            "enumerate_rs_files must return lexicographically sorted paths"
+        );
+    }
+}
 
 #[cfg(test)]
 mod tempdir_compat {

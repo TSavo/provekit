@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "ts:Any",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "Any",
+      "description": "TypeScript any/unknown escape sort for compiler fallback only."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#sorts"
+  },
+  "cid": "blake3-512:95c07ae3d4c7a1686046f31762726de10b26a6836c952c9b1a5e32fe85caa5aa96f4c2ac003aae09f6519126aa27864c3cb123aa262a08482ea0c7c84ced8a62",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "hX7/G6QpuXQcMbp1vxSK2hyp/ikH2PfJ1Nlxg1eQ7dMtYsyrDEemKM20y2FJyJUYjjWSaz3qRPhw6j1rl7YOBw=="
+  }
+}

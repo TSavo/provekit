@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:php:postinc:to:concept:postinc",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "no candidate source operation spec",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "php",
+  "source_op_cid": "blake3-512:gap-no-source-cid-php-postinc",
+  "target_concept_op": "concept:postinc",
+  "target_op_cid": "blake3-512:be615743882f980a2fde0ca6ec3250305c28e2fac1fe4d17accd1790d62af7992ff80282f6507335b959ccceaa32a047f1845b8a9e96a54d20b3766d46589aee"
+}

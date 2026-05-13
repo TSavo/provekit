@@ -17,9 +17,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    contract, eq, forall, gte, lte, must, num, ContractArgs, Int, Term,
-};
+use provekit_ir_symbolic::{contract, eq, forall, gte, lte, must, num, ContractArgs, Int, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -56,10 +54,7 @@ pub fn invariants() {
     contract(
         "cbor_encode_uint_zero_one_byte",
         ContractArgs {
-            post: Some(eq(
-                ctor1("len", ctor1("cbor_encode_uint", num(0))),
-                num(1),
-            )),
+            post: Some(eq(ctor1("len", ctor1("cbor_encode_uint", num(0))), num(1))),
             ..Default::default()
         },
     );
@@ -72,7 +67,10 @@ pub fn invariants() {
     must(
         "cbor_encode_tstr_is_deterministic",
         forall(Int(), |s| {
-            eq(ctor1("cbor_encode_tstr", s.clone()), ctor1("cbor_encode_tstr", s))
+            eq(
+                ctor1("cbor_encode_tstr", s.clone()),
+                ctor1("cbor_encode_tstr", s),
+            )
         }),
     );
 

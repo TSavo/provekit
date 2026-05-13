@@ -96,6 +96,34 @@ fn atomic_unicode_ge_translates_to_smt_ge() {
     assert!(s.contains("(>= a b)"));
 }
 
+#[test]
+fn bug_zoo_predicate_aliases_translate_to_smt_lib() {
+    let f = json!({
+        "kind": "implies",
+        "operands": [
+            {"kind": "atomic", "name": "eq", "args": [
+                {"kind": "var", "name": "value"},
+                {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
+            ]},
+            {"kind": "atomic", "name": "gte", "args": [
+                {"kind": "var", "name": "value"},
+                {"kind": "const", "value": 43, "sort": {"kind": "primitive", "name": "Int"}}
+            ]}
+        ]
+    });
+    let s = smt_emitter::emit(&f).expect("emit");
+    assert!(s.contains("(= value 42)"));
+    assert!(s.contains("(>= value 43)"));
+    assert!(
+        !s.contains("(eq value 42)"),
+        "`eq` is a ProofIR alias and must not be emitted as an uninterpreted SMT symbol"
+    );
+    assert!(
+        !s.contains("(gte value 43)"),
+        "`gte` is a ProofIR alias and must not be emitted as an uninterpreted SMT symbol"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Connectives
 // ---------------------------------------------------------------------------
@@ -283,7 +311,7 @@ fn free_var_outside_quantifier_is_declared_at_top() {
 
 #[test]
 fn shadowing_quantifier_does_not_declare_outer_var() {
-    // forall n. forall n. n > 0  — inner n shadows; only one declare needed (none, since both bind).
+    // forall n. forall n. n > 0: inner n shadows; only one declare needed (none, since both bind).
     let f = json!({
         "kind": "forall",
         "name": "n",
@@ -366,7 +394,7 @@ fn emitted_script_ends_with_check_sat() {
 }
 
 // ---------------------------------------------------------------------------
-// Bad inputs — fail-closed
+// Bad inputs: fail-closed
 // ---------------------------------------------------------------------------
 
 #[test]

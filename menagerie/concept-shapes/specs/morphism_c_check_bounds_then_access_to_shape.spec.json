@@ -1,0 +1,60 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "check-bounds-then-access:c:to-shape",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
+  "formals": [
+    "source_contract"
+  ],
+  "input_cids": [
+    "blake3-512:2b6a0e6a7b696c43680723cd54394a6d55e3dcfa4bfe7f774b29f7afe997324dabd49b6529086cfdcc09b2f616c43f6832487c79a39a48ab6d0b6f53412e6752",
+    "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "homomorphism_obligation": {
+      "kind": "canonicalizer-alpha-equivalence-plus-representation-map",
+      "source": "blake3-512:2b6a0e6a7b696c43680723cd54394a6d55e3dcfa4bfe7f774b29f7afe997324dabd49b6529086cfdcc09b2f616c43f6832487c79a39a48ab6d0b6f53412e6752",
+      "target": "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f"
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {
+      "c_accessible": "accessible",
+      "c_lt": "<",
+      "c_read_i32": "read"
+    },
+    "renaming_map": {
+      "arr": "buf",
+      "fail": "err",
+      "idx": "i",
+      "n": "len",
+      "result": "ret"
+    },
+    "representation_map": {
+      "int": "Value",
+      "int_ptr": "Buffer",
+      "size_t_index": "Index",
+      "size_t_len": "Size"
+    },
+    "source_contract_cid": "blake3-512:2b6a0e6a7b696c43680723cd54394a6d55e3dcfa4bfe7f774b29f7afe997324dabd49b6529086cfdcc09b2f616c43f6832487c79a39a48ab6d0b6f53412e6752",
+    "target_shape_cid": "blake3-512:cb37f973e9b92c56d77bb7fc43ae097ddcfea5ada234f41e3145c80e10074a0f3f38b848a8cc8f907bc17dab7a2385c3ef5673eef3eee2e11efae716016b8b6f"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:neg",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
+  "formals": [
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Int"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "neg",
+    "result": "Int",
+    "wp": "integer arithmetic negation"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
+  }
+}

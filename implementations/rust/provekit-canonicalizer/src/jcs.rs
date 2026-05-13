@@ -100,18 +100,16 @@ mod tests {
 
     #[test]
     fn encode_simple_object_sorts_keys() {
-        let v = Value::object([
-            ("b", Value::integer(1)),
-            ("a", Value::string("x")),
-        ]);
+        let v = Value::object([("b", Value::integer(1)), ("a", Value::string("x"))]);
         assert_eq!(encode_jcs(&v), r#"{"a":"x","b":1}"#);
     }
 
     #[test]
     fn encode_nested_array_object() {
-        let v = Value::object([
-            ("xs", Value::array(vec![Value::integer(1), Value::integer(2)])),
-        ]);
+        let v = Value::object([(
+            "xs",
+            Value::array(vec![Value::integer(1), Value::integer(2)]),
+        )]);
         assert_eq!(encode_jcs(&v), r#"{"xs":[1,2]}"#);
     }
 
@@ -164,5 +162,4 @@ mod tests {
         // Bytes match what a sibling impl (C++ writing raw UTF-8 bytes) produces.
         assert_eq!(encoded.as_bytes(), b"{\"name\":\"\xe2\x89\xa5\"}");
     }
-
 }

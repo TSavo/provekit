@@ -1,0 +1,90 @@
+{
+  "fn_name": "gap:java:new:to:concept:new",
+  "gap_kind": "divergent-semantics",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Alloc"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "String",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "type_name",
+              "slot_sort": "literal"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "new",
+        "result": "Ref",
+        "wp": "new type_name(args)"
+      },
+      "want": {
+        "arity": [
+          "String",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "type_name"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "new",
+        "result": "Expr",
+        "wp_note": "new object of type type_name constructed with args"
+      }
+    }
+  },
+  "reason_note": "java:new returns sort Ref (heap-allocated reference); concept:new (csharp-derived) returns sort Expr (over-generalised). Ref is more precise for an allocation operation; concept:new base should be rebased to java:new. Refusal is loudly bounded per Supra omnia rectum. See #626 R3 follow-up.",
+  "resolution_options": [
+    {
+      "option_kind": "partial-morphism",
+      "status": "recommended",
+      "tradeoff": "partial morphism valid on the non-diverging sub-domain; requires static proof of the side-condition at every use-site"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for the semantically-diverging case"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "java",
+  "source_op_cid": "blake3-512:0cd8b33bb66efdda837a872776bf2b48362ada0a2d432d8b8f55c229ba35606ca29ffd809cba53769e8823917cbf8df15cf5781503fb4b4a69595075a653762d",
+  "target_concept_op": "concept:new",
+  "target_op_cid": "blake3-512:26eb0a9484d68fff3fafe1ee82f09e3c3f49e1e2d1e8d01c733362b39473590e61f5903080ffdf69f2532e57047d0fbd4439a11ff778936e27a61f0c4c8c35b8"
+}

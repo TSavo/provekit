@@ -1,0 +1,76 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:bool-cell",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "cell"
+      },
+      {
+        "name": "value"
+      }
+    ],
+    "formal_sorts": [
+      "Bool"
+    ],
+    "result_sort": "BoolCell",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "cell",
+        "value"
+      ],
+      "body": {
+        "kind": "op",
+        "name": "eq",
+        "args": [
+          {
+            "kind": "op",
+            "name": "bool-cell:get",
+            "args": [
+              {
+                "kind": "op",
+                "name": "seq",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "bool-cell:set",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "cell"
+                      },
+                      {
+                        "kind": "var",
+                        "name": "value"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "var",
+                    "name": "cell"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ]
+      }
+    },
+    "contract_note": "Read-after-write axiom: BOOL_CELL_GET(BOOL_CELL_SET(c, v); c) == v. Writing v to cell c and immediately reading c returns v. The cell is a mutable reference; aliasing and concurrency are out of scope.",
+    "realizations": [
+      "blake3-512:44f964dbef76903992d3469b1801fae693edefe31b503232a20398996230e0c16f1fab794fb85361b8fd67ad301f9f6cbf7124319809e50756f5ec73a7c64892"
+    ]
+  },
+  "cid": "blake3-512:eb16c2445627cf8563da04108aa62e6b46fe0d53c00735082696d938731c4f686df795b1c1098ede2c8f427997f8fadb529b80f5813b5fe011507a8b133cdae6",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -1,0 +1,272 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:8ef55920ab677d4fb44260ed9993295585fd76cc7df67c28673424a2cf49c2f76164e4cc9f1f2739a063ed2f27cb11cd34024c54a6cdfa9af2828e9946d1ff0e",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "assert",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (!${param0}) abort();\nreturn ${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_message": {
+                "args": [],
+                "head": "atomic",
+                "name": "assert-panic-message-not-preserved"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "bool-cell",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return !${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "free",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "free(${param0});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "void"
+          }
+        },
+        {
+          "concept_name": "identity",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "list",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "long acc = 0;\nfor (size_t i = 0; i < (size_t)${param1}; i++) {\n    acc += ${param0}[i];\n}\nreturn acc;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "option",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (${param1} == 0) return -1;\nreturn ${param0}[0];"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "sentinel_for_none": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-none-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "option-bind",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (${param1} == 0) return -1;\nint v = ${param0}[0];\nreturn v <= 0 ? -1 : v * 2;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_bind_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-bind-body-is-fixture-specific-doubling"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "pair",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${return_type} out = { .first = ${param1}, .second = ${param0} };\nreturn out;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "argument_order_swap": {
+                "args": [],
+                "head": "atomic",
+                "name": "pair-swap-baked-into-template-from-fixture"
+              },
+              "struct_to_c_struct": {
+                "args": [],
+                "head": "atomic",
+                "name": "pair-emitted-as-c-struct-with-first-second-fields"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "result",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param1} == 0 ? -1 : ${param0} / ${param1};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "sentinel_for_err": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-err-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "result-bind",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (${param1} == 0) return -1;\nint q = ${param0} / ${param1};\nreturn q < 0 ? -1 : q * 2;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_bind_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-bind-body-is-fixture-specific-doubling"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "retry-loop",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "int attempt = 0;\nwhile (attempt < ${param0}) {\n    attempt += 1;\n    if (attempt >= 1) return true;\n}\nreturn false;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_termination": {
+                "args": [],
+                "head": "atomic",
+                "name": "retry-loop-termination-condition-is-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "tagged-union",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "switch (${param0}) {\n    case -1:\n        return 0;\n    case 0:\n        return 1;\n    default:\n        return 2;\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_labels": {
+                "args": [],
+                "head": "atomic",
+                "name": "tagged-union-labels-0-1-2-are-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "unit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0,
+            "requires_return_type": "void"
+          }
+        }
+      ],
+      "target_language": "c",
+      "template_name": "c-canonical-bodies"
+    },
+    "critical": false,
+    "kind": "body-template",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  }
+}

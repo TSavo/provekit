@@ -1,0 +1,79 @@
+{
+  "auto_minted_mementos": [],
+  "body_cid": null,
+  "fn_name": "foo",
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "i32"
+    }
+  ],
+  "formals": [
+    "x"
+  ],
+  "kind": "function-contract",
+  "locus": {
+    "col": 0,
+    "file": null,
+    "line": 0
+  },
+  "post": {
+    "args": [
+      {
+        "kind": "var",
+        "name": "result"
+      },
+      {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              },
+              {
+                "kind": "const",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                },
+                "value": 0
+              }
+            ],
+            "kind": "ctor",
+            "name": "="
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "Int"
+            },
+            "value": -22
+          },
+          {
+            "kind": "var",
+            "name": "x"
+          }
+        ],
+        "kind": "ctor",
+        "name": "ite"
+      }
+    ],
+    "kind": "atomic",
+    "name": "="
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "effects": {
+    "effects": []
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "i32"
+  },
+  "source_term": "foo.term.json"
+}

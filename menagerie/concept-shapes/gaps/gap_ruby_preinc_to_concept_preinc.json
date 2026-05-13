@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:ruby:preinc:to:concept:preinc",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "operation not in supported set for this language",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "ruby",
+  "source_op_cid": "blake3-512:gap-no-source-cid-ruby-preinc",
+  "target_concept_op": "concept:preinc",
+  "target_op_cid": "blake3-512:8c8383c221eaca3b95d30437d768065d5117091415afb04e92f541af6fb26d37af79d423e25a59ffaf3f6e2d654d0bd64cfe8e071ee5483ed6bca2614442001f"
+}

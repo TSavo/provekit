@@ -17,7 +17,8 @@ public class IrDocumentTest {
         String json = doc.toJson();
         assertTrue(json.contains("\"version\":\"provekit-ir/1.1.0\""));
         assertTrue(json.contains("\"kind\":\"contract\""));
-        assertTrue(json.contains("\"symbol\":\"abs\""));
+        assertTrue(json.contains("\"name\":\"abs\""));
+        assertTrue(json.contains("\"outBinding\":\"out\""));
         assertTrue(json.contains("\"kind\":\"atomic\""));
         assertTrue(json.contains("\"name\":\"gte\""));
     }
@@ -39,12 +40,47 @@ public class IrDocumentTest {
 
     @Test
     public void testBridge() {
-        IrDocument doc = IrDocument.builder()
-            .bridge("parseInt", "bafy...js", "bafy...java")
-            .build();
+        Declaration.Bridge bridge = new Declaration.Bridge(
+            "myBridge",
+            "source",
+            "c-kit",
+            "bafySource",
+            "bafyTarget",
+            "bafyProof",
+            "coq",
+            null
+        );
 
-        String json = doc.toJson();
+        String json = bridge.toJson();
         assertTrue(json.contains("\"kind\":\"bridge\""));
-        assertTrue(json.contains("\"sourceSymbol\":\"parseInt\""));
+        assertTrue(json.contains("\"name\":\"myBridge\""));
+        assertTrue(json.contains("\"sourceSymbol\":\"source\""));
+        assertTrue(json.contains("\"sourceLayer\":\"c-kit\""));
+        assertTrue(json.contains("\"targetProofCid\":\"bafyProof\""));
+        assertTrue(json.contains("\"targetLayer\":\"coq\""));
+    }
+
+    /**
+     * Spec v1.1.0: bridge_decl_v1_1 conformance fixture from conformance/fixtures.toml.
+     * The 9-field Bridge with optional notes must serialize to JCS-canonical
+     * (alphabetical key order) bytes that match the canonical fixture exactly.
+     */
+    @Test
+    public void testBridgeJcsRoundtripV110() {
+        Declaration.Bridge bridge = new Declaration.Bridge(
+            "myBridge",
+            "source",
+            "c-kit",
+            "bafySource",
+            "bafyTarget",
+            "bafyProof",
+            "coq",
+            "some notes"
+        );
+
+        String got = bridge.toJson();
+        String expected = "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"notes\":\"some notes\",\"sourceContractCid\":\"bafySource\",\"sourceLayer\":\"c-kit\",\"sourceSymbol\":\"source\",\"targetContractCid\":\"bafyTarget\",\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\"}";
+
+        assertEquals(expected, got, "Bridge JCS bytes must match conformance/fixtures.toml bridge_decl_v1_1");
     }
 }

@@ -1,0 +1,55 @@
+{
+  "kind": "algorithm",
+  "fn_name": "cpp:lt",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "<",
+    "arity": [
+      "Int",
+      "Int"
+    ],
+    "result": "Bool",
+    "wp": "C++ less-than comparison",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

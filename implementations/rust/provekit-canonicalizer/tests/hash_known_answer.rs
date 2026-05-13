@@ -27,8 +27,7 @@ fn assert_known_answer(input_len: usize, expected_hex_first_64_bytes: &str) {
     assert!(h.starts_with(BLAKE3_512_PREFIX), "missing prefix");
     let hex = h.trim_start_matches(BLAKE3_512_PREFIX);
     assert_eq!(
-        hex,
-        expected_hex_first_64_bytes,
+        hex, expected_hex_first_64_bytes,
         "BLAKE3-512 KAT mismatch for input_len={input_len}"
     );
 }

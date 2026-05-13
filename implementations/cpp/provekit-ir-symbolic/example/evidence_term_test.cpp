@@ -243,6 +243,68 @@ int main() {
         std::printf("  [PASS] present catalog map head: 0xa8 (8 keys)\n");
     }
 
+    // --- 5. BridgeDecl: locked IR-JSON shape (task #225) --------------------
+    //
+    // Cross-impl byte fixture from conformance/fixtures.toml `bridge_decl`:
+    //   {"kind":"bridge","name":"myBridge","notes":"some notes",
+    //    "sourceContractCid":"bafySource","sourceLayer":"c-kit",
+    //    "sourceSymbol":"source","targetContractCid":"bafyTarget",
+    //    "targetLayer":"coq","targetProofCid":"bafyProof"}
+    //
+    // JCS alphabetical key order: kind, name, [notes?], sourceContractCid,
+    // sourceLayer, sourceSymbol, targetContractCid, targetLayer, targetProofCid.
+    // The `notes` field is omitted entirely when empty (JCS "omit absent" rule);
+    // see protocol/specs/2026-04-30-ir-formal-grammar.md §BridgeDeclaration.
+    {
+        BridgeDecl b{};
+        b.name = "myBridge";
+        b.source_symbol = "source";
+        b.source_layer = "c-kit";
+        b.source_contract_cid = "bafySource";
+        b.target_contract_cid = "bafyTarget";
+        b.target_proof_cid = "bafyProof";
+        b.target_layer = "coq";
+        b.notes = "some notes";
+
+        std::ostringstream oss;
+        write_bridge_decl(oss, b);
+        const std::string bridge_got = oss.str();
+        const std::string bridge_want =
+            "{\"kind\":\"bridge\",\"name\":\"myBridge\","
+            "\"notes\":\"some notes\","
+            "\"sourceContractCid\":\"bafySource\","
+            "\"sourceLayer\":\"c-kit\","
+            "\"sourceSymbol\":\"source\","
+            "\"targetContractCid\":\"bafyTarget\","
+            "\"targetLayer\":\"coq\","
+            "\"targetProofCid\":\"bafyProof\"}";
+
+        if (!check_eq_str("BridgeDecl IR-JSON shape (all 9 fields)",
+                          bridge_got, bridge_want)) {
+            failures++;
+        }
+
+        // notes empty: field omitted entirely (not emitted as null/empty).
+        BridgeDecl b_no_notes = b;
+        b_no_notes.notes = "";
+        std::ostringstream oss2;
+        write_bridge_decl(oss2, b_no_notes);
+        const std::string nn_got = oss2.str();
+        const std::string nn_want =
+            "{\"kind\":\"bridge\",\"name\":\"myBridge\","
+            "\"sourceContractCid\":\"bafySource\","
+            "\"sourceLayer\":\"c-kit\","
+            "\"sourceSymbol\":\"source\","
+            "\"targetContractCid\":\"bafyTarget\","
+            "\"targetLayer\":\"coq\","
+            "\"targetProofCid\":\"bafyProof\"}";
+
+        if (!check_eq_str("BridgeDecl notes-absent (omit-when-empty)",
+                          nn_got, nn_want)) {
+            failures++;
+        }
+    }
+
     std::printf("\n");
     if (failures == 0) {
         std::printf("v1.3.0 CONFORMANCE SMOKE TEST OK.\n");

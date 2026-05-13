@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit agent list`         — enumerate installed plugins.
-// `provekit agent describe <n>` — emit a tool descriptor for one.
+// `provekit agent list`: enumerate installed plugins.
+// `provekit agent describe <n>`: emit a tool descriptor for one.
 //
 // Discovery: walks `~/.config/provekit/agents/*/manifest.toml`. Each
 // manifest declares: name, version, protocol_version, binary,
@@ -119,37 +119,25 @@ fn bundled_manifests() -> Vec<AgentManifest> {
         AgentManifest {
             name: "stub".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            protocol_version: "provekit-agent/1".into(),
+            protocol_version: "pep/1.7.0".into(),
             binary: "<bundled>".into(),
-            capabilities: vec![
-                "lift".into(),
-                "must".into(),
-                "fix".into(),
-            ],
+            capabilities: vec!["lift".into(), "must".into(), "fix".into()],
             source: "bundled".into(),
         },
         AgentManifest {
             name: "claude-code".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            protocol_version: "provekit-agent/1".into(),
+            protocol_version: "pep/1.7.0".into(),
             binary: "claude".into(),
-            capabilities: vec![
-                "lift".into(),
-                "must".into(),
-                "fix".into(),
-            ],
+            capabilities: vec!["lift".into(), "must".into(), "fix".into()],
             source: "bundled (skeleton; live mode behind `live` feature)".into(),
         },
         AgentManifest {
             name: "openai".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            protocol_version: "provekit-agent/1".into(),
+            protocol_version: "pep/1.7.0".into(),
             binary: "<HTTPS chat completions>".into(),
-            capabilities: vec![
-                "lift".into(),
-                "must".into(),
-                "fix".into(),
-            ],
+            capabilities: vec!["lift".into(), "must".into(), "fix".into()],
             source: "bundled (skeleton; live mode behind `live` feature)".into(),
         },
     ]
@@ -251,15 +239,14 @@ mod tests {
         let raw = r#"
         name = "echo-agent"
         version = "0.1"
-        protocol_version = "provekit-agent/1"
+        protocol_version = "pep/1.7.0"
         binary = "/usr/local/bin/echo_agent.py"
         capabilities = ["must", "lift"]
         "#;
-        let m = parse_manifest(raw, std::path::Path::new("/tmp/manifest.toml"))
-            .expect("parsed");
+        let m = parse_manifest(raw, std::path::Path::new("/tmp/manifest.toml")).expect("parsed");
         assert_eq!(m.name, "echo-agent");
         assert_eq!(m.version, "0.1");
-        assert_eq!(m.protocol_version, "provekit-agent/1");
+        assert_eq!(m.protocol_version, "pep/1.7.0");
         assert_eq!(m.binary, "/usr/local/bin/echo_agent.py");
         assert!(m.capabilities.contains(&"must".to_string()));
         assert!(m.capabilities.contains(&"lift".to_string()));

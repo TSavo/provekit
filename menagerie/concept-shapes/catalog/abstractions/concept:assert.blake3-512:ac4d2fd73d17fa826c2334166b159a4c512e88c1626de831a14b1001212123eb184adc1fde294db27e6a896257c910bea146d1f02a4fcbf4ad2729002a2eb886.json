@@ -1,0 +1,34 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:assert",
+    "tier": "abstraction",
+    "slots": [],
+    "formal_sorts": [],
+    "result_sort": "Unit",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [],
+      "body": {
+        "kind": "skolem",
+        "predicate": "held",
+        "args": [
+          {
+            "kind": "var",
+            "name": "p"
+          }
+        ]
+      }
+    },
+    "contract_note": "held(p) holds iff the boolean predicate p evaluated to true. If the predicate is false, the assertion aborts (abort on failure). The assertion is state-independent and returns Unit.",
+    "realizations": [
+      "blake3-512:747bfcc3973042129420d7772f833dfcb9ce612c7957d5f6e5b9f30f8557c782502c8686b2c3fd8f8d84b21de78a08454629afda4f5f8ab158296594247c7b1c"
+    ]
+  },
+  "cid": "blake3-512:ac4d2fd73d17fa826c2334166b159a4c512e88c1626de831a14b1001212123eb184adc1fde294db27e6a896257c910bea146d1f02a4fcbf4ad2729002a2eb886",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

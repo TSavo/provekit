@@ -13,5 +13,6 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["implementations/typescript/src/**/*"]
+  "include": ["implementations/typescript/src/**/*"],
+  "exclude": ["implementations/typescript/src/**/*.test.ts"]
 }

@@ -1,0 +1,69 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "union(then_branch.effects, else_branch.effects)"
+      }
+    ]
+  },
+  "fn_name": "concept:conditional",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
+  "formals": [
+    "cond",
+    "then_branch",
+    "else_branch"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Bool",
+      "Stmt",
+      "Stmt"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "cond"
+        },
+        {
+          "name": "then_branch"
+        },
+        {
+          "name": "else_branch"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "conditional",
+    "result": "Stmt",
+    "wp": "branch-selected weakest precondition"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
+  }
+}

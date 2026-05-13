@@ -1,0 +1,86 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "php:for",
+    "formals": [
+      "init",
+      "cond",
+      "step",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "for",
+      "arity": [
+        "Stmt",
+        "Value",
+        "Stmt",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "for loop",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "init"
+          },
+          {
+            "name": "cond"
+          },
+          {
+            "name": "step"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:39e3206910d7b520041cb6d1a485b849bc29f384cf23fe9b5c678eb9982d6eed85e9ebca4200505404de8621dff0e8e2f9befa3f9b2f942479266d199c3a57d7",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "kW+XUzgv5MA/g6OKnChy4EyJ/1bqC9kyr3zAl+i12etHfjL//RqqiR64OzXPZFiUkLc+nOHqxGl7GbEm/5yZCA=="
+  }
+}

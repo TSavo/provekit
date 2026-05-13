@@ -107,7 +107,27 @@ func (c ContractDeclaration) DeclName() string { return c.Name }
 
 func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"contract","name":`)
+	if c.Evidence != nil {
+		buf.WriteString(`{"evidence":`)
+		encoded, err := encodeJSON(c.Evidence)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+		buf.WriteByte(',')
+	} else {
+		buf.WriteByte('{')
+	}
+	if c.Inv != nil {
+		buf.WriteString(`"inv":`)
+		encoded, err := encodeJSON(c.Inv)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+		buf.WriteByte(',')
+	}
+	buf.WriteString(`"kind":"contract","name":`)
 	encoded, err := encodeJSON(c.Name)
 	if err != nil {
 		return nil, err
@@ -119,14 +139,6 @@ func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	buf.Write(encoded)
-	if c.Pre != nil {
-		buf.WriteString(`,"pre":`)
-		encoded, err = encodeJSON(c.Pre)
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(encoded)
-	}
 	if c.Post != nil {
 		buf.WriteString(`,"post":`)
 		encoded, err = encodeJSON(c.Post)
@@ -135,17 +147,9 @@ func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 		}
 		buf.Write(encoded)
 	}
-	if c.Inv != nil {
-		buf.WriteString(`,"inv":`)
-		encoded, err = encodeJSON(c.Inv)
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(encoded)
-	}
-	if c.Evidence != nil {
-		buf.WriteString(`,"evidence":`)
-		encoded, err = encodeJSON(c.Evidence)
+	if c.Pre != nil {
+		buf.WriteString(`,"pre":`)
+		encoded, err = encodeJSON(c.Pre)
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +192,7 @@ type BridgeSpec struct {
 // targetProofCid pinning per the IR formal grammar. Locked key order
 // (post PR #10): kind, name, sourceSymbol, sourceLayer,
 // sourceContractCid, targetContractCid, targetProofCid, targetLayer,
-// notes? — must be byte-equal across all four kits.
+// notes?: must be byte-equal across all four kits.
 type BridgeDeclaration struct {
 	Name              string
 	SourceSymbol      string
@@ -256,6 +260,110 @@ func (b BridgeDeclaration) MarshalJSON() ([]byte, error) {
 		}
 		buf.Write(encoded)
 	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// Locus identifies a source position for a call site.
+// JSON shape (locked key order: column, file, line).
+type Locus struct {
+	File   string `json:"file"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
+}
+
+func (l Locus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"column":`)
+	encoded, err := encodeJSON(l.Column)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"file":`)
+	encoded, err = encodeJSON(l.File)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"line":`)
+	encoded, err = encodeJSON(l.Line)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// CallEdgeDeclaration encodes a call site found by the lifter per
+// protocol/specs/2026-05-03-bridge-linkage-protocol.md §1.
+//
+// JSON shape (JCS-canonical key order: callSiteLocus, evidenceTerm,
+// kind, schemaVersion, sourceContractCid, targetContractCid,
+// targetSymbol):
+//
+//	{
+//	  "callSiteLocus":     { "column": N, "file": "...", "line": N },
+//	  "evidenceTerm":      <IrFormula>,
+//	  "kind":              "call-edge",
+//	  "schemaVersion":     "1",
+//	  "sourceContractCid": "blake3-512:...",
+//	  "targetContractCid": "blake3-512:..." | null,
+//	  "targetSymbol":      "..."
+//	}
+//
+// targetContractCid is null for cross-kit calls (e.g. cgo); in that
+// case targetSymbol carries the kit-prefixed symbol name (e.g.
+// "rust-kit:rustFunc") for linker resolution per R3.
+type CallEdgeDeclaration struct {
+	SourceContractCid string
+	TargetContractCid *string // nil encodes as JSON null
+	TargetSymbol      string
+	CallSiteLocus     Locus
+	EvidenceTerm      IrFormula
+}
+
+func (CallEdgeDeclaration) declMarker()        {}
+func (CallEdgeDeclaration) Kind() string       { return "call-edge" }
+func (c CallEdgeDeclaration) DeclName() string { return c.SourceContractCid }
+
+func (c CallEdgeDeclaration) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"callSiteLocus":`)
+	encoded, err := encodeJSON(c.CallSiteLocus)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"evidenceTerm":`)
+	encoded, err = encodeJSON(c.EvidenceTerm)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"kind":"call-edge","schemaVersion":"1","sourceContractCid":`)
+	encoded, err = encodeJSON(c.SourceContractCid)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"targetContractCid":`)
+	if c.TargetContractCid == nil {
+		buf.WriteString("null")
+	} else {
+		encoded, err = encodeJSON(*c.TargetContractCid)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+	}
+	buf.WriteString(`,"targetSymbol":`)
+	encoded, err = encodeJSON(c.TargetSymbol)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }

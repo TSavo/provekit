@@ -1,0 +1,51 @@
+{
+  "cid": "blake3-512:5bdc03f24dfcc9eb1563c287686d7453eb33cfd5868624e40d2c0a33901716d7d9b37f14077d5748e0e969ee688fce322444380f0d7762429de4eeb1e1123339",
+  "memento": {
+    "contract": {
+      "body": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "self"
+          },
+          {
+            "kind": "var",
+            "name": "T1"
+          },
+          {
+            "kind": "var",
+            "name": "T2"
+          }
+        ],
+        "kind": "skolem",
+        "predicate": "tagged_union_inhabitant"
+      },
+      "formals": [
+        "value"
+      ],
+      "kind": "wp-rule"
+    },
+    "contract_note": "tagged_union_inhabitant(self, T1, T2) holds iff self is either LEFT(v) with v : T1, or RIGHT(v) with v : T2; the two arms are disjoint and exhaustive. When LEFT, the value slot carries a term of sort T1. When RIGHT, the value slot carries a term of sort T2.",
+    "formal_sorts": [
+      "T1",
+      "T2"
+    ],
+    "kind": "concept-abstraction",
+    "operator": "concept:tagged-union",
+    "realizations": [
+      "blake3-512:77e2fddcb09b19d88496dd6e98835c235efa28c3a5114d3bb378f8503ee8ed2b8bec7c4eddad475c4109464a6cc3121a57a0f043039d38575c8ab692f443c2dc"
+    ],
+    "result_sort": "TaggedUnionOfT1T2",
+    "slots": [
+      {
+        "name": "value"
+      }
+    ],
+    "tier": "abstraction"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

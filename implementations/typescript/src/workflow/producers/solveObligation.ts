@@ -1,5 +1,5 @@
 /**
- * solve-obligation — Stage 4 of the bridge enforcement workflow.
+ * solve-obligation: Stage 4 of the bridge enforcement workflow.
  *
  * Takes a per-callsite IR formula obligation plus the configured
  * Solver (composite of one or more SolverEntry per provekit.config.yaml)
@@ -88,7 +88,7 @@ export function makeSolveObligationStage(
     },
 
     async run(input) {
-      // Reject non-smt-lib compilers up front — same posture as
+      // Reject non-smt-lib compilers up front: same posture as
       // checkImplication. Proof-assistant routes need their own emitters.
       for (const entry of input.solver.entries) {
         if (entry.compiler && entry.compiler !== "smt-lib") {
@@ -101,7 +101,7 @@ export function makeSolveObligationStage(
       }
 
       // Use the existing emitSmtLibProblem: negates the assertion and
-      // appends (check-sat). axioms is empty here — the obligation is
+      // appends (check-sat). axioms is empty here: the obligation is
       // self-contained; if the property memento needed axioms (e.g.,
       // theory of strings), a future revision can carry them via the
       // property memento body.

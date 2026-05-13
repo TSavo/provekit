@@ -1,0 +1,60 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:or",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "or",
+    "arity": [
+      "Bool",
+      "Bool"
+    ],
+    "result": "Bool",
+    "wp": "short-circuit disjunction",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "rhs evaluated only when lhs is false"
+      }
+    ]
+  },
+  "locus": "menagerie/c11-language-signature/README.md#operations"
+}

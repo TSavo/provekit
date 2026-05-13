@@ -1,0 +1,80 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:for",
+  "formals": [
+    "init",
+    "cond",
+    "step",
+    "body"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "for",
+    "arity": [
+      "Stmt",
+      "Bool",
+      "Stmt",
+      "Stmt"
+    ],
+    "result": "Stmt",
+    "wp": "core C11 shaped for operation federation. Rust iterator for lowers by rust:for-desugar",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "init"
+        },
+        {
+          "name": "cond"
+        },
+        {
+          "name": "step"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "union(init.effects, body.effects, step.effects)"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

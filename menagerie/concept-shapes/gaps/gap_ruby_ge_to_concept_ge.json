@@ -1,0 +1,96 @@
+{
+  "fn_name": "gap:ruby:ge:to:concept:ge",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Value"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value",
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ge",
+        "result": "Value",
+        "wp": "Ruby ge expression"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ge",
+        "result": "Bool",
+        "wp_note": "integer greater-than-or-equal comparison"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Value\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "ruby",
+  "source_op_cid": "blake3-512:4477a6dc2c529b42dc5f25b53117f7dd3003ceb3dbb51b8a4687c3767f3fea48cba8939b8f25502112334c29006d75e79402ea94240fd142f4eb47d055be556e",
+  "target_concept_op": "concept:ge",
+  "target_op_cid": "blake3-512:ee6a800eaf4d13e80f06f936bbaa86a0a80276ce8d1ab8bc7440d194e0e2034ba8a74fb5c74e624a25f2c0bb76e288191ce4e282f1fbbefed91c390ff8a1dfeb"
+}

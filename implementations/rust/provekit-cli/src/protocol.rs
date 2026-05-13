@@ -19,32 +19,34 @@ use serde_json::Value as Json;
 /// The protocol catalog CID this CLI declares conformance to. Kept in
 /// sync with `protocol/specs/2026-04-30-protocol-versioning.md`. If
 /// the catalog changes, bump this string AND ship a new CLI.
-/// Currently: v1.3.1 (re-sync over v1.3.0; absorbs ir-formal-grammar drift).
+/// Currently: v1.6.4 (patch bump over v1.6.3: catalogs two new draft
+/// extension protocols, Pattern Predicate Protocol and Contract
+/// Composition Protocol, without changing core verifier behavior,
+/// ProofIR grammar, canonicalization, proof-file format, all-layer
+/// lift output semantics, or cross-kit conformance fixture semantics).
 pub const EXPECTED_CATALOG_CID: &str =
-    "blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799";
+    "blake3-512:09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6be75f4afce9eb3dedb7b8ebe2536de054143efefcb3cb622e6e5b4140bb26e6156a9bc9adf3";
 
 /// Catalog JSON bytes embedded at compile time. The CLI never reads
 /// the on-disk spec file at runtime; `verify-protocol` recomputes from
 /// the embedded copy so the answer is about what the binary IS, not
 /// where it was invoked from.
-pub const EMBEDDED_CATALOG_BYTES: &[u8] =
-    include_bytes!("../assets/protocol-catalog.json");
+pub const EMBEDDED_CATALOG_BYTES: &[u8] = include_bytes!("../assets/protocol-catalog.json");
 
 /// Foundation public key bytes (`ed25519:<base64>` form) embedded at
 /// compile time so `verify-protocol --signed` works for an installed
 /// binary anywhere on disk. Mirrors the committed
 /// `.provekit/keys/foundation-v0.pub`.
-pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] =
-    include_bytes!("../assets/foundation-v0.pub");
+pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] = include_bytes!("../assets/foundation-v0.pub");
 
 /// Signed attestation bytes (the JSON object) embedded at compile
 /// time. Mirrors the committed
-/// `.provekit/catalog-signatures/v1.3.1.json` (current). The v1.3.0,
-/// v1.2.0, and v1.1.0 attestations remain on-disk and as embedded
-/// asset siblings for callers pinning to those versions; pass
+/// `.provekit/catalog-signatures/v1.6.4.json` (current). The v1.6.3,
+/// v1.6.2, v1.6.1, v1.6.0, v1.5.0, v1.4.1, v1.4.0, v1.3.1, v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
+/// embedded asset siblings for callers pinning to those versions; pass
 /// `--signature-file` + `--catalog` to verify against them explicitly.
 pub const EMBEDDED_CATALOG_SIGNATURE: &[u8] =
-    include_bytes!("../assets/catalog-signature-v1.3.1.json");
+    include_bytes!("../assets/catalog-signature-v1.6.4.json");
 
 /// Recompute the embedded catalog's CID using the same routine
 /// `tools/recompute-spec-cids` uses: parse JSON, JCS-encode, BLAKE3-512.
@@ -107,8 +109,8 @@ pub fn verify_signed_attestation(
     pubkey_string: &str,
     expected_cid: &str,
 ) -> Result<SignedCatalogVerdict> {
-    let attestation: Json = serde_json::from_slice(signature_file_bytes)
-        .context("parse signed attestation JSON")?;
+    let attestation: Json =
+        serde_json::from_slice(signature_file_bytes).context("parse signed attestation JSON")?;
     let obj = attestation
         .as_object()
         .ok_or_else(|| anyhow!("signed attestation must be a JSON object"))?;
@@ -134,7 +136,10 @@ pub fn verify_signed_attestation(
     let entries: Vec<(String, Arc<Value>)> = vec![
         ("schemaVersion".to_string(), Value::string(schema_version)),
         ("protocolName".to_string(), Value::string(protocol_name)),
-        ("protocolVersion".to_string(), Value::string(protocol_version)),
+        (
+            "protocolVersion".to_string(),
+            Value::string(protocol_version),
+        ),
         ("catalogCid".to_string(), Value::string(catalog_cid.clone())),
         ("declaredAt".to_string(), Value::string(declared_at)),
         ("signer".to_string(), Value::string(signer.clone())),
@@ -203,10 +208,7 @@ mod tests {
     fn embedded_catalog_is_valid_json() {
         let v: Json = serde_json::from_slice(EMBEDDED_CATALOG_BYTES).expect("parse");
         assert!(v.is_object(), "catalog must be a JSON object");
-        let kind = v
-            .get("kind")
-            .and_then(|x| x.as_str())
-            .expect("kind field");
+        let kind = v.get("kind").and_then(|x| x.as_str()).expect("kind field");
         assert_eq!(kind, "catalog");
     }
 
@@ -228,12 +230,9 @@ mod tests {
     #[test]
     fn embedded_signature_verifies_against_embedded_pubkey() {
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict = verify_signed_attestation(
-            EMBEDDED_CATALOG_SIGNATURE,
-            &pk,
-            EXPECTED_CATALOG_CID,
-        )
-        .expect("verify");
+        let verdict =
+            verify_signed_attestation(EMBEDDED_CATALOG_SIGNATURE, &pk, EXPECTED_CATALOG_CID)
+                .expect("verify");
         assert!(verdict.signer_matches, "signer must match pubkey");
         assert!(verdict.cid_matches, "claimed CID must match expected");
         assert!(verdict.signature_ok, "Ed25519 signature must verify");
@@ -263,8 +262,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
 
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict =
-            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        let verdict = verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
         assert!(verdict.cid_matches, "CID untouched");
         assert!(verdict.signer_matches, "signer untouched");
         assert!(!verdict.signature_ok, "tampered signature must fail");
@@ -284,8 +282,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
 
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict =
-            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        let verdict = verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
         // Both CID-mismatch AND signature-fail surface; verifier must
         // refuse on either.
         assert!(!verdict.cid_matches);

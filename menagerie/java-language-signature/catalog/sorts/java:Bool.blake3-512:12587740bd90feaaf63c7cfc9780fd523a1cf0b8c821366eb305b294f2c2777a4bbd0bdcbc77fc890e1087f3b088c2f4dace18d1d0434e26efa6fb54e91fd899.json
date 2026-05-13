@@ -1,0 +1,34 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "java:Bool",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "Bool",
+      "description": "Java boolean truth values."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    }
+  },
+  "cid": "blake3-512:12587740bd90feaaf63c7cfc9780fd523a1cf0b8c821366eb305b294f2c2777a4bbd0bdcbc77fc890e1087f3b088c2f4dace18d1d0434e26efa6fb54e91fd899",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "wy9S12Pf57X0sQ1pxOaFxzbh/559nrA6xx7gsjDbsQHRY2rVBQXPGpdqVWlCSLCgNQAdx05JPTSIe9x1Ipg0Ag=="
+  }
+}

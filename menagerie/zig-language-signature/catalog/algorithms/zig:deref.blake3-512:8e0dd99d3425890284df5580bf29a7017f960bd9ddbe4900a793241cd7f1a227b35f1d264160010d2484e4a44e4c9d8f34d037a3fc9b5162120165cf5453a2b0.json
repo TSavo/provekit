@@ -1,0 +1,61 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "zig:deref",
+    "formals": [
+      "pointer"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Ptr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "deref",
+      "arity": [
+        "Ptr"
+      ],
+      "result": "LValue",
+      "wp": "pointer dereference p.*",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "pointer"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemRead"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "LValue",
+      "args": []
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:8e0dd99d3425890284df5580bf29a7017f960bd9ddbe4900a793241cd7f1a227b35f1d264160010d2484e4a44e4c9d8f34d037a3fc9b5162120165cf5453a2b0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "isuPhI6cE27q60PplezWcuRCACupmLq6SOXrABGKwFmj1pGMwSRwjNDd4abnNerFrxIbpoAAlkFJ8OKezijGDQ=="
+  }
+}

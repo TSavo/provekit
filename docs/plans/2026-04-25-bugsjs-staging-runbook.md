@@ -17,10 +17,10 @@ cd ~/bugsjs && git clone --depth=1 --no-single-branch https://github.com/BugsJS/
 cd ~/bugsjs/<project> && git fetch --tags --depth=1
 ```
 
-The shallow `--no-single-branch` matters — we need every `Bug-*-{original,fix,test,full}` tag reachable, but we don't need their full history.
+The shallow `--no-single-branch` matters: we need every `Bug-*-{original,fix,test,full}` tag reachable, but we don't need their full history.
 
 **What's mechanical:** the clone command, the tag fetch.
-**What's judgment:** which projects to bootstrap from first. Probably Express because it's the codebase I have the most intuition about, smallest surface area, and broadest variety of bug shapes (middleware, routing, error handling, async — covers many capabilities).
+**What's judgment:** which projects to bootstrap from first. Probably Express because it's the codebase I have the most intuition about, smallest surface area, and broadest variety of bug shapes (middleware, routing, error handling, and async, which collectively cover many capabilities).
 
 ### Step 1: Bug enumeration (one-time per project)
 
@@ -29,10 +29,10 @@ cd ~/bugsjs/express
 git tag -l 'Bug-*-original' | sort -V | head -10
 ```
 
-For Express, I expect to see Bug-1 through Bug-N where N is project-specific. Pick the lowest-numbered bug first. There's no semantic ordering signal in the IDs — Bug-1 is just whichever bug got cataloged first. I'll work in numerical order until I have enough samples to know what variety looks like.
+For Express, I expect to see Bug-1 through Bug-N where N is project-specific. Pick the lowest-numbered bug first. There's no semantic ordering signal in the IDs; Bug-1 is just whichever bug got cataloged first. I'll work in numerical order until I have enough samples to know what variety looks like.
 
 **Mechanical:** the listing.
-**Judgment:** none yet — just walk in order.
+**Judgment:** none yet; just walk in order.
 
 ### Step 2: Bug context collection (per-bug)
 
@@ -47,9 +47,9 @@ git diff Bug-N-original Bug-N-test -- 'test/**'        # what was added to tests
 ```
 
 **What I read by hand:**
-- The commit message — what does the developer say they fixed?
-- The diff — what code actually changed? Is it a single-concern fix or noisy?
-- The test diff — does the test target the specific scenario, or is it a broad behavioral test?
+- The commit message: what does the developer say they fixed?
+- The diff: what code actually changed? Is it a single-concern fix or noisy?
+- The test diff: does the test target the specific scenario, or is it a broad behavioral test?
 
 **Decision gates:**
 - Diff touches > 2 files → consider rejecting (noise). Skip if so.
@@ -57,7 +57,7 @@ git diff Bug-N-original Bug-N-test -- 'test/**'        # what was added to tests
 - Diff is mostly whitespace / lint / import reorder with one or two real change lines → rejection candidate. Could harvest the real-change lines manually but that's a calibration question.
 
 **Mechanical:** running the git commands.
-**Judgment:** the read-and-evaluate. This is the step I most want to record verbatim across the first several bugs — what does my "this is a clean fix" intuition look like? Some of it is automatable as filters (LOC count, file count). Some of it isn't (is the comment-only change still a bug fix?).
+**Judgment:** the read-and-evaluate. This is the step I most want to record verbatim across the first several bugs: what does my "this is a clean fix" intuition look like? Some of it is automatable as filters (LOC count, file count). Some of it isn't (is the comment-only change still a bug fix?).
 
 ### Step 3: Synthesize a bug report
 
@@ -96,7 +96,7 @@ provekit analyze              # builds SAST DB
 **Why a worktree:** so I don't pollute the main clone's checkout state, and so each bug has an isolated `.provekit/` to inspect after.
 
 **What I check:**
-- Did `provekit analyze` complete without errors? Some legacy code may have parser failures — log them but proceed.
+- Did `provekit analyze` complete without errors? Some legacy code may have parser failures; log them but proceed.
 - How many nodes did it index? Should be reasonable for the project size.
 - Does my expected locus from Step 3 actually exist in the SAST? Quick check:
 
@@ -105,14 +105,14 @@ sqlite3 .provekit/provekit.db "SELECT id, kind FROM nodes WHERE source_start LIK
 ```
 
 **Mechanical:** all of step 4 except the sanity check.
-**Judgment:** the sanity check — is the SAST seeing what I expect? If not, there's a substrate gap (capability missing, file not parsed, etc.) that BugsJS just surfaced.
+**Judgment:** the sanity check: is the SAST seeing what I expect? If not, there's a substrate gap (capability missing, file not parsed, etc.) that BugsJS just surfaced.
 
 ### Step 5: Run B3 against the staged snapshot
 
 This is where I find out: does the existing principle library cover this bug already?
 
 ```bash
-# Pseudocode for what I'll actually do — once #98 lands, this is a real command
+# Pseudocode for what I'll actually do once #98 lands (this will become a real command)
 provekit recognize <bug-report-file>
 ```
 
@@ -120,7 +120,7 @@ provekit recognize <bug-report-file>
 
 **A. RECOGNIZED.** B3 returned a principle from the library. I read the principle, re-read the diff, and ask:
 - Is the principle's match query firing on the SAME node my expected locus pointed at? If yes, recognition is correct. If no, false-positive at the locus.
-- Would the principle's stored `fixTemplate` produce a diff structurally similar to the production diff? If yes, the recognition is doing real work. If no, the principle matched but its fix isn't appropriate for THIS variant — that's a finding (the principle's `alternateShapes` need extension).
+- Would the principle's stored `fixTemplate` produce a diff structurally similar to the production diff? If yes, the recognition is doing real work. If no, the principle matched but its fix isn't appropriate for THIS variant (that's a finding; the principle's `alternateShapes` need extension).
 - Append BugsJS provenance to the principle. Move on to next bug.
 
 **B. NOT RECOGNIZED.** B3 returned no match. I run the full novel-bug path with `imported: true` and the diff/test pre-populated. Step 6.
@@ -154,7 +154,7 @@ provekit harvest --imported \
 - **C5 (imported)**: writes bug-N-test.ts directly. Runs it. Oracle #9 mutates the fix and confirms the test fails on the mutation.
 - C6 (LLM, opus): abstracts the (signal, invariant, diff) triple into a DSL principle.
 - D1 (mechanical): assembles the bundle, runs all bundle-coherence oracles.
-- D2: in `--staging-only` mode, NOT applied to the project — written to staging dir.
+- D2: in `--staging-only` mode, NOT applied to the project; written to staging dir.
 
 **What I inspect by hand on each first-staging:**
 - The C1 invariant. Reads sensibly?
@@ -179,7 +179,7 @@ provekit harvest --imported \
 - If two staged principles in the same batch have the same `bugClassId` but different shapes: merge them into one principle with `alternateShapes`, OR keep them separate if the shapes are independently meaningful.
 
 **Mechanical:** none. This is entirely judgment.
-**LLM-helpful:** "given these two principles, are they the same bug class?" — but the decision needs human sign-off until we've calibrated.
+**LLM-helpful:** "given these two principles, are they the same bug class?"; however, the decision needs human sign-off until we've calibrated.
 
 ### Step 8: Notes for the calibration record
 
@@ -208,15 +208,15 @@ Specific places this applies during staging:
 
 3. **Test fragment reconstruction.** If a BugsJS test imports something the overlay doesn't have, or uses a test helper we don't recognize, ask the LLM to rewrite the test so it stands alone with our infrastructure. Don't parse the test's AST and try to substitute symbols by hand.
 
-4. **Diff cleanliness assessment (Step 2).** "Is this commit a clean bug fix, a fix-plus-refactor, or noise?" — judgment question. Cheap haiku call returns a verdict + one-sentence rationale. Decision still mine, but the LLM does the read-and-summarize.
+4. **Diff cleanliness assessment (Step 2).** "Is this commit a clean bug fix, a fix-plus-refactor, or noise?"; this is a judgment question. Cheap haiku call returns a verdict + one-sentence rationale. Decision still mine, but the LLM does the read-and-summarize.
 
-5. **Provenance dedup (Step 7).** "Are these two staged principles the same bug class?" — sonnet call with both DSLs + sample matches. Faster than parsing structurally identical ASTs by hand.
+5. **Provenance dedup (Step 7).** "Are these two staged principles the same bug class?"; this is a sonnet call with both DSLs + sample matches. Faster than parsing structurally identical ASTs by hand.
 
 6. **Calibration log summarization.** After 30 bugs, ask an LLM "what patterns do you see?" Surfaces things I missed.
 
-These are *staging-operation* LLM calls — distinct from the loop's intrinsic LLM calls (intake, classify, C1, C4, C6). Cheap, single-shot, often haiku.
+These are *staging-operation* LLM calls, distinct from the loop's intrinsic LLM calls (intake, classify, C1, C4, C6). Cheap, single-shot, often haiku.
 
-The principle: **regex for deterministic formats, LLM for human-written text.** A diff hunk header `@@ -X,N +Y,M @@` is deterministic — regex it. A commit message describing the fix is human prose — LLM it.
+The principle: **regex for deterministic formats, LLM for human-written text.** A diff hunk header `@@ -X,N +Y,M @@` is deterministic; regex it. A commit message describing the fix is human prose; LLM it.
 
 ## What I will NOT delegate to an LLM during hand-staging
 

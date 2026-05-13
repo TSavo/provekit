@@ -8,16 +8,21 @@ description = "ProvekIt: six-stage verifier pipeline (load, enumerate, resolve, 
 
 [dependencies]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+libprovekit = { path = "../libprovekit" }
 provekit-ir-compiler-smt-lib = { path = "../provekit-ir-compiler-smt-lib" }
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
 provekit-ir-compiler-coq = { path = "../provekit-ir-compiler-coq" }
+provekit-ir-compiler-maude = { path = "../provekit-ir-compiler-maude" }
+provekit-ir-compiler-lean = { path = "../provekit-ir-compiler-lean" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 walkdir = { workspace = true }
 rayon = { workspace = true }
 thiserror = { workspace = true }
 toml = "0.8"
+chrono = { version = "0.4", features = ["clock"] }
 
 [dev-dependencies]
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }

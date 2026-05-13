@@ -1,0 +1,42 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "zig:unit",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unit",
+      "arity": [],
+      "result": "Unit",
+      "wp": "unit payload",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 0
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:8790c4dcb616bc4dcf2d86fdacc86ed7a6d7af7903661daa29419f85f5c914176c3c1c0b742226b9d53e32ef27acf1742f8d5f2aa1176dfe5c17a68a50b3f058",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "ehAJlAQbxJ1T9NeaG/RFMPWNmcjFW8QFyD9fs/EBlb6EkGeSGFltHY8cR908zvNWYEiqAOtE60wVK0NmgJdVDg=="
+  }
+}

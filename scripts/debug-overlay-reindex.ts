@@ -4,7 +4,7 @@
  *
  * Sequence:
  *   1. Open overlay rooted at promptlib HEAD (planted bug present in HEAD)
- *   2. Pre-index a "wrong locus" file (reference/toolstac/...) — like Investigate
+ *   2. Pre-index a "wrong locus" file (reference/toolstac/...): like Investigate
  *      mistakenly identified
  *   3. Apply a patch to a DIFFERENT file (the actual buggy repositories.ts)
  *   4. reindexOverlay runs reindexFile on the modified file

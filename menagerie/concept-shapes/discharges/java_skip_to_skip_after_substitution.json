@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:skip",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Unit"
+    }
+  ],
+  "formals": [
+    "unit"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Unit"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "skip",
+    "result": "Stmt",
+    "wp": "empty statement / absent branch"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
+  }
+}

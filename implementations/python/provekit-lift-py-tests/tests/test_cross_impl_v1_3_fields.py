@@ -7,13 +7,15 @@
 #   - ProofEnvelopeInput with binaryCid (stored-only stub; see
 #     proof_envelope.py docstring for the CBOR caveat)
 #
-# Pinned JCS strings are derived from the locked grammar in
-# protocol/specs/2026-04-30-ir-formal-grammar.md and the canonicalizer
-# rules in protocol/specs/2026-04-30-canonicalization-grammar.md (RFC 8785,
-# pass 7). Cross-language conformance: Rust / TS / C++ producing the same
-# Value tree from the same logical input MUST emit byte-identical JCS to
-# what these tests pin. If the literals here drift from a Rust probe, the
-# Python impl is wrong (the protocol IS the bytes).
+# Pinned JCS bytes and BLAKE3-512 hashes are Rust-emitted goldens
+# produced by:
+#   tools/v1-3-fields-probe/
+#
+# That probe constructs the same Value trees the Python kit builds (using
+# the canonicalizer's JCS encoder + BLAKE3-512 hasher) and emits the
+# literal bytes/hashes this file pins. If the Python impl ever diverges
+# from the Rust output, these tests fail -- the Rust kit is the canonical
+# reference implementation.
 
 from __future__ import annotations
 
@@ -37,6 +39,7 @@ from provekit_lift_py_tests import (
 
 
 # ---------- EvidenceTerm ----------------------------------------------------
+# Rust-emitted goldens (tools/v1-3-fields-probe)
 
 EVIDENCE_JCS = (
     '{"certificate":{"formulaHash":"blake3-512:aa",'
@@ -88,7 +91,8 @@ def test_evidence_proof_type_smt_lib_coq_custom_round_trip():
 
 
 # ---------- BridgeDecl ------------------------------------------------------
-
+# Rust-emitted goldens (tools/v1-3-fields-probe)
+#
 # Bridge WITH notes. Locked emit-order key set:
 #   kind, name, sourceSymbol, sourceLayer, sourceContractCid,
 #   targetContractCid, targetProofCid, targetLayer, notes

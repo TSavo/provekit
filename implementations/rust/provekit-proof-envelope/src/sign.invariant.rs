@@ -13,7 +13,7 @@
 //   derivation are cryptographic claims outside the IR's first-order
 //   predicate domain. The IR CAN say:
 //     - signing is deterministic given a fixed seed (ed25519 is
-//       deterministic — RFC 8032 §5.1.6),
+//       deterministic: RFC 8032 §5.1.6),
 //     - the string-form output starts with "ed25519:" (length-floor
 //       proxy: prefix is 8 bytes; full output is at least 9 bytes for
 //       a 1-byte signature, but real signatures are 64 bytes so the
@@ -21,9 +21,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, gte, must, num, String_, Term,
-};
+use provekit_ir_symbolic::{eq, forall, gte, must, num, String_, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -59,10 +57,7 @@ pub fn invariants() {
     must(
         "ed25519_sign_string_length_eq_96",
         forall(String_(), |msg| {
-            eq(
-                ctor1("len", ctor1("ed25519_sign_string", msg)),
-                num(96),
-            )
+            eq(ctor1("len", ctor1("ed25519_sign_string", msg)), num(96))
         }),
     );
 
@@ -78,10 +73,7 @@ pub fn invariants() {
     must(
         "ed25519_pubkey_string_length_eq_52",
         forall(String_(), |seed| {
-            eq(
-                ctor1("len", ctor1("ed25519_pubkey_string", seed)),
-                num(52),
-            )
+            eq(ctor1("len", ctor1("ed25519_pubkey_string", seed)), num(52))
         }),
     );
 

@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "rust:effect-signature:PossibleAliasing",
+  "sorts": [
+    "sort_listofexpr.spec.json",
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_op_possible_aliasing.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

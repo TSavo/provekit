@@ -1,0 +1,14 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "rust:effect-signature:IO",
+  "sorts": [
+    "sort_unit.spec.json",
+    "sort_value.spec.json"
+  ],
+  "operations": [
+    "eff_op_input.spec.json",
+    "eff_op_output.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

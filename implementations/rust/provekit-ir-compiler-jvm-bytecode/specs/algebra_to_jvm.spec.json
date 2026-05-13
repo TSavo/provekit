@@ -1,0 +1,137 @@
+{
+  "kind": "LanguageMorphismMemento",
+  "schemaVersion": "draft-0.2",
+  "name": "provekit-ir-term-algebra-to-jvm-bytecode-core",
+  "status": "draft-not-minted",
+  "mode": "compile",
+  "source": {
+    "kind": "ProofIRTermSignature",
+    "termStratum": true,
+    "language": "c:c11",
+    "languageSignature": "menagerie/c11-language-signature/specs/language_signature_c11.spec.json",
+    "signatureCid": "blake3-512:c942ba70e4b701e139a46590116f5cdc16ab41db277e80e54c01f23e4a7cf6241d4431c60473409cb3f0b61ce27f593071c1c224291f04c61aa04b4773764945",
+    "termEnvelopeKind": "c11-algebra-term",
+    "operationCatalog": "menagerie/c11-language-signature/catalog/algorithms"
+  },
+  "target": {
+    "kind": "JvmBytecodeTargetSignature",
+    "descriptor": "jvm/bytecode/jasmin-i32-core",
+    "artifactKind": "source-file",
+    "mediaType": "text/vnd.jasmin",
+    "evaluationModel": "stack-machine",
+    "valueLanes": [
+      "i32"
+    ],
+    "memory": "private static int array for the minimal deref and store model"
+  },
+  "realizer": {
+    "crate": "provekit-ir-compiler-jvm-bytecode",
+    "binary": "provekit-ir-jvm-bytecode",
+    "compiler": "jvm-bytecode-jasmin-core",
+    "dialect": "jvm-jasmin",
+    "determinism": "byte-equal term JSON and target descriptor produce byte-equal Jasmin text"
+  },
+  "operationMapping": [
+    {
+      "source": "seq(a,b,...)",
+      "target": "emit a; emit b; ...",
+      "obligation": "target sequencing preserves the source statement order"
+    },
+    {
+      "source": "if(c,t,e)",
+      "target": "emit c; ifeq L_else; emit t; goto L_end when needed; L_else: emit e; L_end:",
+      "obligation": "JVM branch selection matches the source conditional"
+    },
+    {
+      "source": "while(c,b)",
+      "target": "L_top: emit c; ifeq L_done; emit b; goto L_top; L_done:",
+      "obligation": "loop entry, exit, break, and continue preserve source control flow"
+    },
+    {
+      "source": "return(e)",
+      "target": "emit e; ireturn",
+      "obligation": "the function result is the lowered value of e"
+    },
+    {
+      "source": "call(f,args...)",
+      "target": "emit args left to right; invokestatic Class/f(II...)I",
+      "obligation": "callee and argument order match the source term"
+    },
+    {
+      "source": "break(c?)",
+      "target": "emit c; ifne L_done, or goto L_done",
+      "obligation": "branch target is the nearest enclosing while exit"
+    },
+    {
+      "source": "continue(c?)",
+      "target": "emit c; ifne L_top, or goto L_top",
+      "obligation": "branch target is the nearest enclosing while loop head"
+    },
+    {
+      "source": "skip",
+      "target": "no instructions",
+      "obligation": "skip leaves the stack and store unchanged"
+    },
+    {
+      "source": "var x",
+      "target": "iload slot(x)",
+      "obligation": "local slot x denotes the same term variable"
+    },
+    {
+      "source": "const n",
+      "target": "iconst, bipush, sipush, or ldc",
+      "obligation": "the target constant is byte-identical in the accepted i32 lane"
+    },
+    {
+      "source": "eq, lt, le",
+      "target": "if_icmpeq, if_icmplt, if_icmple normalized to 0 or 1",
+      "obligation": "integer comparison results use the accepted JVM int boolean encoding"
+    },
+    {
+      "source": "add, sub, mul, neg",
+      "target": "iadd, isub, imul, ineg",
+      "obligation": "integer arithmetic agrees with the accepted i32 JVM semantics"
+    },
+    {
+      "source": "and, or, not",
+      "target": "branch shapes normalized to 0 or 1",
+      "obligation": "boolean operations preserve the source truth convention"
+    },
+    {
+      "source": "deref(p)",
+      "target": "getstatic Class/memory [I; emit p; iaload",
+      "obligation": "load reads the same address in the accepted minimal memory model"
+    },
+    {
+      "source": "assign(x,v)",
+      "target": "emit v; istore slot(x)",
+      "obligation": "local assignment updates the same variable binding"
+    },
+    {
+      "source": "assign(p,v)",
+      "target": "getstatic Class/memory [I; emit p; emit v; iastore",
+      "obligation": "store writes the same address in the accepted minimal memory model"
+    }
+  ],
+  "homomorphismObligation": {
+    "operationPreservation": "compile(apply(op,args)) = target_apply(image(op), map(compile,args)) for every mapped operation",
+    "equationPreservation": "for each source equation in the accepted C11 signature, the emitted JVM behavior entails the compiled equation under the target semantics",
+    "contractRoundTrip": "contract(lift_jvm_bytecode(compile(t))) = repr_jvm_bytecode(contract(t)) after accepted lifter and morphism receipts",
+    "dischargeStatus": "draft only, no MorphismDischargeReceipt minted in this crate"
+  },
+  "refusalPolicy": {
+    "unsupportedOperations": "return Refusal via compile_error.unsupported_predicate",
+    "malformedTerms": "return Refusal via compile_error.malformed_ir",
+    "unsupportedSorts": "return Refusal via compile_error.unsupported_sort",
+    "unsupportedInvariants": "refuse non-unit while invariant payloads until invariant discharge is represented"
+  },
+  "deferred": [
+    "full C11 operation catalog",
+    "direct class-file writer and deterministic constant-pool construction",
+    "typed JVM references and object layouts",
+    "complete memory model",
+    "optimization passes with receipt coverage",
+    "minting and MorphismDischargeReceipt"
+  ],
+  "signOff": "T Savo"
+}

@@ -1,0 +1,91 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:deref",
+    "formals": [
+      "ptr"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Ptr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "connective",
+      "op": "and",
+      "operands": [
+        {
+          "kind": "atomic",
+          "name": "!=",
+          "args": [
+            {
+              "kind": "var",
+              "name": "ptr"
+            },
+            {
+              "kind": "const",
+              "value": "NULL",
+              "sort": {
+                "kind": "ctor",
+                "name": "Ptr",
+                "args": []
+              }
+            }
+          ]
+        },
+        {
+          "kind": "atomic",
+          "name": "valid",
+          "args": [
+            {
+              "kind": "var",
+              "name": "ptr"
+            }
+          ]
+        }
+      ]
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "deref",
+      "arity": [
+        "Ptr"
+      ],
+      "result": "LValue",
+      "wp": "lvalue at ptr",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "ptr"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemRead"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "LValue",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:7b6e952833cbbaeddb1156ecb6b4bef2085bb3479f513e3889b6d51b4ee41170453de541070c45d6f9be98003d60f0e034a1a4c31cc644a28416e2ee9875950e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "61e3h2FvlXahrQh2UqeCNyAuxg0If/lgedx08nkpXVZ+75M6Njr11J01OTfXETXceb7cmEoIzf4csVdqh4taDg=="
+  }
+}

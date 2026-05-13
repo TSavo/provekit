@@ -1,0 +1,46 @@
+{
+  "kind": "algorithm",
+  "fn_name": "c11:opaque",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "opaque",
+    "arity": [
+      "Unit"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    },
+    "result": "Stmt",
+    "wp": "stable placeholder for non-lifted or intentionally opaque cursor kinds",
+    "notes": "Serializer stubs this operation unless a literal source payload is supplied."
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+}

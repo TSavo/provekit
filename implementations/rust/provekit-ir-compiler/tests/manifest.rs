@@ -52,7 +52,10 @@ dialects = ["smt-lib-v2.6"]
     assert_eq!(m.name, "smt-lib-reference");
     assert_eq!(m.version, "0.1.0");
     assert_eq!(m.protocol_version, "provekit-ir-compiler/1");
-    assert_eq!(m.binary, PathBuf::from("/usr/local/bin/provekit-ir-smt-lib"));
+    assert_eq!(
+        m.binary,
+        PathBuf::from("/usr/local/bin/provekit-ir-smt-lib")
+    );
     assert_eq!(m.dialects, vec!["smt-lib-v2.6".to_string()]);
 
     fs::remove_dir_all(&root).ok();

@@ -3,23 +3,37 @@
 // provekit-claim-envelope
 //
 // `mint_contract` / `mint_bridge` / `mint_implication` build a signed
-// memento envelope (the universal claim-envelope wrapper around a
-// role-specific evidence body). Each returns `MintedEnvelope { canonical_bytes, cid }`.
+// memento in the v1.2 LAYERED shape introduced by
+// `protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md`:
 //
-// Mirrors implementations/cpp/provekit/claim-envelope/mint.cpp 1:1 with
-// the v1.1.0 hash widening: every hash is BLAKE3-512 (full 64-byte
-// digest, hex-encoded) carrying the `"blake3-512:"` prefix. CIDs are
-// the same form: NO truncation.
+//   { "envelope": {...}, "header": {...}, "metadata": {...} }
 //
-// Per-formula hashes (preHash, postHash, invHash) and propertyHash /
-// bindingHash are DERIVED here from the caller-supplied formula
-// Values, never accepted from the caller. Validators recompute and
-// reject mismatches.
+//   * envelope = { signer, declaredAt, signature }
+//       The signature is computed over JCS({"header": header, "metadata": metadata}).
+//       The envelope's CID (= attestation CID) is BLAKE3-512(JCS(envelope))
+//       AFTER the signature has been embedded.
+//
+//   * header   = substrate-load-bearing data the verifier reads:
+//                schemaVersion, kind, cid, plus kind-specific REQUIRED
+//                fields (per the kind's normative spec) and the derived
+//                hashes (bindingHash, propertyHash, verdict, inputCids)
+//                used by the resolve/index pipeline.
+//
+//   * metadata = everything else (authoring attribution, lifecycle
+//                strings like producedBy/producedAt, derived per-formula
+//                hashes that are pure tooling convenience). Opaque to
+//                the substrate verifier; signed transitively via the
+//                envelope.
+//
+// Per spec §4: v1.1 flat-shape mementos remain valid as historical
+// artifacts. New emissions adopt the layered shape and carry
+// `schemaVersion: "2"` in the header. The verifier branches on
+// `schemaVersion` at load time.
 
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_proof_envelope::{ed25519_sign_string, Ed25519Seed};
+use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClaimEnvelopeError {
@@ -33,22 +47,27 @@ pub enum ClaimEnvelopeError {
 
 #[derive(Debug, Clone)]
 pub struct MintedEnvelope {
+    /// JCS-canonical bytes of the full layered memento
+    /// (`{envelope, header, metadata}`).
     pub canonical_bytes: Vec<u8>,
+    /// The attestation CID: BLAKE3-512(JCS(envelope)) after the
+    /// signature has been embedded. This identifies the SIGNED
+    /// attestation and is what goes into the bundle members map.
     pub cid: String,
+    /// The content CID: BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?})).
+    /// Signer-independent. Two distinct signers attesting to the same
+    /// logical contract produce the same `contract_cid`. Only populated
+    /// for contract mementos; empty string for bridges and implications.
+    /// Per `protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md` §1.
+    pub contract_cid: String,
 }
 
-// Schema CIDs — placeholder full-shape blake3-512 strings tagged with
-// the role so they don't collide. The catalog itself isn't on
-// blake3-512 yet; once it lands these will be the real published
-// schema CIDs.
-const SCHEMA_CID_CONTRACT: &str =
-    "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c01";
-const SCHEMA_CID_BRIDGE: &str =
-    "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c03";
-const SCHEMA_CID_IMPLICATION: &str =
-    "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c08";
+/// The layered-shape schema version stamped into every memento header
+/// emitted by this kit. Older flat mementos carry `"1"`; verifiers
+/// branch on this string at load time.
+pub const LAYERED_SCHEMA_VERSION: &str = "2";
 
-// ----- DERIVED hash helpers --------------------------------------------------
+// ---------- DERIVED hash helpers --------------------------------------------
 
 fn hash_value(v: &Arc<Value>) -> String {
     let bytes = encode_jcs(v);
@@ -59,77 +78,71 @@ fn hash_string(s: &str) -> String {
     blake3_512_of(s.as_bytes())
 }
 
-// ----- Wrapper assembly ------------------------------------------------------
+// ---------- Envelope assembly -----------------------------------------------
 
-fn build_envelope_for_hashing(
-    binding_hash: &str,
-    property_hash: &str,
-    verdict: &str,
-    produced_by: &str,
-    produced_at: &str,
-    input_cids: &[String],
-    evidence: Arc<Value>,
-) -> Arc<Value> {
-    // ORDERING: inputCids MUST be lex-sorted (spec wrapper ORDERING).
-    let mut sorted: Vec<String> = input_cids.to_vec();
-    sorted.sort();
-    let cids_arr: Vec<Arc<Value>> = sorted.into_iter().map(Value::string).collect();
-
-    Value::object([
-        ("schemaVersion", Value::string("1")),
-        ("bindingHash", Value::string(binding_hash)),
-        ("propertyHash", Value::string(property_hash)),
-        ("verdict", Value::string(verdict)),
-        ("producedBy", Value::string(produced_by)),
-        ("producedAt", Value::string(produced_at)),
-        ("inputCids", Value::array(cids_arr)),
-        ("evidence", evidence),
-    ])
+/// Build the JCS-canonical bytes of `{"header": header, "metadata": metadata}`.
+/// This is the message the envelope's Ed25519 signature covers (spec §2 R2).
+fn signing_bytes(header: &Arc<Value>, metadata: &Arc<Value>) -> Vec<u8> {
+    let msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
+    encode_jcs(&msg).into_bytes()
 }
 
-fn mint_internal(
-    binding_hash: &str,
-    property_hash: &str,
-    verdict: &str,
-    produced_by: &str,
-    produced_at: &str,
-    input_cids: &[String],
-    evidence: Arc<Value>,
+/// Assemble a layered memento, sign it, and compute the attestation CID
+/// (= BLAKE3-512(JCS(envelope-with-signature))). Returns the JCS-canonical
+/// bytes of the full `{envelope, header, metadata}` object alongside the CID.
+/// `content_cid` is the signer-independent contract CID (empty for bridges/implications).
+fn assemble_layered(
+    header: Arc<Value>,
+    metadata: Arc<Value>,
+    declared_at: &str,
     signer_seed: &Ed25519Seed,
+    content_cid: String,
 ) -> MintedEnvelope {
-    // 1. Build the unsigned canonical envelope; hash it for the CID;
-    //    sign the canonical-bytes; re-emit with cid + producerSignature
-    //    appended.
-    let unsigned_v = build_envelope_for_hashing(
-        binding_hash,
-        property_hash,
-        verdict,
-        produced_by,
-        produced_at,
-        input_cids,
-        evidence,
-    );
-    let unsigned_canonical = encode_jcs(&unsigned_v);
-    let cid = blake3_512_of(unsigned_canonical.as_bytes());
-    let producer_sig = ed25519_sign_string(signer_seed, unsigned_canonical.as_bytes());
+    let signer = ed25519_pubkey_string(signer_seed);
+    let signing_msg = signing_bytes(&header, &metadata);
+    let signature = ed25519_sign_string(signer_seed, &signing_msg);
 
-    // Re-emit: clone the unsigned object's entries, append cid and
-    // producerSignature. JCS encoder re-sorts at emit time.
-    let mut entries: Vec<(String, Arc<Value>)> = match unsigned_v.as_ref() {
-        Value::Object(kvs) => kvs.clone(),
-        _ => unreachable!("envelope should be an object"),
-    };
-    entries.push(("cid".into(), Value::string(cid.clone())));
-    entries.push((
-        "producerSignature".into(),
-        Value::string(producer_sig),
-    ));
-    let signed_v = Arc::new(Value::Object(entries));
-    let final_canonical = encode_jcs(&signed_v);
+    // Build the envelope object with the embedded signature; its JCS
+    // hash is the attestation CID.
+    let envelope = Value::object([
+        ("signer", Value::string(signer.clone())),
+        ("declaredAt", Value::string(declared_at.to_string())),
+        ("signature", Value::string(signature.clone())),
+    ]);
+    let envelope_jcs = encode_jcs(&envelope);
+    let attestation_cid = blake3_512_of(envelope_jcs.as_bytes());
+
+    let memento = Value::object([
+        ("envelope", envelope),
+        ("header", header),
+        ("metadata", metadata),
+    ]);
+    let memento_jcs = encode_jcs(&memento);
+
     MintedEnvelope {
-        canonical_bytes: final_canonical.into_bytes(),
-        cid,
+        canonical_bytes: memento_jcs.into_bytes(),
+        cid: attestation_cid,
+        contract_cid: content_cid,
     }
+}
+
+/// Helper: build a header object from a vector of (key, value) pairs.
+/// Always prepends `schemaVersion`, `kind`, `cid` in that order; the
+/// kind-specific REQUIRED header fields follow.
+fn build_header(
+    kind: &str,
+    header_cid: &str,
+    kind_specific: Vec<(String, Arc<Value>)>,
+) -> Arc<Value> {
+    let mut entries: Vec<(String, Arc<Value>)> = Vec::with_capacity(3 + kind_specific.len());
+    entries.push((
+        "schemaVersion".into(),
+        Value::string(LAYERED_SCHEMA_VERSION),
+    ));
+    entries.push(("kind".into(), Value::string(kind.to_string())));
+    entries.push(("cid".into(), Value::string(header_cid.to_string())));
+    entries.extend(kind_specific);
+    Arc::new(Value::Object(entries))
 }
 
 // =============================================================================
@@ -138,9 +151,22 @@ fn mint_internal(
 
 #[derive(Debug, Clone)]
 pub enum Authoring {
-    KitAuthor { author: String, note: Option<String> },
-    Lift { lifter: String, evidence: String, source_cid: Option<String> },
-    Llm { llm: String, llm_version: String, prompt_cid: String, confidence: f64, rationale: Option<String> },
+    KitAuthor {
+        author: String,
+        note: Option<String>,
+    },
+    Lift {
+        lifter: String,
+        evidence: String,
+        source_cid: Option<String>,
+    },
+    Llm {
+        llm: String,
+        llm_version: String,
+        prompt_cid: String,
+        confidence: f64,
+        rationale: Option<String>,
+    },
 }
 
 fn authoring_to_value(a: &Authoring) -> Arc<Value> {
@@ -157,7 +183,11 @@ fn authoring_to_value(a: &Authoring) -> Arc<Value> {
             }
             Arc::new(Value::Object(entries))
         }
-        Authoring::Lift { lifter, evidence, source_cid } => {
+        Authoring::Lift {
+            lifter,
+            evidence,
+            source_cid,
+        } => {
             let mut entries: Vec<(String, Arc<Value>)> = vec![
                 ("producerKind".into(), Value::string("lift")),
                 ("lifter".into(), Value::string(lifter.clone())),
@@ -170,13 +200,22 @@ fn authoring_to_value(a: &Authoring) -> Arc<Value> {
             }
             Arc::new(Value::Object(entries))
         }
-        Authoring::Llm { llm, llm_version, prompt_cid, confidence, rationale } => {
+        Authoring::Llm {
+            llm,
+            llm_version,
+            prompt_cid,
+            confidence,
+            rationale,
+        } => {
             let mut entries: Vec<(String, Arc<Value>)> = vec![
                 ("producerKind".into(), Value::string("llm")),
                 ("llm".into(), Value::string(llm.clone())),
                 ("llmVersion".into(), Value::string(llm_version.clone())),
                 ("promptCid".into(), Value::string(prompt_cid.clone())),
-                ("confidence".into(), Value::integer((confidence * 1000.0) as i64)),
+                (
+                    "confidence".into(),
+                    Value::integer((confidence * 1000.0) as i64),
+                ),
             ];
             if let Some(r) = rationale {
                 if !r.is_empty() {
@@ -205,43 +244,134 @@ pub struct MintContractArgs {
     pub signer_seed: Ed25519Seed,
 }
 
-pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
-    if args.pre.is_none() && args.post.is_none() && args.inv.is_none() {
-        return Err(ClaimEnvelopeError::EmptyContract);
+// =============================================================================
+// mint_authority
+// =============================================================================
+
+pub struct MintAuthorityArgs {
+    pub principal: String,
+    pub key: String,
+    pub scope_kind: String,
+    pub scope: String,
+    pub parent_authority_cid: Option<String>,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn authority_content_cid(args: &MintAuthorityArgs) -> String {
+    let mut kvs: Vec<(String, Arc<Value>)> = vec![
+        ("principal".into(), Value::string(args.principal.clone())),
+        ("key".into(), Value::string(args.key.clone())),
+        ("scopeKind".into(), Value::string(args.scope_kind.clone())),
+        ("scope".into(), Value::string(args.scope.clone())),
+    ];
+    if let Some(parent) = &args.parent_authority_cid {
+        kvs.push(("parentAuthorityCid".into(), Value::string(parent.clone())));
     }
-    if args.out_binding.is_empty() {
-        return Err(ClaimEnvelopeError::EmptyOutBinding);
+    hash_value(&Arc::new(Value::Object(kvs)))
+}
+
+pub fn mint_authority(args: &MintAuthorityArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.principal.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_authority: principal must not be empty".into(),
+        ));
+    }
+    if !args.key.starts_with("ed25519:") {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_authority: key must be an inline ed25519 public key".into(),
+        ));
+    }
+    if args.scope_kind.is_empty() || args.scope.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_authority: scopeKind and scope must not be empty".into(),
+        ));
     }
 
-    // Build evidence.body. Insertion order mirrors C++ kit.
-    let mut body_kvs: Vec<(String, Arc<Value>)> = vec![
-        ("contractName".into(), Value::string(args.contract_name.clone())),
+    let header_cid = authority_content_cid(args);
+    let mut input_cids = Vec::new();
+    if let Some(parent) = &args.parent_authority_cid {
+        input_cids.push(parent.clone());
+    }
+    input_cids.sort();
+    let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
+    let mut kind_specific: Vec<(String, Arc<Value>)> = vec![
+        ("principal".into(), Value::string(args.principal.clone())),
+        ("key".into(), Value::string(args.key.clone())),
+        ("scopeKind".into(), Value::string(args.scope_kind.clone())),
+        ("scope".into(), Value::string(args.scope.clone())),
+    ];
+    if let Some(parent) = &args.parent_authority_cid {
+        kind_specific.push(("parentAuthorityCid".into(), Value::string(parent.clone())));
+    }
+    kind_specific.push(("verdict".into(), Value::string("holds")));
+    kind_specific.push(("inputCids".into(), Value::array(input_arr)));
+
+    let header = build_header("authority", &header_cid, kind_specific);
+    let metadata = Arc::new(Value::Object(vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+        (
+            "authorityClaim".into(),
+            Value::string(format!(
+                "{} controls {} for {}:{}",
+                args.principal, args.key, args.scope_kind, args.scope
+            )),
+        ),
+    ]));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    ))
+}
+
+/// Compute the **content** CID of a contract (signer-independent).
+///
+/// Per `protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md` §1,
+/// this is the BLAKE3-512 of the JCS encoding of the contract's
+/// substrate-load-bearing fields: `name`, `outBinding`, and any of
+/// `pre`/`post`/`inv` that are present. Two distinct signers attesting
+/// to the same logical contract produce the same `contractCid`.
+///
+/// This value goes in `header.cid` of the minted layered memento and is
+/// also available directly without minting via this public function.
+///
+/// Per spec naming convention (`contract_cid(decl)` for Rust).
+pub fn contract_cid(args: &MintContractArgs) -> String {
+    let mut kvs: Vec<(String, Arc<Value>)> = vec![
+        ("name".into(), Value::string(args.contract_name.clone())),
         ("outBinding".into(), Value::string(args.out_binding.clone())),
     ];
     if let Some(pre) = &args.pre {
-        body_kvs.push(("pre".into(), pre.clone()));
-        body_kvs.push(("preHash".into(), Value::string(hash_value(pre))));
+        kvs.push(("pre".into(), pre.clone()));
     }
     if let Some(post) = &args.post {
-        body_kvs.push(("post".into(), post.clone()));
-        body_kvs.push(("postHash".into(), Value::string(hash_value(post))));
+        kvs.push(("post".into(), post.clone()));
     }
     if let Some(inv) = &args.inv {
-        body_kvs.push(("inv".into(), inv.clone()));
-        body_kvs.push(("invHash".into(), Value::string(hash_value(inv))));
+        kvs.push(("inv".into(), inv.clone()));
     }
-    body_kvs.push(("authoring".into(), authoring_to_value(&args.authoring)));
-    let body = Arc::new(Value::Object(body_kvs));
+    let v = Arc::new(Value::Object(kvs));
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
 
-    let evidence = Value::object([
-        ("kind", Value::string("contract")),
-        ("schema", Value::string(SCHEMA_CID_CONTRACT)),
-        ("body", body),
-    ]);
+// Keep the private alias for internal use within this module.
+fn contract_content_cid(args: &MintContractArgs) -> String {
+    contract_cid(args)
+}
 
-    // DERIVED:
-    //   propertyHash = hash(canonical({pre?, post?, inv?, outBinding}))
-    //   bindingHash  = hash(canonical({producerId, contractName, propertyHash}))
+/// Compute the DERIVED `propertyHash` for a contract header.
+///
+/// This is the hash of the contract properties the verifier indexes:
+/// present `pre`/`post`/`inv` slots plus the output binding. It is
+/// intentionally separate from `contract_cid`, which also includes the
+/// contract name and identifies the signer-independent contract content.
+pub fn contract_property_hash(args: &MintContractArgs) -> String {
     let mut ph_kvs: Vec<(String, Arc<Value>)> = Vec::new();
     if let Some(pre) = &args.pre {
         ph_kvs.push(("pre".into(), pre.clone()));
@@ -252,11 +382,45 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     if let Some(inv) = &args.inv {
         ph_kvs.push(("inv".into(), inv.clone()));
     }
-    ph_kvs.push((
-        "outBinding".into(),
-        Value::string(args.out_binding.clone()),
-    ));
-    let property_hash = hash_value(&Arc::new(Value::Object(ph_kvs)));
+    ph_kvs.push(("outBinding".into(), Value::string(args.out_binding.clone())));
+    hash_value(&Arc::new(Value::Object(ph_kvs)))
+}
+
+/// Compute the **contract set CID** from a slice of already-computed
+/// `contractCid` strings (each `blake3-512:<128 hex>` produced by
+/// `contract_cid()`).
+///
+/// Per `protocol/specs/2026-05-03-contract-set-extension.md` §1:
+///   contractSetCid := "blake3-512:" || hex(BLAKE3-512(JCS(<sorted contractCids>)))
+///
+/// The sort is lexicographic on the raw `blake3-512:hex` strings, making
+/// the result order-independent. Two kits enumerating the same contracts
+/// in different order produce byte-identical `contractSetCid` values.
+pub fn compute_contract_set_cid(mut contract_cids: Vec<String>) -> String {
+    contract_cids.sort();
+    let arr: Vec<Arc<Value>> = contract_cids.into_iter().map(Value::string).collect();
+    let v = Value::array(arr);
+    let jcs = encode_jcs(&v);
+    blake3_512_of(jcs.as_bytes())
+}
+
+pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.pre.is_none() && args.post.is_none() && args.inv.is_none() {
+        return Err(ClaimEnvelopeError::EmptyContract);
+    }
+    if args.out_binding.is_empty() {
+        return Err(ClaimEnvelopeError::EmptyOutBinding);
+    }
+
+    // DERIVED:
+    //   propertyHash = hash(JCS({pre?, post?, inv?, outBinding}))
+    //   bindingHash  = hash(JCS({producerId, contractName, propertyHash}))
+    //
+    // These ride in the header because the verifier uses them to index
+    // and resolve callsites; they are substrate-load-bearing despite
+    // being derivable (see spec §1 "kind-specific REQUIRED header
+    // fields").
+    let property_hash = contract_property_hash(args);
 
     let bh_obj = Value::object([
         ("producerId", Value::string(args.produced_by.clone())),
@@ -265,15 +429,55 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     ]);
     let binding_hash = hash_value(&bh_obj);
 
-    Ok(mint_internal(
-        &binding_hash,
-        &property_hash,
-        "holds",
-        &args.produced_by,
+    // Header: schemaVersion + kind + cid + kind-specific REQUIRED fields.
+    let header_cid = contract_content_cid(args);
+    let mut kind_specific: Vec<(String, Arc<Value>)> = vec![
+        ("name".into(), Value::string(args.contract_name.clone())),
+        ("outBinding".into(), Value::string(args.out_binding.clone())),
+    ];
+    if let Some(pre) = &args.pre {
+        kind_specific.push(("pre".into(), pre.clone()));
+    }
+    if let Some(post) = &args.post {
+        kind_specific.push(("post".into(), post.clone()));
+    }
+    if let Some(inv) = &args.inv {
+        kind_specific.push(("inv".into(), inv.clone()));
+    }
+    kind_specific.push(("verdict".into(), Value::string("holds")));
+    kind_specific.push(("bindingHash".into(), Value::string(binding_hash)));
+    kind_specific.push(("propertyHash".into(), Value::string(property_hash)));
+    let mut sorted_inputs: Vec<String> = args.input_cids.clone();
+    sorted_inputs.sort();
+    let inputs_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    kind_specific.push(("inputCids".into(), Value::array(inputs_arr)));
+
+    let header = build_header("contract", &header_cid, kind_specific);
+
+    // Metadata: producer attribution + per-formula derived hashes
+    // (purely tooling convenience; not used by the substrate verifier).
+    let mut metadata_kvs: Vec<(String, Arc<Value>)> = vec![
+        ("authoring".into(), authoring_to_value(&args.authoring)),
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+    ];
+    if let Some(pre) = &args.pre {
+        metadata_kvs.push(("preHash".into(), Value::string(hash_value(pre))));
+    }
+    if let Some(post) = &args.post {
+        metadata_kvs.push(("postHash".into(), Value::string(hash_value(post))));
+    }
+    if let Some(inv) = &args.inv {
+        metadata_kvs.push(("invHash".into(), Value::string(hash_value(inv))));
+    }
+    let metadata = Arc::new(Value::Object(metadata_kvs));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
         &args.produced_at,
-        &args.input_cids,
-        evidence,
         &args.signer_seed,
+        header_cid,
     ))
 }
 
@@ -294,31 +498,33 @@ pub struct MintBridgeArgs {
     pub signer_seed: Ed25519Seed,
 }
 
+/// Compute the content CID of a bridge declaration (signer-independent).
+fn bridge_content_cid(args: &MintBridgeArgs) -> String {
+    let arg_sorts: Vec<Arc<Value>> = args
+        .ir_arg_sorts
+        .iter()
+        .map(|s| Value::string(s.clone()))
+        .collect();
+    let v = Value::object([
+        ("sourceSymbol", Value::string(args.source_symbol.clone())),
+        ("sourceLayer", Value::string(args.source_layer.clone())),
+        (
+            "targetContractCid",
+            Value::string(args.target_contract_cid.clone()),
+        ),
+        ("targetLayer", Value::string(args.target_layer.clone())),
+        ("irArgSorts", Value::array(arg_sorts)),
+        ("irReturnSort", Value::string(args.ir_return_sort.clone())),
+    ]);
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
 pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
     let arg_sorts: Vec<Arc<Value>> = args
         .ir_arg_sorts
         .iter()
         .map(|s| Value::string(s.clone()))
         .collect();
-
-    let mut body_kvs: Vec<(String, Arc<Value>)> = vec![
-        ("sourceSymbol".into(), Value::string(args.source_symbol.clone())),
-        ("sourceLayer".into(), Value::string(args.source_layer.clone())),
-        ("targetContractCid".into(), Value::string(args.target_contract_cid.clone())),
-        ("targetLayer".into(), Value::string(args.target_layer.clone())),
-        ("irArgSorts".into(), Value::array(arg_sorts)),
-        ("irReturnSort".into(), Value::string(args.ir_return_sort.clone())),
-    ];
-    if !args.notes.is_empty() {
-        body_kvs.push(("notes".into(), Value::string(args.notes.clone())));
-    }
-    let body = Arc::new(Value::Object(body_kvs));
-
-    let evidence = Value::object([
-        ("kind", Value::string("bridge")),
-        ("schema", Value::string(SCHEMA_CID_BRIDGE)),
-        ("body", body),
-    ]);
 
     // DERIVED per spec:
     //   bindingHash  = hash(canonical({sourceLayer, sourceSymbol}))
@@ -330,15 +536,215 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
     let binding_hash = hash_value(&bh_obj);
     let property_hash = hash_string(&format!("bridge:{}", args.source_symbol));
 
-    mint_internal(
-        &binding_hash,
-        &property_hash,
-        "holds",
-        &args.produced_by,
+    let header_cid = bridge_content_cid(args);
+    let kind_specific: Vec<(String, Arc<Value>)> = vec![
+        (
+            "sourceSymbol".into(),
+            Value::string(args.source_symbol.clone()),
+        ),
+        (
+            "sourceLayer".into(),
+            Value::string(args.source_layer.clone()),
+        ),
+        (
+            "targetContractCid".into(),
+            Value::string(args.target_contract_cid.clone()),
+        ),
+        (
+            "targetLayer".into(),
+            Value::string(args.target_layer.clone()),
+        ),
+        ("irArgSorts".into(), Value::array(arg_sorts)),
+        (
+            "irReturnSort".into(),
+            Value::string(args.ir_return_sort.clone()),
+        ),
+        ("verdict".into(), Value::string("holds")),
+        ("bindingHash".into(), Value::string(binding_hash)),
+        ("propertyHash".into(), Value::string(property_hash)),
+        (
+            "inputCids".into(),
+            Value::array(vec![Value::string(args.target_contract_cid.clone())]),
+        ),
+    ];
+
+    let header = build_header("bridge", &header_cid, kind_specific);
+
+    let mut metadata_kvs: Vec<(String, Arc<Value>)> = vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+    ];
+    if !args.notes.is_empty() {
+        metadata_kvs.push(("notes".into(), Value::string(args.notes.clone())));
+    }
+    let metadata = Arc::new(Value::Object(metadata_kvs));
+
+    assemble_layered(
+        header,
+        metadata,
         &args.produced_at,
-        &[args.target_contract_cid.clone()],
-        evidence,
         &args.signer_seed,
+        String::new(),
+    )
+}
+
+// =============================================================================
+// mint_bridge_v14 (v1.4 BridgeDeclaration, layered envelope/header/body)
+// =============================================================================
+//
+// Source of truth for the wire shape:
+//   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
+//   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §1, §2
+//   protocol/provekit-ir.cddl  BridgeDeclarationV14
+//
+// Differences from `mint_bridge` (above):
+//   1. Header carries the contract-axis claim only. Witness/binary/
+//      target-layer axes move to the metadata block. (spec §1.R3)
+//   2. `target` is a tagged-union object {kind, cid}, not flat
+//      `targetContractCid` plus `targetLayer`. (spec §1.R1)
+//   3. `schemaVersion` is `"1"` (the v1.4-layered schema version).
+//   4. Metadata fields that are unknown at mint time are OMITTED from
+//      the JCS bytes. They are NOT emitted as `null` and NOT emitted
+//      with placeholder strings. (spec §1.R2)
+//   5. Header fields (sourceSymbol, sourceLayer, sourceContractCid,
+//      target.cid) are substrate-verified content references; the
+//      derived hashes (bindingHash, propertyHash, inputCids,
+//      irArgSorts, irReturnSort, verdict) used by the existing
+//      mint_bridge are kept in the v1.2 (richer) layered shape and do
+//      NOT appear in the v1.4 spec header.
+//
+// Co-existence with `mint_bridge`:
+//   The v1.2-layered `mint_bridge` (schemaVersion="2", richer header)
+//   remains the active path for the existing kit infrastructure. The
+//   v1.4 path is the canonical reference for cross-kit byte-equality
+//   per the substrate-layers / target-dimensionality specs. Both
+//   shapes coexist; v1.1 historical mementos remain valid forever
+//   (spec §4) and are never re-signed.
+
+/// Tagged-union target axis per `2026-05-03-bridge-target-dimensionality.md` §1.R1.
+///
+/// Implementations MUST emit exactly one variant. Implementations MUST NOT
+/// emit a bare string for `target`; the substrate verifier rejects
+/// stringified placeholders (spec §1.R2).
+#[derive(Debug, Clone)]
+pub enum BridgeTargetV14 {
+    /// `{ "kind": "contract", "cid": "<contractCid>" }`
+    /// per `2026-05-03-contract-cid-vs-attestation-cid.md`.
+    Contract { cid: String },
+    /// `{ "kind": "contractSet", "cid": "<contractSetCid>" }`
+    /// per `2026-05-03-contract-set-extension.md`.
+    ContractSet { cid: String },
+}
+
+impl BridgeTargetV14 {
+    fn to_value(&self) -> Arc<Value> {
+        match self {
+            BridgeTargetV14::Contract { cid } => Value::object([
+                ("kind", Value::string("contract")),
+                ("cid", Value::string(cid.clone())),
+            ]),
+            BridgeTargetV14::ContractSet { cid } => Value::object([
+                ("kind", Value::string("contractSet")),
+                ("cid", Value::string(cid.clone())),
+            ]),
+        }
+    }
+}
+
+/// Inputs for `mint_bridge_v14`.
+///
+/// Optional metadata-axis fields are `Option<String>`. `None` means the
+/// field is OMITTED from the JCS bytes. Empty strings ARE distinct from
+/// `None` and would be emitted as `""`; callers SHOULD pass `None` when
+/// the axis is unknown, to satisfy spec §1.R2.
+pub struct MintBridgeV14Args {
+    // ---- header (substrate-verified) ----
+    pub name: String,
+    pub source_symbol: String,
+    pub source_layer: String,
+    pub source_contract_cid: String,
+    pub target: BridgeTargetV14,
+
+    // ---- metadata (optional, opaque to substrate) ----
+    pub target_witness_cid: Option<String>,
+    pub target_binary_cid: Option<String>,
+    pub target_layer: Option<String>,
+    pub target_contract_set_cid: Option<String>,
+    pub produced_by: Option<String>,
+    pub produced_at: Option<String>,
+
+    // ---- envelope inputs ----
+    /// RFC 3339 UTC timestamp for `envelope.declaredAt`.
+    pub declared_at: String,
+    pub signer_seed: Ed25519Seed,
+}
+
+/// Schema version stamp on v1.4 layered bridge headers.
+/// Per `2026-05-03-substrate-layers-envelope-header-body.md` §1.
+pub const BRIDGE_V14_SCHEMA_VERSION: &str = "1";
+
+/// Build the v1.4 header object exactly as specified in
+/// `2026-05-03-bridge-target-dimensionality.md` §1.R3.
+///
+/// Locked key order is by JCS code-point sort at emit time, so this
+/// helper just inserts the canonical 7 fields. The header carries the
+/// contract-axis claim only (spec §1.R3).
+fn build_bridge_header_v14(args: &MintBridgeV14Args) -> Arc<Value> {
+    Value::object([
+        ("schemaVersion", Value::string(BRIDGE_V14_SCHEMA_VERSION)),
+        ("kind", Value::string("bridge")),
+        ("name", Value::string(args.name.clone())),
+        ("sourceSymbol", Value::string(args.source_symbol.clone())),
+        ("sourceLayer", Value::string(args.source_layer.clone())),
+        (
+            "sourceContractCid",
+            Value::string(args.source_contract_cid.clone()),
+        ),
+        ("target", args.target.to_value()),
+    ])
+}
+
+/// Build the v1.4 metadata object. Only `Some(_)` fields are emitted;
+/// `None` fields are OMITTED from JCS bytes per spec §1.R2.
+fn build_bridge_metadata_v14(args: &MintBridgeV14Args) -> Arc<Value> {
+    let mut entries: Vec<(String, Arc<Value>)> = Vec::new();
+    if let Some(ref v) = args.target_witness_cid {
+        entries.push(("targetWitnessCid".into(), Value::string(v.clone())));
+    }
+    if let Some(ref v) = args.target_binary_cid {
+        entries.push(("targetBinaryCid".into(), Value::string(v.clone())));
+    }
+    if let Some(ref v) = args.target_layer {
+        entries.push(("targetLayer".into(), Value::string(v.clone())));
+    }
+    if let Some(ref v) = args.target_contract_set_cid {
+        entries.push(("targetContractSetCid".into(), Value::string(v.clone())));
+    }
+    if let Some(ref v) = args.produced_by {
+        entries.push(("producedBy".into(), Value::string(v.clone())));
+    }
+    if let Some(ref v) = args.produced_at {
+        entries.push(("producedAt".into(), Value::string(v.clone())));
+    }
+    Arc::new(Value::Object(entries))
+}
+
+/// Mint a v1.4 BridgeDeclaration in the layered envelope/header/body
+/// shape. The returned `MintedEnvelope` carries the JCS-canonical bytes
+/// of the full memento and the attestation CID
+/// (= BLAKE3-512(JCS(envelope))).
+///
+/// `contract_cid` on the returned envelope is the empty string;
+/// bridges have no signer-independent contract CID (only contracts do).
+pub fn mint_bridge_v14(args: &MintBridgeV14Args) -> MintedEnvelope {
+    let header = build_bridge_header_v14(args);
+    let metadata = build_bridge_metadata_v14(args);
+    assemble_layered(
+        header,
+        metadata,
+        &args.declared_at,
+        &args.signer_seed,
+        String::new(),
     )
 }
 
@@ -353,6 +759,7 @@ pub struct MintImplicationArgs {
     pub consequent_hash: String,
     pub antecedent_cid: String,
     pub consequent_cid: String,
+    pub additional_input_cids: Vec<String>,
     pub antecedent_slot: String,
     pub consequent_slot: String,
     pub prover: String,
@@ -362,37 +769,43 @@ pub struct MintImplicationArgs {
     pub signer_seed: Ed25519Seed,
 }
 
-pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
-    let mut body_kvs: Vec<(String, Arc<Value>)> = vec![
-        ("antecedentHash".into(), Value::string(args.antecedent_hash.clone())),
-        ("consequentHash".into(), Value::string(args.consequent_hash.clone())),
-        ("antecedentCid".into(), Value::string(args.antecedent_cid.clone())),
-        ("consequentCid".into(), Value::string(args.consequent_cid.clone())),
-        ("antecedentSlot".into(), Value::string(args.antecedent_slot.clone())),
-        ("consequentSlot".into(), Value::string(args.consequent_slot.clone())),
-        ("prover".into(), Value::string(args.prover.clone())),
-        ("proverRunMs".into(), Value::integer(args.prover_run_ms)),
-    ];
-    if !args.smt_lib_input.is_empty() {
-        body_kvs.push(("smtLibInput".into(), Value::string(args.smt_lib_input.clone())));
-    }
-    if !args.proof_witness.is_empty() {
-        body_kvs.push(("proofWitness".into(), Value::string(args.proof_witness.clone())));
-    }
-    let body = Arc::new(Value::Object(body_kvs));
-
-    let evidence = Value::object([
-        ("kind", Value::string("implication")),
-        ("schema", Value::string(SCHEMA_CID_IMPLICATION)),
-        ("body", body),
+fn implication_content_cid(args: &MintImplicationArgs) -> String {
+    let v = Value::object([
+        (
+            "antecedentHash",
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash",
+            Value::string(args.consequent_hash.clone()),
+        ),
+        ("antecedentCid", Value::string(args.antecedent_cid.clone())),
+        ("consequentCid", Value::string(args.consequent_cid.clone())),
+        (
+            "antecedentSlot",
+            Value::string(args.antecedent_slot.clone()),
+        ),
+        (
+            "consequentSlot",
+            Value::string(args.consequent_slot.clone()),
+        ),
     ]);
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
 
+pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
     // DERIVED per spec:
     //   bindingHash  = hash(canonical({antecedentHash, consequentHash}))
     //   propertyHash = hash("implication:" || antecedentHash || ":" || consequentHash)
     let bh_obj = Value::object([
-        ("antecedentHash", Value::string(args.antecedent_hash.clone())),
-        ("consequentHash", Value::string(args.consequent_hash.clone())),
+        (
+            "antecedentHash",
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash",
+            Value::string(args.consequent_hash.clone()),
+        ),
     ]);
     let binding_hash = hash_value(&bh_obj);
     let property_hash = hash_string(&format!(
@@ -400,18 +813,163 @@ pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
         args.antecedent_hash, args.consequent_hash
     ));
 
-    let input_cids = vec![args.antecedent_cid.clone(), args.consequent_cid.clone()];
+    let header_cid = implication_content_cid(args);
+    let mut input_cids = vec![args.antecedent_cid.clone(), args.consequent_cid.clone()];
+    input_cids.extend(args.additional_input_cids.iter().cloned());
+    input_cids.sort();
+    let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
 
-    mint_internal(
-        &binding_hash,
-        &property_hash,
-        "holds",
-        &args.produced_by,
+    let kind_specific: Vec<(String, Arc<Value>)> = vec![
+        (
+            "antecedentHash".into(),
+            Value::string(args.antecedent_hash.clone()),
+        ),
+        (
+            "consequentHash".into(),
+            Value::string(args.consequent_hash.clone()),
+        ),
+        (
+            "antecedentCid".into(),
+            Value::string(args.antecedent_cid.clone()),
+        ),
+        (
+            "consequentCid".into(),
+            Value::string(args.consequent_cid.clone()),
+        ),
+        (
+            "antecedentSlot".into(),
+            Value::string(args.antecedent_slot.clone()),
+        ),
+        (
+            "consequentSlot".into(),
+            Value::string(args.consequent_slot.clone()),
+        ),
+        ("verdict".into(), Value::string("holds")),
+        ("bindingHash".into(), Value::string(binding_hash)),
+        ("propertyHash".into(), Value::string(property_hash)),
+        ("inputCids".into(), Value::array(input_arr)),
+    ];
+
+    let header = build_header("implication", &header_cid, kind_specific);
+
+    let mut metadata_kvs: Vec<(String, Arc<Value>)> = vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+        ("prover".into(), Value::string(args.prover.clone())),
+        ("proverRunMs".into(), Value::integer(args.prover_run_ms)),
+    ];
+    if !args.smt_lib_input.is_empty() {
+        metadata_kvs.push((
+            "smtLibInput".into(),
+            Value::string(args.smt_lib_input.clone()),
+        ));
+    }
+    if !args.proof_witness.is_empty() {
+        metadata_kvs.push((
+            "proofWitness".into(),
+            Value::string(args.proof_witness.clone()),
+        ));
+    }
+    let metadata = Arc::new(Value::Object(metadata_kvs));
+
+    assemble_layered(
+        header,
+        metadata,
         &args.produced_at,
-        &input_cids,
-        evidence,
         &args.signer_seed,
+        String::new(),
     )
+}
+
+// =============================================================================
+// mint_witness
+// =============================================================================
+
+pub struct MintWitnessArgs {
+    pub claim_kind: String,
+    pub claim_body_cid: String,
+    pub verifier_cid: String,
+    pub policy_cid: String,
+    pub evidence_root_cid: String,
+    pub input_cids: Vec<String>,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub claim_body: Arc<Value>,
+    pub evidence: Arc<Value>,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn witness_content_cid(args: &MintWitnessArgs) -> String {
+    let mut input_cids = args.input_cids.clone();
+    input_cids.sort();
+    let input_arr: Vec<Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
+    let v = Value::object([
+        ("claimKind", Value::string(args.claim_kind.clone())),
+        ("claimBodyCid", Value::string(args.claim_body_cid.clone())),
+        ("verifierCid", Value::string(args.verifier_cid.clone())),
+        ("policyCid", Value::string(args.policy_cid.clone())),
+        (
+            "evidenceRootCid",
+            Value::string(args.evidence_root_cid.clone()),
+        ),
+        ("inputCids", Value::array(input_arr)),
+    ]);
+    blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
+pub fn mint_witness(args: &MintWitnessArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.claim_kind.is_empty()
+        || args.claim_body_cid.is_empty()
+        || args.verifier_cid.is_empty()
+        || args.policy_cid.is_empty()
+        || args.evidence_root_cid.is_empty()
+    {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_witness: claim kind, body CID, verifier CID, policy CID, and evidence root CID must not be empty".into(),
+        ));
+    }
+
+    let header_cid = witness_content_cid(args);
+    let mut sorted_inputs = args.input_cids.clone();
+    sorted_inputs.sort();
+    let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    let header = build_header(
+        "witness",
+        &header_cid,
+        vec![
+            ("claimKind".into(), Value::string(args.claim_kind.clone())),
+            (
+                "claimBodyCid".into(),
+                Value::string(args.claim_body_cid.clone()),
+            ),
+            ("verdict".into(), Value::string("holds")),
+            (
+                "verifierCid".into(),
+                Value::string(args.verifier_cid.clone()),
+            ),
+            ("policyCid".into(), Value::string(args.policy_cid.clone())),
+            (
+                "evidenceRootCid".into(),
+                Value::string(args.evidence_root_cid.clone()),
+            ),
+            ("inputCids".into(), Value::array(input_arr)),
+        ],
+    );
+
+    let metadata = Arc::new(Value::Object(vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+        ("claimBody".into(), args.claim_body.clone()),
+        ("evidence".into(), args.evidence.clone()),
+    ]));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    ))
 }
 
 #[cfg(test)]
@@ -451,17 +1009,17 @@ mod tests {
             (
                 "args",
                 Value::array(vec![
-                    Value::object([
-                        ("kind", Value::string("var")),
-                        ("name", Value::string("n")),
-                    ]),
+                    Value::object([("kind", Value::string("var")), ("name", Value::string("n"))]),
                     Value::object([
                         ("kind", Value::string("const")),
                         ("value", Value::integer(0)),
-                        ("sort", Value::object([
-                            ("kind", Value::string("primitive")),
-                            ("name", Value::string("Int")),
-                        ])),
+                        (
+                            "sort",
+                            Value::object([
+                                ("kind", Value::string("primitive")),
+                                ("name", Value::string("Int")),
+                            ]),
+                        ),
                     ]),
                 ]),
             ),
@@ -484,5 +1042,85 @@ mod tests {
         let m = mint_contract(&args).expect("mint");
         assert!(m.cid.starts_with("blake3-512:"));
         assert_eq!(m.cid.len(), "blake3-512:".len() + 128);
+    }
+
+    #[test]
+    fn contract_property_hash_matches_minted_header() {
+        let post = Value::object([
+            ("kind", Value::string("atomic")),
+            ("name", Value::string("ok")),
+            ("args", Value::array(vec![Value::string("out")])),
+        ]);
+        let args = MintContractArgs {
+            contract_name: "checked_add_u8.postcondition".into(),
+            pre: None,
+            post: Some(post),
+            inv: None,
+            out_binding: "out".into(),
+            produced_by: "test".into(),
+            produced_at: "2026-04-30T00:00:00.000Z".into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: "test".into(),
+                note: None,
+            },
+            signer_seed: dummy_seed(),
+        };
+
+        let expected = contract_property_hash(&args);
+        let m = mint_contract(&args).expect("mint");
+        let env: serde_json::Value =
+            serde_json::from_slice(&m.canonical_bytes).expect("parse memento");
+        let actual = env
+            .pointer("/header/propertyHash")
+            .and_then(|v| v.as_str())
+            .expect("header.propertyHash");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn mint_authority_emits_key_scope_and_parent_link() {
+        let authority_key = ed25519_pubkey_string(&[0x22; 32]);
+        let args = MintAuthorityArgs {
+            principal: "bridgeworks.software".into(),
+            key: authority_key.clone(),
+            scope_kind: "contract".into(),
+            scope: "checked_add_u8.postcondition".into(),
+            parent_authority_cid: Some("blake3-512:parent".into()),
+            produced_by: "test".into(),
+            produced_at: "2026-05-08T00:00:00.000Z".into(),
+            signer_seed: dummy_seed(),
+        };
+
+        let minted = mint_authority(&args).expect("mint authority");
+        let env: serde_json::Value =
+            serde_json::from_slice(&minted.canonical_bytes).expect("parse authority");
+
+        assert_eq!(
+            env.pointer("/header/kind").and_then(|v| v.as_str()),
+            Some("authority")
+        );
+        assert_eq!(
+            env.pointer("/header/principal").and_then(|v| v.as_str()),
+            Some("bridgeworks.software")
+        );
+        assert_eq!(
+            env.pointer("/header/key").and_then(|v| v.as_str()),
+            Some(authority_key.as_str())
+        );
+        assert_eq!(
+            env.pointer("/header/scopeKind").and_then(|v| v.as_str()),
+            Some("contract")
+        );
+        assert_eq!(
+            env.pointer("/header/scope").and_then(|v| v.as_str()),
+            Some("checked_add_u8.postcondition")
+        );
+        assert_eq!(
+            env.pointer("/header/inputCids/0").and_then(|v| v.as_str()),
+            Some("blake3-512:parent")
+        );
+        assert!(minted.cid.starts_with("blake3-512:"));
     }
 }

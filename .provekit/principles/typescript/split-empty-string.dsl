@@ -4,7 +4,7 @@
 // The original principle detects calls where the receiver could be an empty string;
 // that requires value-range analysis (capability-gap).
 //
-// FIXME(capability-gap): no requiresParamRef equivalent — over-matches non-param cases.
+// FIXME(capability-gap): no requiresParamRef equivalent: over-matches non-param cases.
 // Empty-string receiver detection needs value_range capability. See capability-gaps.md.
 
 principle split-empty-string {

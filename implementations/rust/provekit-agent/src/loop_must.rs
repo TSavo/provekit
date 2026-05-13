@@ -63,11 +63,12 @@ pub fn run_must_loop<A: ProvekitAgent + ?Sized>(
         let candidate = agent.translate_must(&ctx)?;
         match validate_candidate(&candidate) {
             ValidationOutcome::Accepted(v) => {
-                let minted = mint_validated(&v, &opts.mint_options)
-                    .map_err(|e| MustLoopError::Exhausted {
+                let minted = mint_validated(&v, &opts.mint_options).map_err(|e| {
+                    MustLoopError::Exhausted {
                         tries: (attempt + 1) as u32,
                         last: format!("mint failure: {e}"),
-                    })?;
+                    }
+                })?;
                 return Ok(MustLoopOutcome {
                     candidate,
                     minted,
@@ -105,8 +106,7 @@ mod tests {
             authoring_api_doc: String::new(),
             previous_rejection: None,
         };
-        let out = run_must_loop(&agent, ctx, &MustLoopOptions::default())
-            .expect("loop");
+        let out = run_must_loop(&agent, ctx, &MustLoopOptions::default()).expect("loop");
         assert_eq!(out.candidate.name, "doubleledger_conservation");
         assert!(out.minted.cid.starts_with("blake3-512:"));
         assert_eq!(out.rejected.len(), 0);
@@ -127,13 +127,10 @@ mod tests {
             ) -> Result<Vec<ContractCandidate>, AgentError> {
                 Ok(vec![])
             }
-            fn translate_must(
-                &self,
-                ctx: &MustContext,
-            ) -> Result<ContractCandidate, AgentError> {
+            fn translate_must(&self, ctx: &MustContext) -> Result<ContractCandidate, AgentError> {
                 let n = self.calls.fetch_add(1, Ordering::SeqCst);
                 if n == 0 {
-                    // Malformed — empty contract.
+                    // Malformed: empty contract.
                     Ok(ContractCandidate {
                         name: "bad".into(),
                         pre: None,
@@ -168,10 +165,7 @@ mod tests {
                     })
                 }
             }
-            fn fix_bug(
-                &self,
-                _: &crate::FixContext,
-            ) -> Result<crate::FixResult, AgentError> {
+            fn fix_bug(&self, _: &crate::FixContext) -> Result<crate::FixResult, AgentError> {
                 unimplemented!()
             }
             fn name(&self) -> &str {
@@ -191,8 +185,7 @@ mod tests {
             authoring_api_doc: String::new(),
             previous_rejection: None,
         };
-        let out = run_must_loop(&agent, ctx, &MustLoopOptions::default())
-            .expect("loop");
+        let out = run_must_loop(&agent, ctx, &MustLoopOptions::default()).expect("loop");
         assert_eq!(out.candidate.name, "good");
         assert_eq!(out.rejected.len(), 1);
         assert_eq!(out.agent_calls, 2);

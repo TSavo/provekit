@@ -1,6 +1,6 @@
 # Layered bridges demo: the DAG forms via bridge mementos
 
-> The bridge is how the DAG forms. Encounter a bridge hash — done verifying.
+> The bridge is how the DAG forms. Encounter a bridge hash: done verifying.
 
 ## What this demonstrates
 
@@ -16,13 +16,13 @@ the EDGES of the DAG; they're how the layers compose.
 ```
 Layer 1 (user code)   src/billing/invoice.ts:47 calls parseInt(...)
    ↓ bridges to
-Layer 2 (TS-kit)      global.parseInt — the JS surface
+Layer 2 (TS-kit)      global.parseInt: the JS surface
    ↓ bridges to
-Layer 3 (V8)          v8::Number::parseInt — the C++ implementation
+Layer 3 (V8)          v8::Number::parseInt: the C++ implementation
    ↓ bridges to
-Layer 4 (ECMA-262)    §7.1.4.1 — the standardized definition
+Layer 4 (ECMA-262)    §7.1.4.1: the standardized definition
    ↓ bridges to
-Layer 5 (IEEE 754)    §5.4 — integer conversion semantics
+Layer 5 (IEEE 754)    §5.4: integer conversion semantics
    ↓ bridges to
 Layer 6 (hardware)    Intel FPU verified per IEEE 754
 ```
@@ -49,7 +49,7 @@ at the bridge unless its policy requires deeper traversal.
 
 **This is what makes the substrate scale at consumer-side
 verification cost.** Most consumer verifications stop after 1-2
-bridge layers — your code → your kit's bridge to V8. You never need
+bridge layers: your code → your kit's bridge to V8. You never need
 to re-walk ECMA-262, IEEE 754, and silicon for routine commit-gate
 verification. Those layers are referenced by hash but not traversed.
 
@@ -60,7 +60,7 @@ at the TS-kit bridge (trust V8). Same primitive, different walk depths.
 ## Why parseInt.invariant.ts changes shape
 
 Before bridges: parseInt.invariant.ts had to define every property
-about parseInt directly — ~17 properties, ~120 lines of TS-IR-language.
+about parseInt directly: ~17 properties, ~120 lines of TS-IR-language.
 
 After bridges: parseInt.invariant.ts is a 3-line bridge:
 
@@ -78,7 +78,7 @@ inherit the chain.
 
 **parseInt.invariant.ts as a 3-line file collapses 122 lines of
 redundant work into a hash reference.** Same pattern for every
-runtime built-in. The kit's catalog is mostly bridges — small,
+runtime built-in. The kit's catalog is mostly bridges: small,
 referencing the canonical layers.
 
 ## What changed in the framework
@@ -113,7 +113,7 @@ The verifier walks `inputCids` to traverse layers.
 **Layered contracts model.** Each layer of the language stack
 publishes its contract ONCE. Every layer above just references hashes.
 Total verification work in the ecosystem approaches a constant as the
-number of consumers grows — same hash composition primitive applied
+number of consumers grows: same hash composition primitive applied
 to the LANGUAGE STACK.
 
 **Cross-language convergence.** Python's `int(s)` bridges to CPython,

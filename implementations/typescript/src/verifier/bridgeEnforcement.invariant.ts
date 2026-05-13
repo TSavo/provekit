@@ -7,7 +7,7 @@
 //   * `enumerateBridgeCallsites(...)`
 //
 // Honest scope: full pipeline correctness lives in integration tests;
-// the IR captures shape — discharged + violations + undecidable counts
+// the IR captures shape: discharged + violations + undecidable counts
 // always sum to totalCallsites, totals are non-negative.
 
 import {

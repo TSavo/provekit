@@ -1,0 +1,79 @@
+{
+  "fn_name": "gap:ruby:throw:to:concept:throw",
+  "gap_kind": "effect-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panics"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panics"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "exception"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "throw",
+        "result": "Stmt",
+        "wp": "raise Ruby exception"
+      },
+      "want": {
+        "arity": [
+          "Value"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "throw",
+        "result": "Stmt",
+        "wp_note": "throw exception or value"
+      }
+    }
+  },
+  "reason_note": "effect signature mismatch: got `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Panics\"}]}` want `{\"effects\":[{\"kind\":\"effect-signature\",\"name\":\"Panic\"},{\"kind\":\"effect-signature\",\"name\":\"Panics\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "effect sets differ; transport would silently misrepresent the effect contract"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "ruby",
+  "source_op_cid": "blake3-512:861c7884e5e07cd1d2370ccd9da0e6a6bcb65c33bbd7232613f2382a0c25ff4772a20ea7e5375e9228cbcc6fdb7d7801d4f5c241c243af67c6f64c4c50000eb4",
+  "target_concept_op": "concept:throw",
+  "target_op_cid": "blake3-512:bfca9b128ea5128d15236ebbe44150ff60355b9bbcd664ae4abbc34f2e4e658f7441089449956bfdb333d1f2eb1bff828c74a5d2f3df7fec723abe883bb81a12"
+}

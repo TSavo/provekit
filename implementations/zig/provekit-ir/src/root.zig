@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// provekit-ir — Zig kit for ProvekIt protocol v1.1.0
+// provekit-ir: Zig kit for ProvekIt protocol v1.1.0
 //
 // JCS canonical JSON: all object keys emitted in strict alphabetical order.
 // String escaping matches RFC 8785 (zig std.json default with escape_unicode=false).
@@ -12,6 +12,14 @@ const std = @import("std");
 
 pub const Sort = union(enum) {
     primitive: []const u8,
+    // FunctionSort recursively contains Sort. Zig requires pointer
+    // indirection on recursive type fields to break the dependency
+    // loop (same constraint that `dependent.index_sort` already
+    // satisfies via *const Sort). Slice-of-pointer for args, pointer
+    // for return.
+    function: struct { args: []const *const Sort, return_: *const Sort },
+    dependent: struct { name: []const u8, index_var: []const u8, index_sort: *const Sort },
+    region: struct { name: []const u8 },
 
     pub const Bool = Sort{ .primitive = "Bool" };
     pub const Int = Sort{ .primitive = "Int" };
@@ -27,6 +35,40 @@ pub const Sort = union(enum) {
                 try jws.write("primitive");
                 try jws.objectField("name");
                 try jws.write(name);
+                try jws.endObject();
+            },
+            .function => |f| {
+                try jws.beginObject();
+                try jws.objectField("args");
+                try jws.beginArray();
+                for (f.args) |arg_ptr| {
+                    try jws.write(arg_ptr.*);
+                }
+                try jws.endArray();
+                try jws.objectField("kind");
+                try jws.write("function");
+                try jws.objectField("return");
+                try jws.write(f.return_.*);
+                try jws.endObject();
+            },
+            .dependent => |d| {
+                try jws.beginObject();
+                try jws.objectField("indexSort");
+                try jws.write(d.index_sort.*);
+                try jws.objectField("indexVar");
+                try jws.write(d.index_var);
+                try jws.objectField("kind");
+                try jws.write("dependent");
+                try jws.objectField("name");
+                try jws.write(d.name);
+                try jws.endObject();
+            },
+            .region => |r| {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write("region");
+                try jws.objectField("name");
+                try jws.write(r.name);
                 try jws.endObject();
             },
         }
@@ -124,15 +166,15 @@ pub const Formula = union(enum) {
     pub const ConnectiveKind = enum {
         @"and",
         @"or",
-        @"not",
-        @"implies",
+        not,
+        implies,
 
         pub fn jsonStringify(self: ConnectiveKind, jws: anytype) !void {
             const str = switch (self) {
                 .@"and" => "and",
                 .@"or" => "or",
-                .@"not" => "not",
-                .@"implies" => "implies",
+                .not => "not",
+                .implies => "implies",
             };
             try jws.write(str);
         }
@@ -310,11 +352,11 @@ pub fn Or(operands: []const Formula) Formula {
 }
 
 pub fn Not(operands: []const Formula) Formula {
-    return .{ .connective = .{ .kind = .@"not", .operands = operands } };
+    return .{ .connective = .{ .kind = .not, .operands = operands } };
 }
 
 pub fn Implies(operands: []const Formula) Formula {
-    return .{ .connective = .{ .kind = .@"implies", .operands = operands } };
+    return .{ .connective = .{ .kind = .implies, .operands = operands } };
 }
 
 pub fn Forall(name: []const u8, sort_: Sort, body: *const Formula) Formula {
@@ -330,10 +372,7 @@ pub fn Exists(name: []const u8, sort_: Sort, body: *const Formula) Formula {
 // ---------------------------------------------------------------------------
 
 pub fn jcsStringify(alloc: std.mem.Allocator, value: anytype) ![]u8 {
-    var list = std.ArrayList(u8).init(alloc);
-    errdefer list.deinit();
-    try std.json.stringify(value, .{ .whitespace = .minified }, list.writer());
-    return list.toOwnedSlice();
+    return std.json.Stringify.valueAlloc(alloc, value, .{ .whitespace = .minified });
 }
 
 pub fn jcsHash(alloc: std.mem.Allocator, jcs_bytes: []const u8) ![]u8 {
@@ -342,17 +381,23 @@ pub fn jcsHash(alloc: std.mem.Allocator, jcs_bytes: []const u8) ![]u8 {
     hasher.update(jcs_bytes);
     hasher.final(&hash_out);
 
-    // Format as "blake3-512:" + 128 lowercase hex chars
     const prefix = "blake3-512:";
-    var result = try alloc.alloc(u8, prefix.len + 128);
+    const hex = std.fmt.bytesToHex(hash_out, .lower);
+    var result = try alloc.alloc(u8, prefix.len + hex.len);
     @memcpy(result[0..prefix.len], prefix);
-    _ = try std.fmt.bufPrint(result[prefix.len..], "{s}", .{std.fmt.fmtSliceHexLower(&hash_out)});
+    @memcpy(result[prefix.len..], &hex);
     return result;
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+test {
+    // Pull tests from sibling files into the root test binary so
+    // `zig build test` discovers them.
+    _ = @import("cross_kit_bridges.zig");
+}
 
 test "eq atomic JCS matches Rust" {
     const alloc = std.testing.allocator;
@@ -367,9 +412,7 @@ test "eq atomic JCS matches Rust" {
     defer alloc.free(jcs);
 
     const expected =
-        "{\"args\":[{\"args\":[{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"value\":\"42\"}],\"kind\":\"ctor\",\"name\":\"parse_int\"},"
-        ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":42}],"
-        ++ "\"kind\":\"atomic\",\"name\":\"=\"}";
+        "{\"args\":[{\"args\":[{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"value\":\"42\"}],\"kind\":\"ctor\",\"name\":\"parse_int\"}," ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":42}]," ++ "\"kind\":\"atomic\",\"name\":\"=\"}";
 
     try std.testing.expectEqualStrings(expected, jcs);
 }
@@ -390,8 +433,7 @@ test "eq atomic hash matches Rust" {
     defer alloc.free(hash);
 
     const expected =
-        "blake3-512:5eade72c08811b2d38adcb158eced38f3d319de090d59b2fa7a77ad830169e18"
-        ++ "539d2b75d2a2838c545e644a688cf137603674523ff37f1586a650f6dd05aeaa";
+        "blake3-512:5eade72c08811b2d38adcb158eced38f3d319de090d59b2fa7a77ad830169e18" ++ "539d2b75d2a2838c545e644a688cf137603674523ff37f1586a650f6dd05aeaa";
 
     try std.testing.expectEqualStrings(expected, hash);
 }
@@ -427,12 +469,7 @@ test "pattern1 bounded loop JCS matches Rust" {
     defer alloc.free(jcs);
 
     const expected =
-        "{\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"and\",\"operands\":[{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},"
-        ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],\"kind\":\"atomic\",\"name\":\"≥\"},"
-        ++ "{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":100}],"
-        ++ "\"kind\":\"atomic\",\"name\":\"<\"}]},{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},"
-        ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],\"kind\":\"atomic\",\"name\":\"≥\"}]},"
-        ++ "\"kind\":\"forall\",\"name\":\"x\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
+        "{\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"and\",\"operands\":[{\"args\":[{\"kind\":\"var\",\"name\":\"x\"}," ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],\"kind\":\"atomic\",\"name\":\"≥\"}," ++ "{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":100}]," ++ "\"kind\":\"atomic\",\"name\":\"<\"}]},{\"args\":[{\"kind\":\"var\",\"name\":\"x\"}," ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],\"kind\":\"atomic\",\"name\":\"≥\"}]}," ++ "\"kind\":\"forall\",\"name\":\"x\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
 
     try std.testing.expectEqualStrings(expected, jcs);
 }
@@ -454,9 +491,7 @@ test "contract decl JCS" {
     defer alloc.free(jcs);
 
     const expected =
-        "{\"kind\":\"contract\",\"name\":\"parseInt\",\"outBinding\":\"out\","
-        ++ "\"pre\":{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],"
-        ++ "\"kind\":\"atomic\",\"name\":\"≥\"}}";
+        "{\"kind\":\"contract\",\"name\":\"parseInt\",\"outBinding\":\"out\"," ++ "\"pre\":{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}]," ++ "\"kind\":\"atomic\",\"name\":\"≥\"}}";
 
     try std.testing.expectEqualStrings(expected, jcs);
 }
@@ -479,9 +514,7 @@ test "bridge decl JCS" {
     defer alloc.free(jcs);
 
     const expected =
-        "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"notes\":\"some notes\","
-        ++ "\"sourceContractCid\":\"bafySource\",\"sourceLayer\":\"c-kit\",\"sourceSymbol\":\"source\","
-        ++ "\"targetContractCid\":\"bafyTarget\",\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\"}";
+        "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"notes\":\"some notes\"," ++ "\"sourceContractCid\":\"bafySource\",\"sourceLayer\":\"c-kit\",\"sourceSymbol\":\"source\"," ++ "\"targetContractCid\":\"bafyTarget\",\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\"}";
 
     try std.testing.expectEqualStrings(expected, jcs);
 }

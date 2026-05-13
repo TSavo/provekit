@@ -1,0 +1,26 @@
+Maude binary status: not installed in this environment.
+
+Lowered modules:
+- seq_assoc.maude
+- if_idemp.maude
+
+Expected verdicts when run with Maude:
+
+1. seq-assoc
+   Query lhs: seq(seq(A, B), C)
+   Query rhs: seq(A, seq(B, C))
+   Expected result: the two reduce queries have the same normal form modulo the native assoc attribute on seq. The search query succeeds from lhs to rhs.
+
+2. if-idemp
+   Query lhs: ifc(P, A, A)
+   Query rhs: A
+   Expected result: the two reduce queries both normalize to A. The search query succeeds from lhs to rhs.
+
+CeTA gate note:
+The seq associativity law is represented as a Maude builtin assoc attribute rather than a user rewrite equation. That path bypasses the TRS gate for this law, matching the equational portfolio extension. The remaining user equations are oriented left to right for this fixture. No CeTA certificate was generated here because Maude and CeTA are not installed in this environment.
+
+To run the real discharge:
+maude seq_assoc.maude
+maude if_idemp.maude
+
+See tools/portfolio/maude-ceta-install.md for installing Maude and the CeTA gate.

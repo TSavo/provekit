@@ -1,5 +1,5 @@
 /**
- * Extension authoring API — the user-facing factory functions for
+ * Extension authoring API: the user-facing factory functions for
  * declaring new sorts, predicates, and ctors as extensions.
  *
  * The DX promise: authoring an extension is one function call. The
@@ -46,7 +46,7 @@ import {
 } from "./registry.js";
 
 // ---------------------------------------------------------------------------
-// extensionSort — declare a new sort
+// extensionSort: declare a new sort
 // ---------------------------------------------------------------------------
 
 export interface ExtensionSortInput {
@@ -78,7 +78,7 @@ export function extensionSort(input: ExtensionSortInput): Sort {
 }
 
 // ---------------------------------------------------------------------------
-// extensionPredicate — declare a new atomic predicate
+// extensionPredicate: declare a new atomic predicate
 // ---------------------------------------------------------------------------
 
 export interface ExtensionPredicateInput {
@@ -114,7 +114,7 @@ export function extensionPredicate(
 }
 
 // ---------------------------------------------------------------------------
-// extensionCtor — declare a new term constructor
+// extensionCtor: declare a new term constructor
 // ---------------------------------------------------------------------------
 
 export interface ExtensionCtorInput {

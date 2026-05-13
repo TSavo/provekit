@@ -11,6 +11,15 @@
 
 set -uo pipefail
 
+# Some installs symlink ~/.cargo/bin/cargo -> rustup. PATH must contain
+# ~/.cargo/bin for both to resolve.
+if [ -d "$HOME/.cargo/bin" ]; then
+    case ":$PATH:" in
+        *":$HOME/.cargo/bin:"*) ;;
+        *) PATH="$HOME/.cargo/bin:$PATH" ;;
+    esac
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -145,6 +154,48 @@ if need_tool bun typescript; then
         report "typescript" "PASS" "29 tests, adapters prove equivalence"
     else
         report "typescript" "FAIL" "bun test failed"
+    fi
+fi
+
+# --- C# ---
+echo "[C#] dotnet test"
+if need_tool dotnet csharp; then
+    if (cd implementations/csharp && run_quiet dotnet test --nologo); then
+        report "csharp" "PASS" "DataAnnotations + Linq lift adapters byte-equivalent"
+    else
+        report "csharp" "FAIL" "dotnet test failed"
+    fi
+fi
+
+# --- Ruby ---
+# Kit uses endless-method syntax (Ruby 3+); macOS system ruby is 2.6 and
+# can't even parse it. Prefer Homebrew's ruby when present.
+echo "[Ruby] minitest conformance"
+ruby_bin=""
+if [ -x /usr/local/opt/ruby/bin/ruby ]; then
+    ruby_bin=/usr/local/opt/ruby/bin/ruby
+elif [ -x /opt/homebrew/opt/ruby/bin/ruby ]; then
+    ruby_bin=/opt/homebrew/opt/ruby/bin/ruby
+elif command -v ruby >/dev/null 2>&1 && ruby -e 'exit RUBY_VERSION.to_f >= 3.0 ? 0 : 1' >/dev/null 2>&1; then
+    ruby_bin="$(command -v ruby)"
+fi
+if [ -n "$ruby_bin" ]; then
+    if (cd implementations/ruby && run_quiet "$ruby_bin" -Ilib -Itest test/test_jcs_conformance.rb); then
+        report "ruby" "PASS" "JCS bytes match canonical fixtures"
+    else
+        report "ruby" "FAIL" "test_jcs_conformance.rb failed"
+    fi
+else
+    report "ruby" "SKIP" "ruby >= 3.0 not found (kit uses endless-method syntax)"
+fi
+
+# --- Swift ---
+echo "[Swift] swift run conformance"
+if need_tool swift swift; then
+    if (cd implementations/swift && run_quiet swift run conformance); then
+        report "swift" "PASS" "5 assertions: eq_atomic JCS+hash, pattern1 JCS, contract JCS, bridge JCS"
+    else
+        report "swift" "FAIL" "swift run conformance failed"
     fi
 fi
 

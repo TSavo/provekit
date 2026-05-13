@@ -1,0 +1,74 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Trap"
+      }
+    ]
+  },
+  "fn_name": "concept:mul",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Int",
+      "Int"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "mul",
+    "result": "Int",
+    "wp": "mathematical integer multiplication when no overflow holds"
+  },
+  "pre": {
+    "args": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ],
+        "kind": "op",
+        "name": "mul"
+      }
+    ],
+    "kind": "atomic",
+    "name": "no_signed_overflow"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
+  }
+}

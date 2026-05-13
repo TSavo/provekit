@@ -1,0 +1,55 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:cast",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Expr"
+    }
+  ],
+  "formals": [
+    "target_type",
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target_type",
+          "slot_sort": "type"
+        },
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "cast",
+    "result": "Expr",
+    "wp": "C cast expression preserving explicit target type and lifted child value"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Expr"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:bop_bitor",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "bop_bitor",
+      "arity": [
+        "Expr",
+        "Expr"
+      ],
+      "arity_shape": {
+        "kind": "set"
+      },
+      "result": "Expr",
+      "wp": "C binary | expression; operand evaluation order is not sequenced"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:52c439c24f68bd0adb890b4204bd4f919a73400656a648a862ab30151afd11e12c99514cfac05d55d65c0eba112e7d336675f422e9ac750ea799e299e37cc92a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "BzrSfoT9yzUurdSR4LfttjkWySEYXC/RfXmBFAeq9KM3dZ3M20pN8oiM8oS4SkA0wsiUPApYR1i8iBGnyz5RAA=="
+  }
+}

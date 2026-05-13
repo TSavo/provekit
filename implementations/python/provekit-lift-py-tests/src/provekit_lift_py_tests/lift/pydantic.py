@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit.lift.pydantic — lift Pydantic BaseModel field constraints to
+# provekit.lift.pydantic: lift Pydantic BaseModel field constraints to
 # canonical IR.
 #
 # Cross-domain equivalence guarantee: a Pydantic model constraint that

@@ -1,0 +1,87 @@
+{
+  "fn_name": "gap:rust:call:to:concept:call",
+  "gap_kind": "effect-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "UnresolvedCall"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Call"
+          },
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects or unresolved_call when unavailable"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "FnContract",
+          "ListOf<Expr>"
+        ],
+        "kind": "operation-contract",
+        "operator": "call",
+        "result": "Stmt",
+        "wp": "callee pre under bound args implies callee post under caller state"
+      },
+      "want": {
+        "arity": [
+          "FnContract",
+          "ListOf<Expr>"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "callee"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "call",
+        "result": "Stmt",
+        "wp_note": "callee pre under bound args implies callee post under caller state"
+      }
+    }
+  },
+  "reason_note": "effect signature mismatch: got `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects\"}]}` want `{\"effects\":[{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects\"},{\"kind\":\"effect-signature\",\"name\":\"UnresolvedCall\"},{\"kind\":\"effect-signature\",\"name\":\"Call\"},{\"kind\":\"effect-polymorphic\",\"rule\":\"callee.effects or unresolved_call when unavailable\"}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "effect sets differ; transport would silently misrepresent the effect contract"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:56e4a97d26cfc9b948ac60b8452dd11c14425669150f1e9924677fbdf19c85f29a4b059907d99f22bf8d67dce128691705ead4287a967549124ffc18be1a2dd6",
+  "target_concept_op": "concept:call",
+  "target_op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c"
+}

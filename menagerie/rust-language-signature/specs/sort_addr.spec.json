@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:Addr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Addr",
+    "description": "Abstract memory addresses for effect signatures"
+  }
+}

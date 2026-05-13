@@ -1,0 +1,23 @@
+[package]
+name = "provekit-baseline-std"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: foundation-baseline catalogs for all 12 per-kit std libraries (config-driven)."
+
+[dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8"
+
+[dev-dependencies]
+provekit-verifier = { path = "../provekit-verifier" }
+
+[[bin]]
+name = "mint-all-baselines"
+path = "src/bin/mint_all_baselines.rs"

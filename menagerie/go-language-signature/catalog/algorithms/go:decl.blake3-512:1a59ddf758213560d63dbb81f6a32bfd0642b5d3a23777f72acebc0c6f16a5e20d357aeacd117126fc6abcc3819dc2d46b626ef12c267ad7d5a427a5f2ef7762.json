@@ -1,0 +1,68 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:decl",
+    "formals": [
+      "target",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Identifier",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:decl",
+      "arity": [
+        "Identifier",
+        "Term"
+      ],
+      "result": "Term",
+      "wp": "Go local declaration or short declaration",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target",
+            "slot_sort": "Identifier"
+          },
+          {
+            "name": "value",
+            "slot_sort": "Term"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:1a59ddf758213560d63dbb81f6a32bfd0642b5d3a23777f72acebc0c6f16a5e20d357aeacd117126fc6abcc3819dc2d46b626ef12c267ad7d5a427a5f2ef7762",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "uy5AydCORrmm8pvIOwNmbnuIMbf39k7c6Ax/VNPALfHuwP595DOOM7/byCPp944++95/QlaVemBW94nY7TqVCw=="
+  }
+}

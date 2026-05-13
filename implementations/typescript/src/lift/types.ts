@@ -36,6 +36,27 @@ export interface ContractDecl {
   pre?: IrFormula;
   post?: IrFormula;
   inv?: IrFormula;
+  /**
+   * When present, this contract should be bridged to the named
+   * contract in the given kit. Format: "<kit>:<contractName>"
+   * (e.g., "openapi:e2e-api-1-0-0-get-getusers-200-application-json").
+   * Populated by the provekit-annotations adapter.
+   */
+  targetContract?: string;
+  /**
+   * Source line the contract was lifted from. Used for call-edge locus
+   * when targetContract is present.
+   */
+   sourceLine?: number;
+}
+
+/** A call edge connecting a source contract to a target contract. */
+export interface CallEdgeDecl {
+  sourceContractCid: string;
+  targetContractCid: string | null;
+  targetSymbol: string;
+  callSiteLocus: { file: string; line: number; col: number };
+  evidenceTerm: unknown;
 }
 
 export interface AdapterWarning {
@@ -63,6 +84,7 @@ export interface AdapterReport {
 
 export interface LiftReport {
   decls: ContractDecl[];
+  callEdges?: CallEdgeDecl[];
   adapterReports: AdapterReport[];
   filesScanned: number;
   parseErrors: Array<{ path: string; message: string }>;

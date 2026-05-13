@@ -2,8 +2,8 @@
  * Per-AST-node lift rules. The dispatch table from spec §9.
  *
  * Two mutually recursive walks:
- *   liftFormula(expr): IrFormula  — bool-typed expressions
- *   liftTerm(expr):    IrTerm     — value-typed expressions
+ *   liftFormula(expr): IrFormula: bool-typed expressions
+ *   liftTerm(expr):    IrTerm: value-typed expressions
  *
  * The split is forced by the IR shape: IrFormula has no `Apply` or
  * arithmetic kinds, so `Math.abs(x)` and `a + b` are IrTerm ctors,
@@ -198,7 +198,7 @@ function liftNumericLiteral(node: ts.NumericLiteral): IrTerm {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Binary expressions — formula side                                          */
+/* Binary expressions: formula side                                          */
 /* -------------------------------------------------------------------------- */
 
 const FORMULA_PREDICATE_BY_OP: Partial<Record<ts.SyntaxKind, string>> = {
@@ -231,7 +231,7 @@ function liftBinaryFormula(node: ts.BinaryExpression, ctx: LiftContext): IrFormu
     };
   }
   if (op === ts.SyntaxKind.QuestionQuestionToken) {
-    // a ?? b in formula position — unusual but valid. Desugar.
+    // a ?? b in formula position: unusual but valid. Desugar.
     return liftNullishCoalescingFormula(node, ctx);
   }
   const predicateName = FORMULA_PREDICATE_BY_OP[op];
@@ -254,7 +254,7 @@ function liftBinaryFormula(node: ts.BinaryExpression, ctx: LiftContext): IrFormu
 }
 
 /* -------------------------------------------------------------------------- */
-/* Binary expressions — term side (arithmetic)                                */
+/* Binary expressions: term side (arithmetic)                                */
 /* -------------------------------------------------------------------------- */
 
 const TERM_CTOR_BY_OP: Partial<Record<ts.SyntaxKind, string>> = {
@@ -393,7 +393,7 @@ function liftFormulaAsTerm(expr: ts.Expression, ctx: LiftContext): IrTerm {
 }
 
 function encodeFormulaIntoArgs(_f: IrFormula): IrTerm[] {
-  // v1: opaque encoding — we don't need round-trip yet. Return empty;
+  // v1: opaque encoding: we don't need round-trip yet. Return empty;
   // the canonicalizer treats `as-term` ctors as atoms with no args.
   return [];
 }
@@ -525,7 +525,7 @@ function liftPropertyAccessTerm(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Call expressions — builders, quantifiers, registry                         */
+/* Call expressions: builders, quantifiers, registry                         */
 /* -------------------------------------------------------------------------- */
 
 function liftCallFormula(node: ts.CallExpression, ctx: LiftContext): IrFormula {

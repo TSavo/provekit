@@ -1,0 +1,45 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "morphism:csharp:for:to:concept:for",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
+  "formals": [
+    "source_contract"
+  ],
+  "input_cids": [
+    "blake3-512:485a4e8c8e62391ec1411a5c490fed1898f91e8dfbc9b9c62fefd9c81e2e6dfcd045395f83df614be984e01e04459b8e6544b4f8ae859310ad9192659390eefd",
+    "blake3-512:5efdbe33b64f902d53f221eb98e33511b98766333bc10042982a0f943faf1cb300bc5a0b6018af296c37f32fd0eb11a170bae1d06e42a604f85475c0f98eb16f"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction-and-effect-subset",
+      "source": "blake3-512:485a4e8c8e62391ec1411a5c490fed1898f91e8dfbc9b9c62fefd9c81e2e6dfcd045395f83df614be984e01e04459b8e6544b4f8ae859310ad9192659390eefd",
+      "target": "blake3-512:5efdbe33b64f902d53f221eb98e33511b98766333bc10042982a0f943faf1cb300bc5a0b6018af296c37f32fd0eb11a170bae1d06e42a604f85475c0f98eb16f"
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {},
+    "renaming_map": {},
+    "representation_map": {},
+    "source_contract_cid": "blake3-512:485a4e8c8e62391ec1411a5c490fed1898f91e8dfbc9b9c62fefd9c81e2e6dfcd045395f83df614be984e01e04459b8e6544b4f8ae859310ad9192659390eefd",
+    "target_shape_cid": "blake3-512:5efdbe33b64f902d53f221eb98e33511b98766333bc10042982a0f943faf1cb300bc5a0b6018af296c37f32fd0eb11a170bae1d06e42a604f85475c0f98eb16f"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
+}

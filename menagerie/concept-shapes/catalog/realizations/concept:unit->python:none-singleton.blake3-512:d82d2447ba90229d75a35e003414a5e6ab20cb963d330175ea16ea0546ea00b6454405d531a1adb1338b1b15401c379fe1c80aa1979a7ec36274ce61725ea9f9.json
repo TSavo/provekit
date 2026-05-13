@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:unit->python:none-singleton",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:unit",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:none-singleton",
+        "args": [
+          {
+            "kind": "const",
+            "value": "None",
+            "sort": {
+              "kind": "ctor",
+              "name": "NoneType",
+              "args": []
+            }
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": "None is a named constant (singleton object), not a type constructor; NoneType is not user-definable or instantiable; Python conflates the unit type with its unique value; no explicit 'Unit type' syntax distinct from the value None",
+      "domain_narrowing": "None is overloaded as both unit value and null/absent sentinel; unit use and null-sentinel use are syntactically indistinguishable; realization domain narrowed to programs where None is used in the unit role only; mixing both uses violates unit_singleton contract",
+      "ub_introduction": "none: Python has no undefined behavior; None is a safe, well-defined singleton; no memory corruption or undefined state",
+      "effect_divergence": "none: None carries no effects; returning None is side-effect-free with respect to the unit contract",
+      "value_divergence": "none: None is the unique inhabitant of NoneType, satisfying unit_singleton(None); all values of NoneType are provably equal; no value-representation gap"
+    },
+    "discharge_receipt": null,
+    "effects": []
+  },
+  "cid": "blake3-512:d82d2447ba90229d75a35e003414a5e6ab20cb963d330175ea16ea0546ea00b6454405d531a1adb1338b1b15401c379fe1c80aa1979a7ec36274ce61725ea9f9",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

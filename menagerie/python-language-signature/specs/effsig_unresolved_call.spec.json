@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "python:effect-signature:UnresolvedCall",
+  "sorts": [
+    "sort_string.spec.json",
+    "sort_value.spec.json"
+  ],
+  "operations": [
+    "eff_unresolved_call.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

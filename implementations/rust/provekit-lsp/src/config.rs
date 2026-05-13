@@ -23,7 +23,6 @@
 // External plugins are spawned as child processes and spoken to via JSON-RPC.
 
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,10 +39,18 @@ pub struct ServerConfig {
     pub backend: String,
     #[serde(default)]
     pub backend_args: Vec<String>,
-    #[serde(default = "default_timeout")]
-    pub timeout_ms: u64,
-    #[serde(default = "default_cache_dir")]
-    pub cache_dir: String,
+    // timeout_ms and cache_dir removed (unused)
+    /// Optional path to the provekit-linkerd Unix domain socket.
+    ///
+    /// When set, `did_open` / `did_change` route through the daemon instead
+    /// of the per-plugin subprocess mode.  The value may be overridden by
+    /// the `--daemon-socket <path>` CLI flag.
+    ///
+    /// Example config.toml:
+    ///   [server]
+    ///   daemon_socket = "/run/user/1000/provekit/linkerd-<projectCid>.sock"
+    #[serde(default)]
+    pub daemon_socket: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -60,29 +67,17 @@ pub struct LanguagePluginConfig {
 }
 
 impl LspConfig {
-    /// Build a map from file extension -> language plugin config.
-    pub fn extension_map(&self) -> HashMap<String, LanguagePluginConfig> {
-        let mut map = HashMap::new();
-        for lang in &self.language {
-            for ext in &lang.extensions {
-                let ext_normalized = if ext.starts_with('.') {
-                    ext.to_string()
-                } else {
-                    format!(".{}", ext)
-                };
-                map.insert(ext_normalized, lang.clone());
-            }
-        }
-        map
-    }
-
     /// Find the language config for a given file path.
     pub fn for_path(&self, path: &Path) -> Option<&LanguagePluginConfig> {
         let ext = path.extension()?.to_str()?;
         let with_dot = format!(".{}", ext);
         self.language.iter().find(|l| {
             l.extensions.iter().any(|e| {
-                let e = if e.starts_with('.') { e.clone() } else { format!(".{}", e) };
+                let e = if e.starts_with('.') {
+                    e.clone()
+                } else {
+                    format!(".{}", e)
+                };
                 e == with_dot
             })
         })
@@ -102,21 +97,12 @@ fn default_server() -> ServerConfig {
     ServerConfig {
         backend: default_backend(),
         backend_args: Vec::new(),
-        timeout_ms: default_timeout(),
-        cache_dir: default_cache_dir(),
+        daemon_socket: None,
     }
 }
 
 fn default_backend() -> String {
     "provekit".to_string()
-}
-
-fn default_timeout() -> u64 {
-    5000
-}
-
-fn default_cache_dir() -> String {
-    ".provekit/cache".to_string()
 }
 
 fn default_languages() -> Vec<LanguagePluginConfig> {
@@ -135,11 +121,9 @@ pub fn load_config(path: impl AsRef<Path>) -> Result<LspConfig, String> {
         return Ok(LspConfig::default());
     }
 
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read config: {}", e))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("read config: {}", e))?;
 
-    let config: LspConfig = toml::from_str(&text)
-        .map_err(|e| format!("parse config: {}", e))?;
+    let config: LspConfig = toml::from_str(&text).map_err(|e| format!("parse config: {}", e))?;
 
     Ok(config)
 }

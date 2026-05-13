@@ -1,5 +1,5 @@
 /**
- * IR structural invariants — TypeScript kit.
+ * IR structural invariants: TypeScript kit.
  *
  * These invariants mirror the formal invariants defined in
  * protocol/specs/2026-04-30-ir-formal-grammar.md §Formal Invariants.

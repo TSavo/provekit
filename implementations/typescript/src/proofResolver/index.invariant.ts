@@ -5,8 +5,7 @@
 // Public surface covered: discovery + resolution of .proof files
 // referenced from a project root's node_modules graph.
 //
-// Honest scope: filesystem walking is empirical; the IR pins shape —
-// every resolved entry has a CID of length 139 and a path of length >= 1.
+// Honest scope: filesystem walking is empirical; the IR pins shape: // every resolved entry has a CID of length 139 and a path of length >= 1.
 
 import {
   must,

@@ -1,0 +1,84 @@
+{
+  "cid": "blake3-512:606c3704cebe6ba12ac066178e2c2bba324d2d1c7acdbf26151734cf953af3b435b9e8eaf1bd6312b71e48e61dd78941fbf32332bb9a03046c731f553181fdb0",
+  "memento": {
+    "direction": "left-to-right",
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "fn_name": "concept:result->c:tagged-union-macro",
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "T"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "E"
+      }
+    ],
+    "formals": [
+      "value",
+      "error"
+    ],
+    "kind": "equation",
+    "loss_record": {
+      "domain_narrowing": "C cannot statically enforce exhaustiveness over the two arms; the realization narrows the abstraction domain to programs where the caller manually checks res.tag before accessing res.v; programs that omit the check are in the narrowed-out domain",
+      "domain_narrowing_no_static_checked_exception_discipline": "Rust Result<T,E> provides static exhaustiveness checking via match expressions; C tagged unions cannot enforce this; the realization domain is narrowed to C programs where the programmer manually enforces exhaustiveness at every match site",
+      "structural_divergence": "tagged-union macro family replaces native sum type: multiple declarations (enum discriminator + union field with two arms + wrapper struct) replace a single ADT constructor; arms encoded as integer tag values (name_OK, name_ERR) instead of named constructors; pattern matching becomes switch(res.tag) with manual exhaustiveness; instantiation requires caller-supplied type and macro-name identifiers",
+      "ub_introduction": "accessing res.v.ok when res.tag == name_ERR or res.v.err when res.tag == name_OK reads an uninitialised union field; this is undefined behaviour in C; the abstraction statically excludes these states; the C realization introduces UB on exactly those states"
+    },
+    "post": {
+      "lhs": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          },
+          {
+            "kind": "var",
+            "name": "error"
+          }
+        ],
+        "kind": "op",
+        "name": "concept:result"
+      },
+      "rhs": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "const",
+                "sort": {
+                  "args": [],
+                  "kind": "ctor",
+                  "name": "MacroName"
+                },
+                "value": "RESULT_DECL(T, E, name)"
+              },
+              {
+                "kind": "var",
+                "name": "value"
+              },
+              {
+                "kind": "var",
+                "name": "error"
+              }
+            ],
+            "kind": "op",
+            "name": "c:macro-expand"
+          }
+        ],
+        "kind": "op",
+        "name": "c:tagged-union-macro"
+      }
+    },
+    "role": "abstraction-realization",
+    "target_lang": "c"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

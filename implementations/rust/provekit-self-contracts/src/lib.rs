@@ -13,10 +13,10 @@
 // single `provekit-self-contracts.proof` envelope.
 //
 // File layout:
-//   * `src/lib.rs` — the orchestrator (this file). Pulls in every
+//   * `src/lib.rs`: the orchestrator (this file). Pulls in every
 //     `.invariant.rs` via `#[path]` so they compile as plain Rust
 //     modules without polluting their host crate's dep graph.
-//   * `src/bin/mint-self-contracts.rs` — the runnable binary. Calls
+//   * `src/bin/mint-self-contracts.rs`: the runnable binary. Calls
 //     into `mint_self_proof()` here and prints the resulting CID;
 //     also runs the verifier against the produced .proof and prints
 //     the report.
@@ -38,17 +38,20 @@ use std::path::Path;
 // the file/test layout matches its origin (`protocol/specs/2026-04-30-protocol-catalog-format.md`).
 pub mod catalog_format;
 
+// lift-plugin-protocol spec rules as machine-enforceable contracts.
+// Source contracts that each kit's lift-plugin implementation will
+// bridge to. Origin: `protocol/specs/2026-04-30-lift-plugin-protocol.md`.
+pub mod lift_plugin_protocol;
+
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
-    mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
+    compute_contract_set_cid, contract_cid as compute_contract_cid, mint_bridge, mint_contract,
+    Authoring, MintBridgeArgs, MintContractArgs,
 };
 use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{
-    begin_collecting, finish, reset_collector, ContractDecl,
-};
+use provekit_ir_symbolic::{begin_collecting, finish, reset_collector, ContractDecl};
 use provekit_proof_envelope::{
-    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed,
-    ProofEnvelopeInput,
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 
 const PRODUCED_BY: &str = "provekit-self-contracts@1.0";
@@ -91,6 +94,9 @@ mod kit_invariants;
 #[path = "../../provekit-verifier/src/load_all_proofs.invariant.rs"]
 mod load_all_proofs_invariants;
 
+#[path = "../../provekit-verifier/src/proof_conformance.invariant.rs"]
+mod proof_conformance_invariants;
+
 #[path = "../../provekit-verifier/src/enumerate_callsites.invariant.rs"]
 mod enumerate_callsites_invariants;
 
@@ -103,11 +109,52 @@ mod instantiate_invariants;
 #[path = "../../provekit-verifier/src/smt_emitter.invariant.rs"]
 mod smt_emitter_invariants;
 
+#[path = "../../../../menagerie/bug-zoo/src/lib.invariant.rs"]
+mod bug_zoo_invariants;
+
 // catalog-format spec rules. Module is `pub mod catalog_format` above;
 // the alias here matches the slab-naming convention used in
 // `author_all_invariants()` so the catalog-format contracts ship as a
 // 15th slab in the rust self-contracts bundle.
 use catalog_format as catalog_format_invariants;
+
+// lift-plugin-protocol spec rules. Same convention as catalog-format:
+// the `pub mod lift_plugin_protocol` above gets aliased so the slab
+// name in `author_all_invariants()` reads `lift_plugin_protocol`.
+use lift_plugin_protocol as lift_plugin_protocol_invariants;
+
+/// The standard protocol-contract slab: lift-plugin-protocol C1-C9, split
+/// into the concrete contract facets authored by `lift_plugin_protocol.rs`.
+///
+/// This list is the stable ordering for the separate protocol contract set.
+/// The set CID itself is order-independent, but keeping the order named here
+/// makes missing/additive drift loud in tests and extraction tools.
+pub const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
+    "lift_plugin_initialize_protocol_version_match",
+    "lift_plugin_initialize_capabilities_authoring_surfaces_nonempty",
+    "lift_plugin_initialize_capabilities_ir_version_starts_with_v",
+    "lift_plugin_lift_request_surface_is_string",
+    "lift_plugin_lift_request_source_paths_nonempty",
+    "lift_plugin_lift_request_source_paths_each_nonempty",
+    "lift_plugin_lift_request_options_layer_well_formed",
+    "lift_plugin_lift_request_surface_in_capabilities",
+    "lift_plugin_lift_response_kind_matches_layer",
+    "lift_plugin_lift_response_ir_document_array",
+    "lift_plugin_diagnostic_field_is_array",
+    "lift_emits_call_edge_stream",
+];
+
+/// Accepted contractSetCid for the standard lift-plugin-protocol slab above.
+///
+/// This is the protocol-only trust anchor peer kits bridge to. It is
+/// deliberately separate from any kit's full self-contract surface CID:
+/// protocol evolution must move this pin explicitly, while ordinary Rust
+/// dogfood-surface drift only moves the Rust kit pin.
+pub const ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID: &str = concat!(
+    "blake3-512:",
+    "2b41786f188d603fe0232c6cf64d7a1b4dfc29b07cd1f272b9241c0ed08ebd1f",
+    "1e8cc4eb032d0715915115481ef272f5e454fec77216fadfbccb7098e888db81"
+);
 
 // --- Orchestrator types ----------------------------------------------------
 
@@ -217,6 +264,13 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
         ),
         run_one_slab(
             InvariantSource {
+                label: "proof_conformance",
+                path: "provekit-verifier/src/proof_conformance.invariant.rs",
+            },
+            proof_conformance_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
                 label: "enumerate_callsites",
                 path: "provekit-verifier/src/enumerate_callsites.invariant.rs",
             },
@@ -245,10 +299,24 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
         ),
         run_one_slab(
             InvariantSource {
+                label: "bug_zoo",
+                path: "../../menagerie/bug-zoo/src/lib.invariant.rs",
+            },
+            bug_zoo_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
                 label: "catalog_format",
                 path: "provekit-self-contracts/src/catalog_format.rs",
             },
             catalog_format_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "lift_plugin_protocol",
+                path: "provekit-self-contracts/src/lift_plugin_protocol.rs",
+            },
+            lift_plugin_protocol_invariants::invariants,
         ),
     ];
 
@@ -268,10 +336,7 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
     (slabs, bridges)
 }
 
-fn run_one_slab(
-    source: InvariantSource,
-    f: fn(),
-) -> AuthoredSlab {
+fn run_one_slab(source: InvariantSource, f: fn()) -> AuthoredSlab {
     reset_collector();
     begin_collecting();
     f();
@@ -279,18 +344,90 @@ fn run_one_slab(
     AuthoredSlab { source, contracts }
 }
 
+/// Derive the signer-independent contract CIDs for the standard protocol
+/// contract slab without minting the full Rust self-contracts bundle.
+pub fn lift_plugin_protocol_contract_cids() -> Result<BTreeMap<String, String>, String> {
+    let slab = run_one_slab(
+        InvariantSource {
+            label: "lift_plugin_protocol",
+            path: "provekit-self-contracts/src/lift_plugin_protocol.rs",
+        },
+        lift_plugin_protocol_invariants::invariants,
+    );
+    let signer_seed: Ed25519Seed = [0x42; 32];
+    let mut cids = BTreeMap::new();
+
+    for d in &slab.contracts {
+        let args = MintContractArgs {
+            contract_name: d.name.clone(),
+            pre: d.pre.as_deref().map(formula_to_value),
+            post: d.post.as_deref().map(formula_to_value),
+            inv: d.inv.as_deref().map(formula_to_value),
+            out_binding: d.out_binding.clone(),
+            produced_by: PRODUCED_BY.into(),
+            produced_at: DECLARED_AT.into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: PRODUCED_BY.into(),
+                note: Some(format!("protocol contract from {}", slab.source.path)),
+            },
+            signer_seed,
+        };
+        if cids.contains_key(&d.name) {
+            return Err(format!("duplicate protocol contract name `{}`", d.name));
+        }
+        cids.insert(d.name.clone(), compute_contract_cid(&args));
+    }
+
+    let mut missing = Vec::new();
+    for name in LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES {
+        if !cids.contains_key(*name) {
+            missing.push(*name);
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "lift_plugin_protocol slab missing {} expected contract(s): {}",
+            missing.len(),
+            missing.join(", ")
+        ));
+    }
+    if cids.len() != LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES.len() {
+        return Err(format!(
+            "lift_plugin_protocol slab emitted {} contract(s); expected {}",
+            cids.len(),
+            LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES.len()
+        ));
+    }
+
+    Ok(cids)
+}
+
+/// Derive the standard protocol contract-set CID.
+pub fn lift_plugin_protocol_contract_set_cid() -> Result<String, String> {
+    let cids = lift_plugin_protocol_contract_cids()?;
+    Ok(compute_contract_set_cid(cids.values().cloned().collect()))
+}
+
 /// Result from minting the self-proof.
 #[derive(Debug, Clone)]
 pub struct MintResult {
     /// Full self-identifying CID (`blake3-512:<128 hex>`) of the .proof file.
+    /// This is the bundle CID (attestation-envelope bytes), not the trust anchor.
     pub cid: String,
+    /// Contract set CID per spec #94 §1.
+    ///   contractSetCid := blake3-512(JCS(<sorted contractCids>))
+    /// Signer-independent. Two kits attesting to the same contracts produce the
+    /// same `contract_set_cid` regardless of signer state, timestamps, or build order.
+    /// This is the trust anchor for `verify-self-contracts`.
+    pub contract_set_cid: String,
     /// Bytes written.
     pub bytes_len: usize,
     /// Filesystem path written to.
     pub path: std::path::PathBuf,
     /// Number of mementos bundled (contracts + bridges).
     pub member_count: usize,
-    /// Map from contract name to its memento CID.
+    /// Map from contract name to its content CID (signer-independent contractCid).
     pub contract_cids: BTreeMap<String, String>,
     /// Per-source-file count of contracts authored, for the report.
     pub per_source_counts: Vec<(String, usize)>,
@@ -312,7 +449,13 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
     let signer_seed: Ed25519Seed = [0x42; 32];
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // Map from contract name to its signer-independent contractCid (content hash).
+    // Per spec #94 §1: contractCid := blake3-512(JCS({name,outBinding,pre?,post?,inv?})).
+    // Used only for computing contractSetCid; NOT used for bridge resolution.
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
+    // Map from contract name to its attestation CID (envelope hash, m.cid).
+    // Used for bridge resolution: the verifier looks up mementos by attestation CID.
+    let mut attestation_cids: BTreeMap<String, String> = BTreeMap::new();
     let mut per_source_counts: Vec<(String, usize)> = Vec::new();
     let mut total_contracts: usize = 0;
 
@@ -331,15 +474,13 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
                 input_cids: vec![],
                 authoring: Authoring::KitAuthor {
                     author: PRODUCED_BY.into(),
-                    note: Some(format!(
-                        "self-contract from {}",
-                        slab.source.path
-                    )),
+                    note: Some(format!("self-contract from {}", slab.source.path)),
                 },
                 signer_seed,
             };
-            let m = mint_contract(&args)
-                .map_err(|e| format!("mint_contract({}): {e}", d.name))?;
+            // Compute the content CID (signer-independent) BEFORE minting (spec #94).
+            let ccid = compute_contract_cid(&args);
+            let m = mint_contract(&args).map_err(|e| format!("mint_contract({}): {e}", d.name))?;
             // Detect duplicate names ACROSS slabs and fail loud.
             if contract_cids.contains_key(&d.name) {
                 return Err(format!(
@@ -347,14 +488,19 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
                     d.name
                 ));
             }
-            contract_cids.insert(d.name.clone(), m.cid.clone());
+            // Store content CID (signer-independent) for contractSetCid computation.
+            contract_cids.insert(d.name.clone(), ccid);
+            // Store attestation CID for bridge resolution (verifier looks up by attestation CID).
+            attestation_cids.insert(d.name.clone(), m.cid.clone());
             members.insert(m.cid, m.canonical_bytes);
         }
     }
 
-    // Mint each bridge, resolving contract-name targets to CIDs.
+    // Mint each bridge, resolving contract-name targets to attestation CIDs.
+    // The bridge's target_contract_cid must be the attestation CID (envelope hash)
+    // because the verifier resolves bridges by looking up mementos in the bundle.
     for b in &bridge_decls {
-        let target_cid = contract_cids
+        let target_cid = attestation_cids
             .get(&b.target_contract_name)
             .ok_or_else(|| {
                 format!(
@@ -409,11 +555,18 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
         return Err("internal: cid missing blake3-512 prefix".into());
     }
     let path = out_dir.join(format!("{cid}.proof", cid = built.cid));
-    std::fs::write(&path, &built.bytes)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    std::fs::write(&path, &built.bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
+
+    // Compute contractSetCid per spec #94 §1.
+    // contract_cids values are signer-independent content CIDs; compute set CID
+    // from them. The sort inside compute_contract_set_cid makes the result
+    // order-independent: two kits enumerating the same contracts in different
+    // order produce the same contractSetCid.
+    let contract_set_cid = compute_contract_set_cid(contract_cids.values().cloned().collect());
 
     Ok(MintResult {
         cid: built.cid,
+        contract_set_cid,
         bytes_len: built.bytes.len(),
         path,
         member_count,
@@ -424,7 +577,7 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Property tests — invariants the IR contracts gesture at, enforced in code.
+// Property tests: invariants the IR contracts gesture at, enforced in code.
 // ---------------------------------------------------------------------------
 //
 // The .proof verifier scans static IR. Behavioral parser invariants
@@ -447,8 +600,8 @@ mod tests {
     use provekit_ir_symbolic::parse::{parse_formula, ParseError};
     use provekit_ir_symbolic::serialize::{formula_to_value, marshal_declarations};
     use provekit_ir_symbolic::{
-        and_, atomic_, finish, gt, lt, make_var, must, not_, num, or_,
-        reset_collector, str_const, ContractDecl, Formula, Int, Term,
+        and_, atomic_, finish, gt, lt, make_var, must, not_, num, or_, reset_collector, str_const,
+        ContractDecl, Formula, Int, Term,
     };
     use std::rc::Rc;
 
@@ -546,7 +699,10 @@ mod tests {
     fn rejects_extra_key_on_var() {
         let raw = r#"{"kind":"var","name":"x","sort":{"kind":"primitive","name":"Int"}}"#;
         let v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        assert!(matches!(provekit_ir_symbolic::parse::parse_term(&v), Err(ParseError::ExtraKey { .. })));
+        assert!(matches!(
+            provekit_ir_symbolic::parse::parse_term(&v),
+            Err(ParseError::ExtraKey { .. })
+        ));
     }
 
     #[test]
@@ -571,7 +727,10 @@ mod tests {
     fn rejects_unknown_node_kind() {
         let raw = r#"{"kind":"xyzzy","args":[]}"#;
         let v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        assert!(matches!(parse_formula(&v), Err(ParseError::UnknownKind { .. })));
+        assert!(matches!(
+            parse_formula(&v),
+            Err(ParseError::UnknownKind { .. })
+        ));
     }
 
     // -- INVARIANT 3: locked key order on serialize ---------------------------
@@ -579,7 +738,10 @@ mod tests {
     #[test]
     fn marshal_emits_locked_key_order_for_contract() {
         reset_collector();
-        must("foo", forall_with_name("x".into(), gt(make_var("x"), num(0))));
+        must(
+            "foo",
+            forall_with_name("x".into(), gt(make_var("x"), num(0))),
+        );
         let decls = finish();
         let s = marshal_declarations(&decls);
         let i_kind = s.find(r#""kind":"contract""#).expect("kind first");
@@ -609,8 +771,7 @@ mod tests {
         // Within each slab the contract names must be distinct.
         let (slabs, _) = author_all_invariants();
         for slab in &slabs {
-            let mut names: Vec<&str> =
-                slab.contracts.iter().map(|d| d.name.as_str()).collect();
+            let mut names: Vec<&str> = slab.contracts.iter().map(|d| d.name.as_str()).collect();
             names.sort();
             let original_len = names.len();
             names.dedup();

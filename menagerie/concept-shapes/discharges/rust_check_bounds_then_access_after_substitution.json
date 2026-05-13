@@ -1,0 +1,149 @@
+{
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "guard": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "i"
+            },
+            {
+              "kind": "var",
+              "name": "len"
+            }
+          ],
+          "kind": "ctor",
+          "name": "<"
+        },
+        "index": "i",
+        "kind": "MemRead",
+        "target": "buf"
+      }
+    ]
+  },
+  "fn_name": "shape:check-bounds-then-access",
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Buffer"
+    },
+    {
+      "kind": "primitive",
+      "name": "Index"
+    },
+    {
+      "kind": "primitive",
+      "name": "Size"
+    },
+    {
+      "kind": "primitive",
+      "name": "Value"
+    }
+  ],
+  "formals": [
+    "buf",
+    "i",
+    "len",
+    "err"
+  ],
+  "kind": "AlgorithmMemento",
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "ret"
+          },
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "i"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "len"
+                  }
+                ],
+                "kind": "ctor",
+                "name": "<"
+              },
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "buf"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "i"
+                  }
+                ],
+                "kind": "ctor",
+                "name": "read"
+              },
+              {
+                "kind": "var",
+                "name": "err"
+              }
+            ],
+            "kind": "ctor",
+            "name": "ite"
+          }
+        ],
+        "kind": "atomic",
+        "name": "="
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "i"
+              },
+              {
+                "kind": "var",
+                "name": "len"
+              }
+            ],
+            "kind": "atomic",
+            "name": "<"
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "buf"
+              },
+              {
+                "kind": "var",
+                "name": "i"
+              }
+            ],
+            "kind": "atomic",
+            "name": "accessible"
+          }
+        ]
+      }
+    ]
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "protocol": "AMP",
+  "return_sort": {
+    "kind": "primitive",
+    "name": "Value"
+  },
+  "schema_version": "1"
+}

@@ -1,0 +1,37 @@
+name: Cross-cutting infra
+description: Substrate-side work that spans multiple kits or components.
+title: "[infra] <short title>"
+labels: ["area:dogfood"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For substrate-level work that touches multiple kits or components: mint pipeline,
+        linkerd dispatch consolidation, conformance gate, CI provisioning, etc.
+        Add `kit:*` / `component:*` / `protocol:*` / `area:*` labels as relevant.
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What needs to happen and why? Reference any spec, PR, or commit that motivates this.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What's in scope? What's explicitly out of scope?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What does done look like? Checklist preferred.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Files to touch, agents dispatched, blockers surfaced.

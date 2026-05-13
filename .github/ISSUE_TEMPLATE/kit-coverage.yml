@@ -1,0 +1,65 @@
+name: Kit coverage (4-component substrate)
+description: Track the four RPC components (IR, Lifters, Linker, LSP) for one language kit.
+title: "[kit:<lang>] 4-component substrate coverage"
+labels: ["component:ir", "component:lifter", "component:linker", "component:lsp"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Per the dogfood architecture, every kit exposes 4 RPC services to the Rust CLI.
+        One CLI, N kits: every component speaks canonical substrate RPC.
+        Tag this issue with the matching `kit:<lang>` label.
+  - type: dropdown
+    id: kit
+    attributes:
+      label: Language kit
+      options: [rust, go, java, python, typescript, csharp, cpp, swift, ruby, zig, c]
+    validations:
+      required: true
+  - type: checkboxes
+    id: ir
+    attributes:
+      label: 1. IR (canonical contracts mirrored from rust)
+      options:
+        - label: IR slab present at `implementations/<kit>/.../slabs/`
+        - label: All canonical contracts mirrored from `provekit-self-contracts/src/lift_plugin_protocol.rs` (currently C1-C8)
+        - label: Speaks substrate IR-RPC with the canonical wire shape
+  - type: checkboxes
+    id: lifters
+    attributes:
+      label: 2. Lifters (the family: IR kit + annotation + test + proptest + …)
+      options:
+        - label: IR-kit lifter (lifts hand-authored contract types)
+        - label: Annotation lifter (`//provekit:contract` markers or kit-equivalent)
+        - label: Test lifter (lifts test invariants)
+        - label: Property-test lifter (proptest / quickcheck / hypothesis)
+        - label: Other language-idiomatic lifters (bean validation / data annotations / decorators / macros / …)
+        - label: Each lifter speaks lift-protocol RPC
+  - type: checkboxes
+    id: linker
+    attributes:
+      label: 3. Linker
+      options:
+        - label: Cross-kit bridge linkage participation per spec #114
+        - label: Linkerd dispatch arm at `implementations/rust/provekit-linkerd/src/methods.rs` invokes the kit's binary (not `LifterUnavailable`)
+  - type: checkboxes
+    id: lsp
+    attributes:
+      label: 4. LSP
+      options:
+        - label: "`provekit-lsp-<kit>` binary on PATH"
+        - label: Speaks parse-protocol (`{path, source} → {declarations, callEdges, warnings}` as JSON arrays)
+        - label: Integration tests pass
+  - type: checkboxes
+    id: dogfood
+    attributes:
+      label: Conformance dogfood
+      options:
+        - label: "`.provekit/self-contracts-attestations/<kit>.json` produced via substrate-side mint (no kit-specific mint code)"
+        - label: "`provekit prove --kit=<kit>` passes against canonical contracts"
+        - label: Bundle CID is real (not a placeholder)
+  - type: textarea
+    id: status
+    attributes:
+      label: Status notes
+      description: Recent commits, blockers, and pending follow-ups for this kit.

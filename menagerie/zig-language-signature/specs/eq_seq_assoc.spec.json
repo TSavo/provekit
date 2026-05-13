@@ -1,0 +1,25 @@
+{
+  "kind": "equation",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:seq-assoc",
+  "formals": [
+    "a",
+    "b",
+    "c"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "law": "seq(seq(a,b),c)=seq(a,seq(b,c))"
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

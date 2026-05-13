@@ -1,0 +1,134 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:41f17b869840c3b1430254a1cc88feec172fd5d5abc1d4f25f4a23faa1142e4d0fa9d6e95659ea022d08a060ff2d892a7945e41c404dbba4a0023f5c5dbbc061",
+  "name": "ruby:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:41f17b869840c3b1430254a1cc88feec172fd5d5abc1d4f25f4a23faa1142e4d0fa9d6e95659ea022d08a060ff2d892a7945e41c404dbba4a0023f5c5dbbc061",
+      "name": "ruby:seq",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:6f130e6b2e64e61aacebc8af60f34d2a16ae2a644264a7c7b39ddbc79b4d75da922ce14e178a30d669ebe75f1d084a8acfd18d97aa2b9b4d5d096bbd7910a413",
+          "name": "ruby:decl",
+          "args": [
+            {
+              "kind": "var",
+              "name": "y"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:312271d461261494f3b73fc28d892f80869406daf97ebb1b8e4171ec648d6a372e81cd4ed803cccb8be0a3af7a01c65e814a602c6bf9fc19ad4617aed5b3bd68",
+          "name": "ruby:if",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:567d531f447a799e5920d31e11bdae778b7e3b403a2bde27dbea5e81667d28ac631818831ebf61242ffe56b12c35a92eb5e310ffeae3c6af54ea6fe1a6a9cc81",
+              "name": "ruby:and",
+              "args": [
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:4882cf28a1abbc9298d52eef4abc60cf796ffc213a6426dc15cad403eabc86f2b1e86564b1d4372d5b6ff753a7f4236f471cb67b8375d2f48944f993d792ad4d",
+                  "name": "ruby:gt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 0,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:5ddda889927ffa8780fd876745a5ed7768c5451940941dad8972dc3ec912ea315bea92d7b24816c991eeea380cd7dd82f2ef19b135a80366cc8522e268b589d2",
+                  "name": "ruby:lt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 10,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:8c9fb555f7ecf9ee51a5a167e5a1aa461cd885ed6bbb3d81a8b9de9599481ddee5e7a1855e7f7c628e43ff09517eec7d41bc88f345db58d23b2c0a6e38160c72",
+              "name": "ruby:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 1,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:8c9fb555f7ecf9ee51a5a167e5a1aa461cd885ed6bbb3d81a8b9de9599481ddee5e7a1855e7f7c628e43ff09517eec7d41bc88f345db58d23b2c0a6e38160c72",
+              "name": "ruby:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 2,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:905a4396c92e59635b43da2f86aaea8d4cb665bd544c4210b08af5c8f82004fc1051f6c01801921e1c2be0f2b7dd1ffbe754705ced2d7576450eafa545b49ce6",
+      "name": "ruby:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "y"
+        }
+      ]
+    }
+  ]
+}

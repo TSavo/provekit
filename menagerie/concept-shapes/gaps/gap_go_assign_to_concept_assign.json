@@ -1,0 +1,119 @@
+{
+  "fn_name": "gap:go:assign:to:concept:assign",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "MemWrite"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Write"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Writes"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Identifier"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "LValue"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Identifier",
+          "Term"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target",
+              "slot_sort": "Identifier"
+            },
+            {
+              "name": "value",
+              "slot_sort": "Term"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "assign",
+        "result": "Term",
+        "wp": "Go assignment statement"
+      },
+      "want": {
+        "arity": [
+          "LValue",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "assign",
+        "result": "Stmt",
+        "wp_note": "store value into target and update state"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Identifier\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:450a5d2255b41207397203d750e67efc9ce71bbb01b4b8c1d80286eda5a8904a137b68b4367ba2744054b3d33f90ad25f92c7176184a3822af31a6fb0a30ea46",
+  "target_concept_op": "concept:assign",
+  "target_op_cid": "blake3-512:c92de23581656b0f75bdeff5efe428c33b0088c43f28a35fa50ad77b73f5e13f60078d66c22cfed80d7764224d5647522e92d18de9e8808a19ae31fc4b1b389a"
+}

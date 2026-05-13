@@ -9,61 +9,56 @@ require "json"
 
 module Provekit
   module IR
-    # -- Sort ----------------------------------------------------
+    # ── Sort ────────────────────────────────────────────────────
 
-    Sort = Struct.new(:name) do
-      def self.Int
-        new("Int")
-      end
-
-      def self.Real
-        new("Real")
-      end
-
-      def self.String
-        new("String")
-      end
-
-      def self.Bool
-        new("Bool")
-      end
-
-      def self.Ref
-        new("Ref")
-      end
-
-      def self.Node
-        new("Node")
-      end
+    PrimitiveSort = Struct.new(:name) do
+      def self.Int    = new("Int")
+      def self.Real   = new("Real")
+      def self.String = new("String")
+      def self.Bool   = new("Bool")
+      def self.Ref    = new("Ref")
+      def self.Node   = new("Node")
     end
 
-    # -- Term ----------------------------------------------------
+    FunctionSort = Struct.new(:args, :return_) do
+    end
+
+    DependentSort = Struct.new(:name, :index_var, :index_sort) do
+    end
+
+    RegionSort = Struct.new(:name) do
+      def kind = "region"
+    end
+
+    Sort = PrimitiveSort
+
+    # ── Term ────────────────────────────────────────────────────
 
     def self.var(name:)
       { kind: :var, name: name }
     end
 
     def self.num(value)
-      { kind: :const, value: value.to_i, sort: Sort.Int }
+      { kind: :const, value: value.to_i, sort: PrimitiveSort.Int }
     end
 
     def self.str(value)
-      { kind: :const, value: value.to_s, sort: Sort.String }
+      { kind: :const, value: value.to_s, sort: PrimitiveSort.String }
     end
 
     def self.bool(value)
-      { kind: :const, value: !!value, sort: Sort.Bool }
+      { kind: :const, value: !!value, sort: PrimitiveSort.Bool }
     end
 
     def self.null_ref
-      { kind: :const, value: nil, sort: Sort.Ref }
+      { kind: :const, value: nil, sort: PrimitiveSort.Ref }
     end
 
     def self.ctor(name, *args)
       { kind: :ctor, name: name.to_s, args: args.flatten }
     end
 
-    # -- Formula -------------------------------------------------
+    # ── Formula ─────────────────────────────────────────────────
 
     def self.atomic(name, *args)
       { kind: :atomic, name: name.to_s, args: args.flatten }
@@ -73,50 +68,21 @@ module Provekit
       { kind: kind.to_s, operands: operands.flatten }
     end
 
-    def self.eq(a, b)
-      atomic("=", a, b)
-    end
-
-    def self.neq(a, b)
-      atomic("!=", a, b)
-    end
-
-    def self.gt(a, b)
-      atomic(">", a, b)
-    end
-
-    def self.gte(a, b)
-      atomic(">=", a, b)
-    end
-
-    def self.lt(a, b)
-      atomic("<", a, b)
-    end
-
-    def self.lte(a, b)
-      atomic("<=", a, b)
-    end
-
-    def self.and(*ops)
-      connective(:and, *ops)
-    end
-
-    def self.or_(*ops)
-      connective(:or, *ops)
-    end
-
-    def self.implies(a, b)
-      connective(:implies, a, b)
-    end
-
-    def self.not_(a)
-      connective(:not, a)
-    end
+    def self.eq(a, b)     = atomic("=", a, b)
+    def self.neq(a, b)    = atomic("≠", a, b)
+    def self.gt(a, b)     = atomic(">", a, b)
+    def self.gte(a, b)    = atomic("≥", a, b)
+    def self.lt(a, b)     = atomic("<", a, b)
+    def self.lte(a, b)    = atomic("≤", a, b)
+    def self.and(*ops)    = connective(:and, *ops)
+    def self.or_(*ops)    = connective(:or, *ops)
+    def self.implies(a, b) = connective(:implies, a, b)
+    def self.not_(a)      = connective(:not, a)
     def self.forall(name:, sort:, body:)
       { kind: "forall", name: name.to_s, sort: sort, body: body }
     end
 
-    # -- Declaration ---------------------------------------------
+    # ── Declaration ─────────────────────────────────────────────
 
     ContractDecl = Struct.new(:name, :out_binding, :pre, :post, :inv, keyword_init: true) do
       def initialize(name:, out_binding: "out", pre: nil, post: nil, inv: nil)
@@ -124,13 +90,53 @@ module Provekit
       end
     end
 
-    # -- JCS canonical JSON emitter ------------------------------
+    # Call-edge memento per spec #114 R1.
+    # Emitted for each FFI call site where the calling function has a known
+    # contract. When targeting a cross-kit symbol, target_contract_cid is nil
+    # and target_symbol is populated with "<kit>:<native-name>" for linker
+    # resolution per R3.
+    CallEdgeDecl = Struct.new(
+      :source_contract_cid,
+      :target_contract_cid,
+      :target_symbol,
+      :call_site_file,
+      :call_site_line,
+      :call_site_column,
+      :evidence_term,
+      keyword_init: true,
+    )
+
+    # Bridge declaration. Locked spec key order:
+    #   kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+    #   targetContractCid, targetProofCid, targetLayer, notes (optional).
+    # `notes` is OMITTED entirely when nil: never emitted as null.
+    # Ruby Struct fields are snake_case; the JSON keys are camelCase
+    # and produced by the marshaler, not by `to_h`.
+    Bridge = Struct.new(
+      :name,
+      :source_symbol,
+      :source_layer,
+      :source_contract_cid,
+      :target_contract_cid,
+      :target_proof_cid,
+      :target_layer,
+      :notes,
+      keyword_init: true,
+    ) do
+      def initialize(name:, source_symbol:, source_layer:,
+                     source_contract_cid:, target_contract_cid:,
+                     target_proof_cid:, target_layer:, notes: nil)
+        super
+      end
+    end
+
+    # ── JCS canonical JSON emitter ──────────────────────────────
 
     module Jcs
       def self.encode(value)
         case value
         when Symbol
-          # Symbol values in IR -> string (e.g., :atomic -> "atomic")
+          # Symbol values in IR → string (e.g., :atomic → "atomic")
           emit_string(value.to_s)
         when nil
           emit_const(nil)
@@ -184,7 +190,19 @@ module Provekit
       end
 
       def self.emit_sort(sort)
-        %({"kind":"primitive","name":#{emit_string(sort.name)}})
+        case sort
+        when PrimitiveSort
+          %({"kind":"primitive","name":#{emit_string(sort.name)}})
+        when FunctionSort
+          args_json = "[#{sort.args.map { |a| encode(a) }.join(',')}]"
+          %({"kind":"function","args":#{args_json},"return":#{encode(sort.return_)}})
+        when DependentSort
+          %({"kind":"dependent","name":#{emit_string(sort.name)},"indexVar":#{emit_string(sort.index_var)},"indexSort":#{emit_sort(sort.index_sort)}})
+        when RegionSort
+          %({"kind":"region","name":#{emit_string(sort.name)}})
+        else
+          raise "unknown sort: #{sort.class}"
+        end
       end
 
       def self.emit_const(value)
@@ -199,19 +217,66 @@ module Provekit
       end
     end
 
-    # -- Declaration marshaling ----------------------------------
+    # ── Call-edge marshaling ──────────────────────────────────
+
+    # Serialize a list of CallEdgeDecl to JCS JSON (sorted by file/line/col
+    # for byte-deterministic output per spec #114 R5).
+    def self.marshal_call_edges(edges)
+      sorted = edges.sort_by do |e|
+        [e.call_site_file.to_s, e.call_site_line.to_i, e.call_site_column.to_i]
+      end
+      arr = sorted.map do |e|
+        obj = {
+          callSiteColumn: e.call_site_column,
+          callSiteFile:   e.call_site_file,
+          callSiteLine:   e.call_site_line,
+          evidenceTerm:   e.evidence_term,
+          kind:           "call-edge",
+          schemaVersion:  "1",
+          sourceContractCid: e.source_contract_cid,
+          targetSymbol:   e.target_symbol,
+        }
+        # targetContractCid is omitted when nil (cross-kit call)
+        obj[:targetContractCid] = e.target_contract_cid unless e.target_contract_cid.nil?
+        obj
+      end
+      Jcs.encode(arr)
+    end
+
+    # ── Declaration marshaling ──────────────────────────────────
 
     def self.marshal_declarations(decls)
       arr = decls.map do |d|
-        obj = {
-          kind: "contract",
-          name: d.name,
-          outBinding: d.out_binding,
-        }
-        obj[:pre]  = d.pre  if d.pre
-        obj[:post] = d.post if d.post
-        obj[:inv]  = d.inv  if d.inv
-        obj
+        case d
+        when Bridge
+          obj = {
+            kind: "bridge",
+            name: d.name,
+            sourceSymbol: d.source_symbol,
+            sourceLayer: d.source_layer,
+            sourceContractCid: d.source_contract_cid,
+            targetContractCid: d.target_contract_cid,
+            targetProofCid: d.target_proof_cid,
+            targetLayer: d.target_layer,
+          }
+          # `notes` is omitted entirely when nil; never emitted as null.
+          # This is the byte-equality rule that keeps every kit in sync
+          # (spec 2026-04-30-ir-formal-grammar.md §BridgeDeclaration).
+          obj[:notes] = d.notes if d.notes
+          obj
+        when ContractDecl
+          obj = {
+            kind: "contract",
+            name: d.name,
+            outBinding: d.out_binding,
+          }
+          obj[:pre]  = d.pre  if d.pre
+          obj[:post] = d.post if d.post
+          obj[:inv]  = d.inv  if d.inv
+          obj
+        else
+          raise "unknown declaration type: #{d.class}"
+        end
       end
       Jcs.encode(arr)
     end

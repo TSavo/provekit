@@ -86,22 +86,72 @@ func (s tupleSort) MarshalJSON() ([]byte, error) {
 }
 
 type funcSort struct {
-	Domain []Sort
-	Range  Sort
+	Args   []Sort
+	Return Sort
 }
 
 func (funcSort) sortMarker() {}
 
 func (s funcSort) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"function","domain":`)
-	encoded, err := encodeJSON(s.Domain)
+	buf.WriteString(`{"kind":"function","args":`)
+	encoded, err := encodeJSON(s.Args)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(`,"range":`)
-	encoded, err = encodeJSON(s.Range)
+	buf.WriteString(`,"return":`)
+	encoded, err = encodeJSON(s.Return)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+type dependentSort struct {
+	Name      string
+	IndexVar  string
+	IndexSort Sort
+}
+
+func (dependentSort) sortMarker() {}
+
+func (s dependentSort) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"dependent","name":`)
+	encoded, err := encodeJSON(s.Name)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"indexVar":`)
+	encoded, err = encodeJSON(s.IndexVar)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"indexSort":`)
+	encoded, err = encodeJSON(s.IndexSort)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+type regionSort struct {
+	Name string
+}
+
+func (regionSort) sortMarker() {}
+
+func (s regionSort) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"region","name":`)
+	encoded, err := encodeJSON(s.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +170,10 @@ var (
 	Edge   Sort = primitiveSort{Name: "Edge"}
 )
 
-func SetOf(element Sort) Sort                { return setSort{Element: element} }
-func TupleOf(elements ...Sort) Sort          { return tupleSort{Elements: elements} }
-func FuncOf(domain []Sort, range_ Sort) Sort { return funcSort{Domain: domain, Range: range_} }
+func SetOf(element Sort) Sort           { return setSort{Element: element} }
+func TupleOf(elements ...Sort) Sort     { return tupleSort{Elements: elements} }
+func FuncOf(args []Sort, ret Sort) Sort { return funcSort{Args: args, Return: ret} }
+func RegionOf(name string) Sort         { return regionSort{Name: name} }
 
 // ----------------------------------------------------------------------
 // Term: VarTerm (no sort in JSON), ConstTerm (sort kept), CtorTerm (no
@@ -170,14 +221,14 @@ func (t constTerm) TermSort() Sort { return t.Sort }
 
 func (t constTerm) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"const","value":`)
-	encoded, err := encodeJSON(t.Value)
+	buf.WriteString(`{"kind":"const","sort":`)
+	encoded, err := encodeJSON(t.Sort)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(`,"sort":`)
-	encoded, err = encodeJSON(t.Sort)
+	buf.WriteString(`,"value":`)
+	encoded, err = encodeJSON(t.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -197,14 +248,14 @@ func (t ctorTerm) TermSort() Sort { return t.Sort }
 
 func (t ctorTerm) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"ctor","name":`)
-	encoded, err := encodeJSON(t.Name)
+	buf.WriteString(`{"args":`)
+	encoded, err := marshalTerms(t.Args)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(`,"args":`)
-	encoded, err = marshalTerms(t.Args)
+	buf.WriteString(`,"kind":"ctor","name":`)
+	encoded, err = encodeJSON(t.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -243,20 +294,20 @@ func (t lambdaTerm) TermSort() Sort { return t.Sort }
 
 func (t lambdaTerm) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"lambda","paramName":`)
-	encoded, err := encodeJSON(t.ParamName)
+	buf.WriteString("{\"body\":")
+	encoded, err := encodeJSON(t.Body)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"kind":"lambda","paramName":`)
+	encoded, err = encodeJSON(t.ParamName)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
 	buf.WriteString(",\"paramSort\":")
 	encoded, err = encodeJSON(t.ParamSort)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteString(",\"body\":")
-	encoded, err = encodeJSON(t.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -283,19 +334,19 @@ func (t letTerm) TermSort() Sort { return t.Sort }
 
 func (t letTerm) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"let","bindings":[`)
+	buf.WriteString(`{"bindings":[`)
 	for i, b := range t.Bindings {
 		if i > 0 {
 			buf.WriteByte(',')
 		}
-		buf.WriteString(`{"name":`)
-		encoded, err := encodeJSON(b.Name)
+		buf.WriteString(`{"boundTerm":`)
+		encoded, err := encodeJSON(b.BoundTerm)
 		if err != nil {
 			return nil, err
 		}
 		buf.Write(encoded)
-		buf.WriteString(",\"boundTerm\":")
-		encoded, err = encodeJSON(b.BoundTerm)
+		buf.WriteString(",\"name\":")
+		encoded, err = encodeJSON(b.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -308,7 +359,7 @@ func (t letTerm) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteByte('}')
+	buf.WriteString(",\"kind\":\"let\"}")
 	return buf.Bytes(), nil
 }
 
@@ -337,8 +388,14 @@ func (quantFormula) formulaMarker() {}
 
 func (f quantFormula) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":`)
-	encoded, err := encodeJSON(f.Kind)
+	buf.WriteString(`{"body":`)
+	encoded, err := encodeJSON(f.Body)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"kind":`)
+	encoded, err = encodeJSON(f.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -351,12 +408,6 @@ func (f quantFormula) MarshalJSON() ([]byte, error) {
 	buf.Write(encoded)
 	buf.WriteString(`,"sort":`)
 	encoded, err = encodeJSON(f.Sort)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteString(`,"body":`)
-	encoded, err = encodeJSON(f.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -402,14 +453,14 @@ func (atomicFormula) formulaMarker() {}
 
 func (f atomicFormula) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"atomic","name":`)
-	encoded, err := encodeJSON(f.Name)
+	buf.WriteString(`{"args":`)
+	encoded, err := marshalTerms(f.Args)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(`,"args":`)
-	encoded, err = marshalTerms(f.Args)
+	buf.WriteString(`,"kind":"atomic","name":`)
+	encoded, err = encodeJSON(f.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -429,20 +480,20 @@ func (choiceFormula) formulaMarker() {}
 
 func (f choiceFormula) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"choice","varName":`)
-	encoded, err := encodeJSON(f.VarName)
+	buf.WriteString("{\"body\":")
+	encoded, err := encodeJSON(f.Body)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(",\"sort\":")
+	buf.WriteString(`,"kind":"choice","sort":`)
 	encoded, err = encodeJSON(f.Sort)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(",\"body\":")
-	encoded, err = encodeJSON(f.Body)
+	buf.WriteString(",\"varName\":")
+	encoded, err = encodeJSON(f.VarName)
 	if err != nil {
 		return nil, err
 	}

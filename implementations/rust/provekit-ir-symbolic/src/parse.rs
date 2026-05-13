@@ -12,22 +12,22 @@
 //
 // Closed-object policy: nodes carry exactly the keys their grammar
 // production names. Extra fields are rejected loud (RuleViolation::ExtraKey).
-// `VarTerm` and `CtorTerm` post-v1.1.0 carry no `sort` — the parser
+// `VarTerm` and `CtorTerm` post-v1.1.0 carry no `sort`: the parser
 // rejects strays.
 //
 // Strict-mode arity rules per the grammar:
-//   - `not`     — exactly 1 operand
-//   - `implies` — exactly 2 operands
-//   - `and` / `or` — 2+ operands
+//   - `not`: exactly 1 operand
+//   - `implies`: exactly 2 operands
+//   - `and` / `or`: 2+ operands
 
 use std::rc::Rc;
 
 use serde_json::Value as Json;
 
 use crate::{
-    and_, atomic_, contract, exists, finish, forall, implies, make_var, not_,
-    num, or_, reset_collector, str_const, ConstValue, ContractArgs,
-    ContractDecl, EvidenceCertificate, EvidenceTerm, Formula, Sort, Term,
+    and_, atomic_, contract, exists, finish, forall, implies, make_var, not_, num, or_,
+    reset_collector, str_const, ConstValue, ContractArgs, ContractDecl, EvidenceCertificate,
+    EvidenceTerm, Formula, Sort, Term,
 };
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -55,7 +55,7 @@ pub enum ParseError {
         expected: String,
         actual: usize,
     },
-    #[error("parse: at {path}: empty contract — at least one of pre/post/inv required")]
+    #[error("parse: at {path}: empty contract: at least one of pre/post/inv required")]
     EmptyContract { path: String },
     #[error("parse: invalid JSON: {0}")]
     InvalidJson(String),
@@ -69,8 +69,7 @@ pub enum ParseError {
 /// `mint_bridge`); the kit-emitted document the serializer produces is
 /// only contracts. This matches the spec's ContractDeclaration shape.
 pub fn parse_document(json: &str) -> Result<Vec<ContractDecl>, ParseError> {
-    let v: Json = serde_json::from_str(json)
-        .map_err(|e| ParseError::InvalidJson(e.to_string()))?;
+    let v: Json = serde_json::from_str(json).map_err(|e| ParseError::InvalidJson(e.to_string()))?;
     let arr = v.as_array().ok_or_else(|| ParseError::Mismatch {
         path: "$".into(),
         expected: "array of declarations".into(),
@@ -117,7 +116,15 @@ pub fn parse_sort(v: &Json) -> Result<Sort, ParseError> {
 
 fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError> {
     let obj = require_object(v, path, "contract")?;
-    let allowed = &["kind", "name", "outBinding", "pre", "post", "inv", "evidence"];
+    let allowed = &[
+        "kind",
+        "name",
+        "outBinding",
+        "pre",
+        "post",
+        "inv",
+        "evidence",
+    ];
     reject_extra_keys(obj, allowed, path, "contract")?;
 
     let kind = require_string(obj, "kind", path)?;
@@ -294,7 +301,11 @@ fn parse_formula_at(v: &Json, path: &str) -> Result<Rc<Formula>, ParseError> {
             let sort = parse_sort_at(sort_v, &format!("{path}.sort"))?;
             let body_v = require_field(obj, "body", path)?;
             let body = parse_formula_at(body_v, &format!("{path}.body"))?;
-            Ok(Rc::new(Formula::Choice { var_name, sort, body }))
+            Ok(Rc::new(Formula::Choice {
+                var_name,
+                sort,
+                body,
+            }))
         }
         other => Err(ParseError::UnknownKind {
             path: path.into(),
@@ -365,25 +376,38 @@ fn parse_term_at(v: &Json, path: &str) -> Result<Rc<Term>, ParseError> {
             Ok(Rc::new(Term::Ctor { name, args: terms }))
         }
         "lambda" => {
-            reject_extra_keys(obj, &["kind", "paramName", "paramSort", "body"], path, "lambda")?;
+            reject_extra_keys(
+                obj,
+                &["kind", "paramName", "paramSort", "body"],
+                path,
+                "lambda",
+            )?;
             let param_name = require_string(obj, "paramName", path)?;
             let param_sort_v = require_field(obj, "paramSort", path)?;
             let param_sort = parse_sort_at(param_sort_v, &format!("{path}.paramSort"))?;
             let body_v = require_field(obj, "body", path)?;
             let body = parse_term_at(body_v, &format!("{path}.body"))?;
-            Ok(Rc::new(Term::Lambda { param_name, param_sort, body }))
+            Ok(Rc::new(Term::Lambda {
+                param_name,
+                param_sort,
+                body,
+            }))
         }
         "let" => {
             reject_extra_keys(obj, &["kind", "bindings", "body"], path, "let")?;
             let bindings_v = require_field(obj, "bindings", path)?;
-            let bindings_arr = require_array(bindings_v, &format!("{path}.bindings"), "let.bindings")?;
+            let bindings_arr =
+                require_array(bindings_v, &format!("{path}.bindings"), "let.bindings")?;
             let mut bindings = Vec::with_capacity(bindings_arr.len());
             for (i, b) in bindings_arr.iter().enumerate() {
                 let b_obj = require_object(b, &format!("{path}.bindings[{i}]"), "binding")?;
                 let b_name = require_string(b_obj, "name", &format!("{path}.bindings[{i}]"))?;
                 let b_term_v = require_field(b_obj, "boundTerm", &format!("{path}.bindings[{i}]"))?;
                 let b_term = parse_term_at(b_term_v, &format!("{path}.bindings[{i}].boundTerm"))?;
-                bindings.push(crate::LetBinding { name: b_name, bound_term: b_term });
+                bindings.push(crate::LetBinding {
+                    name: b_name,
+                    bound_term: b_term,
+                });
             }
             let body_v = require_field(obj, "body", path)?;
             let body = parse_term_at(body_v, &format!("{path}.body"))?;
@@ -410,7 +434,9 @@ fn parse_sort_at(v: &Json, path: &str) -> Result<Sort, ParseError> {
         // We surface this honestly rather than silently dropping data.
         other @ ("bitvec" | "set" | "tuple" | "function") => Err(ParseError::Mismatch {
             path: path.into(),
-            expected: "primitive sort (Rust kit limitation; bitvec/set/tuple/function not yet typed)".into(),
+            expected:
+                "primitive sort (Rust kit limitation; bitvec/set/tuple/function not yet typed)"
+                    .into(),
             actual: format!("{other} sort"),
         }),
         other => Err(ParseError::UnknownKind {
@@ -471,11 +497,7 @@ fn require_string(
         })
 }
 
-fn require_array<'a>(
-    v: &'a Json,
-    path: &str,
-    label: &str,
-) -> Result<&'a Vec<Json>, ParseError> {
+fn require_array<'a>(v: &'a Json, path: &str, label: &str) -> Result<&'a Vec<Json>, ParseError> {
     v.as_array().ok_or_else(|| ParseError::Mismatch {
         path: path.into(),
         expected: format!("array ({label})"),
@@ -490,7 +512,7 @@ fn reject_extra_keys(
     kind: &str,
 ) -> Result<(), ParseError> {
     for (k, _) in obj {
-        if !allowed.iter().any(|a| *a == k.as_str()) {
+        if !allowed.contains(&k.as_str()) {
             return Err(ParseError::ExtraKey {
                 path: path.into(),
                 key: k.clone(),
@@ -523,10 +545,7 @@ fn _unused_str_const_for_proptest_exemplar() -> Rc<Term> {
 mod tests {
     use super::*;
     use crate::serialize::{formula_to_value, marshal_declarations};
-    use crate::{
-        and_, eq, gt, lt, must, not_, num, or_, reset_collector, str_const,
-        ConstValue,
-    };
+    use crate::{and_, eq, gt, lt, must, not_, num, or_, reset_collector, str_const, ConstValue};
 
     fn jcs_to_json(v: &std::sync::Arc<provekit_canonicalizer::Value>) -> Json {
         // Round-trip through JCS string -> serde_json::Value for tests.
@@ -607,8 +626,14 @@ mod tests {
     #[test]
     fn round_trip_document_via_marshal() {
         reset_collector();
-        must("compute_cid", crate::forall(crate::String_(), |s| eq(s.clone(), s)));
-        must("BLAKE3_512", crate::forall(crate::String_(), |s| eq(s.clone(), s)));
+        must(
+            "compute_cid",
+            crate::forall(crate::String_(), |s| eq(s.clone(), s)),
+        );
+        must(
+            "BLAKE3_512",
+            crate::forall(crate::String_(), |s| eq(s.clone(), s)),
+        );
         let decls = finish();
         let doc = marshal_declarations(&decls);
         let parsed = parse_document(&doc).expect("parse_document");
@@ -689,10 +714,8 @@ mod tests {
 
     #[test]
     fn rejects_empty_contract() {
-        let j: Json = serde_json::from_str(
-            r#"{"kind":"contract","name":"x","outBinding":"out"}"#,
-        )
-        .unwrap();
+        let j: Json =
+            serde_json::from_str(r#"{"kind":"contract","name":"x","outBinding":"out"}"#).unwrap();
         let r = parse_contract(&j);
         assert!(matches!(r, Err(ParseError::EmptyContract { .. })));
     }
@@ -730,7 +753,10 @@ mod tests {
         let j = jcs_to_json(&v);
         let parsed = parse_term(&j).expect("parse");
         match parsed.as_ref() {
-            Term::Const { value: ConstValue::Int(42), .. } => {}
+            Term::Const {
+                value: ConstValue::Int(42),
+                ..
+            } => {}
             other => panic!("expected Const Int 42, got {other:?}"),
         }
     }

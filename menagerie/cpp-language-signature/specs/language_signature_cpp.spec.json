@@ -1,0 +1,10 @@
+{
+  "kind": "language-signature",
+  "name": "cpp-source",
+  "version": "0.1.0-draft",
+  "namespace": "cpp",
+  "operations": "menagerie/cpp-language-signature/specs/op_*.spec.json",
+  "sorts": "menagerie/cpp-language-signature/specs/sort_*.spec.json",
+  "effects": "menagerie/cpp-language-signature/specs/eff*.spec.json",
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

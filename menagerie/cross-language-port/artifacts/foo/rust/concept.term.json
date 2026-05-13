@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504",
+  "name": "concept:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:40d7790bd82a90175e5ffa7f0a3b4587c274d60a35065693eaa503f68bf8d1039839eb6687831dd7a66c9b45fcb57ec9eac68cf01f6b600afe6dd5a832c76492",
+      "name": "concept:conditional",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:6416cb7457c857c60cd901a01edddb95fed1cd8f890ab6a37c874edcdb7125e5308cfdba63247e84abde588e4f555ebdd4020f7362a3f7c8746bae338f57d522",
+          "name": "concept:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:29e5e9e537f55d701ce6d342fde2c39a4b7158655c77ee08788fac213cbd866cb308f283e0852fccecdc21f0bfdf533fa0592008d80449a5db1a2c265d362f9f",
+          "name": "concept:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb",
+          "name": "concept:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:29e5e9e537f55d701ce6d342fde2c39a4b7158655c77ee08788fac213cbd866cb308f283e0852fccecdc21f0bfdf533fa0592008d80449a5db1a2c265d362f9f",
+      "name": "concept:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

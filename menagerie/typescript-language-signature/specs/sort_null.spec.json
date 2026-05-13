@@ -1,0 +1,16 @@
+{
+  "kind": "sort",
+  "fn_name": "ts:Null",
+  "version": "0.1.0-draft",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Null",
+    "description": "JavaScript null literal."
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#sorts"
+}

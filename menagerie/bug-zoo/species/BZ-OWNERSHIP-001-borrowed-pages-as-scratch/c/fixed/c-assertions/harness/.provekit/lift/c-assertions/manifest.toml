@@ -1,0 +1,11 @@
+name = "c-assertions"
+version = "1.0.0"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+command = ["../kit-rpc/run-c-lifter.sh", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["c-assertions"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

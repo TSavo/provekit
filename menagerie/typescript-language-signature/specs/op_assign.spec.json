@@ -1,0 +1,61 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ts:assign",
+  "version": "0.1.0-draft",
+  "formals": [
+    "target",
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "LValue",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "assign",
+    "arity": [
+      "LValue",
+      "Expr"
+    ],
+    "result": "Stmt",
+    "wp": "store value into target and update state",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "target"
+        },
+        {
+          "name": "value"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Write"
+      }
+    ]
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#operations"
+}

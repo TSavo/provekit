@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit must <file> "<english>"` — translate English to a verified
+// `provekit must <file> "<english>"`: translate English to a verified
 // contract via the configured agent. Drives the propose / validate /
 // mint loop and writes the minted contract memento.
 
 use std::path::PathBuf;
 
 use clap::Parser;
-use provekit_agent::{
-    run_must_loop, MustContext, MustLoopOptions, ProvekitAgent, StubAgent,
-};
+use provekit_agent::{run_must_loop, MustContext, MustLoopOptions, ProvekitAgent, StubAgent};
 
 use crate::project_config::{read_project_config, read_user_config};
 use crate::prompts::{resolve_prompt, substitute, PromptCommand, PromptOverrides};

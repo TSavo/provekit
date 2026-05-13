@@ -1,0 +1,47 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "zig:unreachable",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "unreachable",
+      "arity": [],
+      "result": "Bottom",
+      "wp": "unreachable divergence",
+      "arity_shape": {
+        "kind": "positional",
+        "arity": 0
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Panic"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bottom",
+      "args": []
+    },
+    "locus": "menagerie/zig-language-signature/README.md"
+  },
+  "cid": "blake3-512:f97e2a6b06aa79a6a7e6619aad10a2042fd5072e8d31b513cce1ac159636702aee3e6cd7e8352ad5e2a7c001501ead2020231f9b896975ac64fed968f220a4ae",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "SN87q5gtwNoonyGMByE5aJQDOWQQiQmjFef0kSk0ot9P46cOj4tZOwHvXU87+c8HNYCD2KSi8cCACPY6tvqYCg=="
+  }
+}

@@ -1,0 +1,44 @@
+id: BZ-SHAPE-007
+name: Polyglot Link Obligation
+kingdom: shape
+status: lab
+predicates:
+  boundary: post_caller
+  sink: pre_callee
+  missingEdge: post_caller => pre_callee
+languages:
+  - id: rust-go
+    surface: rust-go-cgo-link
+    paths:
+      labLibrary: rust-go/lab/library
+      labHarness: rust-go/lab/harness
+    commands:
+      hostCheck:
+        cwd: rust-go/lab/harness
+        argv: ["./run.sh"]
+    exhibits: []
+    linkExhibits:
+      - id: cgo-rust-callee
+        surface: rust-go-cgo-link
+        project: rust-go/exhibit/cgo-rust-callee/harness
+        goLspBin: rust-go/kit-rpc/run-go-lsp.sh
+        linkBundleFile: rust-go/exhibit/cgo-rust-callee/harness/link-bundle.json
+        diagnosticFile: rust-go/exhibit/cgo-rust-callee/expected-diagnostic.txt
+        fixed:
+          project: rust-go/fixed/cgo-rust-callee/harness
+          linkBundleFile: rust-go/fixed/cgo-rust-callee/harness/link-bundle.json
+          diagnosticFile: rust-go/fixed/cgo-rust-callee/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - Go cgo implementation mechanics
+            - Rust function body
+            - concrete linker process output formatting
+          preserved:
+            - Rust callee precondition n > 0
+            - Go-to-Rust call edge rust-kit:process
+            - missing link obligation post_caller => pre_callee
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: rust-go/exhibit/sat-witness.json
+wildSightings: []

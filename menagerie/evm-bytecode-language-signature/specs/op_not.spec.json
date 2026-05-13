@@ -1,0 +1,43 @@
+{
+  "kind": "algorithm",
+  "fn_name": "evm:not",
+  "formals": [
+    "value"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "EvmWord",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "EvmWord",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "evm:not",
+    "arity": [
+      "EvmWord"
+    ],
+    "result": "EvmWord",
+    "wp": "bitwise complement of an EVM word",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "locus": "menagerie/evm-bytecode-language-signature/README.md#operations"
+}

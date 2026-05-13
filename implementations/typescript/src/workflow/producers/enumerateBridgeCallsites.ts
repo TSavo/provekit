@@ -1,5 +1,5 @@
 /**
- * enumerate-bridge-callsites — Stage 2 of the bridge enforcement
+ * enumerate-bridge-callsites: Stage 2 of the bridge enforcement
  * workflow.
  *
  * Input: the unified memento pool from load-all-proofs (Stage 1).
@@ -88,7 +88,7 @@ export function makeEnumerateBridgeCallsitesStage(
         if (envelope.evidence?.kind !== "contract") continue;
         const ev = envelope.evidence as ContractEvidence;
         const propertyName = ev.body.contractName ?? cid.slice(0, 12);
-        // Walk every present formula slot — pre / post / inv — for bridge call sites.
+        // Walk every present formula slot: pre / post / inv: for bridge call sites.
         for (const slot of ["pre", "post", "inv"] as const) {
           const f = ev.body[slot] as IrFormula | undefined;
           if (f) {

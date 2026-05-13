@@ -1,0 +1,181 @@
+{
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "kind": "RefInc",
+        "object": "arc_obj"
+      },
+      {
+        "guard": {
+          "args": [
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "arc_obj"
+                }
+              ],
+              "kind": "ctor",
+              "name": "arc_count_after_clone"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              },
+              "value": 0
+            }
+          ],
+          "kind": "ctor",
+          "name": ">"
+        },
+        "kind": "Use",
+        "object": "arc_obj"
+      },
+      {
+        "kind": "RefDec",
+        "object": "arc_obj"
+      }
+    ]
+  },
+  "fn_name": "rust:refcount_inc_use_dec",
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "ArcRef"
+    },
+    {
+      "kind": "primitive",
+      "name": "UseOut"
+    }
+  ],
+  "formals": [
+    "arc_obj",
+    "value"
+  ],
+  "kind": "function-contract",
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "out"
+          },
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ],
+        "kind": "atomic",
+        "name": "="
+      },
+      {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "arc_obj"
+              }
+            ],
+            "kind": "ctor",
+            "name": "arc_count_after"
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "arc_obj"
+              }
+            ],
+            "kind": "ctor",
+            "name": "arc_count_before"
+          }
+        ],
+        "kind": "atomic",
+        "name": "="
+      },
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "arc_obj"
+          }
+        ],
+        "kind": "atomic",
+        "name": "arc_clone_drop_balanced"
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "arc_obj"
+                  }
+                ],
+                "kind": "ctor",
+                "name": "arc_count_after_clone"
+              },
+              {
+                "kind": "const",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                },
+                "value": 0
+              }
+            ],
+            "kind": "atomic",
+            "name": ">"
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "arc_obj"
+              }
+            ],
+            "kind": "atomic",
+            "name": "arc_use_guarded"
+          }
+        ]
+      }
+    ]
+  },
+  "pre": {
+    "args": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "arc_obj"
+          }
+        ],
+        "kind": "ctor",
+        "name": "arc_count_before"
+      },
+      {
+        "kind": "const",
+        "sort": {
+          "kind": "primitive",
+          "name": "Int"
+        },
+        "value": 0
+      }
+    ],
+    "kind": "atomic",
+    "name": ">="
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "UseOut"
+  }
+}

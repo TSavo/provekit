@@ -12,4 +12,6 @@ provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+serde = { workspace = true }
 serde_json = { workspace = true }
+hex = { workspace = true }

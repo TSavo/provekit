@@ -1,4 +1,4 @@
-//! provekit-ir-codegen — Generate Rust types and compilers from CDDL grammar.
+//! provekit-ir-codegen: generate Rust types and compilers from CDDL grammar.
 //!
 //! Usage:
 //!     cargo run -p provekit-ir-codegen
@@ -9,29 +9,29 @@
 //!     provekit-ir-compiler-coq/src/generated.rs
 
 pub mod cddl_parser;
-pub mod rust_gen;
-pub mod h;
+pub mod compile;
+pub mod coq;
+pub mod emit_formula_coq;
+pub mod emit_formula_smt;
 pub mod emit_term;
 pub mod emit_term_coq;
-pub mod emit_formula_smt;
-pub mod emit_formula_coq;
 pub mod free_vars;
-pub mod compile;
+pub mod h;
+pub mod rust_gen;
 pub mod smt;
-pub mod coq;
 
 use std::fs;
 
 pub fn generate_all(cddl_path: &str) -> Result<(), String> {
-    let cddl_text = fs::read_to_string(cddl_path)
-        .map_err(|e| format!("Failed to read CDDL: {}", e))?;
+    let cddl_text =
+        fs::read_to_string(cddl_path).map_err(|e| format!("Failed to read CDDL: {}", e))?;
 
     let cddl = cddl::cddl_from_str(&cddl_text, true)
         .map_err(|e| format!("Failed to parse CDDL: {:?}", e))?;
 
     let ir = cddl_parser::extract_ir(&cddl);
 
-    // 1. Types crate (direct lib.rs — this crate IS the generated types)
+    // 1. Types crate. Direct lib.rs: this crate IS the generated types.
     let types_rs = rust_gen::emit_module(&ir, rust_gen::ModuleKind::Types);
     fs::write("provekit-ir-types/src/lib.rs", types_rs)
         .map_err(|e| format!("Failed to write provekit-ir-types/src/lib.rs: {}", e))?;

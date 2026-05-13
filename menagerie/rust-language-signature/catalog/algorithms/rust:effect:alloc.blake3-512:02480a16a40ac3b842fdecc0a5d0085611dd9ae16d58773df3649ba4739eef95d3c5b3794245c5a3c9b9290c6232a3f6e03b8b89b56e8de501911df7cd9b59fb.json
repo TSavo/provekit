@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:alloc",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "alloc",
+      "arity": [
+        "Unit"
+      ],
+      "result": "Addr",
+      "wp": "allocate an address"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Alloc"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Addr",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:02480a16a40ac3b842fdecc0a5d0085611dd9ae16d58773df3649ba4739eef95d3c5b3794245c5a3c9b9290c6232a3f6e03b8b89b56e8de501911df7cd9b59fb",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "3Ae9gfMm0dWkDQTzffcP/NkEDoW4g6gMg4cHH+g38la6txnEc4XoAahL+z4J1lWUI9WEQw0NG/vIdr+hYDGwAQ=="
+  }
+}

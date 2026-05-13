@@ -1,0 +1,58 @@
+{
+  "kind": "algorithm",
+  "fn_name": "java:and",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "and",
+    "arity": [
+      "Bool",
+      "Bool"
+    ],
+    "result": "Bool",
+    "wp": "lhs && rhs with Java short-circuit evaluation",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs",
+          "slot_sort": "Bool"
+        },
+        {
+          "name": "rhs",
+          "slot_sort": "Bool",
+          "evaluation": "unevaluated"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/java-language-signature/README.md"
+}

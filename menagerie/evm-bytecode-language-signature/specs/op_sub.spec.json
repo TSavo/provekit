@@ -1,0 +1,53 @@
+{
+  "kind": "algorithm",
+  "fn_name": "evm:sub",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "EvmWord",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "EvmWord",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "EvmWord",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "evm:sub",
+    "arity": [
+      "EvmWord",
+      "EvmWord"
+    ],
+    "result": "EvmWord",
+    "wp": "subtraction modulo 2^256 over two EVM words",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "left"
+        },
+        {
+          "name": "right"
+        }
+      ]
+    }
+  },
+  "effects": [],
+  "locus": "menagerie/evm-bytecode-language-signature/README.md#operations"
+}

@@ -83,14 +83,14 @@ func TestResolveTarget_RejectsWhenTargetProofCidDoesNotMatchBundle(t *testing.T)
 
 // rejects_when_pinned_bundle_is_not_loaded (Rust analog).
 //
-// Pinned bundle isn't loaded at all — BundleMembers has no entry for
+// Pinned bundle isn't loaded at all: BundleMembers has no entry for
 // it. Still a mismatch, fail-closed. The contract member IS present in
 // the pool (this is what makes it the right test rather than a
 // "target not in pool" test).
 func TestResolveTarget_RejectsWhenPinnedBundleIsNotLoaded(t *testing.T) {
 	targetCID := "blake3-512:contract-orphan"
 	pool := poolWith(targetCID, contractEnv(trivialPre()))
-	// Note: deliberately do NOT seed BundleMembers — the contract is
+	// Note: deliberately do NOT seed BundleMembers: the contract is
 	// in the pool, but no bundle is registered for it.
 
 	cs := CallSite{

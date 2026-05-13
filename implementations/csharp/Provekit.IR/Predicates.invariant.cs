@@ -3,9 +3,9 @@
 // .invariant.cs for Provekit.IR/Predicates.cs
 //
 // Public surface covered:
-//   * Atomic(name, ...args) — generic atomic builder
-//   * Eq / Ne / Gt / Gte / Lt / Lte — six standard predicates
-//   * And / Or / Not / Implies — four connective constructors
+//   * Atomic(name, ...args): generic atomic builder
+//   * Eq / Ne / Gt / Gte / Lt / Lte: six standard predicates
+//   * And / Or / Not / Implies: four connective constructors
 //
 // Honest scope:
 //   Predicate names are protocol-locked: "=" / "≠" / ">" / "≥" / "<" / "≤".

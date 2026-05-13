@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "go:Identifier",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Identifier",
+    "description": "Go identifier or selector component"
+  }
+}

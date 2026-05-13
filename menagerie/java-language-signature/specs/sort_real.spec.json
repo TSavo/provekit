@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "java:Real",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Real",
+    "description": "Java floating primitive value."
+  }
+}

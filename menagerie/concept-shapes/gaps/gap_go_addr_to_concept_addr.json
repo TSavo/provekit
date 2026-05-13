@@ -1,0 +1,79 @@
+{
+  "fn_name": "gap:go:addr:to:concept:addr",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "LValue"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Term"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target",
+              "slot_sort": "Term"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "addr",
+        "result": "Term",
+        "wp": "address-of expression"
+      },
+      "want": {
+        "arity": [
+          "LValue"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "addr",
+        "result": "Ptr",
+        "wp_note": "address-of expression yielding a pointer to target"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"LValue\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:14a56afc4d46e4ca7932556a5fe67f98ee69d70fbb82e1cbd8b1696118e5aae01500eb3f74653e3d0e54ba0e90259612393018299374083bfe679fe2d595eba0",
+  "target_concept_op": "concept:addr",
+  "target_op_cid": "blake3-512:5d632655150ebe3b7b5b828bb86a7d051c57d5110794375a2e1f707eb69a3948586d9a0ffe575e6eefe0c99f462bea62904e7b1491a556c975626233b2c140f7"
+}

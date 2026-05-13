@@ -1,0 +1,68 @@
+{
+  "kind": "algorithm",
+  "fn_name": "python:compare",
+  "formals": [
+    "operator",
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "compare",
+    "arity": [
+      "String",
+      "Value",
+      "Value"
+    ],
+    "result": "Bool",
+    "wp": "single Python comparison operation",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operator",
+          "evaluation": "unevaluated",
+          "slot_sort": "literal"
+        },
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    },
+    "notes": "Chained comparisons are refused by the draft lifter."
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/python-language-signature/README.md"
+}

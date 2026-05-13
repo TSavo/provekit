@@ -21,8 +21,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    contract, eq, forall, gte, must, num, str_const, ContractArgs, Int,
-    String_, Term,
+    contract, eq, forall, gte, must, num, str_const, ContractArgs, Int, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
@@ -60,7 +59,10 @@ pub fn invariants() {
             eq(
                 ctor1(
                     "len",
-                    ctor1("proof_envelope_output_cid", ctor1("build_proof_envelope", input)),
+                    ctor1(
+                        "proof_envelope_output_cid",
+                        ctor1("build_proof_envelope", input),
+                    ),
                 ),
                 num(139),
             )
@@ -76,7 +78,10 @@ pub fn invariants() {
     must(
         "build_proof_envelope_bytes_nonempty",
         forall(String_(), |input| {
-            gte(ctor1("len", ctor1("build_proof_envelope_bytes", input)), num(1))
+            gte(
+                ctor1("len", ctor1("build_proof_envelope_bytes", input)),
+                num(1),
+            )
         }),
     );
 

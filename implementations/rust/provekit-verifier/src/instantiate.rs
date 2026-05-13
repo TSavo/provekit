@@ -12,9 +12,7 @@ use serde_json::{json, Value as Json};
 use crate::types::{Obligation, ResolvedProperty};
 
 pub fn run(resolved: &ResolvedProperty, arg_term: &Option<Json>) -> Result<Obligation, String> {
-    let arg = arg_term
-        .as_ref()
-        .ok_or("no argument term to substitute")?;
+    let arg = arg_term.as_ref().ok_or("no argument term to substitute")?;
     let f = resolved
         .ir_formula
         .as_ref()
@@ -26,13 +24,8 @@ pub fn run(resolved: &ResolvedProperty, arg_term: &Option<Json>) -> Result<Oblig
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or("forall has empty bound-variable name")?;
-    let sort = f
-        .get("sort")
-        .ok_or("forall has no sort")?
-        .clone();
-    let body = f
-        .get("body")
-        .ok_or("forall has no body")?;
+    let sort = f.get("sort").ok_or("forall has no sort")?.clone();
+    let body = f.get("body").ok_or("forall has no body")?;
     let substituted_body = substitute_formula(body, var_name, arg);
     let forall_with_sort = json!({
         "kind": "forall",

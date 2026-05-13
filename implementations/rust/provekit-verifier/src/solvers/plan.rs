@@ -43,14 +43,14 @@ pub fn run_plan(
     formula: Option<&Json>,
 ) -> (ObligationVerdict, String, Vec<SolverInvocation>) {
     match plan {
-        SolverPlan::Single(name) => single(name, registry, smt_script),
-        SolverPlan::Chain(names) => chain(names, registry, smt_script),
+        SolverPlan::Single(name) => single(name, registry, smt_script, formula),
+        SolverPlan::Chain(names) => chain(names, registry, smt_script, formula),
         SolverPlan::Portfolio { names, mode } => {
-            portfolio(names, *mode, registry, smt_script)
+            portfolio(names, *mode, registry, smt_script, formula)
         }
         SolverPlan::Dispatch(d) => match formula {
             Some(f) => match dispatch_for_formula(f, d) {
-                Some(n) => single(n, registry, smt_script),
+                Some(n) => single(n, registry, smt_script, formula),
                 None => (
                     ObligationVerdict::Undecidable,
                     "dispatch: no matching solver and no default".into(),
@@ -76,10 +76,12 @@ fn single(
     name: &str,
     registry: &Registry,
     smt: &str,
+    formula: Option<&Json>,
 ) -> (ObligationVerdict, String, Vec<SolverInvocation>) {
     match lookup(name, registry) {
         Ok(s) => {
-            let r = s.solve(smt);
+            let input = solver_input(s.as_ref(), smt, formula);
+            let r = s.solve(&input);
             let verdict = r.verdict;
             let reason = reason_for(&r);
             let inv = SolverInvocation {
@@ -96,13 +98,15 @@ fn chain(
     names: &[String],
     registry: &Registry,
     smt: &str,
+    formula: Option<&Json>,
 ) -> (ObligationVerdict, String, Vec<SolverInvocation>) {
     let mut history: Vec<SolverInvocation> = vec![];
     let mut last_reason = String::new();
     for (idx, n) in names.iter().enumerate() {
         match lookup(n, registry) {
             Ok(s) => {
-                let r = s.solve(smt);
+                let input = solver_input(s.as_ref(), smt, formula);
+                let r = s.solve(&input);
                 let definitive = matches!(
                     r.verdict,
                     ObligationVerdict::Discharged | ObligationVerdict::Unsatisfied
@@ -154,6 +158,7 @@ fn portfolio(
     mode: PortfolioMode,
     registry: &Registry,
     smt: &str,
+    formula: Option<&Json>,
 ) -> (ObligationVerdict, String, Vec<SolverInvocation>) {
     // Resolve handles up front; surface lookup misses as Undecidable.
     let mut handles: Vec<&Arc<dyn Solver>> = vec![];
@@ -174,7 +179,10 @@ fn portfolio(
     // still honored by the post-collection sort.
     let results: Vec<SolveResult> = handles
         .par_iter()
-        .map(|s| s.solve(smt))
+        .map(|s| {
+            let input = solver_input(s.as_ref(), smt, formula);
+            s.solve(&input)
+        })
         .collect();
 
     match mode {
@@ -304,15 +312,23 @@ fn reason_for(r: &SolveResult) -> String {
                 "solver '{}' returned sat (counterexample found)",
                 r.solver_name
             ),
-            ObligationVerdict::Undecidable => format!(
-                "solver '{}' returned unknown",
-                r.solver_name
-            ),
-            ObligationVerdict::Disagreement => format!(
-                "solver '{}' produced disagreement",
-                r.solver_name
-            ),
+            ObligationVerdict::Undecidable => {
+                format!("solver '{}' returned unknown", r.solver_name)
+            }
+            ObligationVerdict::Disagreement => {
+                format!("solver '{}' produced disagreement", r.solver_name)
+            }
         }
+    }
+}
+
+fn solver_input(solver: &dyn Solver, smt: &str, formula: Option<&Json>) -> String {
+    if solver.ir_compiler() == "smt-lib-v2.6" {
+        smt.to_string()
+    } else {
+        formula
+            .map(Json::to_string)
+            .unwrap_or_else(|| smt.to_string())
     }
 }
 
@@ -437,9 +453,12 @@ mod tests {
             Arc::new(StubSolver::new("cvc5", ObligationVerdict::Unsatisfied)) as SolverHandle,
         );
         let plan = SolverPlan::Dispatch(crate::solvers::DispatchConfig {
+            equational_theory: None,
             strings: Some("cvc5".into()),
             bitvectors: None,
             linear_arithmetic: Some("z3".into()),
+            dependent_type: None,
+            categorical_structure: None,
             default: Some("z3".into()),
         });
         let f = serde_json::json!({"kind":"atomic","name":"length","args":[]});
@@ -456,9 +475,12 @@ mod tests {
             Arc::new(StubSolver::new("z3", ObligationVerdict::Discharged)) as SolverHandle,
         );
         let plan = SolverPlan::Dispatch(crate::solvers::DispatchConfig {
+            equational_theory: None,
             strings: None,
             bitvectors: None,
             linear_arithmetic: None,
+            dependent_type: None,
+            categorical_structure: None,
             default: Some("z3".into()),
         });
         let f = serde_json::json!({"kind":"atomic","name":"unknown","args":[]});

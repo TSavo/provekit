@@ -47,7 +47,10 @@ pub enum BenchError {
     #[error("lattice: {0}")]
     Lattice(String),
     #[error("z3 not runnable at {path:?}: {source}")]
-    Z3Spawn { path: String, source: std::io::Error },
+    Z3Spawn {
+        path: String,
+        source: std::io::Error,
+    },
 }
 
 /// In-memory record describing one implication memento we loaded.
@@ -77,10 +80,10 @@ struct LatticePool {
     /// Antecedent-hash -> list of implication record indices.
     by_antecedent: HashMap<String, Vec<usize>>,
     impls: Vec<ImpRecord>,
-    /// All publisher-post hashes we observed in any contract — used
+    /// All publisher-post hashes we observed in any contract: used
     /// as the source of "post" sample values.
     post_hashes: Vec<String>,
-    /// All consumer-pre hashes we observed in any contract — used as
+    /// All consumer-pre hashes we observed in any contract: used as
     /// the source of "pre" sample values.
     pre_hashes: Vec<String>,
     /// Total bytes on disk.
@@ -139,7 +142,7 @@ pub fn run(args: &BenchmarkArgs) -> Result<(), BenchError> {
 
     // Half the queries are guaranteed cache-hits (we sample an
     // existing implication and ask its (antecedent, consequent)
-    // pair). The other half are random — these measure the
+    // pair). The other half are random: these measure the
     // tier-2 negative-lookup cost (hash-into-pool miss). The
     // mix gives an honest overall median.
     let imp_keys: Vec<(&String, &String)> = pool
@@ -393,7 +396,10 @@ fn load_lattice(root: &Path) -> Result<LatticePool, BenchError> {
                     .push(ix);
                 impls.push(rec);
             }
-            ParseResult::Contract { pre_hash, post_hash } => {
+            ParseResult::Contract {
+                pre_hash,
+                post_hash,
+            } => {
                 pre_hashes.push(pre_hash);
                 post_hashes.push(post_hash);
             }
@@ -426,9 +432,8 @@ fn parse_proof_file(path: &Path) -> Result<ParseResult, BenchError> {
     // The .proof CBOR envelope has shape { kind: "catalog", ...,
     // members: { <cid>: <bstr-of-JCS-bytes>, ... } }. We only need
     // the inner JCS-JSON bytes; pull them out by minimal scanning.
-    let inner = extract_first_member(&bytes).ok_or_else(|| {
-        BenchError::Lattice(format!("no member in {}", path.display()))
-    })?;
+    let inner = extract_first_member(&bytes)
+        .ok_or_else(|| BenchError::Lattice(format!("no member in {}", path.display())))?;
 
     // Parse inner JSON enough to read the fields we care about.
     let s = std::str::from_utf8(inner).map_err(|e| BenchError::Lattice(e.to_string()))?;
@@ -472,7 +477,10 @@ fn parse_proof_file(path: &Path) -> Result<ParseResult, BenchError> {
         if pre_hash.is_empty() || post_hash.is_empty() {
             Ok(ParseResult::Other)
         } else {
-            Ok(ParseResult::Contract { pre_hash, post_hash })
+            Ok(ParseResult::Contract {
+                pre_hash,
+                post_hash,
+            })
         }
     } else {
         Ok(ParseResult::Other)
@@ -662,7 +670,11 @@ fn verify_envelope_signature(rec: &ImpRecord) -> bool {
     // Value tree doesn't ship a parser, so we do a small
     // strip-and-re-emit instead.
     let stripped = strip_signed_fields(s);
-    ed25519_verify_string(&rec.producer_id, &rec.producer_signature, stripped.as_bytes())
+    ed25519_verify_string(
+        &rec.producer_id,
+        &rec.producer_signature,
+        stripped.as_bytes(),
+    )
 }
 
 /// Remove the `"cid":"..."` and `"producerSignature":"..."` JSON
@@ -781,7 +793,7 @@ fn scan_value_end(bytes: &[u8], start: usize) -> usize {
             i
         }
         _ => {
-            // bare scalar (number, true, false, null) — runs until ',' or '}' or ']'
+            // bare scalar (number, true, false, null): runs until ',' or '}' or ']'
             while i < bytes.len() && bytes[i] != b',' && bytes[i] != b'}' && bytes[i] != b']' {
                 i += 1;
             }
@@ -829,7 +841,10 @@ fn run_z3(z3_path: &str, smt: &str) -> Result<(), BenchError> {
             source,
         })?;
     {
-        let mut stdin = child.stdin.take().ok_or(BenchError::Lattice("no stdin".into()))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or(BenchError::Lattice("no stdin".into()))?;
         stdin.write_all(smt.as_bytes())?;
     }
     let _ = child.wait_with_output()?;
@@ -844,7 +859,9 @@ fn run_z3(z3_path: &str, smt: &str) -> Result<(), BenchError> {
 /// 64 raw bytes. If the input is not the expected shape we return a
 /// zeroed array (so the bench still measures a 64-byte memcmp).
 fn digest_bytes(cid_or_hash: &str) -> [u8; 64] {
-    let stripped = cid_or_hash.strip_prefix("blake3-512:").unwrap_or(cid_or_hash);
+    let stripped = cid_or_hash
+        .strip_prefix("blake3-512:")
+        .unwrap_or(cid_or_hash);
     let mut out = [0u8; 64];
     if stripped.len() == 128 {
         if let Ok(bytes) = hex::decode(stripped) {

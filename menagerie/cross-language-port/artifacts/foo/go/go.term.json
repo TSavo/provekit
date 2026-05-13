@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:16ba2d75022b90561e625e0ff3d69699ec6a741ebcafd023e1de441590372e7d11832a52996df0ae0509305be4da6c797dfeacf3728bbf0246c3555216e8c206",
+  "name": "go:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:f558e76f0ad5e84541f235122a40532663631e773631cf61f59c3d687ee4d248a0aab957263170ce95123e81dff72089f0719b76b961abd0c829cffd694ca1cd",
+      "name": "go:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:c3be1ac233b9e63c6ade58f73fb01397c0d150e7954e1fa193cdfb316393bc815364b128d7b66501048387b462b37acdfc7d758b17df86a67ccbdc7e80b9cefc",
+          "name": "go:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:4d019799bcccb46522531e36e25ece1ae5b439e6d9af5d4d4e60398be7a84c2accc387a1247575e9d211132d6ce237fd7cf27bb86a87f9d83c264990fbe427be",
+          "name": "go:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:769f3dbd14f1ff77501c2695fe818098656c8cb2e196c8f1b6065caf744cf9146c5a05a5cef2d487ec0b1d8ca58316dc94947667a5fc503a395d08e93d9e8ce0",
+          "name": "go:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:4d019799bcccb46522531e36e25ece1ae5b439e6d9af5d4d4e60398be7a84c2accc387a1247575e9d211132d6ce237fd7cf27bb86a87f9d83c264990fbe427be",
+      "name": "go:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

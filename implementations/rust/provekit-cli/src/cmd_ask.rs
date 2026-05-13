@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit ask <FORMULA-FILE>` — Librarian query.
+// `provekit ask <FORMULA-FILE>`: Librarian query.
 //
 // Parse an IR-JSON formula via `provekit_ir_symbolic::parse_formula`,
 // re-serialize to canonical JCS bytes via `formula_to_value`, hash via
@@ -22,7 +22,12 @@ use serde_json::{json, Value as Json};
 use crate::AskArgs;
 
 pub fn run(args: AskArgs) -> u8 {
-    match ask(&args.formula, args.project.as_deref(), args.out.json, args.out.quiet) {
+    match ask(
+        &args.formula,
+        args.project.as_deref(),
+        args.out.json,
+        args.out.quiet,
+    ) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("{}: {e:#}", "error".red().bold());
@@ -48,13 +53,15 @@ fn ask(
             .with_context(|| format!("read {}", formula_file.display()))?
     };
 
-    let json: Json = serde_json::from_str(&raw)
-        .context("parse formula file as JSON (expected IR-JSON)")?;
+    let json: Json =
+        serde_json::from_str(&raw).context("parse formula file as JSON (expected IR-JSON)")?;
     let formula = parse_formula(&json).map_err(|e| anyhow!("parse IR formula: {e}"))?;
     let canonical = encode_jcs(&formula_to_value(&formula));
     let cid = blake3_512_of(canonical.as_bytes());
 
-    let project_root = project.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let project_root = project
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     let hits = find_cid_in_proofs(&cid, &project_root);
 
     if as_json {

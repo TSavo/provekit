@@ -233,6 +233,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
                 inv: __inv,
                 out_binding: __out_binding,
                 evidence: None,
+                concept_hint: None,
             }
         }
 
@@ -347,11 +348,7 @@ pub fn verify(attr: TokenStream, item: TokenStream) -> TokenStream {
     // `inventory::iter::<VerifyTarget>` and dispatches each function's
     // body against the verifier.
     let mut hasher: u64 = 1469598103934665603u64; // FNV-1a 64-bit offset basis
-    for byte in item_fn
-        .clone()
-        .into_token_stream_string()
-        .as_bytes()
-    {
+    for byte in item_fn.clone().into_token_stream_string().as_bytes() {
         hasher ^= *byte as u64;
         hasher = hasher.wrapping_mul(1099511628211u64); // FNV-1a 64-bit prime
     }

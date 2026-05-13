@@ -1,0 +1,116 @@
+{
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "guard": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "item"
+            }
+          ],
+          "kind": "ctor",
+          "name": "rust_valid_item"
+        },
+        "kind": "MemWrite",
+        "target": "store",
+        "value": "item"
+      }
+    ]
+  },
+  "fn_name": "rust:validate_then_commit",
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Item"
+    },
+    {
+      "kind": "primitive",
+      "name": "CommitOutcome"
+    },
+    {
+      "kind": "primitive",
+      "name": "CommitOutcome"
+    }
+  ],
+  "formals": [
+    "item",
+    "err_value",
+    "committed"
+  ],
+  "kind": "function-contract",
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "outcome"
+          },
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "item"
+                  }
+                ],
+                "kind": "ctor",
+                "name": "rust_valid_item"
+              },
+              {
+                "kind": "var",
+                "name": "committed"
+              },
+              {
+                "kind": "var",
+                "name": "err_value"
+              }
+            ],
+            "kind": "ctor",
+            "name": "ite"
+          }
+        ],
+        "kind": "atomic",
+        "name": "="
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "item"
+              }
+            ],
+            "kind": "atomic",
+            "name": "rust_valid_item"
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "item"
+              }
+            ],
+            "kind": "atomic",
+            "name": "rust_commit_applied"
+          }
+        ]
+      }
+    ]
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "CommitOutcome"
+  }
+}

@@ -106,12 +106,18 @@ fn pubkey_string_base64_decodes_to_32_bytes() {
 
 #[test]
 fn distinct_seeds_distinct_pubkeys() {
-    assert_ne!(ed25519_pubkey_string(&SEED_A), ed25519_pubkey_string(&SEED_B));
+    assert_ne!(
+        ed25519_pubkey_string(&SEED_A),
+        ed25519_pubkey_string(&SEED_B)
+    );
 }
 
 #[test]
 fn pubkey_for_fixed_seed_is_deterministic() {
-    assert_eq!(ed25519_pubkey_string(&SEED_A), ed25519_pubkey_string(&SEED_A));
+    assert_eq!(
+        ed25519_pubkey_string(&SEED_A),
+        ed25519_pubkey_string(&SEED_A)
+    );
 }
 
 // ---------------------------------------------------------------------------

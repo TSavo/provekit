@@ -1,0 +1,76 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "ts:and-to-ite-desugar",
+    "formals": [
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      "blake3-512:779e84f80157e68de7d50854a881a5eb9407d40eb0ded41b42d2b5f810cb8d54c9688272a8f7ea177dc17dfaaeaa81bf88daec963ab634ede71153dd8bca42b0",
+      "blake3-512:779e84f80157e68de7d50854a881a5eb9407d40eb0ded41b42d2b5f810cb8d54c9688272a8f7ea177dc17dfaaeaa81bf88daec963ab634ede71153dd8bca42b0"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "ts:and",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "ts:ite",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          },
+          {
+            "kind": "const",
+            "value": false,
+            "sort": {
+              "kind": "ctor",
+              "name": "Boolean",
+              "args": []
+            }
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#equations"
+  },
+  "cid": "blake3-512:25deb33508cee2ebdb55467a23ec7efb57c83e8b3ae8a8dd999e954a568e7970d552ee1c6f4ff97e519e8542b2512958242f6cc87cdf48c2f05b67a6de7ac156",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "7Cavy8Fa7AKzQGEFgk5mkCFoWuolVT0a/UIy+vF5HQAaveRtog1e2HmZEWP6w0BC+jKCfRZTCFYK8t2teQHHCA=="
+  }
+}

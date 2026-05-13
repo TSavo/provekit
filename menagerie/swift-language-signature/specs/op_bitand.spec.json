@@ -1,0 +1,55 @@
+{
+  "kind": "algorithm",
+  "fn_name": "swift:bitand",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "bitand",
+    "arity": [
+      "Value",
+      "Value"
+    ],
+    "result": "Int",
+    "wp": "Swift &: bitwise and",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/swift-language-signature/README.md"
+}

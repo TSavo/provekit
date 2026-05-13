@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint_cpp_self_contracts — the C++ peer self-contracts orchestrator.
+// mint_cpp_self_contracts: the C++ peer self-contracts orchestrator.
 //
 // Walks every .invariant.cpp file in the C++ workspace by calling its
 // extern "C" registrar, mints all collected contracts as signed
@@ -19,12 +19,14 @@
 
 #include "provekit/ir.hpp"
 #include "provekit/canonicalizer/hash.hpp"
+#include "provekit/canonicalizer/jcs.hpp"
 #include "provekit/canonicalizer/value.hpp"
 #include "provekit/claim-envelope/mint.hpp"
 #include "provekit/claim-envelope/value_from_kit.hpp"
 #include "provekit/proof-envelope/proof_envelope.hpp"
 #include "provekit/proof-envelope/sign_ed25519.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -46,6 +48,37 @@ using ::provekit::proof_envelope::ProofEnvelopeInput;
 using ::provekit::proof_envelope::build_proof_envelope;
 using ::provekit::proof_envelope::ed25519_pubkey_string_from_seed;
 using ::provekit::canonicalizer::compute_cid;
+using ::provekit::canonicalizer::encode_jcs;
+using ::provekit::canonicalizer::Value;
+using ::provekit::canonicalizer::ValuePtr;
+
+// Compute the signer-independent contractCid for a contract.
+// Per spec 2026-05-03-contract-cid-vs-attestation-cid.md §1:
+//   contractCid = blake3-512(JCS({name, outBinding, pre?, post?, inv?}))
+static std::string contract_cid_from_args(const MintContractArgs& args) {
+    std::vector<std::pair<std::string, ValuePtr>> kvs;
+    kvs.push_back({"name", Value::string(args.contract_name)});
+    kvs.push_back({"outBinding", Value::string(args.out_binding)});
+    if (args.pre)  kvs.push_back({"pre",  args.pre});
+    if (args.post) kvs.push_back({"post", args.post});
+    if (args.inv)  kvs.push_back({"inv",  args.inv});
+    auto v = Value::object(std::move(kvs));
+    return compute_cid(encode_jcs(v));
+}
+
+// Compute the contractSetCid from a sorted list of signer-independent
+// contractCid strings. Per spec 2026-05-03-contract-set-extension.md §1:
+//   contractSetCid = blake3-512(JCS(<sorted contractCIDs>))
+static std::string compute_contract_set_cid(std::vector<std::string> cids) {
+    std::sort(cids.begin(), cids.end());
+    std::vector<ValuePtr> elems;
+    elems.reserve(cids.size());
+    for (const auto& c : cids) {
+        elems.push_back(Value::string(c));
+    }
+    auto arr = Value::array(std::move(elems));
+    return compute_cid(encode_jcs(arr));
+}
 
 // Each .invariant.cpp file defines an extern "C" registrar that calls
 // must()/contract() to push ContractDecls into the kit-side collector.
@@ -62,9 +95,15 @@ extern "C" {
     void enumerate_callsites_invariants();
     void resolve_target_invariants();
     void instantiate_invariants();
+    void cross_kit_bridges_invariants();
 }
 
-static std::string mint_one_run(const std::string& out_dir, bool verbose) {
+struct MintOneRunResult {
+    std::string bundle_cid;
+    std::string contract_set_cid;
+};
+
+static MintOneRunResult mint_one_run(const std::string& out_dir, bool verbose) {
     // 1. Author every .invariant.cpp module via its registrar.
     reset_collector();
     begin_collecting();
@@ -79,10 +118,11 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
     enumerate_callsites_invariants();
     resolve_target_invariants();
     instantiate_invariants();
+    cross_kit_bridges_invariants();
     auto contract_decls = finish();
 
     if (verbose) {
-        std::printf("authored %zu contracts across 11 .invariant.cpp slabs\n",
+        std::printf("authored %zu contracts across 12 .invariant.cpp slabs\n",
                     contract_decls.size());
     }
 
@@ -94,6 +134,7 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
     const std::string produced_by = "cpp-kit@1.0";
 
     std::map<std::string, std::vector<uint8_t>> members;
+    std::vector<std::string> content_cids;
     for (const auto& d : contract_decls) {
         MintContractArgs args{};
         args.contract_name = d.name;
@@ -107,6 +148,8 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
         args.authoring_kind = AuthoringKind::KitAuthor;
         args.authoring_kit_author = AuthoringKitAuthor{produced_by, ""};
         args.signer_seed = signer_seed;
+        // Compute signer-independent content CID BEFORE minting (spec #94).
+        content_cids.push_back(contract_cid_from_args(args));
         auto minted = mint_contract(args);
         members[minted.cid] = minted.canonical_bytes;
     }
@@ -149,13 +192,16 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
         std::exit(1);
     }
 
+    const std::string cset_cid = compute_contract_set_cid(content_cids);
+
     if (verbose) {
         std::printf("  catalog CID:        %s\n", built.filename_cid.c_str());
+        std::printf("  contractSetCid:     %s\n", cset_cid.c_str());
         std::printf("  proof bytes:        %zu\n", built.bytes.size());
         std::printf("  .proof file:        %s\n", out_path.c_str());
     }
 
-    return built.filename_cid;
+    return MintOneRunResult{built.filename_cid, cset_cid};
 }
 
 // Base64 (standard) encoder for binary -> JSON-safe string. Sufficient
@@ -268,7 +314,7 @@ static void run_rpc_mode() {
             out << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw << ",\"result\":{"
                 << "\"name\":\"cpp-self-contracts\","
                 << "\"version\":\"1.0.0\","
-                << "\"protocol_version\":\"provekit-lift/1\","
+                << "\"protocol_version\":\"pep/1.7.0\","
                 << "\"capabilities\":{"
                 << "\"authoring_surfaces\":[\"cpp-self-contracts\"],"
                 << "\"ir_version\":\"v1.1.0\","
@@ -286,7 +332,9 @@ static void run_rpc_mode() {
                 continue;
             }
             const std::string tmp_dir(tmp);
-            const std::string cid = mint_one_run(tmp_dir, /*verbose=*/false);
+            const auto run_result = mint_one_run(tmp_dir, /*verbose=*/false);
+            const std::string& cid = run_result.bundle_cid;
+            const std::string& cset_cid = run_result.contract_set_cid;
             const std::string proof_path = tmp_dir + "/" + cid + ".proof";
             std::ifstream f(proof_path, std::ios::binary);
             if (!f) {
@@ -307,6 +355,7 @@ static void run_rpc_mode() {
             out << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw << ",\"result\":{"
                 << "\"kind\":\"proof-envelope\","
                 << "\"filename_cid\":" << json_escape(cid) << ","
+                << "\"contract_set_cid\":" << json_escape(cset_cid) << ","
                 << "\"bytes_base64\":" << json_escape(b64) << ","
                 << "\"diagnostics\":[]}}";
             std::cout << out.str() << "\n" << std::flush;
@@ -340,7 +389,7 @@ int main(int argc, char* argv[]) {
     std::printf("output dir: %s\n\n", out_dir.c_str());
 
     std::printf("== mint #1 ==\n");
-    const std::string cid1 = mint_one_run(out_dir, /*verbose=*/true);
+    const auto run1 = mint_one_run(out_dir, /*verbose=*/true);
 
     // Determinism check: mint twice into separate output dirs and
     // assert byte-equality. The .proof filename IS the catalog CID;
@@ -351,11 +400,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::printf("\n== mint #2 (determinism check) ==\n");
-    const std::string cid2 = mint_one_run(out_dir2, /*verbose=*/false);
-    if (cid1 != cid2) {
+    const auto run2 = mint_one_run(out_dir2, /*verbose=*/false);
+    if (run1.bundle_cid != run2.bundle_cid || run1.contract_set_cid != run2.contract_set_cid) {
         std::fprintf(stderr,
-                     "DETERMINISM FAILURE:\n  run 1 cid: %s\n  run 2 cid: %s\n",
-                     cid1.c_str(), cid2.c_str());
+                     "DETERMINISM FAILURE:\n  run 1 cid:            %s\n  run 2 cid:            %s\n"
+                     "  run 1 contractSetCid: %s\n  run 2 contractSetCid: %s\n",
+                     run1.bundle_cid.c_str(), run2.bundle_cid.c_str(),
+                     run1.contract_set_cid.c_str(), run2.contract_set_cid.c_str());
         return 1;
     }
     std::printf("  determinism check:  OK (two runs produced identical CIDs)\n");

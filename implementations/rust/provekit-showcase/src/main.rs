@@ -22,8 +22,8 @@
 // Numbers from this binary are pasted verbatim into
 // docs/launch/showcase-results.md.
 
-mod fixture;
 mod bench;
+mod fixture;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -197,7 +197,9 @@ fn parse_benchmark(rest: &[String]) -> Result<BenchmarkArgs, String> {
 fn parse_size(raw: &str) -> Result<usize, String> {
     let s: String = raw.chars().filter(|c| *c != '_').collect();
     if let Some(idx) = s.find(|c: char| c == 'e' || c == 'E') {
-        let mantissa: f64 = s[..idx].parse().map_err(|e: std::num::ParseFloatError| e.to_string())?;
+        let mantissa: f64 = s[..idx]
+            .parse()
+            .map_err(|e: std::num::ParseFloatError| e.to_string())?;
         let exp: i32 = s[idx + 1..]
             .parse()
             .map_err(|e: std::num::ParseIntError| e.to_string())?;

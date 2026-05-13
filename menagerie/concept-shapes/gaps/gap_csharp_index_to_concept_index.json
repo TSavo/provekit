@@ -1,0 +1,110 @@
+{
+  "fn_name": "gap:csharp:index:to:concept:index",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Read"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Reads"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "MemRead"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Expr",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "index",
+        "result": "Expr",
+        "wp": "base[index]"
+      },
+      "want": {
+        "arity": [
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "base"
+            },
+            {
+              "name": "index"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "index",
+        "result": "LValue",
+        "wp_note": "array element lvalue projection"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Int\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:3ad7a7d9da40f45b902c54b048bc573c027ba7a1a1af5cb844e48cc59765dcc416ae37fdacd06a0726816f8eb1c68730e436a67abd10f1e9b31fd3ea03372fbe",
+  "target_concept_op": "concept:index",
+  "target_op_cid": "blake3-512:18e36040cd6ef5f32811245338ab550147d76a5a1a3e525e6bdba05a492460b3d68d00c49abd9b9e4369698228780d0907b2ca367b783ef045859f8d7ed4cc12"
+}

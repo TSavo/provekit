@@ -1,0 +1,49 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:closure_call",
+  "formals": [
+    "closure",
+    "args"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Closure",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "ListOfExpr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "closure_call",
+    "arity": [
+      "Closure",
+      "ListOfExpr"
+    ],
+    "result": "Stmt",
+    "wp": "call a closure contract"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-polymorphic",
+        "rule": "closure body effects"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

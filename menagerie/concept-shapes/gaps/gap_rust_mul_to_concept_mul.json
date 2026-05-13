@@ -1,0 +1,123 @@
+{
+  "fn_name": "gap:rust:mul:to:concept:mul",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Trap"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      }
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "mul",
+        "result": "Int",
+        "wp": "mathematical integer multiplication when no overflow holds, otherwise Panic in debug"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "mul",
+        "result": "Int",
+        "wp_note": "mathematical integer multiplication when no overflow holds"
+      }
+    },
+    "pre_delta": {
+      "got": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "lhs"
+              },
+              {
+                "kind": "var",
+                "name": "rhs"
+              }
+            ],
+            "kind": "op",
+            "name": "mul"
+          }
+        ],
+        "kind": "atomic",
+        "name": "no_signed_overflow_or_panic"
+      },
+      "want": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "lhs"
+              },
+              {
+                "kind": "var",
+                "name": "rhs"
+              }
+            ],
+            "kind": "op",
+            "name": "mul"
+          }
+        ],
+        "kind": "atomic",
+        "name": "no_signed_overflow"
+      }
+    }
+  },
+  "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow_or_panic\",\"args\":[{\"kind\":\"op\",\"name\":\"mul\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"mul\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:1df457dceb0ec7a6dc4596eb70be001be09180afc69fa3ff8121cd78a0daff5dd9606dbfd4fb9fcdc5d834939a6f19c52b80aace16dea6df5ffdce62d86bbfa2",
+  "target_concept_op": "concept:mul",
+  "target_op_cid": "blake3-512:46cd627de058c8d4f7d087ea33f4904af65ad4b2e3cfd3aff8f44bf27db96b33c2dae39cd30f53898c233c9465ba8d2701c69e5903d48935113103b4db00fd03"
+}

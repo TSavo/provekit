@@ -26,19 +26,21 @@ use std::path::{Path, PathBuf};
 use proc_macro2::TokenStream as TokenStream2;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
-use syn::{Attribute, BinOp, Expr, ExprBinary, ExprCall, ExprIf, ExprLit, ExprMethodCall, ExprPath,
-    ItemFn, Lit, Meta};
+use syn::{
+    Attribute, BinOp, Expr, ExprBinary, ExprCall, ExprIf, ExprLit, ExprMethodCall, ExprPath,
+    ItemFn, Lit, Meta,
+};
 
 /// Coarse classification of a `post = ...` formula. The build-script
 /// verifier maps each shape to a deterministic SMT-LIB encoding;
 /// `Opaque` skips the encoding and yields `undecidable`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormulaShape {
-    /// `gte(out(), num(N))` — return value is at least N.
+    /// `gte(out(), num(N))`: return value is at least N.
     GteConst(i64),
-    /// `gt(out(), num(N))` — return value is strictly greater than N.
+    /// `gt(out(), num(N))`: return value is strictly greater than N.
     GtConst(i64),
-    /// `eq(out(), num(N))` — return value is exactly N.
+    /// `eq(out(), num(N))`: return value is exactly N.
     EqConst(i64),
     /// Anything we couldn't classify. The verifier flags as undecidable.
     Opaque,
@@ -214,9 +216,7 @@ impl<'ast, 'a> Visit<'ast> for FileVisitor<'a> {
     fn visit_item_fn(&mut self, item_fn: &'ast ItemFn) {
         let mut is_verify = false;
         for attr in &item_fn.attrs {
-            if attr_path_is(attr, &["provekit", "contract"])
-                || attr_path_is(attr, &["contract"])
-            {
+            if attr_path_is(attr, &["provekit", "contract"]) || attr_path_is(attr, &["contract"]) {
                 self.record_contract(item_fn, attr);
             }
             if attr_path_is(attr, &["provekit", "verify"]) || attr_path_is(attr, &["verify"]) {
@@ -253,10 +253,7 @@ impl<'ast, 'a> Visit<'ast> for FileVisitor<'a> {
                         // == K`.
                         let line = init.expr.span().start().line;
                         self.out.callsites.push(CallSite {
-                            verify_fn: self
-                                .current_verify_fn
-                                .clone()
-                                .unwrap_or_default(),
+                            verify_fn: self.current_verify_fn.clone().unwrap_or_default(),
                             callee,
                             source_path: self.source_path.clone(),
                             line,
@@ -286,10 +283,7 @@ impl<'ast, 'a> Visit<'ast> for FileVisitor<'a> {
                     .any(|cs| cs.line == line && cs.callee == callee);
                 if !already_recorded {
                     self.out.callsites.push(CallSite {
-                        verify_fn: self
-                            .current_verify_fn
-                            .clone()
-                            .unwrap_or_default(),
+                        verify_fn: self.current_verify_fn.clone().unwrap_or_default(),
                         callee,
                         source_path: self.source_path.clone(),
                         line,
@@ -313,7 +307,10 @@ impl<'ast, 'a> Visit<'ast> for FileVisitor<'a> {
         // demo's `deliberate_violation` flip from discharged to
         // counterexample.
         if let Expr::Binary(ExprBinary {
-            op: BinOp::Eq(_), left, right, ..
+            op: BinOp::Eq(_),
+            left,
+            right,
+            ..
         }) = &*expr_if.cond
         {
             let lname = expr_path_single_ident(left);
@@ -403,9 +400,12 @@ fn classify_post(attr: &Attribute) -> FormulaShape {
 /// the bare `<pred>(out(), num(N))` shape. Returns `Some(N)` on match.
 fn parse_simple_post(body: &str, pred: &str) -> Option<i64> {
     // Trim leading whitespace + up to the first occurrence of `pred(`.
-    let idx = body.find(&format!("{pred} ("))
+    let idx = body
+        .find(&format!("{pred} ("))
         .or_else(|| body.find(&format!("{pred}(")));
-    let Some(start) = idx else { return None; };
+    let Some(start) = idx else {
+        return None;
+    };
     let rest = &body[start..];
     // Confirm shape: `<pred> ( out ( ) , num ( <int> ) )`. We look for
     // the literal substring `num (` or `num(` and then parse the int
@@ -447,7 +447,10 @@ fn call_callee_from_call(call: &ExprCall) -> Option<(String, usize)> {
 }
 
 fn expr_path_single_ident(expr: &Expr) -> Option<String> {
-    if let Expr::Path(ExprPath { path, qself: None, .. }) = expr {
+    if let Expr::Path(ExprPath {
+        path, qself: None, ..
+    }) = expr
+    {
         if path.segments.len() == 1 && path.segments[0].arguments.is_empty() {
             return Some(path.segments[0].ident.to_string());
         }

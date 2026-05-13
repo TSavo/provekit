@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-compiler-coq — Coq compiler for IR contracts.
+// provekit-ir-compiler-coq: Coq compiler for IR contracts.
 //
 // Emits Coq .v files that can be verified with coqc.
 // Supports kit-defined predicates via Definitions (unlike SMT-LIB!).
@@ -53,14 +53,16 @@ impl CoqCompiler {
         let kind = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         if is_term_kind(kind) {
             let term: provekit_ir_types::Term = serde_json::from_value(ir.clone())
-                .map_err(|e| CompileError::MalformedIr(format!("{e}").into()))?;
+                .map_err(|e| CompileError::MalformedIr(format!("{e}")))?;
             let term_str = generated::emit_term(&term);
-            let preamble = "Require Import ZArith String List.\nOpen Scope Z.\nOpen Scope string.\n\n".to_string();
+            let preamble =
+                "Require Import ZArith String List.\nOpen Scope Z.\nOpen Scope string.\n\n"
+                    .to_string();
             let body = format!("Goal {}.\nProof.\n  admit.\nQed.\n", term_str);
             Ok((preamble, body, vec![]))
         } else {
             let formula: provekit_ir_types::Formula = serde_json::from_value(ir.clone())
-                .map_err(|e| CompileError::MalformedIr(format!("{e}").into()))?;
+                .map_err(|e| CompileError::MalformedIr(format!("{e}")))?;
             Ok(generated::compile_formula(&formula))
         }
     }
@@ -77,13 +79,17 @@ impl IrCompiler for CoqCompiler {
         if dialect != DIALECT {
             return Err(CompileError::UnsupportedDialect(dialect.to_string()));
         }
-        
         let (preamble, body, free_vars) = self.compile_inner(ir)?;
-        
         Ok(CompiledFormula {
             preamble,
             body,
             free_vars,
+            opacity_manifest: provekit_ir_compiler::OpacityManifest {
+                protocol_version: "ir-compiler-protocol/2".to_string(),
+                compiler: DIALECT.to_string(),
+                compiler_version: COMPILER_VERSION.to_string(),
+                opacities: vec![],
+            },
         })
     }
 
@@ -137,7 +143,7 @@ mod tests {
                 {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
             ]
         });
-        
+
         let result = compiler.compile(&ir, DIALECT).unwrap();
         assert!(result.body.contains("Goal"));
         assert!(result.body.contains("x = 42"));
@@ -151,7 +157,7 @@ mod tests {
             "name": "roundTrips",
             "args": [{"kind": "var", "name": "s"}]
         });
-        
+
         let result = compiler.compile(&ir, DIALECT).unwrap();
         // Generated compiler emits Parameter declarations in the body
         assert!(result.body.contains("Parameter s"));
@@ -174,7 +180,7 @@ mod tests {
                 ]
             }
         });
-        
+
         let result = compiler.compile(&ir, DIALECT).unwrap();
         assert!(result.body.contains("forall x : Z"));
     }

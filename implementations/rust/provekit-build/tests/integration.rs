@@ -150,7 +150,7 @@ mint_proof = false
     // observable predicate strict mode keys off of: a dead-branch
     // call site is `Unsatisfied` (Z3 returned `sat`, meaning the
     // surrounding equality check is reachable under the contract's
-    // post — wait, that's not the dead-branch shape).
+    // post: wait, that's not the dead-branch shape).
     //
     // Actually in this v0 obligation, we assert post AND surrounding
     // check. A `sat` answer means Z3 found a model where the post is
@@ -165,7 +165,7 @@ mint_proof = false
     // and the surrounding-eq tag in the note text. The strict-mode
     // failure-flag wires through the `Unsatisfied` slot, which in
     // current encoding maps to "post is satisfiable WITH the
-    // surrounding equality" — that's the OK case.
+    // surrounding equality": that's the OK case.
     //
     // For this test, we simply verify the report enumerates the
     // call site and resolved its contract, plus the surrounding
@@ -219,12 +219,7 @@ fn mint_proof_is_deterministic() {
 #[test]
 fn solver_returns_undecidable_when_z3_missing() {
     let cfg = ProvekitConfig::default();
-    let script = build_obligation_script(
-        &cfg,
-        "missing-z3",
-        &FormulaShape::GteConst(0),
-        None,
-    );
+    let script = build_obligation_script(&cfg, "missing-z3", &FormulaShape::GteConst(0), None);
     let res = solve(
         "/nonexistent/path/to/z3-that-does-not-exist",
         &script.script_smt2,
@@ -233,7 +228,8 @@ fn solver_returns_undecidable_when_z3_missing() {
     assert_eq!(res.verdict, SolverVerdict::Undecidable);
     assert!(
         res.note.contains("spawn") || res.note.contains("nonexistent"),
-        "expected spawn-error note, got: {}", res.note
+        "expected spawn-error note, got: {}",
+        res.note
     );
 }
 
@@ -361,7 +357,11 @@ fn walker_handles_filesystem_walk() {
     let out: PathBuf = tmp.path().to_path_buf();
     let outcome = walk(&out);
     assert_eq!(outcome.contracts.len(), 2);
-    let names: Vec<_> = outcome.contracts.iter().map(|c| c.fn_name.as_str()).collect();
+    let names: Vec<_> = outcome
+        .contracts
+        .iter()
+        .map(|c| c.fn_name.as_str())
+        .collect();
     assert!(names.contains(&"f1"));
     assert!(names.contains(&"f2"));
 }
@@ -374,7 +374,7 @@ fn walker_handles_filesystem_walk() {
 // ---------------------------------------------------------------------------
 
 /// Helper: write `src/<file>.rs` under a fresh temp manifest dir and
-/// return the manifest path. The Cargo.toml is minimal — just enough
+/// return the manifest path. The Cargo.toml is minimal: just enough
 /// for `parse_config_from_str` if a test wants a config.
 fn write_lift_fixture(name: &str, body: &str) -> tempfile::TempDir {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -570,7 +570,7 @@ fn lift_violation_drives_cargo_warning() {
         r#"
             // A proptest block whose body is intentionally narrow.
             // Whether or not the underlying `prop_assert` is liftable in
-            // v0 is irrelevant for this test — we only need the proptest
+            // v0 is irrelevant for this test: we only need the proptest
             // adapter to register a `seen` count on the breakdown so the
             // build script's summary line fires.
             proptest! {

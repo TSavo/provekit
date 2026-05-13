@@ -13,7 +13,8 @@
   "bin": {
     "provekit": "bin/provekit.cjs",
     "proveit": "bin/provekit.cjs",
-    "provekit-lift": "bin/provekit-lift.cjs"
+    "provekit-lift": "bin/provekit-lift.cjs",
+    "provekit-lsp-ts": "bin/provekit-lsp-ts.cjs"
   },
   "exports": {
     ".": {
@@ -67,7 +68,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.107",
     "@anthropic-ai/sdk": "^0.88.0",
-"@ipld/dag-cbor": "7.0.0",
+    "@ipld/dag-cbor": "7.0.0",
     "@noble/hashes": "^2.2.0",
     "@opencode-ai/sdk": "^1.4.3",
     "@types/node": "^25.6.0",
@@ -86,7 +87,8 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "z3-solver": "4.16.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

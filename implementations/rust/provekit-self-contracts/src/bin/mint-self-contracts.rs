@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint-self-contracts — the orchestrator binary.
+// mint-self-contracts: the orchestrator binary.
 //
 // 1. Walks every `.invariant.rs` file in the workspace via the
 //    orchestrator at `provekit-self-contracts/src/lib.rs`.
@@ -19,7 +19,7 @@
 //   semantics for (`roundTrips`, `isErr`, `isMalformed`,
 //   `cidMatchesFilename`, `bridgeKnownInPool`, etc.). Those callsite
 //   verdicts resolve to "undecidable", which is the protocol's HONEST
-//   outcome — the value of these contracts is the LIVING DOCS shape,
+//   outcome: the value of these contracts is the LIVING DOCS shape,
 //   not the discharge. Standard-algebra contracts (=, <, >, integer
 //   constants) reach Z3 cleanly and discharge or unsatisfy.
 //
@@ -80,7 +80,7 @@ fn run_rpc_mode() -> ExitCode {
                 "result": {
                     "name": "rust-self-contracts",
                     "version": env!("CARGO_PKG_VERSION"),
-                    "protocol_version": "provekit-lift/1",
+                    "protocol_version": "pep/1.7.0",
                     "capabilities": {
                         "authoring_surfaces": ["rust-self-contracts"],
                         "ir_version": "v1.1.0",
@@ -89,7 +89,8 @@ fn run_rpc_mode() -> ExitCode {
                 }
             }),
             "lift" => {
-                let tmp = std::env::temp_dir().join(format!("provekit-rpc-mint-{}", std::process::id()));
+                let tmp =
+                    std::env::temp_dir().join(format!("provekit-rpc-mint-{}", std::process::id()));
                 let _ = std::fs::remove_dir_all(&tmp);
                 let _ = std::fs::create_dir_all(&tmp);
                 match mint_self_proof(&tmp) {
@@ -113,6 +114,7 @@ fn run_rpc_mode() -> ExitCode {
                             "result": {
                                 "kind": "proof-envelope",
                                 "filename_cid": m.cid,
+                                "contract_set_cid": m.contract_set_cid,
                                 "bytes_base64": b64,
                                 "diagnostics": []
                             }
@@ -213,10 +215,8 @@ fn main() -> ExitCode {
     //
     // Wipe a determinism-check temp dir and mint there first; then mint
     // again into the real out_dir. The two CIDs MUST match.
-    let det_dir = std::env::temp_dir().join(format!(
-        "provekit-self-determinism-{}",
-        std::process::id()
-    ));
+    let det_dir =
+        std::env::temp_dir().join(format!("provekit-self-determinism-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&det_dir);
 
     let mint_a = match mint_self_proof(&det_dir) {
@@ -242,6 +242,7 @@ fn main() -> ExitCode {
     println!("  members:            {}", mint.member_count);
     println!("  total contracts:    {}", mint.total_contracts);
     println!("  catalog CID:        {}", mint.cid);
+    println!("  contractSetCid:     {}", mint.contract_set_cid);
 
     if mint_a.cid != mint.cid {
         eprintln!();
@@ -251,8 +252,16 @@ fn main() -> ExitCode {
         let _ = std::fs::remove_dir_all(&det_dir);
         return ExitCode::from(2);
     }
+    if mint_a.contract_set_cid != mint.contract_set_cid {
+        eprintln!();
+        eprintln!("ERROR: contractSetCid determinism check FAILED:");
+        eprintln!("  run A contractSetCid: {}", mint_a.contract_set_cid);
+        eprintln!("  run B contractSetCid: {}", mint.contract_set_cid);
+        let _ = std::fs::remove_dir_all(&det_dir);
+        return ExitCode::from(2);
+    }
     let _ = std::fs::remove_dir_all(&det_dir);
-    println!("  determinism check:  OK (two runs produced identical CIDs)");
+    println!("  determinism check:  OK (two runs produced identical CIDs and contractSetCid)");
 
     // ---- 3. Verify -----------------------------------------------------------
     let cfg = RunnerConfig {
@@ -266,7 +275,10 @@ fn main() -> ExitCode {
     println!();
     println!("verifier (load + enumerate):");
     println!("  loaded mementos:              {}", pool.mementos.len());
-    println!("  bridges by sourceSymbol:      {}", pool.bridges_by_symbol.len());
+    println!(
+        "  bridges by sourceSymbol:      {}",
+        pool.bridges_by_symbol.len()
+    );
     println!("  enumerated callsites:         {}", callsites.len());
     if !pool.load_errors.is_empty() {
         println!();

@@ -1,0 +1,71 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:assign",
+    "formals": [
+      "lvalue",
+      "rvalue"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "assign",
+      "arity": [
+        "Int",
+        "Int"
+      ],
+      "result": "Stmt",
+      "wp": "post[rvalue / lvalue] (lvalue updated to rvalue)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "lvalue"
+          },
+          {
+            "name": "rvalue"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemWrite"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:965669a4d96a6003df2316f94ac00ca97e0353d3c6efa30e15e02bbd4e66df1366d44ec9a4dcb55ea06d96cee7b7f96684bac90e2177f81682c840a68a205eac",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "EgpkYn6y2DZn0jOHHx9/LSeeGwRJoFNAK9bMRklMNKlxiSmxnLcMz5zTFAIpcyuWbWGtVNQnBdLQofTOL5DGDQ=="
+  }
+}

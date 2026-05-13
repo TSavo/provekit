@@ -1,115 +1,333 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit mint` — the lift-plugin protocol dispatcher.
+// `provekit mint`: the lift-plugin protocol dispatcher.
 //
-// Reads `.provekit/config.toml` for the configured authoring surface,
-// resolves the matching plugin manifest, spawns the plugin's binary
-// with `--rpc`, exchanges NDJSON-over-stdio JSON-RPC, and writes the
-// resulting `.proof` to disk.
+// Architecture (substrate-as-only-mint-pipeline):
+//
+//   One Rust CLI; N language kits. The CLI is the sole mint pipeline for
+//   every kit: including the rust kit itself. Rust is NOT special-cased.
+//   Every kit exposes a lifter binary that speaks the lift-protocol RPC
+//   (`initialize` + `lift`). The CLI drives that RPC, receives a
+//   `proof-envelope` response, and then:
+//
+//     1. Writes the `.proof` file to the output directory (same as before).
+//     2. Signs a self-contracts attestation (letter-envelope format, per
+//        spec #94 / `protocol/specs/2026-05-02-bundle-attestation-protocol.md`)
+//        and writes it to
+//        `<repo-root>/.provekit/self-contracts-attestations/<kit>.json`.
+//
+//   The dogfood invariant: ProvekIt's `prove` verifies each kit satisfies
+//   the canonical contracts minted by the rust kit. The substrate proves
+//   the kits; the kits prove the substrate.
+//
+//   The lift protocol (`initialize` + `lift`) is distinct from the LSP
+//   parse protocol (`initialize` + `parse`). The former is for mint; the
+//   latter is for editor diagnostics. This dispatcher calls the lifter,
+//   NOT the LSP.
 //
 // Spec: protocol/specs/2026-04-30-lift-plugin-protocol.md (draft for v1.2.0).
+//       protocol/specs/2026-05-02-bundle-attestation-protocol.md
+//       spec #94 §2 (contractSetCid in signed body)
 //
-// Three response shapes are defined in the spec; this v1 implements
-// only `proof-envelope` (shape c) — the plugin owns the full pipeline
-// and returns a complete .proof. Shapes (a) ir-document and (b)
-// signed-mementos are spec'd but unimplemented in this dispatcher;
-// adding them is additive, requires no client breakage.
+// Response shapes: `proof-envelope` and `ir-document` are supported in v1.
+// Shape (b) `signed-mementos` is spec'd but unimplemented; adding it is
+// additive, requires no client breakage.
+//
+// Missing-lifter behavior: when a manifest declares a binary that does
+// not exist yet (ENOENT on spawn), mint produces a well-formed
+// attestation with contractSetCid = EMPTY_SET_CID (the BLAKE3-512 of
+// JCS(`[]`)). This surfaces the gap at the per-kit lifter level without
+// failing the substrate pipeline. Any other spawn failure (wrong
+// permissions, exit > 0) is a hard error.
 
-use std::io::{BufRead, BufReader, Write};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::sync::Arc;
 
 use base64::Engine;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
+use libprovekit::core::{
+    address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
+    HashMapInputCatalog, Input, InputCatalog, Kit, KitError, Path as CorePath, PathAlgebra,
+    PathDocument, Term, Verdict,
+};
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use provekit_claim_envelope::{
+    compute_contract_set_cid, contract_cid, mint_authority, mint_contract, mint_implication,
+    Authoring, MintAuthorityArgs, MintContractArgs, MintImplicationArgs,
+};
+use provekit_ir_types::Sort;
+use provekit_mint_amp as algebraic_mint;
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
+    ProofEnvelopeInput,
+};
+
+use crate::lift_plugin::{self, LiftPluginError, LiftPluginOptions};
 use crate::project_config::{read_project_config, read_user_config};
 use crate::OutputFlags;
 use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
-#[derive(Parser, Debug, Clone)]
-pub struct MintArgs {
-    /// Project root containing `.provekit/config.toml`. Defaults to current dir.
-    #[arg(long)]
-    pub project: Option<PathBuf>,
-    /// Override the authoring surface (otherwise read from config).
-    #[arg(long)]
-    pub surface: Option<String>,
-    /// Output directory for the produced `.proof` file. Defaults to current dir.
-    #[arg(long)]
-    pub out: Option<PathBuf>,
-    #[command(flatten)]
-    pub flags: OutputFlags,
+// ---------------------------------------------------------------------------
+// Foundation signing constants
+// ---------------------------------------------------------------------------
+
+/// The v0 foundation seed. PUBLICLY KNOWN. Same seed used by foundation-keygen.
+const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
+
+/// Pinned `declaredAt` for self-contracts attestations minted under the
+/// unified pipeline. Matches the v1.6.0 catalog declared_at for consistency.
+const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
+
+/// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
+///
+/// * `project_subdir`: path segment under `implementations/` (the project root passed to the lifter)
+/// * `lift_surface`: subdirectory name under `.provekit/lift/<surface>/` (the manifest to load)
+/// * `lang_key`: the `lang` field in the signed attestation JSON (and the
+///   key for the `.provekit/self-contracts-attestations/<lang>.json` filename)
+///
+/// Naming diverges for several kits:
+///   `ts`     → project dir `typescript`,  surface `typescript`,             lang `ts`
+///   `csharp` → project dir `csharp`,      surface `csharp`,                 lang `csharp`
+///   `clr-bytecode` → project dir `csharp`, surface `clr-bytecode`,           lang `clr-bytecode`
+///   `evm-bytecode` → project dir `rust`,  surface `evm-bytecode`,            lang `evm-bytecode`
+///   `rust`   → project dir `rust`,        surface `rust-self-contracts`,    lang `rust`
+///   `go`     → project dir `go`,          surface `go-self-contracts`,      lang `go`
+///
+/// `--kit=rust` and `--kit=go` route to their self-contracts surfaces (which
+/// invoke the slab-walking mint binaries) rather than the generic
+/// workspace lifters (`provekit-lift` for rust, the test-fixture lifter for go).
+/// Without this, `make mint-rust` / `make mint-go` walk the wrong source and
+/// produce content-empty CIDs. The `--project=implementations/<lang>
+/// --surface=<lang>` form still reaches the workspace/test-fixture lifters
+/// for tooling that needs them.
+/// Fix: issue #176 Tier 1, option (c): route every kit to its
+/// self-contracts lifter (PR #180 for go, PR #183 for rust).
+pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
+    // (kit_alias, project_subdir, lift_surface,           lang_key)
+    ("rust", "rust", "rust-self-contracts", "rust"),
+    ("go", "go", "go-self-contracts", "go"),
+    ("cpp", "cpp", "cpp-self-contracts", "cpp"),
+    ("ts", "typescript", "typescript-self-contracts", "ts"),
+    ("csharp", "csharp", "csharp", "csharp"),
+    ("clr-bytecode", "csharp", "clr-bytecode", "clr-bytecode"),
+    ("evm-bytecode", "rust", "evm-bytecode", "evm-bytecode"),
+    ("swift", "swift", "swift-self-contracts", "swift"),
+    ("java", "java", "java-self-contracts", "java"),
+    ("python", "python", "python-self-contracts", "python"),
+    ("ruby", "ruby", "ruby-self-contracts", "ruby"),
+    ("zig", "zig", "zig-self-contracts", "zig"),
+    ("c", "c", "c-self-contracts", "c"),
+    ("php", "php", "php-self-contracts", "php"),
+];
+
+/// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
+/// Returns `(project_path, surface, lang_key)` relative to the CWD at
+/// which `provekit` is invoked (expected to be repo root).
+pub(crate) fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
+    KIT_TABLE
+        .iter()
+        .find(|(alias, _, _, _)| *alias == kit)
+        .map(|(_, subdir, surface, lang)| {
+            (
+                PathBuf::from("implementations").join(subdir),
+                surface.to_string(),
+                lang.to_string(),
+            )
+        })
 }
 
-/// Plugin manifest read from `.../lift/<name>/manifest.toml`.
-#[derive(Debug, Default)]
-struct PluginManifest {
-    name: String,
-    command: Vec<String>,
-    working_dir: Option<PathBuf>,
+/// Result of a successful mint transform.
+#[derive(Debug, Clone)]
+struct DispatchResult {
+    filename_cid: String,
+    contract_set_cid: String,
+    bytes_written: usize,
+    proof_file: Option<PathBuf>,
+    lift_result: Value,
 }
 
-fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
-    let mut m = PluginManifest::default();
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(p) => &line[..p],
-            None => line,
-        }
-        .trim();
-        if line.is_empty() || line.starts_with('[') {
-            continue;
-        }
-        let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
-        match key {
-            "name" => m.name = val.trim_matches('"').to_string(),
-            "working_dir" => m.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
-            "command" => {
-                let inner = val.trim_matches(|c| c == '[' || c == ']');
-                m.command = inner
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+#[derive(Debug, Clone, Default)]
+struct MintKit {
+    inputs: HashMapInputCatalog,
+}
+
+#[derive(Debug, Clone)]
+struct MintSession {
+    claim: DomainClaim,
+    result: DispatchResult,
+    surface: String,
+    out_dir: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct MintPathInput {
+    input: Input,
+    inputs: HashMapInputCatalog,
+}
+
+impl MintKit {
+    fn new(inputs: HashMapInputCatalog) -> Self {
+        Self { inputs }
+    }
+
+    fn path<'a>(&self, input: &'a Input) -> Result<&'a CorePath, KitError> {
+        let Input::Path(path) = input else {
+            return Err(KitError::UnsupportedInput {
+                dialect: self.dialect(),
+                message: "mint expects Input::Path containing the composed mint algebra"
+                    .to_string(),
+            });
+        };
+        Ok(path.as_ref())
+    }
+
+    fn transform_session(&self, input: &Input) -> Result<MintSession, KitError> {
+        let path = self.path(input)?;
+        let ordered_steps = path
+            .ordered_steps()
+            .map_err(|error| KitError::Transformation(error.to_string()))?;
+        let mint_step = path
+            .terminal_steps()
+            .into_iter()
+            .find(|step| step.name == "mint" || step.kit == "provekit-mint")
+            .ok_or_else(|| {
+                KitError::Transformation("mint path missing terminal `mint` step".to_string())
+            })?;
+        let lift_step = ordered_steps
+            .iter()
+            .copied()
+            .find(|step| {
+                mint_step.depends_on.iter().any(|name| name == &step.name)
+                    && step.kit.starts_with("lift-plugin:")
+            })
+            .ok_or_else(|| {
+                KitError::Transformation(
+                    "mint path terminal step must depend on a lift-plugin step".to_string(),
+                )
+            })?;
+
+        let lift_request = self.path_step_spec(lift_step, "mint path lift step")?;
+        let mint_request = self.path_step_spec(mint_step, "mint path mint step")?;
+        let project_root = PathBuf::from(
+            required_str(&lift_request, "workspace_root", "mint path lift step")
+                .map_err(KitError::Transformation)?,
+        );
+        let surface = required_str(&lift_request, "surface", "mint path lift step")
+            .map_err(KitError::Transformation)?
+            .to_string();
+        let out_dir = PathBuf::from(
+            required_str(&mint_request, "outDir", "mint path mint step")
+                .map_err(KitError::Transformation)?,
+        );
+        let quiet = mint_request
+            .get("options")
+            .and_then(|options| options.get("quiet"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        let session = match lift_plugin::dispatch_lift(
+            &project_root,
+            &surface,
+            LiftPluginOptions::default(),
+            quiet,
+        ) {
+            Ok(session) => session,
+            Err(LiftPluginError::MissingBinary { binary }) => {
+                if !quiet {
+                    println!(
+                        "{}: lifter binary `{}` not found: producing empty-set attestation",
+                        "warn".yellow().bold(),
+                        binary
+                    );
+                }
+                let empty_cid = compute_contract_set_cid(vec![]);
+                let result = DispatchResult {
+                    filename_cid: String::new(),
+                    contract_set_cid: empty_cid,
+                    bytes_written: 0,
+                    proof_file: None,
+                    lift_result: json!({
+                        "kind": "empty-set",
+                        "reason": "lifter binary not found",
+                        "binary": binary,
+                    }),
+                };
+                let claim = mint_result_claim(input, None, &result)?;
+                return Ok(MintSession {
+                    claim,
+                    result,
+                    surface,
+                    out_dir,
+                });
             }
-            _ => {}
+            Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
+        };
+
+        let lift_response = session.response().clone();
+        let lift_claim = session.claim;
+        let result = mint_lift_response(&project_root, &out_dir, quiet, lift_response)
+            .map_err(KitError::Transformation)?;
+        let claim = mint_result_claim(input, Some(&lift_claim), &result)?;
+        Ok(MintSession {
+            claim,
+            result,
+            surface,
+            out_dir,
+        })
+    }
+
+    fn path_step_spec(&self, step: &PathAlgebra, context: &str) -> Result<Value, KitError> {
+        let cid = step
+            .inputs
+            .first()
+            .ok_or_else(|| KitError::UnsupportedInput {
+                dialect: Dialect::Other(step.kit.clone()),
+                message: format!("{context} must carry at least one input CID"),
+            })?;
+        match self.inputs.get_input(cid) {
+            Some(Input::Spec(value)) => Ok(value.clone()),
+            Some(_) => Err(KitError::UnsupportedInput {
+                dialect: Dialect::Other(step.kit.clone()),
+                message: format!("{context} input `{cid}` must resolve to Input::Spec"),
+            }),
+            None => Err(KitError::UnsupportedInput {
+                dialect: Dialect::Other(step.kit.clone()),
+                message: format!("{context} input `{cid}` is not materialized"),
+            }),
         }
     }
-    if m.command.is_empty() {
-        return Err(format!("manifest {} has no `command`", path.display()));
-    }
-    Ok(m)
 }
 
-fn find_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, String> {
-    let project_local = project_root
-        .join(".provekit")
-        .join("lift")
-        .join(surface)
-        .join("manifest.toml");
-    if project_local.exists() {
-        return parse_manifest(&project_local);
+impl Kit for MintKit {
+    fn dialect(&self) -> Dialect {
+        Dialect::Other("provekit-mint".to_string())
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        let user_global = PathBuf::from(home)
-            .join(".config")
-            .join("provekit")
-            .join("lift")
-            .join(surface)
-            .join("manifest.toml");
-        if user_global.exists() {
-            return parse_manifest(&user_global);
-        }
+
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+        self.transform_session(input).map(|session| session.claim)
     }
-    Err(format!(
-        "no plugin manifest for surface `{surface}` (looked in .provekit/lift/{surface}/manifest.toml and ~/.config/provekit/lift/{surface}/manifest.toml)"
-    ))
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        Ok(claim)
+    }
+
+    fn parse(&self, input: &Input) -> Result<Term, KitError> {
+        let session = self.transform_session(input)?;
+        Ok(Term::Const {
+            value: dispatch_result_to_value(&session.result),
+            sort: Sort::Primitive {
+                name: "MintResult".to_string(),
+            },
+        })
+    }
+
+    fn serialize(&self, term: &Term) -> Result<Input, KitError> {
+        Ok(Input::Term(term.clone()))
+    }
 }
 
 fn dispatch(
@@ -117,184 +335,1479 @@ fn dispatch(
     surface: &str,
     out_dir: &Path,
     quiet: bool,
-) -> Result<(String, usize), String> {
-    let manifest = find_manifest(project_root, surface)?;
-    if !quiet {
-        println!(
-            "{}: surface=`{}` plugin=`{}` command={:?}",
-            "dispatch".green().bold(),
-            surface,
-            manifest.name,
-            manifest.command
-        );
-    }
-
-    let mut cmd = Command::new(&manifest.command[0]);
-    if manifest.command.len() > 1 {
-        cmd.args(&manifest.command[1..]);
-    }
-    cmd.arg("--rpc");
-    if let Some(wd) = &manifest.working_dir {
-        let resolved = if wd.is_absolute() {
-            wd.clone()
-        } else {
-            project_root.join(wd)
-        };
-        cmd.current_dir(resolved);
-    }
-    cmd.stdin(Stdio::piped());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::inherit());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn {:?}: {e}", manifest.command))?;
-    let mut stdin = child.stdin.take().ok_or("no stdin")?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let mut reader = BufReader::new(stdout);
-
-    // 1. initialize
-    let init_req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-cli", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": "provekit-lift/1",
-            "workspace_root": project_root.canonicalize().unwrap_or_else(|_| project_root.to_path_buf()),
-            "config_path": ".provekit/config.toml"
-        }
-    });
-    writeln!(stdin, "{init_req}").map_err(|e| format!("write initialize: {e}"))?;
-
-    let init_resp = read_response(&mut reader, 1)?;
-    if !quiet {
-        if let Some(name) = init_resp.get("name").and_then(|v| v.as_str()) {
-            println!("{}: plugin `{}` ready", "ok".green().bold(), name);
-        }
-    }
-
-    // 2. lift
-    let lift_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "lift",
-        "params": {
-            "surface": surface,
-            "source_paths": [],
-            "options": {"layer": "all"}
-        }
-    });
-    writeln!(stdin, "{lift_req}").map_err(|e| format!("write lift: {e}"))?;
-    let lift_resp = read_response(&mut reader, 2)?;
-
-    // 3. shutdown
-    let shutdown_req = json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "shutdown"
-    });
-    let _ = writeln!(stdin, "{shutdown_req}");
-    drop(stdin);
-    let _ = child.wait();
-
-    // Process response: shape `proof-envelope`
-    let kind = lift_resp.get("kind").and_then(|v| v.as_str()).ok_or(
-        "lift response missing `kind` field; only proof-envelope shape supported in v1",
-    )?;
-    if kind != "proof-envelope" {
-        return Err(format!(
-            "v1 dispatcher only supports `proof-envelope` shape; got `{kind}`. The lift-plugin spec defines shapes (a) `ir-document` and (b) `signed-mementos`; this dispatcher version doesn't implement them yet.",
-        ));
-    }
-    let filename_cid = lift_resp
-        .get("filename_cid")
-        .and_then(|v| v.as_str())
-        .ok_or("missing filename_cid")?
-        .to_string();
-    let bytes_b64 = lift_resp
-        .get("bytes_base64")
-        .and_then(|v| v.as_str())
-        .ok_or("missing bytes_base64")?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(bytes_b64)
-        .map_err(|e| format!("decode bytes_base64: {e}"))?;
-
-    std::fs::create_dir_all(out_dir)
-        .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
-    let out_path = out_dir.join(format!("{filename_cid}.proof"));
-    std::fs::write(&out_path, &bytes)
-        .map_err(|e| format!("write {}: {e}", out_path.display()))?;
-
-    Ok((filename_cid, bytes.len()))
+) -> Result<MintSession, String> {
+    let mint_input = mint_input(project_root, surface, out_dir, quiet);
+    MintKit::new(mint_input.inputs)
+        .transform_session(&mint_input.input)
+        .map_err(|error| error.to_string())
 }
 
-fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
-    let mut line = String::new();
-    let n = reader
-        .read_line(&mut line)
-        .map_err(|e| format!("read response: {e}"))?;
-    if n == 0 {
-        return Err("plugin closed stdout before responding".to_string());
+fn dispatch_path(project_root: &Path, path_file: &Path) -> Result<MintSession, String> {
+    let path = path_under(project_root, path_file);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|error| format!("read mint path document {}: {error}", path.display()))?;
+    let document: PathDocument = serde_json::from_str(&text)
+        .map_err(|error| format!("parse mint path document {}: {error}", path.display()))?;
+    let mut inputs = HashMapInputCatalog::default();
+    for (cid, input) in document
+        .materialized_inputs()
+        .map_err(|error| format!("invalid mint path document {}: {error}", path.display()))?
+    {
+        inputs.put(cid, input);
     }
-    let v: Value = serde_json::from_str(line.trim())
-        .map_err(|e| format!("parse JSON-RPC response: {e}\n  raw: {line}"))?;
-    if v.get("id").and_then(|v| v.as_i64()) != Some(id) {
-        return Err(format!("response id mismatch: expected {id}, got {v:?}"));
+    MintKit::new(inputs)
+        .transform_session(&Input::Path(Box::new(document.path)))
+        .map_err(|error| error.to_string())
+}
+
+fn path_under(project_root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_root.join(path)
     }
-    if let Some(err) = v.get("error") {
-        return Err(format!("plugin returned error: {err}"));
+}
+
+fn mint_input(project_root: &Path, surface: &str, out_dir: &Path, quiet: bool) -> MintPathInput {
+    let lift_input = Input::Spec(lift_plugin::build_lift_params(
+        project_root,
+        surface,
+        LiftPluginOptions::default(),
+    ));
+    let lift_input_cid = address(&lift_input);
+    let mint_input = Input::Spec(json!({
+        "projectRoot": project_root.display().to_string(),
+        "surface": surface,
+        "outDir": out_dir.display().to_string(),
+        "options": {
+            "quiet": quiet
+        }
+    }));
+    let mint_input_cid = address(&mint_input);
+    let mut inputs = HashMapInputCatalog::default();
+    inputs.put(lift_input_cid.clone(), lift_input);
+    inputs.put(mint_input_cid.clone(), mint_input);
+
+    MintPathInput {
+        input: Input::Path(Box::new(CorePath {
+            algebra: vec![
+                PathAlgebra {
+                    name: "lift".to_string(),
+                    kit: format!("lift-plugin:{surface}"),
+                    inputs: vec![lift_input_cid],
+                    depends_on: vec![],
+                },
+                PathAlgebra {
+                    name: "mint".to_string(),
+                    kit: "provekit-mint".to_string(),
+                    inputs: vec![mint_input_cid],
+                    depends_on: vec!["lift".to_string()],
+                },
+            ],
+        })),
+        inputs,
     }
-    v.get("result")
-        .cloned()
-        .ok_or_else(|| "response missing `result`".to_string())
+}
+
+fn mint_lift_response(
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+    lift_resp: Value,
+) -> Result<DispatchResult, String> {
+    let kind = lift_resp
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or("lift response missing `kind` field")?;
+    match kind {
+        "proof-envelope" => {
+            let filename_cid = lift_resp
+                .get("filename_cid")
+                .and_then(|v| v.as_str())
+                .ok_or("missing filename_cid")?
+                .to_string();
+            let contract_set_cid = lift_resp
+                .get("contract_set_cid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let bytes_b64 = lift_resp
+                .get("bytes_base64")
+                .and_then(|v| v.as_str())
+                .ok_or("missing bytes_base64")?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(bytes_b64)
+                .map_err(|e| format!("decode bytes_base64: {e}"))?;
+
+            std::fs::create_dir_all(out_dir)
+                .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+            let out_path = out_dir.join(format!("{filename_cid}.proof"));
+            std::fs::write(&out_path, &bytes)
+                .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+
+            if !quiet {
+                for d in lift_resp
+                    .get("diagnostics")
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                {
+                    let s = d.as_str().unwrap_or("");
+                    if !s.is_empty() {
+                        println!("{}: {s}", "note".dimmed());
+                    }
+                }
+            }
+
+            Ok(DispatchResult {
+                filename_cid,
+                contract_set_cid,
+                bytes_written: bytes.len(),
+                proof_file: Some(out_path),
+                lift_result: redact_lift_result(lift_resp),
+            })
+        }
+        "ir-document" => {
+            let ir = lift_resp
+                .get("ir")
+                .and_then(|v| v.as_array())
+                .ok_or("ir-document response missing `ir` array")?;
+
+            let authorities = lift_resp.get("authorities").and_then(|v| v.as_array());
+            let implications = lift_resp.get("implications").and_then(|v| v.as_array());
+            let witnesses = lift_resp.get("witnesses").and_then(|v| v.as_array());
+            let (bytes, filename_cid, contract_set_cid) = mint_from_ir_document(
+                ir,
+                authorities,
+                implications,
+                witnesses,
+                &project_root,
+                out_dir,
+                quiet,
+            )?;
+
+            std::fs::create_dir_all(out_dir)
+                .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+            let out_path = out_dir.join(format!("{filename_cid}.proof"));
+            std::fs::write(&out_path, &bytes)
+                .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+
+            if !quiet {
+                let diags = lift_resp.get("diagnostics").and_then(|v| v.as_array());
+
+                if let Some(diags) = diags {
+                    for d in diags {
+                        let s = d.as_str().unwrap_or("");
+                        if !s.is_empty() {
+                            println!("{}: {s}", "note".dimmed());
+                        }
+                    }
+                }
+            }
+
+            Ok(DispatchResult {
+                filename_cid,
+                contract_set_cid,
+                bytes_written: bytes.len(),
+                proof_file: Some(out_path),
+                lift_result: lift_resp,
+            })
+        }
+        other => Err(format!(
+            "unsupported response shape `{other}`; expected `proof-envelope` or `ir-document`",
+        )),
+    }
+}
+
+fn redact_lift_result(mut lift_resp: Value) -> Value {
+    if let Some(obj) = lift_resp.as_object_mut() {
+        if obj.contains_key("bytes_base64") {
+            obj.insert(
+                "bytes_base64".to_string(),
+                Value::String("<redacted>".to_string()),
+            );
+        }
+    }
+    lift_resp
+}
+
+fn mint_result_claim(
+    input: &Input,
+    lift_claim: Option<&DomainClaim>,
+    result: &DispatchResult,
+) -> Result<DomainClaim, KitError> {
+    let value = dispatch_result_to_value(result);
+    let term = Term::Const {
+        value,
+        sort: Sort::Primitive {
+            name: "MintResult".to_string(),
+        },
+    };
+    let contract = FunctionContractDomain
+        .project(&term, &Boundary::default())
+        .map_err(|error| KitError::Transformation(error.to_string()))?;
+    let to = if result.filename_cid.is_empty() {
+        address(&term)
+    } else {
+        Cid::parse(result.filename_cid.clone()).unwrap_or_else(|_| address(&term))
+    };
+    let result_cid = address(&term);
+    let premises = lift_claim
+        .map(|claim| vec![claim.cid()])
+        .unwrap_or_default();
+
+    Ok(DomainClaim {
+        domain: DomainKind::Other("provekit-mint".to_string()),
+        contract,
+        artifacts: vec![result_cid],
+        from: vec![address(input)],
+        premises,
+        to,
+        witness: None,
+        verdict: Verdict::Unresolved,
+        attestation: None,
+    })
+}
+
+fn dispatch_result_to_value(result: &DispatchResult) -> Value {
+    json!({
+        "kind": "mint-result",
+        "filenameCid": result.filename_cid,
+        "contractSetCid": result.contract_set_cid,
+        "bytesWritten": result.bytes_written,
+        "proofFile": result.proof_file.as_ref().map(|path| path.display().to_string()),
+        "lift": result.lift_result,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ir-document → proof-envelope minting
+// ---------------------------------------------------------------------------
+
+fn mint_from_ir_document(
+    ir: &[Value],
+    authorities: Option<&Vec<Value>>,
+    implications: Option<&Vec<Value>>,
+    witnesses: Option<&Vec<Value>>,
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+) -> Result<(Vec<u8>, String, String), String> {
+    use std::collections::BTreeMap;
+
+    #[derive(Clone)]
+    struct AuthorityRef {
+        cid: String,
+        seed: Ed25519Seed,
+        principal: String,
+    }
+
+    struct MintedContractRef {
+        attestation_cid: String,
+        pre_hash: Option<String>,
+        post_hash: Option<String>,
+        inv_hash: Option<String>,
+    }
+
+    impl MintedContractRef {
+        fn slot_hash(&self, slot: &str) -> Option<&str> {
+            match slot {
+                "pre" => self.pre_hash.as_deref(),
+                "post" => self.post_hash.as_deref(),
+                "inv" => self.inv_hash.as_deref(),
+                _ => None,
+            }
+        }
+    }
+
+    let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut authorities_by_id: BTreeMap<String, AuthorityRef> = BTreeMap::new();
+    let mut proof_authority: Option<AuthorityRef> = None;
+    let mut contracts_by_name: BTreeMap<String, MintedContractRef> = BTreeMap::new();
+    let mut content_cids: Vec<String> = Vec::new();
+    let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
+    let produced_at = "2026-05-03T18:00:00Z".to_string();
+    let witness_cids_by_contract =
+        lower_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
+
+    if let Some(authorities) = authorities {
+        for authority in authorities {
+            let id = required_str(authority, "id", "authority")?;
+            let principal = optional_str(authority, "principal").unwrap_or(id);
+            let scope_kind = required_str(authority, "scopeKind", id)?;
+            let scope = required_str(authority, "scope", id)?;
+            let seed = deterministic_signer_seed(principal);
+            let key = ed25519_pubkey_string(&seed);
+            let parent_id = optional_str(authority, "parent")
+                .or_else(|| optional_str(authority, "issuer"))
+                .or_else(|| optional_str(authority, "parentAuthority"));
+            let parent = match parent_id {
+                Some(parent_id) => Some(authorities_by_id.get(parent_id).ok_or_else(|| {
+                    format!("authority `{id}` references missing parent `{parent_id}`")
+                })?),
+                None => None,
+            };
+            let parent_authority_cid = parent.map(|parent| parent.cid.clone());
+            let signer_seed = parent.map(|parent| parent.seed).unwrap_or(seed);
+            let args = MintAuthorityArgs {
+                principal: principal.to_string(),
+                key: key.clone(),
+                scope_kind: scope_kind.to_string(),
+                scope: scope.to_string(),
+                parent_authority_cid,
+                produced_by: "provekit-cli".to_string(),
+                produced_at: produced_at.clone(),
+                signer_seed,
+            };
+            let minted =
+                mint_authority(&args).map_err(|e| format!("mint authority `{id}`: {e}"))?;
+            let authority_ref = AuthorityRef {
+                cid: minted.cid.clone(),
+                seed,
+                principal: principal.to_string(),
+            };
+            if scope_kind == "proof" && proof_authority.is_none() {
+                proof_authority = Some(authority_ref.clone());
+            }
+            if authorities_by_id
+                .insert(id.to_string(), authority_ref)
+                .is_some()
+            {
+                return Err(format!("duplicate authority `{id}`"));
+            }
+            members
+                .entry(minted.cid.clone())
+                .or_insert(minted.canonical_bytes);
+        }
+    }
+
+    for decl in ir {
+        let kind = decl.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        if kind != "contract" && kind != "function-contract" {
+            continue;
+        }
+
+        let name = decl
+            .get("name")
+            .or_else(|| decl.get("symbol"))
+            .or_else(|| decl.get("fn_name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unnamed")
+            .to_string();
+        let out_binding = decl
+            .get("outBinding")
+            .or_else(|| decl.get("out_binding"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("out")
+            .to_string();
+        let pre = decl
+            .get("pre")
+            .or_else(|| decl.get("precondition"))
+            .map(json_to_cvalue);
+        let post = decl
+            .get("post")
+            .or_else(|| decl.get("postcondition"))
+            .map(json_to_cvalue);
+        let inv = decl
+            .get("inv")
+            .or_else(|| decl.get("invariant"))
+            .map(json_to_cvalue);
+
+        if pre.is_none() && post.is_none() && inv.is_none() {
+            continue;
+        }
+        let authority = optional_str(decl, "authority")
+            .map(|authority_id| {
+                authorities_by_id.get(authority_id).ok_or_else(|| {
+                    format!("contract `{name}` references missing authority `{authority_id}`")
+                })
+            })
+            .transpose()?;
+        let mut input_cids = string_array(decl, "inputCids", &name)?;
+        if let Some(witness_cids) = witness_cids_by_contract.get(&name) {
+            input_cids.extend(witness_cids.iter().cloned());
+        }
+        if let Some(authority) = authority {
+            input_cids.push(authority.cid.clone());
+        }
+        let signer_seed = authority
+            .map(|authority| authority.seed)
+            .unwrap_or(default_signer_seed);
+        let produced_by = authority
+            .map(|authority| authority.principal.clone())
+            .unwrap_or_else(|| "provekit-cli".to_string());
+
+        let args = MintContractArgs {
+            contract_name: name,
+            pre,
+            post,
+            inv,
+            out_binding,
+            produced_by,
+            produced_at: produced_at.clone(),
+            input_cids,
+            authoring: Authoring::Lift {
+                lifter: "ir-document".to_string(),
+                evidence: "minted from ir-document RPC response".to_string(),
+                source_cid: None,
+            },
+            signer_seed,
+        };
+
+        let ccid = contract_cid(&args);
+        let pre_hash = args.pre.as_ref().map(formula_hash);
+        let post_hash = args.post.as_ref().map(formula_hash);
+        let inv_hash = args.inv.as_ref().map(formula_hash);
+        content_cids.push(ccid.clone());
+
+        let m = mint_contract(&args).map_err(|e| format!("mint contract: {e}"))?;
+
+        if contracts_by_name
+            .insert(
+                args.contract_name.clone(),
+                MintedContractRef {
+                    attestation_cid: m.cid.clone(),
+                    pre_hash,
+                    post_hash,
+                    inv_hash,
+                },
+            )
+            .is_some()
+        {
+            return Err(format!("duplicate contract `{}`", args.contract_name));
+        }
+
+        members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
+    }
+
+    if members.is_empty() {
+        return Err("no contracts to mint".to_string());
+    }
+
+    if let Some(implications) = implications {
+        for implication in implications {
+            let name = implication
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed-implication");
+            let antecedent_name = required_str(implication, "antecedent", name)?;
+            let consequent_name = required_str(implication, "consequent", name)?;
+            let antecedent_slot = optional_str(implication, "antecedentSlot").unwrap_or("post");
+            let consequent_slot = optional_str(implication, "consequentSlot").unwrap_or("post");
+
+            let antecedent = contracts_by_name.get(antecedent_name).ok_or_else(|| {
+                format!("implication `{name}` references missing contract `{antecedent_name}`")
+            })?;
+            let consequent = contracts_by_name.get(consequent_name).ok_or_else(|| {
+                format!("implication `{name}` references missing contract `{consequent_name}`")
+            })?;
+            let antecedent_hash = antecedent.slot_hash(antecedent_slot).ok_or_else(|| {
+                format!(
+                    "implication `{name}` references missing slot `{antecedent_slot}` on contract `{antecedent_name}`"
+                )
+            })?;
+            let consequent_hash = consequent.slot_hash(consequent_slot).ok_or_else(|| {
+                format!(
+                    "implication `{name}` references missing slot `{consequent_slot}` on contract `{consequent_name}`"
+                )
+            })?;
+            let authority = optional_str(implication, "authority")
+                .map(|authority_id| {
+                    authorities_by_id.get(authority_id).ok_or_else(|| {
+                        format!(
+                            "implication `{name}` references missing authority `{authority_id}`"
+                        )
+                    })
+                })
+                .transpose()?;
+            let additional_input_cids = authority
+                .map(|authority| vec![authority.cid.clone()])
+                .unwrap_or_default();
+            let signer_seed = authority
+                .map(|authority| authority.seed)
+                .unwrap_or(default_signer_seed);
+            let produced_by = authority
+                .map(|authority| authority.principal.clone())
+                .unwrap_or_else(|| "provekit-cli".to_string());
+
+            let args = MintImplicationArgs {
+                produced_by,
+                produced_at: produced_at.clone(),
+                antecedent_hash: antecedent_hash.to_string(),
+                consequent_hash: consequent_hash.to_string(),
+                antecedent_cid: antecedent.attestation_cid.clone(),
+                consequent_cid: consequent.attestation_cid.clone(),
+                additional_input_cids,
+                antecedent_slot: antecedent_slot.to_string(),
+                consequent_slot: consequent_slot.to_string(),
+                prover: optional_str(implication, "prover")
+                    .unwrap_or("bridgeworks-white-room")
+                    .to_string(),
+                prover_run_ms: implication
+                    .get("proverRunMs")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+                smt_lib_input: optional_str(implication, "smtLibInput")
+                    .unwrap_or("")
+                    .to_string(),
+                proof_witness: optional_str(implication, "proofWitness")
+                    .unwrap_or(name)
+                    .to_string(),
+                signer_seed,
+            };
+
+            let m = mint_implication(&args);
+            members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
+        }
+    }
+
+    let contract_set_cid = compute_contract_set_cid(content_cids);
+
+    let (proof_signer, proof_signer_seed) = if let Some(authority) = proof_authority {
+        (authority.cid, authority.seed)
+    } else {
+        (
+            ed25519_pubkey_string(&default_signer_seed),
+            default_signer_seed,
+        )
+    };
+
+    let proof_input = ProofEnvelopeInput {
+        name: "ir-document".to_string(),
+        version: "1.0.0".to_string(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid: proof_signer,
+        signer_seed: proof_signer_seed,
+        declared_at: produced_at,
+    };
+
+    let built = build_proof_envelope(&proof_input);
+
+    Ok((built.bytes, built.cid, contract_set_cid))
+}
+
+fn optional_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
+    value.get(field).and_then(|v| v.as_str())
+}
+
+fn required_str<'a>(value: &'a Value, field: &str, context: &str) -> Result<&'a str, String> {
+    optional_str(value, field).ok_or_else(|| format!("`{context}` missing `{field}`"))
+}
+
+fn formula_hash(formula: &Arc<CValue>) -> String {
+    blake3_512_of(encode_jcs(formula).as_bytes())
+}
+
+fn string_array(value: &Value, field: &str, context: &str) -> Result<Vec<String>, String> {
+    let Some(values) = value.get(field) else {
+        return Ok(Vec::new());
+    };
+    let array = values
+        .as_array()
+        .ok_or_else(|| format!("`{context}` field `{field}` must be an array"))?;
+    array
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("`{context}` field `{field}` must contain only strings"))
+        })
+        .collect()
+}
+
+fn lower_witnesses_by_contract(
+    witnesses: Option<&Vec<Value>>,
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let mut by_contract: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let Some(witnesses) = witnesses else {
+        return Ok(by_contract);
+    };
+    for witness in witnesses {
+        let attach_to = required_str(witness, "attachTo", "witness requirement")?;
+        let lowered =
+            crate::cmd_lower::lower_witness_requirement(project_root, witness, out_dir, quiet)
+                .map_err(|e| format!("ORP witness failed: {attach_to}\n{e}"))?;
+        by_contract
+            .entry(attach_to.to_string())
+            .or_default()
+            .push(lowered.filename_cid);
+    }
+    Ok(by_contract)
+}
+
+fn deterministic_signer_seed(principal: &str) -> Ed25519Seed {
+    let digest = blake3_512_of(format!("provekit-signer:{principal}").as_bytes());
+    let hex = digest
+        .strip_prefix("blake3-512:")
+        .expect("blake3_512_of returns tagged digest");
+    let mut seed = [0u8; 32];
+    for (idx, slot) in seed.iter_mut().enumerate() {
+        let hi = hex_nibble(hex.as_bytes()[idx * 2]);
+        let lo = hex_nibble(hex.as_bytes()[idx * 2 + 1]);
+        *slot = (hi << 4) | lo;
+    }
+    seed
+}
+
+fn hex_nibble(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        b'A'..=b'F' => byte - b'A' + 10,
+        _ => 0,
+    }
+}
+
+/// Convert `serde_json::Value` to `provekit_canonicalizer::Value`.
+fn json_to_cvalue(j: &Value) -> Arc<CValue> {
+    match j {
+        Value::Null => CValue::null(),
+        Value::Bool(b) => CValue::boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                CValue::integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                CValue::integer(f as i64)
+            } else {
+                CValue::integer(0)
+            }
+        }
+        Value::String(s) => CValue::string(s.clone()),
+        Value::Array(items) => {
+            let v: Vec<_> = items.iter().map(|x| json_to_cvalue(x)).collect();
+            CValue::array(v)
+        }
+        Value::Object(map) => {
+            let entries: Vec<(String, Arc<CValue>)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), json_to_cvalue(v)))
+                .collect();
+            CValue::object(entries)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Self-contracts attestation signing
+// ---------------------------------------------------------------------------
+
+/// Build the signed self-contracts attestation JSON for a kit.
+///
+/// The signed body (per spec #94 §2) is the seven-field object without
+/// `signature`. JCS encoding of that body is what the foundation key signs.
+///
+/// When `bundle_cid` is empty (lifter binary not found), the attestation
+/// records `cid: ""`: callers can detect the empty-lifter case via this
+/// field. The `contractSetCid` is still valid (it's the empty-set CID).
+fn build_signed_attestation(lang: &str, bundle_cid: &str, contract_set_cid: &str) -> Value {
+    let signer_pubkey = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
+
+    // Build the seven-field message body (no `signature`).
+    // JCS sorts keys by code point; we build as a canonicalizer object in
+    // the SAME field order as foundation-keygen does so the bytes are
+    // byte-identical to what sign-self-contracts produces.
+    let entries: Vec<(String, Arc<CValue>)> = vec![
+        ("schemaVersion".to_string(), CValue::string("1".to_string())),
+        (
+            "kind".to_string(),
+            CValue::string("self-contracts-attestation".to_string()),
+        ),
+        ("lang".to_string(), CValue::string(lang.to_string())),
+        ("cid".to_string(), CValue::string(bundle_cid.to_string())),
+        (
+            "contractSetCid".to_string(),
+            CValue::string(contract_set_cid.to_string()),
+        ),
+        (
+            "declaredAt".to_string(),
+            CValue::string(SELF_CONTRACTS_DECLARED_AT.to_string()),
+        ),
+        ("signer".to_string(), CValue::string(signer_pubkey.clone())),
+    ];
+    let msg_obj = CValue::object(entries);
+    let jcs_bytes = encode_jcs(&msg_obj).into_bytes();
+    let signature = ed25519_sign_string(&FOUNDATION_V0_SEED, &jcs_bytes);
+
+    json!({
+        "schemaVersion": "1",
+        "kind": "self-contracts-attestation",
+        "lang": lang,
+        "cid": bundle_cid,
+        "contractSetCid": contract_set_cid,
+        "declaredAt": SELF_CONTRACTS_DECLARED_AT,
+        "signer": signer_pubkey,
+        "signature": signature,
+    })
+}
+
+/// Write the signed attestation to `<repo_root>/.provekit/self-contracts-attestations/<lang>.json`.
+///
+/// The repo root is located by ascending from the project root looking for
+/// a `.provekit/self-contracts-attestations/` directory. Falls back to
+/// searching from CWD if the project root doesn't resolve it.
+fn write_attestation(
+    project_root: &Path,
+    lang: &str,
+    bundle_cid: &str,
+    contract_set_cid: &str,
+    quiet: bool,
+) -> Result<PathBuf, String> {
+    let attestation = build_signed_attestation(lang, bundle_cid, contract_set_cid);
+    let json_str = serde_json::to_string_pretty(&attestation)
+        .map_err(|e| format!("serialize attestation: {e}"))?;
+
+    let attest_dir = find_attestation_dir(project_root)?;
+    std::fs::create_dir_all(&attest_dir)
+        .map_err(|e| format!("mkdir {}: {e}", attest_dir.display()))?;
+    let out_path = attest_dir.join(format!("{lang}.json"));
+    std::fs::write(&out_path, json_str.as_bytes())
+        .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+    if !quiet {
+        println!("{}: wrote {}", "attest".green().bold(), out_path.display());
+    }
+    Ok(out_path)
+}
+
+/// Locate the `.provekit/self-contracts-attestations/` directory by
+/// searching upward from `start`.
+fn find_attestation_dir(start: &Path) -> Result<PathBuf, String> {
+    // Walk up through the directory tree looking for the attestation dir.
+    let abs = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
+    let mut cur = abs.as_path();
+    loop {
+        let candidate = cur.join(".provekit").join("self-contracts-attestations");
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+        match cur.parent() {
+            Some(p) => cur = p,
+            None => break,
+        }
+    }
+    // Fall back: construct from current working directory.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    Ok(cwd.join(".provekit").join("self-contracts-attestations"))
+}
+
+// ---------------------------------------------------------------------------
+// MintArgs + run
+// ---------------------------------------------------------------------------
+
+#[derive(Parser, Debug, Clone)]
+pub struct MintArgs {
+    #[command(subcommand)]
+    pub command: Option<MintCommand>,
+    /// Project root containing `.provekit/config.toml`. Defaults to current dir.
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+    /// Kit shortcut: maps `<kit>` to `implementations/<kit>`.
+    /// Equivalent to `--project implementations/<kit>`.
+    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
+    #[arg(long, conflicts_with = "project")]
+    pub kit: Option<String>,
+    /// Override the authoring surface (otherwise read from config or derived from --kit).
+    #[arg(long)]
+    pub surface: Option<String>,
+    /// Output directory for the produced `.proof` file. Defaults to current dir.
+    #[arg(long)]
+    pub out: Option<PathBuf>,
+    /// Skip writing the signed attestation JSON.
+    #[arg(long)]
+    pub no_attest: bool,
+    #[command(flatten)]
+    pub flags: OutputFlags,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum MintCommand {
+    Algorithm(AlgebraicMintArgs),
+    Binding(AlgebraicMintArgs),
+    Sort(AlgebraicMintArgs),
+    Equation(AlgebraicMintArgs),
+    EffectSignature(AlgebraicMintArgs),
+    LanguageSignature(AlgebraicMintArgs),
+    LanguageMorphism(AlgebraicMintArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct AlgebraicMintArgs {
+    #[arg(long)]
+    pub spec: PathBuf,
+    #[arg(long)]
+    pub signer: Option<PathBuf>,
+    #[arg(long)]
+    pub unsigned: bool,
+    #[arg(long)]
+    pub catalog: PathBuf,
 }
 
 pub fn run(args: MintArgs) -> u8 {
-    let project_root: PathBuf = args.project.unwrap_or_else(|| PathBuf::from("."));
-    if !project_root.exists() {
-        eprintln!("{}: project not found: {}", "error".red().bold(), project_root.display());
-        return EXIT_USER_ERROR;
+    if let Some(command) = args.command {
+        return run_algebraic_mint(command);
     }
 
-    // Resolve surface: --surface > project config > user config.
-    let surface = if let Some(s) = args.surface {
-        s
-    } else {
-        let project_cfg = read_project_config(&project_root);
-        let user_cfg = read_user_config();
-        match project_cfg
-            .surface_for("must")
-            .or_else(|| user_cfg.surface_for("must"))
-        {
-            Some(s) => s,
+    // Resolve (project_root, surface, lang_key) from --kit or --project.
+    let (project_root, derived_surface, lang_key) = if let Some(kit) = &args.kit {
+        match resolve_kit(kit) {
+            Some((path, surface, lang)) => (path, Some(surface), Some(lang)),
             None => {
+                let known: Vec<&str> = KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
                 eprintln!(
-                    "{}: no `[authoring] surface` in .provekit/config.toml. Pass --surface or run `provekit init`.",
-                    "error".red().bold()
+                    "{}: unknown kit `{}`; known kits: {}",
+                    "error".red().bold(),
+                    kit,
+                    known.join(", ")
                 );
                 return EXIT_USER_ERROR;
             }
         }
+    } else {
+        let path = args.project.clone().unwrap_or_else(|| PathBuf::from("."));
+        (path, None, None)
     };
 
-    let out_dir = args.out.unwrap_or_else(|| project_root.clone());
+    if !project_root.exists() {
+        eprintln!(
+            "{}: project not found: {}",
+            "error".red().bold(),
+            project_root.display()
+        );
+        return EXIT_USER_ERROR;
+    }
 
-    match dispatch(&project_root, &surface, &out_dir, args.flags.quiet) {
-        Ok((cid, n)) => {
-            if !args.flags.quiet {
-                println!();
-                println!("  catalog CID:        {cid}");
-                println!("  proof bytes:        {n}");
-                println!("  .proof file:        {}", out_dir.join(format!("{cid}.proof")).display());
-            } else {
-                println!("{cid}");
+    let project_cfg = read_project_config(&project_root);
+    let user_cfg = read_user_config();
+    let configured_path = if args.kit.is_none() && args.surface.is_none() && args.out.is_none() {
+        project_cfg
+            .path_for("mint")
+            .or_else(|| user_cfg.path_for("mint"))
+    } else {
+        None
+    };
+
+    let session = if let Some(path_file) = configured_path {
+        dispatch_path(&project_root, Path::new(&path_file))
+    } else {
+        // Resolve surface: --surface > --kit derived > project config > user config.
+        let surface = if let Some(s) = args.surface.clone() {
+            s
+        } else if let Some(s) = derived_surface {
+            s
+        } else {
+            match project_cfg
+                .surface_for("lift")
+                .or_else(|| user_cfg.surface_for("lift"))
+            {
+                Some(s) => s,
+                None => {
+                    eprintln!(
+                        "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml, or pass --surface/--kit.",
+                        "error".red().bold()
+                    );
+                    return EXIT_USER_ERROR;
+                }
             }
+        };
+
+        let out_dir = args.out.clone().unwrap_or_else(|| project_root.clone());
+        dispatch(&project_root, &surface, &out_dir, args.flags.quiet)
+    };
+
+    match session {
+        Ok(session) => {
+            let result = session.result;
+            let contract_set_cid = if result.contract_set_cid.is_empty() {
+                compute_contract_set_cid(vec![])
+            } else {
+                result.contract_set_cid.clone()
+            };
+
+            if args.flags.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "ok": true,
+                        "project": &project_root,
+                        "surface": &session.surface,
+                        "filenameCid": &result.filename_cid,
+                        "contractSetCid": &contract_set_cid,
+                        "bytesWritten": result.bytes_written,
+                        "proofFile": &result.proof_file,
+                        "lift": &result.lift_result,
+                    }))
+                    .expect("serialize mint JSON")
+                );
+            } else if !args.flags.quiet {
+                println!();
+                if !result.filename_cid.is_empty() {
+                    println!("  catalog CID:        {}", result.filename_cid);
+                }
+                println!("  contractSetCid:     {contract_set_cid}");
+                if result.bytes_written > 0 {
+                    println!("  proof bytes:        {}", result.bytes_written);
+                    if let Some(proof_file) = &result.proof_file {
+                        println!("  .proof file:        {}", proof_file.display());
+                    } else {
+                        println!(
+                            "  .proof file:        {}",
+                            session
+                                .out_dir
+                                .join(format!("{}.proof", result.filename_cid))
+                                .display()
+                        );
+                    }
+                } else {
+                    println!("  (no .proof written: lifter binary not found)");
+                }
+            } else {
+                // Quiet mode: first line = bundle CID, second line = contractSetCid.
+                // The Makefile captures contractSetCid via grep.
+                if !result.filename_cid.is_empty() {
+                    println!("{}", result.filename_cid);
+                }
+                println!("contractSetCid: {contract_set_cid}");
+            }
+
+            // Write attestation unless suppressed.
+            if !args.no_attest {
+                // Determine lang_key: use --kit derived value, else infer from surface.
+                let lang = lang_key.as_deref().unwrap_or(&session.surface);
+                if let Err(e) = write_attestation(
+                    &project_root,
+                    lang,
+                    &result.filename_cid,
+                    &contract_set_cid,
+                    args.flags.quiet,
+                ) {
+                    eprintln!("{}: {e}", "warn".yellow().bold());
+                    // Non-fatal: attestation write failure doesn't fail the mint.
+                }
+            }
+
             EXIT_OK
         }
         Err(e) => {
             eprintln!("{}: {e}", "error".red().bold());
             EXIT_VERIFY_FAIL
         }
+    }
+}
+
+fn run_algebraic_mint(command: MintCommand) -> u8 {
+    let result = match command {
+        MintCommand::Algorithm(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::AlgorithmSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_algorithm(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::Binding(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::BindingSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_binding(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::Sort(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::SortSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_sort(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::Equation(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::EquationSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_equation(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::EffectSignature(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::EffectSignatureSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_effect_signature(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::LanguageSignature(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::LanguageSignatureSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_language_signature(spec, &signer, &catalog)
+            })
+        }
+        MintCommand::LanguageMorphism(args) => {
+            let signer = signer_from_args(&args);
+            signer.and_then(|signer| {
+                let catalog = algebraic_mint::Catalog::new(args.catalog.clone())?;
+                let spec = algebraic_mint::LanguageMorphismSpec::from_path(&args.spec)?;
+                algebraic_mint::mint_language_morphism(spec, &signer, &catalog)
+            })
+        }
+    };
+
+    match result {
+        Ok(minted) => {
+            println!("{}\t{}", minted.cid, minted.path.display());
+            EXIT_OK
+        }
+        Err(error) => {
+            print_algebraic_error(&error);
+            EXIT_USER_ERROR
+        }
+    }
+}
+
+fn signer_from_args(args: &AlgebraicMintArgs) -> algebraic_mint::Result<algebraic_mint::Signer> {
+    if args.unsigned && args.signer.is_some() {
+        return Err(algebraic_mint::MintError::Signer(
+            "`--unsigned` cannot be combined with `--signer`".into(),
+        ));
+    }
+    if args.unsigned {
+        return Ok(algebraic_mint::Signer::from_unsigned_test_only());
+    }
+    let signer_path = args.signer.as_ref().ok_or_else(|| {
+        algebraic_mint::MintError::Signer(
+            "missing `--signer PATH` unless `--unsigned` is set".into(),
+        )
+    })?;
+    algebraic_mint::Signer::from_pem_path(signer_path)
+}
+
+fn print_algebraic_error(error: &algebraic_mint::MintError) {
+    let kind = match error {
+        algebraic_mint::MintError::Validation(_) => "validation",
+        algebraic_mint::MintError::Catalog(_) => "catalog",
+        algebraic_mint::MintError::Signer(_) => "signer",
+        algebraic_mint::MintError::Canonical(_) => "canonical",
+        algebraic_mint::MintError::Io { .. } => "io",
+        algebraic_mint::MintError::Json { .. } => "json",
+    };
+    eprintln!(
+        "{}",
+        serde_json::to_string(&json!({
+            "error": {
+                "kind": kind,
+                "message": error.to_string()
+            }
+        }))
+        .expect("serialize algebraic mint error")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_kit_ts_maps_to_typescript_dir() {
+        // Issue #204: ts kit routes to typescript-self-contracts surface (not the
+        // generic workspace lifter) so --kit=ts mints real self-contracts.
+        let (path, surface, lang) = resolve_kit("ts").expect("ts must resolve");
+        assert_eq!(path, PathBuf::from("implementations/typescript"));
+        assert_eq!(surface, "typescript-self-contracts");
+        assert_eq!(lang, "ts");
+    }
+
+    #[test]
+    fn resolve_kit_rust_maps_to_rust_dir() {
+        // Issue #176 Tier 1: rust kit maps to rust-self-contracts surface so the
+        // attestation reflects the canonical self-contracts slab, not the generic
+        // workspace lifter.
+        let (path, surface, lang) = resolve_kit("rust").expect("rust must resolve");
+        assert_eq!(path, PathBuf::from("implementations/rust"));
+        assert_eq!(surface, "rust-self-contracts");
+        assert_eq!(lang, "rust");
+    }
+
+    #[test]
+    fn resolve_kit_all_13_ci_kits() {
+        let kits = [
+            "rust",
+            "go",
+            "cpp",
+            "ts",
+            "csharp",
+            "clr-bytecode",
+            "evm-bytecode",
+            "swift",
+            "java",
+            "python",
+            "ruby",
+            "zig",
+            "c",
+        ];
+        for kit in kits {
+            assert!(resolve_kit(kit).is_some(), "kit `{kit}` must resolve");
+        }
+    }
+
+    #[test]
+    fn resolve_kit_unknown_returns_none() {
+        assert!(resolve_kit("haskell").is_none());
+    }
+
+    #[test]
+    fn build_signed_attestation_has_required_fields() {
+        let a = build_signed_attestation("rust", "blake3-512:deadbeef", "blake3-512:cafebabe");
+        assert_eq!(a["schemaVersion"].as_str(), Some("1"));
+        assert_eq!(a["kind"].as_str(), Some("self-contracts-attestation"));
+        assert_eq!(a["lang"].as_str(), Some("rust"));
+        assert_eq!(a["declaredAt"].as_str(), Some("2026-05-05T18:00:00Z"));
+        assert!(a["signature"].as_str().unwrap().starts_with("ed25519:"));
+        assert!(a["signer"].as_str().unwrap().starts_with("ed25519:"));
+    }
+
+    #[test]
+    fn build_signed_attestation_is_deterministic() {
+        let a = build_signed_attestation("go", "blake3-512:aa", "blake3-512:bb");
+        let b = build_signed_attestation("go", "blake3-512:aa", "blake3-512:bb");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn dispatch_lift_params_source_paths_non_empty() {
+        // C3 (verify_c3_lift_request_well_formed) requires source_paths to be
+        // a non-empty array. Sending [] was the bug fixed in issue #166.
+        let root = PathBuf::from(".");
+        let params =
+            crate::lift_plugin::build_lift_params(&root, "rust", LiftPluginOptions::default());
+        let paths = params["source_paths"]
+            .as_array()
+            .expect("source_paths must be an array");
+        assert!(
+            !paths.is_empty(),
+            "source_paths must not be empty: was C3 violation (issue #166)"
+        );
+        assert_eq!(paths[0].as_str(), Some("."), "first entry should be '.'");
+    }
+
+    #[test]
+    fn dispatch_lift_params_has_surface_and_options() {
+        let root = PathBuf::from(".");
+        let params =
+            crate::lift_plugin::build_lift_params(&root, "go", LiftPluginOptions::default());
+        assert_eq!(params["surface"].as_str(), Some("go"));
+        assert_eq!(
+            params["config_path"].as_str(),
+            Some(".provekit/config.toml")
+        );
+        assert!(
+            params["workspace_root"].as_str().is_some(),
+            "workspace_root should be present for lifters that resolve source through the project root"
+        );
+        assert_eq!(params["options"]["layer"].as_str(), Some("all"));
+    }
+
+    #[test]
+    fn mint_input_is_a_composed_path() {
+        let input = mint_input(
+            std::path::Path::new("."),
+            "rust-self-contracts",
+            std::path::Path::new("out"),
+            true,
+        );
+        let Input::Path(path) = input.input else {
+            panic!("mint command input must be a composed path");
+        };
+
+        let lift = path.step("lift").expect("lift algebra step");
+        let mint = path.step("mint").expect("mint algebra step");
+        assert_eq!(lift.kit, "lift-plugin:rust-self-contracts");
+        assert_eq!(mint.kit, "provekit-mint");
+        assert_eq!(lift.inputs.len(), 1);
+        assert_eq!(mint.inputs.len(), 1);
+        assert_eq!(mint.depends_on, vec!["lift".to_string()]);
+        assert!(path.cid().as_str().starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn mint_transform_rejects_invalid_path_algebra() {
+        let input = Input::Path(Box::new(CorePath {
+            algebra: vec![
+                PathAlgebra {
+                    name: "lift".to_string(),
+                    kit: "lift-plugin:rust".to_string(),
+                    inputs: vec![address(&Input::Spec(json!({
+                        "surface": "rust",
+                        "workspace_root": "."
+                    })))],
+                    depends_on: vec![],
+                },
+                PathAlgebra {
+                    name: "mint".to_string(),
+                    kit: "provekit-mint".to_string(),
+                    inputs: vec![address(&Input::Spec(json!({
+                        "outDir": "out"
+                    })))],
+                    depends_on: vec!["lift".to_string(), "missing".to_string()],
+                },
+            ],
+        }));
+
+        let error = MintKit::default()
+            .transform(&input)
+            .expect_err("invalid path algebra should be rejected before transport")
+            .to_string();
+        assert!(
+            error.contains("missing step `missing`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn mint_from_ir_document_accepts_contract_decl_shape() {
+        let ir = vec![json!({
+            "kind": "contract",
+            "symbol": "accept",
+            "invariant": {
+                "kind": "atomic",
+                "name": "eq",
+                "args": [
+                    {"kind": "var", "name": "value"},
+                    {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
+                ]
+            }
+        })];
+
+        let (bytes, filename_cid, contract_set_cid) =
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), Path::new("."), true)
+                .expect("mint bug-zoo style ir-document");
+        assert!(!bytes.is_empty());
+        assert!(filename_cid.starts_with("blake3-512:"));
+        assert!(contract_set_cid.starts_with("blake3-512:"));
+        let proof_path = PathBuf::from(format!("{filename_cid}.proof"));
+        let report =
+            provekit_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
+        assert!(
+            report.errors.is_empty(),
+            "minted ir-document proof should inspect cleanly: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn mint_from_ir_document_mints_implication_mementos() {
+        let ir = vec![
+            json!({
+                "kind": "contract",
+                "name": "lower.claim",
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "lower_holds", "args": []}
+            }),
+            json!({
+                "kind": "contract",
+                "name": "upper.claim",
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "upper_holds", "args": []}
+            }),
+        ];
+        let implications = vec![json!({
+            "name": "lower-implies-upper",
+            "antecedent": "lower.claim",
+            "consequent": "upper.claim",
+            "antecedentSlot": "post",
+            "consequentSlot": "post"
+        })];
+
+        let (bytes, _, _) = mint_from_ir_document(
+            &ir,
+            None,
+            Some(&implications),
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect("mint contracts plus implication");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+
+        assert_eq!(members.len(), 3);
+
+        let mut contract_count = 0;
+        let mut implication_count = 0;
+        for member in members.values() {
+            let bytes = member.as_bstr().expect("member bytes");
+            let envelope: Value = serde_json::from_slice(bytes).expect("member JSON");
+            match envelope.pointer("/header/kind").and_then(|v| v.as_str()) {
+                Some("contract") => contract_count += 1,
+                Some("implication") => {
+                    implication_count += 1;
+                    let inputs = envelope
+                        .pointer("/header/inputCids")
+                        .and_then(|v| v.as_array())
+                        .expect("implication inputCids");
+                    assert_eq!(inputs.len(), 2);
+                }
+                other => panic!("unexpected member kind {other:?}"),
+            }
+        }
+
+        assert_eq!(contract_count, 2);
+        assert_eq!(implication_count, 1);
+    }
+
+    #[test]
+    fn mint_from_ir_document_links_contract_to_authority_memento() {
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "checked_add_u8.postcondition",
+            "outBinding": "out",
+            "authority": "bridgeworks.software",
+            "post": {"kind": "atomic", "name": "checked_add_u8.postcondition", "args": []}
+        })];
+        let authorities = vec![
+            json!({
+                "id": "bridgeworks.root",
+                "principal": "bridgeworks.root",
+                "scopeKind": "proof",
+                "scope": "authority-backed-test"
+            }),
+            json!({
+                "id": "bridgeworks.software",
+                "principal": "bridgeworks.software",
+                "scopeKind": "contract",
+                "scope": "checked_add_u8.postcondition",
+                "parent": "bridgeworks.root"
+            }),
+        ];
+
+        let (bytes, filename_cid, _) = mint_from_ir_document(
+            &ir,
+            Some(&authorities),
+            None,
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect("mint authority plus contract");
+        let proof_path = PathBuf::from(format!("{filename_cid}.proof"));
+        let report =
+            provekit_verifier::proof_conformance::validate_proof_bytes(&proof_path, &bytes);
+        assert!(
+            report.errors.is_empty(),
+            "authority-backed proof should inspect cleanly: {:?}",
+            report.errors
+        );
+
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let root = catalog.as_map().expect("catalog map");
+        let proof_signer = root
+            .get("signer")
+            .and_then(|v| v.as_tstr())
+            .expect("proof signer");
+        assert!(proof_signer.starts_with("blake3-512:"));
+
+        let members = root
+            .get("members")
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        let mut authority = None;
+        let mut authority_member_cid = None;
+        let mut contract = None;
+        for (cid, member) in members {
+            let bytes = member.as_bstr().expect("member bytes");
+            let envelope: Value = serde_json::from_slice(bytes).expect("member JSON");
+            match envelope.pointer("/header/kind").and_then(|v| v.as_str()) {
+                Some("authority")
+                    if envelope
+                        .pointer("/header/principal")
+                        .and_then(|v| v.as_str())
+                        == Some("bridgeworks.software") =>
+                {
+                    authority_member_cid = Some(cid.clone());
+                    authority = Some(envelope);
+                }
+                Some("contract") => contract = Some(envelope),
+                _ => {}
+            }
+        }
+        let authority = authority.expect("authority memento");
+        let authority_member_cid = authority_member_cid.expect("authority member cid");
+        let contract = contract.expect("contract memento");
+        let authority_key = authority
+            .pointer("/header/key")
+            .and_then(|v| v.as_str())
+            .expect("authority key");
+
+        assert_eq!(
+            contract
+                .pointer("/header/inputCids/0")
+                .and_then(|v| v.as_str()),
+            Some(authority_member_cid.as_str())
+        );
+        assert_eq!(
+            contract
+                .pointer("/envelope/signer")
+                .and_then(|v| v.as_str()),
+            Some(authority_key)
+        );
+    }
+
+    #[test]
+    fn mint_from_ir_document_rejects_implication_missing_contract() {
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "upper.claim",
+            "outBinding": "out",
+            "post": {"kind": "atomic", "name": "upper_holds", "args": []}
+        })];
+        let implications = vec![json!({
+            "name": "lower-implies-upper",
+            "antecedent": "lower.claim",
+            "consequent": "upper.claim",
+            "antecedentSlot": "post",
+            "consequentSlot": "post"
+        })];
+
+        let err = mint_from_ir_document(
+            &ir,
+            None,
+            Some(&implications),
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect_err("missing antecedent should fail");
+
+        assert!(err.contains("lower.claim"), "error was: {err}");
+    }
+
+    #[test]
+    fn empty_set_cid_is_stable() {
+        // Verify compute_contract_set_cid([]) is stable across calls.
+        let a = compute_contract_set_cid(vec![]);
+        let b = compute_contract_set_cid(vec![]);
+        assert_eq!(a, b);
+        assert!(a.starts_with("blake3-512:"));
+        // Print so the integration test can verify against the pinned value.
+        eprintln!("empty-set CID = {a}");
     }
 }

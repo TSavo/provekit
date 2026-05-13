@@ -1,0 +1,16 @@
+{
+  "kind": "sort",
+  "fn_name": "ts:Stmt",
+  "version": "0.1.0-draft",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Stmt",
+    "description": "TypeScript source statement term."
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#sorts"
+}

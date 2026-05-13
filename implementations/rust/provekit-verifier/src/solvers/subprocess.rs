@@ -66,8 +66,20 @@ impl Solver for SubprocessSolver {
         cmd.stderr(Stdio::piped());
 
         let mut child = match cmd.spawn() {
-            Ok(c) => c,
+            Ok(c) => {
+                eprintln!(
+                    "[provekit-verifier] spawned solver {:?} (binary={:?}) pid={}",
+                    self.name,
+                    self.binary,
+                    c.id()
+                );
+                c
+            }
             Err(e) => {
+                eprintln!(
+                    "[provekit-verifier] failed to spawn solver {:?} (binary={:?}): {e}",
+                    self.name, self.binary
+                );
                 return SolveResult {
                     verdict: ObligationVerdict::Undecidable,
                     solver_name: self.name.clone(),
@@ -115,10 +127,7 @@ impl Solver for SubprocessSolver {
                                 verdict: ObligationVerdict::Undecidable,
                                 solver_name: self.name.clone(),
                                 solver_version: self.version.clone(),
-                                error: format!(
-                                    "timeout after {}s",
-                                    to.as_secs().max(1)
-                                ),
+                                error: format!("timeout after {}s", to.as_secs().max(1)),
                                 solver_stdout: String::new(),
                                 wall_clock: started.elapsed(),
                                 timed_out: true,
@@ -143,6 +152,10 @@ impl Solver for SubprocessSolver {
             timed_out = false;
         }
 
+        eprintln!(
+            "[provekit-verifier] waiting for solver {:?} to exit (timeout={:?})",
+            self.name, self.timeout
+        );
         let output = match child.wait_with_output() {
             Ok(o) => o,
             Err(e) => {

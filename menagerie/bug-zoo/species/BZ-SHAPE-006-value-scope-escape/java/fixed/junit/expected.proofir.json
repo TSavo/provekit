@@ -1,0 +1,28 @@
+[
+  {
+    "kind": "contract",
+    "symbol": "parseInt@AmountParserTest.java:10:21",
+    "invariant": {
+      "kind": "atomic",
+      "name": "eq",
+      "args": [
+        {
+          "kind": "ctor",
+          "name": "AmountParser.parseInt",
+          "args": [
+            {
+              "kind": "const",
+              "value": "43",
+              "sort": { "kind": "primitive", "name": "String" }
+            }
+          ]
+        },
+        {
+          "kind": "const",
+          "value": 43,
+          "sort": { "kind": "primitive", "name": "Int" }
+        }
+      ]
+    }
+  }
+]

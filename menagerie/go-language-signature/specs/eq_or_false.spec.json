@@ -1,0 +1,36 @@
+{
+  "kind": "equation",
+  "fn_name": "go:or-false",
+  "formals": [
+    "a"
+  ],
+  "formal_sorts": [
+    "sort_term.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "go:or",
+      "args": [
+        {
+          "kind": "var",
+          "name": "a"
+        },
+        {
+          "kind": "literal",
+          "value": false
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "a"
+    }
+  }
+}

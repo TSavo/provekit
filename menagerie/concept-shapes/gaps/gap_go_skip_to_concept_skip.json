@@ -1,0 +1,67 @@
+{
+  "fn_name": "gap:go:skip:to:concept:skip",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "unit",
+              "slot_sort": "Unit"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "skip",
+        "result": "Unit",
+        "wp": "empty statement"
+      },
+      "want": {
+        "arity": [
+          "Unit"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "unit"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "skip",
+        "result": "Stmt",
+        "wp_note": "state unchanged",
+        "wp_rule": {
+          "kind": "var",
+          "name": "Q"
+        }
+      }
+    }
+  },
+  "reason_note": "return sort mismatch: got `{\"kind\":\"ctor\",\"name\":\"Unit\",\"args\":[]}` want `{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:7fb4d0a88552579710ba2b9e7302981537fca6d599eca4c9f681b59f40adbb1ead9b3bb5851896aa683f9ab82b9e6a91e8d465db0b3332245bd00cd6a8d4b8f4",
+  "target_concept_op": "concept:skip",
+  "target_op_cid": "blake3-512:9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb"
+}

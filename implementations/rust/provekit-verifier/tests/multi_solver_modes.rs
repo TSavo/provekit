@@ -243,8 +243,10 @@ version = "3.4"
     let plan = SolverPlan::from_config(&cfg);
     let registry = provekit_verifier::solvers::registry::build(&cfg);
     let (_, _, invs) = run_plan(&plan, &registry, "(check-sat)", None);
-    let versions: std::collections::BTreeSet<&str> =
-        invs.iter().map(|i| i.result.solver_version.as_str()).collect();
+    let versions: std::collections::BTreeSet<&str> = invs
+        .iter()
+        .map(|i| i.result.solver_version.as_str())
+        .collect();
     // Stub solvers ignore the configured `version` field; they report
     // their own "stub-unsat" tag. The point of this test is just that
     // every invocation carries SOME version string we can stamp into
@@ -263,10 +265,7 @@ fn runner_aggregates_per_solver_telemetry() {
     // handshake. With zero call sites the per_solver map is empty
     // but solver_invocations should also be 0 and not panic.
     use provekit_verifier::{Runner, RunnerConfig};
-    let tmp = std::env::temp_dir().join(format!(
-        "provekit-runner-empty-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("provekit-runner-empty-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     let cfg = RunnerConfig {
         project_root: tmp.clone(),
@@ -274,12 +273,18 @@ fn runner_aggregates_per_solver_telemetry() {
         cache_dir: None,
         mint_seed: None,
         mint_producer_id: None,
-        solvers_config: Some(SolversConfig::from_toml(r#"
+        solvers_config: Some(
+            SolversConfig::from_toml(
+                r#"
 [solvers]
 default = "stub"
 [solvers.stub]
 binary = "stub:unsat"
-"#).unwrap()),
+"#,
+            )
+            .unwrap(),
+        ),
+        extra_projects: Vec::new(),
     };
     let runner = Runner::new(cfg);
     let (report, stats) = runner.run_with_tiers();

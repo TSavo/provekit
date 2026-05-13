@@ -70,23 +70,14 @@ fn main() {
                 let ir = match params.get("ir_json") {
                     Some(v) => v.clone(),
                     None => {
-                        let r = error_response(
-                            id.clone(),
-                            -32602,
-                            "missing param: ir_json",
-                            None,
-                        );
+                        let r = error_response(id.clone(), -32602, "missing param: ir_json", None);
                         emit_line(&mut out, &r);
                         continue;
                     }
                 };
                 if dialect.is_empty() {
-                    let r = error_response(
-                        id.clone(),
-                        -32602,
-                        "missing param: target_dialect",
-                        None,
-                    );
+                    let r =
+                        error_response(id.clone(), -32602, "missing param: target_dialect", None);
                     emit_line(&mut out, &r);
                     continue;
                 }
@@ -109,12 +100,7 @@ fn main() {
                 emit_line(&mut out, &r);
                 break;
             }
-            other => error_response(
-                id,
-                -32601,
-                &format!("method not found: {other}"),
-                None,
-            ),
+            other => error_response(id, -32601, &format!("method not found: {other}"), None),
         };
 
         emit_line(&mut out, &resp);

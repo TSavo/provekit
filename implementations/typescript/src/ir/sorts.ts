@@ -1,5 +1,5 @@
 /**
- * Sort values — runtime objects matching the Sort discriminated union
+ * Sort values: runtime objects matching the Sort discriminated union
  * from formulas.ts. These are the "type tokens" used in quantifier
  * and property declarations.
  */
@@ -19,7 +19,7 @@ export const Node: Sort = { kind: "primitive", name: "Node" };
 export const Edge: Sort = { kind: "primitive", name: "Edge" };
 
 // ---------------------------------------------------------------------------
-// Bitvector sorts — SMT-LIB BV theory.
+// Bitvector sorts: SMT-LIB BV theory.
 //
 // `BV(width)` constructs a bitvector sort of the given bit-width. Common
 // widths are exposed as named singletons for ergonomics. Any positive
@@ -56,6 +56,11 @@ export function TupleOf(...elements: Sort[]): Sort {
 }
 
 /** Construct a function sort. */
-export function FuncOf(domain: Sort[], range: Sort): Sort {
-  return { kind: "function", domain, range };
+export function FuncOf(args: Sort[], ret: Sort): Sort {
+  return { kind: "function", args, return: ret };
+}
+
+/** Construct a region sort for lifetime parameter tracking. */
+export function RegionOf(name: string): Sort {
+  return { kind: "region", name };
 }

@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:go:continue:to:concept:continue",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "no candidate source operation spec",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:gap-no-source-cid-go-continue",
+  "target_concept_op": "concept:continue",
+  "target_op_cid": "blake3-512:50144af34411d91c720017f210c587b514e029d79490f86d60e5679bd945a922cd2b6bc160bd8d1c6e0e89ff8063c043f00960401e3e9e617b21b48120cbefbc"
+}

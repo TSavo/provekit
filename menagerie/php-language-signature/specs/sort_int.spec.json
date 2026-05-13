@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "php:Int",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Int",
+    "description": "PHP integer values."
+  }
+}

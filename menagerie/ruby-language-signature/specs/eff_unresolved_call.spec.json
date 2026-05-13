@@ -1,0 +1,50 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ruby:effect:unresolved_call",
+  "formals": [
+    "name"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "effect:unresolved_call",
+    "arity": [
+      "String"
+    ],
+    "result": "Value",
+    "wp": "call without a resolved contract",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "name"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "UnresolvedCall"
+      }
+    ]
+  },
+  "locus": "menagerie/ruby-language-signature/README.md"
+}

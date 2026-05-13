@@ -1,0 +1,14 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "rust:effect-signature:Alloc",
+  "sorts": [
+    "sort_unit.spec.json",
+    "sort_addr.spec.json"
+  ],
+  "operations": [
+    "eff_op_alloc.spec.json",
+    "eff_op_dealloc.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

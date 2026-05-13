@@ -1,0 +1,57 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:imaginary-literal",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Unit",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "imaginary-literal",
+      "arity": [
+        "Unit"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      },
+      "result": "Expr",
+      "wp": "imaginary literal token payload elided at this layer",
+      "notes": "Serializer is stubbed until literal payload terms are added."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:211ec8f4c27cf13d5a0291e20b69a50f1083330b8d3384aa54478328d2b2db58cff2c7b0b3a0b1748b4397a6812d5c1176539d374024fdadb934a371d66a230b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "3w+geKWZW0K5HTda/KMQNL3BDe9EpcnkP/+QLa6mtpKkceVxecXmFLyEYjl5m+jxk6OipO4CmvyJMZYdnJ+RCg=="
+  }
+}

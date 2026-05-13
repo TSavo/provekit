@@ -1,0 +1,59 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:skip",
+    "formals": [
+      "unit"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Unit"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "Unit"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "unit"
+          }
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "skip",
+      "result": "Stmt",
+      "wp_note": "state unchanged",
+      "wp_rule": {
+        "kind": "var",
+        "name": "Q"
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  },
+  "cid": "blake3-512:9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "4dJfq32PSSlKw61ymDAOSB49gyWrb7YMrX8HPn69WmoMH4mfQcUA3YLdfT98ZZ0XKiAVPg8wUxsAF5/u5Mp/AQ=="
+  }
+}

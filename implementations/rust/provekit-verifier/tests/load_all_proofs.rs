@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
@@ -37,7 +37,7 @@ fn make_unique_dir(suffix: &str) -> PathBuf {
     p
 }
 
-fn publish_parseint_proof(dir: &PathBuf) -> String {
+fn publish_parseint_proof(dir: &Path) -> String {
     // Publish a real parseInt .proof via the Rust kit, return its CID.
     reset_collector();
     must("parseInt", forall(Int(), |n| gt(n, num(0))));
@@ -287,8 +287,7 @@ fn multiple_proofs_in_one_dir_all_loaded() {
         let m = mint_contract(&args).expect("mint");
         members.insert(m.cid, m.canonical_bytes);
     }
-    let signer_cid =
-        blake3_512_of(ed25519_pubkey_string(&signer_seed).as_bytes());
+    let signer_cid = blake3_512_of(ed25519_pubkey_string(&signer_seed).as_bytes());
     let built = build_proof_envelope(&ProofEnvelopeInput {
         name: "@test/second".into(),
         version: "1.0.0".into(),

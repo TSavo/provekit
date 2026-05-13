@@ -4,7 +4,7 @@
 #
 # Layer 2 sits ABOVE the (future) Python Layer 0 ("mechanical assert
 # recognition") and below the eventual Layer 3 LLM lift. It walks the
-# Python AST of a source file and recognizes four structural patterns:
+# Python AST of a source file and recognizes five structural patterns:
 #
 #   PATTERN 1 - bounded for loop as universal quantifier
 #       def test_x():
@@ -45,6 +45,16 @@
 #   Lift to: ONE memento, body = and-conjunction over each row substitution.
 #   Memento name: ``<test>::parametrize::<param-names>``.
 #
+#   PATTERN 5 - callsite value-scope facts plus implications
+#       def test_parse():
+#           actual = parse_int("42")
+#           assert actual == 42
+#   Lift to: two callsite-owned contracts,
+#       ``parse_int@<file>:<line>:<col>::facts`` and
+#       ``parse_int@<file>:<line>:<col>::assertion``,
+#   plus an implication edge from facts to assertion. The test is evidence
+#   describing the callsite contract; it does not own the contract name.
+#
 # CLAIM SET:
 #   ``lift_file_layer2`` returns a ``claimed_tests`` set: each test name
 #   Layer 2 took ownership of. The dispatcher passes that set to Layer 0
@@ -55,6 +65,7 @@
 from __future__ import annotations
 
 import ast
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -62,7 +73,6 @@ from .ir import (
     ContractDecl,
     Formula,
     Int,
-    Sort,
     Term,
     and_,
     atomic,
@@ -77,6 +87,7 @@ from .ir import (
     lte,
     make_var,
     ne,
+    not_,
     num,
     str_const,
     subst_var_in_formula,
@@ -110,6 +121,20 @@ class Layer2Output:
     characterization_skipped: int = 0
     parametrize_lifted: int = 0
     parametrize_skipped: int = 0
+    value_scope_lifted: int = 0
+    value_scope_skipped: int = 0
+    implications: List["ImplicationDecl"] = field(default_factory=list)
+
+
+@dataclass
+class ImplicationDecl:
+    name: str
+    antecedent: str
+    consequent: str
+    antecedent_slot: str = "inv"
+    consequent_slot: str = "inv"
+    prover: str = "python-test-value-scope"
+    proof_witness: str = ""
 
 
 @dataclass
@@ -117,6 +142,27 @@ class _HelperDef:
     """A function with one typed param + a single liftable assertion."""
     param_name: str
     assertion: ast.stmt  # the single body statement
+
+
+@dataclass
+class _CallOrigin:
+    callee: str
+    lineno: int
+    col: int
+
+
+@dataclass
+class _ValueScope:
+    current: Dict[str, Term] = field(default_factory=dict)
+    origins: Dict[str, _CallOrigin] = field(default_factory=dict)
+    facts: List[Formula] = field(default_factory=list)
+
+    def copy(self) -> "_ValueScope":
+        return _ValueScope(
+            current=dict(self.current),
+            origins=dict(self.origins),
+            facts=list(self.facts),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +324,9 @@ def _classify_and_lift(
             break
     if all_asserts and len(asserts) >= 2:
         _classify_characterization(asserts, test_name, source_path, out)
+        return
+
+    if _classify_value_scope(body, test_name, source_path, out):
         return
 
     # No Layer 2 pattern claimed it. Leave for Layer 0.
@@ -933,3 +982,462 @@ def _classify_parametrize(
     out.decls.append(ContractDecl(name=memento_name, inv=folded))
     out.lifted += 1
     out.parametrize_lifted += 1
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 5: callsite-scoped value facts from tests
+# ---------------------------------------------------------------------------
+
+
+def _classify_value_scope(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    scopes: List[_ValueScope] = [_ValueScope()]
+    versions: Dict[str, int] = {}
+    decls: List[ContractDecl] = []
+    implications: List[ImplicationDecl] = []
+    used_names: Set[str] = set()
+    assertion_index = 0
+
+    for stmt in body:
+        if _is_assertion_stmt(stmt):
+            made = _emit_value_scope_assertion(
+                stmt,
+                scopes,
+                test_name,
+                assertion_index,
+                source_path,
+                decls,
+                implications,
+                used_names,
+            )
+            assertion_index += 1
+            if made:
+                continue
+            if not decls:
+                return False
+            continue
+
+        next_scopes = _apply_value_scope_statement(stmt, scopes, versions)
+        if next_scopes is None:
+            return False
+        scopes = next_scopes
+
+    if not implications:
+        return False
+
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+    out.decls.extend(decls)
+    out.implications.extend(implications)
+    out.lifted += len(decls)
+    out.value_scope_lifted += 1
+    return True
+
+
+def _apply_value_scope_statement(
+    stmt: ast.stmt,
+    scopes: List[_ValueScope],
+    versions: Dict[str, int],
+) -> Optional[List[_ValueScope]]:
+    if isinstance(stmt, ast.Assign):
+        if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+            return None
+        return _apply_value_scope_binding(stmt.targets[0].id, stmt.value, scopes, versions)
+
+    if isinstance(stmt, ast.AnnAssign):
+        if stmt.value is None or not isinstance(stmt.target, ast.Name):
+            return None
+        return _apply_value_scope_binding(stmt.target.id, stmt.value, scopes, versions)
+
+    if isinstance(stmt, ast.If):
+        return _apply_value_scope_if(stmt, scopes, versions)
+
+    if isinstance(stmt, ast.Pass):
+        return scopes
+
+    return None
+
+
+def _apply_value_scope_if(
+    stmt: ast.If,
+    scopes: List[_ValueScope],
+    versions: Dict[str, int],
+) -> Optional[List[_ValueScope]]:
+    out: List[_ValueScope] = []
+    for scope in scopes:
+        guard = _lift_branch_guard(stmt.test, scope)
+
+        then_scope = scope.copy()
+        then_scope.facts.append(guard)
+        then_scopes = _apply_value_scope_block(stmt.body, [then_scope], versions)
+        if then_scopes is None:
+            return None
+        out.extend(then_scopes)
+
+        else_scope = scope.copy()
+        else_scope.facts.append(not_(guard))
+        else_scopes = _apply_value_scope_block(stmt.orelse, [else_scope], versions)
+        if else_scopes is None:
+            return None
+        out.extend(else_scopes or [else_scope])
+
+    return out
+
+
+def _apply_value_scope_block(
+    stmts: Sequence[ast.stmt],
+    scopes: List[_ValueScope],
+    versions: Dict[str, int],
+) -> Optional[List[_ValueScope]]:
+    current = scopes
+    for stmt in stmts:
+        if _is_assertion_stmt(stmt):
+            return None
+        next_scopes = _apply_value_scope_statement(stmt, current, versions)
+        if next_scopes is None:
+            return None
+        current = next_scopes
+    return current
+
+
+def _apply_value_scope_binding(
+    name: str,
+    value: ast.expr,
+    scopes: List[_ValueScope],
+    versions: Dict[str, int],
+) -> List[_ValueScope]:
+    out: List[_ValueScope] = []
+    for scope in scopes:
+        next_scope = scope.copy()
+        try:
+            rhs = _translate_term_scoped(value, scope)
+        except ValueError:
+            next_scope.current.pop(name, None)
+            next_scope.origins.pop(name, None)
+            out.append(next_scope)
+            continue
+
+        version = versions.get(name, 0)
+        versions[name] = version + 1
+        ssa_name = f"{name}${version}"
+        ssa = make_var(ssa_name)
+        next_scope.current[name] = ssa
+        origin = _call_origin_from_expr(value)
+        if origin is not None:
+            next_scope.origins[name] = origin
+        else:
+            next_scope.origins.pop(name, None)
+        next_scope.facts.append(eq(ssa, rhs))
+        out.append(next_scope)
+    return out
+
+
+def _emit_value_scope_assertion(
+    stmt: ast.stmt,
+    scopes: List[_ValueScope],
+    test_name: str,
+    assertion_index: int,
+    source_path: str,
+    decls: List[ContractDecl],
+    implications: List[ImplicationDecl],
+    used_names: Set[str],
+) -> int:
+    made = 0
+    for scope in scopes:
+        context = _assertion_callsite_context(stmt, scope)
+        if context is None:
+            continue
+        origins, facts, assertion = context
+
+        for origin in origins:
+            base = _callsite_contract_base(origin, source_path)
+            facts_name = _unique_contract_name(f"{base}::facts", used_names)
+            assertion_name = _unique_contract_name(f"{base}::assertion", used_names)
+            implication_name = _unique_contract_name(
+                f"{base}::facts-implies-assertion", used_names
+            )
+            fact_formula = facts[0] if len(facts) == 1 else and_(facts)
+            decls.append(ContractDecl(name=facts_name, inv=fact_formula))
+            decls.append(ContractDecl(name=assertion_name, inv=assertion))
+            implications.append(
+                ImplicationDecl(
+                    name=implication_name,
+                    antecedent=facts_name,
+                    consequent=assertion_name,
+                    proof_witness=f"{test_name} assertion {assertion_index}",
+                )
+            )
+            made += 1
+    return made
+
+
+def _assertion_callsite_context(
+    stmt: ast.stmt,
+    scope: _ValueScope,
+) -> Optional[Tuple[List[_CallOrigin], List[Formula], Formula]]:
+    direct_calls = _collect_assertion_calls(stmt)
+    call_vars: Dict[Tuple[int, int], Term] = {}
+    for call in direct_calls:
+        origin = _call_origin_from_expr(call)
+        if origin is not None:
+            call_vars[_call_key(call)] = make_var(_call_result_var_name(origin))
+
+    transient_facts: List[Formula] = []
+    direct_origins: List[_CallOrigin] = []
+    for call in direct_calls:
+        origin = _call_origin_from_expr(call)
+        if origin is None:
+            continue
+        try:
+            rhs = _translate_call_rhs(call, scope, call_vars)
+        except ValueError:
+            continue
+        var_term = call_vars[_call_key(call)]
+        transient_facts.append(eq(var_term, rhs))
+        direct_origins.append(origin)
+
+    origins = _unique_origins(_origins_for_assertion(stmt, scope) + direct_origins)
+    if not origins:
+        return None
+
+    facts = scope.facts + transient_facts
+    if not facts:
+        return None
+
+    try:
+        assertion = _lift_assertion_stmt_scoped(stmt, scope, call_vars)
+    except ValueError:
+        return None
+
+    return origins, facts, assertion
+
+
+def _unique_contract_name(name: str, used_names: Set[str]) -> str:
+    if name not in used_names:
+        used_names.add(name)
+        return name
+    i = 1
+    while f"{name}::{i}" in used_names:
+        i += 1
+    unique = f"{name}::{i}"
+    used_names.add(unique)
+    return unique
+
+
+def _callsite_contract_base(origin: _CallOrigin, source_path: str) -> str:
+    file_name = os.path.basename(source_path) or source_path or "<unknown>"
+    return f"{origin.callee}@{file_name}:{origin.lineno}:{origin.col}"
+
+
+def _call_result_var_name(origin: _CallOrigin) -> str:
+    return f"{origin.callee}$call${origin.lineno}${origin.col}"
+
+
+def _call_key(call: ast.Call) -> Tuple[int, int]:
+    return (getattr(call, "lineno", 0), getattr(call, "col_offset", 0))
+
+
+def _call_origin_from_expr(node: ast.expr) -> Optional[_CallOrigin]:
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and not node.keywords
+    ):
+        return _CallOrigin(
+            callee=node.func.id,
+            lineno=getattr(node, "lineno", 0),
+            col=getattr(node, "col_offset", 0),
+        )
+    return None
+
+
+def _assertion_value_exprs(stmt: ast.stmt) -> List[ast.expr]:
+    exprs: List[ast.expr] = []
+    if isinstance(stmt, ast.Assert):
+        exprs.append(stmt.test)
+    elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+        name = _attr_method_name(stmt.value.func)
+        if name in _UNITTEST_BINARY_PREDICATES:
+            exprs.extend(stmt.value.args[:2])
+        elif name in ("assertTrue", "assertFalse") and stmt.value.args:
+            exprs.append(stmt.value.args[0])
+    return exprs
+
+
+def _collect_assertion_calls(stmt: ast.stmt) -> List[ast.Call]:
+    calls: List[ast.Call] = []
+    seen: Set[Tuple[int, int]] = set()
+    for expr in _assertion_value_exprs(stmt):
+        for node in ast.walk(expr):
+            if not isinstance(node, ast.Call):
+                continue
+            if _call_origin_from_expr(node) is None:
+                continue
+            key = _call_key(node)
+            if key in seen:
+                continue
+            seen.add(key)
+            calls.append(node)
+    return sorted(calls, key=_call_key)
+
+
+def _origins_for_assertion(stmt: ast.stmt, scope: _ValueScope) -> List[_CallOrigin]:
+    origins: List[_CallOrigin] = []
+    for expr in _assertion_value_exprs(stmt):
+        for node in ast.walk(expr):
+            if isinstance(node, ast.Name) and node.id in scope.origins:
+                origins.append(scope.origins[node.id])
+    return _unique_origins(origins)
+
+
+def _unique_origins(origins: List[_CallOrigin]) -> List[_CallOrigin]:
+    out: List[_CallOrigin] = []
+    seen: Set[Tuple[str, int, int]] = set()
+    for origin in origins:
+        key = (origin.callee, origin.lineno, origin.col)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(origin)
+    return out
+
+
+def _translate_call_rhs(
+    call: ast.Call,
+    scope: _ValueScope,
+    call_vars: Dict[Tuple[int, int], Term],
+) -> Term:
+    if not isinstance(call.func, ast.Name):
+        raise ValueError("call target must be a simple name")
+    if call.keywords:
+        raise ValueError("call with kwargs is not liftable")
+    return ctor(
+        call.func.id,
+        [_translate_term_scoped(arg, scope, call_vars) for arg in call.args],
+    )
+
+
+def _lift_branch_guard(node: ast.expr, scope: _ValueScope) -> Formula:
+    try:
+        return _translate_bool_expr_scoped(node, scope)
+    except ValueError:
+        return atomic("python_branch_condition", [str_const(_unparse(node))])
+
+
+def _lift_assertion_stmt_scoped(
+    stmt: ast.stmt,
+    scope: _ValueScope,
+    call_vars: Optional[Dict[Tuple[int, int], Term]] = None,
+) -> Formula:
+    if isinstance(stmt, ast.Assert):
+        return _translate_bool_expr_scoped(stmt.test, scope, call_vars)
+    if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+        call = stmt.value
+        name = _attr_method_name(call.func)
+        if name in _UNITTEST_BINARY_PREDICATES:
+            if len(call.args) < 2:
+                raise ValueError(f"{name} expects at least 2 positional args")
+            l = _translate_term_scoped(call.args[0], scope, call_vars)
+            r = _translate_term_scoped(call.args[1], scope, call_vars)
+            return atomic(_UNITTEST_BINARY_PREDICATES[name], [l, r])
+        if name == "assertTrue":
+            if len(call.args) < 1:
+                raise ValueError("assertTrue expects 1 positional arg")
+            return _translate_bool_expr_scoped(call.args[0], scope, call_vars)
+        if name == "assertFalse":
+            if len(call.args) < 1:
+                raise ValueError("assertFalse expects 1 positional arg")
+            return not_(_translate_bool_expr_scoped(call.args[0], scope, call_vars))
+    raise ValueError("statement is not a value-scope assertion")
+
+
+def _translate_bool_expr_scoped(
+    node: ast.expr,
+    scope: _ValueScope,
+    call_vars: Optional[Dict[Tuple[int, int], Term]] = None,
+) -> Formula:
+    if isinstance(node, ast.Compare):
+        if len(node.ops) != 1 or len(node.comparators) != 1:
+            raise ValueError("only single comparisons are liftable")
+        sym = _COMPARE_OP_MAP.get(type(node.ops[0]))
+        if sym is None:
+            raise ValueError(f"unsupported comparison op: {type(node.ops[0]).__name__}")
+        return atomic(
+            sym,
+            [
+                _translate_term_scoped(node.left, scope, call_vars),
+                _translate_term_scoped(node.comparators[0], scope, call_vars),
+            ],
+        )
+    if isinstance(node, ast.BoolOp):
+        operands = [
+            _translate_bool_expr_scoped(v, scope, call_vars) for v in node.values
+        ]
+        if isinstance(node.op, ast.And):
+            return and_(operands)
+        if isinstance(node.op, ast.Or):
+            return connective("or", operands)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not_(_translate_bool_expr_scoped(node.operand, scope, call_vars))
+    term = _translate_term_scoped(node, scope, call_vars)
+    return eq(term, bool_const(True))
+
+
+def _translate_term_scoped(
+    node: ast.expr,
+    scope: _ValueScope,
+    call_vars: Optional[Dict[Tuple[int, int], Term]] = None,
+) -> Term:
+    call_vars = call_vars or {}
+    if isinstance(node, ast.Name):
+        if node.id in scope.current:
+            return scope.current[node.id]
+        return _translate_term(node)
+    if isinstance(node, ast.Constant):
+        return _translate_term(node)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return _translate_term(node)
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("call target must be a simple name")
+        if node.keywords:
+            raise ValueError("call with kwargs is not liftable")
+        key = _call_key(node)
+        if key in call_vars:
+            return call_vars[key]
+        return ctor(
+            node.func.id,
+            [_translate_term_scoped(arg, scope, call_vars) for arg in node.args],
+        )
+    if isinstance(node, ast.BinOp):
+        op = _BINOP_TERM_NAMES.get(type(node.op))
+        if op is None:
+            raise ValueError("unsupported binary operator")
+        return ctor(
+            op,
+            [
+                _translate_term_scoped(node.left, scope, call_vars),
+                _translate_term_scoped(node.right, scope, call_vars),
+            ],
+        )
+    raise ValueError("expression shape not in value-scope lift whitelist")
+
+
+_BINOP_TERM_NAMES = {
+    ast.Add: "+",
+    ast.Sub: "-",
+    ast.Mult: "*",
+    ast.Div: "/",
+    ast.Mod: "%",
+}
+
+
+def _unparse(node: ast.AST) -> str:
+    try:
+        return ast.unparse(node)  # type: ignore[attr-defined]
+    except Exception:
+        return node.__class__.__name__

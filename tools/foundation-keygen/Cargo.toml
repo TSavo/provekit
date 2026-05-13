@@ -26,6 +26,38 @@ name = "sign-catalog-v1-3-1"
 path = "src/bin/sign_catalog_v1_3_1.rs"
 
 [[bin]]
+name = "sign-catalog-v1-4-0"
+path = "src/bin/sign_catalog_v1_4_0.rs"
+
+[[bin]]
+name = "sign-catalog-v1-4-1"
+path = "src/bin/sign_catalog_v1_4_1.rs"
+
+[[bin]]
+name = "sign-catalog-v1-5-0"
+path = "src/bin/sign_catalog_v1_5_0.rs"
+
+[[bin]]
+name = "sign-catalog-v1-6-0"
+path = "src/bin/sign_catalog_v1_6_0.rs"
+
+[[bin]]
+name = "sign-catalog-v1-6-1"
+path = "src/bin/sign_catalog_v1_6_1.rs"
+
+[[bin]]
+name = "sign-catalog-v1-6-2"
+path = "src/bin/sign_catalog_v1_6_2.rs"
+
+[[bin]]
+name = "sign-catalog-v1-6-3"
+path = "src/bin/sign_catalog_v1_6_3.rs"
+
+[[bin]]
+name = "sign-catalog-v1-6-4"
+path = "src/bin/sign_catalog_v1_6_4.rs"
+
+[[bin]]
 name = "sign-self-contracts"
 path = "src/bin/sign_self_contracts.rs"
 
@@ -42,3 +74,6 @@ path = "src/lib.rs"
 provekit-canonicalizer = { path = "../../implementations/rust/provekit-canonicalizer" }
 provekit-proof-envelope = { path = "../../implementations/rust/provekit-proof-envelope" }
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+regex = "1"

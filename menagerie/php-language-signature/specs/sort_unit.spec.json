@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "php:Unit",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Unit",
+    "description": "Unit sort for zero-argument statement operations."
+  }
+}

@@ -1,0 +1,34 @@
+{
+ "signatures": [
+  {
+   "keyid": "67881d6b34f25bc422fc73e24446951a92b882ee118656b4f8fab6980e133177",
+   "sig": "d22acf04ec037d500889e95611df99cc17ce28a616e77c71e7b2d7be9a0331c927452f14a44b57016b02b4bb5d2869075bbb32bb02a64ace6fdb7aa147269a04"
+  }
+ ],
+ "signed": {
+  "_type": "link",
+  "byproducts": {},
+  "command": [],
+  "environment": {},
+  "materials": {
+   "contracts.json": {
+    "sha256": "aa24f3a759d68ed1de0fcc5d0a82095502173ff1258e5158f0cd237907036fe2"
+   },
+   "contracts.ts": {
+    "sha256": "47a31673b3cae25f345689b1089e94d9b788097e98ba7df93059858c21ddb559"
+   },
+   "index.js": {
+    "sha256": "8c092cb5fc37cb8dcdfa9862d849304728261802ba0c41248127fb418ad79f00"
+   },
+   "package.json": {
+    "sha256": "1ed6bafaa566b1a7cc92267392a27b26316d5b1dbc4b1fca089bd23628bd41b7"
+   }
+  },
+  "name": "safe-json-pack",
+  "products": {
+   "package.tgz": {
+    "sha256": "384ae63c140b184bb23a7034f5d4b67b39952ac7b7e2fa4d33a2200ad55c33db"
+   }
+  }
+ }
+}

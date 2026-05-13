@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "ts:seq-empty-right",
+    "formals": [
+      "a"
+    ],
+    "formal_sorts": [
+      "blake3-512:110567bc440f42caf937502b159db345d3c99bdae060029741ab022526fef68a2c744f19d5227e90dd70ec7fb15635d456bb7e61d632f2c70cc734fc02e71a03"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "ts:seq",
+        "args": [
+          {
+            "kind": "var",
+            "name": "a"
+          },
+          {
+            "kind": "op",
+            "name": "ts:seq",
+            "args": []
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "var",
+        "name": "a"
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#equations"
+  },
+  "cid": "blake3-512:ddfc619a8a8b72537dfb3209927b929b17c844f7be411c9905d7edb22392f0ab7790aa1040f3c3696271ae37fffd2e50b530b0b6494f3fecb8be1a4e67fd30e3",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "C5/lBdDvzpCAVsnvS9hF2+UwwGXhUdtN0RMcOvgyTOq7QykwbRJT2Xp0I8v7/Lidy7Fi24e/aOC+X2cX1QGJBA=="
+  }
+}

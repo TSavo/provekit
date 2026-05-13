@@ -103,7 +103,7 @@ func runRPCMode() {
 			writeResponse(req.ID, map[string]interface{}{
 				"name":             "provekit-lift-go",
 				"version":          "1.0",
-				"protocol_version": "provekit-lift/1",
+				"protocol_version": "pep/1.7.0",
 				"capabilities": map[string]interface{}{
 					"authoring_surfaces": []string{"go"},
 					"ir_version":         "v1.1.0",

@@ -1,0 +1,347 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+use provekit_ir_types::{IrFormula, IrTerm, Sort};
+use serde_json::{json, Value};
+use thiserror::Error;
+
+use super::primitives::address;
+use super::traits::{Kit, KitError};
+use super::types::{
+    memento_from_parts, Cid, Contract, Dialect, DomainClaim, DomainKind, Input, Term, Verdict,
+};
+
+/// Core Kit adapter for a lift-plugin-protocol subprocess.
+///
+/// This is the primitive-facing transport: `Kit::transform` sends an
+/// `Input::Spec` lift request to a JSON-RPC lifter and returns a claim whose
+/// artifact vector points at the lifter response. CLI code may still render
+/// the old response shape through the session escape hatch while downstream
+/// code moves to addresses and claims.
+#[derive(Debug, Clone)]
+pub struct LiftPluginKit {
+    surface: String,
+    command: Vec<String>,
+    working_dir: Option<PathBuf>,
+}
+
+impl LiftPluginKit {
+    /// Build a lift-plugin Kit from an already-resolved command.
+    pub fn new(
+        surface: impl Into<String>,
+        command: Vec<String>,
+        working_dir: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            surface: surface.into(),
+            command,
+            working_dir,
+        }
+    }
+
+    /// Run the plugin transport and retain protocol metadata.
+    pub fn parse_session(&self, input: &Input) -> Result<LiftPluginKitSession, LiftPluginKitError> {
+        let request = lift_request_from_input(input)?;
+        let (initialize_response, response) = self.dispatch(request)?;
+        let response_term = response_term(response.clone());
+        let claim = self.claim_from_response_term(input, response_term)?;
+        Ok(LiftPluginKitSession {
+            initialize_response,
+            legacy_response: response,
+            claim,
+        })
+    }
+
+    /// Promote a lift-plugin response term into the first-class primitive claim.
+    pub fn claim_from_response_term(
+        &self,
+        input: &Input,
+        response_term: Term,
+    ) -> Result<DomainClaim, LiftPluginKitError> {
+        let response = match &response_term {
+            Term::Const { value, .. } => value,
+            _ => {
+                return Err(LiftPluginKitError::Failed(
+                    "lift kit returned a non-response term".to_string(),
+                ))
+            }
+        };
+        let response_cid = address(&response_term);
+        let contract = lift_response_contract(&self.surface, response, &response_cid);
+
+        Ok(DomainClaim {
+            domain: DomainKind::Other("lift-plugin".to_string()),
+            contract,
+            artifacts: vec![response_cid.clone()],
+            from: vec![address(input)],
+            premises: vec![],
+            to: response_cid,
+            witness: None,
+            verdict: Verdict::Unresolved,
+            attestation: None,
+        })
+    }
+
+    #[deprecated(
+        note = "lift plugin kits emit Term values; move this caller to consume the term directly"
+    )]
+    pub fn legacy_response_from_term(term: &Term) -> Result<&Value, LiftPluginKitError> {
+        legacy_response_from_term(term)
+    }
+
+    fn dispatch(&self, lift_params: &Value) -> Result<(Value, Value), LiftPluginKitError> {
+        if self.command.is_empty() {
+            return Err(LiftPluginKitError::Failed(
+                "lift plugin command is empty".to_string(),
+            ));
+        }
+
+        let mut cmd = Command::new(&self.command[0]);
+        if self.command.len() > 1 {
+            cmd.args(&self.command[1..]);
+        }
+        if !self.command.iter().any(|arg| arg == "--rpc") {
+            cmd.arg("--rpc");
+        }
+        if let Some(working_dir) = &self.working_dir {
+            cmd.current_dir(working_dir);
+        }
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::inherit());
+
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(LiftPluginKitError::MissingBinary {
+                    binary: self.command[0].clone(),
+                });
+            }
+            Err(error) => {
+                return Err(LiftPluginKitError::Failed(format!(
+                    "spawn {:?}: {error}",
+                    self.command
+                )));
+            }
+        };
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| LiftPluginKitError::Failed("lift plugin stdin unavailable".into()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| LiftPluginKitError::Failed("lift plugin stdout unavailable".into()))?;
+        let mut reader = BufReader::new(stdout);
+
+        let init_req = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "client": {"name": "libprovekit", "version": env!("CARGO_PKG_VERSION")},
+                "protocol_version": "pep/1.7.0",
+                "workspace_root": lift_params.get("workspace_root").cloned().unwrap_or_else(|| json!(".")),
+                "config_path": lift_params.get("config_path").cloned().unwrap_or_else(|| json!(".provekit/config.toml"))
+            }
+        });
+        writeln!(stdin, "{init_req}").map_err(|error| {
+            LiftPluginKitError::Failed(format!("write lift initialize: {error}"))
+        })?;
+        let initialize_response = read_response(&mut reader, 1)?;
+
+        let lift_req = json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "lift",
+            "params": lift_params
+        });
+        writeln!(stdin, "{lift_req}")
+            .map_err(|error| LiftPluginKitError::Failed(format!("write lift request: {error}")))?;
+        let response = read_response(&mut reader, 2)?;
+
+        let shutdown_req = json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "shutdown"
+        });
+        let _ = writeln!(stdin, "{shutdown_req}");
+        drop(stdin);
+
+        let status = child
+            .wait()
+            .map_err(|error| LiftPluginKitError::Failed(format!("wait lift plugin: {error}")))?;
+        if !status.success() {
+            return Err(LiftPluginKitError::Failed(format!(
+                "lift plugin exited {status}"
+            )));
+        }
+
+        Ok((initialize_response, response))
+    }
+}
+
+impl Kit for LiftPluginKit {
+    fn dialect(&self) -> Dialect {
+        Dialect::Other(format!("lift-plugin:{}", self.surface))
+    }
+
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+        self.parse_session(input)
+            .map(|session| session.claim)
+            .map_err(|error| KitError::Transformation(format!("lift plugin transport: {error}")))
+    }
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        Ok(claim)
+    }
+
+    fn parse(&self, input: &Input) -> Result<Term, KitError> {
+        self.parse_session(input)
+            .map(|session| response_term(session.legacy_response))
+            .map_err(|error| KitError::Serialization(format!("lift plugin transport: {error}")))
+    }
+
+    fn serialize(&self, term: &Term) -> Result<Input, KitError> {
+        let response = legacy_response_from_term(term)
+            .map_err(|error| KitError::Serialization(error.to_string()))?;
+        Ok(Input::Spec(response.clone()))
+    }
+}
+
+/// Result of one lift-plugin Kit parse.
+#[derive(Debug, Clone)]
+pub struct LiftPluginKitSession {
+    /// The initialize response from the plugin.
+    pub initialize_response: Value,
+    /// The legacy JSON-RPC lift response retained outside the primitive claim.
+    pub legacy_response: Value,
+    /// The primitive claim produced by `Kit::transform`.
+    pub claim: DomainClaim,
+}
+
+impl LiftPluginKitSession {
+    /// Borrow the materialized lift-plugin response retained outside the primitive claim.
+    pub fn response(&self) -> &Value {
+        &self.legacy_response
+    }
+
+    #[deprecated(
+        note = "lift plugin kits emit DomainClaim values; move this caller to consume `claim` directly"
+    )]
+    pub fn legacy_response(&self) -> Result<&Value, LiftPluginKitError> {
+        Ok(&self.legacy_response)
+    }
+}
+
+/// Errors from the lift-plugin Kit transport.
+#[derive(Debug, Error)]
+pub enum LiftPluginKitError {
+    /// The configured lifter binary was not found.
+    #[error("lifter binary `{binary}` not found")]
+    MissingBinary { binary: String },
+    /// The JSON-RPC session failed.
+    #[error("{0}")]
+    Failed(String),
+    /// The response term was no longer the deprecated JSON escape-hatch shape.
+    #[error("lift plugin term no longer carries a legacy response")]
+    LegacyResponseUnavailable,
+}
+
+fn lift_request_from_input(input: &Input) -> Result<&Value, LiftPluginKitError> {
+    match input {
+        Input::Spec(value) => Ok(value),
+        _ => Err(LiftPluginKitError::Failed(
+            "lift plugin kit expects Input::Spec lift parameters".to_string(),
+        )),
+    }
+}
+
+fn response_term(response: Value) -> Term {
+    Term::Const {
+        value: response,
+        sort: primitive_sort("LiftPluginResponse"),
+    }
+}
+
+fn lift_response_contract(surface: &str, response: &Value, response_cid: &Cid) -> Contract {
+    let response_kind = response
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let fn_name = format!("lift::{surface}::{response_kind}");
+    let pre = IrFormula::Atomic {
+        name: "true".to_string(),
+        args: vec![],
+    };
+    let post = IrFormula::Atomic {
+        name: "=".to_string(),
+        args: vec![
+            IrTerm::Var {
+                name: "result".to_string(),
+            },
+            IrTerm::Const {
+                value: response.clone(),
+                sort: primitive_sort("LiftPluginResponse"),
+            },
+        ],
+    };
+
+    memento_from_parts(
+        fn_name,
+        vec!["request".to_string()],
+        vec![primitive_sort("LiftPluginRequest")],
+        primitive_sort("LiftPluginResponse"),
+        pre,
+        post,
+        Some(response_cid.as_str().to_string()),
+    )
+}
+
+fn primitive_sort(name: &str) -> Sort {
+    Sort::Primitive {
+        name: name.to_string(),
+    }
+}
+
+fn legacy_response_from_term(term: &Term) -> Result<&Value, LiftPluginKitError> {
+    match term {
+        Term::Const { value, .. } => Ok(value),
+        _ => Err(LiftPluginKitError::LegacyResponseUnavailable),
+    }
+}
+
+fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, LiftPluginKitError> {
+    let mut line = String::new();
+    let n = reader
+        .read_line(&mut line)
+        .map_err(|error| LiftPluginKitError::Failed(format!("read lift response: {error}")))?;
+    if n == 0 {
+        return Err(LiftPluginKitError::Failed(
+            "lift plugin closed stdout before responding".to_string(),
+        ));
+    }
+    let value: Value = serde_json::from_str(line.trim()).map_err(|error| {
+        LiftPluginKitError::Failed(format!(
+            "parse lift JSON-RPC response: {error}\n  raw: {line}"
+        ))
+    })?;
+    if value.get("id").and_then(Value::as_i64) != Some(id) {
+        return Err(LiftPluginKitError::Failed(format!(
+            "lift response id mismatch: expected {id}, got {value:?}"
+        )));
+    }
+    if let Some(error) = value.get("error") {
+        return Err(LiftPluginKitError::Failed(format!(
+            "lift plugin returned error: {error}"
+        )));
+    }
+    value
+        .get("result")
+        .cloned()
+        .ok_or_else(|| LiftPluginKitError::Failed("lift response missing `result`".into()))
+}

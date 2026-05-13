@@ -1,0 +1,57 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ts:or",
+  "version": "0.1.0-draft",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "or",
+    "arity": [
+      "Expr",
+      "Expr"
+    ],
+    "result": "Expr",
+    "wp": "short-circuit logical disjunction",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs",
+          "evaluation": "unevaluated"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/typescript-language-signature/README.md#operations"
+}

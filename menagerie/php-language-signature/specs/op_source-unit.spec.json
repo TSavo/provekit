@@ -1,0 +1,58 @@
+{
+    "kind": "algorithm",
+    "fn_name": "php:source-unit",
+    "version": "0.1.0-draft",
+    "formals": [
+        "bytes",
+        "operational_term"
+    ],
+    "formal_sorts": [
+        {
+            "kind": "ctor",
+            "name": "String",
+            "args": []
+        },
+        {
+            "kind": "ctor",
+            "name": "Stmt",
+            "args": []
+        }
+    ],
+    "return_sort": {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+    },
+    "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+    },
+    "post": {
+        "kind": "operation-contract",
+        "operator": "source-unit",
+        "arity": [
+            "String",
+            "Stmt"
+        ],
+        "result": "Stmt",
+        "wp": "lossless PHP source wrapper; source bytes are recoverable and operational_term is the lifted program",
+        "arity_shape": {
+            "kind": "named",
+            "slots": [
+                {
+                    "name": "bytes",
+                    "evaluation": "unevaluated",
+                    "slot_sort": "literal"
+                },
+                {
+                    "name": "operational_term"
+                }
+            ]
+        }
+    },
+    "effects": {
+        "effects": []
+    },
+    "locus": "menagerie/php-language-signature/README.md#operations"
+}

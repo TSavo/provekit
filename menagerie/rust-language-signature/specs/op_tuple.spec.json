@@ -1,0 +1,37 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:tuple",
+  "formals": [
+    "items"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "ListOfExpr",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Expr",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "tuple",
+    "arity": [
+      "ListOfExpr"
+    ],
+    "result": "Expr",
+    "wp": "tuple expression, walker variadic form is resolved to this op"
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

@@ -28,6 +28,9 @@ namespace Provekit.Lift.Linq;
 public abstract record Sort
 {
     public sealed record Primitive(string Name) : Sort;
+    public sealed record Function(Sort[] Args, Sort Return) : Sort;
+    public sealed record Dependent(string Name, string IndexVar, Sort IndexSort) : Sort;
+    public sealed record RegionSort(string Name) : Sort;
 }
 
 public abstract record Term
@@ -67,6 +70,7 @@ public static class IR
     public static Term Num(long v) => new Term.Const(v, Int());
     public static Term Str(string v) => new Term.Const(v, StringSort());
     public static Term BoolConst(bool v) => new Term.Const(v, Bool());
+    public static Term Null() => new Term.Const(null!, Ref());
     public static Term Ctor(string name, params Term[] args) => new Term.Ctor(name, args);
 
     public static Formula Atom(string name, params Term[] args) => new Formula.Atomic(name, args);
@@ -186,6 +190,7 @@ public static class IREmit
                     case int i: sb.Append(i); break;
                     case bool b: sb.Append(b ? "true" : "false"); break;
                     case string s: WriteString(sb, s); break;
+                    case null: sb.Append("null"); break;
                     default:
                         throw new InvalidOperationException($"unsupported const value: {c.Value?.GetType()}");
                 }
@@ -213,8 +218,36 @@ public static class IREmit
         switch (s)
         {
             case Sort.Primitive p:
+                // Locked key order: kind, name.
                 sb.Append("{\"kind\":\"primitive\",\"name\":");
                 WriteString(sb, p.Name);
+                sb.Append('}');
+                return;
+            case Sort.Function f:
+                // Locked key order: kind, args, return: JCS-alphabetical.
+                sb.Append("{\"args\":[");
+                for (int i = 0; i < f.Args.Length; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    WriteSort(sb, f.Args[i]);
+                }
+                sb.Append("],\"kind\":\"function\",\"return\":");
+                WriteSort(sb, f.Return);
+                sb.Append('}');
+                return;
+            case Sort.Dependent d:
+                // Locked key order: kind, name, indexVar, indexSort: JCS-alphabetical.
+                sb.Append("{\"indexSort\":");
+                WriteSort(sb, d.IndexSort);
+                sb.Append(",\"indexVar\":");
+                WriteString(sb, d.IndexVar);
+                sb.Append(",\"kind\":\"dependent\",\"name\":");
+                WriteString(sb, d.Name);
+                sb.Append('}');
+                return;
+            case Sort.RegionSort r:
+                sb.Append("{\"kind\":\"region\",\"name\":");
+                WriteString(sb, r.Name);
                 sb.Append('}');
                 return;
         }

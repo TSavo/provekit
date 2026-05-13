@@ -1,0 +1,33 @@
+{
+  "cid": "blake3-512:b5b2ebf9e1e67a2c4ac8e3a24b63642e50d77e56ef6a506320908b8d5cbeed2249167dda715bb942d20258217e6588b16cffc80710b7ef86597679735d82661e",
+  "code_site": {
+    "function_term_cid": "blake3-512:9de5f093cfe3f6e1e4bfc725df1f66d97660fcfb24e8e01dd252eedc95f49443d9a8a8af7ee8697ff79948d64ac2bdd64d5bf5e8035b547337baffe170e930db",
+    "source_cid": "blake3-512:5c10e7a3d1d410b563c0691617f95f875f80b63c40e4c00ee2f369a40b1d14d4cc09fb3fd5db0bd39907c3d9ed5ff4e13c16cce66608e956b67576abce666415",
+    "span": {
+      "end": 1263,
+      "start": 1216
+    }
+  },
+  "concept_cid": "blake3-512:810a566d81bb6908fbe50ca27dbddd126ae6bfb12ccde4c004d37e7d9827da7c46ff159671cd4a64cb3318898e11faa88234fe76a870190ab719a5e5ca480ad5",
+  "discharge": {
+    "method": "wp",
+    "verdict": "loudly-bounded-lossy",
+    "discharge_receipt_cid": "blake3-512:6c66a7b4ecf68bad7d11ae8458ae92e55531e0c4dfec73b89f65b0714ce4563ba5d5430fe115fb1bf48df95b3d102d619cef5400310f9123a342592cabd92e2e",
+    "loss_record": {
+      "structural_divergence": {
+        "kind": "atomic",
+        "name": "smoke-test-single-atom-encoding:formula-string-transport (smoke-test single-atom encoding)",
+        "args": []
+      }
+    }
+  },
+  "kind": "concept-site",
+  "local_contract_cid": "blake3-512:9de5f093cfe3f6e1e4bfc725df1f66d97660fcfb24e8e01dd252eedc95f49443d9a8a8af7ee8697ff79948d64ac2bdd64d5bf5e8035b547337baffe170e930db",
+  "provenance": {
+    "clusterer_cid": "blake3-512:03a70aece9916e50982aa3b8d81dd5ade479ebd67034f5b2a0dcaee2d08448aeb846996b4b7c7452b9d3fa71131e6f89d68003b9d0dc0b5d888f0a7c6a3ce60f",
+    "discharger_cid": "blake3-512:9ec1028c460527f8bf0d99928b090a63ef985c94754f88d1d8365464b42e6ce1974ac753de63a8949a62f0f583ed77cb94cd42a0e2e22186c9c3ccbad1e894e4",
+    "lifter_cid": "blake3-512:ade6080ae818f7a8e16b8a30e5442e329a77fa8b52b5075557915dfd62acd6740ca4893db1c8ed300c632487e27ba45eed300c8339474f36fe545aad0687ff3f"
+  },
+  "schemaVersion": "1",
+  "witnesses": []
+}

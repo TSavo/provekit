@@ -1,0 +1,134 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:388736ddf57a4837a1c399f38aa34cd88e75dfe77190ad6756eb14dabb53ae4bc085fc5cb95114fab5b8409f2d713d1814dc89c6e727741700a2b8be8651a184",
+  "name": "ts:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:388736ddf57a4837a1c399f38aa34cd88e75dfe77190ad6756eb14dabb53ae4bc085fc5cb95114fab5b8409f2d713d1814dc89c6e727741700a2b8be8651a184",
+      "name": "ts:seq",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:b8a1cc54959c7ab560c0ae3dc842ee96c85a0ae9133b01acd534a0085d18b8cc88e8076db180d3e2543f42434831dc76e779084d2faf22319cc6a959a1392109",
+          "name": "ts:decl",
+          "args": [
+            {
+              "kind": "var",
+              "name": "y"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:b1398a03bc63bdc3204ac19bc6a48102b5829d8aad4f41f9c6383c232b89a76294c5bf228f34155d263a817a6d331e6c73f54d3e57e0348c3096beb7c6c2a318",
+          "name": "ts:if",
+          "args": [
+            {
+              "kind": "op",
+              "opCid": "blake3-512:e86d726ba02b84569eedb10496c7f87f148b0521ae79f26a29e5de5b18857e32d51adafe06232aebdb5bd78fe833b6b6fbd36773bfb846f3d48158bf1751d381",
+              "name": "ts:and",
+              "args": [
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:4a75ce29698ce66c57e042f8c1677a9d949ea82458224e1515b35b2b73854dc9b1dfb4f1bc3b231dfa01c1cdd89ad8c68a1cd6c8fe1a93e8bfe9ed38efae5fad",
+                  "name": "ts:gt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 0,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "op",
+                  "opCid": "blake3-512:0fdee28331512761df5a467040143ab3c1c17b725abbb49d9a1627daa13f88a36015391e2bc38321bcd8914c353ba0b9989b5b90fb347118c37b3d1877fbfc53",
+                  "name": "ts:lt",
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "x"
+                    },
+                    {
+                      "kind": "const",
+                      "value": 10,
+                      "sort": {
+                        "kind": "primitive",
+                        "name": "Int"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:fe2e0be049e493939ecf9363e9a015d8eb1482ac82c06b3b774f5d8d4f0a7f829f56ddba425499f367f451bc4439bb8b66045bbf9f3d7b89d09ae8e6a881dd5c",
+              "name": "ts:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 1,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "op",
+              "opCid": "blake3-512:fe2e0be049e493939ecf9363e9a015d8eb1482ac82c06b3b774f5d8d4f0a7f829f56ddba425499f367f451bc4439bb8b66045bbf9f3d7b89d09ae8e6a881dd5c",
+              "name": "ts:assign",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "y"
+                },
+                {
+                  "kind": "const",
+                  "value": 2,
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "Int"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:96a44daebb39eece21ab35533e84adb9cf77083730a2aac372e375c60e86c69d575e2160f0c544192ea4db2a141b4dc1e29aa3270a15da8ec15114987bad8579",
+      "name": "ts:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "y"
+        }
+      ]
+    }
+  ]
+}

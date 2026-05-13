@@ -7,6 +7,15 @@
 // v1.1.0: filenames MUST be `blake3-512:<128 hex>.proof` and member
 // CIDs MUST start with `"blake3-512:"`. Producer signatures MUST start
 // with `"ed25519:"`. Anything else is rejected loud.
+//
+// v1.2 layered shape (per protocol/specs/2026-05-03-substrate-layers-
+// envelope-header-body.md): mementos are `{envelope, header, metadata}`
+// with `envelope = {signer, declaredAt, signature}`. The attestation
+// CID is `blake3_512(JCS(envelope))`. The verifier branches on the
+// presence of a top-level `envelope` key vs. `producerSignature` to
+// pick the legacy strip-and-rehash path or the envelope-hash path.
+// Both shapes coexist; the catalog cut elsewhere bumps the per-memento
+// `schemaVersion` from "1" to "2".
 
 use std::path::{Path, PathBuf};
 
@@ -81,7 +90,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     }
     // Filenames whose stem isn't a 128-hex string are tolerated; the
     // CID-from-bytes is what matters. (C++ rejects unknown tags loud;
-    // we keep that behavior via the prefix-trim — if there's a tag,
+    // we keep that behavior via the prefix-trim: if there's a tag,
     // it must be blake3-512.)
     if !hex_only && !filename_hex.is_empty() {
         pool.load_errors.push(LoadError {
@@ -94,17 +103,12 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     }
 
     let catalog = decode(&bytes)?;
-    let m_root = catalog
-        .as_map()
-        .ok_or("catalog is not a map")?
-        .clone();
+    let m_root = catalog.as_map().ok_or("catalog is not a map")?.clone();
 
     let members = m_root
         .get("members")
         .ok_or("catalog has no `members` map")?;
-    let members_map = members
-        .as_map()
-        .ok_or("catalog `members` is not a map")?;
+    let members_map = members.as_map().ok_or("catalog `members` is not a map")?;
 
     for (cid, val) in members_map {
         if !cid.starts_with(HASH_TAG_PREFIX) {
@@ -137,8 +141,14 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
                 continue;
             }
         };
-        // Tag-dispatch on producerSignature.
-        if let Some(sig) = env.get("producerSignature").and_then(|v| v.as_str()) {
+        // Tag-dispatch on whichever signature field is present.
+        // v1.1 flat shape: `producerSignature` at top level.
+        // v1.2 layered shape: `envelope.signature`.
+        let sig_str_opt = env
+            .pointer("/envelope/signature")
+            .and_then(|v| v.as_str())
+            .or_else(|| env.get("producerSignature").and_then(|v| v.as_str()));
+        if let Some(sig) = sig_str_opt {
             if !sig.starts_with(SIG_TAG_PREFIX) {
                 pool.load_errors.push(LoadError {
                     proof_path: path.display().to_string(),
@@ -149,8 +159,10 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
                 continue;
             }
         }
-        // Rule 2: re-derive envelope CID.
-        let derived = compute_envelope_cid(&env);
+        // Rule 2: re-derive the member identity. ProofRunMemento and
+        // StageReceipt are header-addressed artifacts, unlike older
+        // v1.2 mementos whose member identity is the envelope CID.
+        let derived = compute_member_cid(&env);
         if derived != *cid {
             pool.load_errors.push(LoadError {
                 proof_path: path.display().to_string(),
@@ -170,15 +182,26 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
             .entry(derived_full.clone())
             .or_default()
             .insert(cid.clone());
-        if let Some(ev) = env.get("evidence") {
-            if ev.get("kind").and_then(|k| k.as_str()) == Some("bridge") {
-                if let Some(body) = ev.get("body") {
-                    if let Some(sym) = body.get("sourceSymbol").and_then(|v| v.as_str()) {
-                        if !sym.is_empty() {
-                            pool.bridges_by_symbol
-                                .insert(sym.to_string(), env.clone());
-                        }
-                    }
+
+        // Bridge indexing. Same dual-shape rule:
+        //   v1.1: evidence.kind == "bridge", evidence.body.sourceSymbol
+        //   v1.2: header.kind == "bridge",   header.sourceSymbol
+        let (bridge_kind, source_symbol) = if env.get("envelope").is_some() {
+            (
+                env.pointer("/header/kind").and_then(|k| k.as_str()),
+                env.pointer("/header/sourceSymbol").and_then(|v| v.as_str()),
+            )
+        } else {
+            (
+                env.pointer("/evidence/kind").and_then(|k| k.as_str()),
+                env.pointer("/evidence/body/sourceSymbol")
+                    .and_then(|v| v.as_str()),
+            )
+        };
+        if bridge_kind == Some("bridge") {
+            if let Some(sym) = source_symbol {
+                if !sym.is_empty() {
+                    pool.bridges_by_symbol.insert(sym.to_string(), env.clone());
                 }
             }
         }
@@ -186,9 +209,20 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-/// Re-derive an envelope's CID by stripping `cid` and `producerSignature`,
-/// JCS-encoding, BLAKE3-512.
+/// Re-derive an envelope's CID. Branches on memento shape:
+///
+/// * v1.2 layered: top-level `envelope` is present; CID is
+///   `blake3_512(JCS(envelope))` directly. The header and metadata
+///   stay outside the hash, but the signature inside the envelope
+///   covers them transitively.
+///
+/// * v1.1 flat: strip `cid` + `producerSignature`, JCS-encode, hash.
 fn compute_envelope_cid(env: &Json) -> String {
+    if let Some(envelope) = env.get("envelope") {
+        let value_tree = json_to_value(envelope);
+        let canonical = encode_jcs(&value_tree);
+        return blake3_512_of(canonical.as_bytes());
+    }
     let mut stripped = env.clone();
     if let Json::Object(map) = &mut stripped {
         map.shift_remove("cid");
@@ -197,6 +231,19 @@ fn compute_envelope_cid(env: &Json) -> String {
     let value_tree = json_to_value(&stripped);
     let canonical = encode_jcs(&value_tree);
     blake3_512_of(canonical.as_bytes())
+}
+
+fn compute_member_cid(env: &Json) -> String {
+    let kind = env
+        .pointer("/header/kind")
+        .or_else(|| env.pointer("/envelope/header/kind"))
+        .and_then(|v| v.as_str());
+    if matches!(kind, Some("proof-run" | "stage-receipt")) {
+        if let Some(cid) = env.pointer("/header/cid").and_then(|v| v.as_str()) {
+            return cid.to_string();
+        }
+    }
+    compute_envelope_cid(env)
 }
 
 fn json_to_value(j: &Json) -> std::sync::Arc<Value> {
@@ -220,8 +267,10 @@ fn json_to_value(j: &Json) -> std::sync::Arc<Value> {
             Value::array(v)
         }
         Json::Object(map) => {
-            let entries: Vec<(String, _)> =
-                map.iter().map(|(k, v)| (k.clone(), json_to_value(v))).collect();
+            let entries: Vec<(String, _)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), json_to_value(v)))
+                .collect();
             std::sync::Arc::new(Value::Object(entries))
         }
     }

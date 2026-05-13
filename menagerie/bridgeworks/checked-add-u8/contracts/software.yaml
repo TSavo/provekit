@@ -1,0 +1,30 @@
+id: software.checked_add_u8
+layer: software
+native_artifact: ../artifacts/software/checked_add_u8.c
+lift_surface: bridgeworks-checked-add
+projection: Bridgeworks checked-add software validator
+claim:
+  name: checked_add_u8.postcondition
+  summary: >
+    checked_add_u8(a, b) returns overflow=false and value=(a+b) when
+    a+b < 256; otherwise it returns overflow=true.
+inputs:
+  assumptions:
+    - a and b are uint8_t values.
+    - uint16_t arithmetic is available for the intermediate sum.
+  adjacent_support:
+    - compiler.lowering.preserves_checked_add
+outputs:
+  boundary_claim: checked_add_u8.postcondition
+  marker: "/* provekit:contract checked_add_u8.postcondition */"
+refusal_cases:
+  - id: software.overflow_add_u8
+    artifact: ../mutations/software/overflow-add-u8/overflow_add_u8.c
+    reason: >
+      The software artifact advertises overflow_add_u8.postcondition
+      instead of the boundary contract checked_add_u8.postcondition.
+  - id: software.counterfeit_contract
+    artifact: ../mutations/software/counterfeit-contract/checked_add_u8.c
+    reason: >
+      The software artifact advertises checked_add_u8.postcondition but
+      violates it for overflow inputs.

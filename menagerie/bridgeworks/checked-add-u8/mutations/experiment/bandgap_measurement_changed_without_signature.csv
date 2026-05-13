@@ -1,0 +1,8 @@
+# bridgeworks:claim experiment.material_parameters.within_tolerance
+# bridgeworks:calibration_signature BW-CAL-2026-05-08-SHA256-4b8a02f3
+# bridgeworks:mutation expected_refusal=experiment_measurement_changed_without_calibration_signature
+sample_id,temperature_c,bandgap_ev,nmos_vth_v,pmos_abs_vth_v,oxide_thickness_nm,operator
+BW-ADD8-001,25,1.122,0.431,0.449,4.08,white-room-exp
+BW-ADD8-002,25,1.118,0.428,0.452,4.13,white-room-exp
+BW-ADD8-003,85,1.113,0.421,0.444,4.16,white-room-exp
+BW-ADD8-004,-20,1.129,0.438,0.458,4.02,white-room-exp

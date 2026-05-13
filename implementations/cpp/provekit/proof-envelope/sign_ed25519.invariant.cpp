@@ -8,7 +8,7 @@
 //
 // Honest scope:
 //   The IR cannot express "ed25519 signature is unforgeable under
-//   chosen-message attack" — that's a cryptographic claim outside FOL.
+//   chosen-message attack": that's a cryptographic claim outside FOL.
 //   What IR CAN express: output sizes, determinism of seeded signer,
 //   shape of pubkey-from-seed.
 
@@ -71,7 +71,7 @@ extern "C" void sign_invariants() {
                        ctor1("ed25519_pubkey_from_seed", seed));
          }));
 
-    // f(x(a)) = a — the round-trip identity. Verify(Sign(msg, seed),
+    // f(x(a)) = a: the round-trip identity. Verify(Sign(msg, seed),
     // PubkeyFromSeed(seed), msg) MUST equal true. This is the missing
     // invariant the placeholder-signer_cid bug exposed: without this
     // contract, the construction `signer_cid = compute_cid(pubkey_string_from_seed(seed))`

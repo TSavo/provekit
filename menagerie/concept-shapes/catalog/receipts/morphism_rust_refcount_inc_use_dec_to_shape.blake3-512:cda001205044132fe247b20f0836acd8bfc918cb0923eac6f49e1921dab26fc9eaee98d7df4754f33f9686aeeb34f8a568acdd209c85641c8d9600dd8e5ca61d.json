@@ -1,0 +1,31 @@
+{
+  "cid": "blake3-512:cda001205044132fe247b20f0836acd8bfc918cb0923eac6f49e1921dab26fc9eaee98d7df4754f33f9686aeeb34f8a568acdd209c85641c8d9600dd8e5ca61d",
+  "memento": {
+    "after_substitution_cid": "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e",
+    "discharged": true,
+    "kind": "MorphismDischargeReceipt",
+    "literal_map": {},
+    "method": "canonicalizer-alpha-equivalence-plus-representation-map",
+    "morphism_cid": "blake3-512:26e325bf56a11e3b4ef0887ced6ae15b58d4b1ce5fbb0855333bcfb33cf6a3854f8df46e486724e20de59f66877e4ae1c0cb37442c87ed38dde3d15a874ad1da",
+    "operator_map": {
+      "arc_clone_drop_balanced": "balanced_refcount_pair",
+      "arc_count_after": "refcount_after",
+      "arc_count_after_clone": "refcount_after_inc",
+      "arc_count_before": "refcount_before",
+      "arc_use_guarded": "use_guarded"
+    },
+    "renaming_map": {
+      "arc_obj": "o",
+      "out": "ret",
+      "value": "use_ret"
+    },
+    "representation_map": {
+      "ArcRef": "Object",
+      "UseOut": "UseValue"
+    },
+    "schema_version": "1",
+    "shape_cid": "blake3-512:2b334aca2238b2a55c6e34f705b84e9f5abbbc34aa47b7310a92b73e05e70fd3072bc7315e9a55c2f2ed15826af0c68be18b95c2d07b9b9971f9d5041ca4916e",
+    "source_contract_cid": "blake3-512:aa480223c50f8061c23a35894ca2a407e420c036b488d043b298708cefbf47ba1c019d66fda7956f2bf4902861b4d4572afd433f7efd2c6a6ffd498e2529f8a1"
+  },
+  "signature": null
+}

@@ -24,7 +24,9 @@ impl From<Sort> for ir::Sort {
 
 impl From<&Sort> for ir::Sort {
     fn from(s: &Sort) -> Self {
-        ir::Sort::Primitive { name: s.name.clone() }
+        ir::Sort::Primitive {
+            name: s.name.clone(),
+        }
     }
 }
 
@@ -32,6 +34,19 @@ impl From<ir::Sort> for Sort {
     fn from(s: ir::Sort) -> Self {
         match s {
             ir::Sort::Primitive { name } => Sort { name },
+            // The symbolic-side `Sort` wrapper is primitive-only; it does
+            // not yet model Function/Dependent. Deferred to #331 (Coq) /
+            // #332 (SMT-LIB) along with the rest of the v1.5.0 grammar
+            // grow downstream of the canonical `provekit-ir-types::Sort`.
+            ir::Sort::Function { .. }
+            | ir::Sort::Dependent { .. }
+            | ir::Sort::Float { .. }
+            | ir::Sort::Region { .. } => {
+                unimplemented!(
+                    "FunctionSort/DependentSort/FloatSort/RegionSort not supported in symbolic Sort wrapper: \
+                     deferred to #331 (Coq) / #332 (SMT-LIB) / #401 (Region)"
+                )
+            }
         }
     }
 }
@@ -70,7 +85,9 @@ impl TryFrom<serde_json::Value> for ConstValue {
                 .ok_or_else(|| format!("ConstValue::Int expected, got {n}")),
             serde_json::Value::String(s) => Ok(ConstValue::String(s)),
             serde_json::Value::Bool(b) => Ok(ConstValue::Bool(b)),
-            other => Err(format!("ConstValue expected number/string/bool, got {other}")),
+            other => Err(format!(
+                "ConstValue expected number/string/bool, got {other}"
+            )),
         }
     }
 }
@@ -90,7 +107,11 @@ pub fn term_to_ir(t: &Term) -> ir::Term {
             name: name.clone(),
             args: args.iter().map(|a| term_to_ir(a)).collect(),
         },
-        Term::Lambda { param_name, param_sort, body } => ir::Term::Lambda {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => ir::Term::Lambda {
             param_name: param_name.clone(),
             param_sort: param_sort.into(),
             body: Box::new(term_to_ir(body)),
@@ -113,7 +134,11 @@ pub fn term_from_ir(t: ir::Term) -> Term {
             name,
             args: args.into_iter().map(|a| Rc::new(term_from_ir(a))).collect(),
         },
-        ir::Term::Lambda { param_name, param_sort, body } => Term::Lambda {
+        ir::Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => Term::Lambda {
             param_name,
             param_sort: param_sort.into(),
             body: Rc::new(term_from_ir(*body)),
@@ -154,13 +179,26 @@ pub fn formula_to_ir(f: &Formula) -> ir::Formula {
             args: args.iter().map(|a| term_to_ir(a)).collect(),
         },
         Formula::Connective { kind, operands } => match kind.as_str() {
-            "and" => ir::Formula::And { operands: operands.iter().map(|o| formula_to_ir(o)).collect() },
-            "or" => ir::Formula::Or { operands: operands.iter().map(|o| formula_to_ir(o)).collect() },
-            "not" => ir::Formula::Not { operands: operands.iter().map(|o| formula_to_ir(o)).collect() },
-            "implies" => ir::Formula::Implies { operands: operands.iter().map(|o| formula_to_ir(o)).collect() },
+            "and" => ir::Formula::And {
+                operands: operands.iter().map(|o| formula_to_ir(o)).collect(),
+            },
+            "or" => ir::Formula::Or {
+                operands: operands.iter().map(|o| formula_to_ir(o)).collect(),
+            },
+            "not" => ir::Formula::Not {
+                operands: operands.iter().map(|o| formula_to_ir(o)).collect(),
+            },
+            "implies" => ir::Formula::Implies {
+                operands: operands.iter().map(|o| formula_to_ir(o)).collect(),
+            },
             _ => panic!("unknown connective kind: {kind}"),
         },
-        Formula::Quantifier { kind, name, sort, body } => match kind.as_str() {
+        Formula::Quantifier {
+            kind,
+            name,
+            sort,
+            body,
+        } => match kind.as_str() {
             "forall" => ir::Formula::Forall {
                 name: name.clone(),
                 sort: sort.into(),
@@ -173,7 +211,11 @@ pub fn formula_to_ir(f: &Formula) -> ir::Formula {
             },
             _ => panic!("unknown quantifier kind: {kind}"),
         },
-        Formula::Choice { var_name, sort, body } => ir::Formula::Choice {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => ir::Formula::Choice {
             var_name: var_name.clone(),
             sort: sort.into(),
             body: Box::new(formula_to_ir(body)),
@@ -189,19 +231,31 @@ pub fn formula_from_ir(f: ir::Formula) -> Formula {
         },
         ir::Formula::And { operands } => Formula::Connective {
             kind: "and".into(),
-            operands: operands.into_iter().map(|o| Rc::new(formula_from_ir(o))).collect(),
+            operands: operands
+                .into_iter()
+                .map(|o| Rc::new(formula_from_ir(o)))
+                .collect(),
         },
         ir::Formula::Or { operands } => Formula::Connective {
             kind: "or".into(),
-            operands: operands.into_iter().map(|o| Rc::new(formula_from_ir(o))).collect(),
+            operands: operands
+                .into_iter()
+                .map(|o| Rc::new(formula_from_ir(o)))
+                .collect(),
         },
         ir::Formula::Not { operands } => Formula::Connective {
             kind: "not".into(),
-            operands: operands.into_iter().map(|o| Rc::new(formula_from_ir(o))).collect(),
+            operands: operands
+                .into_iter()
+                .map(|o| Rc::new(formula_from_ir(o)))
+                .collect(),
         },
         ir::Formula::Implies { operands } => Formula::Connective {
             kind: "implies".into(),
-            operands: operands.into_iter().map(|o| Rc::new(formula_from_ir(o))).collect(),
+            operands: operands
+                .into_iter()
+                .map(|o| Rc::new(formula_from_ir(o)))
+                .collect(),
         },
         ir::Formula::Forall { name, sort, body } => Formula::Quantifier {
             kind: "forall".into(),
@@ -215,10 +269,26 @@ pub fn formula_from_ir(f: ir::Formula) -> Formula {
             sort: sort.into(),
             body: Rc::new(formula_from_ir(*body)),
         },
-        ir::Formula::Choice { var_name, sort, body } => Formula::Choice {
+        ir::Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => Formula::Choice {
             var_name,
             sort: sort.into(),
             body: Rc::new(formula_from_ir(*body)),
         },
+        // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
+        // `substitute` / `apply` appear only inside an unreduced `wp_rule`
+        // term. They are eliminated by `libprovekit::wp` before any formula
+        // is converted into the symbolic representation; the symbolic engine
+        // has no equivalent and is not meant to see them. Reaching this arm
+        // is a bug.
+        ir::Formula::Substitute { .. } | ir::Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached ir-symbolic formula conversion; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
     }
 }

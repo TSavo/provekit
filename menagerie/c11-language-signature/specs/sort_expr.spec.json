@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "c11:Expr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Expr",
+    "description": "C11 expression terms"
+  }
+}

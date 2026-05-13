@@ -1,0 +1,118 @@
+{
+  "fn_name": "gap:typescript:neg:to:concept:neg",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Trap"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Panic"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Int"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "operand"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "neg",
+        "result": "Expr",
+        "wp": "TypeScript unary operator -"
+      },
+      "want": {
+        "arity": [
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "neg",
+        "result": "Int",
+        "wp_note": "integer arithmetic negation when no overflow holds"
+      }
+    },
+    "pre_delta": {
+      "got": {
+        "args": [],
+        "kind": "atomic",
+        "name": "true"
+      },
+      "want": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "value"
+              }
+            ],
+            "kind": "op",
+            "name": "neg"
+          }
+        ],
+        "kind": "atomic",
+        "name": "no_signed_overflow"
+      }
+    }
+  },
+  "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"neg\",\"args\":[{\"kind\":\"var\",\"name\":\"value\"}]}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "typescript",
+  "source_op_cid": "blake3-512:64c0f0594f71b3ba86dceaeac915ab9840d569bc45092851d85544edacb6d85dd211f48a6265cc511fb5654b378167d6a4cada2c23e998c3d820bdb5dc9f7d55",
+  "target_concept_op": "concept:neg",
+  "target_op_cid": "blake3-512:ad958847b50cf07ddbb92d85ae488a5f983d5619e108476b42e519174cfcce883ecd637544a372b946bb45a1c22893c710bc9b08ea0569ad0e035b3babb6a409"
+}

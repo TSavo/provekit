@@ -33,8 +33,8 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula,
-    Int, Sort, Term,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Int,
+    Sort, Term,
 };
 
 #[derive(Debug, Clone)]
@@ -122,7 +122,9 @@ fn visit_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
                 out.warnings.push(LiftWarning {
                     source_path: source_path.into(),
                     item_name: name.clone(),
-                    reason: format!("v0 creusot adapter skips #[creusot::{marker}] (revisit in v1.x)"),
+                    reason: format!(
+                        "v0 creusot adapter skips #[creusot::{marker}] (revisit in v1.x)"
+                    ),
                 });
             }
         }
@@ -147,7 +149,9 @@ fn visit_impl_fn(f: &syn::ImplItemFn, source_path: &str, out: &mut AdapterOutput
                 out.warnings.push(LiftWarning {
                     source_path: source_path.into(),
                     item_name: name.clone(),
-                    reason: format!("v0 creusot adapter skips #[creusot::{marker}] (revisit in v1.x)"),
+                    reason: format!(
+                        "v0 creusot adapter skips #[creusot::{marker}] (revisit in v1.x)"
+                    ),
                 });
             }
         }
@@ -232,7 +236,8 @@ fn process(
         post,
         inv,
         out_binding: "out".into(),
-    evidence: None,
+        evidence: None,
+        concept_hint: None,
     });
     out.lifted += 1;
 }
@@ -272,13 +277,23 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
     match &**f {
         Formula::Atomic { name, args } => atomic_(
             name.clone(),
-            args.iter().map(|a| subst_term(a, from, to)).collect::<Vec<_>>(),
+            args.iter()
+                .map(|a| subst_term(a, from, to))
+                .collect::<Vec<_>>(),
         ),
         Formula::Connective { kind, operands } => Rc::new(Formula::Connective {
             kind: kind.clone(),
-            operands: operands.iter().map(|o| subst_var_name(o, from, to)).collect(),
+            operands: operands
+                .iter()
+                .map(|o| subst_var_name(o, from, to))
+                .collect(),
         }),
-        Formula::Quantifier { kind, name, sort, body } => {
+        Formula::Quantifier {
+            kind,
+            name,
+            sort,
+            body,
+        } => {
             if name == from {
                 f.clone()
             } else {
@@ -290,7 +305,11 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             if var_name == from {
                 f.clone() // shadowed
             } else {
@@ -313,7 +332,11 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
             name: name.clone(),
             args: args.iter().map(|a| subst_term(a, from, to)).collect(),
         }),
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == from {
                 t.clone() // shadowed
             } else {
@@ -343,8 +366,15 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_term(body, from, to) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_term(body, from, to)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -380,7 +410,9 @@ fn translate_term(expr: &syn::Expr) -> Result<Rc<Term>, String> {
         }
         syn::Expr::Lit(l) => match &l.lit {
             syn::Lit::Int(li) => {
-                let n: i64 = li.base10_parse().map_err(|e| format!("integer literal: {e}"))?;
+                let n: i64 = li
+                    .base10_parse()
+                    .map_err(|e| format!("integer literal: {e}"))?;
                 Ok(num(n))
             }
             syn::Lit::Str(ls) => Ok(str_const(ls.value())),
@@ -399,13 +431,18 @@ fn translate_term(expr: &syn::Expr) -> Result<Rc<Term>, String> {
                 ));
             }
             let inner = translate_term(c.args.first().unwrap())?;
-            Ok(Rc::new(Term::Ctor { name: callee, args: vec![inner] }))
+            Ok(Rc::new(Term::Ctor {
+                name: callee,
+                args: vec![inner],
+            }))
         }
         syn::Expr::Unary(u) => {
             if matches!(u.op, syn::UnOp::Neg(_)) {
                 if let syn::Expr::Lit(l) = &*u.expr {
                     if let syn::Lit::Int(li) = &l.lit {
-                        let n: i64 = li.base10_parse().map_err(|e| format!("integer literal: {e}"))?;
+                        let n: i64 = li
+                            .base10_parse()
+                            .map_err(|e| format!("integer literal: {e}"))?;
                         return Ok(num(-n));
                     }
                 }

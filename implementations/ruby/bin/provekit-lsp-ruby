@@ -1,60 +1,145 @@
 #!/usr/bin/env ruby
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit-lsp-ruby - NDJSON LSP plugin for Ruby.
+# provekit-lsp-ruby: NDJSON LSP plugin for Ruby.
 #
-# Protocol:
+# Protocol (provekit-lift/1 over stdio):
 #   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-#   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
+#   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
 #   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
 #
-# Usage: ruby bin/provekit-lsp-ruby
+# Legacy parse method is retained for backward compatibility.
+#
+# Usage: provekit-lsp-ruby --rpc
+
+# Re-exec with Homebrew Ruby if running on the macOS system Ruby (< 3.0).
+# Endless methods (def f = expr) and Struct keyword_init require Ruby 3.0+.
+if RUBY_VERSION < "3.0"
+  candidates = [
+    "/usr/local/opt/ruby/bin/ruby",  # Homebrew on Intel
+    "/opt/homebrew/opt/ruby/bin/ruby", # Homebrew on Apple Silicon
+  ]
+  ruby = candidates.find { |p| File.executable?(p) }
+  exec(ruby, __FILE__, *ARGV) if ruby
+  abort "provekit-lsp-ruby requires Ruby 3.0+; install via: brew install ruby"
+end
 
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "json"
 require "provekit/ir"
 require "provekit/lift/active_model"
+require "provekit/lift/ffi_resolver"
 
 include Provekit::IR
 
 def respond(id, result)
-  puts JSON.generate({ jsonrpc: "2.0", id: id, result: result })
+  $stdout.puts JSON.generate({ jsonrpc: "2.0", id: id, result: result })
+  $stdout.flush
 end
 
 def err(id, code, message)
-  puts JSON.generate({ jsonrpc: "2.0", id: id, error: { code: code, message: message } })
+  $stdout.puts JSON.generate({ jsonrpc: "2.0", id: id, error: { code: code, message: message } })
+  $stdout.flush
 end
 
 ARGV.include?("--rpc") || (warn "Usage: provekit-lsp-ruby --rpc"; exit 1)
 
 STDIN.each_line do |line|
   req = JSON.parse(line) rescue next
-  id = req["id"]
+  id     = req["id"]
   method = req["method"]
+  params = req["params"] || {}
 
   case method
   when "initialize"
-    respond id, { name: "provekit-lsp-ruby", version: "0.1.0", capabilities: ["parse"] }
+    respond id, {
+      name: "provekit-lsp-ruby",
+      version: "0.1.0",
+      protocol_version: "provekit-lift/1",
+      capabilities: {
+        authoring_surfaces: ["ruby-source"],
+        ir_version: "v1.1.0",
+        emits_signed_mementos: false,
+      },
+    }
+
+  when "lift"
+    workspace_root = params["workspace_root"] || "."
+    source_paths   = params["source_paths"] || []
+
+    unless source_paths.is_a?(Array) && !source_paths.empty?
+      err id, -32602, "lift: source_paths must be a non-empty array"
+      next
+    end
+
+    all_decls = []
+    diagnostics = []
+
+    source_paths.each do |sp|
+      full_path = File.expand_path(sp.to_s, workspace_root)
+      next unless File.file?(full_path) && full_path.end_with?(".rb")
+
+      begin
+        source = File.read(full_path, encoding: "utf-8")
+      rescue => e
+        diagnostics << { kind: "read-error", path: full_path, reason: e.message }
+        next
+      end
+
+      # Lift annotations.
+      source.each_line.with_index do |line, i|
+        if line =~ /#\s*provekit:\s*contract/
+          fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+          fn_name = fn ? $1 : "unknown"
+          all_decls << ContractDecl.new(name: fn_name, post: Provekit::IR.and())
+        end
+        if line =~ /#\s*provekit:\s*implement\s+([\w-]+)/
+          cid = $1
+          fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+          fn_name = fn ? $1 : "unknown"
+          all_decls << ContractDecl.new(name: "#{fn_name}->#{cid}", post: Provekit::IR.and())
+        end
+      end
+    end
+
+    jcs = all_decls.empty? ? "[]" : Provekit::IR.marshal_declarations(all_decls)
+    ir = JSON.parse(jcs)
+
+    respond id, {
+      kind: "ir-document",
+      ir: ir,
+      callEdges: [],
+      diagnostics: diagnostics,
+      opacityReport: [],
+      refusals: [],
+    }
 
   when "parse"
-    params = req["params"] || {}
     path   = params["path"] || "source.rb"
     source = params["source"] || ""
 
+    # If a `language` param is provided and is not "ruby", reject it.
+    lang = params["language"]
+    if lang && lang != "ruby"
+      err id, -32602, "provekit-lsp-ruby only handles language 'ruby', got '#{lang}'"
+      next
+    end
+
     decls = []
 
-    # Scan for //provekit:contract, //provekit:implement annotations
+    # Scan for # provekit:contract / # provekit:implement annotations.
+    # Ruby uses # for single-line comments; accept optional spaces around the colon.
     source.each_line.with_index do |line, i|
-      if line =~ %r{//\s*provekit:\s*contract}
+      if line =~ /#\s*provekit:\s*contract/
         fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
         fn_name = fn ? $1 : "unknown"
-        decls << ContractDecl.new(name: fn_name, post: and())
+        decls << ContractDecl.new(name: fn_name, post: Provekit::IR.and())
       end
-      if line =~ %r{//\s*provekit:\s*implement\s+([\w-]+)}
+      if line =~ /#\s*provekit:\s*implement\s+([\w-]+)/
         cid = $1
         fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
         fn_name = fn ? $1 : "unknown"
-        decls << ContractDecl.new(name: "#{fn_name}->#{cid}", post: and())
+        decls << ContractDecl.new(name: "#{fn_name}->#{cid}", post: Provekit::IR.and())
       end
     end
 
@@ -77,11 +162,21 @@ STDIN.each_line do |line|
         end
       end
     rescue => e
-      # source eval failed - just use annotation scan
+      # source eval failed: just use annotation scan
     end
 
-    jcs = decls.empty? ? "[]" : marshal_declarations(decls)
-    respond id, { declarations: JSON.parse(jcs), warnings: [] } rescue respond(id, { declarations: [], warnings: [] })
+    jcs = decls.empty? ? "[]" : Provekit::IR.marshal_declarations(decls)
+
+    # Emit call-edge stream per spec #114 R1.
+    # Walk source for FFI call sites (Fiddle + ffi gem patterns).
+    ffi_result = Provekit::Lift::FfiResolver.resolve(source, path: path)
+    edges_json = ffi_result.call_edges.empty? ? "[]" : Provekit::IR.marshal_call_edges(ffi_result.call_edges)
+
+    respond id, {
+      declarations: JSON.parse(jcs),
+      callEdges:    JSON.parse(edges_json),
+      warnings:     ffi_result.linker_errors,
+    } rescue respond(id, { declarations: [], callEdges: [], warnings: [] })
 
   when "shutdown"
     respond id, nil

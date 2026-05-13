@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "go:Int",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Int",
+    "description": "Go integer value in the lifted symbolic subset"
+  }
+}

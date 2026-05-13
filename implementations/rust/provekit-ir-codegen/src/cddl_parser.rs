@@ -67,7 +67,7 @@ pub fn extract_ir(cddl: &cddl::ast::CDDL) -> IrSchema {
                                     .cloned()
                                     .collect();
                                 if tag_values.is_empty() {
-                                    // No tag found — keep original variant name
+                                    // No tag found, keep original variant name.
                                     new_variants.push(v.clone());
                                 } else {
                                     for tag_value in tag_values {
@@ -90,7 +90,9 @@ pub fn extract_ir(cddl: &cddl::ast::CDDL) -> IrSchema {
                 }
                 if changed {
                     if let Some(def) = types.get_mut(&name) {
-                        def.kind = TypeKind::Enum { variants: new_variants };
+                        def.kind = TypeKind::Enum {
+                            variants: new_variants,
+                        };
                     }
                 }
             }
@@ -99,7 +101,8 @@ pub fn extract_ir(cddl: &cddl::ast::CDDL) -> IrSchema {
 
     // Third pass: convert single-struct aliases into single-variant enums.
     // e.g. Sort = PrimitiveSort  ->  enum Sort { Primitive { name } }
-    let alias_names: Vec<String> = types.iter()
+    let alias_names: Vec<String> = types
+        .iter()
         .filter(|(_, d)| matches!(d.kind, TypeKind::Alias { .. }))
         .map(|(n, _)| n.clone())
         .collect();
@@ -117,12 +120,14 @@ pub fn extract_ir(cddl: &cddl::ast::CDDL) -> IrSchema {
                             if let Some(first_tag) = tag_values.first() {
                                 let variant_name = tag_to_variant_name(first_tag);
                                 if let Some(def) = types.get_mut(&name) {
-                                    def.kind = TypeKind::Enum { variants: vec![Variant {
-                                        name: variant_name,
-                                        serde_rename: first_tag.clone(),
-                                        fields: inlined_fields,
-                                        is_unit: false,
-                                    }] };
+                                    def.kind = TypeKind::Enum {
+                                        variants: vec![Variant {
+                                            name: variant_name,
+                                            serde_rename: first_tag.clone(),
+                                            fields: inlined_fields,
+                                            is_unit: false,
+                                        }],
+                                    };
                                 }
                             }
                         }
@@ -152,7 +157,10 @@ fn tag_to_variant_name(tag: &str) -> String {
 fn find_tag_values(cddl: &cddl::ast::CDDL, type_name: &str) -> Vec<String> {
     for rule in &cddl.rules {
         if rule.name() == type_name {
-            if let cddl::ast::Rule::Type { rule: type_rule, .. } = rule {
+            if let cddl::ast::Rule::Type {
+                rule: type_rule, ..
+            } = rule
+            {
                 let choices: Vec<_> = type_rule.value.type_choices.iter().collect();
                 if choices.len() == 1 {
                     if let cddl::ast::Type2::Map { group, .. } = &choices[0].type1.type2 {
@@ -170,7 +178,9 @@ fn find_tag_values_for_type(cddl: &cddl::ast::CDDL, type_name: &str) -> Option<V
     for rule in &cddl.rules {
         if rule.name() == type_name {
             match rule {
-                cddl::ast::Rule::Type { rule: type_rule, .. } => {
+                cddl::ast::Rule::Type {
+                    rule: type_rule, ..
+                } => {
                     let choices: Vec<_> = type_rule.value.type_choices.iter().collect();
                     if choices.len() == 1 {
                         match &choices[0].type1.type2 {
@@ -202,9 +212,7 @@ fn extract_kind_values(cddl: &cddl::ast::CDDL, group: &cddl::ast::Group) -> Vec<
                         cddl::ast::MemberKey::Value { value, .. } => {
                             matches!(value, cddl::token::Value::TEXT(t) if t == "kind")
                         }
-                        cddl::ast::MemberKey::Bareword { ident, .. } => {
-                            ident.to_string() == "kind"
-                        }
+                        cddl::ast::MemberKey::Bareword { ident, .. } => ident.to_string() == "kind",
                         _ => false,
                     };
                     if is_kind {
@@ -234,7 +242,10 @@ fn extract_kind_values(cddl: &cddl::ast::CDDL, group: &cddl::ast::Group) -> Vec<
 fn resolve_string_enum(cddl: &cddl::ast::CDDL, type_name: &str) -> Vec<String> {
     for rule in &cddl.rules {
         if rule.name() == type_name {
-            if let cddl::ast::Rule::Type { rule: type_rule, .. } = rule {
+            if let cddl::ast::Rule::Type {
+                rule: type_rule, ..
+            } = rule
+            {
                 let mut values = Vec::new();
                 for tc in &type_rule.value.type_choices {
                     if let cddl::ast::Type2::TextValue { value, .. } = &tc.type1.type2 {
@@ -251,7 +262,9 @@ fn resolve_string_enum(cddl: &cddl::ast::CDDL, type_name: &str) -> Vec<String> {
 fn process_rule(rule: &cddl::ast::Rule) -> Option<TypeDef> {
     let name = rule.name();
     match rule {
-        cddl::ast::Rule::Type { rule: type_rule, .. } => {
+        cddl::ast::Rule::Type {
+            rule: type_rule, ..
+        } => {
             let kind = convert_type(&type_rule.value)?;
             Some(TypeDef { name, kind })
         }
@@ -266,12 +279,13 @@ fn convert_type(ty: &cddl::ast::Type) -> Option<TypeKind> {
     let choices: Vec<_> = ty.type_choices.iter().collect();
 
     // Check if all choices are text values -> string enum
-    let all_text_values: Option<Vec<String>> = choices.iter().map(|tc| {
-        match &tc.type1.type2 {
+    let all_text_values: Option<Vec<String>> = choices
+        .iter()
+        .map(|tc| match &tc.type1.type2 {
             cddl::ast::Type2::TextValue { value, .. } => Some(value.to_string()),
             _ => None,
-        }
-    }).collect();
+        })
+        .collect();
 
     if let Some(values) = all_text_values {
         if !values.is_empty() {
@@ -299,12 +313,15 @@ fn convert_type(ty: &cddl::ast::Type) -> Option<TypeKind> {
         }
     }
     if all_string_like && !text_values.is_empty() {
-        return Some(TypeKind::StringEnum { values: text_values });
+        return Some(TypeKind::StringEnum {
+            values: text_values,
+        });
     }
 
     // Check if all choices are Map types -> enum with struct variants
-    let all_maps: Option<Vec<(String, Vec<Field>)>> = choices.iter().map(|tc| {
-        match &tc.type1.type2 {
+    let all_maps: Option<Vec<(String, Vec<Field>)>> = choices
+        .iter()
+        .map(|tc| match &tc.type1.type2 {
             cddl::ast::Type2::Map { group, .. } => {
                 let tag_field = find_literal_tag(group)?;
                 let fields = convert_group_entries(group, Some(&tag_field));
@@ -315,21 +332,24 @@ fn convert_type(ty: &cddl::ast::Type) -> Option<TypeKind> {
                 Some((variant_name, vec![]))
             }
             _ => None,
-        }
-    }).collect();
+        })
+        .collect();
 
     if let Some(map_variants) = all_maps {
         if map_variants.len() > 1 {
-            let variants = map_variants.into_iter().map(|(tag, fields)| {
-                let variant_name = to_pascal_case(&tag);
-                let is_unit = fields.is_empty();
-                Variant {
-                    name: variant_name,
-                    serde_rename: tag,
-                    fields,
-                    is_unit,
-                }
-            }).collect();
+            let variants = map_variants
+                .into_iter()
+                .map(|(tag, fields)| {
+                    let variant_name = to_pascal_case(&tag);
+                    let is_unit = fields.is_empty();
+                    Variant {
+                        name: variant_name,
+                        serde_rename: tag,
+                        fields,
+                        is_unit,
+                    }
+                })
+                .collect();
             return Some(TypeKind::Enum { variants });
         }
     }
@@ -344,33 +364,41 @@ fn convert_type(ty: &cddl::ast::Type) -> Option<TypeKind> {
             }
             cddl::ast::Type2::Array { group, .. } => {
                 let item_type = array_item_type(group);
-                return Some(TypeKind::Alias { target: format!("Vec<{}>", item_type) });
+                return Some(TypeKind::Alias {
+                    target: format!("Vec<{}>", item_type),
+                });
             }
             cddl::ast::Type2::Typename { ident, .. } => {
-                return Some(TypeKind::Alias { target: cddl_to_rust_type(&ident.to_string()) });
+                return Some(TypeKind::Alias {
+                    target: cddl_to_rust_type(&ident.to_string()),
+                });
             }
             _ => {
-                return Some(TypeKind::Alias { target: type2_to_rust_type(&tc.type1.type2) });
+                return Some(TypeKind::Alias {
+                    target: type2_to_rust_type(&tc.type1.type2),
+                });
             }
         }
     }
 
     // Multiple typename choices
-    let variant_refs: Vec<String> = choices.iter().map(|tc| {
-        match &tc.type1.type2 {
+    let variant_refs: Vec<String> = choices
+        .iter()
+        .map(|tc| match &tc.type1.type2 {
             cddl::ast::Type2::Typename { ident, .. } => ident.to_string(),
             _ => "Unknown".to_string(),
-        }
-    }).collect();
+        })
+        .collect();
 
-    let variants = variant_refs.into_iter().map(|name| {
-        Variant {
+    let variants = variant_refs
+        .into_iter()
+        .map(|name| Variant {
             name: name.clone(),
             serde_rename: name.clone(),
             fields: vec![],
             is_unit: true,
-        }
-    }).collect();
+        })
+        .collect();
     Some(TypeKind::Enum { variants })
 }
 
@@ -384,9 +412,7 @@ fn find_literal_tag(group: &cddl::ast::Group) -> Option<String> {
                         cddl::ast::MemberKey::Value { value, .. } => {
                             matches!(value, cddl::token::Value::TEXT(t) if t == "kind")
                         }
-                        cddl::ast::MemberKey::Bareword { ident, .. } => {
-                            ident.to_string() == "kind"
-                        }
+                        cddl::ast::MemberKey::Bareword { ident, .. } => ident.to_string() == "kind",
                         _ => false,
                     };
                     if is_kind {
@@ -407,7 +433,9 @@ fn convert_group_entries(group: &cddl::ast::Group, exclude_tag: Option<&str>) ->
     for choice in &group.group_choices {
         for (entry, _) in &choice.group_entries {
             if let cddl::ast::GroupEntry::ValueMemberKey { ge, .. } = entry {
-                let optional = ge.occur.as_ref()
+                let optional = ge
+                    .occur
+                    .as_ref()
                     .map(|o| matches!(o.occur, cddl::ast::Occur::Optional { .. }))
                     .unwrap_or(false);
 
@@ -451,7 +479,10 @@ fn type_to_rust_type(ty: &cddl::ast::Type) -> String {
     if choices.len() == 1 {
         type1_to_rust_type(&choices[0].type1)
     } else {
-        let refs: Vec<String> = choices.iter().map(|tc| type1_to_rust_type(&tc.type1)).collect();
+        let refs: Vec<String> = choices
+            .iter()
+            .map(|tc| type1_to_rust_type(&tc.type1))
+            .collect();
         refs.join(" | ")
     }
 }
@@ -471,9 +502,7 @@ fn type2_to_rust_type(t2: &cddl::ast::Type2) -> String {
             let item = array_item_type(group);
             format!("Vec<{}>", item)
         }
-        cddl::ast::Type2::ParenthesizedType { pt, .. } => {
-            type_to_rust_type(pt)
-        }
+        cddl::ast::Type2::ParenthesizedType { pt, .. } => type_to_rust_type(pt),
         _ => "serde_json::Value".to_string(),
     }
 }

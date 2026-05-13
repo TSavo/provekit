@@ -1,0 +1,22 @@
+[package]
+name = "provekit-lsp-rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "NDJSON LSP plugin for Rust. Thin shim around provekit-lift adapters; speaks the per-language plugin protocol (initialize/parse/shutdown)."
+
+[[bin]]
+name = "provekit-lsp-rust"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_lsp_rust"
+path = "src/lib.rs"
+
+[dependencies]
+provekit-lift = { path = "../provekit-lift" }
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+serde_json = { workspace = true }
+syn = { workspace = true }
+blake3 = { workspace = true }

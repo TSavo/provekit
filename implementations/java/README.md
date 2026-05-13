@@ -11,8 +11,9 @@ A `@NotNull` in Jakarta Bean Validation, a `//@ requires x != null` in JML, and 
 ## Architecture
 
 ```
-provekit-lift-java-core              (facade — RPC, walking, IR emission)
+provekit-lift-java-core              (facade: RPC, walking, IR emission)
 ├── provekit-lift-java-bean-validation   (@NotNull, @Email, @Min, @Size...)
+├── provekit-lift-java-junit             (assertEquals, local value-scope lemmas)
 ├── provekit-lift-java-jml               (//@ requires, //@ ensures)
 ├── provekit-lift-java-cofoja            (@Requires, @Ensures)
 ├── provekit-lift-java-spring-web        (@GetMapping, @RequestParam, @ResponseStatus)
@@ -30,6 +31,7 @@ You install the core + whichever bindings match the annotation libraries you use
 | Binding JAR | Annotation Library | What gets lifted |
 |---|---|---|
 | `provekit-lift-java-bean-validation` | Jakarta Bean Validation | `@NotNull`, `@NotEmpty`, `@NotBlank`, `@Email`, `@Min`, `@Max`, `@Size`, `@Pattern`, `@Positive`, `@Negative`, `@PositiveOrZero`, `@NegativeOrZero`, `@AssertTrue`, `@AssertFalse`, `@DecimalMin`, `@DecimalMax`, `@Digits`, `@Future`, `@Past` |
+| `provekit-lift-java-junit` | JUnit Jupiter | `@Test` / `@ParameterizedTest` methods with `assertEquals`, `assertNotEquals`, `assertTrue`, `assertFalse`; assertions bind implications over the test-local value scope, including SSA assignment steps and guarded branch joins |
 | `provekit-lift-java-jml` | JML (Java Modeling Language) | `//@ requires <expr>`, `//@ ensures <expr>`, `//@ invariant <expr>` |
 | `provekit-lift-java-cofoja` | Cofoja (Contracts for Java) | `@Requires("<expr>")`, `@Ensures("<expr>")`, `@Invariant("<expr>")` |
 | `provekit-lift-java-spring-web` | Spring Web / Spring MVC | `@RequestMapping`, `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, `@PatchMapping`, `@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestHeader`, `@ResponseStatus` |
@@ -113,11 +115,11 @@ The core discovers bindings via `ServiceLoader`. No config needed.
 ```toml
 name = "java"
 version = "1.0.0"
-protocol_version = "provekit-lift/1"
-command = ["java", "-cp", "provekit-lift-java-core-0.1.0-shaded.jar:provekit-lift-java-bean-validation-0.1.0.jar:provekit-lift-java-spring-web-0.1.0.jar", "com.provekit.lift.Main", "--rpc"]
+protocol_version = "pep/1.7.0"
+command = ["java", "-cp", "provekit-lift-java-core-0.1.0-shaded.jar:provekit-lift-java-bean-validation-0.1.0.jar:provekit-lift-java-junit-0.1.0.jar:provekit-lift-java-spring-web-0.1.0.jar", "com.provekit.lift.Main", "--rpc"]
 
 [capabilities]
-authoring_surfaces = ["java-bean-validation", "java-jml", "java-cofoja", "java-spring-web", "java-spring-security", "java-swagger", "java-jackson", "java-jpa", "java-hibernate"]
+authoring_surfaces = ["java-bean-validation", "java-junit", "java-jml", "java-cofoja", "java-spring-web", "java-spring-security", "java-swagger", "java-jackson", "java-jpa", "java-hibernate"]
 ir_version = "v1.1.0"
 ```
 

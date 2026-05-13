@@ -5,14 +5,14 @@
 // Two parallel declarative concerns, both written by `provekit init`
 // and both edited by the user. ProvekIt does not auto-detect either:
 //
-//   1. **Authoring surface** — which annotation library the agent
+//   1. **Authoring surface**: which annotation library the agent
 //      should target ("ts-zod", "rust-contracts-crate", "default", ...).
-//   2. **Agent backend** — which coding-agent drives the work
+//   2. **Agent backend**: which coding-agent drives the work
 //      ("claude-code", "openai", "stub", ...).
 //
 // Resolution order for both is identical:
 //
-//   - CLI flag (`--surface`, `--agent`) — one-shot override.
+//   - CLI flag (`--surface`, `--agent`): one-shot override.
 //   - Project per-command override   `[authoring.must]`, `[agent.must]`.
 //   - Project default                `[authoring]`,        `[agent]`.
 //   - User per-command override      (in `~/.config/provekit/config.toml`).
@@ -45,6 +45,14 @@ pub struct ProjectConfig {
     pub solver_chain: Vec<String>,
     pub solver_portfolio: Vec<String>,
     pub solver_mode: Option<String>, // "first-wins" | "consensus"
+
+    /// Extra contract directories loaded by `provekit prove`.
+    /// e.g., an OpenAPI spec project whose .proof files are
+    /// consumed alongside the main project.
+    pub callees: Vec<String>,
+
+    /// Serialized command path documents, keyed by command.
+    pub path_mint: Option<String>,
 }
 
 impl ProjectConfig {
@@ -66,6 +74,13 @@ impl ProjectConfig {
             _ => &None,
         };
         per_cmd.clone().or_else(|| self.agent_default.clone())
+    }
+
+    pub fn path_for(&self, cmd: &str) -> Option<String> {
+        match cmd {
+            "mint" => self.path_mint.clone(),
+            _ => None,
+        }
     }
 }
 
@@ -133,6 +148,10 @@ fn parse_config(text: &str) -> ProjectConfig {
                 cfg.solver_portfolio = parse_string_array(&val);
             }
             (Some("solvers"), "mode") => cfg.solver_mode = Some(val),
+            (Some("verify"), "callees") => {
+                cfg.callees = parse_string_array(&val);
+            }
+            (Some("paths.mint"), "file") => cfg.path_mint = Some(val),
             _ => {}
         }
     }
@@ -186,6 +205,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "rust-proptest",
     "rust-quickcheck",
     "ts-zod",
+    "typescript-source",
     "ts-class-validator",
     "ts-fast-check",
     "ts-jsdoc",
@@ -194,10 +214,22 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "python-pydantic",
     "python-deal",
     "python-hypothesis",
+    "python-source",
+    "ruby-source",
+    "php-source",
+    "java-source",
     "java-bean-validation",
     "java-jml",
+    "jvm-bytecode",
+    "csharp",
+    "csharp-source",
     "cpp-26-contracts",
     "cpp-boost-contract",
+    "cpp-source",
+    "clr-bytecode",
+    "swift-source",
+    "zig-source",
+    "evm-bytecode",
 ];
 
 /// Agent menu shown by `provekit init`.
@@ -249,9 +281,8 @@ mod tests {
     #[test]
     fn project_overrides_user_via_merge() {
         let project = parse_config("[agent]\nbackend = \"openai\"\n");
-        let user = parse_config(
-            "[authoring]\nsurface = \"ts-zod\"\n[agent]\nbackend = \"claude-code\"\n",
-        );
+        let user =
+            parse_config("[authoring]\nsurface = \"ts-zod\"\n[agent]\nbackend = \"claude-code\"\n");
         let (surface, agent) = merged_for_command(&project, &user, "must");
         assert_eq!(agent.as_deref(), Some("openai"));
         assert_eq!(surface.as_deref(), Some("ts-zod"));
@@ -270,6 +301,16 @@ mod tests {
     }
 
     #[test]
+    fn parses_mint_path_file() {
+        let cfg = parse_config("[paths.mint]\nfile = \".provekit/paths/mint.json\"\n");
+        assert_eq!(
+            cfg.path_for("mint").as_deref(),
+            Some(".provekit/paths/mint.json")
+        );
+        assert_eq!(cfg.path_for("prove"), None);
+    }
+
+    #[test]
     fn missing_file_yields_default() {
         let p = std::env::temp_dir().join("provekit-no-such-config.toml");
         let _ = std::fs::remove_file(&p);
@@ -282,6 +323,14 @@ mod tests {
     fn known_lists_include_anchor_entries() {
         assert!(KNOWN_SURFACES.contains(&"default"));
         assert!(KNOWN_SURFACES.contains(&"ts-zod"));
+        assert!(KNOWN_SURFACES.contains(&"typescript-source"));
+        assert!(KNOWN_SURFACES.contains(&"php-source"));
+        assert!(KNOWN_SURFACES.contains(&"ruby-source"));
+        assert!(KNOWN_SURFACES.contains(&"csharp-source"));
+        assert!(KNOWN_SURFACES.contains(&"swift-source"));
+        assert!(KNOWN_SURFACES.contains(&"zig-source"));
+        assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
+        assert!(KNOWN_SURFACES.contains(&"evm-bytecode"));
         assert!(KNOWN_AGENTS.contains(&"stub"));
         assert!(KNOWN_AGENTS.contains(&"claude-code"));
     }

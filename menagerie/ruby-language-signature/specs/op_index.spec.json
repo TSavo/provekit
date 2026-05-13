@@ -1,0 +1,60 @@
+{
+  "kind": "algorithm",
+  "fn_name": "ruby:index",
+  "formals": [
+    "base",
+    "index"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Value",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Value",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "index",
+    "arity": [
+      "Value",
+      "Value"
+    ],
+    "result": "Value",
+    "wp": "Ruby index expression base[index]",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "index"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Reads"
+      }
+    ]
+  },
+  "locus": "menagerie/ruby-language-signature/README.md"
+}

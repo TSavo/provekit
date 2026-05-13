@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "shape:branch-on-error-else-passthrough",
+    "formals": [
+      "x",
+      "err_val"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "primitive",
+        "name": "Value"
+      },
+      {
+        "kind": "primitive",
+        "name": "Value"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "args": [
+        {
+          "kind": "var",
+          "name": "ret"
+        },
+        {
+          "args": [
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "x"
+                }
+              ],
+              "kind": "ctor",
+              "name": "err_cond"
+            },
+            {
+              "kind": "var",
+              "name": "err_val"
+            },
+            {
+              "kind": "var",
+              "name": "x"
+            }
+          ],
+          "kind": "ctor",
+          "name": "ite"
+        }
+      ],
+      "kind": "atomic",
+      "name": "="
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Value"
+    }
+  },
+  "cid": "blake3-512:320d5c06af9642dee5896aee14dfc1e87f9f2796ca5c16a6a743b5d9f49ed06fcc3a7a71c83c8c0f0724bf6f327368135187382bddd497aee91d11a48d73504b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "oy3ZXLBMcjuyOcSKKecD7NfB6MJOeLsB6celywatRWh2t553ysz3Kgl8DkrBO8fYWlCq1aZ8Es+i3SbdgQGJAg=="
+  }
+}

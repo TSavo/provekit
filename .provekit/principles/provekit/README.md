@@ -1,7 +1,7 @@
 # ProvekIt-specific principle partition
 
 Axioms about ProvekIt's own shape. These principles fire only when the
-target codebase IS ProvekIt — they encode the 15 product constraints
+target codebase IS ProvekIt: they encode the 15 product constraints
 from `docs/specs/2026-04-27-constraint-driven-development.md` § "Product
 constraints" as enforceable axioms.
 
@@ -25,5 +25,5 @@ the language partitions use, possibly extended with new relations
 
 ## Files
 
-(none yet — first axiom is #1 "no LLM in the verification path",
+(none yet: first axiom is #1 "no LLM in the verification path",
 landing as a DSL principle once the import-graph relation is added)

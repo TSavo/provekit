@@ -1,0 +1,56 @@
+{
+  "kind": "algorithm",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:index",
+  "formals": [
+    "base",
+    "index"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "LValue",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "index",
+    "arity": [
+      "Expr",
+      "Int"
+    ],
+    "result": "LValue",
+    "wp": "index projection",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "base"
+        },
+        {
+          "name": "index"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

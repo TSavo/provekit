@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:python:ge:to:concept:ge",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "no candidate source operation spec",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "python",
+  "source_op_cid": "blake3-512:gap-no-source-cid-python-ge",
+  "target_concept_op": "concept:ge",
+  "target_op_cid": "blake3-512:ee6a800eaf4d13e80f06f936bbaa86a0a80276ce8d1ab8bc7440d194e0e2034ba8a74fb5c74e624a25f2c0bb76e288191ce4e282f1fbbefed91c390ff8a1dfeb"
+}

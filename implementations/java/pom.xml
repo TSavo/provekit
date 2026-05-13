@@ -17,8 +17,14 @@
 
     <modules>
         <module>provekit-ir</module>
+        <module>provekit-claim-envelope</module>
+        <module>provekit-java-contract-annotations</module>
+        <module>provekit-java-self-contracts</module>
         <module>provekit-lift-java-core</module>
+        <module>provekit-lift-java-source</module>
         <module>provekit-lift-java-bean-validation</module>
+        <module>provekit-lift-java-provekit-native</module>
+        <module>provekit-lift-java-junit</module>
         <module>provekit-lift-java-jml</module>
         <module>provekit-lift-java-cofoja</module>
         <module>provekit-lift-java-spring-web</module>
@@ -27,6 +33,7 @@
         <module>provekit-lift-java-jackson</module>
         <module>provekit-lift-java-jpa</module>
         <module>provekit-lift-java-hibernate</module>
+        <module>provekit-realize-java-core</module>
         <module>provekit-lift-java-integration-tests</module>
     </modules>
 
@@ -49,4 +56,27 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>targeted-test-reactor</id>
+            <activation>
+                <property>
+                    <name>test</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.4</version>
+                        <configuration>
+                            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

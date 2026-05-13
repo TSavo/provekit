@@ -1,5 +1,5 @@
 /**
- * `provekit-lift` — CLI entry point for the TS lift toolchain.
+ * `provekit-lift`: CLI entry point for the TS lift toolchain.
  *
  * Usage:
  *   provekit-lift [<dir>] [--out <dir>] [--quiet]
@@ -69,7 +69,7 @@ export function parseCliArgs(argv: string[]): CliFlags {
 
 function printHelp(): void {
   process.stdout.write(
-    `provekit-lift — promote existing zod schemas and fast-check properties to signed contracts.
+    `provekit-lift: promote existing zod schemas and fast-check properties to signed contracts.
 
 USAGE:
   provekit-lift [<workspace-dir>] [--out <dir>] [--quiet]
@@ -145,13 +145,27 @@ function runRpcMode(): void {
         const resp = { jsonrpc: "2.0", id, result: { name: "provekit-lift-ts", version: "1.0", capabilities: [] } };
         process.stdout.write(JSON.stringify(resp) + "\n");
       } else if (method === "lift") {
+        // Get workspace from request or fallback to cwd
+        const params = req.params || {};
+        const srcPaths: string[] = Array.isArray(params.source_paths) ? params.source_paths : [];
+        const ws = srcPaths.length > 0 ? resolve(srcPaths[0]) : process.cwd();
         // Run the actual lift
-        const { report, minted, outPath } = liftAndMint(process.cwd(), process.cwd(), defaultLiftOptions());
+        const { report, minted, outPath } = liftAndMint(ws, ws, defaultLiftOptions());
         const fs = require("fs");
         const bytes = fs.readFileSync(outPath);
         const b64 = bytes.toString("base64");
         const cid = minted.cid;
-        const resp = { jsonrpc: "2.0", id, result: { kind: "proof-envelope", filename_cid: cid, bytes_base64: b64 } };
+        const resp: any = { jsonrpc: "2.0", id, result: { kind: "proof-envelope", filename_cid: cid, bytes_base64: b64 } };
+        if (minted.callEdges.length > 0) {
+          resp.result.callEdges = minted.callEdges.map((ce: any) => ({
+            kind: "call-edge",
+            sourceContractCid: ce.sourceContractCid,
+            targetContractCid: ce.targetContractCid,
+            targetSymbol: ce.targetSymbol,
+            callSiteLocus: ce.callSiteLocus,
+            evidenceTerm: ce.evidenceTerm,
+          }));
+        }
         process.stdout.write(JSON.stringify(resp) + "\n");
       } else if (method === "shutdown") {
         const resp = { jsonrpc: "2.0", id, result: null };
@@ -167,7 +181,7 @@ function runRpcMode(): void {
 }
 
 /**
- * Top-level entry — invoked by the `provekit-lift` bin shim.
+ * Top-level entry: invoked by the `provekit-lift` bin shim.
  *
  * Exported separately from runCli so tests can inject argv without
  * triggering process.exit.

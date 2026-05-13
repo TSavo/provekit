@@ -81,25 +81,13 @@ fn control_characters_are_unicode_escaped() {
     // U+0000..U+001F render as `\u00XX` (lowercase hex). The encoder
     // does NOT use the named short escapes (\n, \t, etc.) — it uses
     // \u00XX uniformly for determinism.
-    assert_eq!(
-        encode_jcs(&Value::String("\u{0000}".into())),
-        "\"\\u0000\""
-    );
-    assert_eq!(
-        encode_jcs(&Value::String("\u{001f}".into())),
-        "\"\\u001f\""
-    );
+    assert_eq!(encode_jcs(&Value::String("\u{0000}".into())), "\"\\u0000\"");
+    assert_eq!(encode_jcs(&Value::String("\u{001f}".into())), "\"\\u001f\"");
     assert_eq!(encode_jcs(&Value::String("\n".into())), "\"\\u000a\"");
     assert_eq!(encode_jcs(&Value::String("\r".into())), "\"\\u000d\"");
     assert_eq!(encode_jcs(&Value::String("\t".into())), "\"\\u0009\"");
-    assert_eq!(
-        encode_jcs(&Value::String("\u{0008}".into())),
-        "\"\\u0008\""
-    );
-    assert_eq!(
-        encode_jcs(&Value::String("\u{000c}".into())),
-        "\"\\u000c\""
-    );
+    assert_eq!(encode_jcs(&Value::String("\u{0008}".into())), "\"\\u0008\"");
+    assert_eq!(encode_jcs(&Value::String("\u{000c}".into())), "\"\\u000c\"");
 }
 
 #[test]
@@ -207,10 +195,7 @@ fn object_keys_sorted_by_unicode_code_point_for_ascii_only() {
 
 #[test]
 fn no_whitespace_between_pairs() {
-    let v = Value::object([
-        ("a", Value::integer(1)),
-        ("b", Value::integer(2)),
-    ]);
+    let v = Value::object([("a", Value::integer(1)), ("b", Value::integer(2))]);
     let s = encode_jcs(&v);
     assert!(!s.contains(' '));
     assert!(!s.contains('\n'));
@@ -222,17 +207,11 @@ fn nested_object_sorts_at_each_level() {
     let v = Value::object([
         (
             "outer",
-            Value::object([
-                ("z", Value::integer(1)),
-                ("a", Value::integer(2)),
-            ]),
+            Value::object([("z", Value::integer(1)), ("a", Value::integer(2))]),
         ),
         ("first", Value::integer(0)),
     ]);
-    assert_eq!(
-        encode_jcs(&v),
-        "{\"first\":0,\"outer\":{\"a\":2,\"z\":1}}"
-    );
+    assert_eq!(encode_jcs(&v), "{\"first\":0,\"outer\":{\"a\":2,\"z\":1}}");
 }
 
 #[test]
@@ -241,10 +220,7 @@ fn duplicate_keys_in_input_both_emitted() {
     // encoder sorts and emits all of them. JSON itself does not say what
     // to do with duplicates; for our purposes we only build trees with
     // unique keys, but document the encoder's literal behavior.
-    let v = Value::object([
-        ("a", Value::integer(1)),
-        ("a", Value::integer(2)),
-    ]);
+    let v = Value::object([("a", Value::integer(1)), ("a", Value::integer(2))]);
     let s = encode_jcs(&v);
     // Both entries land; sort is stable on equal keys.
     assert!(s.contains("\"a\":1"));
@@ -288,9 +264,9 @@ fn array_of_objects() {
 
 #[test]
 fn deeply_nested_array() {
-    let v = Value::array(vec![Value::array(vec![Value::array(vec![Value::integer(
-        1,
-    )])])]);
+    let v = Value::array(vec![Value::array(vec![Value::array(vec![
+        Value::integer(1),
+    ])])]);
     assert_eq!(encode_jcs(&v), "[[[1]]]");
 }
 
@@ -346,10 +322,7 @@ fn realistic_envelope_shape_round_trips() {
     // Smoke test on something that looks like a real claim envelope.
     let v = Value::object([
         ("schemaVersion", Value::string("1")),
-        (
-            "bindingHash",
-            Value::string("blake3-512:abcdef1234567890"),
-        ),
+        ("bindingHash", Value::string("blake3-512:abcdef1234567890")),
         ("verdict", Value::string("holds")),
         ("inputCids", Value::array(vec![])),
         (

@@ -87,15 +87,9 @@ fn emit_enum(out: &mut String, name: &str, variants: &[Variant]) {
                     out.push_str(&format!(
                         "        #[serde(skip_serializing_if = \"Option::is_none\")]\n"
                     ));
-                    out.push_str(&format!(
-                        "        {}: Option<{}>,\n",
-                        field.name, ty
-                    ));
+                    out.push_str(&format!("        {}: Option<{}>,\n", field.name, ty));
                 } else {
-                    out.push_str(&format!(
-                        "        {}: {},\n",
-                        field.name, ty
-                    ));
+                    out.push_str(&format!("        {}: {},\n", field.name, ty));
                 }
             }
             out.push_str("    },\n");
@@ -128,14 +122,34 @@ pub struct Block {
 
 #[derive(Debug)]
 pub enum Stmt {
-    Let { name: String, expr: Expr },
-    LetTyped { name: String, ty: String, expr: Expr },
-    LetMut { name: String, expr: Expr },
+    Let {
+        name: String,
+        expr: Expr,
+    },
+    LetTyped {
+        name: String,
+        ty: String,
+        expr: Expr,
+    },
+    LetMut {
+        name: String,
+        expr: Expr,
+    },
     Expr(Expr),
     Return(Expr),
-    PushStr { target: String, value: String },
-    For { var: String, iter: Expr, body: Block },
-    Match { expr: Expr, arms: Vec<MatchArm> },
+    PushStr {
+        target: String,
+        value: String,
+    },
+    For {
+        var: String,
+        iter: Expr,
+        body: Block,
+    },
+    Match {
+        expr: Expr,
+        arms: Vec<MatchArm>,
+    },
 }
 
 #[derive(Debug)]
@@ -150,14 +164,37 @@ pub enum Expr {
     Raw(String),
     LiteralString(String),
     Var(String),
-    Call { func: String, args: Vec<Expr> },
-    MethodCall { receiver: Box<Expr>, method: String, args: Vec<Expr> },
-    FieldAccess { base: Box<Expr>, field: String },
-    Match { expr: Box<Expr>, arms: Vec<MatchArm> },
-    Closure { params: Vec<String>, body: Box<Expr> },
+    Call {
+        func: String,
+        args: Vec<Expr>,
+    },
+    MethodCall {
+        receiver: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
+    FieldAccess {
+        base: Box<Expr>,
+        field: String,
+    },
+    Match {
+        expr: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    Closure {
+        params: Vec<String>,
+        body: Box<Expr>,
+    },
     Block(Block),
-    If { cond: Box<Expr>, then_branch: Block, else_branch: Option<Block> },
-    Format { template: String, args: Vec<Expr> },
+    If {
+        cond: Box<Expr>,
+        then_branch: Block,
+        else_branch: Option<Block>,
+    },
+    Format {
+        template: String,
+        args: Vec<Expr>,
+    },
     Vec(Vec<Expr>),
     Ref(Box<Expr>),
 }
@@ -199,7 +236,9 @@ fn emit_stmt(out: &mut String, stmt: &Stmt, indent: usize) {
         Stmt::PushStr { target, value } => {
             out.push_str(&format!(
                 "{}{}.push_str({});\n",
-                pad, target, escape_rust_string(value)
+                pad,
+                target,
+                escape_rust_string(value)
             ));
         }
         Stmt::For { var, iter, body } => {
@@ -255,7 +294,11 @@ fn emit_expr_inline_indent(out: &mut String, expr: &Expr, indent: usize) {
             }
             out.push(')');
         }
-        Expr::MethodCall { receiver, method, args } => {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => {
             emit_expr_inline_indent(out, receiver, indent);
             out.push('.');
             out.push_str(method);
@@ -331,7 +374,11 @@ fn emit_expr_inline_indent(out: &mut String, expr: &Expr, indent: usize) {
             out.push_str(&"    ".repeat(indent));
             out.push('}');
         }
-        Expr::If { cond, then_branch, else_branch } => {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             out.push_str("if ");
             emit_expr_inline_indent(out, cond, indent);
             out.push_str(" {\n");
@@ -395,7 +442,14 @@ fn escape_rust_string(s: &str) -> String {
 }
 
 /// Emit a function signature and body.
-pub fn emit_function(out: &mut String, vis: &str, name: &str, args: &[(String, String)], ret: Option<&str>, body: &Block) {
+pub fn emit_function(
+    out: &mut String,
+    vis: &str,
+    name: &str,
+    args: &[(String, String)],
+    ret: Option<&str>,
+    body: &Block,
+) {
     if !vis.is_empty() {
         out.push_str(vis);
         out.push(' ');

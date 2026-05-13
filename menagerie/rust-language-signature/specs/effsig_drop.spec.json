@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "rust:effect-signature:Drop",
+  "sorts": [
+    "sort_addr.spec.json",
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_op_drop_glue.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

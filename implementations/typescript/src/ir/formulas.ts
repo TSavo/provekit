@@ -4,7 +4,7 @@
  * everything else in the IR library produces them.
  *
  * This file is the single source of truth for the IR-formula shape.
- * Zero runtime dependencies — pure type and helper definitions.
+ * Zero runtime dependencies: pure type and helper definitions.
  */
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,9 @@ export type Sort =
   | { kind: "bitvec"; width: number }
   | { kind: "set"; element: Sort }
   | { kind: "tuple"; elements: Sort[] }
-  | { kind: "function"; domain: Sort[]; range: Sort };
+  | { kind: "function"; args: Sort[]; return: Sort }
+  | { kind: "dependent"; name: string; indexVar: string; indexSort: Sort }
+  | { kind: "region"; name: string };
 
 // ---------------------------------------------------------------------------
 // Terms

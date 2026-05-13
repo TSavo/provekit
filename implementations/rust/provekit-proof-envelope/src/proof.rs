@@ -40,7 +40,16 @@ pub struct ProofEnvelopeInput {
     /// e.g. `"blake3-512:abc..."`) to that member's canonical bytes
     /// (JCS-JSON bytes for memento envelopes).
     pub members: BTreeMap<String, Vec<u8>>,
-    /// CID of the signer's public-key memento (or any resolvable CID).
+    /// Identity carried into the envelope's `signer` field. Two valid
+    /// shapes per the memento-envelope grammar:
+    ///   1. `blake3-512:<hex>` - CID resolving to a pubkey memento
+    ///      (canonical, used by `.proof` catalogs)
+    ///   2. `ed25519:<base64-pubkey>` - inline self-identifying form
+    ///      (used by memento envelopes that don't pin a separate
+    ///      pubkey memento, e.g. fixtures and standalone declarations)
+    ///
+    /// The struct field name is preserved for backwards compatibility;
+    /// either form is accepted by the wire format.
     pub signer_cid: String,
     /// Ed25519 seed bytes; deterministic signing for tests/demos.
     pub signer_seed: Ed25519Seed,
@@ -124,10 +133,8 @@ fn body_pairs_unsigned(input: &ProofEnvelopeInput) -> Vec<CborPair> {
         pairs.push(make_string_pair("binaryCid", bcid));
     }
     if let Some(ref meta) = input.metadata {
-        let mut meta_pairs: Vec<CborPair> = meta
-            .iter()
-            .map(|(k, v)| make_string_pair(k, v))
-            .collect();
+        let mut meta_pairs: Vec<CborPair> =
+            meta.iter().map(|(k, v)| make_string_pair(k, v)).collect();
         let mut meta_cbor = Vec::new();
         emit_sorted_map(&mut meta_cbor, &mut meta_pairs);
         pairs.push(CborPair {
@@ -178,8 +185,8 @@ mod tests {
         let input = ProofEnvelopeInput {
             name: "@x/y".to_string(),
             version: "0.0.1".to_string(),
-        binary_cid: None,
-        metadata: None,
+            binary_cid: None,
+            metadata: None,
             members,
             signer_cid: "blake3-512:bb".to_string(),
             signer_seed: [0x11; 32],

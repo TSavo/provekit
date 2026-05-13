@@ -1,0 +1,47 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:seq",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  ],
+  "formals": [
+    "first",
+    "second"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Stmt",
+      "Stmt"
+    ],
+    "arity_shape": {
+      "arity": 2,
+      "kind": "positional"
+    },
+    "kind": "operation-contract",
+    "operator": "seq",
+    "result": "Stmt",
+    "wp": "wp(first, wp(second, post))"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
+  }
+}

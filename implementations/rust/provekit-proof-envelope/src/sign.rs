@@ -55,7 +55,7 @@ pub fn ed25519_pubkey_string(seed: &Ed25519Seed) -> String {
 /// `"ed25519:" + base64(sig)`) using `pubkey_string`
 /// (spec form `"ed25519:" + base64(pubkey)`).
 /// Returns `true` iff the signature is valid. Returns `false` for any
-/// malformed input rather than panicking — verifiers must fail
+/// malformed input rather than panicking: verifiers must fail
 /// closed, but on a separate code path.
 pub fn ed25519_verify_string(pubkey_string: &str, sig_string: &str, message: &[u8]) -> bool {
     let pk_b64 = match pubkey_string.strip_prefix(ED25519_KEY_PREFIX) {
@@ -81,6 +81,34 @@ pub fn ed25519_verify_string(pubkey_string: &str, sig_string: &str, message: &[u
     pk_arr.copy_from_slice(&pk_bytes);
     let mut sig_arr = [0u8; 64];
     sig_arr.copy_from_slice(&sig_bytes);
+    let vk = match VerifyingKey::from_bytes(&pk_arr) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let sig = Signature::from_bytes(&sig_arr);
+    vk.verify(message, &sig).is_ok()
+}
+
+/// Verify `message` against a raw 64-byte Ed25519 signature using a
+/// self-identifying string public key (`"ed25519:" + base64(pubkey)`).
+/// The `.proof` catalog envelope stores its outer signature in this raw
+/// byte-string form.
+pub fn ed25519_verify_bytes(pubkey_string: &str, sig_bytes: &[u8], message: &[u8]) -> bool {
+    let pk_b64 = match pubkey_string.strip_prefix(ED25519_KEY_PREFIX) {
+        Some(s) => s,
+        None => return false,
+    };
+    let pk_bytes = match B64.decode(pk_b64) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    if pk_bytes.len() != 32 || sig_bytes.len() != 64 {
+        return false;
+    }
+    let mut pk_arr = [0u8; 32];
+    pk_arr.copy_from_slice(&pk_bytes);
+    let mut sig_arr = [0u8; 64];
+    sig_arr.copy_from_slice(sig_bytes);
     let vk = match VerifyingKey::from_bytes(&pk_arr) {
         Ok(v) => v,
         Err(_) => return false,
@@ -122,6 +150,15 @@ mod tests {
         let sig = ed25519_sign_string(&seed, b"hello world");
         assert!(ed25519_verify_string(&pk, &sig, b"hello world"));
         assert!(!ed25519_verify_string(&pk, &sig, b"goodbye world"));
+    }
+
+    #[test]
+    fn verify_raw_signature_round_trip() {
+        let seed: Ed25519Seed = [0x42; 32];
+        let pk = ed25519_pubkey_string(&seed);
+        let sig = ed25519_sign_with_seed(&seed, b"hello world");
+        assert!(ed25519_verify_bytes(&pk, &sig, b"hello world"));
+        assert!(!ed25519_verify_bytes(&pk, &sig, b"goodbye world"));
     }
 
     #[test]

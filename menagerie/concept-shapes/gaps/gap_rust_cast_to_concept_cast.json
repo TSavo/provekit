@@ -1,0 +1,86 @@
+{
+  "fn_name": "gap:rust:cast:to:concept:cast",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Sort"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Expr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Expr",
+          "Sort"
+        ],
+        "kind": "operation-contract",
+        "operator": "cast",
+        "result": "Expr",
+        "wp": "Rust as cast, including truncating conversions"
+      },
+      "want": {
+        "arity": [
+          "Expr",
+          "Expr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "target_type",
+              "slot_sort": "type"
+            },
+            {
+              "name": "value"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "cast",
+        "result": "Expr",
+        "wp_note": "C cast expression preserving explicit target type and lifted child value"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Sort\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Expr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "rust",
+  "source_op_cid": "blake3-512:01e7e940a8648e6c5e9afed49ce4db4be40449d411f7fa53326c3982953ea16d086cfa4b2cb333220069e399cf57e125dad12dac5bb01acf17345be445d18e4c",
+  "target_concept_op": "concept:cast",
+  "target_op_cid": "blake3-512:f410b454baa33f207b03cea78723ce7f457253c17959ca1d54c611e63e3260d2a5142ac927945118ad8b880cbcfbee16995db334c32f1caabe3a3677c59277f5"
+}

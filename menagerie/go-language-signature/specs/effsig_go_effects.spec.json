@@ -1,0 +1,27 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "go:effect-signature:GoEffects",
+  "sorts": [
+    "sort_term.spec.json",
+    "sort_type.spec.json",
+    "sort_identifier.spec.json",
+    "sort_literal.spec.json",
+    "sort_bool.spec.json",
+    "sort_int.spec.json",
+    "sort_real.spec.json",
+    "sort_string.spec.json",
+    "sort_ref.spec.json",
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_reads.spec.json",
+    "eff_writes.spec.json",
+    "eff_io.spec.json",
+    "eff_unsafe.spec.json",
+    "eff_panics.spec.json",
+    "eff_unresolved_call.spec.json",
+    "eff_opaque_loop.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

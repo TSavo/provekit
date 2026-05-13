@@ -24,7 +24,7 @@
  *   not(false)  → true
  *
  * For all other predicates (kit-defined, SAST, etc.), `not` is left
- * on the atomic node as a negated atomic — the spec's NNF form
+ * on the atomic node as a negated atomic: the spec's NNF form
  * allows this for non-standard predicates.
  *
  * This pass is applied recursively until no not-wrapping-non-atomic
@@ -113,7 +113,7 @@ function pushNot(inner: CanonicalFolAst): CanonicalFolAst {
     }
 
     case "choice":
-      // not(choice(x, s, body)) — complex negation, leave as not(choice)
+      // not(choice(x, s, body)): complex negation, leave as not(choice)
       return { kind: "not", operands: [inner] };
   }
 }

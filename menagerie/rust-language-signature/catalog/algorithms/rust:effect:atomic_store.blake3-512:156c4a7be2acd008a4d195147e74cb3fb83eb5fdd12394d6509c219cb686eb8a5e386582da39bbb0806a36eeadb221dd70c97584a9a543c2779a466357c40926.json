@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:atomic_store",
+    "formals": [
+      "addr",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Addr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "atomic_store",
+      "arity": [
+        "Addr",
+        "Value"
+      ],
+      "result": "Unit",
+      "wp": "atomic store"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "AtomicAccess"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:156c4a7be2acd008a4d195147e74cb3fb83eb5fdd12394d6509c219cb686eb8a5e386582da39bbb0806a36eeadb221dd70c97584a9a543c2779a466357c40926",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AoqUOj8/+dyQ+aWfWzyGlQOiO9SuabmLlJcihJGBOkJYY03dfVFERKfR3pVDxgaLmUVUg/5+tO87fYFBRhc6DQ=="
+  }
+}

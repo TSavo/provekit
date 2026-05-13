@@ -1,0 +1,59 @@
+{
+  "fn_name": "gap:csharp:ge:to:concept:ge",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "kind": "operation-contract",
+        "operator": "ge",
+        "result": "Bool",
+        "wp": "lhs >= rhs"
+      },
+      "want": {
+        "arity": [
+          "Int",
+          "Int"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "lhs"
+            },
+            {
+              "name": "rhs"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "ge",
+        "result": "Bool",
+        "wp_note": "integer greater-than-or-equal comparison"
+      }
+    }
+  },
+  "reason_note": "wp mismatch: got `\"lhs >= rhs\"` want `\"integer greater-than-or-equal comparison\"`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "csharp",
+  "source_op_cid": "blake3-512:98ad6f495f9e55b12f5323698a7fe8cdbf5626e31e47bbdfa2aabdca3431642e30861624e2947f3691973ce8c9c7df4e25767698a5429c3750b6a8d95359e6ba",
+  "target_concept_op": "concept:ge",
+  "target_op_cid": "blake3-512:ee6a800eaf4d13e80f06f936bbaa86a0a80276ce8d1ab8bc7440d194e0e2034ba8a74fb5c74e624a25f2c0bb76e288191ce4e282f1fbbefed91c390ff8a1dfeb"
+}

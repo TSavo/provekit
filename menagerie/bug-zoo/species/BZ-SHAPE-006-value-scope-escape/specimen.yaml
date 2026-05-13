@@ -1,0 +1,145 @@
+id: BZ-SHAPE-006
+name: Value Scope Escape
+kingdom: shape
+status: lab
+predicates:
+  boundary: eq(value, 42)
+  sink: gte(value, 43)
+  missingEdge: eq(value, 42) => gte(value, 43)
+languages:
+  - id: java
+    surface: java-junit-and-spring-value-witnesses
+    paths:
+      labLibrary: java/lab/library
+      labHarness: java/lab/harness
+    commands:
+      hostCheck:
+        cwd: java/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: junit
+        surface: java-junit
+        harness: java/exhibit/junit/harness
+        kitRpc: java/exhibit/junit/kit-rpc
+        proofIrFile: java/exhibit/junit/expected.proofir.json
+        diagnosticFile: java/exhibit/junit/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/junit/harness
+          kitRpc: java/fixed/junit/kit-rpc
+          proofIrFile: java/fixed/junit/expected.proofir.json
+          diagnosticFile: java/fixed/junit/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - JUnit runner lifecycle and assertion message plumbing
+            - Java method body implementation detail outside the asserted value
+          preserved:
+            - point witness eq(value$0, 42)
+      - id: spring
+        surface: java-spring-bean-validation
+        harness: java/exhibit/spring/harness
+        kitRpc: java/exhibit/spring/kit-rpc
+        proofIrFile: java/exhibit/spring/expected.proofir.json
+        diagnosticFile: java/exhibit/spring/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/spring/harness
+          kitRpc: java/fixed/spring/kit-rpc
+          proofIrFile: java/fixed/spring/expected.proofir.json
+          diagnosticFile: java/fixed/spring/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - Spring request binding machinery
+            - Bean Validation runtime dispatch
+          preserved:
+            - default value witness eq(value, 42)
+            - callee precondition gte(value, 43)
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: java/exhibit/sat-witness.json
+    composition:
+      checks:
+        - id: junit-42-does-not-satisfy-min-43
+          phase: exhibit
+          expected: missing
+          witnessExhibit: junit
+          witnessSource: lab
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: "value$0" }
+              - { kind: const, value: 42, sort: { kind: primitive, name: Int } }
+          requirementFormula:
+            kind: atomic
+            name: gte
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          bindings:
+            value: "value$0"
+          assignment:
+            value$0: 42
+          diagnosticFile: java/exhibit/value-scope-escape/expected-diagnostic.txt
+        - id: spring-default-42-does-not-satisfy-min-43
+          phase: exhibit
+          expected: missing
+          witnessExhibit: spring
+          requirementExhibit: spring
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 42, sort: { kind: primitive, name: Int } }
+          requirementFormula:
+            kind: atomic
+            name: gte
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          assignment:
+            value: 42
+          diagnosticFile: java/exhibit/value-scope-escape-spring/expected-diagnostic.txt
+        - id: junit-43-satisfies-min-43
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: junit
+          witnessSource: lab
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: "value$0" }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          requirementFormula:
+            kind: atomic
+            name: gte
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          bindings:
+            value: "value$0"
+          assignment:
+            value$0: 43
+          diagnosticFile: java/fixed/value-scope-escape/expected-diagnostic.txt
+        - id: spring-default-43-satisfies-min-43
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: spring
+          requirementExhibit: spring
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          requirementFormula:
+            kind: atomic
+            name: gte
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          assignment:
+            value: 43
+          diagnosticFile: java/fixed/value-scope-escape-spring/expected-diagnostic.txt
+wildSightings: []

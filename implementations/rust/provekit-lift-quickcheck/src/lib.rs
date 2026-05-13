@@ -30,8 +30,8 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula,
-    Int, Sort, Term,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Int,
+    Sort, Term,
 };
 
 #[derive(Debug, Clone)]
@@ -124,7 +124,8 @@ fn visit_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
         post: None,
         inv: Some(wrapped),
         out_binding: "out".into(),
-    evidence: None,
+        evidence: None,
+        concept_hint: None,
     });
     out.lifted += 1;
 }
@@ -159,7 +160,9 @@ fn extract_tail_expr(block: &syn::Block) -> Result<&syn::Expr, String> {
     }
     match &block.stmts[0] {
         syn::Stmt::Expr(e, None) => Ok(e),
-        _ => Err("v0 quickcheck adapter requires a tail expression body (no trailing semicolon)".into()),
+        _ => Err(
+            "v0 quickcheck adapter requires a tail expression body (no trailing semicolon)".into(),
+        ),
     }
 }
 
@@ -189,13 +192,23 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
     match &**f {
         Formula::Atomic { name, args } => atomic_(
             name.clone(),
-            args.iter().map(|a| subst_term(a, from, to)).collect::<Vec<_>>(),
+            args.iter()
+                .map(|a| subst_term(a, from, to))
+                .collect::<Vec<_>>(),
         ),
         Formula::Connective { kind, operands } => Rc::new(Formula::Connective {
             kind: kind.clone(),
-            operands: operands.iter().map(|o| subst_var_name(o, from, to)).collect(),
+            operands: operands
+                .iter()
+                .map(|o| subst_var_name(o, from, to))
+                .collect(),
         }),
-        Formula::Quantifier { kind, name, sort, body } => {
+        Formula::Quantifier {
+            kind,
+            name,
+            sort,
+            body,
+        } => {
             if name == from {
                 f.clone()
             } else {
@@ -207,7 +220,11 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             if var_name == from {
                 f.clone() // shadowed
             } else {
@@ -231,7 +248,11 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
             name: name.clone(),
             args: args.iter().map(|a| subst_term(a, from, to)).collect(),
         }),
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == from {
                 t.clone() // shadowed
             } else {
@@ -261,8 +282,15 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_term(body, from, to) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_term(body, from, to)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }

@@ -1,0 +1,34 @@
+{
+ "signatures": [
+  {
+   "keyid": "e0b48411b15c308b8e836fcea8704abfe22ad395016d580e2d3515f6c789d17e",
+   "sig": "c50171c66e95f5c73b1836f61f56652807f46f18b44c66c05364d655bb3d19d840aa58d74906cc10aa4614a3e1626fb5025bc433f442bf357b80770e2ac94906"
+  }
+ ],
+ "signed": {
+  "_type": "link",
+  "byproducts": {},
+  "command": [],
+  "environment": {},
+  "materials": {
+   "contracts.json": {
+    "sha256": "652af62e58ea7b22e157d44eca082c27ac405cca75ee1ed1c3eddb1f22708a9d"
+   },
+   "contracts.ts": {
+    "sha256": "92072cca363d657880e5b524b8c8f83bf72c39a45ff6bb25f00ae1543231c8c0"
+   },
+   "index.js": {
+    "sha256": "c62f03e3f25aff21261bda1e79d7bbca12ab2c59f82d4c83e4917354a858da14"
+   },
+   "package.json": {
+    "sha256": "34e1ffde589224c4f59d5cae3416f6b39993dc29c960c583a79b3936b627f472"
+   }
+  },
+  "name": "safe-json-pack",
+  "products": {
+   "package.tgz": {
+    "sha256": "1b67b781c0fd0d6283cffa2d00f6fe6a009ba3fe96e06545a15c0d7fddd8776a"
+   }
+  }
+ }
+}

@@ -1,0 +1,37 @@
+{
+  "kind": "equation",
+  "fn_name": "java:seq-skip-right",
+  "formals": [
+    "s"
+  ],
+  "formal_sorts": [
+    "sort_stmt.spec.json"
+  ],
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "java:seq",
+      "args": [
+        {
+          "kind": "var",
+          "name": "s"
+        },
+        {
+          "kind": "op",
+          "name": "java:skip",
+          "args": []
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "s"
+    }
+  }
+}

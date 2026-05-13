@@ -1,0 +1,8 @@
+{
+  "kind": "effect",
+  "name": "reads",
+  "fields": [
+    "target"
+  ],
+  "locus": "menagerie/cpp-language-signature/README.md"
+}

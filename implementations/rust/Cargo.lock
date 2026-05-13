@@ -741,6 +741,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
 
 [[package]]
+name = "futures-executor"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf29c38818342a3b26b5b923639e7b1f4a61fc5e76102d4b1981c6dc7a7579d"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-io"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1131,6 +1142,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libprovekit"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-types",
+ "provekit-proof-envelope",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1168,6 +1191,15 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "url",
+]
+
+[[package]]
+name = "matchers"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
+dependencies = [
+ "regex-automata",
 ]
 
 [[package]]
@@ -1270,6 +1302,16 @@ name = "owo-colors"
 version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d211803b9b6b570f68772237e415a029d5a50c65d382910b879fb19d3271f94d"
+
+[[package]]
+name = "parking_lot"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
+dependencies = [
+ "lock_api",
+ "parking_lot_core",
+]
 
 [[package]]
 name = "parking_lot_core"
@@ -1487,6 +1529,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-baseline-rust-std"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-proof-envelope",
+ "provekit-verifier",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-baseline-std"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-proof-envelope",
+ "provekit-verifier",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "provekit-bridgeworks"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
+name = "provekit-bug-zoo"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "provekit-canonicalizer",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+]
+
+[[package]]
 name = "provekit-build"
 version = "0.1.0"
 dependencies = [
@@ -1518,6 +1608,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "hex",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1525,8 +1616,10 @@ dependencies = [
 name = "provekit-claim-envelope"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "provekit-canonicalizer",
  "provekit-proof-envelope",
+ "serde",
  "serde_json",
  "thiserror",
 ]
@@ -1537,16 +1630,32 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "chrono",
  "clap",
+ "libprovekit",
  "owo-colors",
  "provekit-agent",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
+ "provekit-ir-compiler",
+ "provekit-ir-compiler-coq",
+ "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
+ "provekit-lift",
+ "provekit-lift-contracts",
+ "provekit-linker",
+ "provekit-mint-amp",
+ "provekit-plugin-loader",
  "provekit-proof-envelope",
+ "provekit-self-contracts",
  "provekit-verifier",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "serial_test",
+ "syn",
+ "tempfile",
  "thiserror",
  "walkdir",
 ]
@@ -1570,6 +1679,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-c"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "provekit-ir-compiler-coq"
 version = "0.1.0"
 dependencies = [
@@ -1579,9 +1699,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-jvm-bytecode"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-ir-compiler-lean"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-ir-compiler-maude"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-ir-compiler-smt-lib"
 version = "0.1.0"
 dependencies = [
+ "provekit-canonicalizer",
  "provekit-ir-compiler",
  "provekit-ir-types",
  "serde",
@@ -1594,6 +1744,24 @@ version = "0.1.0"
 dependencies = [
  "provekit-ir-compiler",
  "serde_json",
+]
+
+[[package]]
+name = "provekit-ir-compiler-wasm"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "provekit-ir-types",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-ir-compiler-x86-64"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -1612,6 +1780,7 @@ dependencies = [
 name = "provekit-ir-types"
 version = "0.1.0"
 dependencies = [
+ "provekit-canonicalizer",
  "serde",
  "serde_json",
 ]
@@ -1644,12 +1813,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-asm-aarch64"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "provekit-lift-asm-x86-64"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "provekit-lift-contracts"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "provekit-canonicalizer",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "quote",
+ "serde_json",
  "syn",
 ]
 
@@ -1664,6 +1858,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-evm-bytecode"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
 name = "provekit-lift-flux"
 version = "0.1.0"
 dependencies = [
@@ -1671,6 +1876,17 @@ dependencies = [
  "provekit-ir-symbolic",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "provekit-lift-jvm-bytecode"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler-jvm-bytecode",
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1683,6 +1899,29 @@ dependencies = [
  "provekit-verifier",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "provekit-lift-native-surfaces"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-types",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-lift-openapi"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "walkdir",
 ]
 
 [[package]]
@@ -1720,10 +1959,14 @@ name = "provekit-lift-rust-tests"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "provekit-canonicalizer",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "provekit-lift",
  "provekit-verifier",
+ "provekit-walk",
  "quote",
+ "serde_json",
  "syn",
 ]
 
@@ -1738,10 +1981,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-linker"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-ir-compiler-smt-lib",
+ "provekit-verifier",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-linkerd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-lift",
+ "provekit-linker",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "provekit-lsp"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "proc-macro2",
+ "provekit-lsp-rust",
  "quote",
  "serde",
  "serde_json",
@@ -1751,6 +2025,17 @@ dependencies = [
  "toml 0.8.23",
  "tower-lsp",
  "walkdir",
+]
+
+[[package]]
+name = "provekit-lsp-rust"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "provekit-ir-symbolic",
+ "provekit-lift",
+ "serde_json",
+ "syn",
 ]
 
 [[package]]
@@ -1774,6 +2059,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-mint-amp"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "hex",
+ "libprovekit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "provekit-plugin-loader"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-proof-envelope",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "provekit-proof-envelope"
 version = "0.1.0"
 dependencies = [
@@ -1782,6 +2093,16 @@ dependencies = [
  "hex",
  "provekit-canonicalizer",
  "thiserror",
+]
+
+[[package]]
+name = "provekit-protocol-switchyard"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "provekit-canonicalizer",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1813,15 +2134,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-supply-chain-rails"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "provekit-verifier"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "libprovekit",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-compiler",
  "provekit-ir-compiler-coq",
+ "provekit-ir-compiler-lean",
+ "provekit-ir-compiler-maude",
  "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
+ "provekit-ir-types",
  "provekit-proof-envelope",
  "rayon",
  "serde",
@@ -1829,6 +2164,24 @@ dependencies = [
  "thiserror",
  "toml 0.8.23",
  "walkdir",
+]
+
+[[package]]
+name = "provekit-walk"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "libprovekit",
+ "proc-macro2",
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-types",
+ "provekit-lift-contracts",
+ "provekit-proof-envelope",
+ "quote",
+ "serde_json",
+ "syn",
+ "thiserror",
 ]
 
 [[package]]
@@ -2019,10 +2372,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "scc"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46e6f046b7fef48e2660c57ed794263155d713de679057f2d0c169bfc6e756cc"
+dependencies = [
+ "sdd",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdd"
+version = "3.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "semver"
@@ -2115,6 +2483,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
+name = "serial_test"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911bd979bf1070a3f3aa7b691a3b3e9968f339ceeec89e08c280a8a22207a32f"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "scc",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a7d91949b85b0d2fb687445e448b40d322b6b3e4af6b44a29b21d9a5f33e6d9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2123,6 +2530,15 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
+]
+
+[[package]]
+name = "sharded-slab"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
+dependencies = [
+ "lazy_static",
 ]
 
 [[package]]
@@ -2172,6 +2588,37 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smoke-test-e2e"
+version = "0.1.0"
+
+[[package]]
+name = "smoke-test-e2e-driver"
+version = "0.1.0"
+dependencies = [
+ "libprovekit",
+ "proc-macro2",
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-ir-types",
+ "provekit-proof-envelope",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
+name = "socket2"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
 
 [[package]]
 name = "spki"
@@ -2272,6 +2719,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_local"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "time"
 version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2325,6 +2781,7 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "signal-hook-registry",
+ "socket2",
  "tokio-macros",
  "windows-sys",
 ]
@@ -2522,6 +2979,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
+ "valuable",
+]
+
+[[package]]
+name = "tracing-log"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
+dependencies = [
+ "log",
+ "once_cell",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.3.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
+dependencies = [
+ "matchers",
+ "nu-ansi-term",
+ "once_cell",
+ "regex-automata",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
 ]
 
 [[package]]
@@ -2588,6 +3075,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "uriparse"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2621,6 +3114,12 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "valuable"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "version_check"

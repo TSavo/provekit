@@ -1,0 +1,15 @@
+{
+  "name": "safe-json",
+  "version": "1.4.2",
+  "description": "Small JSON boundary utility with explicit ProvekIt contracts.",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "contracts.ts",
+    "contracts.json"
+  ],
+  "scripts": {
+    "test": "node test.js"
+  },
+  "license": "Apache-2.0"
+}

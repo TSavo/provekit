@@ -43,7 +43,7 @@ public class CanonicalizerConformanceTests
 
     /// <summary>
     /// Build the canonical AST for `x &gt; 0` (x = de Bruijn 0, sort Int).
-    /// Construction order doesn't matter — the encoder sorts keys per §7.3.
+    /// Construction order doesn't matter: the encoder sorts keys per §7.3.
     /// </summary>
     private static Value MakeFixture()
     {

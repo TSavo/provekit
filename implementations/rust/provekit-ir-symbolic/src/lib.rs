@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-ir-symbolic — Rust kit. Mirrors the C++ kit at
+// provekit-ir-symbolic: Rust kit. Mirrors the C++ kit at
 // implementations/cpp/provekit-ir-symbolic/include/provekit/ir.hpp.
 //
 // Maximal-uniformity IR per protocol/specs/2026-04-30-ir-formal-grammar.md
@@ -28,6 +28,7 @@ use std::rc::Rc;
 
 pub mod convert;
 pub mod parse;
+pub mod parse_expr;
 pub mod serialize;
 
 // Re-export serde types so consumers can use both authoring API and
@@ -48,13 +49,19 @@ impl Sort {
         Self { name: "Int".into() }
     }
     pub fn real() -> Self {
-        Self { name: "Real".into() }
+        Self {
+            name: "Real".into(),
+        }
     }
     pub fn string() -> Self {
-        Self { name: "String".into() }
+        Self {
+            name: "String".into(),
+        }
     }
     pub fn bool() -> Self {
-        Self { name: "Bool".into() }
+        Self {
+            name: "Bool".into(),
+        }
     }
 }
 
@@ -76,7 +83,7 @@ pub fn Bool() -> Sort {
 }
 
 // ---------------------------------------------------------------------------
-// Term — VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort)
+// Term: VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -88,11 +95,26 @@ pub enum ConstValue {
 
 #[derive(Debug, Clone)]
 pub enum Term {
-    Var { name: String },
-    Const { value: ConstValue, sort: Sort },
-    Ctor { name: String, args: Vec<Rc<Term>> },
-    Lambda { param_name: String, param_sort: Sort, body: Rc<Term> },
-    Let { bindings: Vec<LetBinding>, body: Rc<Term> },
+    Var {
+        name: String,
+    },
+    Const {
+        value: ConstValue,
+        sort: Sort,
+    },
+    Ctor {
+        name: String,
+        args: Vec<Rc<Term>>,
+    },
+    Lambda {
+        param_name: String,
+        param_sort: Sort,
+        body: Rc<Term>,
+    },
+    Let {
+        bindings: Vec<LetBinding>,
+        body: Rc<Term>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -126,7 +148,7 @@ pub fn out() -> Rc<Term> {
     make_var("out")
 }
 
-/// `parse_int(s)` — bridge primitive. Registers with the bridge
+/// `parse_int(s)`: bridge primitive. Registers with the bridge
 /// registry on first call (process-local). Returns a CtorTerm.
 pub fn parse_int(s: Rc<Term>) -> Rc<Term> {
     ensure_kit_bridges_registered();
@@ -137,7 +159,7 @@ pub fn parse_int(s: Rc<Term>) -> Rc<Term> {
 }
 
 // ---------------------------------------------------------------------------
-// Formula — three kinds: atomic / connective / quantifier
+// Formula: three kinds: atomic / connective / quantifier
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -209,7 +231,7 @@ pub fn or_(operands: Vec<Rc<Formula>>) -> Rc<Formula> {
 }
 
 // ---------------------------------------------------------------------------
-// Quantifier counter — fresh names for bound variables
+// Quantifier counter: fresh names for bound variables
 // ---------------------------------------------------------------------------
 
 thread_local! {
@@ -337,6 +359,17 @@ pub struct ContractDecl {
     pub inv: Option<Rc<Formula>>,
     pub out_binding: String,
     pub evidence: Option<EvidenceTerm>,
+    /// Human-supplied concept name extracted from a `// concept: <name>` (or
+    /// `/// concept: <name>`) annotation immediately preceding the function.
+    ///
+    /// - `None`  -- no annotation found
+    /// - `Some("UNNAMED-CONCEPT-N")` -- placeholder emitted by the substrate
+    /// - `Some("<real-name>")` -- human-supplied name ready for catalog binding
+    ///
+    /// This field is METADATA ONLY.  It does NOT participate in the
+    /// canonical-bytes / CID derivation.  Changing the annotation never
+    /// rewrites the shape identity.
+    pub concept_hint: Option<String>,
 }
 
 thread_local! {
@@ -363,6 +396,7 @@ pub fn contract<S: Into<String>>(name: S, args: ContractArgs) {
             inv: args.inv,
             out_binding: args.out_binding.unwrap_or_else(|| "out".into()),
             evidence: args.evidence,
+            concept_hint: None,
         });
     });
 }

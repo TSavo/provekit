@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:FnContract",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "FnContract",
+    "description": "Function contract values used at call sites"
+  }
+}

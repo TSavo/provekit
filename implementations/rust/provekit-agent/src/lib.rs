@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// provekit-agent — pluggable coding-agent surface for ProvekIt.
+// provekit-agent: pluggable coding-agent surface for ProvekIt.
 //
 // Two directions, both first-class:
 //
@@ -29,14 +29,14 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod loop_fix;
 pub mod loop_lift;
 pub mod loop_must;
-pub mod loop_fix;
 pub mod stub;
 
+pub use loop_fix::{run_fix_loop, FixLoopOptions, FixLoopOutcome};
 pub use loop_lift::{run_lift_loop, LiftLoopOptions, LiftLoopOutcome};
 pub use loop_must::{run_must_loop, MustLoopOptions, MustLoopOutcome};
-pub use loop_fix::{run_fix_loop, FixLoopOptions, FixLoopOutcome};
 pub use stub::StubAgent;
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ pub enum AgentError {
 }
 
 // ---------------------------------------------------------------------------
-// Provenance — recorded on every minted memento so the lattice knows
+// Provenance: recorded on every minted memento so the lattice knows
 // who proposed what.
 // ---------------------------------------------------------------------------
 
@@ -79,7 +79,7 @@ pub struct AgentProvenance {
 }
 
 // ---------------------------------------------------------------------------
-// Candidate contract — one proposal in IR-JSON canonical form. The
+// Candidate contract: one proposal in IR-JSON canonical form. The
 // agent serializes its formula trees to IR-JSON strings; we parse +
 // validate before minting.
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ fn default_out_binding() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// File patch — minimal shape: { path, new_content }. Optional
+// File patch: minimal shape: { path, new_content }. Optional
 // old_content lets the patch carry a precondition (matches what's on
 // disk). Unified-diff parsing is intentionally not on the table for
 // v0; full-file replacement is the simplest contract that survives
@@ -196,16 +196,11 @@ pub struct FixContext {
 pub trait ProvekitAgent: Send + Sync {
     /// Lift contracts from a source file. Returns zero or more
     /// candidates in canonical IR-JSON.
-    fn propose_contracts(
-        &self,
-        ctx: &ProposeContext,
-    ) -> Result<Vec<ContractCandidate>, AgentError>;
+    fn propose_contracts(&self, ctx: &ProposeContext)
+        -> Result<Vec<ContractCandidate>, AgentError>;
 
     /// Translate an English description to one IR contract.
-    fn translate_must(
-        &self,
-        ctx: &MustContext,
-    ) -> Result<ContractCandidate, AgentError>;
+    fn translate_must(&self, ctx: &MustContext) -> Result<ContractCandidate, AgentError>;
 
     /// Fix a bug. Returns code patches + any new contracts the fix
     /// implies.
@@ -216,7 +211,7 @@ pub trait ProvekitAgent: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// Validation — shared between the lift / must loops. Parses the
+// Validation: shared between the lift / must loops. Parses the
 // candidate's IR-JSON, returns a typed `ContractDecl` on success or a
 // rejection reason the agent can read.
 // ---------------------------------------------------------------------------
@@ -260,11 +255,14 @@ pub fn validate_candidate(c: &ContractCandidate) -> ValidationOutcome {
         return ValidationOutcome::Rejected("out_binding must be non-empty".into());
     }
 
-    fn parse_one(label: &str, s: &str) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, String> {
-        let v: serde_json::Value = serde_json::from_str(s)
-            .map_err(|e| format!("`{label}` is not valid JSON: {e}"))?;
-        let f = parse::parse_formula(&v)
-            .map_err(|e| format!("`{label}` is not valid IR-JSON: {e}"))?;
+    fn parse_one(
+        label: &str,
+        s: &str,
+    ) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, String> {
+        let v: serde_json::Value =
+            serde_json::from_str(s).map_err(|e| format!("`{label}` is not valid JSON: {e}"))?;
+        let f =
+            parse::parse_formula(&v).map_err(|e| format!("`{label}` is not valid IR-JSON: {e}"))?;
         Ok(serialize::formula_to_value(&f))
     }
 
@@ -350,12 +348,13 @@ pub fn mint_validated(
         authoring: Authoring::Llm {
             llm: v.provenance.agent_name.clone(),
             llm_version: v.provenance.agent_version.clone(),
-            prompt_cid: format!(
-                "blake3-512:{}",
-                hex_zero_pad(&v.provenance.agent_name)
-            ),
+            prompt_cid: format!("blake3-512:{}", hex_zero_pad(&v.provenance.agent_name)),
             confidence: v.provenance.confidence.unwrap_or(0.5),
-            rationale: v.provenance.rationale.clone().or_else(|| Some(evidence.clone())),
+            rationale: v
+                .provenance
+                .rationale
+                .clone()
+                .or_else(|| Some(evidence.clone())),
         },
         signer_seed: opts.signer_seed,
     };
@@ -387,7 +386,7 @@ fn hex_zero_pad(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Tool descriptor — dropped into Claude Code / Continue / Cursor /
+// Tool descriptor: dropped into Claude Code / Continue / Cursor /
 // Aider config so external agents can call ProvekIt as a tool.
 // ---------------------------------------------------------------------------
 

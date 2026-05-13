@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "rust:MatchArm",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "MatchArm",
+    "description": "One match arm with pattern, guard, and body"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "kind": "CIBlastRadius",
+  "schemaVersion": "1",
+  "jobKey": "provekit/conformance/rust",
+  "subjectKind": "kit",
+  "subject": "rust",
+  "protocolCatalogCid": "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f",
+  "jobDefinitionCid": "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+  "commandCid": "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+  "runnerIdentityCid": "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333",
+  "toolchainCids": [],
+  "sourceClosureCid": "blake3-512:55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555",
+  "lockfileCids": [],
+  "generatedInputCids": [],
+  "fixtureCids": [],
+  "relevantSpecCids": [],
+  "policyCid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "nondeterminism": {
+    "network": "forbidden",
+    "clock": "forbidden",
+    "secrets": "forbidden",
+    "randomness": "forbidden"
+  },
+  "inputCids": [
+    "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f"
+  ]
+}

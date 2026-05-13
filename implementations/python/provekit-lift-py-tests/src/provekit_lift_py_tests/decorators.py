@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# provekit.decorators — direct contract authoring for Python.
+# provekit.decorators: direct contract authoring for Python.
 #
 # Usage:
 #   @provekit.contract(pre=lambda x: x >= 0, post=lambda out: out >= 0)

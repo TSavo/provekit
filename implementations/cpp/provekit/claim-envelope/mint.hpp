@@ -16,10 +16,12 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "../canonicalizer/value.hpp"
 #include "../proof-envelope/sign_ed25519.hpp"
+#include "../../provekit-ir-symbolic/include/provekit/bridge_v14.hpp"
 
 namespace provekit::claim_envelope {
 
@@ -89,6 +91,9 @@ struct MintBridgeArgs {
 };
 
 MintedEnvelope mint_bridge(const MintBridgeArgs& args);
+
+// ── v1.4 BridgeDeclaration (layered envelope/header/body, tagged-union target) ──
+MintedEnvelope mint_bridge_v14(const MintBridgeV14Args& args);
 
 // ---- Implication role ------------------------------------------------------
 

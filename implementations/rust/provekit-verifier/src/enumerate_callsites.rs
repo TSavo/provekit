@@ -31,10 +31,7 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
             .to_string();
         if property_name.is_empty() {
             // Stable fallback: short prefix of CID.
-            property_name = format!(
-                "{}...",
-                cid.chars().take(12).collect::<String>()
-            );
+            property_name = format!("{}...", cid.chars().take(12).collect::<String>());
         }
         for slot in ["pre", "post", "inv"] {
             if let Some(f) = body.get(slot) {

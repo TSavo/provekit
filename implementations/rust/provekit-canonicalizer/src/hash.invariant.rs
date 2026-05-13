@@ -50,10 +50,7 @@ pub fn invariants() {
     must(
         "blake3_512_of_is_deterministic",
         forall(String_(), |b| {
-            eq(
-                ctor1("blake3_512_of", b.clone()),
-                ctor1("blake3_512_of", b),
-            )
+            eq(ctor1("blake3_512_of", b.clone()), ctor1("blake3_512_of", b))
         }),
     );
 

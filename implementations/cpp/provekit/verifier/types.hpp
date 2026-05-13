@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Verifier types — POD-style structs the 6-stage bridge enforcement
+// Verifier types: POD-style structs the 6-stage bridge enforcement
 // pipeline passes between stages. Mirrors the Go verifier's types.go.
 //
 // Architecture: the memento IS the verification. The .proof protocol IS the cache.
@@ -144,7 +144,7 @@ struct MementoPool {
     }
 };
 
-// CallSite — a (bridge, property memento, arg term) triple.
+// CallSite: a (bridge, property memento, arg term) triple.
 struct CallSite {
     std::string bridge_ir_name;
     std::string bridge_target_cid;
@@ -155,7 +155,7 @@ struct CallSite {
     Json arg_term;  // an IrTerm object; null if missing
 };
 
-// ResolvedProperty — what resolve-bridge-target returns.
+// ResolvedProperty: what resolve-bridge-target returns.
 struct ResolvedProperty {
     std::string cid;
     Json ir_formula;

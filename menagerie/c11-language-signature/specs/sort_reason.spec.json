@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "c11:Reason",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Reason",
+    "description": "Trap reasons for undefined behavior"
+  }
+}

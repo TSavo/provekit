@@ -1,0 +1,118 @@
+{
+  "auto_minted_mementos": [],
+  "effects": {
+    "effects": [
+      {
+        "guard": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            }
+          ],
+          "kind": "ctor",
+          "name": "valid"
+        },
+        "kind": "MemWrite",
+        "target": "state",
+        "value": "x"
+      }
+    ]
+  },
+  "fn_name": "shape:validate-then-commit",
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Candidate"
+    },
+    {
+      "kind": "primitive",
+      "name": "Outcome"
+    },
+    {
+      "kind": "primitive",
+      "name": "Outcome"
+    }
+  ],
+  "formals": [
+    "x",
+    "err",
+    "committed_state"
+  ],
+  "kind": "AlgorithmMemento",
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "ret"
+          },
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "x"
+                  }
+                ],
+                "kind": "ctor",
+                "name": "valid"
+              },
+              {
+                "kind": "var",
+                "name": "committed_state"
+              },
+              {
+                "kind": "var",
+                "name": "err"
+              }
+            ],
+            "kind": "ctor",
+            "name": "ite"
+          }
+        ],
+        "kind": "atomic",
+        "name": "="
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              }
+            ],
+            "kind": "atomic",
+            "name": "valid"
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "x"
+              }
+            ],
+            "kind": "atomic",
+            "name": "commit_applied"
+          }
+        ]
+      }
+    ]
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "protocol": "AMP",
+  "return_sort": {
+    "kind": "primitive",
+    "name": "Outcome"
+  },
+  "schema_version": "1"
+}

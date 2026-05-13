@@ -1,0 +1,35 @@
+destinations:
+  - id: bug-zoo
+    path: bug-zoo
+    runnable: true
+    claim: bugs as missing edges and fixes as closure receipts
+    command: cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
+  - id: hashbound-mainline
+    path: hashbound-mainline
+    runnable: planned
+    claim: cross-domain implication chains compressed to 64-byte verification
+  - id: supply-chain-rails
+    path: supply-chain-rails
+    runnable: true
+    claim: authentic compatible-looking releases cannot silently betray preserved contracts
+    command: cargo run --manifest-path menagerie/supply-chain-rails/Cargo.toml -- --all
+  - id: bridgeworks
+    path: bridgeworks
+    runnable: true
+    claim: ProofIR carries vertical contracts and .proof CIDs compress the implication DAG
+    command: cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all
+  - id: protocol-switchyard
+    path: protocol-switchyard
+    runnable: true
+    claim: protocol versions as roots and migrations as witnessed edges
+    command: cargo run --manifest-path menagerie/protocol-switchyard/Cargo.toml -- --all
+    notes: |
+      MVP runs the v1->v2 HTTP profile migration end to end and emits four
+      reproducible blake3-512 CIDs (fromCatalogCid, toCatalogCid, bodyCid,
+      witnessCid). Aspirational: no grammar-conformance execution against the
+      prose specs, no implementation conformance witness, no separate
+      compatibility-invariant or bridge-checker witnesses yet.
+  - id: change-station
+    path: change-station
+    runnable: planned
+    claim: commits as p -> q proof-carrying transitions

@@ -1,0 +1,30 @@
+{
+  "cid": "blake3-512:82265e10ef9d7aecccca24f4470183bd27847b85f3d28d81e5ea0a2084688b03af363c5e00c120fe056a215e7a3fbaf981186364b3124c3c5cb17d928cbcc4d8",
+  "memento": {
+    "after_substitution_cid": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae",
+    "discharged": true,
+    "kind": "MorphismDischargeReceipt",
+    "literal_map": {},
+    "method": "canonicalizer-alpha-equivalence-plus-representation-map",
+    "morphism_cid": "blake3-512:e8577df2a02ff15be5c9a4c200f828354fda8da2bb3a5148a3b102b315d52ba78aa5970b2d3f5d7777216fb026d0e866901347afe5bf22976dd01a742a26b288",
+    "operator_map": {
+      "rust_commit_applied": "commit_applied",
+      "rust_valid_item": "valid"
+    },
+    "renaming_map": {
+      "committed": "committed_state",
+      "err_value": "err",
+      "item": "x",
+      "outcome": "ret",
+      "store": "state"
+    },
+    "representation_map": {
+      "CommitOutcome": "Outcome",
+      "Item": "Candidate"
+    },
+    "schema_version": "1",
+    "shape_cid": "blake3-512:79bc915f87dacb3902b5c0a69fc9920b662bb3ed15d35066040d92b98daa46c2c31af84c3b6c0c5e34d778f57091127bf8afe1a5eb9d9152459027bcf946c3ae",
+    "source_contract_cid": "blake3-512:6fe082243005cf1b42dee0e38c8ec07d761fc60b8e7887abfe8e4002f2d4dfca655fd6f9d0fbaab172a75fea5d21beb7a1f03918611ec81481a70a6dc5e329cc"
+  },
+  "signature": null
+}

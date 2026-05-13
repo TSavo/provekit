@@ -1,0 +1,128 @@
+[
+  {
+    "auto_minted_mementos": [],
+    "body_cid": null,
+    "fn_name": "process_buf_to_dst",
+    "formal_sorts": [
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      },
+      {
+        "kind": "primitive",
+        "name": "i32"
+      }
+    ],
+    "formals": [
+      "src",
+      "dst",
+      "buf_len",
+      "used",
+      "target"
+    ],
+    "kind": "function-contract",
+    "post": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "pre": {
+      "kind": "and",
+      "operands": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "src"
+            },
+            {
+              "kind": "var",
+              "name": "NULL"
+            }
+          ],
+          "kind": "atomic",
+          "name": "≠"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "dst"
+            },
+            {
+              "kind": "var",
+              "name": "NULL"
+            }
+          ],
+          "kind": "atomic",
+          "name": "≠"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "dst"
+            },
+            {
+              "kind": "var",
+              "name": "src"
+            }
+          ],
+          "kind": "atomic",
+          "name": "≠"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "buf_len"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              },
+              "value": 0
+            }
+          ],
+          "kind": "atomic",
+          "name": "≠"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "used"
+            },
+            {
+              "kind": "var",
+              "name": "buf_len"
+            }
+          ],
+          "kind": "atomic",
+          "name": "≤"
+        }
+      ]
+    },
+    "effects": {
+      "effects": []
+    },
+    "return_sort": {
+      "kind": "primitive",
+      "name": "i32"
+    }
+  }
+]

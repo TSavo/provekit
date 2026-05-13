@@ -1,0 +1,21 @@
+[package]
+name = "provekit-ir-compiler-lean"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: Lean 4 and mathlib IR compiler."
+
+[dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+provekit-ir-types = { path = "../provekit-ir-types" }
+serde_json.workspace = true
+
+[[bin]]
+name = "provekit-ir-lean"
+path = "src/main.rs"
+
+[lib]
+name = "provekit_ir_compiler_lean"
+path = "src/lib.rs"

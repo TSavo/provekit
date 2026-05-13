@@ -1,0 +1,104 @@
+{
+  "fn_name": "gap:zig:deref:to:concept:deref",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Ptr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "pointer"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "deref",
+        "result": "LValue",
+        "wp": "pointer dereference p.*"
+      },
+      "want": {
+        "arity": [
+          "Ptr"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "ptr"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "deref",
+        "result": "LValue",
+        "wp_note": "lvalue at ptr"
+      }
+    },
+    "pre_delta": {
+      "got": {
+        "args": [],
+        "kind": "atomic",
+        "name": "true"
+      },
+      "want": {
+        "kind": "connective",
+        "op": "and",
+        "operands": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "ptr"
+              },
+              {
+                "kind": "const",
+                "sort": {
+                  "args": [],
+                  "kind": "ctor",
+                  "name": "Ptr"
+                },
+                "value": "NULL"
+              }
+            ],
+            "kind": "atomic",
+            "name": "!="
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "ptr"
+              }
+            ],
+            "kind": "atomic",
+            "name": "valid"
+          }
+        ]
+      }
+    }
+  },
+  "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}` want `{\"kind\":\"connective\",\"op\":\"and\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"!=\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"},{\"kind\":\"const\",\"value\":\"NULL\",\"sort\":{\"kind\":\"ctor\",\"name\":\"Ptr\",\"args\":[]}}]},{\"kind\":\"atomic\",\"name\":\"valid\",\"args\":[{\"kind\":\"var\",\"name\":\"ptr\"}]}]}`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "zig",
+  "source_op_cid": "blake3-512:8e0dd99d3425890284df5580bf29a7017f960bd9ddbe4900a793241cd7f1a227b35f1d264160010d2484e4a44e4c9d8f34d037a3fc9b5162120165cf5453a2b0",
+  "target_concept_op": "concept:deref",
+  "target_op_cid": "blake3-512:93ff252a879bc061949fecdb9710a0a927b47f5104f5e628c7e0bd2477e3ea3515ebb2bc2794d9cc7c11c6ea16db511ff20a18c699bb94f7854e79b5e195f717"
+}

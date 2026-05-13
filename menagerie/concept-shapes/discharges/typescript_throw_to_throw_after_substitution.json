@@ -1,0 +1,49 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
+  },
+  "fn_name": "concept:throw",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Value"
+    }
+  ],
+  "formals": [
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Value"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "throw",
+    "result": "Stmt",
+    "wp": "throw value; may panic/raise under the contract precondition"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
+  }
+}

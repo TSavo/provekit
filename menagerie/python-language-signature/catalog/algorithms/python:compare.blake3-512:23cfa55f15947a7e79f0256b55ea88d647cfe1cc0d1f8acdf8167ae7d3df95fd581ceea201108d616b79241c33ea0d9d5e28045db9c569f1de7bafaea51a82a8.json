@@ -1,0 +1,79 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "python:compare",
+    "formals": [
+      "operator",
+      "lhs",
+      "rhs"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "compare",
+      "arity": [
+        "String",
+        "Value",
+        "Value"
+      ],
+      "result": "Bool",
+      "wp": "single Python comparison operation",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "operator",
+            "evaluation": "unevaluated",
+            "slot_sort": "literal"
+          },
+          {
+            "name": "lhs"
+          },
+          {
+            "name": "rhs"
+          }
+        ]
+      },
+      "notes": "Chained comparisons are refused by the draft lifter."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    "locus": "menagerie/python-language-signature/README.md"
+  },
+  "cid": "blake3-512:23cfa55f15947a7e79f0256b55ea88d647cfe1cc0d1f8acdf8167ae7d3df95fd581ceea201108d616b79241c33ea0d9d5e28045db9c569f1de7bafaea51a82a8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "szwRYDPCovOnhd84MaN+4a7fqov7zlL/Edc2kcXDL8Vr6J65OSUxo5BROtTpTAB3m1iB1phwxtg4+cTP/mwzCw=="
+  }
+}

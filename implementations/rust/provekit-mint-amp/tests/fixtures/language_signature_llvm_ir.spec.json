@@ -1,0 +1,9 @@
+{
+  "kind": "language_signature",
+  "fn_name": "llvm-ir:18",
+  "sorts": ["sort_c_int.spec.json", "sort_c_bool.spec.json"],
+  "operations": [],
+  "equations": [],
+  "effect_signatures": [],
+  "body_cid": "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}

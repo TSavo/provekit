@@ -1,0 +1,34 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "zig:ListOfExpr",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "ListOfExpr",
+      "description": "Finite ordered expression argument lists."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    }
+  },
+  "cid": "blake3-512:175968c59c1f27613d86479c1e06129ff375e64be27ea1d31534fa6a9f9fe38b945e302e88c2aa180ad5976ae425b4f0d1a548eb980bcf400f7c040e1e120000",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "7q9XtxCtJoWHVSR7ORRpzsVVfzZoPSvRk0D9FEN1HYx20CRB2xYC43drZFvVX746fuWwTu9qqMjHgDZKmBRuAQ=="
+  }
+}

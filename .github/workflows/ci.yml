@@ -1,16 +1,17 @@
-# ProvekIt — cross-language conformance gate
+# ProvekIt: cross-language conformance gate
 #
-# Runs the same gate as `make ci` on every push and PR. Source of truth
-# for "is the protocol byte-deterministic across all 5 peer languages on
-# Linux x86_64 today" — answer is committed to the repo, not asserted.
+# Runs the Linux `make ci` gate on every push and PR, then adds macOS Swift
+# and per-kit verifier jobs. Source of truth for "do the kits derive the
+# catalog-pinned protocol CIDs today" is committed to the repo, not asserted.
 #
 # Languages exercised:
 #   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
-#   Python 3.12, clang++ via apt + vendored portable BLAKE3.
+#   Python 3.12, Java 21 (Temurin) + Maven, clang/clang++ via apt,
+#   C, C++, Zig, PHP, Ruby, and Swift in the macOS job.
 #
-# The Makefile is the contract. CI installs toolchains then calls `make`
-# targets so local dev and CI run the same code path. If you can run
-# `make ci` locally, this workflow runs the same thing.
+# The Makefile is the local contract. CI installs toolchains, calls `make`
+# targets for the Linux profile, then runs the extra platform/profile jobs that
+# are not part of the default local aggregate.
 
 name: CI
 
@@ -24,10 +25,17 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   conformance:
     name: Cross-language conformance gate
-    runs-on: ubuntu-latest
+    # [self-hosted, Linux, X64] not bare `self-hosted`: otherwise the
+    # macOS runner registered for #305 will pick up this Linux-only job
+    # (apt-get) and fail.
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
     steps:
@@ -42,13 +50,30 @@ jobs:
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/cross-kit-conformance/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             implementations/rust/target
+            tools/cross-kit-conformance/target
             tools/recompute-spec-cids/target
             tools/foundation-keygen/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
@@ -94,19 +119,142 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Install python kit wheels (blake3, pynacl, cbor2)
+        # mint-python invokes the mint-python-self-contracts orchestrator
+        # which imports blake3 / pynacl / cbor2 at runtime. The kit ships
+        # these as deps in its pyproject.toml; an editable install picks
+        # them up via the wheels in PyPI. Without this step, mint-python
+        # fails with ModuleNotFoundError once it's wired into all-mint.
+        # Mirrors how `cache: maven` + setup-java provisions java's deps.
+        run: pip install -e implementations/python/provekit-lift-py-tests
+
+      - name: Install Supply Chain Rails native receipt tools
+        # The Supply Chain Rails exhibit intentionally invokes real
+        # conventional receipt verifiers before ProvekIt rejects the poisoned
+        # package on contract rails. Keep CI on that same path: install the
+        # native SLSA VSA and in-toto verifiers, then let `provekit package
+        # inspect` call them through the lifter.
+        run: |
+          python -m pip install --user uv
+          export PATH="${HOME}/.local/bin:${PATH}"
+          menagerie/supply-chain-rails/authenticated-betrayal/tools/install-native-receipt-tools.sh
+          "${HOME}/go/bin/slsa-verifier" version
+          "$(uv tool dir --bin)/in-toto-verify" --version
+
+      - name: Set up Java 21 + Maven
+        # build-java (added by java-agent E2E work) calls `mvn package`.
+        # pom.xml sets maven.compiler.source/target=17; Temurin 21 is
+        # LTS and forward-compatible with source level 17.
+        # cache: maven caches ~/.m2/repository so subsequent runs skip
+        # the multi-hundred-MB dependency download.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
       # ---------------------------------------------------------------
-      # System-level deps: openssl, nlohmann-json. BLAKE3 is vendored
-      # at tools/blake3-vendored/, no system package required.
+      # System-level deps: PHP CLI + Composer + b3sum (PHP kit), openssl,
+      # nlohmann-json, libblake3 (Ruby FFI), libyaml (Ruby psych/bundler
+      # runtime). Run BEFORE setup-ruby so the bundler-cache step has
+      # libblake3 and libyaml already on the host when it resolves and
+      # builds native gems.
+      #
+      # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
+      # FFI binding to libblake3 needs the system package because no
+      # rubygem on Ruby 3.x exposes 64-byte XOF mode (per PR #226 notes).
       # ---------------------------------------------------------------
 
-      - name: Install C++ system deps
+      - name: Install C++ system deps + z3 + cvc5 + libyaml
+        # z3 is the SMT solver invoked by the TS workflow producer's
+        # checkImplication / bridgeEnforcement / circularProof tests
+        # (`provekit prove` substrate). Without it on PATH, every
+        # solver invocation returns ENOENT, the producer maps that to
+        # `undecidable`, and ~10 tests fail with errors of the shape
+        # `expected 'undecidable' to be 'equivalent'`. The `prove`
+        # workflow in provekit.yml installed z3; this gate did not.
+        # Closes task #215 ("CI: TS workflow producer tests failing").
+        #
+        # cvc5 joins z3 in the default solver portfolio per
+        # `.provekit/config.toml` (closes #251). Ubuntu Noble apt ships
+        # cvc5 at `/usr/bin/cvc5` (verified via packages.ubuntu.com
+        # filelist).
+        #
+        # libyaml-dev is needed for Ruby's psych (YAML) extension;
+        # bundler-cache fails with `libyaml-0.so.2: cannot open shared
+        # object file` without it on Ubuntu 24.04 hosted runners.
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
+            b3sum \
             build-essential \
             clang \
+            cmake \
+            composer \
+            cvc5 \
+            libclang-dev \
+            libsodium-dev \
             libssl-dev \
-            nlohmann-json3-dev
+            libyaml-dev \
+            llvm-dev \
+            maven \
+            nlohmann-json3-dev \
+            php-cli \
+            unzip \
+            z3
+          php -m | grep -q '^sodium$'
+
+      - name: Install Vampire (upstream GitHub release)
+        # Vampire joins the default solver portfolio per
+        # `.provekit/config.toml` (closes #252 Tier 1). The original
+        # plan in #252 assumed `apt-get install vampire` on Ubuntu
+        # Noble, but Vampire is NOT packaged in any Ubuntu suite
+        # (verified via packages.ubuntu.com search). The upstream
+        # release at github.com/vprover/vampire ships a static x86_64
+        # Linux binary in vampire-Linux-X64.zip. We pin to v5.0.1
+        # (current latest as of 2026-05).
+        run: |
+          cd /tmp
+          EXPECTED_SHA="6ff2f42ea7fb9753ee104efc3e623d5e39443190f7c82a63e1e1517bf9d2cde3"
+          curl -fsSL --retry 5 -o vampire.zip \
+            https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          echo "$EXPECTED_SHA  vampire.zip" | sha256sum -c -
+          unzip -qo vampire.zip
+          sudo install -m 0755 vampire /usr/local/bin/vampire
+          vampire --version | head -1
+
+
+      - name: Set up Ruby 3.3
+        # mint-ruby-self-contracts (PR #234, issue #209) ships a Ruby
+        # orchestrator that the rust CLI invokes via the lift-plugin-protocol
+        # RPC. Without ruby on PATH the orchestrator binary errors at exec
+        # and the contractSetCid pinned-CID test sees the empty-set sentinel.
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: implementations/ruby
+
+      - name: Install Zig 0.16.0 (pinned upstream stable)
+        # Issue #283. mint-zig-self-contracts (PR #241, issue #213) ships
+        # an orchestrator that the rust CLI invokes via lift-plugin-protocol
+        # RPC. Without zig on PATH the orchestrator binary errors at exec
+        # and the contractSetCid pinned-CID test sees the empty-set sentinel.
+        #
+        # The kit's std.ArrayList unmanaged-by-default usage (PR #168/#171)
+        # requires zig 0.16's std API. Issue #283 recommended pinning a
+        # 0.16-dev nightly URL because 0.16 was unreleased at the time it
+        # was filed; 0.16.0 shipped 2026-04-14, so we pin the stable
+        # release URL instead -- same pinned-URL property, no nightly-
+        # regression risk. ziglang.org keeps every release indefinitely.
+        # Refresh this URL only when the kit's std API requirements change.
+        #
+        # Direct ziglang.org downloads are intentionally not bandwidth-
+        # guaranteed. setup-zig v2 uses the Zig community mirror list and
+        # verifies tarball signatures while keeping the compiler version pinned.
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
 
       # ---------------------------------------------------------------
       # The gate.
@@ -116,9 +264,10 @@ jobs:
         run: make help
 
       - name: make conformance
-        # Catalog v1.2.0 hash equality, signed protocol verify, and all 5
-        # peer self-contract CIDs equal their pinned values. Failure here
-        # means the protocol has drifted and the PR is not mergeable.
+        # Catalog v1.6.2 hash equality, signed protocol verify, live mint
+        # attestations, self-contract tests, and cross-kit fixtures. Failure
+        # here means the protocol or a kit conformance surface drifted and
+        # the PR is not mergeable.
         run: make conformance
 
       - name: make test-all
@@ -127,3 +276,613 @@ jobs:
         # Go modules; test-ts runs vitest; test-csharp runs xUnit;
         # test-python runs pytest after a local pip install.
         run: make test-all
+
+  conformance-macos-swift:
+    # Step 5 of the 12/12 conformance epic (#277). The Linux conformance
+    # gate above intentionally excludes swift from `all-mint` because the
+    # swift kit is macOS-only (Package.swift `platforms: [.macOS(.v10_15)]`
+    # plus an OpenSSL libcrypto dep wired through Homebrew prefixes). This
+    # job exercises `make mint-swift` end-to-end on a macOS runner so the
+    # swift kit's pinned contractSetCid is verified on every PR alongside
+    # the Linux 11/12 set, advancing the gate to 12/12.
+    #
+    # Scope (kept lean to manage macOS runner minutes):
+    #   - install rust (swift toolchain ships pre-installed on the
+    #     hosted runner, OpenSSL is available under /opt/homebrew on
+    #     Apple Silicon and Package.swift auto-detects the prefix).
+    #   - run `make mint-swift` (loud failure gate: shells out to
+    #     verify-self-contracts against the pinned swift.json envelope).
+    #   - run only the swift-specific pinned-CID integration test
+    #     (`swift_kit_pins_expected_contract_set_cid`), which is gated
+    #     #[cfg_attr(not(target_os = "macos"), ignore)] in the rust
+    #     suite and never executes on the Linux job.
+    #
+    # Out of scope: `make conformance` and `make test-all`. Those are
+    # the Linux job's contract; replicating them here doubles cost
+    # without adding signal. The cross-kit byte-equivalence claim is
+    # already protected by the Linux gate's pinned CIDs for the other
+    # 11 kits, and JCS+BLAKE3 is architecture-independent.
+    name: Cross-language conformance gate (macOS swift)
+    # Self-hosted Mac runner registered on the architect's machine
+    # (label `macOS`, X64). Closes #305: moves the swift jobs off
+    # GitHub-hosted macos-latest onto our own infra. Toolchains
+    # (swift, rust) are pre-installed on the runner host.
+    runs-on: [self-hosted, macOS, X64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        # mint-swift depends on build-rust (the orchestrator binary
+        # provekit-cli is the dispatcher invoked via the lift-plugin-protocol
+        # RPC against mint-swift-self-contracts).
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        # Same cache shape as the Linux job; ${{ runner.os }} resolves to
+        # macOS here so the namespace is distinct (no collision with the
+        # Linux cargo cache). PRs restore only so post-job cache upload cannot
+        # turn successful verification into a timeout failure.
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
+        # Same cache shape as the Linux job; ${{ runner.os }} resolves to
+        # macOS here so the namespace is distinct (no collision with the
+        # Linux cargo cache). Cold-start without this is ~5-7 minutes of
+        # crate compilation; with the cache, sub-minute restore.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Verify swift toolchain
+        # macOS GitHub-hosted runners ship the swift toolchain
+        # pre-installed (Xcode command-line tools). No setup-swift action
+        # required. This step is for log readability so a future failure
+        # mode (Apple changing the runner image baseline) is loud.
+        run: |
+          swift --version
+          xcrun --find swift
+
+      - name: make help (sanity)
+        run: make help
+
+      - name: make mint-swift
+        # End-to-end: build-rust + build-swift, then dispatch mint --kit=swift
+        # to the swift orchestrator (mint-swift-self-contracts --rpc), and
+        # verify the resulting contractSetCid matches the pinned envelope at
+        # provenance/self-contracts-attest/swift.json. Failure here means the
+        # swift kit's emission has drifted relative to the rest of the
+        # protocol (or the swift slab itself has changed) and is a hard stop.
+        run: make mint-swift
+
+      - name: cargo test swift_kit_pins
+        # Redundant pin verification: the integration test asserts the
+        # contractSetCid string equals the pinned constant
+        # SWIFT_CONTRACT_SET_CID (blake3-512:272543ef...) directly,
+        # whereas `make mint-swift` checks against the JSON envelope.
+        # The test silently skips when mint fails (run_mint returns ok=false);
+        # the previous step is the loud gate, this is the in-rust-suite gate
+        # the integration tests assert by file.
+        run: cargo test -p provekit-cli --test mint_kit_integration -- swift_kit_pins
+        working-directory: implementations/rust
+
+      - name: swift catalog-pinned fixtures
+        # Runs the central Rust fixture harness in the macOS-only profile.
+        # This is the same conformance law as the Linux job, but restricted
+        # to Swift because the Swift kit is macOS-only.
+        run: cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- --profile swift
+
+  cicp-reuse-smoke:
+    name: CICP checked-in reuse smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Validate checked-in CICP reuse witnesses
+        run: |
+          set -uo pipefail
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          set +e
+          implementations/rust/target/release/provekit ci accept \
+            --repo . \
+            --all-kits \
+            --clean \
+            --check \
+            --json \
+            2> .provekit/ci-accept-check.err
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cat .provekit/ci-accept-check.err >&2
+            echo "::warning::CICP accepted witnesses are stale; this advisory smoke does not gate CI."
+            exit 0
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Per-kit conformance gate: provekit prove --kit=<kit>
+  #
+  # Each job spawns the kit's lifter via JSON-RPC and runs C1-C8 verifiers
+  # against the captured RPC messages.
+  #
+  # swift runs on macos-latest (Swift toolchain is macOS-only).
+  # All other kits run on self-hosted Linux.
+  # ---------------------------------------------------------------------------
+
+  prove-linux:
+    name: "prove-${{ matrix.kit }} (C1-C8 conformance)"
+    # Linux-only: exclude the macOS runner registered for #305.
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
+    needs: conformance
+    strategy:
+      fail-fast: false
+      matrix:
+        kit:
+          - rust
+          - go
+          - cpp
+          - ts
+          - csharp
+          - clr-bytecode
+          - evm-bytecode
+          - java
+          - python
+          - ruby
+          - zig
+          - c
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Set up Go 1.22
+        if: matrix.kit == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: |
+            implementations/go/provekit-ir-symbolic/go.sum
+            implementations/go/provekit-self-contracts/go.sum
+            implementations/go/provekit-lift-go-tests/go.sum
+
+      - name: Set up .NET 10 (preview)
+        if: matrix.kit == 'csharp' || matrix.kit == 'clr-bytecode'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Set up pnpm
+        if: matrix.kit == 'ts'
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Set up Node 22
+        if: matrix.kit == 'ts'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Set up Python 3.12
+        if: matrix.kit == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install python kit deps
+        if: matrix.kit == 'python'
+        run: pip install -e implementations/python/provekit-lift-py-tests
+
+      - name: Install system deps (cpp)
+        if: matrix.kit == 'cpp'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libssl-dev \
+            nlohmann-json3-dev
+
+      - name: Install system deps (c)
+        if: matrix.kit == 'c'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libclang-dev \
+            libsodium-dev \
+            libssl-dev \
+            llvm-dev
+
+      - name: Set up Java (java)
+        if: matrix.kit == 'java'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Install Java deps (java)
+        if: matrix.kit == 'java'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends maven
+
+      - name: Install Ruby (ruby)
+        if: matrix.kit == 'ruby'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: implementations/ruby
+
+      - name: Install Zig (zig)
+        if: matrix.kit == 'zig'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Install PHP deps (php)
+        if: matrix.kit == 'php'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            b3sum \
+            php-cli
+          php -m | grep -q '^sodium$'
+
+      - name: "CICP shadow blast radius (${{ matrix.kit }})"
+        run: |
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci shadow \
+            --kit "${{ matrix.kit }}" \
+            --out-dir ".provekit/ci-shadow/${{ matrix.kit }}" \
+            --runner-identity "github-actions/${{ runner.os }}/${{ runner.arch }}" \
+            --json
+
+      - name: "CICP reuse admission (${{ matrix.kit }})"
+        id: cicp_reuse
+        run: |
+          set +e
+          implementations/rust/target/release/provekit ci reuse \
+            --current-blast-radius ".provekit/ci-shadow/${{ matrix.kit }}/blast-radius.json" \
+            --accepted-dir .provekit/ci/accepted \
+            --reuse-out ".provekit/ci-shadow/${{ matrix.kit }}/reuse.json" \
+            --json > ".provekit/ci-shadow/${{ matrix.kit }}/reuse-summary.json" \
+            2> ".provekit/ci-shadow/${{ matrix.kit }}/reuse-error.txt"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "CICP_REUSE_HIT=true" >> "$GITHUB_ENV"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            cat ".provekit/ci-shadow/${{ matrix.kit }}/reuse-summary.json"
+          else
+            echo "CICP_REUSE_HIT=false" >> "$GITHUB_ENV"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            cat ".provekit/ci-shadow/${{ matrix.kit }}/reuse-error.txt"
+          fi
+
+      - name: "prove-${{ matrix.kit }}"
+        if: steps.cicp_reuse.outputs.hit != 'true'
+        run: make prove-${{ matrix.kit }}
+
+      - name: "CICP candidate result (${{ matrix.kit }})"
+        if: steps.cicp_reuse.outputs.hit != 'true'
+        run: |
+          implementations/rust/target/release/provekit ci result \
+            --blast-radius ".provekit/ci-shadow/${{ matrix.kit }}/blast-radius.json" \
+            --out ".provekit/ci-shadow/${{ matrix.kit }}/job-result.json" \
+            --producer-name github-actions \
+            --producer-version "${{ github.run_id }}.${{ github.run_attempt }}" \
+            --json
+
+      - name: "Upload CICP shadow (${{ matrix.kit }})"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicp-shadow-${{ matrix.kit }}
+          path: .provekit/ci-shadow/${{ matrix.kit }}
+
+  prove-swift:
+    name: "prove-swift (C1-C8 conformance, macOS)"
+    # Self-hosted Mac runner (issue #305).
+    runs-on: [self-hosted, macOS, X64]
+    timeout-minutes: 20
+    needs: conformance
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: CICP shadow blast radius (swift)
+        run: |
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci shadow \
+            --kit swift \
+            --out-dir .provekit/ci-shadow/swift \
+            --runner-identity "github-actions/${{ runner.os }}/${{ runner.arch }}" \
+            --json
+
+      - name: CICP reuse admission (swift)
+        id: cicp_reuse
+        run: |
+          set +e
+          implementations/rust/target/release/provekit ci reuse \
+            --current-blast-radius .provekit/ci-shadow/swift/blast-radius.json \
+            --accepted-dir .provekit/ci/accepted \
+            --reuse-out .provekit/ci-shadow/swift/reuse.json \
+            --json > .provekit/ci-shadow/swift/reuse-summary.json \
+            2> .provekit/ci-shadow/swift/reuse-error.txt
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "CICP_REUSE_HIT=true" >> "$GITHUB_ENV"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            cat .provekit/ci-shadow/swift/reuse-summary.json
+          else
+            echo "CICP_REUSE_HIT=false" >> "$GITHUB_ENV"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            cat .provekit/ci-shadow/swift/reuse-error.txt
+          fi
+
+      - name: prove-swift
+        if: steps.cicp_reuse.outputs.hit != 'true'
+        run: make prove-swift
+
+      - name: CICP candidate result (swift)
+        if: steps.cicp_reuse.outputs.hit != 'true'
+        run: |
+          implementations/rust/target/release/provekit ci result \
+            --blast-radius .provekit/ci-shadow/swift/blast-radius.json \
+            --out .provekit/ci-shadow/swift/job-result.json \
+            --producer-name github-actions \
+            --producer-version "${{ github.run_id }}.${{ github.run_attempt }}" \
+            --json
+
+      - name: Upload CICP shadow (swift)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicp-shadow-swift
+          path: .provekit/ci-shadow/swift
+
+  cicp-refresh:
+    name: CICP PR witness refresh
+    if: >-
+      always() &&
+      !cancelled() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.prove-linux.result == 'success' &&
+      needs.prove-swift.result == 'success'
+    runs-on: [self-hosted, Linux, X64, vault]
+    timeout-minutes: 15
+    needs:
+      - prove-linux
+      - prove-swift
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download CICP candidate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cicp-shadow-*
+          path: .provekit/ci-artifacts
+          merge-multiple: false
+
+      - name: Prepare CICP results directory
+        run: |
+          set -euo pipefail
+          rm -rf .provekit/ci-shadow
+          mkdir -p .provekit/ci-shadow
+          shopt -s nullglob
+          found=0
+          for artifact in .provekit/ci-artifacts/cicp-shadow-*; do
+            kit="${artifact##*/cicp-shadow-}"
+            mkdir -p ".provekit/ci-shadow/${kit}"
+            cp -R "${artifact}/." ".provekit/ci-shadow/${kit}/"
+            found=1
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "No CICP candidate artifacts were downloaded." >&2
+            exit 1
+          fi
+
+      - name: Accept successful CICP candidates
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci accept \
+            --repo . \
+            --all-kits \
+            --results-dir .provekit/ci-shadow \
+            --json
+
+      - name: Commit refreshed CICP witnesses
+        env:
+          CICP_GH_TOKEN_FILE: /run/vault/github-pat
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git add .provekit/ci/accepted
+          if git diff --cached --quiet; then
+            echo "CICP accepted witnesses are already current."
+            exit 0
+          fi
+          token_file="$RUNNER_TEMP/cicp-gh-token"
+          rm -f "$token_file"
+          if [ ! -s "$CICP_GH_TOKEN_FILE" ]; then
+            echo "Vault-rendered GitHub token file missing or empty: $CICP_GH_TOKEN_FILE" >&2
+            exit 1
+          fi
+          if [ -r "$CICP_GH_TOKEN_FILE" ]; then
+            tr -d '\r\n' < "$CICP_GH_TOKEN_FILE" > "$token_file"
+          else
+            echo "Vault-rendered GitHub token file is not readable by $(id -un); trying sudo copy." >&2
+            if ! sudo -n sh -c 'tr -d "\r\n" < "$1"' sh "$CICP_GH_TOKEN_FILE" > "$token_file"; then
+              echo "Vault-rendered GitHub token file is not readable and sudo copy failed: $CICP_GH_TOKEN_FILE" >&2
+              exit 1
+            fi
+          fi
+          chmod 600 "$token_file"
+          if [ ! -s "$token_file" ]; then
+            echo "Vault-rendered GitHub token was empty after staging: $CICP_GH_TOKEN_FILE" >&2
+            exit 1
+          fi
+          git diff --cached --name-only
+          git config user.name "provekit-ci"
+          git config user.email "provekit-ci@users.noreply.github.com"
+          git commit -m "Refresh CICP accepted witnesses"
+          token="$(cat "$token_file")"
+          git push "https://x-access-token:${token}@github.com/${GH_REPOSITORY}.git" "HEAD:${PR_HEAD_REF}"
+          echo "Pushed refreshed CICP accepted witnesses; the new PR head will run CI."

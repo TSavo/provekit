@@ -1,0 +1,22 @@
+{
+  "fn_name": "gap:java:addr:to:concept:addr",
+  "gap_kind": "missing-source-op",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "source_supported": false
+  },
+  "reason_note": "operation not in supported set for this language",
+  "resolution_options": [
+    {
+      "option_kind": "accept-permanent",
+      "status": "recommended",
+      "tradeoff": "language genuinely lacks this op or the language signature directory is missing; the only path is to add the op to the language spec"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "java",
+  "source_op_cid": "blake3-512:gap-no-source-cid-java-addr",
+  "target_concept_op": "concept:addr",
+  "target_op_cid": "blake3-512:5d632655150ebe3b7b5b828bb86a7d051c57d5110794375a2e1f707eb69a3948586d9a0ffe575e6eefe0c99f462bea62904e7b1491a556c975626233b2c140f7"
+}

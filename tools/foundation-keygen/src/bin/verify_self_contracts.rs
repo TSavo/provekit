@@ -3,24 +3,29 @@
 // verify-self-contracts
 //
 // Letter-envelope attestation verifier for per-language self-contracts
-// bundles. Performs the four checks the conformance gate cares about
-// in one invocation, no external tools (no `jq`, etc.) required:
+// bundles. Performs the four trust-path checks the conformance gate cares
+// about in one invocation, no external tools (no `jq`, etc.) required:
 //
 //   1. The attestation file parses as JSON with the expected fields.
 //   2. The attestation's `signer` matches the on-disk
 //      `.provekit/keys/foundation-v0.pub`.
 //   3. The Ed25519 signature verifies against the rebuilt JCS-encoded
-//      six-field message body.
-//   4. The attestation's `cid` field equals the observed CID passed in
-//      by the caller (typically the freshly-minted output of
-//      `provekit mint`).
+//      message body (now covering contractSetCid per spec #94).
+//   4. The attestation's `contractSetCid` field equals the observed
+//      contractSetCid passed in by the caller. This is the trust-path
+//      comparison per spec #94: content-only, signer-independent.
+//
+// Bundle CID drift (attestation.cid != observed bundle bytes) is reported
+// as a SOFT WARNING (eprintln! + exit 0). It is diagnostic only: bundles
+// may differ across machines/runs due to envelope timestamps while the
+// contractSetCid remains byte-identical. See spec #94 §0.
 //
 // Usage:
 //
-//   verify-self-contracts <attestation.json> <observed-cid>
+//   verify-self-contracts <attestation.json> <observed-contract-set-cid>
 //
-// Exits 0 iff all four checks pass; non-zero with a diagnostic on the
-// first failed check otherwise.
+// Exits 0 iff signer + signature + contractSetCid all match.
+// Exits non-zero with a diagnostic on the first failed check.
 
 use std::fs;
 use std::path::Path;
@@ -49,12 +54,12 @@ fn run() -> Result<(), String> {
     let attestation_path = args
         .next()
         .ok_or_else(|| "missing <attestation.json> argument".to_string())?;
-    let observed_cid = args
+    let observed_contract_set_cid = args
         .next()
-        .ok_or_else(|| "missing <observed-cid> argument".to_string())?;
+        .ok_or_else(|| "missing <observed-contract-set-cid> argument".to_string())?;
     if args.next().is_some() {
         return Err(
-            "unexpected extra arguments; usage: verify-self-contracts <attestation.json> <observed-cid>"
+            "unexpected extra arguments; usage: verify-self-contracts <attestation.json> <observed-contract-set-cid>"
                 .to_string(),
         );
     }
@@ -68,7 +73,7 @@ fn run() -> Result<(), String> {
     let verdict = verify_signed_self_contracts_attestation(
         &attestation_bytes,
         &trusted_pubkey,
-        &observed_cid,
+        &observed_contract_set_cid,
     )?;
 
     if !verdict.signer_matches {
@@ -83,14 +88,17 @@ fn run() -> Result<(), String> {
             trusted_pubkey
         ));
     }
-    if !verdict.cid_matches {
+    if !verdict.contract_set_cid_matches {
         return Err(format!(
-            "CID drift: attestation claims `{}`, observed `{}`",
-            verdict.claimed_cid, verdict.observed_cid
+            "contractSetCid drift: attestation claims `{}`, observed `{}`",
+            verdict.claimed_contract_set_cid, verdict.observed_contract_set_cid
         ));
     }
 
-    println!("OK  {} (cid {})", attestation_path, verdict.claimed_cid);
+    println!(
+        "OK  {} (contractSetCid {})",
+        attestation_path, verdict.claimed_contract_set_cid
+    );
     Ok(())
 }
 

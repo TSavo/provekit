@@ -10,10 +10,42 @@ using ::provekit::canonicalizer::Value;
 using ::provekit::canonicalizer::ValuePtr;
 
 ValuePtr sort_to_value(const ::provekit::ir::Sort& sort) {
-    return Value::object({
-        {"kind", Value::string("primitive")},
-        {"name", Value::string(sort.name)},
-    });
+    return std::visit(
+        [&](const auto& s) -> ValuePtr {
+            using S = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<S, ::provekit::ir::PrimitiveSort>) {
+                // Locked key order: kind, name.
+                return Value::object({
+                    {"kind", Value::string("primitive")},
+                    {"name", Value::string(s.name)},
+                });
+            } else if constexpr (std::is_same_v<S, ::provekit::ir::FunctionSort>) {
+                std::vector<ValuePtr> arg_values;
+                arg_values.reserve(s.args.size());
+                for (const auto& a : s.args) arg_values.push_back(sort_to_value(*a));
+                // Locked key order: kind, args, return.
+                return Value::object({
+                    {"kind", Value::string("function")},
+                    {"args", Value::array(arg_values)},
+                    {"return", sort_to_value(*s.return_)},
+                });
+            } else if constexpr (std::is_same_v<S, ::provekit::ir::DependentSort>) {
+                // Locked key order: kind, name, indexVar, indexSort.
+                return Value::object({
+                    {"kind", Value::string("dependent")},
+                    {"name", Value::string(s.name)},
+                    {"indexVar", Value::string(s.indexVar)},
+                    {"indexSort", sort_to_value(*s.indexSort)},
+                });
+            } else if constexpr (std::is_same_v<S, ::provekit::ir::RegionSort>) {
+                // Locked key order: kind, name.
+                return Value::object({
+                    {"kind", Value::string("region")},
+                    {"name", Value::string(s.name)},
+                });
+            }
+        },
+        sort.v);
 }
 
 ValuePtr term_to_value(const ::provekit::ir::Term& term) {
@@ -110,7 +142,7 @@ ValuePtr formula_to_value(const ::provekit::ir::Formula& formula) {
                     {"operands", Value::array(operand_values)},
                 });
             } else if constexpr (std::is_same_v<F, ::provekit::ir::QuantifierFormula>) {
-                // Locked key order: kind, name, sort, body. (Flat — no Lambda wrapper.)
+                // Locked key order: kind, name, sort, body. (Flat: no Lambda wrapper.)
                 return Value::object({
                     {"kind", Value::string(f.kind)},
                     {"name", Value::string(f.name)},

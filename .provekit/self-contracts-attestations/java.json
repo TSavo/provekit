@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1",
+  "kind": "self-contracts-attestation",
+  "lang": "java",
+  "cid": "blake3-512:edcd4a4dbdbc885a1f5aa998b59a8ac0862f538a9eff6c0d08274418f690f2f46f84442f9d62f24afed26594a37e2e1ebb327e9421368d2323c8c47c4909bb3d",
+  "contractSetCid": "blake3-512:36bf7c78c12b59cb77bf16d12b5a568ec80a590512a31578801caeee56edbc95317eef0a95993309d02711a2cf2d7a210de9e6db972dae819f8dfa28bc10f21b",
+  "declaredAt": "2026-05-05T18:00:00Z",
+  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "signature": "ed25519:BE8zyD31O+bdhpGCurVckUzxUXREmGHNJ2fAxZD57nZgF7/oygRS5/c/h4sjAlOv/7fsrqJw1QjnJsb1EcOgDQ=="
+}

@@ -35,7 +35,7 @@ export class LeanUnsupportedError extends Error {
  * primitives are emitted as bare identifiers (the caller is responsible for
  * declaring them as opaque types in the preamble).
  *
- * Tuple, set, and function sorts throw — they require Mathlib lemmas that
+ * Tuple, set, and function sorts throw: they require Mathlib lemmas that
  * the translator does not commit to.
  */
 export function emitSort(sort: Sort): string {
@@ -55,6 +55,10 @@ export function emitSort(sort: Sort): string {
     case "function":
       throw new LeanUnsupportedError(
         "Lean translator: function sorts are not first-class in the FOL fragment. Declare an opaque function symbol via `axiom f : T1 -> T2` in the kit and use it as a ctor.",
+      );
+    case "dependent":
+      throw new LeanUnsupportedError(
+        "Lean translator: dependent sorts are out of scope for the FOL fragment.",
       );
     default:
       throw new LeanUnsupportedError(`Lean translator: unknown sort kind ${(sort as { kind: string }).kind}`);
@@ -84,8 +88,11 @@ export function collectUserSorts(sort: Sort, out: Set<string>): void {
       for (const e of sort.elements) collectUserSorts(e, out);
       return;
     case "function":
-      for (const d of sort.domain) collectUserSorts(d, out);
-      collectUserSorts(sort.range, out);
+      for (const d of sort.args) collectUserSorts(d, out);
+      collectUserSorts(sort.return, out);
+      return;
+    case "dependent":
+      collectUserSorts(sort.indexSort, out);
       return;
   }
 }

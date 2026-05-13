@@ -2,7 +2,7 @@
 //
 // recompute-spec-cids
 //
-// Catalog freeze tool (current target: v1.3.1). Computes BLAKE3-512 CIDs for every protocol
+// Catalog freeze tool (current target: v1.6.4). Computes BLAKE3-512 CIDs for every protocol
 // spec file listed in `protocol/specs/2026-04-30-protocol-catalog.json`,
 // substitutes them into the catalog (replacing `RECOMPUTE-AFTER-*`
 // placeholders), then computes the catalog's own CID as
@@ -45,8 +45,14 @@
 // Catalog property key -> spec file basename (without extension):
 const SPEC_MAP: &[(&str, &str)] = &[
     ("ir-formal-grammar", "2026-04-30-ir-formal-grammar.md"),
-    ("canonicalization-grammar", "2026-04-30-canonicalization-grammar.md"),
-    ("memento-envelope-grammar", "2026-04-30-memento-envelope-grammar.md"),
+    (
+        "canonicalization-grammar",
+        "2026-04-30-canonicalization-grammar.md",
+    ),
+    (
+        "memento-envelope-grammar",
+        "2026-04-30-memento-envelope-grammar.md",
+    ),
     (
         "signatures-and-non-repudiation",
         "2026-04-30-signatures-and-non-repudiation.md",
@@ -55,7 +61,10 @@ const SPEC_MAP: &[(&str, &str)] = &[
         "chain-validity-and-fail-closed",
         "2026-04-30-chain-validity-and-fail-closed.md",
     ),
-    ("ir-extension-protocol", "2026-04-30-ir-extension-protocol.md"),
+    (
+        "ir-extension-protocol",
+        "2026-04-30-ir-extension-protocol.md",
+    ),
     ("proof-file-format", "2026-04-30-proof-file-format.md"),
     ("semantic-envelope", "2026-04-29-the-semantic-envelope.md"),
     (
@@ -83,25 +92,48 @@ const SPEC_MAP: &[(&str, &str)] = &[
         "agent-plugin-protocol",
         "2026-04-30-agent-plugin-protocol.md",
     ),
-    (
-        "ir-compiler-protocol",
-        "2026-04-30-ir-compiler-protocol.md",
-    ),
+    ("ir-compiler-protocol", "2026-04-30-ir-compiler-protocol.md"),
     (
         "multi-solver-protocol",
         "2026-04-30-multi-solver-protocol.md",
     ),
-    (
-        "lift-plugin-protocol",
-        "2026-04-30-lift-plugin-protocol.md",
-    ),
+    ("lift-plugin-protocol", "2026-04-30-lift-plugin-protocol.md"),
     (
         "correctness-is-a-hash",
         "2026-04-29-correctness-is-a-hash.md",
     ),
+    ("lsp-protocol", "2026-04-30-lsp-protocol.md"),
     (
-        "lsp-protocol",
-        "2026-04-30-lsp-protocol.md",
+        "contract-cid-vs-attestation-cid",
+        "2026-05-03-contract-cid-vs-attestation-cid.md",
+    ),
+    (
+        "contract-set-extension",
+        "2026-05-03-contract-set-extension.md",
+    ),
+    (
+        "substrate-layers-envelope-header-body",
+        "2026-05-03-substrate-layers-envelope-header-body.md",
+    ),
+    (
+        "version-chains-pinning",
+        "2026-05-03-version-chains-pinning.md",
+    ),
+    (
+        "protocol-evolution-protocol",
+        "2026-05-07-protocol-evolution-protocol.md",
+    ),
+    (
+        "content-addressed-ci-protocol",
+        "2026-05-07-content-addressed-ci-protocol.md",
+    ),
+    (
+        "pattern-predicate-protocol",
+        "2026-05-09-pattern-predicate-protocol.md",
+    ),
+    (
+        "contract-composition-protocol",
+        "2026-05-09-contract-composition-protocol.md",
     ),
 ];
 
@@ -184,8 +216,8 @@ fn run(write: bool) -> Result<(), String> {
     //    serde_json's preserve_order feature).
     let catalog_text = fs::read_to_string(&catalog_path)
         .map_err(|e| format!("read {}: {}", catalog_path.display(), e))?;
-    let mut catalog: JsonValue = serde_json::from_str(&catalog_text)
-        .map_err(|e| format!("parse catalog json: {}", e))?;
+    let mut catalog: JsonValue =
+        serde_json::from_str(&catalog_text).map_err(|e| format!("parse catalog json: {}", e))?;
 
     // 3. Cross-check: every catalog property key must be in our SPEC_MAP,
     //    and every SPEC_MAP key must be in the catalog. Surface any drift.
@@ -273,7 +305,7 @@ fn run(write: bool) -> Result<(), String> {
     }
 
     // 7. Report.
-    println!("# Protocol catalog freeze (v1.3.1)");
+    println!("# Protocol catalog freeze (v1.6.4)");
     println!();
     println!("Catalog file:    {}", catalog_path.display());
     println!("Catalog CID:     {}", catalog_cid);

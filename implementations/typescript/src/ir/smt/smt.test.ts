@@ -40,7 +40,7 @@ function ctor(name: string, args: IrTerm[], sort: Sort): IrTerm {
 // Per-node-kind emission
 // ---------------------------------------------------------------------------
 
-describe("emitSmtLib — per node kind", () => {
+describe("emitSmtLib: per node kind", () => {
   it("emits forall with sort and binder", () => {
     const f = forAll(Int, (x) => A.equal(x, x));
     expect(emitSmtLib(f)).toBe("(forall ((_x0 Int)) (= _x0 _x0))");
@@ -114,7 +114,7 @@ describe("emitSmtLib — per node kind", () => {
 // Quantifier nesting + binder name preservation
 // ---------------------------------------------------------------------------
 
-describe("emitSmtLib — quantifier scoping", () => {
+describe("emitSmtLib: quantifier scoping", () => {
   it("preserves distinct binder names under nesting", () => {
     const f = forAll(Int, (x) => forAll(Int, (y) => A.lessThan(x, y)));
     expect(emitSmtLib(f)).toBe(
@@ -154,7 +154,7 @@ describe("emitSmtLib — quantifier scoping", () => {
 // Sort mapping
 // ---------------------------------------------------------------------------
 
-describe("emitSmtLib — sort mapping", () => {
+describe("emitSmtLib: sort mapping", () => {
   it("maps Bool/Int/Real/String to SMT-LIB built-ins", () => {
     expect(emitSmtLib(forAll(Bool, () => A.equal(1, 1)))).toContain("Bool");
     expect(emitSmtLib(forAll(Int, () => A.equal(1, 1)))).toContain("Int");
@@ -177,7 +177,7 @@ describe("emitSmtLib — sort mapping", () => {
 // Constant literals
 // ---------------------------------------------------------------------------
 
-describe("emitSmtLib — constants", () => {
+describe("emitSmtLib: constants", () => {
   it("renders integer literals", () => {
     expect(emitSmtLib(A.equal(1, 1))).toBe("(= 1 1)");
   });
@@ -307,10 +307,10 @@ describe("emitSmtLibProblem", () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// sorts module — direct API
+// sorts module: direct API
 // ---------------------------------------------------------------------------
 
-describe("smt/sorts — emitSort", () => {
+describe("smt/sorts: emitSort", () => {
   it("maps each built-in primitive name correctly", () => {
     expect(emitSort(Int)).toBe("Int");
     expect(emitSort(Real)).toBe("Real");
@@ -332,14 +332,14 @@ describe("smt/sorts — emitSort", () => {
     );
   });
 
-  it("emits function sorts as (-> dom range)", () => {
+  it("emits function sorts as (-> dom ret)", () => {
     expect(
-      emitSort({ kind: "function", domain: [Int, Real], range: Bool }),
+      emitSort({ kind: "function", args: [Int, Real], return: Bool }),
     ).toBe("(-> Int Real Bool)");
   });
 });
 
-describe("smt/sorts — collectUserSorts", () => {
+describe("smt/sorts: collectUserSorts", () => {
   it("ignores built-in sorts", () => {
     const out = new Set<string>();
     collectUserSorts(Int, out);
@@ -352,12 +352,12 @@ describe("smt/sorts — collectUserSorts", () => {
     const ux: Sort = { kind: "primitive", name: "USort" };
     collectUserSorts(SetOf(ux), out);
     collectUserSorts({ kind: "tuple", elements: [Int, ux] }, out);
-    collectUserSorts({ kind: "function", domain: [ux], range: ux }, out);
+    collectUserSorts({ kind: "function", args: [ux], return: ux }, out);
     expect([...out]).toEqual(["USort"]);
   });
 });
 
-describe("smt/sorts — isBuiltInPrimitive", () => {
+describe("smt/sorts: isBuiltInPrimitive", () => {
   it("recognizes built-ins", () => {
     expect(isBuiltInPrimitive("Int")).toBe(true);
     expect(isBuiltInPrimitive("Bool")).toBe(true);
@@ -372,10 +372,10 @@ describe("smt/sorts — isBuiltInPrimitive", () => {
 });
 
 // ---------------------------------------------------------------------------
-// declarations module — direct API
+// declarations module: direct API
 // ---------------------------------------------------------------------------
 
-describe("smt/declarations — collectDeclarations", () => {
+describe("smt/declarations: collectDeclarations", () => {
   it("collects user sorts from quantifier sorts", () => {
     const f = forAll(cents, (x) => A.equal(x, x));
     const decls = collectDeclarations([f]);
@@ -436,7 +436,7 @@ describe("smt/declarations — collectDeclarations", () => {
   });
 });
 
-describe("smt/declarations — emitters", () => {
+describe("smt/declarations: emitters", () => {
   it("emitSortDeclarations renders one (declare-sort) line per user sort", () => {
     const decls = collectDeclarations([forAll(cents, (x) => A.equal(x, x))]);
     expect(emitSortDeclarations(decls)).toEqual(["(declare-sort Cents 0)"]);
@@ -473,10 +473,10 @@ describe("emitFormula (direct emit module)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Constants — bigint & negative bigint encoding
+// Constants: bigint & negative bigint encoding
 // ---------------------------------------------------------------------------
 
-describe("emitSmtLib — bigint constants", () => {
+describe("emitSmtLib: bigint constants", () => {
   it("renders positive bigint as bare integer", () => {
     const f: IrFormula = {
       kind: "atomic",
@@ -502,7 +502,7 @@ describe("emitSmtLib — bigint constants", () => {
   });
 });
 
-describe("emitSmtLib — null constant rejection", () => {
+describe("emitSmtLib: null constant rejection", () => {
   it("throws when emitting a null const", () => {
     const f: IrFormula = {
       kind: "atomic",
@@ -516,7 +516,7 @@ describe("emitSmtLib — null constant rejection", () => {
   });
 });
 
-describe("emitSmtLib — true/false predicate args", () => {
+describe("emitSmtLib: true/false predicate args", () => {
   it("emits atomic 'true' with no args as the literal true", () => {
     const f: IrFormula = { kind: "atomic", name: "true", args: [] };
     expect(emitSmtLib(f)).toBe("true");
@@ -546,7 +546,7 @@ describe("emitSmtLib — true/false predicate args", () => {
   });
 });
 
-describe("emitSmtLib — structural sanity", () => {
+describe("emitSmtLib: structural sanity", () => {
   it("output has balanced parentheses", () => {
     const f = forAll(Int, (x) =>
       exists(Int, (y) => and(A.lessThan(x, y), implies(A.equal(x, 0), A.equal(y, 1)))),
@@ -571,7 +571,7 @@ describe("emitSmtLib — structural sanity", () => {
 // Bitvector theory
 // ---------------------------------------------------------------------------
 
-describe("emitSmtLib — BV sort emission", () => {
+describe("emitSmtLib: BV sort emission", () => {
   it("renders bitvec sorts as (_ BitVec N)", () => {
     expect(emitSort(BV(8))).toBe("(_ BitVec 8)");
     expect(emitSort(BV(32))).toBe("(_ BitVec 32)");
@@ -591,7 +591,7 @@ describe("emitSmtLib — BV sort emission", () => {
   });
 });
 
-describe("emitSmtLib — BV constants", () => {
+describe("emitSmtLib: BV constants", () => {
   it("renders a BV literal as (_ bv<N> <W>)", () => {
     const f: IrFormula = {
       kind: "atomic",
@@ -641,7 +641,7 @@ describe("emitSmtLib — BV constants", () => {
   });
 });
 
-describe("emitSmtLib — BV term operators", () => {
+describe("emitSmtLib: BV term operators", () => {
   function bvVar(name: string, _width: number): IrTerm {
     void _width;
     return { kind: "var", name };
@@ -683,7 +683,7 @@ describe("emitSmtLib — BV term operators", () => {
   });
 });
 
-describe("emitSmtLib — BV comparison predicates", () => {
+describe("emitSmtLib: BV comparison predicates", () => {
   function bvVar(name: string, _width: number): IrTerm {
     void _width;
     return { kind: "var", name };
@@ -720,7 +720,7 @@ describe("emitSmtLib — BV comparison predicates", () => {
   });
 });
 
-describe("emitSmtLibProblem — BV theory built-ins are not declared", () => {
+describe("emitSmtLibProblem: BV theory built-ins are not declared", () => {
   function bvVar(name: string, _width: number): IrTerm {
     void _width;
     return { kind: "var", name };
@@ -774,7 +774,7 @@ describe("emitSmtLibProblem — BV theory built-ins are not declared", () => {
   });
 });
 
-describe("collectDeclarations — BV theory dedup", () => {
+describe("collectDeclarations: BV theory dedup", () => {
   it("does not record bvadd / bvxor / extract as ctor declarations", () => {
     const x: IrTerm = { kind: "var", name: "x"};
     const f: IrFormula = {

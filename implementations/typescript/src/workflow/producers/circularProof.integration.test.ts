@@ -1,5 +1,5 @@
 /**
- * Circular Proof Demo — Working Integration Test
+ * Circular Proof Demo: Working Integration Test
  * 
  * Demonstrates cross-language verification:
  *   TS processValue → C++ multiply2x → Go addThree → TS finalizeValue
@@ -206,7 +206,7 @@ describe("circular proof: TS → C++ → Go → TS", () => {
       });
 
       // ================================================================
-      // Node 4: TypeScript (finalizeValue) — circular back to TS!
+      // Node 4: TypeScript (finalizeValue): circular back to TS!
       // Contract: output = input * 2
       // Bridge from Go: Go calls finalizeValue
       // ================================================================

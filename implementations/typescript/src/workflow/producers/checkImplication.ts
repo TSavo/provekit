@@ -1,5 +1,5 @@
 /**
- * check-implication Stage — directional implication test between two
+ * check-implication Stage: directional implication test between two
  * propertyHashes' SMT translations.
  *
  * The forensic core question for a library bump: when a propertyHash CID
@@ -19,7 +19,7 @@
  *
  * Either probe can return "unknown" (Z3 didn't decide within the budget).
  * The Stage surfaces the underlying verdicts so the caller can decide
- * how to handle undecidable corners — typically falling back to LLM
+ * how to handle undecidable corners: typically falling back to LLM
  * judgment OR surfacing "undecidable" as a load-bearing answer in the
  * forensic report ("the change crossed into a regime where mechanical
  * comparison fails").
@@ -171,7 +171,6 @@ export function makeCheckImplicationStage(
       
       const probeAB = wrapImplicationProbe(input.newSmt, input.oldSmt);
       const probeBA = wrapImplicationProbe(input.oldSmt, input.newSmt);
-
       // Process SMT-LIB solvers
       const smtResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = smtSolvers.length > 0 
         ? await Promise.all(
@@ -343,49 +342,116 @@ function classifyVerdict(
 }
 
 /**
+ * Lazy singleton for the z3-solver WebAssembly module. We prefer WASM
+ * because it eliminates the system-binary dependency that breaks CI
+ * when `z3` is not on $PATH. The init Promise is cached so every
+ * solver invocation shares a single wasm compile+instantiation.
+ */
+let _z3WasmReady: Promise<any> | null = null;
+
+function getZ3Wasm(): Promise<any> {
+  if (!_z3WasmReady) {
+    _z3WasmReady = (async () => {
+      try {
+        const z3 = require("z3-solver");
+        const api = await z3.init();
+        return api;
+      } catch (e) {
+        _z3WasmReady = null; // reset on failure so next call can retry
+        throw e;
+      }
+    })();
+  }
+  return _z3WasmReady;
+}
+
+/**
+ * Feed an SMT-LIB2 script to the WASM z3-solver and return its
+ * check-sat verdict. No system binary required.
+ */
+async function invokeSolverWasm(
+  script: string,
+  timeoutMs: number,
+): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
+  try {
+    const api = await getZ3Wasm();
+    const ctx = new api.Context("main");
+    const solver = new ctx.Solver();
+    if (timeoutMs > 0) solver.set("timeout", timeoutMs);
+    solver.fromString(script);
+    const result = await solver.check();
+    if (result === "sat" || result === "unsat") return result;
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
  * Solver-agnostic invocation. The SolverEntry describes everything
  * needed to run any SMT-LIB-2.6-conformant solver: binary + flags with
  * {{TIMEOUT_S}} and {{TIMEOUT_MS}} placeholders. Adding a new solver
  * (Bitwuzla, Boolector, MathSAT, …) is a YAML edit, not a TS edit.
+ *
+ * For smt-lib entries the WASM-based z3-solver is tried first (no
+ * system binary required). If WASM fails, we fall back to the solver
+ * pool (long-lived processes) to avoid per-invocation spawn overhead.
  */
 export async function invokeSolver(
   solver: SolverEntry,
   script: string,
 ): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
-  const timeoutMs = solver.timeoutMs;
-  const args = solver.flags.map((flag) =>
-    flag
-      .replaceAll("{{TIMEOUT_MS}}", String(timeoutMs))
-      .replaceAll("{{TIMEOUT_S}}", String(Math.ceil(timeoutMs / 1000))),
-  );
-  return new Promise((resolve) => {
-    let child;
+  // Primary path: WASM z3-solver (works without a system binary)
+  if (solver.compiler === "smt-lib") {
     try {
-      child = spawn(solver.binary, args, { stdio: ["pipe", "pipe", "pipe"] });
+      return await invokeSolverWasm(script, solver.timeoutMs);
     } catch {
-      resolve("unknown");
-      return;
+      // Fall through to pool-based fallback
     }
-    let stdout = "";
-    if (child.stdout) child.stdout.on("data", (c) => (stdout += c.toString()));
-    if (child.stderr) child.stderr.on("data", () => { /* discard */ });
-    const timer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch { /* ignore */ }
-      resolve("timeout");
-    }, timeoutMs + 250);
-    child.on("error", () => { clearTimeout(timer); resolve("unknown"); });
-    child.on("close", () => {
-      clearTimeout(timer);
-      const lines = stdout.trim().split("\n").map((l) => l.trim());
-      const last = lines[lines.length - 1] ?? "";
-      if (last === "sat" || last === "unsat" || last === "unknown") resolve(last);
-      else resolve("unknown");
-    });
-    if (child.stdin) {
-      child.stdin.write(script);
-      child.stdin.end();
+  }
+
+  // Fallback: use solver pool for system binary
+  return await invokeSolverViaPool(solver, script);
+}
+
+/**
+ * Invoke a solver via the long-lived worker pool. Extracts declarations
+ * from the script and uses (push)/(pop) for per-query isolation.
+ */
+async function invokeSolverViaPool(
+  solver: SolverEntry,
+  script: string,
+): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
+  // Late import to avoid circular dependency at module load time
+  const { getGlobalPool } = await import("../../test-support/smtPool.js");
+  const pool = await getGlobalPool();
+  const worker = await pool.acquire();
+
+  try {
+    worker.push();
+
+    // Send each line of the script (declarations + assertions)
+    for (const line of script.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0 || trimmed.startsWith(";")) continue;
+
+      if (trimmed.startsWith("(declare-") || trimmed.startsWith("(assert")) {
+        worker.assert(trimmed);
+      } else if (trimmed.startsWith("(check-sat")) {
+        // Skip; we'll call checkSat() explicitly
+      } else if (!trimmed.startsWith("(set-logic")) {
+        // Other commands: skip (set-logic will be implicit in pool)
+      }
     }
-  });
+
+    const result = await worker.checkSat(solver.timeoutMs);
+    return result;
+  } catch {
+    return "unknown";
+  } finally {
+    worker.pop();
+    worker.release();
+  }
 }
 
 /**

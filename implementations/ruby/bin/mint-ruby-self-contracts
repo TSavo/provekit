@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+# SPDX-License-Identifier: Apache-2.0
+#
+# mint-ruby-self-contracts: RPC entry point for the ruby-self-contracts
+# lift surface, plus direct CLI invocation.
+#
+# Speaks the lift-plugin protocol (pep/1.7.0) over NDJSON on stdio
+# when invoked with --rpc. Otherwise mints once into the given output
+# directory (or a tmpdir) for human inspection.
+#
+# Spec: protocol/specs/2026-04-30-lift-plugin-protocol.md
+
+# Re-exec under a modern Ruby if started on the macOS system Ruby (< 3.0).
+# Endless-method syntax (def f = expr) and Struct keyword_init are 3.0+.
+if RUBY_VERSION < "3.0"
+  candidates = [
+    "/opt/homebrew/opt/ruby/bin/ruby",
+    "/usr/local/opt/ruby/bin/ruby",
+    "/opt/homebrew/bin/ruby",
+    "/usr/local/bin/ruby",
+  ]
+  better = candidates.find { |p| File.executable?(p) }
+  if better && better != RbConfig.ruby
+    exec(better, __FILE__, *ARGV)
+  end
+end
+
+require_relative "../lib/provekit/self_contracts"
+
+exit Provekit::SelfContracts.main(ARGV)

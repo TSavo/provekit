@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:not",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    }
+  ],
+  "formals": [
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Bool"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "not",
+    "result": "Bool",
+    "wp": "! value"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Bool"
+  }
+}

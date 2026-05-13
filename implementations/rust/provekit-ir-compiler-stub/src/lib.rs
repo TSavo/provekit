@@ -35,6 +35,12 @@ impl IrCompiler for StubCompiler {
                 name: "stub_var".to_string(),
                 sort: "Stub".to_string(),
             }],
+            opacity_manifest: provekit_ir_compiler::OpacityManifest {
+                protocol_version: "ir-compiler-protocol/2".to_string(),
+                compiler: DIALECT.to_string(),
+                compiler_version: env!("CARGO_PKG_VERSION").to_string(),
+                opacities: vec![],
+            },
         })
     }
 

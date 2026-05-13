@@ -12,9 +12,9 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, begin_collecting, contract, eq, exists, finish, forall, gt, gte, implies,
-    lt, lte, must, ne, not_, num, or_, out, parse_int, reset_collector, str_const, ContractArgs,
-    ConstValue, Formula, Int, Sort, Term, lambda, let_term, choice,
+    and_, atomic_, begin_collecting, choice, contract, eq, exists, finish, forall, gt, gte,
+    implies, lambda, let_term, lt, lte, must, ne, not_, num, or_, out, parse_int, reset_collector,
+    str_const, ConstValue, ContractArgs, Formula, Int, Sort, Term,
 };
 
 // ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ fn contract_with_only_inv_succeeds() {
 }
 
 // ---------------------------------------------------------------------------
-// Quantifier — fresh bound names
+// Quantifier: fresh bound names
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -137,10 +137,7 @@ fn forall_generates_fresh_sequential_names_after_reset() {
     let f0 = forall(Int(), |_| and_(vec![]));
     let f1 = forall(Int(), |_| and_(vec![]));
     match (f0.as_ref(), f1.as_ref()) {
-        (
-            Formula::Quantifier { name: n0, .. },
-            Formula::Quantifier { name: n1, .. },
-        ) => {
+        (Formula::Quantifier { name: n0, .. }, Formula::Quantifier { name: n1, .. }) => {
             assert_eq!(n0, "_x0");
             assert_eq!(n1, "_x1");
         }
@@ -260,7 +257,7 @@ fn or_passes_through_caller_arity() {
 }
 
 // ---------------------------------------------------------------------------
-// Atomic predicate names — Unicode round-trip
+// Atomic predicate names: Unicode round-trip
 // ---------------------------------------------------------------------------
 
 fn atomic_name(f: &Rc<Formula>) -> String {
@@ -369,7 +366,11 @@ fn primitive_sorts_have_correct_names() {
 fn lambda_has_param_name_sort_and_body() {
     let lam = lambda("x".into(), Int(), num(42));
     match lam.as_ref() {
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             assert_eq!(param_name, "x");
             assert_eq!(param_sort.name, "Int");
             match body.as_ref() {
@@ -404,7 +405,10 @@ fn lambda_param_is_bound_in_body_scope() {
 #[test]
 fn let_has_bindings_and_body() {
     let let_expr = let_term(
-        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        vec![provekit_ir_symbolic::LetBinding {
+            name: "x".into(),
+            bound_term: num(1),
+        }],
         num(2),
     );
     match let_expr.as_ref() {
@@ -434,8 +438,14 @@ fn let_has_bindings_and_body() {
 fn let_with_multiple_bindings_is_sequential() {
     let let_expr = let_term(
         vec![
-            provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) },
-            provekit_ir_symbolic::LetBinding { name: "y".into(), bound_term: num(2) },
+            provekit_ir_symbolic::LetBinding {
+                name: "x".into(),
+                bound_term: num(1),
+            },
+            provekit_ir_symbolic::LetBinding {
+                name: "y".into(),
+                bound_term: num(2),
+            },
         ],
         num(3),
     );
@@ -455,11 +465,13 @@ fn let_with_multiple_bindings_is_sequential() {
 
 #[test]
 fn choice_has_var_name_sort_and_body() {
-    let c = choice("x".into(), Int(), |v| {
-        eq(v, num(0))
-    });
+    let c = choice("x".into(), Int(), |v| eq(v, num(0)));
     match c.as_ref() {
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             assert_eq!(var_name, "x");
             assert_eq!(sort.name, "Int");
             match body.as_ref() {

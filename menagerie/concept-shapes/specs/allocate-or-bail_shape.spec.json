@@ -1,0 +1,162 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "failure_condition": {
+          "args": [
+            {
+              "kind": "var",
+              "name": "n"
+            }
+          ],
+          "kind": "ctor",
+          "name": "alloc_failed"
+        },
+        "kind": "Alloc",
+        "result": "p",
+        "size": "n"
+      }
+    ]
+  },
+  "fn_name": "shape:allocate-or-bail",
+  "formal_sorts": [
+    {
+      "kind": "primitive",
+      "name": "Size"
+    },
+    {
+      "kind": "primitive",
+      "name": "ReturnValue"
+    },
+    {
+      "kind": "primitive",
+      "name": "ReturnValue"
+    },
+    {
+      "kind": "primitive",
+      "name": "Buffer"
+    }
+  ],
+  "formals": [
+    "n",
+    "err",
+    "continuation_value",
+    "p"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "kind": "and",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "ret"
+          },
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "n"
+                  }
+                ],
+                "kind": "ctor",
+                "name": "alloc_failed"
+              },
+              {
+                "kind": "var",
+                "name": "err"
+              },
+              {
+                "kind": "var",
+                "name": "continuation_value"
+              }
+            ],
+            "kind": "ctor",
+            "name": "ite"
+          }
+        ],
+        "kind": "atomic",
+        "name": "="
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "n"
+              }
+            ],
+            "kind": "atomic",
+            "name": "alloc_failed"
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "p"
+              },
+              {
+                "kind": "const",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Buffer"
+                },
+                "value": "null"
+              }
+            ],
+            "kind": "atomic",
+            "name": "="
+          }
+        ]
+      },
+      {
+        "kind": "implies",
+        "operands": [
+          {
+            "kind": "not",
+            "operands": [
+              {
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "n"
+                  }
+                ],
+                "kind": "atomic",
+                "name": "alloc_failed"
+              }
+            ]
+          },
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "p"
+              },
+              {
+                "kind": "var",
+                "name": "n"
+              }
+            ],
+            "kind": "atomic",
+            "name": "valid_buffer"
+          }
+        ]
+      }
+    ]
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "kind": "primitive",
+    "name": "ReturnValue"
+  }
+}

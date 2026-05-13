@@ -9,7 +9,7 @@
  * Built-in sorts (Bool, Int, Real, String) and built-in atomic predicates
  * (=, !=, <, <=, >, >=) are not declared.
  *
- * The translator does NOT invent semantics — it only declares opaque
+ * The translator does NOT invent semantics: it only declares opaque
  * symbols. Axioms about those symbols are the kit's responsibility, the
  * same discipline the SMT translator follows.
  */
@@ -56,7 +56,7 @@ interface CollectorState {
 
 /**
  * Collect declarations from a list of formulas. Duplicate ctors with the
- * same arity are deduplicated; mismatched arities throw — the IR shouldn't
+ * same arity are deduplicated; mismatched arities throw: the IR shouldn't
  * reuse a ctor name with two arities.
  */
 export function collectDeclarations(formulas: IrFormula[]): Declarations {

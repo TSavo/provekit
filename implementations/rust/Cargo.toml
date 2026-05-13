@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "provekit-canonicalizer",
+    "provekit-plugin-loader",
+    "provekit-mint-amp",
     "provekit-proof-envelope",
     "provekit-claim-envelope",
     "provekit-ir-symbolic",
@@ -10,9 +12,17 @@ members = [
     "provekit-ir-compiler-smt-lib",
     "provekit-ir-compiler-stub",
     "provekit-ir-compiler-coq",
+    "provekit-ir-compiler-c",
+    "provekit-ir-compiler-x86-64",
+    "provekit-ir-compiler-wasm",
+    "provekit-ir-compiler-jvm-bytecode",
+    "provekit-ir-compiler-maude",
+    "provekit-ir-compiler-lean",
     "provekit-ir-codegen",
     "provekit-verifier",
     "provekit-self-contracts",
+    "provekit-baseline-rust-std",
+    "libprovekit",
     "provekit-cli",
     "provekit-macros",
     "provekit-macros-rt",
@@ -26,13 +36,29 @@ members = [
     "provekit-lift-quickcheck",
     "provekit-lift-verus",
     "provekit-lift-rust-tests",
+    "provekit-lift-asm-x86-64",
+    "provekit-lift-jvm-bytecode",
+    "provekit-lift-evm-bytecode",
+    "provekit-lift-openapi",
+    "provekit-lift-asm-aarch64",
+    "provekit-lift-native-surfaces",
+    "provekit-linker",
     "provekit-lsp",
+    "provekit-lsp-rust",
     "provekit-build",
     "provekit-agent",
     "provekit-agent-claude-code",
     "provekit-agent-openai",
     "provekit-showcase",
     "examples/build_script_demo",
+    "provekit-linkerd",
+    "provekit-baseline-std",
+    "../../menagerie/bug-zoo",
+    "../../menagerie/bridgeworks",
+    "../../menagerie/supply-chain-rails",
+    "../../menagerie/protocol-switchyard",
+    "../../menagerie/smoke-test-e2e",
+    "../../menagerie/smoke-test-e2e/driver",
 ]
 
 [workspace.package]
@@ -64,6 +90,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # Verifier glue
 walkdir = "2"
+toml = "0.8"
 rayon = "1.10"
 # Proc-macro authoring stack
 syn = { version = "2", features = ["full", "extra-traits", "visit"] }

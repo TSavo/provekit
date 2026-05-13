@@ -1,0 +1,54 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:do",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Bool"
+    }
+  ],
+  "formals": [
+    "body",
+    "cond"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Stmt",
+      "Bool"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "body"
+        },
+        {
+          "name": "cond"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "do",
+    "result": "Stmt",
+    "wp_note": "do body once, then loop while cond"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Stmt"
+  }
+}

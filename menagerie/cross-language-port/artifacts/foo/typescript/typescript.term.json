@@ -1,0 +1,69 @@
+{
+  "kind": "op",
+  "opCid": "blake3-512:388736ddf57a4837a1c399f38aa34cd88e75dfe77190ad6756eb14dabb53ae4bc085fc5cb95114fab5b8409f2d713d1814dc89c6e727741700a2b8be8651a184",
+  "name": "ts:seq",
+  "args": [
+    {
+      "kind": "op",
+      "opCid": "blake3-512:b1398a03bc63bdc3204ac19bc6a48102b5829d8aad4f41f9c6383c232b89a76294c5bf228f34155d263a817a6d331e6c73f54d3e57e0348c3096beb7c6c2a318",
+      "name": "ts:if",
+      "args": [
+        {
+          "kind": "op",
+          "opCid": "blake3-512:4bbe6b2dbb80efc59de3f1cf3234356b7e00a3d81aee1817fc42752fa859a26560e03ebaf920b2ae3721459aa362e14467edc838605bad16850de524057df9c7",
+          "name": "ts:eq",
+          "args": [
+            {
+              "kind": "var",
+              "name": "x"
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:96a44daebb39eece21ab35533e84adb9cf77083730a2aac372e375c60e86c69d575e2160f0c544192ea4db2a141b4dc1e29aa3270a15da8ec15114987bad8579",
+          "name": "ts:return",
+          "args": [
+            {
+              "kind": "const",
+              "value": -22,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "op",
+          "opCid": "blake3-512:9390de6e93b12abe345c44b61d2d37a83cca0bdc22a110c4d5dcee0e9a1516ff6592175f06ca5203d2d32d9438b3211ea5c812260b9d6467f587097cce2329c8",
+          "name": "ts:skip",
+          "args": [
+            {
+              "kind": "unit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "op",
+      "opCid": "blake3-512:96a44daebb39eece21ab35533e84adb9cf77083730a2aac372e375c60e86c69d575e2160f0c544192ea4db2a141b4dc1e29aa3270a15da8ec15114987bad8579",
+      "name": "ts:return",
+      "args": [
+        {
+          "kind": "var",
+          "name": "x"
+        }
+      ]
+    }
+  ]
+}

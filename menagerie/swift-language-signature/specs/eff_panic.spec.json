@@ -1,0 +1,36 @@
+{
+  "kind": "algorithm",
+  "fn_name": "swift:effect:panic",
+  "formals": [],
+  "formal_sorts": [],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unit",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "effect:panic",
+    "arity": [],
+    "result": "Unit",
+    "wp": "trap, throw, or otherwise panic",
+    "arity_shape": {
+      "kind": "named",
+      "slots": []
+    }
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
+  },
+  "locus": "menagerie/swift-language-signature/README.md"
+}

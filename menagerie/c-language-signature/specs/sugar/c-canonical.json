@@ -1,0 +1,152 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:d1c75065f168ddd510c5c66ce3c8ad4278a803758e002e2f97d8b265172a006705ec96b9d0f4bf16edac22565709a4b741b01e9e56bccaab6c372bb177acd538",
+    "content": {
+      "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @requires(${lhs} > ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "gt"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @requires(${lhs} >= ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "ge"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @requires(${lhs} < ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "lt"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @requires(${lhs} <= ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "le"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @requires(${lhs} == ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "eq"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @ensures(${lhs} > ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "ensures_gt"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-function",
+            "template": "// @ensures(${lhs} == ${rhs})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "predicate_pattern": {
+            "args": [
+              {"args": [], "head": "var", "name": "${lhs}"},
+              {"args": [], "head": "var", "name": "${rhs}"}
+            ],
+            "head": "ensures_eq"
+          }
+        }
+      ],
+      "sugar_name": "canonical",
+      "target_language": "c"
+    },
+    "critical": false,
+    "kind": "sugar",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "Canonical C annotation sugar dict for ProvekIt contract clause rendering.",
+    "source_url": "menagerie/c-language-signature/specs/sugar/c-canonical.json"
+  }
+}

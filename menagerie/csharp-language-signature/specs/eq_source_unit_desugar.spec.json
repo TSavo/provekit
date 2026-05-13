@@ -1,0 +1,48 @@
+{
+  "kind": "equation",
+  "fn_name": "csharp:source-unit-desugar",
+  "formals": [
+    "bytes",
+    "operational_term"
+  ],
+  "formal_sorts": [
+    "sort_string.spec.json",
+    "sort_stmt.spec.json"
+  ],
+  "role": "desugaring",
+  "direction": "left-to-right",
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "equation",
+    "lhs": {
+      "kind": "op",
+      "name": "csharp:source-unit",
+      "args": [
+        {
+          "kind": "var",
+          "name": "bytes"
+        },
+        {
+          "kind": "var",
+          "name": "operational_term"
+        }
+      ]
+    },
+    "rhs": {
+      "kind": "var",
+      "name": "operational_term"
+    }
+  },
+  "effects": [],
+  "obligations": {
+    "wp_preservation": {
+      "kind": "wp-preservation",
+      "status": "discharged",
+      "method": "definition-unfolding:csharp:source-unit operational_term wp"
+    }
+  }
+}

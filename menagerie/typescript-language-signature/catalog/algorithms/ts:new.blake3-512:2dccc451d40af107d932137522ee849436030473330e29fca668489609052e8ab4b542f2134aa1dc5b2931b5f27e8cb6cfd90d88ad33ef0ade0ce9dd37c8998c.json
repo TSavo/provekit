@@ -1,0 +1,69 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ts:new",
+    "formals": [
+      "constructor",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Args",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "new",
+      "arity": [
+        "Expr",
+        "Args"
+      ],
+      "result": "Expr",
+      "wp": "construct a new object with ordered arguments",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "constructor"
+          },
+          {
+            "name": "args",
+            "shape": {
+              "kind": "set"
+            }
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:2dccc451d40af107d932137522ee849436030473330e29fca668489609052e8ab4b542f2134aa1dc5b2931b5f27e8cb6cfd90d88ad33ef0ade0ce9dd37c8998c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "KH8LrF9N56xhbUKS33A0FVxegpaW7wFOcM+E3dE8L5C/B/XDvHklKsUhGJfHq1MSWP6EOQyugB+mJiHw6XZ6Dw=="
+  }
+}

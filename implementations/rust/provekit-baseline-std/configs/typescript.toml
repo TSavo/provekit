@@ -1,0 +1,211 @@
+# TypeScript std baseline: v1 catalog
+lang = "typescript"
+kit = "ts-kit"
+language_version = "ES2022"
+
+[[builtins]]
+name = "String_prototype_length"
+signature = "str_len"
+return_type = "number"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+[[builtins.predicates]]
+kind = "gte"
+args = { left = "str_len", right = 0, comment = "length floor" }
+
+[[builtins]]
+name = "String_prototype_startsWith"
+signature = "str_starts_with"
+arity = 2
+return_type = "boolean"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "String_prototype_endsWith"
+signature = "str_ends_with"
+arity = 2
+return_type = "boolean"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "String_prototype_trim"
+signature = "str_trim"
+return_type = "string"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+[[builtins.predicates]]
+kind = "gte"
+args = { left = "str_len", right = 0, comment = "output length floor" }
+
+[[builtins]]
+name = "String_prototype_includes"
+signature = "str_includes"
+arity = 2
+return_type = "boolean"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "String_prototype_slice"
+signature = "str_slice"
+arity = 2
+return_type = "string"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "String_prototype_indexOf"
+signature = "str_index_of"
+arity = 2
+return_type = "number"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Array_prototype_length"
+signature = "arr_len"
+return_type = "number"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+[[builtins.predicates]]
+kind = "gte"
+args = { left = "arr_len", right = 0 }
+
+[[builtins]]
+name = "Array_prototype_push"
+signature = "arr_push"
+arity = 2
+return_type = "number"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Array_prototype_pop"
+signature = "arr_pop"
+return_type = "object"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Array_prototype_map"
+signature = "arr_map"
+arity = 2
+return_type = "array"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Array_prototype_filter"
+signature = "arr_filter"
+arity = 2
+return_type = "array"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Array_prototype_reduce"
+signature = "arr_reduce"
+arity = 3
+return_type = "object"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Array_prototype_includes"
+signature = "arr_includes"
+arity = 2
+return_type = "boolean"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Map_set"
+signature = "map_set"
+arity = 3
+return_type = "map"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Map_get"
+signature = "map_get"
+arity = 2
+return_type = "object"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Map_has"
+signature = "map_has"
+arity = 2
+return_type = "boolean"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Map_size"
+signature = "map_size"
+return_type = "number"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+[[builtins.predicates]]
+kind = "gte"
+args = { left = "map_size", right = 0 }
+
+[[builtins]]
+name = "Promise_then"
+signature = "promise_then"
+arity = 2
+return_type = "promise"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"
+
+[[builtins]]
+name = "Promise_resolve"
+signature = "promise_resolve"
+arity = 1
+return_type = "promise"
+[[builtins.predicates]]
+kind = "type_signature"
+[[builtins.predicates]]
+kind = "determinism"

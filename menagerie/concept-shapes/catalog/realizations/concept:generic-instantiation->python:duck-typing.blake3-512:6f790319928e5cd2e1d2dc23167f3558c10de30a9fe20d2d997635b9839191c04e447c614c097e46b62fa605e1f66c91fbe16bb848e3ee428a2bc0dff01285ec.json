@@ -1,0 +1,95 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:generic-instantiation->python:duck-typing",
+    "formals": [
+      "parametric_def",
+      "type_args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "GenericDef",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfType",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:generic-instantiation",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "python:duck-typed-call",
+        "args": [
+          {
+            "kind": "var",
+            "name": "parametric_def"
+          },
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "python",
+    "loss_record": {
+      "structural_divergence": {
+        "args": [
+          {
+            "kind": "op",
+            "name": "python:duck-typed-call",
+            "args": [
+              {
+                "kind": "var",
+                "name": "parametric_def"
+              },
+              {
+                "kind": "var",
+                "name": "type_args"
+              }
+            ]
+          }
+        ],
+        "kind": "atomic",
+        "name": "duck_typing_realization_is_absence_of_instantiation"
+      },
+      "domain_narrowing": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "type_args"
+          }
+        ],
+        "kind": "atomic",
+        "name": "type_bound_violations_caught_at_use_time_not_instantiation"
+      }
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:6f790319928e5cd2e1d2dc23167f3558c10de30a9fe20d2d997635b9839191c04e447c614c097e46b62fa605e1f66c91fbe16bb848e3ee428a2bc0dff01285ec",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

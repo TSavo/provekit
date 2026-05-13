@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// scan_self — ProvekIt's first self-application.
+// scan_self: ProvekIt's first self-application.
 //
 // 1. Authors 5+ contracts ABOUT the Rust impl's IR-JSON parser via
 //    `provekit_self_contracts::author_self_contracts`.
@@ -16,7 +16,7 @@
 //     (Z3 has no semantics for `roundTrips` / `isErr` /
 //     `isMalformed`). That's the protocol's HONEST outcome.
 //   - Standard-algebra contracts (5, 6, 7) don't enumerate as
-//     callsites in their *own* memento — there's no bridge mapping
+//     callsites in their *own* memento: there's no bridge mapping
 //     `not_arity_bounds` etc. to an IR symbol. They sit in the
 //     pool as authored but verifiable-by-inspection mementos.
 //
@@ -54,14 +54,21 @@ fn main() -> ExitCode {
     let total: usize = slabs.iter().map(|s| s.contracts.len()).sum();
     println!();
     println!("authored:");
-    println!("  contracts: {} across {} .invariant.rs files", total, slabs.len());
+    println!(
+        "  contracts: {} across {} .invariant.rs files",
+        total,
+        slabs.len()
+    );
     for s in &slabs {
         println!("    [{}]", s.source.label);
         for d in &s.contracts {
             let pre = d.pre.as_ref().map(|_| "pre").unwrap_or("");
             let post = d.post.as_ref().map(|_| "post").unwrap_or("");
             let inv = d.inv.as_ref().map(|_| "inv").unwrap_or("");
-            let slots: Vec<&str> = [pre, post, inv].into_iter().filter(|s| !s.is_empty()).collect();
+            let slots: Vec<&str> = [pre, post, inv]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect();
             println!("      - {} ({})", d.name, slots.join(", "));
         }
     }
@@ -101,7 +108,10 @@ fn main() -> ExitCode {
     println!();
     println!("verifier (load + enumerate):");
     println!("  loaded mementos:              {}", pool.mementos.len());
-    println!("  bridges by sourceSymbol:      {}", pool.bridges_by_symbol.len());
+    println!(
+        "  bridges by sourceSymbol:      {}",
+        pool.bridges_by_symbol.len()
+    );
     println!("  enumerated callsites:         {}", callsites.len());
     if !pool.load_errors.is_empty() {
         println!();

@@ -1,0 +1,67 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:member",
+    "formals": [
+      "base",
+      "field"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Expr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "member",
+      "arity": [
+        "Expr",
+        "String"
+      ],
+      "result": "Expr",
+      "wp": "base.field (member access)",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "base"
+          },
+          {
+            "name": "field",
+            "slot_sort": "identifier"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Expr",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:4a7abe2df77ff3adc2bc6450c91c69e4b99306fad5c47a9d514b85d22319a6a5c7ff74cadf1f5702d845ac07e6292a465a222a2e4c7507e915ed1537a7144234",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "Bhjyq6d6F90VQLu94oxOPrI642pt0lpVjesHTspHagqvf6FZqvd/3kjVe2WRcQmFhJ2Re8JI1dL/uAEobnPlAA=="
+  }
+}

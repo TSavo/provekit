@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:drop",
+    "formals": [
+      "place"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Place",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "drop",
+      "arity": [
+        "Place"
+      ],
+      "result": "Stmt",
+      "wp": "run drop glue for a place"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Drop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:49a5d64103229f4305ab48a48d19f8a76093920d51498f2aaf739defac91ca65287c639fe257742b7b9c482a66a3679189a5e4d70541c2ee3eeed1105f0f7c9b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "jnGYGFEFIMgPT9TWZWJC0pFv3EooBggAFrdRzpI0U6mKJd7bwzp2ZZcnZsYDfjOnGUF2pnBHG54MYnHdh7m+Dg=="
+  }
+}

@@ -20,11 +20,11 @@ import (
 // reference, future TS port) must hash to the same JCS bytes for the
 // same logical claim.
 
-const goldenSimpleEq = `[{"kind":"contract","name":"zeroIsZero","outBinding":"out","pre":{"kind":"atomic","name":"=","args":[{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"0","sort":{"kind":"primitive","name":"String"}}]},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}]`
+const goldenSimpleEq = `[{"kind":"contract","name":"zeroIsZero","outBinding":"out","pre":{"args":[{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"0"}],"kind":"ctor","name":"parseInt"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"="}}]`
 
-const goldenForAllEq = `[{"kind":"contract","name":"denominator-nonzero","outBinding":"out","pre":{"kind":"forall","name":"_x0","sort":{"kind":"primitive","name":"Int"},"body":{"kind":"atomic","name":"=","args":[{"kind":"var","name":"_x0"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}}]`
+const goldenForAllEq = `[{"kind":"contract","name":"denominator-nonzero","outBinding":"out","pre":{"body":{"args":[{"kind":"var","name":"_x0"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"="},"kind":"forall","name":"_x0","sort":{"kind":"primitive","name":"Int"}}}]`
 
-const goldenExistsParseInt = `[{"kind":"contract","name":"can-be-zero","outBinding":"out","pre":{"kind":"exists","name":"_x0","sort":{"kind":"primitive","name":"String"},"body":{"kind":"atomic","name":"=","args":[{"kind":"ctor","name":"parseInt","args":[{"kind":"var","name":"_x0"}]},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}}]`
+const goldenExistsParseInt = `[{"kind":"contract","name":"can-be-zero","outBinding":"out","pre":{"body":{"args":[{"args":[{"kind":"var","name":"_x0"}],"kind":"ctor","name":"parseInt"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"="},"kind":"exists","name":"_x0","sort":{"kind":"primitive","name":"String"}}}]`
 
 func TestCanonicalFormSimpleEq(t *testing.T) {
 	ResetCollector()

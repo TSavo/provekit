@@ -1,0 +1,45 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:assert->c:one-line-macro",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:assert",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "c:one-line-macro",
+        "args": [
+          {
+            "kind": "const",
+            "value": "#define ASSERT(p) do { if (!(p)) { abort(); } } while(0)",
+            "sort": {
+              "kind": "ctor",
+              "name": "MacroBody",
+              "args": []
+            }
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "c",
+    "loss_record": {
+      "structural_divergence": "macro_replaces_native_assertion: C has no native assertion; assert.h exists but the substrate's concept:assert is the canonical one; realization uses a single-line macro with do-while wrapper to allow use in all syntactic contexts; macro expansion is syntax-level, not function-call level",
+      "effect_divergence": "abort_on_failure: the concept specifies held(p) as the postcondition; the C realization calls abort() directly on predicate failure; abort() is a blocking system call with no structured recovery; the effect is identical (program termination) but the mechanism is language-specific and non-recoverable"
+    },
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": []
+  },
+  "cid": "blake3-512:747bfcc3973042129420d7772f833dfcb9ce612c7957d5f6e5b9f30f8557c782502c8686b2c3fd8f8d84b21de78a08454629afda4f5f8ab158296594247c7b1c",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

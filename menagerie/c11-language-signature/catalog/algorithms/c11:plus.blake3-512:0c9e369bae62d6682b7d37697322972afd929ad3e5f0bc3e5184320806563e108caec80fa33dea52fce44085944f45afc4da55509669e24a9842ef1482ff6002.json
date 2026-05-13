@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "c11:plus",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "plus",
+      "arity": [
+        "Int"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "value"
+          }
+        ]
+      },
+      "result": "Int",
+      "wp": "unary plus expression preserving value"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/c11-language-signature/README.md#generated-cursor-kind-operations"
+  },
+  "cid": "blake3-512:0c9e369bae62d6682b7d37697322972afd929ad3e5f0bc3e5184320806563e108caec80fa33dea52fce44085944f45afc4da55509669e24a9842ef1482ff6002",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "0nbADCWT/AyvQZWzZtLZ2IHCMzUAqcH7tHjqkcSQhVT/vnPvHH4SPdkNAIWmp1tHvxplAhveZofuy83LMHlICQ=="
+  }
+}

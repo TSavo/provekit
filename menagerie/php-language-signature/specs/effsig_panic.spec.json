@@ -1,0 +1,10 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "php:effect-signature:Panic",
+  "sorts": [
+    "sort_unit.spec.json"
+  ],
+  "operations": [],
+  "equations": [],
+  "effect_signatures": []
+}

@@ -24,25 +24,14 @@ pub struct JsonRpcBackend {
 pub struct VerifyResult {
     pub status: String,
     #[serde(default)]
-    pub function: String,
-    #[serde(default)]
-    pub target_cid: String,
-    #[serde(default)]
     pub transfers: Vec<Transfer>,
     #[serde(default)]
     pub error: Option<String>,
-    #[serde(default)]
-    pub counterexample: Option<Value>,
-    #[serde(default)]
-    pub suggestion: Option<String>,
-    #[serde(default)]
-    pub evidence: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Transfer {
-    pub domain: String,
-    pub cid: String,
+    // domain and cid removed (unused in current LSP code)
 }
 
 impl JsonRpcBackend {
@@ -105,13 +94,9 @@ impl JsonRpcBackend {
             return Err(format!("backend error: {}", msg));
         }
 
-        let result = resp
-            .get("result")
-            .ok_or("no result in response")?
-            .clone();
+        let result = resp.get("result").ok_or("no result in response")?.clone();
 
-        serde_json::from_value(result)
-            .map_err(|e| format!("decode verify result: {}", e))
+        serde_json::from_value(result).map_err(|e| format!("decode verify result: {}", e))
     }
 
     // ------------------------------------------------------------------
@@ -139,14 +124,10 @@ impl JsonRpcBackend {
     }
 
     async fn exchange(&mut self, req: &Value) -> Result<Value, String> {
-        let line = serde_json::to_string(req)
-            .map_err(|e| format!("encode: {}", e))?;
+        let line = serde_json::to_string(req).map_err(|e| format!("encode: {}", e))?;
 
-        writeln!(self.stdin, "{}", line)
-            .map_err(|e| format!("write: {}", e))?;
-        self.stdin
-            .flush()
-            .map_err(|e| format!("flush: {}", e))?;
+        writeln!(self.stdin, "{}", line).map_err(|e| format!("write: {}", e))?;
+        self.stdin.flush().map_err(|e| format!("flush: {}", e))?;
 
         let mut buf = String::new();
         let n = self
@@ -158,8 +139,7 @@ impl JsonRpcBackend {
             return Err("backend closed stdout".to_string());
         }
 
-        serde_json::from_str(&buf)
-            .map_err(|e| format!("decode: {}", e))
+        serde_json::from_str(&buf).map_err(|e| format!("decode: {}", e))
     }
 
     fn next_id(&mut self) -> u64 {

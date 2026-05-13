@@ -1,0 +1,5 @@
+[allowlist]
+description = "Repository-owned demo keys for executable supply-chain fixtures"
+paths = [
+  '''menagerie/supply-chain-rails/authenticated-betrayal/packages/.*/attestations/(in-toto|slsa)/.*\.key$''',
+]

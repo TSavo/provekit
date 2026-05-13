@@ -16,8 +16,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    atomic_, contract, eq, forall, implies, must, ContractArgs, String_,
-    Term,
+    atomic_, contract, eq, forall, implies, must, ContractArgs, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
@@ -75,7 +74,10 @@ pub fn invariants() {
         "obligation_property_cid_carries_through",
         forall(String_(), |resolved| {
             eq(
-                ctor1("obligation_property_cid", ctor1("instantiate", resolved.clone())),
+                ctor1(
+                    "obligation_property_cid",
+                    ctor1("instantiate", resolved.clone()),
+                ),
                 ctor1("resolved_property_cid", resolved),
             )
         }),

@@ -1,0 +1,83 @@
+{
+  "cid": "blake3-512:789ab75ea7b537708ac56b3f9a19dc6f353fdaa4b35e757e04a597aec6ee0f2bf9ddfaff99d6d9aea3a51333a5810e01bb5e2d48274ead5e9bde91431396c7e1",
+  "memento": {
+    "direction": "left-to-right",
+    "discharge_receipt": "deferred:pending-641-PR8",
+    "effects": [],
+    "fn_name": "concept:pair->c:struct",
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "T1"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "T2"
+      }
+    ],
+    "formals": [
+      "first",
+      "second"
+    ],
+    "kind": "equation",
+    "loss_record": {
+      "domain_narrowing": "C has no type-level distinction between a pair struct and any struct; the realization narrows the domain to programs that treat the struct instance as a pair (maintaining the two-slot invariant); programs that use the struct for other purposes are in the narrowed-out domain",
+      "structural_divergence": "struct with two fields replaces native product type: one declaration with explicit T1 and T2 field types replaces a language primitive; field access via .first and .second instead of pattern matching or positional indexing; instantiation requires caller-supplied type and macro-name identifiers",
+      "ub_introduction": "none: both slots are always occupied at initialization and remain valid; field access is always safe; the C struct is safer than option in that there is no absent slot"
+    },
+    "post": {
+      "lhs": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "first"
+          },
+          {
+            "kind": "var",
+            "name": "second"
+          }
+        ],
+        "kind": "op",
+        "name": "concept:pair"
+      },
+      "rhs": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "const",
+                "sort": {
+                  "args": [],
+                  "kind": "ctor",
+                  "name": "MacroName"
+                },
+                "value": "PAIR(T1, T2, name)"
+              },
+              {
+                "kind": "var",
+                "name": "first"
+              },
+              {
+                "kind": "var",
+                "name": "second"
+              }
+            ],
+            "kind": "op",
+            "name": "c:macro-expand"
+          }
+        ],
+        "kind": "op",
+        "name": "c:struct"
+      }
+    },
+    "role": "abstraction-realization",
+    "target_lang": "c"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

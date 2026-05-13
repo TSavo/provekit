@@ -1,0 +1,1 @@
+BZ-SHAPE-006 exposes missing edge: eq(value, 42) => gte(value, 43)

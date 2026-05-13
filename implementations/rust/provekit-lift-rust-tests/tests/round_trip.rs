@@ -2,8 +2,8 @@
 //
 // Integration test: end-to-end fixture lift -> mint -> .proof file ->
 // verifier load. Asserts:
-//   - 4 simple `assert_eq!` lifted
-//   - 1 `assert!` with binop lifted
+//   - 4 simple `assert_eq!` callsites lifted
+//   - 1 no-call `assert!` with binop skips honestly
 //   - 1 deliberately-skipped `format!()` macro operand produces a warning
 //     (v0.5 widened the operand whitelist to include method calls; the
 //      negative shape moved to format!-style operand-position macros)
@@ -43,7 +43,7 @@ fn neg_one_negates() {{
     assert_eq!(neg(1), -1);
 }}
 
-// 1 assert! with a binop body.
+// 1 assert! with no callsite.
 #[test]
 fn count_positive() {{
     assert!(count > 0);
@@ -61,7 +61,7 @@ fn skipped_format_macro() {{
 }
 
 #[test]
-fn fixture_lifts_5_skips_1_and_round_trips_through_verifier() {
+fn fixture_lifts_4_skips_2_and_round_trips_through_verifier() {
     // Per-test temp dir.
     let base = std::env::temp_dir();
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -97,20 +97,31 @@ fn fixture_lifts_5_skips_1_and_round_trips_through_verifier() {
         "expected 6 assertion candidates seen across the fixture"
     );
     assert_eq!(
-        rt.lifted, 5,
-        "expected 5 lifted (4 assert_eq! + 1 assert!), warnings: {:?}",
+        rt.lifted, 4,
+        "expected 4 lifted callsite assertions, warnings: {:?}",
         rt.warnings
     );
     assert_eq!(
         rt.warnings.len(),
-        1,
-        "expected exactly 1 honest skip (the format! macro assertion)"
+        2,
+        "expected exactly 2 honest skips (no callsite + format! macro)"
     );
-    assert!(rt.warnings[0].item_name.starts_with("skipped_format_macro"));
+    assert!(rt
+        .warnings
+        .iter()
+        .any(|w| w.item_name == "count_positive" && w.reason.contains("callsite")));
+    assert!(rt
+        .warnings
+        .iter()
+        .any(|w| w.item_name == "skipped_format_macro" && w.reason.contains("format")));
 
     // .proof filename = `<cid>.proof`.
     assert!(proof_path.exists(), "proof file should exist on disk");
-    let fname = proof_path.file_name().unwrap().to_string_lossy().to_string();
+    let fname = proof_path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
     let expected = format!("{}.proof", minted.cid);
     assert_eq!(fname, expected, "filename should be <cid>.proof");
     assert!(
@@ -126,10 +137,10 @@ fn fixture_lifts_5_skips_1_and_round_trips_through_verifier() {
         "verifier should have zero load errors, got {:?}",
         pool.load_errors
     );
-    // Each lifted assert is a unique-named contract -> one member each.
+    // Each lifted callsite assertion is a unique-named contract -> one member each.
     assert_eq!(
-        minted.member_count, 5,
-        "expected 5 distinct mementos (one per lifted assertion)"
+        minted.member_count, 4,
+        "expected 4 distinct mementos (one per lifted callsite assertion)"
     );
 
     println!("FIXTURE_PROOF_CID={}", minted.cid);

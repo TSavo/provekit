@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Provekit.SelfContracts — the C# peer self-contracts orchestrator.
+// Provekit.SelfContracts: the C# peer self-contracts orchestrator.
 //
 // Walks every *.invariant.cs file's Register() entrypoint, mints all
 // collected contracts as signed mementos, bundles into a `.proof` whose
@@ -34,7 +34,7 @@ namespace Provekit.SelfContracts;
 
 public static class Program
 {
-    // Foundation key — test seed [0x42; 32], same as Rust/C++/Go/TS peers.
+    // Foundation key: test seed [0x42; 32], same as Rust/C++/Go/TS peers.
     public static readonly byte[] FoundationSeed = Enumerable.Repeat((byte)0x42, 32).ToArray();
     public const string DeclaredAt = "2026-04-30T12:00:00.000Z";
     public const string ProducedBy = "csharp-kit@1.0";
@@ -59,19 +59,21 @@ public static class Program
         Directory.CreateDirectory(outDir);
 
         Console.WriteLine("== mint #1 ==");
-        var (cid1, contractCount, fileCount) = MintOneRun(outDir, verbose: true);
+        var (cid1, contractSetCid1, contractCount, fileCount) = MintOneRun(outDir, verbose: true);
 
         var outDir2 = Path.Combine(outDir, "_determinism_check");
         Directory.CreateDirectory(outDir2);
         Console.WriteLine();
         Console.WriteLine("== mint #2 (determinism check) ==");
-        var (cid2, _, _) = MintOneRun(outDir2, verbose: false);
+        var (cid2, contractSetCid2, _, _) = MintOneRun(outDir2, verbose: false);
 
-        if (cid1 != cid2)
+        if (cid1 != cid2 || contractSetCid1 != contractSetCid2)
         {
             Console.Error.WriteLine("DETERMINISM FAILURE:");
-            Console.Error.WriteLine($"  run 1 cid: {cid1}");
-            Console.Error.WriteLine($"  run 2 cid: {cid2}");
+            Console.Error.WriteLine($"  run 1 cid:              {cid1}");
+            Console.Error.WriteLine($"  run 2 cid:              {cid2}");
+            Console.Error.WriteLine($"  run 1 contractSetCid:   {contractSetCid1}");
+            Console.Error.WriteLine($"  run 2 contractSetCid:   {contractSetCid2}");
             return 1;
         }
         Console.WriteLine("  determinism check:  OK (two runs produced identical CIDs)");
@@ -115,7 +117,7 @@ public static class Program
                     {
                         ["name"] = "csharp-self-contracts",
                         ["version"] = "1.0.0",
-                        ["protocol_version"] = "provekit-lift/1",
+                        ["protocol_version"] = "pep/1.7.0",
                         ["capabilities"] = new JsonObject
                         {
                             ["authoring_surfaces"] = new JsonArray { "csharp" },
@@ -132,7 +134,7 @@ public static class Program
                         Directory.CreateDirectory(tmpDir);
                         try
                         {
-                            var (cid, _, _) = MintOneRun(tmpDir, verbose: false);
+                            var (cid, contractSetCid, _, _) = MintOneRun(tmpDir, verbose: false);
                             var proofPath = Path.Combine(tmpDir, $"{cid}.proof");
                             var bytes = File.ReadAllBytes(proofPath);
                             var b64 = Convert.ToBase64String(bytes);
@@ -140,6 +142,7 @@ public static class Program
                             {
                                 ["kind"] = "proof-envelope",
                                 ["filename_cid"] = cid,
+                                ["contract_set_cid"] = contractSetCid,
                                 ["bytes_base64"] = b64,
                                 ["diagnostics"] = new JsonArray(),
                             });
@@ -194,10 +197,10 @@ public static class Program
 
     /// <summary>
     /// One full author + mint + bundle pass. Returns the catalog CID
-    /// (also used as the .proof filename), the number of contracts,
-    /// and the number of invariant files registered.
+    /// (also used as the .proof filename), the contractSetCid (spec #94),
+    /// the number of contracts, and the number of invariant files registered.
     /// </summary>
-    public static (string Cid, int ContractCount, int FileCount) MintOneRun(string outDir, bool verbose)
+    public static (string Cid, string ContractSetCid, int ContractCount, int FileCount) MintOneRun(string outDir, bool verbose)
     {
         // 1. Register every .invariant.cs module.
         Collector.BeginCollecting();
@@ -213,6 +216,7 @@ public static class Program
         // Use SortedDictionary so insertion order doesn't leak into bytes
         // (the proof envelope sorts CBOR keys, but keep dict order tidy).
         var members = new Dictionary<string, byte[]>();
+        var contentCids = new List<string>();
         foreach (var d in contractDecls)
         {
             var args = new MintContractArgs
@@ -228,6 +232,9 @@ public static class Program
                 Authoring = new Authoring.KitAuthor(ProducedBy),
                 SignerSeed = FoundationSeed,
             };
+            // Compute signer-independent content CID BEFORE minting (spec #94).
+            var contentCid = Mint.ContractCid(args);
+            contentCids.Add(contentCid);
             var minted = Mint.MintContract(args);
             members[minted.Cid] = minted.CanonicalBytes;
         }
@@ -249,18 +256,22 @@ public static class Program
         };
         var built = Proof.Build(proofInput);
 
-        // 4. Write <cid>.proof to disk.
+        // 4. Compute contractSetCid (spec #94): signer-independent trust anchor.
+        var contractSetCid = Mint.ContractSetCid(contentCids);
+
+        // 5. Write <cid>.proof to disk.
         var outPath = Path.Combine(outDir, $"{built.Cid}.proof");
         File.WriteAllBytes(outPath, built.Bytes);
 
         if (verbose)
         {
             Console.WriteLine($"  catalog CID:        {built.Cid}");
+            Console.WriteLine($"  contractSetCid:     {contractSetCid}");
             Console.WriteLine($"  proof bytes:        {built.Bytes.Length}");
             Console.WriteLine($"  .proof file:        {outPath}");
         }
 
-        return (built.Cid, contractDecls.Count, fileCount);
+        return (built.Cid, contractSetCid, contractDecls.Count, fileCount);
     }
 
     /// <summary>
@@ -297,6 +308,9 @@ public static class Program
         SignInvariants.Register();
         ProofInvariants.Register();
 
-        return 15;
+        // Cross-kit bridges (Phase 2: lift-plugin protocol counterparts).
+        CrossKitBridges.Register();
+
+        return 16;
     }
 }

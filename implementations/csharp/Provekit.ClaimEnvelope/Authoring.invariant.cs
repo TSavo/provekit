@@ -6,7 +6,7 @@
 //   * Authoring.KitAuthor(author, note?)
 //   * Authoring.Lift(lifter, evidence, sourceCid?)
 //   * Authoring.Llm(model, version, promptCid, confidence, rationale?)
-//   * Authoring.ToValue() — emits producerKind tag
+//   * Authoring.ToValue(): emits producerKind tag
 //
 // Honest scope:
 //   The producerKind discriminator strings are protocol-locked:
@@ -36,7 +36,7 @@ public static class AuthoringInvariants
             post: Eq(Ctor("len", StrConst("llm")), Num(3)));
 
         // KitAuthor with empty note OMITS the field (null/empty equivalence)
-        // — encoded as a contract that the emitted JSON does not contain
+        //: encoded as a contract that the emitted JSON does not contain
         // the literal substring `"note":`.
         Contract("csharp_authoring_kit_author_omits_empty_note",
             post: Eq(Ctor("ContainsNoteField", Ctor("KitAuthor", StrConst("x"), StrConst(""))), Num(0)));

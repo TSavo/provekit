@@ -1,0 +1,69 @@
+{
+  "cid": "blake3-512:c550fb759564433d1ec92f9ca402dc4007c150b46e63385f9298eb836e6cc0a636f65dddaede1325852925bb72d8d570ae309e11281a3075f17749e9bc753807",
+  "memento": {
+    "direction": "left-to-right",
+    "discharge_receipt": "deferred:pending-61-PR5",
+    "effects": [],
+    "fn_name": "concept:option->c:tagged-union-macro",
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "T"
+      }
+    ],
+    "formals": [
+      "value"
+    ],
+    "kind": "equation",
+    "loss_record": {
+      "domain_narrowing": "C cannot statically enforce exhaustiveness over the two arms; the realization narrows the abstraction domain to programs where the caller manually checks opt.tag before accessing opt.some; programs that omit the check are in the narrowed-out domain",
+      "structural_divergence": "tagged-union macro family replaces native sum type: three declarations (enum discriminator + union field + wrapper struct) replace a single ADT constructor; arms encoded as integer tag values (name_NONE=0, name_SOME=1) instead of named constructors; pattern matching becomes switch(opt.tag) with manual exhaustiveness; instantiation requires caller-supplied type and macro-name identifiers",
+      "ub_introduction": "accessing opt.some when opt.tag == name_NONE reads an uninitialised union field; this is undefined behaviour in C; the abstraction statically excludes this state; the C realization introduces UB on exactly those states"
+    },
+    "post": {
+      "lhs": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ],
+        "kind": "op",
+        "name": "concept:option"
+      },
+      "rhs": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "const",
+                "sort": {
+                  "args": [],
+                  "kind": "ctor",
+                  "name": "MacroName"
+                },
+                "value": "OPTION_DECL(T, name)"
+              },
+              {
+                "kind": "var",
+                "name": "value"
+              }
+            ],
+            "kind": "op",
+            "name": "c:macro-expand"
+          }
+        ],
+        "kind": "op",
+        "name": "c:tagged-union-macro"
+      }
+    },
+    "role": "abstraction-realization",
+    "target_lang": "c"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

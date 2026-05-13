@@ -22,14 +22,27 @@ extern "C" {
 
 typedef enum {
     PK_SORT_PRIMITIVE,
+    PK_SORT_FUNCTION,
+    PK_SORT_DEPENDENT,
+    PK_SORT_REGION,
 } pk_sort_kind;
 
-typedef struct pk_sort {
+typedef struct pk_sort pk_sort;
+
+struct pk_sort {
     pk_sort_kind kind;
-    char *name; /* owned */
-} pk_sort;
+    union {
+        struct { char *name; } primitive;
+        struct { pk_sort **args; size_t n_args; pk_sort *ret; } function;
+        struct { char *name; char *index_var; pk_sort *index_sort; } dependent;
+        struct { char *name; } region;
+    } data;
+};
 
 pk_sort *pk_sort_primitive(const char *name);
+pk_sort *pk_sort_function(pk_sort **args, size_t n_args, pk_sort *ret);
+pk_sort *pk_sort_dependent(const char *name, const char *index_var, pk_sort *index_sort);
+pk_sort *pk_sort_region(const char *name);
 void pk_sort_free(pk_sort *s);
 
 /* ----------------------------------------------------------------------- */

@@ -1,0 +1,45 @@
+{
+  "kind": "algorithm",
+  "fn_name": "python:not",
+  "formals": [
+    "operand"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "not",
+    "arity": [
+      "Bool"
+    ],
+    "result": "Bool",
+    "wp": "boolean negation",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "operand"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/python-language-signature/README.md"
+}

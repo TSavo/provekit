@@ -1,0 +1,188 @@
+{
+  "fn_name": "gap:go:conditional:to:concept:conditional",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union(then_branch.effects, else_branch.effects)"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Bool"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Term",
+          "Bool",
+          "Term",
+          "Term"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "init",
+              "slot_sort": "Term"
+            },
+            {
+              "name": "cond",
+              "slot_sort": "Bool"
+            },
+            {
+              "name": "then",
+              "slot_sort": "Term"
+            },
+            {
+              "name": "else",
+              "slot_sort": "Term"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "conditional",
+        "result": "Term",
+        "wp": "Go if statement with optional init statement"
+      },
+      "want": {
+        "arity": [
+          "Bool",
+          "Stmt",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "cond"
+            },
+            {
+              "name": "then_branch"
+            },
+            {
+              "name": "else_branch"
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "conditional",
+        "result": "Stmt",
+        "wp_note": "cond ? wp(then_branch, post) : wp(else_branch, post)",
+        "wp_rule": {
+          "kind": "and",
+          "operands": [
+            {
+              "kind": "implies",
+              "operands": [
+                {
+                  "kind": "var",
+                  "name": "cond"
+                },
+                {
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "Q"
+                    }
+                  ],
+                  "fn": "wp_then_branch",
+                  "kind": "apply"
+                }
+              ]
+            },
+            {
+              "kind": "implies",
+              "operands": [
+                {
+                  "kind": "not",
+                  "operands": [
+                    {
+                      "kind": "var",
+                      "name": "cond"
+                    }
+                  ]
+                },
+                {
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "Q"
+                    }
+                  ],
+                  "fn": "wp_else_branch",
+                  "kind": "apply"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Bool\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:90499ca96378d6a34d1accdd499de0bb5ec776eea38277ced9430ede0cb7f7d8abb2266c4635193ac1da6e77ca28b93cf0c964a1cdd5cf3598e67494c27d960d",
+  "target_concept_op": "concept:conditional",
+  "target_op_cid": "blake3-512:40d7790bd82a90175e5ffa7f0a3b4587c274d60a35065693eaa503f68bf8d1039839eb6687831dd7a66c9b45fcb57ec9eac68cf01f6b600afe6dd5a832c76492"
+}

@@ -1,0 +1,116 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:dynamic-dispatch",
+    "tier": "abstraction",
+    "slots": [
+      {
+        "name": "receiver"
+      },
+      {
+        "name": "method_name"
+      },
+      {
+        "name": "args",
+        "variadic": true
+      }
+    ],
+    "formal_sorts": [
+      "Value",
+      "Name",
+      "ListOfValue"
+    ],
+    "result_sort": "Value",
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [
+        "receiver",
+        "method_name",
+        "args"
+      ],
+      "body": {
+        "kind": "and",
+        "operands": [
+          {
+            "kind": "atomic",
+            "name": "defined",
+            "args": [
+              {
+                "kind": "op",
+                "name": "lookup",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "runtime_type",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "var",
+                    "name": "method_name"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "apply",
+            "fn": "wp_call",
+            "args": [
+              {
+                "kind": "op",
+                "name": "lookup",
+                "args": [
+                  {
+                    "kind": "op",
+                    "name": "runtime_type",
+                    "args": [
+                      {
+                        "kind": "var",
+                        "name": "receiver"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "var",
+                    "name": "method_name"
+                  }
+                ]
+              },
+              {
+                "kind": "op",
+                "name": "cons",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "receiver"
+                  },
+                  {
+                    "kind": "var",
+                    "name": "args"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "contract_note": "the call result and effect equal those of lookup(runtime_type(receiver), method_name) applied to [receiver, ...args]; undefined if no method resolves",
+    "realizations": [
+      "blake3-512:f9a65ab52f9c715e36337f9cd437a641ffc8b57eacec103da87ab17ae2515209c29053bd20476df4bec8db943d65aea7ce645a143ff0973ea5553a4cc00676cb",
+      "blake3-512:fb885c8ea7b2ccfdb154286df9409218902a1ab8ab7159e9ca33914ff5a016bbc4dd0972ffd2db94dc3c1aec619e031229eec307f7d7fc3c3ac936573197dd90",
+      "blake3-512:417165fe5951c0a7f6a4607993544ce67defa00c41c297eb792e525b8e2a4d6f7f6001672cd645fee863e9d53b59e23643055c99340d89b29d7bf262514dbe9c"
+    ]
+  },
+  "cid": "blake3-512:a1566d96804de4288972e5991664fc0719d811b168a32c039a47d5e5e6c34de7f13dd372ea377498f352a443c6746d6957ad8e31bd867733ac34cbe3df786399",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

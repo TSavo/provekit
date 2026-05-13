@@ -49,11 +49,13 @@ use std::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
 use syn::visit::Visit;
 
-pub mod source_walk;
 pub mod lift_pass;
+pub mod source_walk;
 
+pub use lift_pass::{
+    run_lift_pass, LiftAdapterCount, LiftPassReport, LiftedContract, ALL_ADAPTERS,
+};
 pub use source_walk::{ContractSite, FormulaShape, VerifySite, WalkOutcome};
-pub use lift_pass::{LiftedContract, LiftPassReport, LiftAdapterCount, run_lift_pass, ALL_ADAPTERS};
 
 /// Default Z3 query timeout in milliseconds.
 pub const DEFAULT_Z3_TIMEOUT_MS: u64 = 3_000;
@@ -153,8 +155,8 @@ pub enum ConfigError {
 /// `ProvekitConfig`. An invalid table (e.g. a key with the wrong type,
 /// or an unknown field thanks to `deny_unknown_fields`) is.
 pub fn parse_config_from_str(toml_str: &str) -> Result<ProvekitConfig, ConfigError> {
-    let parsed: toml::Value = toml::from_str(toml_str)
-        .map_err(|e| ConfigError::Parse(format!("toml: {e}")))?;
+    let parsed: toml::Value =
+        toml::from_str(toml_str).map_err(|e| ConfigError::Parse(format!("toml: {e}")))?;
     let metadata = parsed
         .get("package")
         .and_then(|p| p.get("metadata"))
@@ -173,7 +175,8 @@ pub fn parse_config_from_str(toml_str: &str) -> Result<ProvekitConfig, ConfigErr
 
 /// Read and parse the consumer's Cargo.toml at `path`.
 pub fn parse_config_from_path(path: &Path) -> Result<ProvekitConfig, ConfigError> {
-    let s = fs::read_to_string(path).map_err(|e| ConfigError::Read(format!("{}: {e}", path.display())))?;
+    let s = fs::read_to_string(path)
+        .map_err(|e| ConfigError::Read(format!("{}: {e}", path.display())))?;
     parse_config_from_str(&s)
 }
 
@@ -399,7 +402,7 @@ pub struct VerificationReport {
     pub mint_cid: Option<String>,
     /// Number of contracts produced by lift adapters (proptest, contracts,
     /// kani, prusti, creusot, flux, quickcheck, verus). Not the same
-    /// thing as `contract_count` — these came from third-party
+    /// thing as `contract_count`: these came from third-party
     /// annotations the consumer already had, not from `#[provekit::*]`
     /// decorators. Populated by the lift pass that runs alongside the
     /// source walk.
@@ -437,7 +440,7 @@ impl VerificationReport {
             .filter(|c| c.verdict == SolverVerdict::Undecidable)
             .count()
     }
-    /// True iff at least one call site is `Unsatisfied` — i.e. the
+    /// True iff at least one call site is `Unsatisfied`: i.e. the
     /// solver returned a counterexample. Used by strict mode to fail
     /// the build.
     pub fn has_violations(&self) -> bool {
@@ -637,7 +640,7 @@ pub fn run_verification_inner(
 ) -> VerificationReport {
     let walk = source_walk::walk(manifest_dir);
     // Lift pass: walk the same source tree, dispatch to every enabled
-    // lift adapter, collect ContractDecls. This runs by default — the
+    // lift adapter, collect ContractDecls. This runs by default: the
     // user does NOT type "lift" anywhere; just `cargo build`.
     let enabled = cfg.enabled_lift_adapters();
     let lift_report = run_lift_pass(manifest_dir, &enabled);
@@ -675,12 +678,8 @@ pub fn run_verification_inner(
                     cs.verify_fn,
                     cs.callee
                 );
-                let script = build_obligation_script(
-                    cfg,
-                    &label,
-                    &c.post_shape,
-                    cs.surrounding_eq_check,
-                );
+                let script =
+                    build_obligation_script(cfg, &label, &c.post_shape, cs.surrounding_eq_check);
                 let res = solve(&z3, &script.script_smt2, cfg.z3_timeout_ms());
                 // Verdict-mapping rules for v0:
                 //
@@ -689,7 +688,7 @@ pub fn run_verification_inner(
                 //     unsat -> Unsatisfied  (post is itself contradictory; loud)
                 //
                 //   surrounding `if x == K` check:
-                //     unsat -> Unsatisfied  (branch is DEAD per contract — warn)
+                //     unsat -> Unsatisfied  (branch is DEAD per contract: warn)
                 //     sat   -> Discharged   (branch is reachable; fine)
                 //
                 // The strict-mode failure path keys off `Unsatisfied`,
@@ -705,10 +704,7 @@ pub fn run_verification_inner(
                     ),
                     (None, SolverVerdict::Unsatisfied) => (
                         SolverVerdict::Discharged,
-                        format!(
-                            "discharged: post={} is satisfiable",
-                            c.post_shape.label()
-                        ),
+                        format!("discharged: post={} is satisfiable", c.post_shape.label()),
                     ),
                     (Some(k), SolverVerdict::Discharged) => (
                         SolverVerdict::Unsatisfied,
@@ -758,9 +754,8 @@ pub fn run_verification_inner(
     // for simplicity; the SMT cost is tiny.
     let glob_pat = cfg.verify_targets();
     if glob_pat != "**/*" {
-        let pat = glob::Pattern::new(&glob_pat).unwrap_or_else(|_| {
-            glob::Pattern::new("**/*").expect("**/* always parses")
-        });
+        let pat = glob::Pattern::new(&glob_pat)
+            .unwrap_or_else(|_| glob::Pattern::new("**/*").expect("**/* always parses"));
         report.callsites.retain(|c| pat.matches(&c.verify_fn));
     }
     // Stash the walk paths as a side effect so emit_cargo_directives
@@ -781,13 +776,18 @@ fn emit_cargo_directives(report: &VerificationReport, cfg: &ProvekitConfig) {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
-    println!("cargo:rerun-if-changed={}", manifest_dir.join("Cargo.toml").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("Cargo.toml").display()
+    );
     for entry in walkdir::WalkDir::new(manifest_dir.join("src"))
         .follow_links(false)
         .into_iter()
         .flatten()
     {
-        if entry.file_type().is_file() && entry.path().extension().and_then(|s| s.to_str()) == Some("rs") {
+        if entry.file_type().is_file()
+            && entry.path().extension().and_then(|s| s.to_str()) == Some("rs")
+        {
             println!("cargo:rerun-if-changed={}", entry.path().display());
         }
     }
@@ -937,7 +937,7 @@ pub mod __for_tests {
 }
 
 // Required to satisfy the `use syn::visit::Visit` import even when not
-// directly referenced — keeps the dep graph honest.
+// directly referenced: keeps the dep graph honest.
 const _: fn() = || {
     fn _is_visit<T: Visit<'static>>() {}
 };

@@ -1,0 +1,135 @@
+{
+  "fn_name": "gap:ruby:call:to:concept:call",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "UnresolvedCall"
+          }
+        ]
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "UnresolvedCall"
+          },
+          {
+            "kind": "effect-signature",
+            "name": "Call"
+          },
+          {
+            "kind": "effect-polymorphic",
+            "rule": "callee.effects or unresolved_call when unavailable"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "String"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "ListOfValue"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "FnContract"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "ListOfExpr"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "String",
+          "ListOfValue"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "evaluation": "unevaluated",
+              "name": "callee",
+              "slot_sort": "literal"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "notes": "The term encoding stores callee followed by positional actual arguments.",
+        "operator": "call",
+        "result": "Value",
+        "wp": "call callee with positional arguments"
+      },
+      "want": {
+        "arity": [
+          "FnContract",
+          "ListOf<Expr>"
+        ],
+        "arity_shape": {
+          "kind": "named",
+          "slots": [
+            {
+              "name": "callee"
+            },
+            {
+              "name": "args",
+              "shape": {
+                "kind": "set"
+              }
+            }
+          ]
+        },
+        "kind": "operation-contract",
+        "operator": "call",
+        "result": "Stmt",
+        "wp_note": "callee pre under bound args implies callee post under caller state"
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"String\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfValue\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"FnContract\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"ListOfExpr\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "ruby",
+  "source_op_cid": "blake3-512:b79e37706e03f4655a7976098b32657ce8028be1bd2b2e83a7bc3a5e14c40d586380865f968c4a61036e29810e6ae3845b5faabcb64af6d7596e85aa38d37352",
+  "target_concept_op": "concept:call",
+  "target_op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c"
+}

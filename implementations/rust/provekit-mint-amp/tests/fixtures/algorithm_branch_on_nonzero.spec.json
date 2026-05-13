@@ -1,0 +1,35 @@
+{
+  "kind": "algorithm",
+  "fn_name": "branch-on-nonzero",
+  "formals": ["ast_pattern", "context"],
+  "formal_sorts": [
+    {"kind": "ctor", "name": "ASTPattern", "args": []},
+    {"kind": "ctor", "name": "Context", "args": []}
+  ],
+  "return_sort": {"kind": "ctor", "name": "IrFormula", "args": []},
+  "pre": {
+    "kind": "atomic",
+    "name": "matches",
+    "args": [
+      {"kind": "var", "name": "ast_pattern"},
+      {"kind": "ctor", "name": "BranchOnNonzero", "args": []}
+    ]
+  },
+  "post": {
+    "kind": "atomic",
+    "name": "=",
+    "args": [
+      {"kind": "var", "name": "result"},
+      {
+        "kind": "ctor",
+        "name": "Implies",
+        "args": [
+          {"kind": "var", "name": "condition"},
+          {"kind": "var", "name": "then_formula"}
+        ]
+      }
+    ]
+  },
+  "effects": {"effects": []},
+  "locus": "docs/papers/12-after-languages-how-proofir-represents-every-language.md#branch-on-nonzero"
+}

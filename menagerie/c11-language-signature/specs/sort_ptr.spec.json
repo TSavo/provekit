@@ -1,0 +1,14 @@
+{
+  "kind": "sort",
+  "fn_name": "c11:Ptr",
+  "formals": [],
+  "return_sort": {
+    "kind": "kind",
+    "name": "*"
+  },
+  "post": {
+    "kind": "sort-description",
+    "name": "Ptr",
+    "description": "C11 pointer values with null and provenance constraints"
+  }
+}

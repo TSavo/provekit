@@ -10,6 +10,10 @@
 //                            it reads IR-JSON, compiles to Coq via
 //                            `CoqCompiler`, and runs `coqc` on the
 //                            generated `.v` file.
+//   * MaudeSubprocessSolver - when `ir_compiler = "maude"`.
+//                            It compiles equational theory obligations
+//                            and trusts reduce only when the CeTA gate
+//                            accepts termination and confluence.
 //   * SubprocessSolver     - default. Generic SMT-LIB v2.6 driver
 //                            (Z3, cvc5, bitwuzla, MathSAT, ...).
 //
@@ -19,18 +23,20 @@
 //
 // Spec: protocol/specs/2026-05-02-multi-solver-protocol-v2.md
 //       (Coq's seat in `Portfolio { consensus, coverage_required: true }`).
-// Note: this file ships the registry seat. The §5 ConsensusCoverage
-// 7-step rule and the OpacityManifest types are out of scope for this
-// change; see the PR body for the staged-rollout plan.
+// Note: this file ships the registry seat. Consensus coverage policy
+// and opacity manifests are handled by the compiler and runner layers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use provekit_ir_compiler_coq::DIALECT as COQ_DIALECT;
+use provekit_ir_compiler_lean::DIALECT as LEAN_DIALECT;
+use provekit_ir_compiler_maude::DIALECT as MAUDE_DIALECT;
 
 use crate::solvers::{
-    CoqSubprocessSolver, SolverConfig, SolverHandle, SolversConfig, StubSolver, SubprocessSolver,
+    CetaGateConfig, CoqSubprocessSolver, LeanSubprocessSolver, MaudeSubprocessSolver, SolverConfig,
+    SolverHandle, SolversConfig, StubSolver, SubprocessSolver,
 };
 
 pub fn build(cfg: &SolversConfig) -> HashMap<String, SolverHandle> {
@@ -50,12 +56,22 @@ fn is_coq_compiler(ir_compiler: &str) -> bool {
     ir_compiler == "coq" || ir_compiler == COQ_DIALECT
 }
 
+fn is_maude_compiler(ir_compiler: &str) -> bool {
+    ir_compiler == "maude" || ir_compiler == MAUDE_DIALECT
+}
+
+fn is_lean_compiler(ir_compiler: &str) -> bool {
+    ir_compiler == "lean" || ir_compiler == LEAN_DIALECT
+}
+
 fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
     if let Some(stub) = StubSolver::from_binary(name, &sc.binary) {
         return Arc::new(stub) as SolverHandle;
     }
     let timeout = sc.timeout_seconds.map(Duration::from_secs);
-    let bin = if sc.binary.is_empty() {
+    let bin = if sc.binary.is_empty() && is_lean_compiler(&sc.ir_compiler) {
+        "lake".to_string()
+    } else if sc.binary.is_empty() {
         name.to_string()
     } else {
         sc.binary.clone()
@@ -66,6 +82,31 @@ fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
             bin,
             sc.version.clone(),
             timeout,
+        )) as SolverHandle;
+    }
+    if is_maude_compiler(&sc.ir_compiler) {
+        return Arc::new(MaudeSubprocessSolver::new(
+            name,
+            bin,
+            sc.version.clone(),
+            timeout,
+            CetaGateConfig {
+                enabled: sc.ceta_gate,
+                ceta_binary: sc.ceta_binary.clone(),
+                termination_prover: sc.termination_prover.clone(),
+                confluence_checker: sc.confluence_checker.clone(),
+                timeout,
+            },
+        )) as SolverHandle;
+    }
+    if is_lean_compiler(&sc.ir_compiler) {
+        return Arc::new(LeanSubprocessSolver::new(
+            name,
+            bin,
+            sc.version.clone(),
+            timeout,
+            sc.lake_project.clone(),
+            sc.lean_toolchain.clone(),
         )) as SolverHandle;
     }
     Arc::new(SubprocessSolver::new(
@@ -81,6 +122,12 @@ fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
 /// Convenience: build a registry with a single Z3 SubprocessSolver
 /// at the given binary path. Used by the legacy `RunnerConfig.z3_path`
 /// fallback when no `.provekit/config.toml` is present.
+///
+/// A 30-second per-invocation timeout is applied as defense-in-depth.
+/// Without a timeout, a Z3 invocation that reads from stdin without
+/// receiving EOF (e.g. when inherited in a subprocess chain) can block
+/// indefinitely.  30 s is a conservative upper bound for any SMT-LIB
+/// obligation that would arise from a ProvekIt proof graph.
 pub fn build_default_z3(z3_path: &str) -> HashMap<String, SolverHandle> {
     let mut out: HashMap<String, SolverHandle> = HashMap::new();
     out.insert(
@@ -91,7 +138,7 @@ pub fn build_default_z3(z3_path: &str) -> HashMap<String, SolverHandle> {
             "4.x",
             "smt-lib-v2.6",
             vec!["-smt2".into(), "-in".into()],
-            None,
+            Some(Duration::from_secs(30)),
         )) as SolverHandle,
     );
     out
@@ -165,6 +212,86 @@ ir_compiler = "coq"
             "expected IR-JSON parse error from CoqSubprocessSolver, got: {}",
             res.error
         );
+    }
+
+    #[test]
+    fn build_recognizes_lean_ir_compiler() {
+        let toml = r#"
+[solvers]
+default = "lean"
+[solvers.lean]
+binary = "lake"
+ir_compiler = "lean"
+"#;
+        let c = SolversConfig::from_toml(toml).unwrap();
+        let r = build(&c);
+        let s = r.get("lean").expect("lean registered");
+        assert_eq!(s.ir_compiler(), "lean");
+        let res = s.solve("(check-sat)");
+        assert_eq!(res.verdict, crate::types::ObligationVerdict::Undecidable);
+        assert!(
+            res.error.contains("parse IR-JSON") || res.error.contains("IR-JSON"),
+            "expected IR-JSON parse error from LeanSubprocessSolver, got: {}",
+            res.error
+        );
+    }
+
+    #[test]
+    fn build_recognizes_default_workspace_portfolio() {
+        // Closes #251 (cvc5) + #252 Tier 1 (Vampire).
+        //
+        // Reads the canonical `.provekit/config.toml` from the repo
+        // root (computed from CARGO_MANIFEST_DIR) and asserts that the
+        // file parses cleanly and registers all five default-portfolio
+        // solvers with the right ir_compiler tags. This is a
+        // registry-build smoke test only: it does not spawn any solver
+        // binary, so it passes even on hosts that lack
+        // cvc5/vampire/coqc on PATH (which is the whole point of the
+        // first-wins mode in the default config).
+        //
+        // Closes #296: the prior version parsed an inline TOML string
+        // instead of the actual file, letting the repo config drift
+        // without test signal.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("could not find repository root");
+        let config_path = root.join(".provekit").join("config.toml");
+        let body = std::fs::read_to_string(&config_path)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", config_path.display()));
+        let c = SolversConfig::from_toml(&body).expect("config parses");
+        let r = build(&c);
+
+        // All six seats register.
+        for name in ["z3", "cvc5", "vampire", "coq", "maude", "lean"] {
+            assert!(r.contains_key(name), "{name} seat missing from registry");
+        }
+
+        // SMT seats route to the generic SubprocessSolver
+        // (ir_compiler tag round-trips as "smt-lib-v2.6").
+        for name in ["z3", "cvc5", "vampire"] {
+            let s = r.get(name).unwrap();
+            assert_eq!(s.name(), name);
+            assert_eq!(
+                s.ir_compiler(),
+                "smt-lib-v2.6",
+                "{name} should route to the SMT-LIB SubprocessSolver",
+            );
+        }
+
+        // Coq seat routes to CoqSubprocessSolver. The Coq solver's
+        // ir_compiler() tag is COQ_DIALECT ("coq"), and (per
+        // `build_recognizes_coq_ir_compiler`) handing it SMT-LIB MUST
+        // surface an IR-JSON parse error rather than a binary-spawn
+        // error. We only check the tag here; the load-bearing
+        // dispatch assertion already lives in the dedicated test
+        // above.
+        let coq = r.get("coq").unwrap();
+        assert_eq!(coq.ir_compiler(), "coq");
+        let maude = r.get("maude").unwrap();
+        assert_eq!(maude.ir_compiler(), "maude");
+        let lean = r.get("lean").unwrap();
+        assert_eq!(lean.ir_compiler(), "lean");
     }
 
     #[test]

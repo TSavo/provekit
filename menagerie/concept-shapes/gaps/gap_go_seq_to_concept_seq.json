@@ -1,0 +1,111 @@
+{
+  "fn_name": "gap:go:seq:to:concept:seq",
+  "gap_kind": "sort-mismatch",
+  "kind": "TransportGapMemento",
+  "reason": {
+    "effects_delta": {
+      "got": {
+        "effects": []
+      },
+      "want": {
+        "effects": [
+          {
+            "kind": "effect-polymorphic",
+            "rule": "union(first.effects, second.effects)"
+          }
+        ]
+      }
+    },
+    "formal_sorts_delta": {
+      "got": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Term"
+        }
+      ],
+      "want": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        },
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "Stmt"
+        }
+      ]
+    },
+    "post_delta": {
+      "got": {
+        "arity": [
+          "Term",
+          "Term"
+        ],
+        "arity_shape": {
+          "arity": 2,
+          "kind": "positional"
+        },
+        "kind": "operation-contract",
+        "operator": "seq",
+        "result": "Term",
+        "wp": "left-to-right statement sequencing"
+      },
+      "want": {
+        "arity": [
+          "Stmt",
+          "Stmt"
+        ],
+        "arity_shape": {
+          "arity": 2,
+          "kind": "positional"
+        },
+        "kind": "operation-contract",
+        "operator": "seq",
+        "result": "Stmt",
+        "wp_note": "wp(first, wp(second, post))",
+        "wp_rule": {
+          "args": [
+            {
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "Q"
+                }
+              ],
+              "fn": "wp_second",
+              "kind": "apply"
+            }
+          ],
+          "fn": "wp_first",
+          "kind": "apply"
+        }
+      }
+    }
+  },
+  "reason_note": "formal sort mismatch: got `[{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Term\",\"args\":[]}]` want `[{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]},{\"kind\":\"ctor\",\"name\":\"Stmt\",\"args\":[]}]`",
+  "resolution_options": [
+    {
+      "option_kind": "add-representation-map",
+      "status": "recommended",
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
+    },
+    {
+      "option_kind": "accept-permanent",
+      "status": "deferred",
+      "tradeoff": "no exact bridge for structurally distinct sorts"
+    }
+  ],
+  "schema_version": "1",
+  "signature": null,
+  "source_lang": "go",
+  "source_op_cid": "blake3-512:4cc2f526164023c6401828ed393f00546e71eb5f01d52f1a302c282bffc8db2690872b22727e228c8decf6785f38b1587e2ab1171d8c7af62bb4d6fa72ece8fb",
+  "target_concept_op": "concept:seq",
+  "target_op_cid": "blake3-512:2f4f01ae873fcd3d57990ecd94e24caaa3ce1cbd5baf4347b21fe8625750bd4b30e2f92b8415e4595ec637d3aa7f511d42c006d587ee1cf5fe8b264df39f1504"
+}

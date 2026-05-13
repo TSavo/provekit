@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "ts:LValue",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "LValue",
+      "description": "Assignable TypeScript target."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    },
+    "locus": "menagerie/typescript-language-signature/README.md#sorts"
+  },
+  "cid": "blake3-512:2183cfa7b77f6a3e49089c5797455fe0e2482edba7adadeb0c0cbe1100e26584d1219820e323d3c064ed9430bbd827f14992587e03a8af979fd139b2a7b06929",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "xiGypuTCy8ZdIxPCr3xtBo0uWM21HTFxEi0uXROCLdsl8MxebbZ+I72QtHei84rcqEJCeHJe9LY/cl2T+SwACQ=="
+  }
+}

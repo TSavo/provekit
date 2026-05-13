@@ -38,24 +38,49 @@ public class IrDocument {
             declarations.add(new Declaration.Property(name, params, body));
             return this;
         }
-        public Builder bridge(String sourceSymbol, String sourceCid, String targetCid) {
-            declarations.add(new Declaration.Bridge(sourceSymbol, sourceCid, targetCid, null));
+        /** v1.1.0 9-field bridge with no notes. */
+        public Builder bridge(
+            String name,
+            String sourceSymbol,
+            String sourceLayer,
+            String sourceContractCid,
+            String targetContractCid,
+            String targetProofCid,
+            String targetLayer
+        ) {
+            declarations.add(new Declaration.Bridge(
+                name, sourceSymbol, sourceLayer,
+                sourceContractCid, targetContractCid, targetProofCid, targetLayer,
+                null));
             return this;
         }
-        public Builder bridge(String sourceSymbol, String sourceCid, String targetCid, String evidence) {
-            declarations.add(new Declaration.Bridge(sourceSymbol, sourceCid, targetCid, evidence));
+        /** v1.1.0 9-field bridge including optional notes. */
+        public Builder bridge(
+            String name,
+            String sourceSymbol,
+            String sourceLayer,
+            String sourceContractCid,
+            String targetContractCid,
+            String targetProofCid,
+            String targetLayer,
+            String notes
+        ) {
+            declarations.add(new Declaration.Bridge(
+                name, sourceSymbol, sourceLayer,
+                sourceContractCid, targetContractCid, targetProofCid, targetLayer,
+                notes));
             return this;
         }
         public Builder contract(String symbol, Formula precondition, Formula postcondition) {
-            declarations.add(new Declaration.Contract(symbol, precondition, postcondition, null, null));
+            declarations.add(new Declaration.Contract(symbol, "out", precondition, postcondition, null, null));
             return this;
         }
         public Builder contract(String symbol, Formula precondition, Formula postcondition, Formula invariant) {
-            declarations.add(new Declaration.Contract(symbol, precondition, postcondition, invariant, null));
+            declarations.add(new Declaration.Contract(symbol, "out", precondition, postcondition, invariant, null));
             return this;
         }
         public Builder contract(String symbol, Formula precondition, Formula postcondition, Formula invariant, String evidence) {
-            declarations.add(new Declaration.Contract(symbol, precondition, postcondition, invariant, evidence));
+            declarations.add(new Declaration.Contract(symbol, "out", precondition, postcondition, invariant, evidence));
             return this;
         }
         public IrDocument build() {

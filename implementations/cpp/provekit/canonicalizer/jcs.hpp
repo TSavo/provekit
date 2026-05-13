@@ -3,9 +3,9 @@
 // JCS-JSON encoder, per protocol/specs/2026-04-30-canonicalization-grammar.md §7
 // (RFC 8785 JSON Canonicalization Scheme).
 //
-// Implements the rules normatively from the spec — clean-room. No
+// Implements the rules normatively from the spec: clean-room. No
 // reference to the TypeScript implementation. If a case below cannot
-// be derived from the spec alone, that is a SPEC HOLE — flag it.
+// be derived from the spec alone, that is a SPEC HOLE: flag it.
 //
 // Spec rules implemented:
 //   §7.1  UTF-8 output, no BOM

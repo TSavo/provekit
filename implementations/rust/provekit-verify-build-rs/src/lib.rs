@@ -1,4 +1,4 @@
-// provekit-verify crate — Cargo build.rs integration
+// provekit-verify crate: Cargo build.rs integration
 //
 // Add to Cargo.toml:
 //   [build-dependencies]

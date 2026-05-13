@@ -1,0 +1,338 @@
+id: BZ-SHAPE-005
+name: Null Boundary Equivalence
+kingdom: shape
+status: lab
+predicates:
+  boundary: maybe_null(name)
+  sink: non_null(name)
+  missingEdge: maybe_null(name) => non_null(name)
+languages:
+  - id: java
+    surface: java-provekit-native-and-spring-web
+    paths:
+      labLibrary: java/lab/library
+      labHarness: java/lab/harness
+    commands:
+      hostCheck:
+        cwd: java/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: provekit-native
+        surface: java-provekit-native
+        harness: java/exhibit/provekit-native/harness
+        kitRpc: java/exhibit/provekit-native/kit-rpc
+        proofIrFile: java/exhibit/provekit-native/expected.proofir.json
+        diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/provekit-native/harness
+          kitRpc: java/fixed/provekit-native/kit-rpc
+          proofIrFile: java/fixed/provekit-native/expected.proofir.json
+          diagnosticFile: java/fixed/provekit-native/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - Java method body string concatenation
+            - concrete annotation package name
+          preserved:
+            - precondition neq(name, null)
+      - id: spring-web
+        surface: java-spring-web
+        harness: java/exhibit/spring-web/harness
+        kitRpc: java/exhibit/spring-web/kit-rpc
+        proofIrFile: java/exhibit/spring-web/expected.proofir.json
+        diagnosticFile: java/exhibit/spring-web/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/spring-web/harness
+          kitRpc: java/fixed/spring-web/kit-rpc
+          proofIrFile: java/fixed/spring-web/expected.proofir.json
+          diagnosticFile: java/fixed/spring-web/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - Spring request binding machinery
+            - Java method body string concatenation
+          preserved:
+            - precondition neq(name, null)
+    equivalence:
+      required:
+        - [provekit-native, spring-web]
+    exposure:
+      satWitnessFile: java/exhibit/sat-witness.json
+    composition:
+      checks:
+        - id: java-provekit-native-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: provekit-native
+          requirementExhibit: provekit-native
+          witnessFormula: &name_is_null
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: name }
+              - { kind: const, value: null, sort: { kind: primitive, name: Ref } }
+          requirementFormula: &name_is_non_null
+            kind: atomic
+            name: neq
+            args:
+              - { kind: var, name: name }
+              - { kind: const, value: null, sort: { kind: primitive, name: Ref } }
+          assignment:
+            name: 0
+          diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
+        - id: java-spring-web-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: spring-web
+          requirementExhibit: spring-web
+          witnessFormula: *name_is_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 0
+          diagnosticFile: java/exhibit/spring-web/expected-diagnostic.txt
+        - id: java-provekit-native-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: provekit-native
+          requirementExhibit: provekit-native
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: java/fixed/provekit-native/expected-diagnostic.txt
+        - id: java-spring-web-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: spring-web
+          requirementExhibit: spring-web
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: java/fixed/spring-web/expected-diagnostic.txt
+  - id: typescript
+    surface: typescript-zod-and-class-validator
+    paths:
+      labLibrary: typescript/lab/library
+      labHarness: typescript/lab/harness
+    commands:
+      hostCheck:
+        cwd: typescript/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: zod
+        surface: typescript-zod
+        harness: typescript/exhibit/zod/harness
+        kitRpc: typescript/exhibit/zod/kit-rpc
+        proofIrFile: typescript/exhibit/zod/expected.proofir.json
+        diagnosticFile: typescript/exhibit/zod/expected-diagnostic.txt
+        fixed:
+          harness: typescript/fixed/zod/harness
+          kitRpc: typescript/fixed/zod/kit-rpc
+          proofIrFile: typescript/fixed/zod/expected.proofir.json
+          diagnosticFile: typescript/fixed/zod/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - TypeScript function body string concatenation
+            - concrete zod parser runtime implementation
+          preserved:
+            - precondition neq(name, null)
+      - id: class-validator
+        surface: typescript-class-validator
+        harness: typescript/exhibit/class-validator/harness
+        kitRpc: typescript/exhibit/class-validator/kit-rpc
+        proofIrFile: typescript/exhibit/class-validator/expected.proofir.json
+        diagnosticFile: typescript/exhibit/class-validator/expected-diagnostic.txt
+        fixed:
+          harness: typescript/fixed/class-validator/harness
+          kitRpc: typescript/fixed/class-validator/kit-rpc
+          proofIrFile: typescript/fixed/class-validator/expected.proofir.json
+          diagnosticFile: typescript/fixed/class-validator/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - TypeScript function body string concatenation
+            - concrete class-validator decorator package name
+          preserved:
+            - precondition neq(name, null)
+    equivalence:
+      required:
+        - [zod, class-validator]
+    exposure:
+      satWitnessFile: typescript/exhibit/sat-witness.json
+    composition:
+      checks:
+        - id: typescript-zod-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: zod
+          requirementExhibit: zod
+          witnessFormula: *name_is_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 0
+          diagnosticFile: typescript/exhibit/zod/expected-diagnostic.txt
+        - id: typescript-class-validator-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: class-validator
+          requirementExhibit: class-validator
+          witnessFormula: *name_is_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 0
+          diagnosticFile: typescript/exhibit/class-validator/expected-diagnostic.txt
+        - id: typescript-zod-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: zod
+          requirementExhibit: zod
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: typescript/fixed/zod/expected-diagnostic.txt
+        - id: typescript-class-validator-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: class-validator
+          requirementExhibit: class-validator
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: typescript/fixed/class-validator/expected-diagnostic.txt
+  - id: csharp
+    surface: csharp-data-annotations-provekit-annotations-and-linq
+    paths:
+      labLibrary: csharp/lab/library
+      labHarness: csharp/lab/harness
+    commands:
+      hostCheck:
+        cwd: csharp/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: data-annotations
+        surface: csharp-data-annotations
+        harness: csharp/exhibit/data-annotations/harness
+        kitRpc: csharp/exhibit/data-annotations/kit-rpc
+        proofIrFile: csharp/exhibit/data-annotations/expected.proofir.json
+        diagnosticFile: csharp/exhibit/data-annotations/expected-diagnostic.txt
+        fixed:
+          harness: csharp/fixed/data-annotations/harness
+          kitRpc: csharp/fixed/data-annotations/kit-rpc
+          proofIrFile: csharp/fixed/data-annotations/expected.proofir.json
+          diagnosticFile: csharp/fixed/data-annotations/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - C# method body string concatenation
+            - concrete DataAnnotations runtime implementation
+          preserved:
+            - precondition neq(name, null)
+      - id: provekit-annotations
+        surface: csharp-provekit-annotations
+        harness: csharp/exhibit/provekit-annotations/harness
+        kitRpc: csharp/exhibit/provekit-annotations/kit-rpc
+        proofIrFile: csharp/exhibit/provekit-annotations/expected.proofir.json
+        diagnosticFile: csharp/exhibit/provekit-annotations/expected-diagnostic.txt
+        fixed:
+          harness: csharp/fixed/provekit-annotations/harness
+          kitRpc: csharp/fixed/provekit-annotations/kit-rpc
+          proofIrFile: csharp/fixed/provekit-annotations/expected.proofir.json
+          diagnosticFile: csharp/fixed/provekit-annotations/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - C# method body string concatenation
+            - concrete provekit annotation scanner declaration shape
+          preserved:
+            - precondition neq(name, null)
+      - id: linq-where
+        surface: csharp-linq
+        harness: csharp/exhibit/linq-where/harness
+        kitRpc: csharp/exhibit/linq-where/kit-rpc
+        proofIrFile: csharp/exhibit/linq-where/expected.proofir.json
+        diagnosticFile: csharp/exhibit/linq-where/expected-diagnostic.txt
+        fixed:
+          harness: csharp/fixed/linq-where/harness
+          kitRpc: csharp/fixed/linq-where/kit-rpc
+          proofIrFile: csharp/fixed/linq-where/expected.proofir.json
+          diagnosticFile: csharp/fixed/linq-where/expected-diagnostic.txt
+        lossiness:
+          erased:
+            - C# method body string concatenation
+            - concrete LINQ membership quantifier shape
+          preserved:
+            - precondition neq(name, null)
+    equivalence:
+      required:
+        - [data-annotations, provekit-annotations]
+        - [data-annotations, linq-where]
+    exposure:
+      satWitnessFile: csharp/exhibit/sat-witness.json
+    composition:
+      checks:
+        - id: csharp-data-annotations-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: data-annotations
+          requirementExhibit: data-annotations
+          witnessFormula: *name_is_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 0
+          diagnosticFile: csharp/exhibit/data-annotations/expected-diagnostic.txt
+        - id: csharp-provekit-annotations-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: provekit-annotations
+          requirementExhibit: provekit-annotations
+          witnessFormula: *name_is_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 0
+          diagnosticFile: csharp/exhibit/provekit-annotations/expected-diagnostic.txt
+        - id: csharp-linq-where-lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: linq-where
+          requirementExhibit: linq-where
+          witnessFormula: *name_is_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 0
+          diagnosticFile: csharp/exhibit/linq-where/expected-diagnostic.txt
+        - id: csharp-data-annotations-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: data-annotations
+          requirementExhibit: data-annotations
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: csharp/fixed/data-annotations/expected-diagnostic.txt
+        - id: csharp-provekit-annotations-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: provekit-annotations
+          requirementExhibit: provekit-annotations
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: csharp/fixed/provekit-annotations/expected-diagnostic.txt
+        - id: csharp-linq-where-fixed-non-null-satisfies-non-null
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: linq-where
+          requirementExhibit: linq-where
+          witnessFormula: *name_is_non_null
+          requirementFormula: *name_is_non_null
+          assignment:
+            name: 1
+          diagnosticFile: csharp/fixed/linq-where/expected-diagnostic.txt
+wildSightings: []

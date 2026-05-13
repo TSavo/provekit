@@ -1,5 +1,5 @@
 /**
- * Universal claim envelope — main entrypoint.
+ * Universal claim envelope: main entrypoint.
  *
  * Spec: protocol/specs/2026-04-30-memento-envelope-grammar.md
  *

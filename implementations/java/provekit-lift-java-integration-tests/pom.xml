@@ -23,12 +23,27 @@
         </dependency>
         <dependency>
             <groupId>com.provekit</groupId>
+            <artifactId>provekit-lift-java-provekit-native</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-lift-java-junit</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.provekit</groupId>
             <artifactId>provekit-lift-java-jml</artifactId>
             <version>0.1.0</version>
         </dependency>
         <dependency>
             <groupId>com.provekit</groupId>
             <artifactId>provekit-lift-java-spring-web</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-lift-java-cofoja</artifactId>
             <version>0.1.0</version>
         </dependency>
         <dependency>

@@ -1,0 +1,57 @@
+{
+  "kind": "algorithm",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:and",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Bool",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "and",
+    "arity": [
+      "Bool",
+      "Bool"
+    ],
+    "result": "Bool",
+    "wp": "short-circuit boolean and",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "lhs"
+        },
+        {
+          "name": "rhs",
+          "evaluation": "unevaluated"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

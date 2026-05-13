@@ -1,0 +1,60 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Trap"
+      }
+    ]
+  },
+  "fn_name": "concept:neg",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Int"
+    }
+  ],
+  "formals": [
+    "value"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Int"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "value"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "neg",
+    "result": "Int",
+    "wp": "integer arithmetic negation when no overflow holds"
+  },
+  "pre": {
+    "args": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "value"
+          }
+        ],
+        "kind": "op",
+        "name": "neg"
+      }
+    ],
+    "kind": "atomic",
+    "name": "no_signed_overflow"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Int"
+  }
+}

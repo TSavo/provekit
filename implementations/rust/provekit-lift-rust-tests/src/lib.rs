@@ -3,9 +3,9 @@
 // provekit-lift-rust-tests
 //
 // Walks the syn AST of a Rust source file looking for `#[test]` and
-// `#[tokio::test]` functions. For each, scans the function body for
-// assertion-macro invocations and lifts EACH assertion to its own
-// content-addressed ContractDecl.
+// `#[tokio::test]` functions. For each assertion macro, identifies the
+// producer callsite for the asserted value and lifts one content-addressed
+// ContractDecl per callsite.
 //
 // THE FRAMING:
 //
@@ -57,24 +57,42 @@
 // JCS invariants operationally enforced but un-lifted. v0.5 admits the
 // idiomatic "compose a constructor, call a function, compare" shape.
 //
-// Naming convention: contract name = "<test_function_name>::<index>",
-// where index counts assertion-macro statements zero-indexed in source
-// order. The semantics: each assertion is independently a witness; if
-// the file later splits an assert into two, the new one mints a fresh
-// CID without invalidating the others.
+// Naming convention: contract name = "<callee>@<file>:<line>:<col>",
+// where the locus is the call expression that produced the asserted value.
+// Let-bound observations substitute the latest visible `let name = <call>`
+// binding into the lifted formula before emission. Assertions with no
+// identifiable producer callsite skip with a LiftWarning.
 //
 // Each lifted ContractDecl has:
-//   - name           = "<test_fn>::<i>"
+//   - name           = "<callee>@<file>:<line>:<col>"
 //   - inv            = the lifted atomic Formula (closed; no foralls)
 //   - pre/post       = None
 //   - out_binding    = "out" (unused; provided for ContractDecl shape parity)
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
+use std::collections::HashMap;
+
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_symbolic::{
-    eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Term,
+    eq, gt, gte, lt, lte, make_var, ne, num, serialize::formula_to_value, str_const, ContractDecl,
+    Formula, Term,
 };
+use provekit_ir_types::{
+    EvidenceMemento, IrFormula, SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
+};
+use provekit_walk::emit::rust_function_term_json_cid;
+use syn::spanned::Spanned;
+
+/// The auto-promote sentinel lifter CID (128 hex zeros after the prefix).
+/// Used until PR-F wires the real lifter CID (compound spec §4.4).
+pub const AUTO_PROMOTE_LIFTER_CID: &str = concat!(
+    "blake3-512:",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+);
 
 pub mod layer2;
 pub use layer2::{lift_file_layer2, Layer2Output};
@@ -103,6 +121,49 @@ pub(crate) fn translate_term_pub(expr: &syn::Expr) -> Result<Rc<Term>, String> {
     translate_term(expr)
 }
 
+pub(crate) fn lift_assertion_macro_at_callsites_pub(
+    mac: &syn::Macro,
+    source_path: &str,
+    bindings: &BTreeMap<String, BoundCall>,
+) -> Result<Vec<LiftedCallsiteAssertion>, String> {
+    lift_assertion_macro_at_callsites(mac, source_path, bindings)
+}
+
+pub(crate) fn callsite_contract_name_pub(
+    callee: &str,
+    source_path: &str,
+    span: proc_macro2::Span,
+) -> String {
+    callsite_contract_name(callee, source_path, span)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BoundCall {
+    pub(crate) callee: String,
+    pub(crate) span: proc_macro2::Span,
+    pub(crate) term: Rc<Term>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LiftedCallsiteAssertion {
+    pub(crate) name: String,
+    pub(crate) formula: Rc<Formula>,
+}
+
+/// Extended version of `LiftedCallsiteAssertion` that also carries the
+/// callsite span and raw callee name -- needed for `SourceLocatorSpan` and
+/// `test_target_function_cid` in `EvidenceMemento`.
+#[derive(Debug, Clone)]
+struct LiftedCallsiteAssertionWithSpan {
+    name: String,
+    formula: Rc<Formula>,
+    callsite_span: proc_macro2::Span,
+    /// Raw callee name (e.g. `"deposit"` or `"Account::deposit"`). Used to
+    /// look up the target function in the same lift pass for Option A CID
+    /// computation (spec §10 `test_target_function_cid`).
+    callee: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct LiftWarning {
     pub source_path: String,
@@ -113,6 +174,10 @@ pub struct LiftWarning {
 #[derive(Debug, Default)]
 pub struct AdapterOutput {
     pub decls: Vec<ContractDecl>,
+    /// One `EvidenceMemento` per lifted callsite assertion.
+    /// Populated only when `lift_file_with_evidence` is called; empty
+    /// when using the basic `lift_file` / `lift_file_with_skip` API.
+    pub evidences: Vec<EvidenceMemento>,
     pub warnings: Vec<LiftWarning>,
     /// Total assertion macro candidates the adapter saw (lifted + skipped).
     pub seen: usize,
@@ -138,6 +203,69 @@ pub fn lift_file_with_skip(
     let mut out = AdapterOutput::default();
     walk_items(&file.items, source_path, skip, &mut out);
     out
+}
+
+/// Same as `lift_file` but also mints an `EvidenceMemento` per lifted
+/// callsite assertion. The `source_bytes` are the raw bytes of the source
+/// file identified by `source_path`; they are hashed to produce the
+/// `source_cid` embedded in each evidence's `source_locator`.
+///
+/// Use this variant when the caller already holds the file bytes (e.g., the
+/// `walk_emit` binary after reading the file to pass to `syn::parse_file`).
+/// This keeps the lifter pure (no filesystem I/O).
+pub fn lift_file_with_evidence(
+    file: &syn::File,
+    source_path: &str,
+    source_bytes: &[u8],
+) -> AdapterOutput {
+    lift_file_with_evidence_and_skip(file, source_path, source_bytes, &BTreeSet::new())
+}
+
+/// Combined `lift_file_with_evidence` + `lift_file_with_skip`.
+pub fn lift_file_with_evidence_and_skip(
+    file: &syn::File,
+    source_path: &str,
+    source_bytes: &[u8],
+    skip: &BTreeSet<String>,
+) -> AdapterOutput {
+    let source_cid = blake3_512_of(source_bytes);
+    // Build a map from bare function name to &syn::ItemFn for all non-test top-level
+    // functions in this file. Used by `visit_test_fn_with_evidence` to compute
+    // `test_target_function_cid` (spec §10) via Option A: same-lift-pass CID
+    // for free-fn callees whose definition is visible in this syn::File.
+    let fn_map: HashMap<String, &syn::ItemFn> = collect_non_test_fns(&file.items);
+    let mut out = AdapterOutput::default();
+    walk_items_with_evidence(
+        &file.items,
+        source_path,
+        &source_cid,
+        skip,
+        &fn_map,
+        &mut out,
+    );
+    out
+}
+
+/// Collect all non-test `fn` items reachable from `items` (top-level and inside
+/// `mod` blocks) by bare name. Only free functions are included; method calls
+/// on `self` / receiver types cannot be resolved by name alone and fall through
+/// to the pending path.
+fn collect_non_test_fns<'a>(items: &'a [syn::Item]) -> HashMap<String, &'a syn::ItemFn> {
+    let mut map = HashMap::new();
+    for item in items {
+        match item {
+            syn::Item::Fn(f) if !has_test_attr(&f.attrs) => {
+                map.insert(f.sig.ident.to_string(), f);
+            }
+            syn::Item::Mod(m) => {
+                if let Some((_, inner)) = &m.content {
+                    map.extend(collect_non_test_fns(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    map
 }
 
 fn walk_items(
@@ -178,6 +306,64 @@ fn walk_block_for_items(
     }
 }
 
+/// Evidence-emitting variant of `walk_items`. Mirrors `walk_items` but passes
+/// `source_cid` and `fn_map` down so `visit_test_fn_with_evidence` can populate
+/// `evidences` including `test_target_function_cid` (spec §10).
+fn walk_items_with_evidence<'a>(
+    items: &'a [syn::Item],
+    source_path: &str,
+    source_cid: &str,
+    skip: &BTreeSet<String>,
+    fn_map: &HashMap<String, &'a syn::ItemFn>,
+    out: &mut AdapterOutput,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(f) => {
+                if has_test_attr(&f.attrs) && !skip.contains(&f.sig.ident.to_string()) {
+                    visit_test_fn_with_evidence(f, source_path, source_cid, fn_map, out);
+                }
+                walk_block_for_items_with_evidence(
+                    &f.block,
+                    source_path,
+                    source_cid,
+                    skip,
+                    fn_map,
+                    out,
+                );
+            }
+            syn::Item::Mod(m) => {
+                if let Some((_, items)) = &m.content {
+                    walk_items_with_evidence(items, source_path, source_cid, skip, fn_map, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn walk_block_for_items_with_evidence<'a>(
+    block: &'a syn::Block,
+    source_path: &str,
+    source_cid: &str,
+    skip: &BTreeSet<String>,
+    fn_map: &HashMap<String, &'a syn::ItemFn>,
+    out: &mut AdapterOutput,
+) {
+    for stmt in &block.stmts {
+        if let syn::Stmt::Item(item) = stmt {
+            walk_items_with_evidence(
+                std::slice::from_ref(item),
+                source_path,
+                source_cid,
+                skip,
+                fn_map,
+                out,
+            );
+        }
+    }
+}
+
 /// Recognize `#[test]` and `#[tokio::test]` (also tolerates other
 /// `*::test` attribute paths used by async-runtime crates: `async_std`,
 /// `actix_rt`, `smol`, etc.).
@@ -190,11 +376,10 @@ fn has_test_attr(attrs: &[syn::Attribute]) -> bool {
 
 fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
     let test_name = f.sig.ident.to_string();
-    // Walk every statement in the body. Each macro statement that is
-    // an assertion macro increments the assertion index, regardless
-    // of whether it lifts cleanly.
-    let mut idx: usize = 0;
+    let mut bindings: BTreeMap<String, BoundCall> = BTreeMap::new();
     for stmt in &f.block.stmts {
+        update_call_bindings_from_stmt(stmt, &mut bindings);
+
         let mac_opt = match stmt {
             syn::Stmt::Macro(sm) => Some(&sm.mac),
             syn::Stmt::Expr(syn::Expr::Macro(em), _) => Some(&em.mac),
@@ -205,27 +390,648 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
             continue;
         }
         out.seen += 1;
-        let memento_name = format!("{test_name}::{idx}");
-        idx += 1;
-        match lift_assertion_macro(mac) {
-            Ok(formula) => {
-                out.decls.push(ContractDecl {
-                    name: memento_name,
-                    pre: None,
-                    post: None,
-                    inv: Some(formula),
-                    out_binding: "out".into(),
-                evidence: None,
-                });
-                out.lifted += 1;
+        match lift_assertion_macro_at_callsites(mac, source_path, &bindings) {
+            Ok(parts) => {
+                for part in parts {
+                    out.decls.push(ContractDecl {
+                        name: part.name,
+                        pre: None,
+                        post: None,
+                        inv: Some(part.formula),
+                        out_binding: "out".into(),
+                        evidence: None,
+                        concept_hint: None,
+                    });
+                    out.lifted += 1;
+                }
             }
             Err(reason) => {
                 out.warnings.push(LiftWarning {
                     source_path: source_path.into(),
-                    item_name: memento_name,
+                    item_name: test_name.clone(),
                     reason,
                 });
             }
+        }
+    }
+}
+
+/// Evidence-emitting variant of `visit_test_fn`. Emits both a `ContractDecl`
+/// (via the same path as `visit_test_fn`) and an `EvidenceMemento` per
+/// lifted callsite.
+///
+/// `fn_map` maps bare function names to their `syn::ItemFn` for non-test
+/// functions in the same lift pass. Used to compute `test_target_function_cid`
+/// (spec §10) via Option A when the callee is visible in this syn::File.
+/// When the callee is not in the map (cross-crate or method call on a receiver
+/// type), emits `"pending:<symbol>"` as a clearly-non-CID placeholder.
+fn visit_test_fn_with_evidence(
+    f: &syn::ItemFn,
+    source_path: &str,
+    source_cid: &str,
+    fn_map: &HashMap<String, &syn::ItemFn>,
+    out: &mut AdapterOutput,
+) {
+    let test_name = f.sig.ident.to_string();
+    let mut bindings: BTreeMap<String, BoundCall> = BTreeMap::new();
+    for stmt in &f.block.stmts {
+        update_call_bindings_from_stmt(stmt, &mut bindings);
+
+        let mac_opt = match stmt {
+            syn::Stmt::Macro(sm) => Some(&sm.mac),
+            syn::Stmt::Expr(syn::Expr::Macro(em), _) => Some(&em.mac),
+            _ => None,
+        };
+        let Some(mac) = mac_opt else { continue };
+        if !is_assertion_macro(mac) {
+            continue;
+        }
+        out.seen += 1;
+        match lift_assertion_macro_at_callsites_with_span(mac, source_path, &bindings) {
+            Ok(parts) => {
+                for part in parts {
+                    // Emit ContractDecl (same as the basic path).
+                    out.decls.push(ContractDecl {
+                        name: part.name.clone(),
+                        pre: None,
+                        post: None,
+                        inv: Some(part.formula.clone()),
+                        out_binding: "out".into(),
+                        evidence: None,
+                        concept_hint: None,
+                    });
+                    out.lifted += 1;
+
+                    // Also mint an EvidenceMemento.
+                    let span_start = part.callsite_span.start();
+                    let span_end = part.callsite_span.end();
+                    let source_locator = SourceLocator {
+                        source_cid: source_cid.to_string(),
+                        span: SourceLocatorSpan {
+                            // proc_macro2 col is 0-indexed; spec §1.1 mandates 0-indexed col.
+                            start: SourceLocatorPoint {
+                                line: span_start.line as u32,
+                                col: span_start.column as u32,
+                            },
+                            end: SourceLocatorPoint {
+                                line: span_end.line as u32,
+                                col: span_end.column as u32,
+                            },
+                        },
+                    };
+
+                    // Build extension_fields.
+                    let mut ext = BTreeMap::new();
+
+                    // Compute test_target_function_cid (spec §10 REQUIRED for
+                    // source_kind "test-assertion").
+                    // Option A: if the bare callee name resolves to a fn in the
+                    // same syn::File, compute the rust-algebra-term CID directly.
+                    // Restriction: only free-fn callees (Expr::Call with Expr::Path)
+                    // have a resolvable bare name; method calls on receivers fall
+                    // through to Option B.
+                    // Option B: emit "pending:<symbol>" -- a clearly-non-CID marker
+                    // that is NOT a blake3-512: prefixed string, so downstream tools
+                    // know this binding needs post-lift resolution.
+                    let bare_callee = part.callee.split("::").last().unwrap_or(&part.callee);
+                    let target_function_cid = match fn_map.get(bare_callee) {
+                        Some(item_fn) => {
+                            // Option A: same-file function -- compute CID via walk.
+                            match rust_function_term_json_cid(item_fn, source_path) {
+                                Ok(cid) => cid,
+                                Err(_) => format!("pending:{}", part.callee),
+                            }
+                        }
+                        None => {
+                            // Option B: cross-crate or unresolvable -- pending marker.
+                            format!("pending:{}", part.callee)
+                        }
+                    };
+                    ext.insert(
+                        "test_target_function_cid".to_string(),
+                        serde_json::Value::String(target_function_cid),
+                    );
+                    ext.insert(
+                        "test_function_name".to_string(),
+                        serde_json::Value::String(test_name.clone()),
+                    );
+                    ext.insert(
+                        "target_callsite_symbol".to_string(),
+                        serde_json::Value::String(part.name.clone()),
+                    );
+
+                    // Mint the EvidenceMemento CID.
+                    let ir_formula = formula_to_ir_formula(&part.formula);
+                    let cid = evidence_memento_cid(
+                        10000,
+                        &ext,
+                        AUTO_PROMOTE_LIFTER_CID,
+                        &ir_formula,
+                        &SourceKind::TestAssertion,
+                        &source_locator,
+                    );
+
+                    out.evidences.push(EvidenceMemento {
+                        cid,
+                        confidence_basis_points: 10000,
+                        extension_fields: ext,
+                        kind: "evidence".to_string(),
+                        lifter_cid: AUTO_PROMOTE_LIFTER_CID.to_string(),
+                        predicate: ir_formula,
+                        schema_version: "1".to_string(),
+                        source_kind: SourceKind::TestAssertion,
+                        source_locator,
+                    });
+                }
+            }
+            Err(reason) => {
+                out.warnings.push(LiftWarning {
+                    source_path: source_path.into(),
+                    item_name: test_name.clone(),
+                    reason,
+                });
+            }
+        }
+    }
+}
+
+fn update_call_bindings_from_stmt(stmt: &syn::Stmt, bindings: &mut BTreeMap<String, BoundCall>) {
+    let syn::Stmt::Local(local) = stmt else {
+        return;
+    };
+
+    let mut bound_names = Vec::new();
+    collect_pat_idents(&local.pat, &mut bound_names);
+    for name in &bound_names {
+        bindings.remove(name);
+    }
+
+    if bound_names.len() != 1 {
+        return;
+    }
+    let Some(init) = &local.init else {
+        return;
+    };
+    if let Some(call) = bound_call_from_expr(&init.expr) {
+        bindings.insert(bound_names.remove(0), call);
+    }
+}
+
+fn collect_pat_idents(pat: &syn::Pat, out: &mut Vec<String>) {
+    match pat {
+        syn::Pat::Ident(p) => out.push(p.ident.to_string()),
+        syn::Pat::Type(p) => collect_pat_idents(&p.pat, out),
+        syn::Pat::Reference(p) => collect_pat_idents(&p.pat, out),
+        syn::Pat::Paren(p) => collect_pat_idents(&p.pat, out),
+        syn::Pat::Tuple(p) => {
+            for elem in &p.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        syn::Pat::TupleStruct(p) => {
+            for elem in &p.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        syn::Pat::Struct(p) => {
+            for field in &p.fields {
+                collect_pat_idents(&field.pat, out);
+            }
+        }
+        syn::Pat::Slice(p) => {
+            for elem in &p.elems {
+                collect_pat_idents(elem, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn bound_call_from_expr(expr: &syn::Expr) -> Option<BoundCall> {
+    match expr {
+        syn::Expr::Call(c) => {
+            let syn::Expr::Path(p) = &*c.func else {
+                return None;
+            };
+            Some(BoundCall {
+                callee: path_final_segment(&p.path)?,
+                span: c.span(),
+                term: translate_term(expr).ok()?,
+            })
+        }
+        syn::Expr::MethodCall(mc) => Some(BoundCall {
+            callee: mc.method.to_string(),
+            span: mc.span(),
+            term: translate_term(expr).ok()?,
+        }),
+        syn::Expr::Paren(p) => bound_call_from_expr(&p.expr),
+        syn::Expr::Reference(r) => bound_call_from_expr(&r.expr),
+        syn::Expr::Cast(c) => bound_call_from_expr(&c.expr),
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
+struct AssertionCallsite {
+    callee: String,
+    span: proc_macro2::Span,
+}
+
+fn lift_assertion_macro_at_callsites(
+    mac: &syn::Macro,
+    source_path: &str,
+    bindings: &BTreeMap<String, BoundCall>,
+) -> Result<Vec<LiftedCallsiteAssertion>, String> {
+    let formula = lift_assertion_macro(mac)?;
+    let exprs = assertion_observed_exprs(mac)?;
+    let mut callsites = Vec::new();
+    let mut substitutions: BTreeMap<String, Rc<Term>> = BTreeMap::new();
+    for expr in &exprs {
+        collect_expr_callsites(expr, bindings, &mut callsites, &mut substitutions);
+    }
+    if callsites.is_empty() {
+        return Err("assertion has no identifiable callsite".into());
+    }
+
+    let formula = subst_vars_in_formula(&formula, &substitutions);
+    let mut seen_names = BTreeSet::new();
+    let mut out = Vec::new();
+    for callsite in callsites {
+        let name = callsite_contract_name(&callsite.callee, source_path, callsite.span);
+        if seen_names.insert(name.clone()) {
+            out.push(LiftedCallsiteAssertion {
+                name,
+                formula: formula.clone(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn assertion_observed_exprs(mac: &syn::Macro) -> Result<Vec<syn::Expr>, String> {
+    let path = path_to_string(&mac.path);
+    match path.as_str() {
+        "assert_eq" => {
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_eq: parse: {e}"))?;
+            Ok(vec![pair.a, pair.b])
+        }
+        "assert_ne" => {
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_ne: parse: {e}"))?;
+            Ok(vec![pair.a, pair.b])
+        }
+        "assert" => {
+            let one: OneExpr =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert: parse: {e}"))?;
+            Ok(vec![one.a])
+        }
+        "assert_matches" => {
+            let pair: ScrutineePattern = syn::parse2(mac.tokens.clone())
+                .map_err(|e| format!("assert_matches: parse: {e}"))?;
+            Ok(vec![pair.scrutinee])
+        }
+        other => Err(format!("not an assertion macro: {other}")),
+    }
+}
+
+fn collect_expr_callsites(
+    expr: &syn::Expr,
+    bindings: &BTreeMap<String, BoundCall>,
+    out: &mut Vec<AssertionCallsite>,
+    substitutions: &mut BTreeMap<String, Rc<Term>>,
+) {
+    match expr {
+        syn::Expr::Call(c) => {
+            if let syn::Expr::Path(p) = &*c.func {
+                if let Some(callee) = path_final_segment(&p.path) {
+                    out.push(AssertionCallsite {
+                        callee,
+                        span: c.span(),
+                    });
+                }
+            }
+        }
+        syn::Expr::MethodCall(mc) => out.push(AssertionCallsite {
+            callee: mc.method.to_string(),
+            span: mc.span(),
+        }),
+        syn::Expr::Path(p) => {
+            if let Some(id) = p.path.get_ident() {
+                if let Some(binding) = bindings.get(&id.to_string()) {
+                    out.push(AssertionCallsite {
+                        callee: binding.callee.clone(),
+                        span: binding.span,
+                    });
+                    substitutions.insert(id.to_string(), binding.term.clone());
+                }
+            }
+        }
+        syn::Expr::Binary(b) => {
+            collect_expr_callsites(&b.left, bindings, out, substitutions);
+            collect_expr_callsites(&b.right, bindings, out, substitutions);
+        }
+        syn::Expr::Paren(p) => collect_expr_callsites(&p.expr, bindings, out, substitutions),
+        syn::Expr::Reference(r) => collect_expr_callsites(&r.expr, bindings, out, substitutions),
+        syn::Expr::Cast(c) => collect_expr_callsites(&c.expr, bindings, out, substitutions),
+        syn::Expr::Tuple(t) => {
+            for elem in &t.elems {
+                collect_expr_callsites(elem, bindings, out, substitutions);
+            }
+        }
+        syn::Expr::Array(a) => {
+            for elem in &a.elems {
+                collect_expr_callsites(elem, bindings, out, substitutions);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn callsite_contract_name(callee: &str, source_path: &str, span: proc_macro2::Span) -> String {
+    let start = span.start();
+    format!("{callee}@{source_path}:{}:{}", start.line, start.column)
+}
+
+/// Evidence-emitting variant of `lift_assertion_macro_at_callsites`.
+/// Returns `LiftedCallsiteAssertionWithSpan` so callers can extract both
+/// the callsite name AND the span for `SourceLocatorSpan`.
+fn lift_assertion_macro_at_callsites_with_span(
+    mac: &syn::Macro,
+    source_path: &str,
+    bindings: &BTreeMap<String, BoundCall>,
+) -> Result<Vec<LiftedCallsiteAssertionWithSpan>, String> {
+    let formula = lift_assertion_macro(mac)?;
+    let exprs = assertion_observed_exprs(mac)?;
+    let mut callsites = Vec::new();
+    let mut substitutions: BTreeMap<String, Rc<Term>> = BTreeMap::new();
+    for expr in &exprs {
+        collect_expr_callsites(expr, bindings, &mut callsites, &mut substitutions);
+    }
+    if callsites.is_empty() {
+        return Err("assertion has no identifiable callsite".into());
+    }
+
+    let formula = subst_vars_in_formula(&formula, &substitutions);
+    let mut seen_names = BTreeSet::new();
+    let mut out = Vec::new();
+    for callsite in callsites {
+        let name = callsite_contract_name(&callsite.callee, source_path, callsite.span);
+        if seen_names.insert(name.clone()) {
+            out.push(LiftedCallsiteAssertionWithSpan {
+                name,
+                formula: formula.clone(),
+                callsite_span: callsite.span,
+                callee: callsite.callee.clone(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Convert a `provekit_ir_symbolic::Formula` (Rc-based internal repr) to
+/// `provekit_ir_types::IrFormula` (serde-friendly substrate type) by
+/// round-tripping through the `canonicalizer::Value` JSON encoding.
+///
+/// Panics on serialization failure -- if `formula_to_value` succeeded,
+/// the JSON is always valid `IrFormula` JSON by construction.
+fn formula_to_ir_formula(f: &Rc<Formula>) -> IrFormula {
+    let cv = formula_to_value(f);
+    let json_str = encode_jcs(&cv);
+    serde_json::from_str::<IrFormula>(&json_str)
+        .expect("formula_to_ir_formula: round-trip through JCS should always succeed")
+}
+
+/// Convert a `serde_json::Value` (from `extension_fields`) to a
+/// `canonicalizer::Value` for inclusion in the JCS CID computation.
+fn serde_json_to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
+    match v {
+        serde_json::Value::Null => CValue::null(),
+        serde_json::Value::Bool(b) => CValue::boolean(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else {
+                // Floats are not used in extension_fields; fall back to
+                // string representation (stable, deterministic).
+                CValue::string(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => CValue::string(s.clone()),
+        serde_json::Value::Array(items) => {
+            let cv: Vec<Arc<CValue>> = items.iter().map(serde_json_to_cvalue).collect();
+            CValue::array(cv)
+        }
+        serde_json::Value::Object(map) => {
+            // serde_json::Map preserves insertion order by default, but for
+            // JCS the encoder sorts keys anyway, so any order is fine here.
+            let entries: Vec<(String, Arc<CValue>)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), serde_json_to_cvalue(v)))
+                .collect();
+            Arc::new(CValue::Object(entries))
+        }
+    }
+}
+
+/// Compute the JCS-canonical CID for an `EvidenceMemento` by building the
+/// full header tree as a `canonicalizer::Value` with the `cid` key elided,
+/// then hashing with BLAKE3-512.
+///
+/// Locked JCS key order (alphabetical; mirrors spec §1.1):
+///   confidence_basis_points, extension_fields, kind, lifter_cid,
+///   predicate, schemaVersion, source_kind, source_locator
+/// (Note: `cid` is elided; the hash IS the cid.)
+fn evidence_memento_cid(
+    confidence_basis_points: u16,
+    extension_fields: &BTreeMap<String, serde_json::Value>,
+    lifter_cid: &str,
+    predicate: &IrFormula,
+    source_kind: &SourceKind,
+    source_locator: &SourceLocator,
+) -> String {
+    // predicate as canonical Value: serialize IrFormula -> serde_json::Value
+    // -> serde_json string -> parse into CValue via encode_jcs round-trip.
+    let pred_json = serde_json::to_value(predicate).expect("IrFormula must be serializable");
+    let pred_cv = serde_json_to_cvalue(&pred_json);
+
+    // extension_fields as sorted CValue object.
+    let ext_entries: Vec<(String, Arc<CValue>)> = extension_fields
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json_to_cvalue(v)))
+        .collect();
+    let ext_cv = Arc::new(CValue::Object(ext_entries));
+
+    // source_kind wire string.
+    let kind_str: String = source_kind.clone().into();
+
+    // source_locator as CValue: JCS key order: source_cid, span.
+    // span: JCS key order: end, start.
+    // point: JCS key order: col, line.
+    let make_point = |p: &SourceLocatorPoint| {
+        CValue::object([
+            ("col", CValue::integer(p.col as i64)),
+            ("line", CValue::integer(p.line as i64)),
+        ])
+    };
+    let span_cv = CValue::object([
+        ("end", make_point(&source_locator.span.end)),
+        ("start", make_point(&source_locator.span.start)),
+    ]);
+    let locator_cv = CValue::object([
+        (
+            "source_cid",
+            CValue::string(source_locator.source_cid.clone()),
+        ),
+        ("span", span_cv),
+    ]);
+
+    // Full header WITHOUT the cid key.
+    let header = CValue::object([
+        (
+            "confidence_basis_points",
+            CValue::integer(confidence_basis_points as i64),
+        ),
+        ("extension_fields", ext_cv),
+        ("kind", CValue::string("evidence")),
+        ("lifter_cid", CValue::string(lifter_cid.to_string())),
+        ("predicate", pred_cv),
+        ("schemaVersion", CValue::string("1")),
+        ("source_kind", CValue::string(kind_str)),
+        ("source_locator", locator_cv),
+    ]);
+
+    let canonical_bytes = encode_jcs(&header);
+    blake3_512_of(canonical_bytes.as_bytes())
+}
+
+fn path_final_segment(path: &syn::Path) -> Option<String> {
+    path.segments.last().map(|seg| seg.ident.to_string())
+}
+
+fn subst_vars_in_formula(
+    f: &Rc<Formula>,
+    substitutions: &BTreeMap<String, Rc<Term>>,
+) -> Rc<Formula> {
+    if substitutions.is_empty() {
+        return f.clone();
+    }
+    match &**f {
+        Formula::Atomic { name, args } => {
+            let new_args: Vec<Rc<Term>> = args
+                .iter()
+                .map(|a| subst_vars_in_term(a, substitutions))
+                .collect();
+            Rc::new(Formula::Atomic {
+                name: name.clone(),
+                args: new_args,
+            })
+        }
+        Formula::Connective { kind, operands } => {
+            let new_ops: Vec<Rc<Formula>> = operands
+                .iter()
+                .map(|o| subst_vars_in_formula(o, substitutions))
+                .collect();
+            Rc::new(Formula::Connective {
+                kind: kind.clone(),
+                operands: new_ops,
+            })
+        }
+        Formula::Quantifier {
+            kind,
+            name,
+            sort,
+            body,
+        } => {
+            if substitutions.contains_key(name) {
+                f.clone()
+            } else {
+                Rc::new(Formula::Quantifier {
+                    kind: kind.clone(),
+                    name: name.clone(),
+                    sort: sort.clone(),
+                    body: subst_vars_in_formula(body, substitutions),
+                })
+            }
+        }
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
+            if substitutions.contains_key(var_name) {
+                f.clone()
+            } else {
+                Rc::new(Formula::Choice {
+                    var_name: var_name.clone(),
+                    sort: sort.clone(),
+                    body: subst_vars_in_formula(body, substitutions),
+                })
+            }
+        }
+    }
+}
+
+fn subst_vars_in_term(t: &Rc<Term>, substitutions: &BTreeMap<String, Rc<Term>>) -> Rc<Term> {
+    match &**t {
+        Term::Var { name } => substitutions
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| t.clone()),
+        Term::Const { .. } => t.clone(),
+        Term::Ctor { name, args } => {
+            let new_args: Vec<Rc<Term>> = args
+                .iter()
+                .map(|a| subst_vars_in_term(a, substitutions))
+                .collect();
+            Rc::new(Term::Ctor {
+                name: name.clone(),
+                args: new_args,
+            })
+        }
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
+            if substitutions.contains_key(param_name) {
+                t.clone()
+            } else {
+                Rc::new(Term::Lambda {
+                    param_name: param_name.clone(),
+                    param_sort: param_sort.clone(),
+                    body: subst_vars_in_term(body, substitutions),
+                })
+            }
+        }
+        Term::Let { bindings, body } => {
+            let mut new_bindings = Vec::new();
+            let mut shadowed = false;
+            for b in bindings {
+                if !shadowed {
+                    new_bindings.push(provekit_ir_symbolic::LetBinding {
+                        name: b.name.clone(),
+                        bound_term: subst_vars_in_term(&b.bound_term, substitutions),
+                    });
+                    if substitutions.contains_key(&b.name) {
+                        shadowed = true;
+                    }
+                } else {
+                    new_bindings.push(provekit_ir_symbolic::LetBinding {
+                        name: b.name.clone(),
+                        bound_term: b.bound_term.clone(),
+                    });
+                }
+            }
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_vars_in_term(body, substitutions)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -242,15 +1048,15 @@ fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
     let path = path_to_string(&mac.path);
     match path.as_str() {
         "assert_eq" => {
-            let pair: TwoExprs = syn::parse2(mac.tokens.clone())
-                .map_err(|e| format!("assert_eq: parse: {e}"))?;
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_eq: parse: {e}"))?;
             let l = translate_term(&pair.a)?;
             let r = translate_term(&pair.b)?;
             Ok(eq(l, r))
         }
         "assert_ne" => {
-            let pair: TwoExprs = syn::parse2(mac.tokens.clone())
-                .map_err(|e| format!("assert_ne: parse: {e}"))?;
+            let pair: TwoExprs =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert_ne: parse: {e}"))?;
             let l = translate_term(&pair.a)?;
             let r = translate_term(&pair.b)?;
             Ok(ne(l, r))
@@ -258,8 +1064,8 @@ fn lift_assertion_macro(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
         "assert" => {
             // Only the `assert!(<expr>)` form. The expression must be a
             // top-level binary comparison.
-            let one: OneExpr = syn::parse2(mac.tokens.clone())
-                .map_err(|e| format!("assert: parse: {e}"))?;
+            let one: OneExpr =
+                syn::parse2(mac.tokens.clone()).map_err(|e| format!("assert: parse: {e}"))?;
             translate_bool_expr(&one.a)
         }
         "assert_matches" => {
@@ -582,9 +1388,9 @@ impl syn::parse::Parse for VecMacroArgs {
         let first: syn::Expr = input.parse()?;
         // Detect `vec![v; n]` repeat-shape.
         if input.peek(syn::Token![;]) {
-            return Err(input.error(
-                "vec![v; n] repeat-form not lifted in v0.5 (only finite list form)",
-            ));
+            return Err(
+                input.error("vec![v; n] repeat-form not lifted in v0.5 (only finite list form)")
+            );
         }
         exprs.push(first);
         while input.peek(syn::Token![,]) {
@@ -655,6 +1461,23 @@ mod tests {
         syn::parse_file(src).unwrap()
     }
 
+    fn assert_callsite_name(name: &str, callee: &str) {
+        let prefix = format!("{callee}@t.rs:");
+        assert!(
+            name.starts_with(&prefix),
+            "expected `{name}` to start with `{prefix}`"
+        );
+        let rest = &name[prefix.len()..];
+        let parts: Vec<_> = rest.split(':').collect();
+        assert_eq!(parts.len(), 2, "expected <line>:<col>, got `{rest}`");
+        assert!(parts[0].parse::<usize>().unwrap() > 0);
+        parts[1].parse::<usize>().unwrap();
+        assert!(
+            !name.starts_with("parse_int_42::") && !name.starts_with("three_facts::"),
+            "old test-owned name leaked: {name}"
+        );
+    }
+
     #[test]
     fn lifts_simple_assert_eq() {
         let src = r#"
@@ -666,7 +1489,7 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
-        assert_eq!(out.decls[0].name, "parse_int_42::0");
+        assert_callsite_name(&out.decls[0].name, "parse_int");
         assert!(out.decls[0].inv.is_some());
     }
 
@@ -684,10 +1507,10 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 3, "warnings: {:?}", out.warnings);
         let names: Vec<_> = out.decls.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(
-            names,
-            vec!["three_facts::0", "three_facts::1", "three_facts::2"]
-        );
+        assert_eq!(names.len(), 3);
+        for name in names {
+            assert_callsite_name(name, "f");
+        }
     }
 
     #[test]
@@ -695,12 +1518,60 @@ mod tests {
         let src = r#"
             #[test]
             fn nonneg_one() {
-                assert!(some_value > 0);
+                assert!(some_value() > 0);
             }
         "#;
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "some_value");
+    }
+
+    #[test]
+    fn let_bound_call_attaches_to_bound_callsite() {
+        let src = r#"
+            #[test]
+            fn test_foo() {
+                let r = foo(5);
+                assert_eq!(r, 10);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "foo");
+        let inv = out.decls[0].inv.as_ref().expect("inv");
+        let lhs = match &**inv {
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
+            other => panic!("expected atomic =, got {other:?}"),
+        };
+        match &*lhs {
+            Term::Ctor { name, args } => {
+                assert_eq!(name, "foo");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("expected let binding to substitute to foo call, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn skips_literal_assertion_without_callsite() {
+        let src = r#"
+            #[test]
+            fn literal_fact() {
+                assert_eq!(1, 1);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.seen, 1);
+        assert_eq!(out.lifted, 0);
+        assert_eq!(out.warnings.len(), 1);
+        assert!(
+            out.warnings[0].reason.contains("callsite"),
+            "warning should explain no callsite: {:?}",
+            out.warnings[0]
+        );
     }
 
     #[test]
@@ -714,6 +1585,7 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "g");
     }
 
     #[test]
@@ -729,12 +1601,11 @@ mod tests {
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "len");
         // Inspect the IR: the LHS should be Ctor("len", [str_const("foo")]).
         let inv = out.decls[0].inv.as_ref().expect("inv");
         let lhs = match &**inv {
-            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => {
-                args[0].clone()
-            }
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
         match &*lhs {
@@ -770,16 +1641,12 @@ mod tests {
         // Walk the structure.
         let inv = out.decls[0].inv.as_ref().expect("inv");
         let lhs = match &**inv {
-            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => {
-                args[0].clone()
-            }
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
         // outer: encode_jcs(<one arg>)
         let inner = match &*lhs {
-            Term::Ctor { name, args } if name == "encode_jcs" && args.len() == 1 => {
-                args[0].clone()
-            }
+            Term::Ctor { name, args } if name == "encode_jcs" && args.len() == 1 => args[0].clone(),
             other => panic!("expected Ctor encode_jcs/1, got {other:?}"),
         };
         // next: Value::object(<one arg = array>)
@@ -841,7 +1708,7 @@ mod tests {
         "#;
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
-        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
     }
 
     #[test]
@@ -855,12 +1722,12 @@ mod tests {
         "#;
         let f = parse(src);
         let out = lift_file(&f, "t.rs");
-        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
     }
 
     #[test]
     fn skips_format_macro_in_operand_position() {
-        // `format!(...)` is `Expr::Macro` — explicitly NOT lifted in v0.5.
+        // `format!(...)` is `Expr::Macro`: explicitly NOT lifted in v0.5.
         // This is the negative-coverage test that documents what stays out.
         let src = r#"
             #[test]
@@ -873,8 +1740,7 @@ mod tests {
         assert_eq!(out.lifted, 0);
         assert_eq!(out.warnings.len(), 1);
         assert!(
-            out.warnings[0].reason.contains("macro")
-                && out.warnings[0].reason.contains("format"),
+            out.warnings[0].reason.contains("macro") && out.warnings[0].reason.contains("format"),
             "expected reason to name the macro: {:?}",
             out.warnings[0].reason
         );
@@ -932,5 +1798,317 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.seen, 0);
         assert_eq!(out.lifted, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // EvidenceMemento emission tests (lift_file_with_evidence)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn lift_with_evidence_emits_evidence_alongside_decls() {
+        let src = r#"
+            #[test]
+            fn parse_int_42() {
+                assert_eq!(parse_int("42"), 42);
+            }
+        "#;
+        let f = parse(src);
+        let src_bytes = src.as_bytes();
+        let out = lift_file_with_evidence(&f, "t.rs", src_bytes);
+        // Both paths populated.
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_eq!(out.decls.len(), 1);
+        assert_eq!(out.evidences.len(), 1);
+    }
+
+    #[test]
+    fn evidence_source_kind_is_test_assertion() {
+        let src = r#"
+            #[test]
+            fn check_something() {
+                assert_eq!(f(1), 1);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1);
+        assert_eq!(
+            out.evidences[0].source_kind,
+            provekit_ir_types::SourceKind::TestAssertion
+        );
+    }
+
+    #[test]
+    fn evidence_fields_are_correct() {
+        let src = r#"
+            #[test]
+            fn check_something() {
+                assert_eq!(f(1), 1);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        let ev = &out.evidences[0];
+        assert_eq!(ev.kind, "evidence");
+        assert_eq!(ev.schema_version, "1");
+        assert_eq!(ev.confidence_basis_points, 10000);
+        assert_eq!(ev.lifter_cid, AUTO_PROMOTE_LIFTER_CID);
+        assert!(
+            ev.cid.starts_with("blake3-512:"),
+            "cid should be blake3-512 prefixed, got: {}",
+            ev.cid
+        );
+        assert_eq!(
+            ev.cid.len(),
+            11 + 128,
+            "cid should be prefix + 128 hex chars"
+        );
+    }
+
+    #[test]
+    fn evidence_extension_fields_contain_test_function_name() {
+        let src = r#"
+            #[test]
+            fn my_specific_test() {
+                assert_eq!(compute(5), 10);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1);
+        let ev = &out.evidences[0];
+        let name = ev
+            .extension_fields
+            .get("test_function_name")
+            .and_then(|v| v.as_str())
+            .expect("test_function_name must be present");
+        assert_eq!(name, "my_specific_test");
+    }
+
+    #[test]
+    fn evidence_extension_fields_contain_target_callsite_symbol() {
+        let src = r#"
+            #[test]
+            fn check_compute() {
+                assert_eq!(compute(5), 10);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1);
+        let ev = &out.evidences[0];
+        let symbol = ev
+            .extension_fields
+            .get("target_callsite_symbol")
+            .and_then(|v| v.as_str())
+            .expect("target_callsite_symbol must be present");
+        // Symbol is "<callee>@<file>:<line>:<col>".
+        assert!(symbol.starts_with("compute@t.rs:"), "got: {symbol}");
+    }
+
+    #[test]
+    fn evidence_test_target_function_cid_present_and_valid_spec_b2() {
+        // Spec §10: `test_target_function_cid` is REQUIRED in extension_fields
+        // for source_kind "test-assertion". When the callee is in the same
+        // syn::File (Option A), the CID must be a valid blake3-512:... string
+        // matching the independently-computed function-term CID of the callee.
+        //
+        // Source has both the production fn `double` and a test that calls it,
+        // mirroring the common `mod tests { use super::*; }` inline pattern.
+        let src = "fn double(x: i32) -> i32 { x * 2 }\n\
+                   #[test]\nfn test_double() {\nassert_eq!(double(3), 6);\n}\n";
+        let parsed = parse(src);
+        let out = lift_file_with_evidence(&parsed, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
+        let ev = &out.evidences[0];
+
+        // Field must be present.
+        let cid_val = ev
+            .extension_fields
+            .get("test_target_function_cid")
+            .and_then(|v| v.as_str())
+            .expect("test_target_function_cid must be present in extension_fields");
+
+        // Must be a valid blake3-512: CID (Option A resolved), not a pending marker.
+        assert!(
+            cid_val.starts_with("blake3-512:"),
+            "test_target_function_cid should be a blake3-512 CID when callee is \
+             in the same file; got: {cid_val}"
+        );
+        assert_eq!(
+            cid_val.len(),
+            11 + 128,
+            "blake3-512 CID should be prefix (11) + 128 hex chars; got len {}",
+            cid_val.len()
+        );
+
+        // CID must match the independently-computed function-term CID for `double`.
+        let double_fn = parsed
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "double" => Some(f),
+                _ => None,
+            })
+            .expect("double fn must be in parsed items");
+        let expected_cid = provekit_walk::emit::rust_function_term_json_cid(double_fn, "t.rs")
+            .expect("rust_function_term_json_cid must succeed for simple fn");
+        assert_eq!(
+            cid_val, expected_cid,
+            "test_target_function_cid must match the lifted CID of the target function"
+        );
+    }
+
+    #[test]
+    fn evidence_test_target_function_cid_pending_when_cross_crate_spec_b2() {
+        // When the callee is NOT in the same syn::File (cross-crate call),
+        // the lifter must emit a "pending:<symbol>" marker rather than a
+        // fabricated CID. This is the Option B path.
+        let src = "#[test]\nfn test_external() {\nassert_eq!(external_fn(1), 2);\n}\n";
+        let parsed = parse(src);
+        let out = lift_file_with_evidence(&parsed, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
+        let ev = &out.evidences[0];
+
+        let cid_val = ev
+            .extension_fields
+            .get("test_target_function_cid")
+            .and_then(|v| v.as_str())
+            .expect("test_target_function_cid must be present even for cross-crate callees");
+
+        assert!(
+            cid_val.starts_with("pending:"),
+            "cross-crate callee should emit pending:<symbol>; got: {cid_val}"
+        );
+        assert!(
+            !cid_val.starts_with("blake3-512:"),
+            "pending marker must NOT look like a real CID; got: {cid_val}"
+        );
+    }
+
+    #[test]
+    fn evidence_source_locator_col_is_0indexed_spec_b1() {
+        // Spec §1.1 normative: col counts UTF-8 BYTES within the line, 0-indexed.
+        // proc_macro2 with span-locations also uses 0-indexed columns, so the
+        // raw column value must be used WITHOUT adding 1.
+        //
+        // Source layout (line numbers are 1-based per spec):
+        //   line 1: ""  (raw string starts with newline)
+        //   line 2: "#[test]"
+        //   line 3: "fn span_pin() {"
+        //   line 4: "assert_eq!(f(0), 0);"  -- f is at byte 11 (0-indexed) on this line
+        //   line 5: "}"
+        //
+        // In the raw string below the indentation is 0 (no leading spaces) so
+        // the column is unambiguous and cross-platform stable.
+        let src = "#[test]\nfn span_pin() {\nassert_eq!(f(0), 0);\n}\n";
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.evidences.len(), 1, "warnings: {:?}", out.warnings);
+        let ev = &out.evidences[0];
+        // "assert_eq!(" is 11 bytes; f is at col 11 (0-indexed).
+        assert_eq!(
+            ev.source_locator.span.start.col, 11,
+            "col should be 0-indexed (spec §1.1); got {}. \
+             If this is 12, the +1 bug was re-introduced.",
+            ev.source_locator.span.start.col
+        );
+        // Line 3 (1-indexed) is where assert_eq!(f(0), ...) lives.
+        assert_eq!(
+            ev.source_locator.span.start.line, 3,
+            "line should be 1-indexed; got {}",
+            ev.source_locator.span.start.line
+        );
+    }
+
+    #[test]
+    fn evidence_source_cid_matches_source_bytes_hash() {
+        let src = r#"
+            #[test]
+            fn hash_stable() {
+                assert_eq!(f(1), 1);
+            }
+        "#;
+        let f = parse(src);
+        let src_bytes = src.as_bytes();
+        let expected_source_cid = provekit_canonicalizer::blake3_512_of(src_bytes);
+        let out = lift_file_with_evidence(&f, "t.rs", src_bytes);
+        assert_eq!(out.evidences.len(), 1);
+        assert_eq!(
+            out.evidences[0].source_locator.source_cid,
+            expected_source_cid
+        );
+    }
+
+    #[test]
+    fn evidence_cid_is_deterministic() {
+        // Same source, same output -> same CID on every call.
+        let src = r#"
+            #[test]
+            fn deterministic_cid() {
+                assert_eq!(f(1), 1);
+            }
+        "#;
+        let f = parse(src);
+        let src_bytes = src.as_bytes();
+        let out1 = lift_file_with_evidence(&f, "t.rs", src_bytes);
+        let out2 = lift_file_with_evidence(&f, "t.rs", src_bytes);
+        assert_eq!(out1.evidences.len(), 1);
+        assert_eq!(out2.evidences.len(), 1);
+        assert_eq!(out1.evidences[0].cid, out2.evidences[0].cid);
+    }
+
+    #[test]
+    fn evidence_three_assertions_yields_three_evidences() {
+        let src = r#"
+            #[test]
+            fn three_facts() {
+                assert_eq!(f(1), 1);
+                assert_eq!(f(2), 2);
+                assert_ne!(f(3), 0);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.lifted, 3, "warnings: {:?}", out.warnings);
+        assert_eq!(out.evidences.len(), 3);
+        // All evidence CIDs should be distinct (different spans + formulas).
+        let cids: std::collections::HashSet<_> = out.evidences.iter().map(|e| &e.cid).collect();
+        assert_eq!(cids.len(), 3, "CIDs should be distinct");
+    }
+
+    #[test]
+    fn lift_with_evidence_skips_literal_only_assertion() {
+        // Same skip-behavior as the basic path: no callsite means no evidence.
+        let src = r#"
+            #[test]
+            fn literal_fact() {
+                assert_eq!(1, 1);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file_with_evidence(&f, "t.rs", src.as_bytes());
+        assert_eq!(out.seen, 1);
+        assert_eq!(out.lifted, 0);
+        assert_eq!(out.evidences.len(), 0);
+        assert_eq!(out.warnings.len(), 1);
+    }
+
+    #[test]
+    fn basic_lift_does_not_populate_evidences() {
+        // Verify backward compat: lift_file() leaves evidences empty.
+        let src = r#"
+            #[test]
+            fn parse_int_42() {
+                assert_eq!(parse_int("42"), 42);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.lifted, 1);
+        assert!(
+            out.evidences.is_empty(),
+            "lift_file should not populate evidences"
+        );
     }
 }

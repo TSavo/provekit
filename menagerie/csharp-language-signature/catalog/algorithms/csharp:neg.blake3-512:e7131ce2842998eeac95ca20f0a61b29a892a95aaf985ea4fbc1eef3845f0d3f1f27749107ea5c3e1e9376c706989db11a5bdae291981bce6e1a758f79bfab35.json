@@ -1,0 +1,48 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "csharp:neg",
+    "formals": [
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Int",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "neg",
+      "arity": [
+        "Int"
+      ],
+      "result": "Int",
+      "wp": "-value (arithmetic negation)"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    "locus": "menagerie/csharp-language-signature/README.md"
+  },
+  "cid": "blake3-512:e7131ce2842998eeac95ca20f0a61b29a892a95aaf985ea4fbc1eef3845f0d3f1f27749107ea5c3e1e9376c706989db11a5bdae291981bce6e1a758f79bfab35",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "zc59SilB+rcx2nwfEJv+KoAbRQKYnmSjf++VmgXoheohe8RBRUS8SPr95WIfbR7IBQWLH/zKiPGCbw6sBE9ACQ=="
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "go:if",
+    "formals": [
+      "init",
+      "cond",
+      "then",
+      "else"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Bool",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Term",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "go:if",
+      "arity": [
+        "Term",
+        "Bool",
+        "Term",
+        "Term"
+      ],
+      "result": "Term",
+      "wp": "Go if statement with optional init statement",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "init",
+            "slot_sort": "Term"
+          },
+          {
+            "name": "cond",
+            "slot_sort": "Bool"
+          },
+          {
+            "name": "then",
+            "slot_sort": "Term"
+          },
+          {
+            "name": "else",
+            "slot_sort": "Term"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Term",
+      "args": []
+    },
+    "locus": "menagerie/go-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:90499ca96378d6a34d1accdd499de0bb5ec776eea38277ced9430ede0cb7f7d8abb2266c4635193ac1da6e77ca28b93cf0c964a1cdd5cf3598e67494c27d960d",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "/XyCYEdafXkFNxCuqKSX6jCBBAs1xtxMV50slGXWGCBGqo/WUWENQEVUeheWGlYVkTaZj/b29PxyMy3Ivo0wCQ=="
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "EquationMemento",
+    "fn_name": "csharp:and-desugar",
+    "formals": [
+      "left",
+      "right"
+    ],
+    "formal_sorts": [
+      "blake3-512:f207c0d911354bea999d5dfd9405185353763c50a79c4a6175238748824d65140ca0e14c02cde5b67a6c67a71d565380a9112d3141800ec474feae57effb42d6",
+      "blake3-512:f207c0d911354bea999d5dfd9405185353763c50a79c4a6175238748824d65140ca0e14c02cde5b67a6c67a71d565380a9112d3141800ec474feae57effb42d6"
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "equation",
+      "lhs": {
+        "kind": "op",
+        "name": "csharp:and",
+        "args": [
+          {
+            "kind": "var",
+            "name": "left"
+          },
+          {
+            "kind": "var",
+            "name": "right"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "csharp:ite-bool",
+        "args": [
+          {
+            "kind": "var",
+            "name": "left"
+          },
+          {
+            "kind": "var",
+            "name": "right"
+          },
+          {
+            "kind": "const",
+            "value": false,
+            "sort": {
+              "kind": "ctor",
+              "name": "Bool",
+              "args": []
+            }
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "primitive",
+      "name": "Bool"
+    }
+  },
+  "cid": "blake3-512:9306ce31bc305cf0d2188a05c1e70be4960ca2882eb692a07101a66c04e6757c3f52bf2bfa8a41e52aafd4121f567dfb93de17be4f5df6b1fc7e3166649008c8",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "9yqMpED4PDXNhtGBmtS36GyztSOMfWReyeRmriH+MUQUCm08OikwDbrtv9dI8nAh6xpBFyE/mkgor2CZKWsHAw=="
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "java:effect-signature:MemWrite",
+  "sorts": [
+    "sort_string.spec.json",
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_write.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

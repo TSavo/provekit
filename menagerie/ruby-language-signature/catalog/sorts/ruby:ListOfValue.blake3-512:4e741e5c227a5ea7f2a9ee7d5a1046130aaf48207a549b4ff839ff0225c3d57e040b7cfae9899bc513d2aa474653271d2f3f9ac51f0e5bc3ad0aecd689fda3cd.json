@@ -1,0 +1,34 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "ruby:ListOfValue",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "sort-description",
+      "name": "ListOfValue",
+      "description": "Ruby ListOfValue term sort."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    }
+  },
+  "cid": "blake3-512:4e741e5c227a5ea7f2a9ee7d5a1046130aaf48207a549b4ff839ff0225c3d57e040b7cfae9899bc513d2aa474653271d2f3f9ac51f0e5bc3ad0aecd689fda3cd",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "qctXBx3EMyCmgD/MgGr+6vAafESyoGv2U0vsjm2jYTMy11NzggUCzlbMIc9knKsiGI6iE5TTFDRK+brIUW4YBw=="
+  }
+}

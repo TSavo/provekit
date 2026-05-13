@@ -16,7 +16,7 @@ use provekit_proof_envelope::{
 };
 
 // ---------------------------------------------------------------------------
-// Unsigned int — boundary table per RFC 8949 §4.2.1 (shortest form)
+// Unsigned int: boundary table per RFC 8949 §4.2.1 (shortest form)
 // ---------------------------------------------------------------------------
 
 fn enc_uint(v: u64) -> Vec<u8> {
@@ -69,10 +69,7 @@ fn uint_shortest_form_65536_promotes_to_four_bytes() {
 
 #[test]
 fn uint_shortest_form_u32_max_is_four_bytes() {
-    assert_eq!(
-        enc_uint(0xFFFF_FFFF),
-        vec![0x1A, 0xFF, 0xFF, 0xFF, 0xFF]
-    );
+    assert_eq!(enc_uint(0xFFFF_FFFF), vec![0x1A, 0xFF, 0xFF, 0xFF, 0xFF]);
 }
 
 #[test]

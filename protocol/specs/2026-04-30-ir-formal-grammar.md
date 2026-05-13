@@ -179,9 +179,29 @@ with accompanying English explanation.
 | ValidElements | `∀s → HasKey("elements") ∧ ∀e∈elements → IsSort(e)` |
 
 **FunctionSort** (Section: Sorts)
+
 | Invariant | Formula |
 |-----------|---------|
-| ValidDomainAndRange | `∀s → HasKey("domain")∧∀d∈domain→IsSort(d) ∧ HasKey("range")∧IsSort(range)` |
+| ValidArgsAndReturn | `∀s → HasKey("args")∧IsArray(args)∧len(args)≥1∧∀a∈args→IsSort(a) ∧ HasKey("return")∧IsSort(return)` |
+
+**DependentSort** (Section: Sorts)
+
+| Invariant | Formula |
+|-----------|---------|
+| ValidFields | `∀s → HasKey("name")∧IsString(name) ∧ HasKey("indexVar")∧IsString(indexVar) ∧ HasKey("indexSort")∧IsSort(indexSort)` |
+
+**FloatSort** (Section: Sorts)
+
+| Invariant | Formula |
+|-----------|---------|
+| ValidWidth | `∀s → HasKey("width")∧IsPositiveInteger(width) ∧ width ∈ {16,32,64,128}` |
+
+**RegionSort** (Section: Sorts)
+
+| Invariant | Formula |
+|-----------|---------|
+| ValidName | `∀s → HasKey("name")∧IsString(name)∧len(name)>0` |
+| OpaqueToBackends | `∀s, backend∈{SMT-LIB,Coq} → ¬ReachesBackend(s,backend)` |
 
 **Strict Mode** (Section: Reference Parser)
 | Invariant | Formula |
@@ -1037,7 +1057,7 @@ ensuring the proof is for the correct claim.
 ### Sort
 
 ```ebnf
-Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort
+Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort | FloatSort | RegionSort
 ```
 
 ### PrimitiveSort
@@ -1093,15 +1113,72 @@ TupleSort ::= "{"
 
 ### FunctionSort
 
-Locked key order: `kind`, `domain`, `range`.
+Locked key order: `kind`, `args`, `return`.
 
 ```ebnf
 FunctionSort ::= "{"
                    "\"kind\"" ":" "\"function\"" ","
-                   "\"domain\"" ":" "[" ( Sort ( "," Sort )* )? "]" ","
-                   "\"range\"" ":" Sort
+                   "\"args\"" ":" "[" Sort ( "," Sort )* "]" ","
+                   "\"return\"" ":" Sort
                  "}"
 ```
+
+The `args` array must contain one or more Sort elements. The `return` field
+is a single Sort.
+
+### DependentSort
+
+Locked key order: `kind`, `name`, `indexVar`, `indexSort`.
+
+```ebnf
+DependentSort ::= "{"
+                    "\"kind\"" ":" "\"dependent\"" ","
+                    "\"name\"" ":" String ","
+                    "\"indexVar\"" ":" String ","
+                    "\"indexSort\"" ":" Sort
+                  "}"
+```
+
+`name` is a type-level name (e.g. `"Vec"`). `indexVar` is a value-level
+variable the type depends on (e.g. `"n"` for `Vec<n>`). `indexSort`
+constrains the sort of the index variable.
+
+### FloatSort
+
+Locked key order: `kind`, `width`.
+
+```ebnf
+FloatSort ::= "{"
+                "\"kind\"" ":" "\"float\"" ","
+                "\"width\"" ":" PositiveInteger
+              "}"
+```
+
+`width` is the bit-width of the IEEE-754 float: 16, 32, 64, or 128.
+FloatSort is opaque at the SMT-LIB and Coq layers (bit-pattern encoding);
+full floating-point theory is deferred to a follow-up RFC (#385).
+
+### RegionSort
+
+Locked key order: `kind`, `name` (alphabetical).
+
+```ebnf
+RegionSort ::= "{"
+                 "\"kind\"" ":" "\"region\"" ","
+                 "\"name\"" ":" String
+               "}"
+```
+
+`name` is a Rust lifetime name: e.g. `"'a"`, `"'static"`, or a fresh
+region variable like `"'r0"`. RegionSort is an opaque carrier for
+borrow-checker lifetime variables so that lifted Rust functions with
+lifetime parameters receive well-typed contracts without collapsing
+lifetimes into a primitive sort (which would break CID stability and
+the sort-collapse invariants from #384 A.1).
+
+RegionSort MUST NOT reach the SMT-LIB or Coq backends — regions are
+pre-resolved in composition. Prerequisite for #384 C.9 (Outlives
+predicates).
 
 ### Formal Invariants
 
@@ -1134,14 +1211,163 @@ A SetSort must have an `element` field containing a valid Sort.
 ```
 A TupleSort must have an `elements` array containing at least one valid Sort.
 
-**INVARIANT FunctionSort.ValidDomainAndRange:**
+**INVARIANT FunctionSort.ValidArgsAndReturn:**
 ```
 ∀s: FunctionSort → HasKey(s, "kind") ∧ s.kind = "function" ∧
-                    HasKey(s, "domain") ∧ IsArray(s.domain) ∧
-                    ∀d ∈ s.domain → IsSort(d) ∧
-                    HasKey(s, "range") ∧ IsSort(s.range)
+                    HasKey(s, "args") ∧ IsArray(s.args) ∧
+                    ∀a ∈ s.args → IsSort(a) ∧ len(s.args) >= 1 ∧
+                    HasKey(s, "return") ∧ IsSort(s.return)
 ```
-A FunctionSort must have a non-empty `domain` array of Sorts and a valid `range` Sort.
+A FunctionSort must have a non-empty `args` array of Sorts and a valid `return` Sort.
+
+**INVARIANT DependentSort.ValidFields:**
+```
+∀s: DependentSort → HasKey(s, "kind") ∧ s.kind = "dependent" ∧
+                     HasKey(s, "name") ∧ IsString(s.name) ∧ len(s.name) > 0 ∧
+                     HasKey(s, "indexVar") ∧ IsString(s.indexVar) ∧ len(s.indexVar) > 0 ∧
+                     HasKey(s, "indexSort") ∧ IsSort(s.indexSort)
+```
+A DependentSort must have a non-empty `name`, a non-empty `indexVar`, and a valid `indexSort`.
+
+**INVARIANT FloatSort.ValidWidth:**
+```
+∀s: FloatSort → HasKey(s, "kind") ∧ s.kind = "float" ∧
+                HasKey(s, "width") ∧ IsPositiveInteger(s.width) ∧ s.width ∈ {16, 32, 64, 128}
+```
+A FloatSort must have a `width` field that is one of the four IEEE-754 standard widths.
+
+**INVARIANT RegionSort.ValidName:**
+```
+∀s: RegionSort → HasKey(s, "kind") ∧ s.kind = "region" ∧
+                  HasKey(s, "name") ∧ IsString(s.name) ∧ len(s.name) > 0
+```
+A RegionSort must have a non-empty string `name` field carrying the lifetime name.
+
+**INVARIANT RegionSort.OpaqueToBackends:**
+```
+∀s: RegionSort, backend: Backend →
+  backend ∈ {SMT-LIB, Coq} → ¬ReachesBackend(s, backend)
+```
+RegionSorts MUST be pre-resolved before reaching the SMT-LIB or Coq compiler layers.
+
+### Sort Examples
+
+**FunctionSort — minimal (identity function on Int):**
+```json
+{
+  "kind": "function",
+  "args": [{"kind": "primitive", "name": "Int"}],
+  "return": {"kind": "primitive", "name": "Int"}
+}
+```
+
+**FunctionSort — nested (two-arg function returning a function):**
+```json
+{
+  "kind": "function",
+  "args": [
+    {"kind": "primitive", "name": "Int"},
+    {"kind": "primitive", "name": "Bool"}
+  ],
+  "return": {
+    "kind": "function",
+    "args": [{"kind": "primitive", "name": "String"}],
+    "return": {"kind": "primitive", "name": "Real"}
+  }
+}
+```
+
+**DependentSort — minimal (Vec indexed by Int):**
+```json
+{
+  "kind": "dependent",
+  "name": "Vec",
+  "indexVar": "n",
+  "indexSort": {"kind": "primitive", "name": "Int"}
+}
+```
+
+**DependentSort — nested (FinSet whose index is itself a function sort):**
+```json
+{
+  "kind": "dependent",
+  "name": "FinSet",
+  "indexVar": "card",
+  "indexSort": {
+    "kind": "function",
+    "args": [{"kind": "primitive", "name": "Int"}],
+    "return": {"kind": "primitive", "name": "Bool"}
+  }
+}
+```
+
+**FloatSort — 32-bit float:**
+```json
+{"kind": "float", "width": 32}
+```
+
+**FloatSort — 64-bit float:**
+```json
+{"kind": "float", "width": 64}
+```
+
+**RegionSort — named lifetime:**
+```json
+{"kind": "region", "name": "'a"}
+```
+
+**RegionSort — static lifetime:**
+```json
+{"kind": "region", "name": "'static"}
+```
+
+**RegionSort — fresh region variable:**
+```json
+{"kind": "region", "name": "'r0"}
+```
+
+## Source positions
+
+### Locus
+
+A `Locus` identifies a position in a source file. It is the canonical source-position type used by every memento that needs to point at a location in a developer's code, including (but not limited to) call-edge mementos (per `2026-05-03-bridge-linkage-protocol.md` §1), invariant fix-loop mementos (per `2026-04-27-standing-invariant-runtime.md`), and lift-time diagnostics.
+
+Locked key order (alphabetical, per JCS): `column`, `file`, `line`. The grammar:
+
+```ebnf
+Locus       ::= "{" '"column"' ":" Column "," '"file"' ":" File "," '"line"' ":" Line "}"
+
+Column      ::= NaturalInteger          (* 1-based column index *)
+File        ::= JsonString              (* canonical, slash-separated POSIX-style relative path *)
+Line        ::= NaturalInteger          (* 1-based line index *)
+
+NaturalInteger ::= "0" | DigitSansZero ( Digit )*
+```
+
+```hoare
+{ true } IsLocus(o) { ⇔ IsObject(o) ∧ HasKey(o, "column") ∧ HasKey(o, "file") ∧ HasKey(o, "line") ∧
+                       IsNaturalInteger(o.column) ∧ IsString(o.file) ∧ IsNaturalInteger(o.line) }
+```
+
+**Required fields, no defaults.** All three keys MUST be present. A `Locus` with a missing field is a hard parse error in strict mode and a fatal lifter bug in lenient mode. There is no implicit zero, no synthetic placeholder. If the lifter cannot determine a real source position (e.g., for a derived contract with no source backing), it MUST omit the `Locus`-bearing field entirely rather than emit a Locus with garbage values.
+
+**File field semantics.** The `file` value is a relative POSIX-style path (forward slashes only), rooted at the project's lift-time root directory. Lifters MUST emit forward slashes regardless of host filesystem (Windows lifters convert `\` to `/`). Lifters MUST NOT include drive letters, file:// URLs, or absolute paths; cross-machine byte-equivalence depends on every kit emitting identical relative paths for identical projects.
+
+**Line and column conventions.** `line` and `column` are both 1-based natural integers. Column counts UTF-16 code units to match LSP semantics (per `2026-05-03-lsp-protocol.md`); kits whose host language uses byte offsets or grapheme clusters MUST convert to UTF-16 code units before emission. Tab handling: tabs count as one column position; lifters MUST NOT expand tabs for column counting (otherwise the same source produces different Locus values on different render configurations).
+
+**JCS encoding.** Per `2026-04-30-canonicalization-grammar.md`, every Locus is JCS-encoded with keys sorted alphabetically: `column` first, `file` second, `line` third. The integers MUST be emitted as bare decimal digits (no leading zeros except for `0` itself, no exponent, no decimal point); the string MUST be emitted with the JCS-mandated escape sequences. Two Locus values referring to the same position MUST produce byte-identical JCS encoding across all conforming kits.
+
+**Why this matters.** Locus is a leaf type embedded in many higher-level mementos. A drift in Locus encoding (a kit emitting `{file, line, column}` order, or expanding tabs, or using byte offsets) cascades into every memento that contains a Locus, which cascades into every contractCid and bridgeCid that hashes those mementos, which breaks cross-kit byte-equivalence at the substrate level. The stake is the §11/§12 pin convergence: if Locus drifts, identical content produces different addresses across kits, and the pin breaks. Locus is normative because every kit must converge on its bytes for the substrate's content-addressing to hold.
+
+### Formal Invariants
+
+**Test Plan** (Section: Locus Conformance)
+| Invariant | Formula |
+|-----------|---------|
+| LocusKeyOrder | `∀l Locus → JsonKeys(JCS(l)) = ["column","file","line"]` |
+| LocusFileForwardSlash | `∀l Locus → ¬Contains(l.file, "\\")` |
+| LocusFileRelative | `∀l Locus → ¬StartsWith(l.file, "/") ∧ ¬Matches(l.file, /^[A-Za-z]:/)` |
+| LocusLineColumnOneBased | `∀l Locus → l.line ≥ 1 ∧ l.column ≥ 1` |
 
 ## Determinism rules
 

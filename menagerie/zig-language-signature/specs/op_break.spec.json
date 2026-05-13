@@ -1,0 +1,46 @@
+{
+  "kind": "algorithm",
+  "version": "0.1.0-draft",
+  "fn_name": "zig:break",
+  "formals": [
+    "unit"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Stmt",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "break",
+    "arity": [
+      "Unit"
+    ],
+    "result": "Stmt",
+    "wp": "exit nearest loop",
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "unit"
+        }
+      ]
+    }
+  },
+  "effects": {
+    "effects": []
+  },
+  "locus": "menagerie/zig-language-signature/README.md"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "effect_signature",
+  "fn_name": "ruby:effect-signature:Panics",
+  "sorts": [
+    "sort_value.spec.json",
+    "sort_unit.spec.json"
+  ],
+  "operations": [
+    "eff_panics.spec.json"
+  ],
+  "equations": [],
+  "effect_signatures": []
+}

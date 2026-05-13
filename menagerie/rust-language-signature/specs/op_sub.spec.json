@@ -1,0 +1,64 @@
+{
+  "kind": "algorithm",
+  "fn_name": "rust:sub",
+  "formals": [
+    "lhs",
+    "rhs"
+  ],
+  "formal_sorts": [
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    },
+    {
+      "kind": "ctor",
+      "name": "Int",
+      "args": []
+    }
+  ],
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Int",
+    "args": []
+  },
+  "pre": {
+    "kind": "atomic",
+    "name": "no_signed_overflow_or_panic",
+    "args": [
+      {
+        "kind": "op",
+        "name": "sub",
+        "args": [
+          {
+            "kind": "var",
+            "name": "lhs"
+          },
+          {
+            "kind": "var",
+            "name": "rhs"
+          }
+        ]
+      }
+    ]
+  },
+  "post": {
+    "kind": "operation-contract",
+    "operator": "sub",
+    "arity": [
+      "Int",
+      "Int"
+    ],
+    "result": "Int",
+    "wp": "mathematical integer subtraction when no overflow holds, otherwise Panic in debug"
+  },
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Panic"
+      }
+    ]
+  },
+  "locus": "menagerie/rust-language-signature/README.md#operations"
+}

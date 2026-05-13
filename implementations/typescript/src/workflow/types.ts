@@ -1,11 +1,11 @@
 /**
- * Workflow primitive — the layer above the memento store.
+ * Workflow primitive: the layer above the memento store.
  *
  * Spec: protocol/specs/2026-04-29-workflows-as-first-class-primitive.md
  *
  * A Stage is a single unit of work: hash its input, look up the memento
  * store, return the cached output if it exists, otherwise run and cache.
- * A Workflow composes stages — passing one stage's CID as the next
+ * A Workflow composes stages: passing one stage's CID as the next
  * stage's inputCids. Work-skipping cascades: if all upstream stages hit
  * cache, the downstream input hash is unchanged, so it also hits.
  *
@@ -23,7 +23,7 @@
  * - Stage: pure, cacheable, output is a CLAIM that composes by reference
  *   in the proof DAG. Verdict-bearing.
  * - Action: impure, run-every-time, output is a RESOURCE handle. Audit-
- *   only memento (write-only — no cache lookup ever happens). Does not
+ *   only memento (write-only: no cache lookup ever happens). Does not
  *   compose into binding hashes downstream.
  *
  * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
@@ -37,15 +37,14 @@ export interface Action<TInput, TResource> {
 
   /**
    * Canonicalize input for the audit memento. NOT used for cache
-   * lookup — Actions always run. Two invocations with the same input
+   * lookup: Actions always run. Two invocations with the same input
    * produce two separate audit mementos.
    */
   serializeInput(input: TInput): unknown;
 
   /**
    * Render the resource as a human-readable description for the audit
-   * memento's witness. Must NOT include the live resource handle —
-   * only metadata sufficient to identify what was produced (the
+   * memento's witness. Must NOT include the live resource handle: * only metadata sufficient to identify what was produced (the
    * worktree path, the lock identifier, the file path written).
    */
   describeResource(resource: TResource): string;
@@ -71,8 +70,7 @@ export interface Stage<TInput, TOutput> {
 
   /**
    * Producer identity for the memento. Engines/LLMs/version pinned.
-   * Same stage with two producers gets two rows in the table —
-   * cross-validation surfaces disagreements.
+   * Same stage with two producers gets two rows in the table: * cross-validation surfaces disagreements.
    */
   producedBy: string;
 
@@ -91,7 +89,7 @@ export interface Stage<TInput, TOutput> {
 
   /**
    * Reconstruct the output from its witness. The cache-hit path
-   * uses this — we never re-run when the memento is found.
+   * uses this: we never re-run when the memento is found.
    */
   deserializeOutput(witness: string): TOutput;
 
@@ -118,7 +116,7 @@ export interface Workflow {
 }
 
 export interface StageResult<TOutput> {
-  /** The stage's output — either freshly computed or reconstructed from cache. */
+  /** The stage's output: either freshly computed or reconstructed from cache. */
   output: TOutput;
 
   /**

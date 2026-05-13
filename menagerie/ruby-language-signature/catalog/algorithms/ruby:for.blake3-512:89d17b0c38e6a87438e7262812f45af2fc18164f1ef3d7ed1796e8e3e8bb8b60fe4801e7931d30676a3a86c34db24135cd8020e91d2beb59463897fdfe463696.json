@@ -1,0 +1,81 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "ruby:for",
+    "formals": [
+      "target",
+      "iterable",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Stmt",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "for",
+      "arity": [
+        "Value",
+        "Value",
+        "Stmt"
+      ],
+      "result": "Stmt",
+      "wp": "opaque Ruby for loop over iterable",
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "target"
+          },
+          {
+            "name": "iterable"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      }
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "OpaqueLoop"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Stmt",
+      "args": []
+    },
+    "locus": "menagerie/ruby-language-signature/README.md"
+  },
+  "cid": "blake3-512:89d17b0c38e6a87438e7262812f45af2fc18164f1ef3d7ed1796e8e3e8bb8b60fe4801e7931d30676a3a86c34db24135cd8020e91d2beb59463897fdfe463696",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "e+0TKd1vbrwkKbLlBfbSn1QSlVeZdhU7Nk19KCW2PEAgF3DfuKlpzUUANz8uOTU26tP1lnk8IUFqHBO6PNQABw=="
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "rust:effect:write",
+    "formals": [
+      "addr",
+      "value"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Addr",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Value",
+        "args": []
+      }
+    ],
+    "pre": {
+      "kind": "atomic",
+      "name": "true",
+      "args": []
+    },
+    "post": {
+      "kind": "operation-contract",
+      "operator": "write",
+      "arity": [
+        "Addr",
+        "Value"
+      ],
+      "result": "Unit",
+      "wp": "write value to memory addr"
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "MemWrite"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unit",
+      "args": []
+    },
+    "locus": "menagerie/rust-language-signature/README.md#operations"
+  },
+  "cid": "blake3-512:028e541deef2a9e154b9a4965cf5800445f5c46ba5c1d0a4a1fee635c872285538478984569788f339968627088e8d11d01d88b798f9d904275a5aea955f8122",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "JjdDpruuf0n5zHB+KnlYnKgDyisE/76HL349n5EKgdn/0qx2veevLp56XWRpb1sxOllvtWBKI7I4h0qUWEOQAQ=="
+  }
+}
