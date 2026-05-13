@@ -1659,6 +1659,317 @@ pub struct CompoundContractMemento {
 // ============================================================
 
 // ============================================================
+// Manual extension: ProofRunMemento + StageReceipt (issue #792)
+// Source of truth:
+//   protocol/specs/2026-05-13-proof-run-memento.md §1 and §4
+//
+// Substrate-only types: carry CIDs and structured stage receipts but do
+// not execute the verifier pipeline or interpret stage outputs. Wiring
+// these into the actual provekit-verifier runtime is a follow-up.
+//
+// `header.cid` is DERIVED from JCS(header without cid) and BLAKE3-512.
+// For ProofRunMemento, output_artifact_cids sorts ascending in canonical
+// form; stage_receipt_cids preserves execution order. For StageReceipt,
+// output_cids and refusal_cids sort ascending in canonical form.
+// stage_name is `tstr`: this spec does NOT bake any stage vocabulary.
+// ============================================================
+
+/// Envelope layer for `ProofRunMemento` and `StageReceipt`.
+///
+/// Locked JCS key order: declaredAt, signature, signer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProofRunEnvelope {
+    #[serde(rename = "declaredAt")]
+    pub declared_at: String,
+    pub signature: String,
+    pub signer: String,
+}
+
+/// Run-level verdict per `ProofRunMemento` §5.
+///
+/// Closed enum: admissible / refused / partial.
+/// Named `ProofRunVerdict` to distinguish from `RunVerdict` (PR #799)
+/// which carries the pipeline-run aggregate verdict (failed/refused/succeeded).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProofRunVerdict {
+    #[serde(rename = "admissible")]
+    Admissible,
+    #[serde(rename = "refused")]
+    Refused,
+    #[serde(rename = "partial")]
+    Partial,
+}
+
+/// Stage-level verdict per `StageReceipt` §1.2.
+///
+/// Closed enum: ok / warned / refused / skipped. NOT the same enum as
+/// `ProofRunVerdict`: `StageReceipt` records a single stage's outcome, while
+/// `ProofRunMemento` records the run-aggregate outcome.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StageVerdict {
+    #[serde(rename = "ok")]
+    Ok,
+    #[serde(rename = "warned")]
+    Warned,
+    #[serde(rename = "refused")]
+    Refused,
+    #[serde(rename = "skipped")]
+    Skipped,
+}
+
+/// Header layer for `ProofRunMemento`.
+///
+/// Locked JCS key order:
+///   cid, input_artifact_cids, input_run_cids, kind, link_bundle_cid,
+///   output_artifact_cids, plugin_registry_cid, proof_envelope_cid,
+///   schemaVersion, sealed_at, stage_receipt_cids, verdict,
+///   verifier_pipeline_cid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProofRunHeader {
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    #[serde(rename = "input_artifact_cids")]
+    pub input_artifact_cids: Vec<String>,
+    #[serde(rename = "input_run_cids")]
+    pub input_run_cids: Vec<String>,
+    /// MUST be "proof-run".
+    pub kind: String,
+    #[serde(rename = "link_bundle_cid")]
+    pub link_bundle_cid: String,
+    #[serde(rename = "output_artifact_cids")]
+    pub output_artifact_cids: Vec<String>,
+    #[serde(rename = "plugin_registry_cid")]
+    pub plugin_registry_cid: String,
+    #[serde(rename = "proof_envelope_cid")]
+    pub proof_envelope_cid: String,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "sealed_at")]
+    pub sealed_at: String,
+    /// Execution order. NOT sorted; preserves verifier stage sequence.
+    #[serde(rename = "stage_receipt_cids")]
+    pub stage_receipt_cids: Vec<String>,
+    pub verdict: ProofRunVerdict,
+    #[serde(rename = "verifier_pipeline_cid")]
+    pub verifier_pipeline_cid: String,
+}
+
+/// Metadata layer for `ProofRunMemento`.
+///
+/// Locked JCS key order: note, source_url.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ProofRunMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(rename = "source_url")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+}
+
+/// A content-addressed `provekit prove` run record.
+///
+/// Locked JCS key order: envelope, header, metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProofRunMemento {
+    pub envelope: ProofRunEnvelope,
+    pub header: ProofRunHeader,
+    pub metadata: ProofRunMetadata,
+}
+
+/// Header layer for `StageReceipt`.
+///
+/// Locked JCS key order:
+///   cid, diagnostics, finished_at, input_cids, kind, output_cids,
+///   refusal_cids, schemaVersion, stage_name, started_at, verdict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StageReceiptHeader {
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    pub diagnostics: Vec<serde_json::Value>,
+    #[serde(rename = "finished_at")]
+    pub finished_at: String,
+    #[serde(rename = "input_cids")]
+    pub input_cids: Vec<String>,
+    /// MUST be "stage-receipt".
+    pub kind: String,
+    #[serde(rename = "output_cids")]
+    pub output_cids: Vec<String>,
+    #[serde(rename = "refusal_cids")]
+    pub refusal_cids: Vec<String>,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    /// `tstr`. Stage vocabulary is pinned externally by a future
+    /// `VerifierPipelineMemento` (#799), NOT closed by this spec.
+    #[serde(rename = "stage_name")]
+    pub stage_name: String,
+    #[serde(rename = "started_at")]
+    pub started_at: String,
+    pub verdict: StageVerdict,
+}
+
+/// Metadata layer for `StageReceipt`.
+///
+/// Locked JCS key order: note.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct StageReceiptMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// A content-addressed receipt for one verifier stage.
+///
+/// Locked JCS key order: envelope, header, metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StageReceipt {
+    pub envelope: ProofRunEnvelope,
+    pub header: StageReceiptHeader,
+    pub metadata: StageReceiptMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofRunCanonicalizationError {
+    message: String,
+}
+
+impl ProofRunCanonicalizationError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ProofRunCanonicalizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ProofRunCanonicalizationError {}
+
+impl From<serde_json::Error> for ProofRunCanonicalizationError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::new(err.to_string())
+    }
+}
+
+impl ProofRunMemento {
+    /// Serialize the whole memento through the repo JCS encoder.
+    pub fn to_jcs_string(&self) -> Result<String, ProofRunCanonicalizationError> {
+        let json = serde_json::to_value(self)?;
+        let canonical = proof_run_json_to_canonical(&json)?;
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    /// Recompute `header.cid` per §4.
+    ///
+    /// Sort-vs-preserve per §2.1:
+    /// - `input_artifact_cids` sorts ascending (set semantics)
+    /// - `output_artifact_cids` sorts ascending (set semantics)
+    /// - `stage_receipt_cids` preserves execution order (matches the
+    ///   verifier-pipeline stage vocabulary)
+    /// - `input_run_cids` preserves declared replay-graph order
+    pub fn recompute_header_cid(&self) -> Result<String, ProofRunCanonicalizationError> {
+        let mut header = serde_json::to_value(&self.header)?;
+        let serde_json::Value::Object(ref mut object) = header else {
+            return Err(ProofRunCanonicalizationError::new(
+                "proof-run header did not serialize as an object",
+            ));
+        };
+
+        object.remove("cid");
+        for key in ["input_artifact_cids", "output_artifact_cids"] {
+            if let Some(serde_json::Value::Array(items)) = object.get_mut(key) {
+                items.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+            }
+        }
+
+        let canonical = proof_run_json_to_canonical(&header)?;
+        let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+}
+
+impl StageReceipt {
+    /// Serialize the whole receipt through the repo JCS encoder.
+    pub fn to_jcs_string(&self) -> Result<String, ProofRunCanonicalizationError> {
+        let json = serde_json::to_value(self)?;
+        let canonical = proof_run_json_to_canonical(&json)?;
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    /// Recompute `header.cid` per §4.
+    ///
+    /// Sort-vs-preserve per §2.2:
+    /// - `input_cids` sorts ascending (set semantics; "unless a
+    ///   stage-specific memento records an ordered input" is a
+    ///   higher-layer concern that lives outside this canonical form)
+    /// - `output_cids` sorts ascending (set semantics)
+    /// - `refusal_cids` sorts ascending (set semantics)
+    /// - `diagnostics` preserves producer-declared order (these are
+    ///   structured records, not a CID set)
+    pub fn recompute_header_cid(&self) -> Result<String, ProofRunCanonicalizationError> {
+        let mut header = serde_json::to_value(&self.header)?;
+        let serde_json::Value::Object(ref mut object) = header else {
+            return Err(ProofRunCanonicalizationError::new(
+                "stage-receipt header did not serialize as an object",
+            ));
+        };
+
+        object.remove("cid");
+        for key in ["input_cids", "output_cids", "refusal_cids"] {
+            if let Some(serde_json::Value::Array(items)) = object.get_mut(key) {
+                items.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+            }
+        }
+
+        let canonical = proof_run_json_to_canonical(&header)?;
+        let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+}
+
+fn proof_run_json_to_canonical(
+    value: &serde_json::Value,
+) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, ProofRunCanonicalizationError> {
+    use provekit_canonicalizer::Value as CanonicalValue;
+
+    match value {
+        serde_json::Value::Null => Ok(CanonicalValue::null()),
+        serde_json::Value::Bool(b) => Ok(CanonicalValue::boolean(*b)),
+        serde_json::Value::Number(n) => {
+            let Some(integer) = n.as_i64() else {
+                return Err(ProofRunCanonicalizationError::new(format!(
+                    "unsupported non-i64 JSON number in proof-run: {n}"
+                )));
+            };
+            Ok(CanonicalValue::integer(integer))
+        }
+        serde_json::Value::String(s) => Ok(CanonicalValue::string(s.clone())),
+        serde_json::Value::Array(items) => {
+            let converted = items
+                .iter()
+                .map(proof_run_json_to_canonical)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(CanonicalValue::array(converted))
+        }
+        serde_json::Value::Object(object) => {
+            let converted = object
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), proof_run_json_to_canonical(value)?)))
+                .collect::<Result<Vec<_>, ProofRunCanonicalizationError>>()?;
+            Ok(CanonicalValue::object(converted))
+        }
+    }
+}
+
+// ============================================================
+// End manual extension block -- ProofRunMemento + StageReceipt
+// ============================================================
+
+// ============================================================
 // Manual extension: observation-wrapper memento (#804)
 // Source of truth:
 //   protocol/specs/2026-05-13-effect-occurrence-memento.md §1
