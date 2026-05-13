@@ -70,6 +70,10 @@ The substrate then runs the discharge: lift both surfaces, check structural equi
 
 The library author signs the binding themselves and publishes it alongside their package release. `npm publish` ships the package and a `provekit-sugar.json` (or equivalent convention) declaring the surface-to-concept mapping. The trust profile is identical to trusting the library itself: the signature on the binding is the existing release key.
 
+**Why a library author ships sugar.** When a developer checks out a repo that uses your library and chooses to work in a target language different from the repo's authoritative surface, the realize-pass needs your sugar at every call site that uses your library. Without your sugar, the realize refuses at those call sites and the developer cannot work in their surface of choice. With it, the developer gets working code end to end. You become the missing piece that completes the developer's surface choice.
+
+This is competitive, not altruistic. The first library in each cross-X cell to ship sugar captures developers who happened to want a different surface from the one the repo is written in. The library that does not ship sugar loses that pull-request to the one that did. Network effect on the correctness axis, not the marketing axis: refusals at your call sites become commits to your competitor.
+
 This is the scaling path. The other three paths bottleneck on curator-hours, lifter coverage, or LLM compute. Self-Attested bottlenecks on world publication rate, which is several orders of magnitude larger.
 
 Memory: `project_provekit_libraries_ship_sugar.md`. Future paper 22 (working title: *After Packages: Libraries Ship Their Own Bindings*) makes the architectural argument; the rule of thumb here is the operational consequence.
