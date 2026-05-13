@@ -3,10 +3,12 @@
 #
 # provekit-lsp-ruby: NDJSON LSP plugin for Ruby.
 #
-# Protocol:
+# Protocol (provekit-lift/1 over stdio):
 #   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-#   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
+#   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
 #   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
+#
+# Legacy parse method is retained for backward compatibility.
 #
 # Usage: provekit-lsp-ruby --rpc
 
@@ -44,15 +46,75 @@ ARGV.include?("--rpc") || (warn "Usage: provekit-lsp-ruby --rpc"; exit 1)
 
 STDIN.each_line do |line|
   req = JSON.parse(line) rescue next
-  id = req["id"]
+  id     = req["id"]
   method = req["method"]
+  params = req["params"] || {}
 
   case method
   when "initialize"
-    respond id, { name: "provekit-lsp-ruby", version: "0.1.0", capabilities: ["parse"] }
+    respond id, {
+      name: "provekit-lsp-ruby",
+      version: "0.1.0",
+      protocol_version: "provekit-lift/1",
+      capabilities: {
+        authoring_surfaces: ["ruby-source"],
+        ir_version: "v1.1.0",
+        emits_signed_mementos: false,
+      },
+    }
+
+  when "lift"
+    workspace_root = params["workspace_root"] || "."
+    source_paths   = params["source_paths"] || []
+
+    unless source_paths.is_a?(Array) && !source_paths.empty?
+      err id, -32602, "lift: source_paths must be a non-empty array"
+      next
+    end
+
+    all_decls = []
+    diagnostics = []
+
+    source_paths.each do |sp|
+      full_path = File.expand_path(sp.to_s, workspace_root)
+      next unless File.file?(full_path) && full_path.end_with?(".rb")
+
+      begin
+        source = File.read(full_path, encoding: "utf-8")
+      rescue => e
+        diagnostics << { kind: "read-error", path: full_path, reason: e.message }
+        next
+      end
+
+      # Lift annotations.
+      source.each_line.with_index do |line, i|
+        if line =~ /#\s*provekit:\s*contract/
+          fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+          fn_name = fn ? $1 : "unknown"
+          all_decls << ContractDecl.new(name: fn_name, post: Provekit::IR.and())
+        end
+        if line =~ /#\s*provekit:\s*implement\s+([\w-]+)/
+          cid = $1
+          fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+          fn_name = fn ? $1 : "unknown"
+          all_decls << ContractDecl.new(name: "#{fn_name}->#{cid}", post: Provekit::IR.and())
+        end
+      end
+    end
+
+    jcs = all_decls.empty? ? "[]" : Provekit::IR.marshal_declarations(all_decls)
+    ir = JSON.parse(jcs)
+
+    respond id, {
+      kind: "ir-document",
+      ir: ir,
+      callEdges: [],
+      diagnostics: diagnostics,
+      opacityReport: [],
+      refusals: [],
+    }
 
   when "parse"
-    params = req["params"] || {}
     path   = params["path"] || "source.rb"
     source = params["source"] || ""
 
