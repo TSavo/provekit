@@ -249,6 +249,109 @@ pub struct BridgeDeclarationV14 {
     pub metadata: BridgeMetadataV14,
 }
 
+// ============================================================
+// MANUAL EXTENSION BLOCK -- sort morphism memento (issue #794)
+// Source of truth:
+//   protocol/specs/2026-05-13-sort-morphism-memento.md §1
+//
+// This substrate type records transport between two pinned sort CIDs under
+// pinned language-signature CIDs. It deliberately carries no language-specific
+// conversion runtime.
+//
+// Locked JCS key order:
+//   outer object: envelope, header, metadata
+//   envelope: declaredAt, signature, signer
+//   header: cid, direction, kind, precision_loss, range_loss,
+//     representation_constraints, runtime_guards, schemaVersion,
+//     source_language_signature_cid, source_sort_cid,
+//     target_language_signature_cid, target_sort_cid
+//   metadata: note (omitted when absent), source_url (omitted when absent)
+// ============================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SortMorphismMemento {
+    pub envelope: SortMorphismEnvelope,
+    pub header: SortMorphismHeader,
+    pub metadata: SortMorphismMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SortMorphismEnvelope {
+    #[serde(rename = "declaredAt")]
+    pub declared_at: String,
+    pub signature: String,
+    pub signer: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SortMorphismHeader {
+    pub cid: String,
+    pub direction: MorphismDirection,
+    pub kind: String,
+    #[serde(rename = "precision_loss")]
+    pub precision_loss: PrecisionLoss,
+    #[serde(rename = "range_loss")]
+    pub range_loss: RangeLoss,
+    #[serde(rename = "representation_constraints")]
+    pub representation_constraints: Vec<RepresentationConstraint>,
+    #[serde(rename = "runtime_guards")]
+    pub runtime_guards: Vec<RuntimeGuard>,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "source_language_signature_cid")]
+    pub source_language_signature_cid: String,
+    #[serde(rename = "source_sort_cid")]
+    pub source_sort_cid: String,
+    #[serde(rename = "target_language_signature_cid")]
+    pub target_language_signature_cid: String,
+    #[serde(rename = "target_sort_cid")]
+    pub target_sort_cid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct SortMorphismMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(rename = "source_url")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MorphismDirection {
+    #[serde(rename = "bidirectional")]
+    Bidirectional,
+    #[serde(rename = "left-to-right")]
+    LeftToRight,
+    #[serde(rename = "right-to-left")]
+    RightToLeft,
+}
+
+pub type PrecisionLoss = String;
+pub type RangeLoss = String;
+pub type RuntimeFailureMode = String;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepresentationConstraint {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub param: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeGuard {
+    #[serde(rename = "failure_mode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_mode: Option<RuntimeFailureMode>,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub predicate: Option<String>,
+}
+
+// ============================================================
+// End manual extension block -- sort morphism memento (issue #794)
+// ============================================================
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum IrTerm {
