@@ -528,11 +528,31 @@ fn canonical_multi_target_emission_smoke() {
 }
 
 // ============================================================================
-// Test 16: gaps.json records v0 capability gaps
+// Test 16: gaps.json reflects real substrate state (post PR #779 + #783)
 // ============================================================================
 
 #[test]
-fn gaps_doc_records_v0_capability_gaps() {
+fn gaps_doc_reflects_real_substrate_state() {
+    // Pre-PR #783: bind emitted two unconditional `v0-capability-gap` entries
+    // ("multi-lang lift_plugin dispatch deferred", "real ConceptAbstractionMemento
+    // catalog lookup deferred") for every run. PR #779 made the dispatcher
+    // exercise the actual per-language kits via kit_dispatch, so those gaps
+    // became lies: they claimed a substrate limitation that no longer existed.
+    //
+    // Per Supra omnia rectum, gaps must reflect REAL substrate state. The
+    // honest replacements are situation-specific:
+    //   - `kit-plugin-unavailable` is emitted by the dispatcher when a kit
+    //     isn't registered for the requested language.
+    //   - `bind-stub-body-emitted` is emitted per concept by
+    //     `apply_canonical_rewrite` when a body falls through to a language
+    //     stub.
+    //   - `below-threshold` is emitted per concept when site count falls
+    //     under the threshold.
+    //   - `kit-plugin-unavailable` for realize is emitted when the realize
+    //     kit isn't registered.
+    //
+    // None of those require an unconditional v0-capability-gap. This test
+    // enforces the absence of the stale lying gap kind.
     let root = fixture_root();
     let out = tempfile::tempdir().expect("tempdir").into_path();
     let result = bind_cmd(&root, &out, "invisible", "monitor", None);
@@ -542,8 +562,8 @@ fn gaps_doc_records_v0_capability_gaps() {
     let gap_arr = gaps["gaps"].as_array().expect("gaps must be array");
     let kinds: Vec<&str> = gap_arr.iter().filter_map(|g| g["kind"].as_str()).collect();
     assert!(
-        kinds.contains(&"v0-capability-gap"),
-        "gaps.json must record at least one v0-capability-gap"
+        !kinds.contains(&"v0-capability-gap"),
+        "gaps.json must NOT record stale v0-capability-gap entries after PR #779 made dispatch real (PR #783 removed the lie)"
     );
     assert!(
         !kinds.contains(&"v0-orp-delegation-gap"),

@@ -831,23 +831,22 @@ fn run_bind_engine(
         }
     }
 
-    // Record v0 capability gaps.
-    gaps.push(GapRecord {
-        kind: "v0-capability-gap".into(),
-        detail: "multi-lang lift_plugin dispatch deferred to v1 (only Rust lifting in v0)".into(),
-    });
-    gaps.push(GapRecord {
-        kind: "v0-capability-gap".into(),
-        detail: "real ConceptAbstractionMemento catalog lookup deferred to v1 (v0 uses soft-match classification)".into(),
-    });
-    // F6 (post body-template-memento, #766/#767/#768): the unconditional
-    // `bind-stub-body-emitted` gap with hardcoded binding count was a lie
-    // once the Java realize plugin began emitting real bodies for templated
-    // concepts. The accurate replacement is per-concept gap emission done
-    // AFTER `apply_canonical_rewrite` returns (see the main cmd_bind flow).
-    // The engine itself can't emit these gaps because it doesn't know which
-    // concepts' bodies will fall through to a stub — that's known only after
-    // each binding's realize_for_bind call reports its `is_stub` kind.
+    // Per PR #779, multi-lang lift dispatch IS wired via kit_dispatch, and the
+    // "v0-capability-gap: multi-lang lift_plugin dispatch deferred" claim is no
+    // longer true: when a non-Rust bind-lift kit is registered, the dispatcher
+    // exercises it and the lift result is REAL. Emitting the legacy gap
+    // unconditionally lied about the substrate state. The honest replacement
+    // is per-situation: `kit-plugin-unavailable` is already emitted by the
+    // dispatcher when no kit registers; `bind-stub-body-emitted` is emitted
+    // per-concept by `apply_canonical_rewrite` when a body falls through to a
+    // stub; below-threshold and unnamed-concept gaps are emitted above. None
+    // of those require an unconditional v0-capability-gap.
+    //
+    // The "real ConceptAbstractionMemento catalog lookup" gap is similarly
+    // stale: the concept catalog now feeds through `seed_catalog()` + the
+    // human-annotation path, and the soft-match classification still applies
+    // but it isn't a capability gap, it's a substrate choice. If a stronger
+    // catalog lookup lands later it's an enhancement, not a closure of a gap.
     Ok(EngineResult {
         bindings,
         concepts,
