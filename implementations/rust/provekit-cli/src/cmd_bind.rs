@@ -19,6 +19,8 @@
 //     converge to ORP.
 //
 // Output layout:
+//   .provekit/bindings/evidence/<cid>.json — one EvidenceMemento per contract source
+//   .provekit/bindings/contracts/<cid>.json — one CompoundContractMemento per local contract
 //   .provekit/bindings/sites/<cid>.json   — one ConceptSiteMemento per match
 //   .provekit/bindings/index.json         — summary map
 //   .provekit/bindings/gaps.json          — coverage gaps / deferred capabilities
@@ -40,8 +42,9 @@ use serde::{Deserialize, Serialize};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
-    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge, IrFormula,
-    LossRecord,
+    AggregationStrategy, CodeSite, CodeSiteSpan, CompoundContractMemento, ConceptSiteMemento,
+    ConceptSiteProvenance, Discharge, EvidenceMemento, EvidenceRef, IrFormula, LossRecord,
+    SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -278,6 +281,26 @@ pub fn run(args: BindArgs) -> u8 {
     };
 
     // Persist artifacts.
+    let _ = std::fs::create_dir_all(output_dir.join("evidence"));
+    for evidence in &result.evidence_mementos {
+        let path = output_dir
+            .join("evidence")
+            .join(format!("{}.json", safe_filename(&evidence.cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(evidence).unwrap_or_default(),
+        );
+    }
+    let _ = std::fs::create_dir_all(output_dir.join("contracts"));
+    for contract in &result.compound_contracts {
+        let path = output_dir
+            .join("contracts")
+            .join(format!("{}.json", safe_filename(&contract.cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(contract).unwrap_or_default(),
+        );
+    }
     let _ = std::fs::create_dir_all(output_dir.join("sites"));
     for memento in &result.site_mementos {
         let path = output_dir
@@ -382,6 +405,8 @@ pub fn run(args: BindArgs) -> u8 {
 pub struct EngineResult {
     pub bindings: Vec<BindingRecord>,
     pub concepts: Vec<ConceptRecord>,
+    pub evidence_mementos: Vec<EvidenceMemento>,
+    pub compound_contracts: Vec<CompoundContractMemento>,
     pub site_mementos: Vec<ConceptSiteMemento>,
     pub gaps: Vec<GapRecord>,
 }
@@ -404,6 +429,7 @@ pub struct BindingRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractOrigin {
     AttributeLift,
+    EvidenceLift { source_kind: String },
     TestLift,
     AlgebraSynthesis { rule_id: String },
     Empty,
@@ -413,6 +439,9 @@ impl ContractOrigin {
     pub fn label(&self) -> String {
         match self {
             ContractOrigin::AttributeLift => "annotation-lift".into(),
+            ContractOrigin::EvidenceLift { source_kind } => {
+                format!("evidence-lift[{source_kind}]")
+            }
             ContractOrigin::TestLift => "test-lift".into(),
             ContractOrigin::AlgebraSynthesis { rule_id } => {
                 format!("algebra-synthesis[{}]", rule_id)
@@ -455,6 +484,7 @@ struct RawLift {
     fn_line: usize,
     attr_pre: Option<String>,
     attr_post: Option<String>,
+    witnesses: Vec<ContractWitness>,
     concept_annotation: Option<String>,
     term_shape: TermShape,
     param_names: Vec<String>,
@@ -462,17 +492,56 @@ struct RawLift {
     return_type: String,
 }
 
+#[derive(Debug, Clone)]
+struct ContractWitness {
+    role: String,
+    predicate: IrFormula,
+    predicate_text: Option<String>,
+    source_kind: SourceKind,
+    confidence_basis_points: u16,
+    source_line: usize,
+    source_col: u32,
+    extension_fields: BTreeMap<String, serde_json::Value>,
+}
+
 /// Convert one PEP 1.7.0 `bind-lift-entry` (returned by a `kind = "lift"`
 /// plugin per `2026-05-13-bind-ir-lift-result.md`) into the engine-internal
 /// `RawLift` shape. This is the ONLY entry point through which lift data
 /// reaches the eight-verb engine; there is no language-specific path.
 fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLift {
+    let mut witnesses = Vec::new();
+    if let Some(pre) = entry.attr_pre.as_deref() {
+        witnesses.push(annotation_contract_witness(
+            "pre",
+            pre,
+            entry.fn_line as usize,
+            &entry.file,
+            &entry.fn_name,
+        ));
+    }
+    if let Some(post) = entry.attr_post.as_deref() {
+        witnesses.push(annotation_contract_witness(
+            "post",
+            post,
+            entry.fn_line as usize,
+            &entry.file,
+            &entry.fn_name,
+        ));
+    }
+    witnesses.extend(
+        entry
+            .witnesses
+            .iter()
+            .map(|w| contract_witness_from_bind_entry(w, entry.fn_line as usize)),
+    );
+
     RawLift {
         file: entry.file.clone(),
         fn_name: entry.fn_name.clone(),
         fn_line: entry.fn_line as usize,
         attr_pre: entry.attr_pre.clone(),
         attr_post: entry.attr_post.clone(),
+        witnesses,
         concept_annotation: entry.concept_annotation.clone(),
         term_shape: TermShape::from_kit(entry.term_shape.clone(), entry.term_shape_cid.clone()),
         param_names: entry.param_names.clone(),
@@ -482,6 +551,108 @@ fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLif
         } else {
             entry.return_type.clone()
         },
+    }
+}
+
+fn annotation_contract_witness(
+    role: &str,
+    predicate_text: &str,
+    fn_line: usize,
+    file: &str,
+    fn_name: &str,
+) -> ContractWitness {
+    let mut extension_fields = BTreeMap::new();
+    extension_fields.insert(
+        "role".to_string(),
+        serde_json::Value::String(role.to_string()),
+    );
+    extension_fields.insert(
+        "surface".to_string(),
+        serde_json::Value::String(format!("attr_{role}")),
+    );
+    extension_fields.insert(
+        "function_symbol".to_string(),
+        serde_json::Value::String(format!("{fn_name}@{file}")),
+    );
+    ContractWitness {
+        role: role.to_string(),
+        predicate: formula_text_to_ir_formula(predicate_text),
+        predicate_text: Some(predicate_text.to_string()),
+        source_kind: SourceKind::Annotation,
+        confidence_basis_points: 10000,
+        source_line: fn_line.max(1),
+        source_col: 0,
+        extension_fields,
+    }
+}
+
+fn contract_witness_from_bind_entry(
+    witness: &crate::kit_dispatch::BindContractWitness,
+    default_line: usize,
+) -> ContractWitness {
+    let role = if witness.role.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        witness.role.trim().to_string()
+    };
+    let source_kind = if witness.source_kind.trim().is_empty() {
+        SourceKind::Other("unspecified".to_string())
+    } else {
+        SourceKind::from(witness.source_kind.trim().to_string())
+    };
+    let mut extension_fields = witness.extension_fields.clone();
+    extension_fields
+        .entry("role".to_string())
+        .or_insert_with(|| serde_json::Value::String(role.clone()));
+    ContractWitness {
+        role,
+        predicate: witness_predicate_formula(
+            witness.predicate.as_ref(),
+            witness.predicate_text.as_deref(),
+        ),
+        predicate_text: witness
+            .predicate_text
+            .clone()
+            .or_else(|| witness.predicate.as_ref().map(|value| value.to_string())),
+        confidence_basis_points: witness
+            .confidence_basis_points
+            .unwrap_or_else(|| default_confidence_basis_points(&source_kind)),
+        source_kind,
+        source_line: witness
+            .line
+            .map(|n| n as usize)
+            .unwrap_or(default_line)
+            .max(1),
+        source_col: witness.col.unwrap_or(0).min(u32::MAX as u64) as u32,
+        extension_fields,
+    }
+}
+
+fn witness_predicate_formula(
+    predicate: Option<&serde_json::Value>,
+    predicate_text: Option<&str>,
+) -> IrFormula {
+    if let Some(value) = predicate {
+        if !value.is_null() {
+            if let Ok(formula) = serde_json::from_value::<IrFormula>(value.clone()) {
+                return formula;
+            }
+            return formula_text_to_ir_formula(&value.to_string());
+        }
+    }
+    formula_text_to_ir_formula(predicate_text.unwrap_or("true"))
+}
+
+fn default_confidence_basis_points(source_kind: &SourceKind) -> u16 {
+    match source_kind {
+        SourceKind::Annotation
+        | SourceKind::TypeSignature
+        | SourceKind::NativeSurface
+        | SourceKind::StructuralSynthesis => 10000,
+        SourceKind::TestAssertion => 9000,
+        SourceKind::Docstring | SourceKind::ReviewComment => 6000,
+        SourceKind::EmpiricalWitness => 5000,
+        SourceKind::LoopInvariant | SourceKind::ImplicitEffect | SourceKind::Other(_) => 7500,
     }
 }
 
@@ -589,6 +760,8 @@ fn run_bind_engine(
 
     // ---- Verb 4: SCOPE + Verb 6: IDENTIFY + Verb 7: REALIZE ----------------
     let mut bindings: Vec<BindingRecord> = Vec::new();
+    let mut evidence_mementos: Vec<EvidenceMemento> = Vec::new();
+    let mut compound_contracts: Vec<CompoundContractMemento> = Vec::new();
     let mut site_mementos: Vec<ConceptSiteMemento> = Vec::new();
 
     let lifter_cid = blake3_512_of(b"provekit-cli/bind-v0/lifter");
@@ -615,11 +788,21 @@ fn run_bind_engine(
             .expect("shape was clustered");
 
         // Contract origin priority: attribute > test > algebra-synthesis > empty.
+        let explicit_pre = contract_text_from_witnesses(&lift.witnesses, "pre");
+        let explicit_post = contract_text_from_witnesses(&lift.witnesses, "post");
         let (origin, pre, post) = if lift.attr_pre.is_some() || lift.attr_post.is_some() {
             (
                 ContractOrigin::AttributeLift,
                 lift.attr_pre.clone(),
                 lift.attr_post.clone(),
+            )
+        } else if explicit_pre.is_some() || explicit_post.is_some() {
+            (
+                ContractOrigin::EvidenceLift {
+                    source_kind: dominant_source_kind_label(&lift.witnesses),
+                },
+                explicit_pre,
+                explicit_post,
             )
         } else if let Some(test_post) = test_post_map.get(&lift.fn_name) {
             (ContractOrigin::TestLift, None, Some(test_post.clone()))
@@ -675,6 +858,21 @@ fn run_bind_engine(
             let source_cid = blake3_512_of(&source_bytes);
             let (span_start, span_end) = byte_span_for_line(&source_bytes, lift.fn_line);
             let fn_term_cid = local_cid.clone();
+            let binding_witnesses =
+                contract_witnesses_for_binding(lift, &origin, pre.as_deref(), post.as_deref());
+            let site_evidences: Vec<EvidenceMemento> = binding_witnesses
+                .iter()
+                .map(|w| evidence_memento_from_contract_witness(w, &source_cid, &lifter_cid))
+                .collect();
+            let compound = compound_contract_memento(&fn_term_cid, &site_evidences);
+            let local_contract_cid = compound
+                .as_ref()
+                .map(|c| c.cid.clone())
+                .unwrap_or_else(|| local_cid.clone());
+            evidence_mementos.extend(site_evidences);
+            if let Some(compound) = compound {
+                compound_contracts.push(compound);
+            }
 
             let (d_verdict, d_loss, d_receipt, d_refusal) = match &verdict {
                 DischargeVerdict::Exact => {
@@ -762,7 +960,10 @@ fn run_bind_engine(
             header_kv.push(("concept_cid", Value::string(abstraction_cid.clone())));
             header_kv.push(("discharge", discharge_v));
             header_kv.push(("kind", Value::string("concept-site".to_string())));
-            header_kv.push(("local_contract_cid", Value::string(local_cid.clone())));
+            header_kv.push((
+                "local_contract_cid",
+                Value::string(local_contract_cid.clone()),
+            ));
             header_kv.push(("provenance", provenance_v));
             header_kv.push(("schemaVersion", Value::string("1".to_string())));
             header_kv.push(("witnesses", Value::array(vec![])));
@@ -782,7 +983,7 @@ fn run_bind_engine(
                 concept_cid: abstraction_cid.clone(),
                 discharge,
                 kind: "concept-site".to_string(),
-                local_contract_cid: local_cid.clone(),
+                local_contract_cid,
                 provenance: ConceptSiteProvenance {
                     clusterer_cid: clusterer_cid.clone(),
                     discharger_cid: discharger_cid.clone(),
@@ -850,6 +1051,8 @@ fn run_bind_engine(
     Ok(EngineResult {
         bindings,
         concepts,
+        evidence_mementos,
+        compound_contracts,
         site_mementos,
         gaps,
     })
@@ -1339,6 +1542,9 @@ fn discharge_verdict(shape: &TermShape, origin: &ContractOrigin) -> DischargeVer
         ContractOrigin::AttributeLift => DischargeVerdict::LoudlyBoundedLossy {
             loss: "annotation-lift: structural discharge not attempted (v0)".into(),
         },
+        ContractOrigin::EvidenceLift { source_kind } => DischargeVerdict::LoudlyBoundedLossy {
+            loss: format!("evidence-lift[{source_kind}]: structural discharge not attempted (v0)"),
+        },
         ContractOrigin::TestLift => DischargeVerdict::LoudlyBoundedLossy {
             loss: "test-lift: structural discharge not attempted (v0)".into(),
         },
@@ -1685,6 +1891,344 @@ fn byte_span_for_line(bytes: &[u8], line_no: usize) -> (u64, u64) {
         }
     }
     (bytes.len() as u64, bytes.len() as u64)
+}
+
+fn contract_text_from_witnesses(witnesses: &[ContractWitness], role: &str) -> Option<String> {
+    let parts: Vec<String> = witnesses
+        .iter()
+        .filter(|w| witness_role_matches(w, role))
+        .map(|w| {
+            w.predicate_text
+                .clone()
+                .unwrap_or_else(|| serde_json::to_string(&w.predicate).unwrap_or_default())
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect();
+    match parts.len() {
+        0 => None,
+        1 => parts.into_iter().next(),
+        _ => Some(parts.join(" && ")),
+    }
+}
+
+fn witness_role_matches(witness: &ContractWitness, role: &str) -> bool {
+    witness.role == role
+        || witness
+            .extension_fields
+            .get("role")
+            .and_then(|v| v.as_str())
+            .map(|r| r == role)
+            .unwrap_or(false)
+}
+
+fn dominant_source_kind_label(witnesses: &[ContractWitness]) -> String {
+    let labels: BTreeSet<String> = witnesses
+        .iter()
+        .map(|w| source_kind_label(&w.source_kind))
+        .collect();
+    match labels.len() {
+        0 => "unspecified".to_string(),
+        1 => labels
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| "unspecified".to_string()),
+        _ => "mixed".to_string(),
+    }
+}
+
+fn contract_witnesses_for_binding(
+    lift: &RawLift,
+    origin: &ContractOrigin,
+    pre: Option<&str>,
+    post: Option<&str>,
+) -> Vec<ContractWitness> {
+    match origin {
+        ContractOrigin::AttributeLift | ContractOrigin::EvidenceLift { .. } => {
+            lift.witnesses.clone()
+        }
+        ContractOrigin::TestLift => post
+            .map(|text| {
+                synthesized_contract_witness(
+                    "post",
+                    text,
+                    SourceKind::TestAssertion,
+                    lift.fn_line,
+                    &lift.file,
+                    &lift.fn_name,
+                    [(
+                        "surface".to_string(),
+                        serde_json::Value::String("bind-test-witness-entry".to_string()),
+                    )],
+                )
+            })
+            .into_iter()
+            .collect(),
+        ContractOrigin::AlgebraSynthesis { rule_id } => {
+            let mut witnesses = Vec::new();
+            if let Some(text) = pre {
+                witnesses.push(synthesized_contract_witness(
+                    "pre",
+                    text,
+                    SourceKind::StructuralSynthesis,
+                    lift.fn_line,
+                    &lift.file,
+                    &lift.fn_name,
+                    [(
+                        "synthesis_rule_id".to_string(),
+                        serde_json::Value::String(rule_id.clone()),
+                    )],
+                ));
+            }
+            if let Some(text) = post {
+                witnesses.push(synthesized_contract_witness(
+                    "post",
+                    text,
+                    SourceKind::StructuralSynthesis,
+                    lift.fn_line,
+                    &lift.file,
+                    &lift.fn_name,
+                    [(
+                        "synthesis_rule_id".to_string(),
+                        serde_json::Value::String(rule_id.clone()),
+                    )],
+                ));
+            }
+            witnesses
+        }
+        ContractOrigin::Empty => Vec::new(),
+    }
+}
+
+fn synthesized_contract_witness<I>(
+    role: &str,
+    predicate_text: &str,
+    source_kind: SourceKind,
+    fn_line: usize,
+    file: &str,
+    fn_name: &str,
+    extra_fields: I,
+) -> ContractWitness
+where
+    I: IntoIterator<Item = (String, serde_json::Value)>,
+{
+    let mut extension_fields = BTreeMap::new();
+    extension_fields.insert(
+        "role".to_string(),
+        serde_json::Value::String(role.to_string()),
+    );
+    extension_fields.insert(
+        "function_symbol".to_string(),
+        serde_json::Value::String(format!("{fn_name}@{file}")),
+    );
+    for (key, value) in extra_fields {
+        extension_fields.insert(key, value);
+    }
+    ContractWitness {
+        role: role.to_string(),
+        predicate: formula_text_to_ir_formula(predicate_text),
+        predicate_text: Some(predicate_text.to_string()),
+        confidence_basis_points: default_confidence_basis_points(&source_kind),
+        source_kind,
+        source_line: fn_line.max(1),
+        source_col: 0,
+        extension_fields,
+    }
+}
+
+fn evidence_memento_from_contract_witness(
+    witness: &ContractWitness,
+    source_cid: &str,
+    lifter_cid: &str,
+) -> EvidenceMemento {
+    let source_locator = SourceLocator {
+        source_cid: source_cid.to_string(),
+        span: SourceLocatorSpan {
+            start: SourceLocatorPoint {
+                line: witness.source_line.min(u32::MAX as usize) as u32,
+                col: witness.source_col,
+            },
+            end: SourceLocatorPoint {
+                line: witness.source_line.min(u32::MAX as usize) as u32,
+                col: witness.source_col,
+            },
+        },
+    };
+    let cid = evidence_memento_cid(
+        witness.confidence_basis_points,
+        &witness.extension_fields,
+        lifter_cid,
+        &witness.predicate,
+        &witness.source_kind,
+        &source_locator,
+    );
+    EvidenceMemento {
+        cid,
+        confidence_basis_points: witness.confidence_basis_points,
+        extension_fields: witness.extension_fields.clone(),
+        kind: "evidence".to_string(),
+        lifter_cid: lifter_cid.to_string(),
+        predicate: witness.predicate.clone(),
+        schema_version: "1".to_string(),
+        source_kind: witness.source_kind.clone(),
+        source_locator,
+    }
+}
+
+fn evidence_memento_cid(
+    confidence_basis_points: u16,
+    extension_fields: &BTreeMap<String, serde_json::Value>,
+    lifter_cid: &str,
+    predicate: &IrFormula,
+    source_kind: &SourceKind,
+    source_locator: &SourceLocator,
+) -> String {
+    let pred_json = serde_json::to_value(predicate).expect("IrFormula must serialize");
+    let pred_v = json_to_value(&pred_json);
+    let ext_entries: Vec<(String, Arc<Value>)> = extension_fields
+        .iter()
+        .map(|(k, v)| (k.clone(), json_to_value(v)))
+        .collect();
+    let source_kind = source_kind_label(source_kind);
+    let header = Value::object([
+        (
+            "confidence_basis_points",
+            Value::integer(confidence_basis_points as i64),
+        ),
+        ("extension_fields", Arc::new(Value::Object(ext_entries))),
+        ("kind", Value::string("evidence")),
+        ("lifter_cid", Value::string(lifter_cid.to_string())),
+        ("predicate", pred_v),
+        ("schemaVersion", Value::string("1")),
+        ("source_kind", Value::string(source_kind)),
+        ("source_locator", source_locator_to_value(source_locator)),
+    ]);
+    blake3_512_of(encode_jcs(&header).as_bytes())
+}
+
+fn compound_contract_memento(
+    function_term_cid: &str,
+    evidences: &[EvidenceMemento],
+) -> Option<CompoundContractMemento> {
+    if evidences.is_empty() {
+        return None;
+    }
+    let mut evidence_refs: Vec<EvidenceRef> = evidences
+        .iter()
+        .map(|evidence| EvidenceRef {
+            evidence_cid: evidence.cid.clone(),
+            weight_basis_points: 10000,
+        })
+        .collect();
+    evidence_refs.sort_by(|a, b| a.evidence_cid.cmp(&b.evidence_cid));
+    let composed_pre = compose_evidence_role(evidences, "pre");
+    let composed_post = compose_evidence_role(evidences, "post");
+    let aggregation_strategy = AggregationStrategy::Conjunction;
+    let cid = compound_contract_cid(
+        &aggregation_strategy,
+        &composed_pre,
+        &composed_post,
+        &evidence_refs,
+        function_term_cid,
+    );
+    Some(CompoundContractMemento {
+        aggregation_strategy,
+        cid,
+        composed_post,
+        composed_pre,
+        evidences: evidence_refs,
+        function_term_cid: function_term_cid.to_string(),
+        kind: "compound-contract".to_string(),
+        schema_version: "1".to_string(),
+    })
+}
+
+fn compose_evidence_role(evidences: &[EvidenceMemento], role: &str) -> IrFormula {
+    let mut selected: Vec<&EvidenceMemento> = evidences
+        .iter()
+        .filter(|evidence| {
+            evidence
+                .extension_fields
+                .get("role")
+                .and_then(|v| v.as_str())
+                .map(|r| r == role)
+                .unwrap_or(false)
+        })
+        .collect();
+    selected.sort_by(|a, b| a.cid.cmp(&b.cid));
+    let predicates: Vec<IrFormula> = selected
+        .into_iter()
+        .map(|evidence| evidence.predicate.clone())
+        .collect();
+    and_formula(predicates)
+}
+
+fn compound_contract_cid(
+    aggregation_strategy: &AggregationStrategy,
+    composed_pre: &IrFormula,
+    composed_post: &IrFormula,
+    evidence_refs: &[EvidenceRef],
+    function_term_cid: &str,
+) -> String {
+    let refs_json = serde_json::to_value(evidence_refs).expect("EvidenceRef must serialize");
+    let strategy_label: String = aggregation_strategy.clone().into();
+    let header = Value::object([
+        ("aggregation_strategy", Value::string(strategy_label)),
+        ("composed_post", ir_formula_to_value(composed_post)),
+        ("composed_pre", ir_formula_to_value(composed_pre)),
+        ("evidences", json_to_value(&refs_json)),
+        (
+            "function_term_cid",
+            Value::string(function_term_cid.to_string()),
+        ),
+        ("kind", Value::string("compound-contract")),
+        ("schemaVersion", Value::string("1")),
+    ]);
+    blake3_512_of(encode_jcs(&header).as_bytes())
+}
+
+fn ir_formula_to_value(formula: &IrFormula) -> Arc<Value> {
+    json_to_value(&serde_json::to_value(formula).expect("IrFormula must serialize"))
+}
+
+fn source_locator_to_value(locator: &SourceLocator) -> Arc<Value> {
+    let point_to_value = |point: &SourceLocatorPoint| {
+        Value::object([
+            ("col", Value::integer(point.col as i64)),
+            ("line", Value::integer(point.line as i64)),
+        ])
+    };
+    Value::object([
+        ("source_cid", Value::string(locator.source_cid.clone())),
+        (
+            "span",
+            Value::object([
+                ("end", point_to_value(&locator.span.end)),
+                ("start", point_to_value(&locator.span.start)),
+            ]),
+        ),
+    ])
+}
+
+fn source_kind_label(source_kind: &SourceKind) -> String {
+    source_kind.clone().into()
+}
+
+fn and_formula(operands: Vec<IrFormula>) -> IrFormula {
+    match operands.len() {
+        0 => formula_text_to_ir_formula("true"),
+        1 => operands
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| formula_text_to_ir_formula("true")),
+        _ => IrFormula::And { operands },
+    }
+}
+
+fn formula_text_to_ir_formula(text: &str) -> IrFormula {
+    IrFormula::Atomic {
+        name: text.to_string(),
+        args: vec![],
+    }
 }
 
 fn formula_text_to_value(text: &str) -> Arc<Value> {

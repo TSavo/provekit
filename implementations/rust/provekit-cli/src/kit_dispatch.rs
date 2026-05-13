@@ -30,6 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -66,6 +67,34 @@ pub struct BindLiftEntry {
     pub term_shape: Value,
     #[serde(default)]
     pub term_shape_cid: String,
+    #[serde(default)]
+    pub witnesses: Vec<BindContractWitness>,
+}
+
+/// One contract witness carried by a bind lift entry.
+///
+/// `source_kind` intentionally reuses the existing `EvidenceMemento`
+/// vocabulary (`annotation`, `test-assertion`, `type-signature`, `docstring`,
+/// `native-surface`, ...). cmd_bind promotes these entries directly into
+/// `EvidenceMemento`s instead of maintaining a parallel bind-only taxonomy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BindContractWitness {
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub predicate: Option<Value>,
+    #[serde(default)]
+    pub predicate_text: Option<String>,
+    #[serde(default)]
+    pub source_kind: String,
+    #[serde(default)]
+    pub confidence_basis_points: Option<u16>,
+    #[serde(default)]
+    pub line: Option<u64>,
+    #[serde(default)]
+    pub col: Option<u64>,
+    #[serde(default)]
+    pub extension_fields: BTreeMap<String, Value>,
 }
 
 /// Result of `dispatch_bind_lift`. Carries the lift entries plus any

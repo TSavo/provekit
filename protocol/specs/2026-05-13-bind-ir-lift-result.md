@@ -1,6 +1,6 @@
 # Bind-IR Lift-Result Shape (`bind-ir/1`)
 
-**Status:** v1.0.0 normative draft for the `ir-document.ir[]` payload that lift plugins return when invoked from `provekit bind`.
+**Status:** v1.1.0 normative draft for the `ir-document.ir[]` payload that lift plugins return when invoked from `provekit bind`.
 **Date:** 2026-05-13
 **Author:** T Savo
 
@@ -36,8 +36,32 @@ bind-lift-entry = {
   param_types:        [* tstr],       ; source-language type names, same order as param_names
   return_type:        tstr,           ; source-language return type, "()" for unit
   term_shape:         term-shape-doc, ; structural fingerprint per §2
-  term_shape_cid:     tstr            ; "blake3-512:<128hex>" of canonical term_shape JCS bytes
+  term_shape_cid:     tstr,           ; "blake3-512:<128hex>" of canonical term_shape JCS bytes
+  witnesses:          [* bind-contract-witness-entry]
 }
+
+bind-contract-witness-entry = {
+  col:                     uint / null, ; 0-based byte column of the source surface, if known
+  confidence_basis_points: uint / null, ; prior confidence, defaults from source_kind
+  extension_fields:        {* tstr => any},
+  line:                    uint / null, ; 1-based line of the source surface, if known
+  predicate:               ir-formula / null,
+  predicate_text:          tstr / null, ; compatibility text form when no IR formula is available
+  role:                    "pre" / "post" / "inv" / tstr,
+  source_kind:             source-kind
+}
+
+source-kind = "annotation"
+            / "test-assertion"
+            / "type-signature"
+            / "docstring"
+            / "loop-invariant"
+            / "implicit-effect"
+            / "native-surface"
+            / "structural-synthesis"
+            / "empirical-witness"
+            / "review-comment"
+            / tstr
 ```
 
 ### §1.1 Field semantics
@@ -56,10 +80,17 @@ bind-lift-entry = {
 | `return_type`        | yes      | The source-language return type, or `"()"` for unit/void. |
 | `term_shape`         | yes      | A language-neutral structural fingerprint of the function body, defined per §2. |
 | `term_shape_cid`     | yes      | `"blake3-512:" + hex(BLAKE3-512(JCS-canonical bytes of `term_shape`))`. Used as the bucket key for clustering. |
+| `witnesses`          | yes      | Contract witnesses already married to this function/concept site. Each witness is promoted directly to an `EvidenceMemento` by cmd_bind. Legacy `attr_pre` / `attr_post` producers MAY leave this empty; cmd_bind auto-promotes those fields as `source_kind = "annotation"` witnesses for backward compatibility. |
 
-### §1.2 What is OUT OF scope for this entry
+### §1.2 Contract witness semantics
 
-- **Test-derived contracts.** A separate `bind-test-witness-entry` MAY be specified in a future revision; v1.0.0 of this shape does not include test-extracted postconditions. Lift kits that wish to expose tests SHOULD do so under a distinct entry `kind` so cmd_bind can route them through Verb 1's contract-origin tier without confusing them with attribute-derived contracts.
+`bind-contract-witness-entry.source_kind` MUST use the existing `EvidenceMemento.source_kind` vocabulary from `2026-05-13-compound-contract-memento.md` §10. Lift kits MUST NOT invent a parallel bind-only source-kind enum. Unknown future labels are carried as open extensions and map to `SourceKind::Other`.
+
+`predicate` is preferred when the lifter has an `IrFormula`. `predicate_text` is the compatibility surface for existing annotation strings and native extractor ecosystems that have not yet lowered their predicate into IR. When both are present, `predicate` is authoritative for evidence minting and `predicate_text` is retained only for source re-emission surfaces.
+
+### §1.3 What is OUT OF scope for this entry
+
+- **Unmarried test streams.** Test-derived, native-surface, docstring, and type-signature producers that have not yet identified the target function/concept MAY still emit their own evidence surfaces. This bind entry carries the married form: the lifter has already associated the witness with the function named by `file` + `fn_name`.
 - **The full IR algebra term.** This entry is the BIND surface (clustering + naming + scoping); the full algebra term used by transport is requested separately via the realize-plugin protocol (`provekit.plugin.invoke` with `method: "lift"` on the realize side, see `2026-05-12-plugin-protocol.md` §4.2.2 and the body-template realize plugins).
 - **Concept-shape catalog matches.** The kit MUST emit `term_shape` + `term_shape_cid`; the catalog match is performed by cmd_bind (Verb 6: Identify), not the kit.
 
@@ -117,7 +148,8 @@ A Rust `pub fn identity(x: i32) -> i32 { x }` lifted with the annotation `// con
   "param_types": ["i32"],
   "return_type": "i32",
   "term_shape": { "kind": "body", "stmts": [{ "kind": "opaque" }] },
-  "term_shape_cid": "blake3-512:..."
+  "term_shape_cid": "blake3-512:...",
+  "witnesses": []
 }
 ```
 
@@ -135,7 +167,7 @@ Wrapped in the standard `ir-document` envelope:
 
 - A `kind = "lift"` PEP 1.7.0 plugin MAY emit the bind-lift-entry shape alongside other entry kinds in the same `ir-document.ir[]`. cmd_bind selects only entries with `kind = "bind-lift-entry"` for the eight-verb pipeline.
 - The `provekit-lift` Rust binary (which emits `proof-envelope` results for `provekit prove`) is a DIFFERENT lift surface. Bind kits and prove kits MAY share an implementation but MUST honor the surface the caller requested through `lift-params.surface`.
-- Future entry kinds (`bind-test-witness-entry`, `bind-loop-witness-entry`, etc.) extend the bind surface without breaking this v1.0.0 entry shape.
+- Future entry kinds for unmatched evidence streams MAY extend the bind surface without breaking this v1.1.0 entry shape. Once a producer has married evidence to a function/concept site, it SHOULD use `witnesses[]`.
 
 ## §5. Refusal vs gap
 
