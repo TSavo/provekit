@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{
-    EffectOccurrence, InvariantViolation, ObservationWrapperMemento,
+    EffectOccurrence, InvariantViolation, ObservationWrapperMemento, OccurrenceKind,
+    OccurrenceRole,
 };
 use serde_json::{json, Value as Json};
 
@@ -28,8 +29,8 @@ fn observer_effect() -> EffectOccurrence {
             "file": "src/wrapper.rs",
             "symbol": "observe"
         }),
-        occurrence_kind: "Io".to_string(),
-        role: "body".to_string(),
+        occurrence_kind: OccurrenceKind::Io,
+        role: OccurrenceRole::Body,
         signature_cid: "blake3-512:io-signature".to_string(),
     }
 }
@@ -44,8 +45,8 @@ fn object_effect() -> EffectOccurrence {
             "file": "src/object.rs",
             "line": 7
         }),
-        occurrence_kind: "Reads".to_string(),
-        role: "body".to_string(),
+        occurrence_kind: OccurrenceKind::Reads,
+        role: OccurrenceRole::Body,
         signature_cid: "blake3-512:mem-read-signature".to_string(),
     }
 }

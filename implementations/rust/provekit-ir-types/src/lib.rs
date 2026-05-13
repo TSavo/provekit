@@ -1676,10 +1676,181 @@ pub struct CompoundContractMemento {
 //     preservation_claim_cid, provenance_cid, wrapper_fcm_cid
 // ============================================================
 
-/// A promoted semantic effect payload carried by `FunctionContractMemento.effects`.
+// ============================================================
+// Manual extension: EffectOccurrence substrate object (issue #793)
+// Source of truth:
+//   protocol/specs/2026-05-13-effect-occurrence-memento.md
+//
+// EffectOccurrence is a canonical object embedded in
+// FunctionContractMemento.effects. It is not a top-level memento and carries
+// no envelope, metadata, cid, or evidence pointer.
+//
+// Key-order rule: struct field names mirror the CDDL key names exactly and
+// are declared in JCS alphabetical order:
+//   args, discharge_key, locator, occurrence_kind, role, signature_cid.
+// The JCS encoder lives outside this crate; serde round-trip tests here pin
+// the structural wire shape.
+// ============================================================
+
+/// Discharge-classification verdict for an `EffectOccurrence`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Classification {
+    #[serde(rename = "block")]
+    Block,
+    #[serde(rename = "memento-required")]
+    MementoRequired,
+    #[serde(rename = "informational-dischargeable")]
+    InformationalDischargeable,
+}
+
+/// The canonical v1 occurrence kind labels plus namespaced extensions.
 ///
-/// This is the minimal substrate shape from
-/// `2026-05-13-effect-occurrence-memento.md` §1.
+/// Wire format: a bare JSON string. Unknown labels are carried as
+/// `Extension(String)` so storage-compatible readers can round-trip them. The
+/// public `from_str` helper returns `None` for unknown non-namespaced labels,
+/// because v1 extensions are required to use `<namespace>:<kind>`. Serde
+/// deserialization fails closed on bare unknowns via `TryFrom<String>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum OccurrenceKind {
+    Reads,
+    Writes,
+    Io,
+    Panics,
+    OpaqueLoop,
+    UnresolvedCall,
+    AtomicAccess,
+    EarlyReturn,
+    Unsafe,
+    ClosureCapture,
+    PinnedReference,
+    RawPointerProvenance,
+    PossibleAliasing,
+    Drop,
+    Extension(String),
+}
+
+impl OccurrenceKind {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "Reads" => Some(OccurrenceKind::Reads),
+            "Writes" => Some(OccurrenceKind::Writes),
+            "Io" => Some(OccurrenceKind::Io),
+            "Panics" => Some(OccurrenceKind::Panics),
+            "OpaqueLoop" => Some(OccurrenceKind::OpaqueLoop),
+            "UnresolvedCall" => Some(OccurrenceKind::UnresolvedCall),
+            "AtomicAccess" => Some(OccurrenceKind::AtomicAccess),
+            "EarlyReturn" => Some(OccurrenceKind::EarlyReturn),
+            "Unsafe" => Some(OccurrenceKind::Unsafe),
+            "ClosureCapture" => Some(OccurrenceKind::ClosureCapture),
+            "PinnedReference" => Some(OccurrenceKind::PinnedReference),
+            "RawPointerProvenance" => Some(OccurrenceKind::RawPointerProvenance),
+            "PossibleAliasing" => Some(OccurrenceKind::PossibleAliasing),
+            "Drop" => Some(OccurrenceKind::Drop),
+            extension => match extension.split_once(':') {
+                // Per spec §3 namespaced-extensions rule, an extension
+                // value MUST be `<namespace>:<kind>` with EXACTLY one
+                // colon and both segments non-empty. Bare leading/trailing
+                // colons (`:kind`, `acme:`) and multi-colon strings
+                // (`a:b:c`) are malformed and not extensions.
+                Some((ns, kind))
+                    if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') =>
+                {
+                    Some(OccurrenceKind::Extension(extension.to_string()))
+                }
+                _ => None,
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for OccurrenceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            OccurrenceKind::Reads => "Reads",
+            OccurrenceKind::Writes => "Writes",
+            OccurrenceKind::Io => "Io",
+            OccurrenceKind::Panics => "Panics",
+            OccurrenceKind::OpaqueLoop => "OpaqueLoop",
+            OccurrenceKind::UnresolvedCall => "UnresolvedCall",
+            OccurrenceKind::AtomicAccess => "AtomicAccess",
+            OccurrenceKind::EarlyReturn => "EarlyReturn",
+            OccurrenceKind::Unsafe => "Unsafe",
+            OccurrenceKind::ClosureCapture => "ClosureCapture",
+            OccurrenceKind::PinnedReference => "PinnedReference",
+            OccurrenceKind::RawPointerProvenance => "RawPointerProvenance",
+            OccurrenceKind::PossibleAliasing => "PossibleAliasing",
+            OccurrenceKind::Drop => "Drop",
+            OccurrenceKind::Extension(s) => s,
+        };
+        f.write_str(s)
+    }
+}
+
+impl TryFrom<String> for OccurrenceKind {
+    type Error = OccurrenceKindError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        if let Some(known) = OccurrenceKind::from_str(&s) {
+            return Ok(known);
+        }
+        // Bare unknowns fail closed per spec §3 + admissibility-spine
+        // namespaced-extensions rule. Extensions MUST be
+        // `<namespace>:<kind>` with both segments non-empty. A bare
+        // unknown that silently became Extension(s) would fall through
+        // CCP and the classifier with no policy gate.
+        // Spec §3: extension labels are `<namespace>:<kind>` with EXACTLY
+        // one colon. `a:b:c` is malformed.
+        match s.split_once(':') {
+            Some((ns, kind)) if !ns.is_empty() && !kind.is_empty() && !kind.contains(':') => {
+                Ok(OccurrenceKind::Extension(s))
+            }
+            _ => Err(OccurrenceKindError { raw: s }),
+        }
+    }
+}
+
+impl From<OccurrenceKind> for String {
+    fn from(k: OccurrenceKind) -> String {
+        k.to_string()
+    }
+}
+
+/// Returned when an `occurrence_kind` string is neither a canonical v1
+/// kind nor a well-formed `<namespace>:<kind>` extension.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OccurrenceKindError {
+    pub raw: String,
+}
+
+impl std::fmt::Display for OccurrenceKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unrecognized occurrence_kind {:?}: not a canonical v1 kind and not a well-formed `<namespace>:<kind>` extension",
+            self.raw
+        )
+    }
+}
+
+impl std::error::Error for OccurrenceKindError {}
+
+/// Contract position where an occurrence is relevant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OccurrenceRole {
+    #[serde(rename = "pre")]
+    Pre,
+    #[serde(rename = "post")]
+    Post,
+    #[serde(rename = "invariant")]
+    Invariant,
+    #[serde(rename = "body")]
+    Body,
+    #[serde(rename = "exceptional")]
+    Exceptional,
+}
+
+/// Canonical occurrence payload embedded in `FunctionContractMemento.effects`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectOccurrence {
     pub args: serde_json::Value,
@@ -1687,10 +1858,55 @@ pub struct EffectOccurrence {
     pub discharge_key: String,
     pub locator: serde_json::Value,
     #[serde(rename = "occurrence_kind")]
-    pub occurrence_kind: String,
-    pub role: String,
+    pub occurrence_kind: OccurrenceKind,
+    pub role: OccurrenceRole,
     #[serde(rename = "signature_cid")]
     pub signature_cid: String,
+}
+
+impl EffectOccurrence {
+    /// Pure structural classification per the v1 EffectOccurrence table.
+    pub fn classify(&self) -> Classification {
+        match self.occurrence_kind {
+            OccurrenceKind::Reads
+            | OccurrenceKind::Writes
+            | OccurrenceKind::Io
+            | OccurrenceKind::Panics
+            | OccurrenceKind::Unsafe => Classification::Block,
+            OccurrenceKind::AtomicAccess => self.classify_atomic_access(),
+            OccurrenceKind::Drop => self.classify_drop(),
+            OccurrenceKind::OpaqueLoop
+            | OccurrenceKind::UnresolvedCall
+            | OccurrenceKind::EarlyReturn
+            | OccurrenceKind::ClosureCapture
+            | OccurrenceKind::PinnedReference
+            | OccurrenceKind::RawPointerProvenance
+            | OccurrenceKind::PossibleAliasing
+            | OccurrenceKind::Extension(_) => Classification::MementoRequired,
+        }
+    }
+
+    fn classify_atomic_access(&self) -> Classification {
+        match self.args.get("ordering") {
+            Some(ordering) if !ordering.is_null() => Classification::InformationalDischargeable,
+            _ => Classification::MementoRequired,
+        }
+    }
+
+    fn classify_drop(&self) -> Classification {
+        let drop_kind = self
+            .args
+            .get("drop_kind")
+            .or_else(|| self.args.get("dropKind"))
+            .and_then(serde_json::Value::as_str);
+
+        match drop_kind {
+            Some("Trivial" | "trivial" | "Structural" | "structural") => {
+                Classification::InformationalDischargeable
+            }
+            _ => Classification::MementoRequired,
+        }
+    }
 }
 
 // NOTE: an earlier draft of this module declared a public
@@ -2083,6 +2299,10 @@ fn serde_json_to_canonical_value(
 
 // ============================================================
 // End manual extension block -- promotion-decision memento
+// ============================================================
+
+// ============================================================
+// End manual extension block -- EffectOccurrence substrate object
 // ============================================================
 
 // ============================================================
