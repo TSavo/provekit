@@ -46,9 +46,10 @@ use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
     AggregationStrategy, CodeSite, CodeSiteSpan, CompoundContractMemento, ConceptSiteMemento,
     ConceptSiteProvenance, Discharge, EvidenceMemento, EvidenceRef, IrFormula, LossRecord,
-    PolicyMemento, PromotionDecisionEnvelope, PromotionDecisionHeader, PromotionDecisionMemento,
-    PromotionDecisionMetadata, PromotionGate, PromotionResult, ProofGatePolicyMemento, SourceKind,
-    SourceLocator, SourceLocatorPoint, SourceLocatorSpan,
+    ObservationWrapperMemento, PolicyMemento, PromotionDecisionEnvelope, PromotionDecisionHeader,
+    PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult,
+    ProofGatePolicyMemento, RealizationPlanMemento, SourceKind, SourceLocator,
+    SourceLocatorPoint, SourceLocatorSpan,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -345,7 +346,11 @@ pub fn run(args: BindArgs) -> u8 {
     // Rewrite output. Canonical-rewrite returns the set of concepts whose body
     // fell through to the language stub so we can emit per-concept gap entries
     // per `body-template-memento.md` §5.
-    let stub_concepts: Vec<String> = match &args.rewrite {
+    let (stub_concepts, realization_plan_mementos, observation_wrapper_mementos): (
+        Vec<String>,
+        Vec<RealizationPlanMemento>,
+        Vec<ObservationWrapperMemento>,
+    ) = match &args.rewrite {
         RewriteShape::Annotate => {
             // annotate rewrites in-place in source-language syntax.
             // Cross-language annotation is not supported in v0; use --rewrite=canonical.
@@ -361,7 +366,7 @@ pub fn run(args: BindArgs) -> u8 {
             apply_annotate_rewrite(
                 &root, &src_files, &result, &args.mode, /*to_disk=*/ true,
             );
-            Vec::new()
+            (Vec::new(), Vec::new(), Vec::new())
         }
         RewriteShape::Canonical => apply_canonical_rewrite(
             &root,
@@ -380,7 +385,7 @@ pub fn run(args: BindArgs) -> u8 {
                 apply_annotate_rewrite(
                     &root, &src_files, &result, &args.mode, /*to_disk=*/ false,
                 );
-                Vec::new()
+                (Vec::new(), Vec::new(), Vec::new())
             } else {
                 apply_canonical_rewrite(
                     &root,
@@ -395,6 +400,28 @@ pub fn run(args: BindArgs) -> u8 {
             }
         }
     };
+
+    // Write realization-plan and observation-wrapper mementos (Blocker #1, #4).
+    let _ = std::fs::create_dir_all(output_dir.join("realization-plans"));
+    for plan in &realization_plan_mementos {
+        let path = output_dir
+            .join("realization-plans")
+            .join(format!("{}.json", safe_filename(&plan.selected_realization_cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(plan).unwrap_or_default(),
+        );
+    }
+    let _ = std::fs::create_dir_all(output_dir.join("observation-wrappers"));
+    for wrapper in &observation_wrapper_mementos {
+        let path = output_dir
+            .join("observation-wrappers")
+            .join(format!("{}.json", safe_filename(&wrapper.wrapper_fcm_cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(wrapper).unwrap_or_default(),
+        );
+    }
 
     // Augment gaps with per-concept `bind-stub-body-emitted` entries for
     // every concept whose body fell through during canonical rewrite, per
@@ -438,6 +465,11 @@ pub struct EngineResult {
     pub promotion_decisions: Vec<PromotionDecisionMemento>,
     pub site_mementos: Vec<ConceptSiteMemento>,
     pub gaps: Vec<GapRecord>,
+    /// Minted per realize call per spec §1.2 (Blocker #1).
+    pub realization_plan_mementos: Vec<RealizationPlanMemento>,
+    /// Minted when mode ∈ {witness, monitor, dispatcher} and the kit returned
+    /// an observation_wrapper_emission_record (Blocker #4).
+    pub observation_wrapper_mementos: Vec<ObservationWrapperMemento>,
 }
 
 #[derive(Debug, Clone)]
@@ -1120,6 +1152,9 @@ fn run_bind_engine(
         promotion_decisions,
         site_mementos,
         gaps,
+        // Populated by apply_canonical_rewrite after the engine returns.
+        realization_plan_mementos: Vec::new(),
+        observation_wrapper_mementos: Vec::new(),
     })
 }
 
@@ -1355,7 +1390,7 @@ fn apply_canonical_rewrite(
     to_disk: bool,
     output_dir: &Path,
     sugar_plugins: &[serde_json::Value],
-) -> Vec<String> {
+) -> (Vec<String>, Vec<RealizationPlanMemento>, Vec<ObservationWrapperMemento>) {
     // The realize plugin owns mode-aware emission; bind passes the selected
     // mode plus the married contract payload so the kit can choose target
     // sugar without Rust knowing the target syntax.
@@ -1376,6 +1411,8 @@ fn apply_canonical_rewrite(
     let mut kit_unavailable = false;
     let mut kit_unavailable_detail = String::new();
     let mut file_extension: Option<String> = None;
+    let mut realization_plan_mementos: Vec<RealizationPlanMemento> = Vec::new();
+    let mut observation_wrapper_mementos: Vec<ObservationWrapperMemento> = Vec::new();
 
     for (rel_file, bindings) in &by_file {
         let mut chunks: Vec<String> = Vec::new();
@@ -1397,6 +1434,26 @@ fn apply_canonical_rewrite(
                     witnesses: b.contract_witnesses.clone(),
                 }
             });
+            let request = crate::kit_dispatch::RealizeRequest {
+                function: b.site_fn.clone(),
+                params: b.param_names.clone(),
+                param_types: b.param_types.clone(),
+                return_type: b.return_type.clone(),
+                concept_name: concept_name.to_string(),
+                mode: Some(mode_label(mode).to_string()),
+                contract: contract_payload,
+                sugar_cids: sugar_plugins
+                    .iter()
+                    .filter_map(|plugin| {
+                        plugin
+                            .get("header")
+                            .and_then(|h| h.get("cid"))
+                            .and_then(|c| c.as_str())
+                            .map(str::to_string)
+                    })
+                    .collect(),
+                sugar_plugins: sugar_plugins.to_vec(),
+            };
             match crate::cmd_transport::realize_for_bind_with_contract(
                 target_lang,
                 &b.site_fn,
@@ -1405,7 +1462,7 @@ fn apply_canonical_rewrite(
                 &b.return_type,
                 &concept_name,
                 Some(mode_label(mode)),
-                contract_payload,
+                request.contract.clone(),
                 sugar_plugins.to_vec(),
             ) {
                 Ok(r) => {
@@ -1414,6 +1471,30 @@ fn apply_canonical_rewrite(
                     }
                     if file_extension.is_none() && !r.extension.is_empty() {
                         file_extension = Some(r.extension.to_string());
+                    }
+                    // Blocker #1, #2, #4: mint substrate artifacts after each
+                    // successful realize call.
+                    match crate::cmd_transport::mint_realization_artifacts(
+                        &request,
+                        &r,
+                        &b.site_memento_cid,
+                    ) {
+                        Ok((plan, wrapper)) => {
+                            realization_plan_mementos.push(plan);
+                            if let Some(w) = wrapper {
+                                observation_wrapper_mementos.push(w);
+                            }
+                        }
+                        Err(e) => {
+                            // Mint failure is loudly-bounded-lossy: the emit
+                            // succeeded, but the plan memento is absent. Log to
+                            // stderr and continue.
+                            eprintln!(
+                                "bind: mint_realization_artifacts failed for \
+                                 {}: {e}",
+                                b.site_fn
+                            );
+                        }
                     }
                     chunks.push(r.source);
                 }
@@ -1466,7 +1547,11 @@ fn apply_canonical_rewrite(
     }
 
     // BTreeSet → sorted Vec for deterministic gap-record output order.
-    stub_concepts.into_iter().collect()
+    (
+        stub_concepts.into_iter().collect(),
+        realization_plan_mementos,
+        observation_wrapper_mementos,
+    )
 }
 
 // Note: language-specific emit helpers (comment_prefix_for, emit_target_stub,

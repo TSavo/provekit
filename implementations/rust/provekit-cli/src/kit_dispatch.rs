@@ -533,6 +533,11 @@ pub struct RealizedSource {
     pub emitted_artifact_cid: Option<String>,
     pub observed_loss_record: Value,
     pub used_sugars: Vec<Value>,
+    /// Raw `observation_wrapper_emission_record` from the kit response, present
+    /// when mode ∈ {witness, monitor, dispatcher} and the kit emitted a wrapper
+    /// FCM. Expected fields: wrapper_fcm_cid, observer_effects,
+    /// preservation_claim_cid.
+    pub observation_wrapper_emission_record: Option<Value>,
 }
 
 /// Dispatch a realize call for `target_lang`. Returns `Err(KitUnavailable)`
@@ -782,6 +787,29 @@ fn invoke_realize(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    // Nit: used_sugars ⊆ cited_sugar_cids subset check.
+    // If the kit returns a sugar CID that was not cited in the request, the
+    // call is unauthorized. Fail with a descriptive error so the caller can
+    // emit a CompositionRefusalMemento with failure_kind "ext:unauthorized-sugar".
+    for used in &used_sugars {
+        if let Some(used_cid) = used
+            .get("header")
+            .and_then(|h| h.get("cid"))
+            .and_then(Value::as_str)
+            .or_else(|| used.as_str())
+        {
+            if !request.sugar_cids.iter().any(|c| c == used_cid) {
+                return Err(format!(
+                    "ext:unauthorized-sugar: kit returned sugar CID {used_cid:?} \
+                     not in cited set {:?}",
+                    request.sugar_cids
+                ));
+            }
+        }
+    }
+    let observation_wrapper_emission_record = result
+        .get("observation_wrapper_emission_record")
+        .cloned();
     Ok(RealizedSource {
         extension,
         source,
@@ -789,6 +817,7 @@ fn invoke_realize(
         emitted_artifact_cid,
         observed_loss_record,
         used_sugars,
+        observation_wrapper_emission_record,
     })
 }
 
