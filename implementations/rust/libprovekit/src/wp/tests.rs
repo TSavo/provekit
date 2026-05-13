@@ -51,7 +51,9 @@ fn int_sort() -> Sort {
     }
 }
 fn t_var(n: &str) -> Term {
-    Term::Var { name: n.to_string() }
+    Term::Var {
+        name: n.to_string(),
+    }
 }
 fn t_const(n: i64) -> Term {
     Term::Const {
@@ -72,7 +74,9 @@ fn sentinel_cid() -> Cid {
     Cid::parse(format!("blake3-512:{}", "0".repeat(128))).expect("sentinel cid is valid")
 }
 fn ir_var(n: &str) -> IrTerm {
-    IrTerm::Var { name: n.to_string() }
+    IrTerm::Var {
+        name: n.to_string(),
+    }
 }
 fn ir_const(n: i64) -> IrTerm {
     IrTerm::Const {
@@ -132,7 +136,10 @@ fn add_contract() -> OpContractInfo {
     ));
     c.post = Some(atomic(
         "=",
-        vec![ir_var("result"), op_term("add", vec![ir_var("lhs"), ir_var("rhs")])],
+        vec![
+            ir_var("result"),
+            op_term("add", vec![ir_var("lhs"), ir_var("rhs")]),
+        ],
     ));
     c
 }
@@ -144,7 +151,10 @@ fn div_contract() -> OpContractInfo {
     c.pre = Some(atomic("not_zero", vec![ir_var("rhs")]));
     c.post = Some(atomic(
         "=",
-        vec![ir_var("result"), op_term("div", vec![ir_var("lhs"), ir_var("rhs")])],
+        vec![
+            ir_var("result"),
+            op_term("div", vec![ir_var("lhs"), ir_var("rhs")]),
+        ],
     ));
     c
 }
@@ -152,7 +162,10 @@ fn div_contract() -> OpContractInfo {
 /// `uop_neg` — value-op, `post = (result == neg(x))`.
 fn neg_contract() -> OpContractInfo {
     let mut c = OpContractInfo::new(vec![SlotInfo::value("x")]);
-    c.post = Some(atomic("=", vec![ir_var("result"), op_term("neg", vec![ir_var("x")])]));
+    c.post = Some(atomic(
+        "=",
+        vec![ir_var("result"), op_term("neg", vec![ir_var("x")])],
+    ));
     c
 }
 
@@ -161,7 +174,10 @@ fn eq_contract() -> OpContractInfo {
     let mut c = OpContractInfo::new(vec![SlotInfo::value("lhs"), SlotInfo::value("rhs")]);
     c.post = Some(atomic(
         "=",
-        vec![ir_var("result"), op_term("eq", vec![ir_var("lhs"), ir_var("rhs")])],
+        vec![
+            ir_var("result"),
+            op_term("eq", vec![ir_var("lhs"), ir_var("rhs")]),
+        ],
     ));
     c
 }
@@ -186,7 +202,10 @@ fn if_contract() -> OpContractInfo {
         SlotInfo::stmt("else_branch"),
     ]);
     c.wp_rule = Some(and(vec![
-        implies(prop("cond"), apply("wp_then_branch", postcondition_placeholder())),
+        implies(
+            prop("cond"),
+            apply("wp_then_branch", postcondition_placeholder()),
+        ),
         implies(
             not(prop("cond")),
             apply("wp_else_branch", postcondition_placeholder()),
@@ -211,7 +230,11 @@ fn seq_contract() -> OpContractInfo {
 /// a control-flow op with no `Stmt` slots and a `substitute` node.)
 fn return_contract() -> OpContractInfo {
     let mut c = OpContractInfo::new(vec![SlotInfo::value("value")]);
-    c.wp_rule = Some(subst(postcondition_placeholder(), "result", ir_var("value")));
+    c.wp_rule = Some(subst(
+        postcondition_placeholder(),
+        "result",
+        ir_var("value"),
+    ));
     c
 }
 
@@ -305,9 +328,14 @@ fn synthesize_value_rule_returns_the_substitute_schema_node() {
     // Before instantiation a synthesized value-op rule is literally
     // `pre ∧ substitute(Q, result, value_expr)` — the schema node is the
     // payload that gets reduced once Q is known.
-    let rule = add_contract().synthesize_value_rule().expect("synthesizable");
+    let rule = add_contract()
+        .synthesize_value_rule()
+        .expect("synthesizable");
     let expected = and(vec![
-        atomic("no_signed_overflow", vec![op_term("add", vec![ir_var("lhs"), ir_var("rhs")])]),
+        atomic(
+            "no_signed_overflow",
+            vec![op_term("add", vec![ir_var("lhs"), ir_var("rhs")])],
+        ),
         subst(
             postcondition_placeholder(),
             "result",
@@ -354,7 +382,10 @@ fn authored_if_rule_instantiated() {
         implies(not(prop("cond")), else_wp),
     ]);
     assert_eq!(got, expected);
-    assert!(!contains_schema_node(&got), "no Substitute/Apply nodes remain after instantiation");
+    assert!(
+        !contains_schema_node(&got),
+        "no Substitute/Apply nodes remain after instantiation"
+    );
 }
 
 #[test]
@@ -409,10 +440,16 @@ fn evaluates_seq_if_return_skip_body() {
     let got = wp(&term, &q, &base_resolver()).expect("evaluated");
     let expected = and(vec![
         implies(prop("cond"), atomic("=", vec![ir_var("x"), ir_var("out")])),
-        implies(not(prop("cond")), atomic("=", vec![ir_var("y"), ir_var("out")])),
+        implies(
+            not(prop("cond")),
+            atomic("=", vec![ir_var("y"), ir_var("out")]),
+        ),
     ]);
     assert_eq!(got, expected);
-    assert!(!contains_schema_node(&got), "no Substitute/Apply nodes remain");
+    assert!(
+        !contains_schema_node(&got),
+        "no Substitute/Apply nodes remain"
+    );
 }
 
 #[test]
@@ -420,12 +457,22 @@ fn wp_of_leaves() {
     let r = base_resolver();
     // wp(var v, Q) = Q[result := v]
     assert_eq!(
-        wp(&t_var("v"), &atomic("=", vec![ir_var("result"), ir_const(3)]), &r).unwrap(),
+        wp(
+            &t_var("v"),
+            &atomic("=", vec![ir_var("result"), ir_const(3)]),
+            &r
+        )
+        .unwrap(),
         atomic("=", vec![ir_var("v"), ir_const(3)])
     );
     // wp(const 5, Q) = Q[result := 5]
     assert_eq!(
-        wp(&t_const(5), &atomic("<", vec![ir_var("result"), ir_const(9)]), &r).unwrap(),
+        wp(
+            &t_const(5),
+            &atomic("<", vec![ir_var("result"), ir_const(9)]),
+            &r
+        )
+        .unwrap(),
         atomic("<", vec![ir_const(5), ir_const(9)])
     );
     // wp(unit, Q) = Q
@@ -444,7 +491,13 @@ fn refuses_opaque_loop_naming_the_loop_cid() {
     let term = t_op(
         "seq",
         vec![
-            t_op("while", vec![t_op("bop_eq", vec![t_var("i"), t_var("n")]), t_op("skip", vec![])]),
+            t_op(
+                "while",
+                vec![
+                    t_op("bop_eq", vec![t_var("i"), t_var("n")]),
+                    t_op("skip", vec![]),
+                ],
+            ),
             t_op("skip", vec![]),
         ],
     );
@@ -458,7 +511,10 @@ fn refuses_opaque_loop_naming_the_loop_cid() {
 #[test]
 fn refuses_unresolved_call_naming_the_callee() {
     let resolver = base_resolver().with("indirect_call", opaque_call_contract("fn_ptr"));
-    let term = t_op("seq", vec![t_op("indirect_call", vec![]), t_op("skip", vec![])]);
+    let term = t_op(
+        "seq",
+        vec![t_op("indirect_call", vec![]), t_op("skip", vec![])],
+    );
     let err = wp(&term, &prop("Q"), &resolver).unwrap_err();
     match err {
         WpError::Refused(Refusal::OpaqueCall { callee }) => assert_eq!(callee, "fn_ptr"),
@@ -471,7 +527,9 @@ fn refuses_unknown_op_as_unresolved_call() {
     let term = t_op("totally_unknown_op", vec![]);
     let err = wp(&term, &prop("Q"), &base_resolver()).unwrap_err();
     match err {
-        WpError::Refused(Refusal::OpaqueCall { callee }) => assert_eq!(callee, "totally_unknown_op"),
+        WpError::Refused(Refusal::OpaqueCall { callee }) => {
+            assert_eq!(callee, "totally_unknown_op")
+        }
         other => panic!("expected OpaqueCall refusal, got {other:?}"),
     }
 }
@@ -496,7 +554,9 @@ fn malformed_rule_applying_a_transformer_for_a_missing_slot() {
     let resolver = base_resolver().with("weird", c);
     let term = t_op("weird", vec![t_op("skip", vec![])]);
     let err = wp(&term, &prop("Q"), &resolver).unwrap_err();
-    assert!(matches!(err, WpError::MalformedRule { op, fn_name } if op == "weird" && fn_name == "wp_body"));
+    assert!(
+        matches!(err, WpError::MalformedRule { op, fn_name } if op == "weird" && fn_name == "wp_body")
+    );
 }
 
 #[test]
@@ -601,12 +661,12 @@ const PINNED_APPLY_NODE_CID: &str =
 // Compound-aware discharge tests (PR-F of #716).
 // ============================================================
 
-use std::collections::BTreeMap;
+use crate::wp::{aggregate_conjunction, wp_compound, EvidenceVerdict};
 use provekit_ir_types::{
     AggregationStrategy, CompoundContractMemento, EvidenceMemento, EvidenceRef, LossRecord,
     SourceKind, SourceLocator, SourceLocatorPoint, SourceLocatorSpan, VerdictKind,
 };
-use crate::wp::{aggregate_conjunction, EvidenceVerdict, wp_compound};
+use std::collections::BTreeMap;
 
 /// Build a minimal `SourceLocator` for test fixtures.
 fn test_locator() -> SourceLocator {
@@ -671,7 +731,10 @@ fn wp_compound_empty_evidences_is_exact() {
     assert_eq!(report.compound_cid, "cid-empty");
     assert_eq!(report.per_evidence_verdicts, vec![]);
     assert_eq!(report.compound_verdict, VerdictKind::Exact);
-    assert!(report.composed_loss_record.0.is_empty(), "vacuous exact has no loss");
+    assert!(
+        report.composed_loss_record.0.is_empty(),
+        "vacuous exact has no loss"
+    );
 }
 
 // ---- Test 2: single exact evidence ----
@@ -688,8 +751,8 @@ fn wp_compound_single_exact_evidence() {
     );
     let target = t_op("skip", vec![]);
 
-    let report = wp_compound(&compound, &target, &[evidence], &base_resolver())
-        .expect("single exact");
+    let report =
+        wp_compound(&compound, &target, &[evidence], &base_resolver()).expect("single exact");
 
     assert_eq!(report.compound_verdict, VerdictKind::Exact);
     assert_eq!(report.per_evidence_verdicts.len(), 1);
@@ -711,11 +774,13 @@ fn wp_compound_all_exact_yields_exact() {
     );
     let target = t_op("skip", vec![]);
 
-    let report = wp_compound(&compound, &target, &[e1, e2], &base_resolver())
-        .expect("all exact");
+    let report = wp_compound(&compound, &target, &[e1, e2], &base_resolver()).expect("all exact");
 
     assert_eq!(report.compound_verdict, VerdictKind::Exact);
-    assert!(report.per_evidence_verdicts.iter().all(|v| v.verdict == VerdictKind::Exact));
+    assert!(report
+        .per_evidence_verdicts
+        .iter()
+        .all(|v| v.verdict == VerdictKind::Exact));
 }
 
 // ---- Test 4: one lossy evidence → compound loudly-bounded-lossy ----
@@ -741,16 +806,21 @@ fn wp_compound_one_lossy_evidence_yields_lossy() {
     );
     let target = t_op("uop_neg", vec![t_var("x")]);
 
-    let report =
-        wp_compound(&compound, &target, &[exact_ev, lossy_ev], &base_resolver())
-            .expect("lossy compound");
+    let report = wp_compound(&compound, &target, &[exact_ev, lossy_ev], &base_resolver())
+        .expect("lossy compound");
 
     assert_eq!(report.compound_verdict, VerdictKind::LoudlyBoundedLossy);
     // composed loss record must contain the divergence key
-    assert!(report.composed_loss_record.0.contains_key("structural_divergence"));
+    assert!(report
+        .composed_loss_record
+        .0
+        .contains_key("structural_divergence"));
     // per-evidence: first is exact, second is lossy
     assert_eq!(report.per_evidence_verdicts[0].verdict, VerdictKind::Exact);
-    assert_eq!(report.per_evidence_verdicts[1].verdict, VerdictKind::LoudlyBoundedLossy);
+    assert_eq!(
+        report.per_evidence_verdicts[1].verdict,
+        VerdictKind::LoudlyBoundedLossy
+    );
 }
 
 // ---- Test 5: one refuse evidence → compound refuse ----
@@ -791,7 +861,10 @@ fn wp_compound_one_refuse_yields_compound_refuse() {
         .expect("refuse compound result");
 
     assert_eq!(report.compound_verdict, VerdictKind::Refuse);
-    assert!(report.composed_loss_record.0.is_empty(), "refuse has no loss");
+    assert!(
+        report.composed_loss_record.0.is_empty(),
+        "refuse has no loss"
+    );
     assert_eq!(report.per_evidence_verdicts[0].verdict, VerdictKind::Refuse);
 }
 
@@ -901,10 +974,14 @@ fn wp_compound_is_deterministic() {
     );
     let target = t_op("skip", vec![]);
 
-    let r1 = wp_compound(&compound, &target, &[e1.clone(), e2.clone()], &base_resolver())
-        .expect("first run");
-    let r2 = wp_compound(&compound, &target, &[e1, e2], &base_resolver())
-        .expect("second run");
+    let r1 = wp_compound(
+        &compound,
+        &target,
+        &[e1.clone(), e2.clone()],
+        &base_resolver(),
+    )
+    .expect("first run");
+    let r2 = wp_compound(&compound, &target, &[e1, e2], &base_resolver()).expect("second run");
 
     assert_eq!(r1, r2, "wp_compound must be deterministic");
 }
@@ -922,8 +999,7 @@ fn wp_compound_report_carries_compound_cid() {
     );
     let target = t_op("skip", vec![]);
 
-    let report = wp_compound(&compound, &target, &[e1], &base_resolver())
-        .expect("report");
+    let report = wp_compound(&compound, &target, &[e1], &base_resolver()).expect("report");
 
     assert_eq!(report.compound_cid, "the-compound-cid");
     assert_eq!(report.per_evidence_verdicts[0].evidence_cid, "cid-e1");
@@ -946,7 +1022,7 @@ fn wp_compound_multiple_lossy_evidences_union_loss_records() {
     //   ev1: predicate = (result == 0)  → wp = (neg(x) == 0)  — diverges → F1 in loss
     //   ev2: predicate = (result == 1)  → wp = (neg(x) == 1)  — diverges → F2 in loss
     let result_is_zero = atomic("=", vec![ir_var("result"), ir_const(0)]);
-    let result_is_one  = atomic("=", vec![ir_var("result"), ir_const(1)]);
+    let result_is_one = atomic("=", vec![ir_var("result"), ir_const(1)]);
 
     let ev1 = make_evidence("cid-lossy-1", result_is_zero.clone());
     let ev2 = make_evidence("cid-lossy-2", result_is_one.clone());
@@ -958,8 +1034,8 @@ fn wp_compound_multiple_lossy_evidences_union_loss_records() {
     );
     let target = t_op("uop_neg", vec![t_var("x")]);
 
-    let report = wp_compound(&compound, &target, &[ev1, ev2], &base_resolver())
-        .expect("two-lossy compound");
+    let report =
+        wp_compound(&compound, &target, &[ev1, ev2], &base_resolver()).expect("two-lossy compound");
 
     assert_eq!(report.compound_verdict, VerdictKind::LoudlyBoundedLossy);
 
@@ -978,9 +1054,9 @@ fn wp_compound_multiple_lossy_evidences_union_loss_records() {
                 "union must be And of two formulas, not LWW singleton"
             );
         }
-        other => panic!(
-            "expected IrFormula::And (union of two divergence formulas), got {other:?}"
-        ),
+        other => {
+            panic!("expected IrFormula::And (union of two divergence formulas), got {other:?}")
+        }
     }
 }
 

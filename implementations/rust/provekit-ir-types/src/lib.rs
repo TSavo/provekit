@@ -2983,3 +2983,274 @@ fn is_namespaced_extension(value: &str) -> bool {
 // ============================================================
 // End manual extension block -- ObligationReceiptMemento substrate (#800)
 // ============================================================
+// ============================================================
+
+// ============================================================
+// MANUAL EXTENSION BLOCK -- CompositionRefusalMemento
+// Source of truth:
+//   protocol/specs/2026-05-13-composition-refusal-memento.md §1, §4
+//
+// This block adds the canonical CCP refusal artifact. CID identity is
+// JCS(header with `cid` elided); envelope and metadata never participate
+// in the refusal CID.
+// ============================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionRefusalEnvelope {
+    #[serde(rename = "declaredAt")]
+    pub declared_at: String,
+    pub signature: String,
+    pub signer: String,
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockingEffect {
+    #[serde(rename = "atom_cid")]
+    pub atom_cid: String,
+    pub classification: String,
+    #[serde(rename = "discharge_key")]
+    pub discharge_key: String,
+    #[serde(rename = "occurrence_kind")]
+    pub occurrence_kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IncompatiblePair {
+    #[serde(rename = "atom_a_cid")]
+    pub atom_a_cid: String,
+    #[serde(rename = "atom_b_cid")]
+    pub atom_b_cid: String,
+    #[serde(rename = "effect_a")]
+    pub effect_a: String,
+    #[serde(rename = "effect_b")]
+    pub effect_b: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MissingRequirement {
+    #[serde(rename = "expected_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_cid: Option<String>,
+    #[serde(rename = "memento_kind")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memento_kind: Option<String>,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+}
+
+/// Header layer for a CCP refusal.
+///
+/// Locked JCS key order (alphabetical):
+///   atoms_cids, blocking_effects, ccp_version, cid, compose_input_cid,
+///   effect_occurrences, effect_set_cids, failure_detail, failure_kind,
+///   incompatible_pair, kind, missing_memento_requirements, schemaVersion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionRefusalHeader {
+    #[serde(rename = "atoms_cids")]
+    pub atoms_cids: Vec<String>,
+    #[serde(rename = "blocking_effects")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocking_effects: Option<Vec<BlockingEffect>>,
+    #[serde(rename = "ccp_version")]
+    pub ccp_version: String,
+    /// DERIVED: BLAKE3-512 over JCS(header) with `cid` elided.
+    pub cid: String,
+    #[serde(rename = "compose_input_cid")]
+    pub compose_input_cid: String,
+    #[serde(rename = "effect_occurrences")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_occurrences: Option<Vec<EffectOccurrence>>,
+    #[serde(rename = "effect_set_cids")]
+    pub effect_set_cids: Vec<String>,
+    #[serde(rename = "failure_detail")]
+    pub failure_detail: String,
+    #[serde(rename = "failure_kind")]
+    pub failure_kind: String,
+    #[serde(rename = "incompatible_pair")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incompatible_pair: Option<IncompatiblePair>,
+    pub kind: String,
+    #[serde(rename = "missing_memento_requirements")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing_memento_requirements: Option<Vec<MissingRequirement>>,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionRefusalMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(rename = "provenance_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance_cid: Option<String>,
+    #[serde(rename = "refused_at")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refused_at: Option<String>,
+    #[serde(rename = "source_url")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionRefusalMemento {
+    pub envelope: CompositionRefusalEnvelope,
+    pub header: CompositionRefusalHeader,
+    pub metadata: CompositionRefusalMetadata,
+}
+
+fn canonical_value_from_json(value: serde_json::Value) -> provekit_canonicalizer::Value {
+    match value {
+        serde_json::Value::Null => provekit_canonicalizer::Value::Null,
+        serde_json::Value::Bool(b) => provekit_canonicalizer::Value::Bool(b),
+        serde_json::Value::Number(n) => provekit_canonicalizer::Value::Integer(
+            n.as_i64()
+                .expect("CompositionRefusalMemento canonical numbers must fit i64"),
+        ),
+        serde_json::Value::String(s) => provekit_canonicalizer::Value::String(s),
+        serde_json::Value::Array(items) => provekit_canonicalizer::Value::Array(
+            items
+                .into_iter()
+                .map(canonical_value_from_json)
+                .map(std::sync::Arc::new)
+                .collect(),
+        ),
+        serde_json::Value::Object(map) => provekit_canonicalizer::Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, std::sync::Arc::new(canonical_value_from_json(v))))
+                .collect(),
+        ),
+    }
+}
+
+pub fn composition_refusal_header_cid(header: &CompositionRefusalHeader) -> String {
+    let mut value =
+        serde_json::to_value(header).expect("CompositionRefusalHeader serializes to JSON");
+    value
+        .as_object_mut()
+        .expect("CompositionRefusalHeader serializes as object")
+        .remove("cid");
+    let canonical = canonical_value_from_json(value);
+    let bytes = provekit_canonicalizer::encode_jcs(&canonical);
+    provekit_canonicalizer::blake3_512_of(bytes.as_bytes())
+}
+
+pub fn composition_refusal_compose_input_cid(
+    atoms_cids: &[String],
+    effect_set_cids: &[String],
+    ccp_version: &str,
+) -> String {
+    let value = serde_json::json!({
+        "atoms_cids": atoms_cids,
+        "ccp_version": ccp_version,
+        "effect_set_cids": effect_set_cids,
+    });
+    let canonical = canonical_value_from_json(value);
+    let bytes = provekit_canonicalizer::encode_jcs(&canonical);
+    provekit_canonicalizer::blake3_512_of(bytes.as_bytes())
+}
+
+pub fn composition_refusal_signature(
+    header: &CompositionRefusalHeader,
+    metadata: &CompositionRefusalMetadata,
+) -> String {
+    let value = serde_json::json!({
+        "header": header,
+        "metadata": metadata,
+    });
+    let canonical = canonical_value_from_json(value);
+    let bytes = provekit_canonicalizer::encode_jcs(&canonical);
+    format!(
+        "unsigned-substrate:{}",
+        provekit_canonicalizer::blake3_512_of(bytes.as_bytes())
+    )
+}
+
+#[cfg(test)]
+mod composition_refusal_tests {
+    use super::*;
+
+    fn cid(ch: char) -> String {
+        format!("blake3-512:{}", ch.to_string().repeat(128))
+    }
+
+    fn canonical_impure_refusal() -> CompositionRefusalMemento {
+        let atoms_cids = vec![cid('a'), cid('b')];
+        let effect_set_cids = vec![cid('c'), cid('d')];
+        let occurrence = EffectOccurrence {
+            args: serde_json::json!({"target":"stdout"}),
+            discharge_key: "io:stdout".to_string(),
+            locator: serde_json::json!({"atom_cid": atoms_cids[1]}),
+            occurrence_kind: OccurrenceKind::Io,
+            role: OccurrenceRole::Body,
+            signature_cid: cid('e'),
+        };
+        let blocking = BlockingEffect {
+            atom_cid: atoms_cids[1].clone(),
+            classification: "block".to_string(),
+            discharge_key: occurrence.discharge_key.clone(),
+            occurrence_kind: occurrence.occurrence_kind.to_string(),
+        };
+        let compose_input_cid =
+            composition_refusal_compose_input_cid(&atoms_cids, &effect_set_cids, "1.0.0");
+        let mut header = CompositionRefusalHeader {
+            atoms_cids,
+            blocking_effects: Some(vec![blocking]),
+            ccp_version: "1.0.0".to_string(),
+            cid: String::new(),
+            compose_input_cid,
+            effect_occurrences: Some(vec![occurrence]),
+            effect_set_cids,
+            failure_detail: format!("impure atom {}", cid('b')),
+            failure_kind: "impure-input".to_string(),
+            incompatible_pair: None,
+            kind: "composition-refusal".to_string(),
+            missing_memento_requirements: None,
+            schema_version: "1".to_string(),
+        };
+        header.cid = composition_refusal_header_cid(&header);
+        let metadata = CompositionRefusalMetadata::default();
+        let signature = composition_refusal_signature(&header, &metadata);
+        CompositionRefusalMemento {
+            envelope: CompositionRefusalEnvelope {
+                declared_at: "1970-01-01T00:00:00Z".to_string(),
+                signature,
+                signer: "substrate:test".to_string(),
+            },
+            header,
+            metadata,
+        }
+    }
+
+    #[test]
+    fn canonical_impure_refusal_round_trips_and_recomputes_cid() {
+        let refusal = canonical_impure_refusal();
+        let json = serde_json::to_string(&refusal).expect("serialize refusal");
+        let decoded: CompositionRefusalMemento =
+            serde_json::from_str(&json).expect("deserialize refusal");
+
+        assert_eq!(decoded, refusal);
+        assert_eq!(
+            composition_refusal_header_cid(&decoded.header),
+            decoded.header.cid
+        );
+        assert_eq!(decoded.header.failure_kind, "impure-input");
+    }
+
+    #[test]
+    fn same_canonical_refusal_inputs_mint_same_cid() {
+        let first = canonical_impure_refusal();
+        let mut second = canonical_impure_refusal();
+        second.envelope.declared_at = "2026-05-13T00:00:00Z".to_string();
+        second.envelope.signer = "substrate:other".to_string();
+        second.metadata.note = Some("operator note outside refusal identity".to_string());
+
+        assert_eq!(first.header.cid, second.header.cid);
+    }
+}
+
+// ============================================================
+// End manual extension block -- CompositionRefusalMemento
+// ============================================================
