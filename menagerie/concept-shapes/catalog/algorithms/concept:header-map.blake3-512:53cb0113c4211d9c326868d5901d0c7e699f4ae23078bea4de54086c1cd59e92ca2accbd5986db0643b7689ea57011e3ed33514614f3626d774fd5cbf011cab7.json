@@ -1,0 +1,58 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:header-map",
+    "formals": [
+      "entries"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "ListOfHeaderEntry"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "ListOfHeaderEntry"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "entries",
+            "shape": {
+              "kind": "set"
+            }
+          }
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "header-map",
+      "result": "HeaderMap",
+      "wp_note": "A header map is a multimap from field name to field values; duplicate field names are preserved."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "HeaderMap"
+    }
+  },
+  "cid": "blake3-512:53cb0113c4211d9c326868d5901d0c7e699f4ae23078bea4de54086c1cd59e92ca2accbd5986db0643b7689ea57011e3ed33514614f3626d774fd5cbf011cab7",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "3NWrHqP6lNLpvOlPKOujo89e0/5AgC8kLs8W56W24ioJLRaKQC4n1YoC0TCfBCOmafEgRVCUyWUrKrThXTn9Bw=="
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:url",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Scheme"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Authority"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Path"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Optional<Query>"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Optional<Fragment>"
+    }
+  ],
+  "formals": [
+    "scheme",
+    "authority",
+    "path",
+    "query",
+    "fragment"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Scheme",
+      "Authority",
+      "Path",
+      "Optional<Query>",
+      "Optional<Fragment>"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "scheme"
+        },
+        {
+          "name": "authority"
+        },
+        {
+          "name": "path"
+        },
+        {
+          "name": "query"
+        },
+        {
+          "name": "fragment"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "url",
+    "result": "Url",
+    "wp_note": "URL components are carried as parsed fields; normalization policy is left to the binding."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Url"
+  }
+}

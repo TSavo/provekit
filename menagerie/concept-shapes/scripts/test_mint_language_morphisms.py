@@ -12,13 +12,20 @@ for both guards.  The tests below verify the fix is in place and will catch any
 future regression of this kind.
 """
 
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mint_language_morphisms as m
+
+
+def _canonical_key(spec):
+    """Deterministic test CID that does not require the Rust canonicalizer binary."""
+    return json.dumps(m.algorithm_payload(spec), sort_keys=True, separators=(",", ":"))
 
 
 def _make_spec(wp_key=None, wp_value=None, pre=None, effects=None):
@@ -46,7 +53,16 @@ def _make_spec(wp_key=None, wp_value=None, pre=None, effects=None):
     return spec
 
 
-class TryStructuralSubsumptionTests(unittest.TestCase):
+class CanonicalCidPatchMixin:
+    def setUp(self):
+        self._canonical_patcher = patch.object(m, "canonical_cid_spec", side_effect=_canonical_key)
+        self._canonical_patcher.start()
+
+    def tearDown(self):
+        self._canonical_patcher.stop()
+
+
+class TryStructuralSubsumptionTests(CanonicalCidPatchMixin, unittest.TestCase):
 
     def test_wp_note_vs_wp_same_value_produces_morphism(self):
         """The core regression: concept has post.wp_note, lang has post.wp,
@@ -139,7 +155,7 @@ WP_RULE_X = {"kind": "var", "name": "Q"}
 WP_RULE_Y = {"kind": "app", "fn": "wp", "args": [{"kind": "var", "name": "S"}, {"kind": "var", "name": "Q"}]}
 
 
-class WpRuleGateTests(unittest.TestCase):
+class WpRuleGateTests(CanonicalCidPatchMixin, unittest.TestCase):
     """Tests for the wp_rule equality gate added in PR #633 round-2.
 
     Soundness requirement (Supra omnia, rectum): when BOTH sides carry wp_rule

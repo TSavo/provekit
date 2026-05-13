@@ -1,0 +1,153 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:http-response",
+    "formals": [
+      "status",
+      "headers",
+      "body"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "HttpStatus"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "HeaderMap"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "ByteStreamOrBytes"
+      }
+    ],
+    "pre": {
+      "args": [
+        {
+          "kind": "var",
+          "name": "status"
+        }
+      ],
+      "kind": "atomic",
+      "name": "http_status_code"
+    },
+    "post": {
+      "arity": [
+        "HttpStatus",
+        "HeaderMap",
+        "ByteStreamOrBytes"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "status"
+          },
+          {
+            "name": "headers"
+          },
+          {
+            "name": "body"
+          }
+        ]
+      },
+      "kind": "operation-contract",
+      "loss_record": {
+        "body-decoding": {
+          "args": [
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "concept:http-response"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "body-decoding"
+            }
+          ],
+          "kind": "atomic",
+          "name": "http_loss_dimension_requires_realization_policy"
+        },
+        "header-case-sensitivity": {
+          "args": [
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "concept:http-response"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "header-case-sensitivity"
+            }
+          ],
+          "kind": "atomic",
+          "name": "http_loss_dimension_requires_realization_policy"
+        },
+        "streaming-body": {
+          "args": [
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "concept:http-response"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "streaming-body"
+            }
+          ],
+          "kind": "atomic",
+          "name": "http_loss_dimension_requires_realization_policy"
+        }
+      },
+      "operator": "http-response",
+      "result": "HttpResponse",
+      "wp_note": "Constructs an HTTP response from status, concept:header-map, and body bytes or a concept:byte-stream."
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "NetworkResponse"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "HttpResponse"
+    }
+  },
+  "cid": "blake3-512:42438adf303fb5d9a27fb29ae39e318d3799951a528115fdaa9e4c3ac7f95d4b069d15a4b1348e05535f738fad141b060d91896181533a897bd7464eee058cf9",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "16u1QZE8c2IIGf5MtdphRc6kQlqxehU27R2OFnkuHx3j/ZRV5wB6oRZFkI6L66PmkmeZJSZlrHmcddSAlN2oDQ=="
+  }
+}

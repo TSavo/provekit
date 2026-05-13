@@ -1,0 +1,142 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "NetworkResponse"
+      }
+    ]
+  },
+  "fn_name": "concept:http-response",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "HttpStatus"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "HeaderMap"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "ByteStreamOrBytes"
+    }
+  ],
+  "formals": [
+    "status",
+    "headers",
+    "body"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "HttpStatus",
+      "HeaderMap",
+      "ByteStreamOrBytes"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "status"
+        },
+        {
+          "name": "headers"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "loss_record": {
+      "body-decoding": {
+        "args": [
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "String"
+            },
+            "value": "concept:http-response"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "String"
+            },
+            "value": "body-decoding"
+          }
+        ],
+        "kind": "atomic",
+        "name": "http_loss_dimension_requires_realization_policy"
+      },
+      "header-case-sensitivity": {
+        "args": [
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "String"
+            },
+            "value": "concept:http-response"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "String"
+            },
+            "value": "header-case-sensitivity"
+          }
+        ],
+        "kind": "atomic",
+        "name": "http_loss_dimension_requires_realization_policy"
+      },
+      "streaming-body": {
+        "args": [
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "String"
+            },
+            "value": "concept:http-response"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "String"
+            },
+            "value": "streaming-body"
+          }
+        ],
+        "kind": "atomic",
+        "name": "http_loss_dimension_requires_realization_policy"
+      }
+    },
+    "operator": "http-response",
+    "result": "HttpResponse",
+    "wp_note": "Constructs an HTTP response from status, concept:header-map, and body bytes or a concept:byte-stream."
+  },
+  "pre": {
+    "args": [
+      {
+        "kind": "var",
+        "name": "status"
+      }
+    ],
+    "kind": "atomic",
+    "name": "http_status_code"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "HttpResponse"
+  }
+}
