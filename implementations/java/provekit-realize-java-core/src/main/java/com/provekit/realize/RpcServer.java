@@ -1,9 +1,11 @@
 package com.provekit.realize;
 
+import com.provekit.ir.Blake3;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -86,12 +88,20 @@ public final class RpcServer {
         String function = JsonUtil.decodeJsonStringField(paramsObj, "function");
         String returnType = JsonUtil.decodeJsonStringField(paramsObj, "return_type");
         String conceptName = JsonUtil.decodeJsonStringField(paramsObj, "concept_name");
+        String mode = JsonUtil.decodeJsonStringField(paramsObj, "mode");
+        ContractPayload contract = ContractPayload.fromJson(JsonUtil.extractObjectField(paramsObj, "contract"));
+        List<String> sugarPlugins = JsonUtil.decodeJsonObjectArray(paramsObj, "sugar_plugins");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
         SugarRealizer.Realization r =
-                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName);
+                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, contract, sugarPlugins);
         return "{\"source\":" + JsonUtil.quoted(r.source())
-                + ",\"is_stub\":" + (r.isStub() ? "true" : "false") + "}";
+                + ",\"emitted_artifact_cid\":"
+                + JsonUtil.quoted(Blake3.blake3_512(r.source().getBytes(StandardCharsets.UTF_8)))
+                + ",\"is_stub\":" + (r.isStub() ? "true" : "false")
+                + ",\"observed_loss_record\":" + r.observedLossRecord()
+                + ",\"used_sugars\":" + r.usedSugarsJson()
+                + "}";
     }
 
     /**

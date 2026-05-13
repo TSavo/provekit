@@ -109,7 +109,11 @@ final class JsonUtil {
      * Returns the object content (including braces), or "{}" if not found.
      */
     static String extractParamsObject(String json) {
-        String key = "\"params\"";
+        return extractObjectField(json, "params");
+    }
+
+    static String extractObjectField(String json, String field) {
+        String key = "\"" + field + "\"";
         int ki = json.indexOf(key);
         if (ki < 0) return "{}";
         int pos = ki + key.length();
@@ -118,7 +122,11 @@ final class JsonUtil {
             pos++;
         }
         if (pos >= json.length() || json.charAt(pos) != '{') return "{}";
-        // Find the matching closing brace.
+        return extractObjectAt(json, pos);
+    }
+
+    private static String extractObjectAt(String json, int pos) {
+        if (pos >= json.length() || json.charAt(pos) != '{') return "{}";
         int depth = 0;
         int start = pos;
         while (pos < json.length()) {
@@ -128,7 +136,6 @@ final class JsonUtil {
                 depth--;
                 if (depth == 0) { pos++; break; }
             } else if (c == '"') {
-                // skip string content
                 pos++;
                 while (pos < json.length()) {
                     char sc = json.charAt(pos);
@@ -140,6 +147,41 @@ final class JsonUtil {
             pos++;
         }
         return json.substring(start, pos);
+    }
+
+    static List<String> decodeJsonObjectArray(String json, String field) {
+        String key = "\"" + field + "\"";
+        int ki = json.indexOf(key);
+        if (ki < 0) return List.of();
+        int pos = ki + key.length();
+        while (pos < json.length()
+            && (json.charAt(pos) == ':' || json.charAt(pos) == ' ' || json.charAt(pos) == '\t')) {
+            pos++;
+        }
+        if (pos >= json.length() || json.charAt(pos) != '[') return List.of();
+        pos++;
+
+        List<String> result = new ArrayList<>();
+        while (pos < json.length() && json.charAt(pos) != ']') {
+            char c = json.charAt(pos);
+            if (c == '{') {
+                String object = extractObjectAt(json, pos);
+                result.add(object);
+                pos += object.length();
+            } else if (c == '"') {
+                pos++;
+                while (pos < json.length()) {
+                    char sc = json.charAt(pos);
+                    if (sc == '\\') { pos += 2; continue; }
+                    if (sc == '"') break;
+                    pos++;
+                }
+                pos++;
+            } else {
+                pos++;
+            }
+        }
+        return result;
     }
 
     /**

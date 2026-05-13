@@ -365,6 +365,19 @@ impl PluginFlags {
 
         Ok(memento)
     }
+
+    /// Reload successfully declared plugins of `kind` in true CLI order and
+    /// return their full memento JSON. Consumers use this when the downstream
+    /// kit needs the plugin content, not just the sealed registry CID.
+    pub fn payloads_for_kind(&self, kind: &str) -> Vec<serde_json::Value> {
+        self.ordered_plugins()
+            .iter()
+            .filter(|(declared_kind, _, _)| declared_kind == kind)
+            .filter_map(|(_, source, _)| load_one(source).ok())
+            .filter(|plugin| plugin.kind() == kind)
+            .filter_map(|plugin| serde_json::to_value(plugin).ok())
+            .collect()
+    }
 }
 
 /// A plugin load failure that refused the run (critical = true or
