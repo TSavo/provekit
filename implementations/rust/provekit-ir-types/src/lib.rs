@@ -428,9 +428,9 @@ pub struct AbstractionSlot {
 /// one-or-more via a successor mint with `refines = <PR1 schema CID>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConceptAbstractionMemento {
-    pub kind: String,      // must be "concept-abstraction"
+    pub kind: String, // must be "concept-abstraction"
     pub operator: String,
-    pub tier: String,      // must be "abstraction"
+    pub tier: String, // must be "abstraction"
     pub slots: Vec<AbstractionSlot>,
     #[serde(rename = "formal_sorts")]
     pub formal_sorts: Vec<String>,
@@ -470,7 +470,7 @@ pub struct RealizationPost {
 /// NOTE: `discharge_receipt` is optional in PR1. PR2 tightens to required.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RealizationDesugaringMemento {
-    pub kind: String,            // must be "equation"
+    pub kind: String, // must be "equation"
     #[serde(rename = "fn_name")]
     pub fn_name: String,
     pub formals: Vec<String>,
@@ -479,8 +479,8 @@ pub struct RealizationDesugaringMemento {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pre: Option<IrFormula>,
     pub post: RealizationPost,
-    pub role: String,            // must be "abstraction-realization"
-    pub direction: String,       // must be "left-to-right"
+    pub role: String,      // must be "abstraction-realization"
+    pub direction: String, // must be "left-to-right"
     #[serde(rename = "target_lang")]
     pub target_lang: String,
     #[serde(rename = "loss_record")]
@@ -488,7 +488,7 @@ pub struct RealizationDesugaringMemento {
     #[serde(rename = "discharge_receipt")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discharge_receipt: Option<String>,
-    pub effects: Vec<String>,    // always [] for the equation itself; never skip
+    pub effects: Vec<String>, // always [] for the equation itself; never skip
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refines: Option<String>,
 }
@@ -737,7 +737,7 @@ pub struct TransportGapMemento {
     pub fn_name: String,
     #[serde(rename = "gap_kind")]
     pub gap_kind: GapKind,
-    pub kind: String,           // must be "TransportGapMemento"
+    pub kind: String, // must be "TransportGapMemento"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<GapReason>,
     #[serde(rename = "reason_note")]
@@ -791,7 +791,7 @@ pub struct PartialMorphismMemento {
     pub gap_memento_cid: Option<String>,
     #[serde(rename = "homomorphism_obligation")]
     pub homomorphism_obligation: PartialHomomorphismObligation,
-    pub kind: String,           // must be "PartialMorphismMemento"
+    pub kind: String, // must be "PartialMorphismMemento"
     #[serde(rename = "literal_map")]
     pub literal_map: serde_json::Value,
     #[serde(rename = "operator_map")]
@@ -844,7 +844,7 @@ pub struct LossyMorphismMemento {
     pub gap_memento_cid: Option<String>,
     #[serde(rename = "homomorphism_obligation")]
     pub homomorphism_obligation: LossyHomomorphismObligation,
-    pub kind: String,           // must be "LossyMorphismMemento"
+    pub kind: String, // must be "LossyMorphismMemento"
     #[serde(rename = "literal_map")]
     pub literal_map: serde_json::Value,
     pub loss: LossRecord,
@@ -1017,6 +1017,246 @@ pub struct ConceptSiteMemento {
 // ============================================================
 
 // ============================================================
+// Manual extension: parametric realization mementos (issue #801)
+// Source of truth:
+//   protocol/specs/2026-05-13-parametric-realization.md §1
+//
+// This block adds durable substrate shapes for two-stage realization:
+// a reusable catalog template and a per-site selection receipt. It does
+// not implement realization lookup, sort-slot solving, effect transforms,
+// loss evaluation, or language-kit emission.
+//
+// Per JCS canonicalization, field order MUST equal the locked alphabetical
+// order in the spec. JSON-valued fields are intentionally opaque.
+// ============================================================
+
+pub type Cid = String;
+
+/// A required sort-morphism slot in a parametric realization.
+///
+/// Locked JCS key order: slot_name, source_type_variable,
+/// target_type_variable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotDescriptor {
+    #[serde(rename = "slot_name")]
+    pub slot_name: String,
+    #[serde(rename = "source_type_variable")]
+    pub source_type_variable: String,
+    #[serde(rename = "target_type_variable")]
+    pub target_type_variable: String,
+}
+
+/// A required effect transform slot in a parametric realization.
+///
+/// Locked JCS key order: concept_effect, slot_name, target_effect.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectSlotDescriptor {
+    #[serde(rename = "concept_effect")]
+    pub concept_effect: String,
+    #[serde(rename = "slot_name")]
+    pub slot_name: String,
+    #[serde(rename = "target_effect")]
+    pub target_effect: String,
+}
+
+/// A reusable catalog template for realizing a concept pattern into a
+/// target-language pattern.
+///
+/// Source of truth: protocol/specs/2026-05-13-parametric-realization.md §1.1
+///
+/// Locked JCS key order:
+///   body_template_cids, concept_pattern, effect_transform_slots,
+///   loss_record_template, provenance_cid, required_sort_morphism_slots,
+///   sugar_cids, target_pattern, type_variables.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParametricRealizationMemento {
+    #[serde(rename = "body_template_cids")]
+    pub body_template_cids: Vec<Cid>,
+    #[serde(rename = "concept_pattern")]
+    pub concept_pattern: serde_json::Value,
+    #[serde(rename = "effect_transform_slots")]
+    pub effect_transform_slots: Vec<EffectSlotDescriptor>,
+    #[serde(rename = "loss_record_template")]
+    pub loss_record_template: serde_json::Value,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: Cid,
+    #[serde(rename = "required_sort_morphism_slots")]
+    pub required_sort_morphism_slots: Vec<SlotDescriptor>,
+    #[serde(rename = "sugar_cids")]
+    pub sugar_cids: Vec<Cid>,
+    #[serde(rename = "target_pattern")]
+    pub target_pattern: serde_json::Value,
+    #[serde(rename = "type_variables")]
+    pub type_variables: Vec<String>,
+}
+
+/// A per-site selection receipt that instantiates a
+/// `ParametricRealizationMemento`.
+///
+/// Source of truth: protocol/specs/2026-05-13-parametric-realization.md §1.2
+///
+/// Locked JCS key order:
+///   candidate_set_cid, concept_site_cid, effect_occurrence_transform,
+///   loss_function_cid, observation_wrapper_cid, provenance_cid,
+///   selected_candidate_cid, selected_realization_cid, sort_morphism_cids,
+///   total_loss_record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RealizationPlanMemento {
+    #[serde(rename = "candidate_set_cid")]
+    pub candidate_set_cid: Cid,
+    #[serde(rename = "concept_site_cid")]
+    pub concept_site_cid: Cid,
+    #[serde(rename = "effect_occurrence_transform")]
+    pub effect_occurrence_transform: serde_json::Value,
+    #[serde(rename = "loss_function_cid")]
+    pub loss_function_cid: Cid,
+    #[serde(rename = "observation_wrapper_cid")]
+    pub observation_wrapper_cid: Option<Cid>,
+    #[serde(rename = "provenance_cid")]
+    pub provenance_cid: Cid,
+    #[serde(rename = "selected_candidate_cid")]
+    pub selected_candidate_cid: Cid,
+    #[serde(rename = "selected_realization_cid")]
+    pub selected_realization_cid: Cid,
+    #[serde(rename = "sort_morphism_cids")]
+    pub sort_morphism_cids: Vec<Cid>,
+    #[serde(rename = "total_loss_record")]
+    pub total_loss_record: serde_json::Value,
+}
+
+/// Returned when a `ParametricRealizationMemento` violates one of its
+/// load-time invariants per `2026-05-13-parametric-realization.md`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParametricRealizationError {
+    /// Spec §1.1 CDDL: `type_variables: [+ tstr]` (non-empty).
+    EmptyTypeVariables,
+    /// Spec §1.1 CDDL: `required_sort_morphism_slots: [+ slot-descriptor]`
+    /// (non-empty).
+    EmptyRequiredSortMorphismSlots,
+    /// A slot descriptor references a type variable not in
+    /// `type_variables`. This would be unresolvable at instantiation
+    /// time.
+    SlotReferencesUnknownTypeVariable {
+        slot_name: String,
+        variable: String,
+        side: &'static str,
+    },
+}
+
+impl std::fmt::Display for ParametricRealizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyTypeVariables => f.write_str(
+                "ParametricRealizationMemento: type_variables is empty (spec §1.1 CDDL requires [+ tstr])",
+            ),
+            Self::EmptyRequiredSortMorphismSlots => f.write_str(
+                "ParametricRealizationMemento: required_sort_morphism_slots is empty (spec §1.1 CDDL requires [+ slot-descriptor])",
+            ),
+            Self::SlotReferencesUnknownTypeVariable {
+                slot_name,
+                variable,
+                side,
+            } => write!(
+                f,
+                "ParametricRealizationMemento: slot {slot_name:?} {side}_type_variable {variable:?} is not in type_variables",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ParametricRealizationError {}
+
+impl ParametricRealizationMemento {
+    /// Check load-time invariants per spec §1.1.
+    ///
+    /// Enforced:
+    /// 1. `type_variables` non-empty (CDDL `[+ tstr]`)
+    /// 2. `required_sort_morphism_slots` non-empty (CDDL `[+ slot-descriptor]`)
+    /// 3. every slot's `source_type_variable` and `target_type_variable`
+    ///    is a member of `type_variables`
+    pub fn validate(&self) -> Result<(), ParametricRealizationError> {
+        if self.type_variables.is_empty() {
+            return Err(ParametricRealizationError::EmptyTypeVariables);
+        }
+        if self.required_sort_morphism_slots.is_empty() {
+            return Err(ParametricRealizationError::EmptyRequiredSortMorphismSlots);
+        }
+        let known: std::collections::HashSet<&str> =
+            self.type_variables.iter().map(String::as_str).collect();
+        for slot in &self.required_sort_morphism_slots {
+            if !known.contains(slot.source_type_variable.as_str()) {
+                return Err(ParametricRealizationError::SlotReferencesUnknownTypeVariable {
+                    slot_name: slot.slot_name.clone(),
+                    variable: slot.source_type_variable.clone(),
+                    side: "source",
+                });
+            }
+            if !known.contains(slot.target_type_variable.as_str()) {
+                return Err(ParametricRealizationError::SlotReferencesUnknownTypeVariable {
+                    slot_name: slot.slot_name.clone(),
+                    variable: slot.target_type_variable.clone(),
+                    side: "target",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Returned when a `RealizationPlanMemento` does not match its cited
+/// `ParametricRealizationMemento`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RealizationPlanError {
+    /// The plan's `sort_morphism_cids` length must equal the
+    /// realization's `required_sort_morphism_slots` length: one CID
+    /// per slot.
+    SortMorphismCountMismatch { expected: usize, actual: usize },
+    /// The realization itself was malformed; this plan cannot be
+    /// validated against it.
+    RealizationInvalid(ParametricRealizationError),
+}
+
+impl std::fmt::Display for RealizationPlanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SortMorphismCountMismatch { expected, actual } => write!(
+                f,
+                "RealizationPlanMemento: sort_morphism_cids.len() = {actual}, expected {expected} (one per realization required_sort_morphism_slots entry)",
+            ),
+            Self::RealizationInvalid(inner) => write!(f, "RealizationPlanMemento: cited realization is invalid: {inner}"),
+        }
+    }
+}
+
+impl std::error::Error for RealizationPlanError {}
+
+impl RealizationPlanMemento {
+    /// Check the plan-vs-realization slot-count invariant per spec §1.2.
+    ///
+    /// The plan's `sort_morphism_cids` is the ordered list of CIDs
+    /// filling the realization's `required_sort_morphism_slots`; the
+    /// lengths MUST match.
+    pub fn validate_against(
+        &self,
+        realization: &ParametricRealizationMemento,
+    ) -> Result<(), RealizationPlanError> {
+        realization
+            .validate()
+            .map_err(RealizationPlanError::RealizationInvalid)?;
+        let expected = realization.required_sort_morphism_slots.len();
+        let actual = self.sort_morphism_cids.len();
+        if expected != actual {
+            return Err(RealizationPlanError::SortMorphismCountMismatch { expected, actual });
+        }
+        Ok(())
+    }
+}
+
+// ============================================================
+// End manual extension block -- parametric realization mementos
+// ============================================================
+
+// ============================================================
 // Manual extension: compound-contract layer (PR-A of compound spec)
 // Source of truth:
 //   protocol/specs/2026-05-13-compound-contract-memento.md §1, §2, §3
@@ -1185,7 +1425,9 @@ impl From<AggregationStrategy> for String {
         match s {
             AggregationStrategy::Conjunction => "conjunction".to_string(),
             AggregationStrategy::BestConfidence => "best-confidence".to_string(),
-            AggregationStrategy::LoudlyBoundedDisjunction => "loudly-bounded-disjunction".to_string(),
+            AggregationStrategy::LoudlyBoundedDisjunction => {
+                "loudly-bounded-disjunction".to_string()
+            }
             AggregationStrategy::Other(s) => s,
         }
     }

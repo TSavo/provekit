@@ -9,3 +9,6 @@ description = "ProvekIt IR generated types from CDDL grammar."
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
