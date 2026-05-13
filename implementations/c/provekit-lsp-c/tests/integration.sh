@@ -40,8 +40,9 @@ check() {
     fi
 }
 
-# Build the NDJSON request sequence.
-# We embed the fixture source inline so no file I/O is needed from the binary.
+# ---------------------------------------------------------------------------
+# Round 1: initialize + parse + shutdown
+# ---------------------------------------------------------------------------
 REQUESTS=$(printf '%s\n%s\n%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"parse\",\"params\":{\"path\":\"two_funcs.c\",\"source\":\"$SOURCE\"}}" \
@@ -55,6 +56,7 @@ LINE2=$(printf '%s\n' "$RESPONSES" | sed -n '2p')
 LINE3=$(printf '%s\n' "$RESPONSES" | sed -n '3p')
 
 printf "Running provekit-lsp-c integration tests...\n"
+printf "\n-- initialize / parse / shutdown --\n"
 
 # T1: initialize response contains name
 check "T1 initialize: name" "$LINE1" '"name":"provekit-lsp-c"'
@@ -62,8 +64,11 @@ check "T1 initialize: name" "$LINE1" '"name":"provekit-lsp-c"'
 # T2: initialize response contains version
 check "T2 initialize: version" "$LINE1" '"version":"0.1.0"'
 
-# T3: initialize response contains capabilities array with parse
-check "T3 initialize: capabilities contains parse" "$LINE1" '"parse"'
+# T3: initialize response contains protocol_version
+check "T3 initialize: protocol_version" "$LINE1" '"protocol_version":"provekit-lift/1"'
+
+# T3b: initialize response contains authoring_surfaces
+check "T3b initialize: authoring_surfaces c-source" "$LINE1" '"authoring_surfaces":["c-source"]'
 
 # T4: parse response contains declarations array
 check "T4 parse: declarations key present" "$LINE2" '"declarations":'
@@ -100,6 +105,52 @@ check "T12 parse: refusals key present" "$LINE2" '"refusals":'
 
 # T13: shutdown response contains null result
 check "T13 shutdown: result null" "$LINE3" '"result":null'
+
+# ---------------------------------------------------------------------------
+# Round 2: lift method — pass the fixture path directly
+# ---------------------------------------------------------------------------
+printf "\n-- lift method --\n"
+
+LIFT_REQUESTS=$(printf '%s\n%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":10,"method":"initialize","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"lift\",\"params\":{\"workspace_root\":\"$SCRIPT_DIR\",\"source_paths\":[\"$FIXTURE\"]}}" \
+    '{"jsonrpc":"2.0","id":12,"method":"shutdown"}')
+
+LIFT_RESPONSES=$(printf '%s\n' "$LIFT_REQUESTS" | "$BIN" --rpc)
+
+LIFT1=$(printf '%s\n' "$LIFT_RESPONSES" | sed -n '1p')
+LIFT2=$(printf '%s\n' "$LIFT_RESPONSES" | sed -n '2p')
+LIFT3=$(printf '%s\n' "$LIFT_RESPONSES" | sed -n '3p')
+
+# T14: lift initialize response contains protocol_version
+check "T14 lift/initialize: protocol_version" "$LIFT1" '"protocol_version":"provekit-lift/1"'
+
+# T15: lift response is ir-document
+check "T15 lift: kind ir-document" "$LIFT2" '"kind":"ir-document"'
+
+# T16: lift response contains ir array
+check "T16 lift: ir key present" "$LIFT2" '"ir":'
+
+# T17: lift response ir array contains contract 'add'
+check "T17 lift: ir contains add" "$LIFT2" '"name":"add"'
+
+# T18: lift response ir array contains contract 'compute'
+check "T18 lift: ir contains compute" "$LIFT2" '"name":"compute"'
+
+# T19: lift response callEdges is empty array
+check "T19 lift: callEdges empty" "$LIFT2" '"callEdges":[]'
+
+# T20: lift response contains diagnostics array
+check "T20 lift: diagnostics key present" "$LIFT2" '"diagnostics":'
+
+# T21: lift response contains opacityReport array
+check "T21 lift: opacityReport key present" "$LIFT2" '"opacityReport":'
+
+# T22: lift response contains refusals array
+check "T22 lift: refusals key present" "$LIFT2" '"refusals":'
+
+# T23: shutdown response contains null result
+check "T23 lift/shutdown: result null" "$LIFT3" '"result":null'
 
 printf "\nResults: %d passed, %d failed\n" "$PASS" "$FAIL"
 
