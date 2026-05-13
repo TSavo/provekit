@@ -2,26 +2,21 @@
 //
 // provekit-lsp-cpp: canonical NDJSON LSP plugin for C++.
 //
-// Protocol (identical to provekit-lsp-go):
+// Protocol (provekit-lift/1 over stdio):
 //
 //   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-//   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
+//   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
 //   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
 //
-// initialize returns:
-//   {"name":"provekit-lsp-cpp","version":"0.1.0","capabilities":["parse"]}
+// Legacy parse method is retained for backward compatibility.
 //
-// parse returns:
-//   {"declarations":[...IR ContractDecl objects...],"callEdges":[],"warnings":[]}
-//
-// Lifted using provekit-lift-cpp's scan_file + lift_annotations logic
-// from provekit/ir.hpp. callEdges is always [] (no call-graph analysis
-// implemented in the C++ LSP; zig precedent in linkerd/methods.rs).
+// Wire shape matches implementations/go/provekit-lift-go/rpc.go.
 //
 // Binary name: provekit-lsp-cpp (no args required; reads NDJSON from stdin)
 
 #include "provekit/ir.hpp"
 
+#include <fstream>
 #include <iostream>
 #include <regex>
 #include <sstream>
@@ -171,6 +166,54 @@ static std::string extract_id(const std::string& line) {
     return "null";
 }
 
+// Extract a JSON string array field from a JSON line.
+// Returns a vector of unescaped strings.
+static std::vector<std::string> extract_string_array(const std::string& line, const std::string& key) {
+    std::string search = "\"" + key + "\"";
+    size_t pos = line.find(search);
+    if (pos == std::string::npos) return {};
+    size_t colon = line.find(':', pos + search.size());
+    if (colon == std::string::npos) return {};
+    size_t bracket = line.find('[', colon + 1);
+    if (bracket == std::string::npos) return {};
+
+    std::vector<std::string> result;
+    size_t i = bracket + 1;
+    while (i < line.size()) {
+        while (i < line.size() && (line[i] == ' ' || line[i] == '\t' || line[i] == ',')) ++i;
+        if (i >= line.size() || line[i] == ']') break;
+        if (line[i] != '"') break;
+        ++i;
+        std::string elem;
+        while (i < line.size() && line[i] != '"') {
+            if (line[i] == '\\' && i + 1 < line.size()) {
+                ++i;
+                switch (line[i]) {
+                    case '"':  elem += '"';  break;
+                    case '\\': elem += '\\'; break;
+                    case 'n':  elem += '\n'; break;
+                    case 'r':  elem += '\r'; break;
+                    case 't':  elem += '\t'; break;
+                    default:   elem += line[i]; break;
+                }
+            } else {
+                elem += line[i];
+            }
+            ++i;
+        }
+        if (i < line.size() && line[i] == '"') ++i;
+        result.push_back(std::move(elem));
+    }
+    return result;
+}
+
+// Read entire file to string. Returns empty string on failure.
+static std::string read_file(const std::string& path) {
+    std::ifstream f(path);
+    if (!f.is_open()) return "";
+    return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+}
+
 // ---------------------------------------------------------------------------
 // Response writers
 // ---------------------------------------------------------------------------
@@ -213,9 +256,55 @@ int main() {
 
         if (method == "initialize") {
             send_result(id,
-                "{\"name\":\"provekit-lsp-cpp\","
-                "\"version\":\"0.1.0\","
-                "\"capabilities\":[\"parse\"]}");
+                "{\"capabilities\":{"
+                "\"authoring_surfaces\":[\"cpp-source\"],"
+                "\"emits_signed_mementos\":false,"
+                "\"ir_version\":\"v1.1.0\"},"
+                "\"name\":\"provekit-lsp-cpp\","
+                "\"protocol_version\":\"provekit-lift/1\","
+                "\"version\":\"0.1.0\"}");
+
+        } else if (method == "lift") {
+            // Extract workspace_root and source_paths from params.
+            std::string workspace_root = extract_string(line, "workspace_root");
+            if (workspace_root.empty()) workspace_root = ".";
+
+            std::vector<std::string> source_paths = extract_string_array(line, "source_paths");
+            if (source_paths.empty()) {
+                send_error(id, -32602, "lift: source_paths must be a non-empty array");
+                continue;
+            }
+
+            // Lift each file; aggregate declarations.
+            reset_collector();
+            begin_collecting();
+
+            for (const auto& sp : source_paths) {
+                std::string full_path = sp;
+                if (!sp.empty() && sp[0] != '/') {
+                    full_path = workspace_root + "/" + sp;
+                }
+                std::string source = read_file(full_path);
+                if (source.empty()) continue;
+
+                auto anns = scan_source(source);
+                for (const auto& ann : anns) {
+                    if (ann.kind == Annotation::Contract) {
+                        auto post = atomic_("true", {});
+                        contract(ann.function_name, nullptr, post);
+                    }
+                }
+            }
+
+            auto decls = finish();
+            std::string ir_json = marshal_declarations(decls);
+            send_result(id,
+                "{\"callEdges\":[],"
+                "\"diagnostics\":[],"
+                "\"ir\":" + ir_json + ","
+                "\"kind\":\"ir-document\","
+                "\"opacityReport\":[],"
+                "\"refusals\":[]}");
 
         } else if (method == "parse") {
             // Extract path and source from params.

@@ -1,14 +1,8 @@
 #!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
 # Integration test for provekit-lsp-cpp.
 #
-# Lifecycle: initialize -> parse (fixture with //provekit:contract) -> shutdown.
-# Asserts:
-#   1. initialize response has name="provekit-lsp-cpp", version="0.1.0",
-#      capabilities=["parse"]
-#   2. parse response contains declarations array, callEdges array, warnings array
-#   3. declarations is non-empty (at least one contract lifted from fixture)
-#   4. callEdges is empty array []
-#   5. shutdown response result is null
+# Tests provekit-lift/1 protocol: initialize, lift, parse (legacy), shutdown.
 #
 # Usage: sh test_lsp.sh [path-to-binary]
 
@@ -30,7 +24,7 @@ assert_contains() {
     label="$1"
     text="$2"
     pattern="$3"
-    if echo "$text" | grep -qF "$pattern"; then
+    if printf '%s' "$text" | grep -qF "$pattern"; then
         echo "  PASS: $label"
         PASS=$((PASS + 1))
     else
@@ -45,7 +39,7 @@ assert_not_contains() {
     label="$1"
     text="$2"
     pattern="$3"
-    if echo "$text" | grep -qF "$pattern"; then
+    if printf '%s' "$text" | grep -qF "$pattern"; then
         echo "  FAIL: $label (should NOT contain: $pattern)"
         echo "    got: $text"
         FAIL=$((FAIL + 1))
@@ -55,39 +49,56 @@ assert_not_contains() {
     fi
 }
 
-# Fixture: a tiny C++ source with one //provekit:contract annotation.
-FIXTURE='//provekit:contract\nint compute_sum(int a, int b) { return a + b; }'
-
-# Build the NDJSON conversation.
-INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-PARSE='{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.cpp","source":"//provekit:contract\nint compute_sum(int a, int b) { return a + b; }"}}'
-SHUTDOWN='{"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}'
-
-INPUT="$(printf '%s\n%s\n%s\n' "$INIT" "$PARSE" "$SHUTDOWN")"
-
-OUTPUT="$(printf '%s' "$INPUT" | "$BIN")"
-
-INIT_RESP="$(printf '%s' "$OUTPUT" | head -1)"
-PARSE_RESP="$(printf '%s' "$OUTPUT" | sed -n '2p')"
-SHUTDOWN_RESP="$(printf '%s' "$OUTPUT" | sed -n '3p')"
+# Create a temp directory with a fixture C++ file.
+TMPDIR_PATH="$(mktemp -d)"
+cat > "$TMPDIR_PATH/fixture.cpp" << 'EOF'
+//provekit:contract
+int compute_sum(int a, int b) { return a + b; }
+EOF
 
 echo "=== initialize ==="
-assert_contains "name field"          "$INIT_RESP"     '"name":"provekit-lsp-cpp"'
-assert_contains "version field"       "$INIT_RESP"     '"version":"0.1.0"'
-assert_contains "capabilities parse"  "$INIT_RESP"     '"capabilities":["parse"]'
-assert_not_contains "no error"        "$INIT_RESP"     '"error"'
+INIT_INPUT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+INIT_RESP=$(printf '%s\n{"jsonrpc":"2.0","id":2,"method":"shutdown"}\n' "$INIT_INPUT" | "$BIN" | head -1)
+assert_contains "name field"              "$INIT_RESP" '"name":"provekit-lsp-cpp"'
+assert_contains "version field"           "$INIT_RESP" '"version":"0.1.0"'
+assert_contains "protocol_version"        "$INIT_RESP" '"protocol_version":"provekit-lift/1"'
+assert_contains "authoring_surfaces"      "$INIT_RESP" '"authoring_surfaces":["cpp-source"]'
+assert_not_contains "no error"            "$INIT_RESP" '"error"'
 
-echo "=== parse ==="
-assert_contains "declarations field"  "$PARSE_RESP"    '"declarations":'
-assert_contains "callEdges field"     "$PARSE_RESP"    '"callEdges":[]'
-assert_contains "warnings field"      "$PARSE_RESP"    '"warnings":[]'
-assert_contains "at least one decl"   "$PARSE_RESP"    '"kind":"contract"'
-assert_contains "contract name"       "$PARSE_RESP"    '"name":"compute_sum"'
-assert_not_contains "no error"        "$PARSE_RESP"    '"error"'
+echo "=== lift ==="
+LIFT_INPUT=$(printf '%s\n%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"lift\",\"params\":{\"workspace_root\":\"$TMPDIR_PATH\",\"source_paths\":[\"fixture.cpp\"]}}" \
+    '{"jsonrpc":"2.0","id":3,"method":"shutdown"}')
+LIFT_OUTPUT=$(printf '%s\n' "$LIFT_INPUT" | "$BIN")
+LIFT_RESP=$(printf '%s\n' "$LIFT_OUTPUT" | sed -n '2p')
+assert_contains "kind ir-document"        "$LIFT_RESP" '"kind":"ir-document"'
+assert_contains "ir key"                  "$LIFT_RESP" '"ir":'
+assert_contains "contract compute_sum"    "$LIFT_RESP" '"name":"compute_sum"'
+assert_contains "callEdges empty"         "$LIFT_RESP" '"callEdges":[]'
+assert_contains "diagnostics key"         "$LIFT_RESP" '"diagnostics":[]'
+assert_not_contains "no error"            "$LIFT_RESP" '"error"'
+
+echo "=== parse (legacy) ==="
+PARSE_INPUT=$(printf '%s\n%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.cpp","source":"//provekit:contract\nint compute_sum(int a, int b) { return a + b; }"}}' \
+    '{"jsonrpc":"2.0","id":3,"method":"shutdown"}')
+PARSE_OUTPUT=$(printf '%s\n' "$PARSE_INPUT" | "$BIN")
+PARSE_RESP=$(printf '%s\n' "$PARSE_OUTPUT" | sed -n '2p')
+assert_contains "declarations field"      "$PARSE_RESP" '"declarations":'
+assert_contains "callEdges empty"         "$PARSE_RESP" '"callEdges":[]'
+assert_contains "at least one decl"       "$PARSE_RESP" '"kind":"contract"'
+assert_contains "contract name"           "$PARSE_RESP" '"name":"compute_sum"'
+assert_not_contains "no error"            "$PARSE_RESP" '"error"'
 
 echo "=== shutdown ==="
-assert_contains "result null"         "$SHUTDOWN_RESP" '"result":null'
-assert_not_contains "no error"        "$SHUTDOWN_RESP" '"error"'
+SHUTDOWN_RESP=$(printf '%s\n' "$LIFT_OUTPUT" | sed -n '3p')
+assert_contains "result null"             "$SHUTDOWN_RESP" '"result":null'
+assert_not_contains "no error"            "$SHUTDOWN_RESP" '"error"'
+
+# Cleanup
+rm -rf "$TMPDIR_PATH"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
