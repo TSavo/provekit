@@ -75,14 +75,14 @@ module Provekit
         when :and, :or
           ast[1..].each { |child| walk_predicates(child, opts) }
         when :key?
-          # skip key check — we already know the field name
+          # skip key check - we already know the field name
         when :predicate
           # [:predicate, [:name?, [[:name, "value"], ...]]]
           predicate = ast[1]
           if predicate.is_a?(Array) && predicate[0].is_a?(Symbol)
             name = predicate[0].to_s
             predicate[1..].each do |arg|
-              # arg format: [:name, value] — e.g., [:num_args, 1]
+              # arg format: [:name, value] - e.g., [:num_args, 1]
               if arg.is_a?(Array) && arg.length == 2
                 key = arg[0].to_s
                 val = arg[1]
@@ -91,7 +91,7 @@ module Provekit
             end
           end
         when :attr?
-          # Attribute predicate — extract value constraints
+          # Attribute predicate - extract value constraints
           ast[1..].each { |child| walk_predicates(child, opts) }
         when :val_included_in?
           opts["one_of"] = ast[1..]

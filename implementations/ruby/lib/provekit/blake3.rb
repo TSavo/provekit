@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# BLAKE3-512 hash delegate — shells out to Python blake3 module.
+# BLAKE3-512 hash delegate - shells out to Python blake3 module.
 # Pure Ruby BLAKE3 planned for v1.2.
 #
 # Usage:

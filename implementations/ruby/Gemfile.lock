@@ -1,0 +1,23 @@
+PATH
+  remote: .
+  specs:
+    provekit-ruby (0.1.0)
+
+PATH
+  remote: vendor/rspec-lite
+  specs:
+    rspec (3.13.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  provekit-ruby!
+  rspec!
+
+BUNDLED WITH
+   1.17.2

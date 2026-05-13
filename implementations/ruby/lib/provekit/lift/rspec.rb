@@ -3,9 +3,9 @@
 # ProvekIt RSpec Layer 2 lift adapter.
 #
 # Walks RSpec test files and lifts structural patterns to canonical IR:
-#   Pattern 1 — bounded loop as universal quantifier
-#   Pattern 2 — helper-function inlining (memento per call site)
-#   Pattern 3 — multi-assert characterization conjunction
+#   Pattern 1 - bounded loop as universal quantifier
+#   Pattern 2 - helper-function inlining (memento per call site)
+#   Pattern 3 - multi-assert characterization conjunction
 #
 # Mirrors the Go/ provekit-lift-go-tests, Rust provekit-lift-rust-tests,
 # and TypeScript adapters.
@@ -61,7 +61,7 @@ module Provekit
           if expects >= 2
             decls << IR::ContractDecl.new(
               name: block[:name],
-              pre: IR.and()  # true placeholder — characterization conjunction
+              pre: IR.and()  # true placeholder - characterization conjunction
             )
             claimed << block[:name]
           end
@@ -70,7 +70,7 @@ module Provekit
         Output.new(decls: decls, warnings: warnings, claimed_tests: claimed)
       end
 
-      # ── Block scanning ────────────────────────────────────────
+      # -- Block scanning ----------------------------------------
 
       def self.scan_blocks(lines, start_idx, end_idx, depth = 0)
         blocks = []
@@ -118,7 +118,7 @@ module Provekit
         start
       end
 
-      # ── Pattern 1: bounded loop → forall quantifier ───────────
+      # -- Pattern 1: bounded loop -> forall quantifier -----------
 
       def self.try_pattern1(line)
         # (lo..hi).each { |i| ... }

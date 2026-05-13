@@ -9,18 +9,35 @@ require "json"
 
 module Provekit
   module IR
-    # ── Sort ────────────────────────────────────────────────────
+    # -- Sort ----------------------------------------------------
 
     Sort = Struct.new(:name) do
-      def self.Int    = new("Int")
-      def self.Real   = new("Real")
-      def self.String = new("String")
-      def self.Bool   = new("Bool")
-      def self.Ref    = new("Ref")
-      def self.Node   = new("Node")
+      def self.Int
+        new("Int")
+      end
+
+      def self.Real
+        new("Real")
+      end
+
+      def self.String
+        new("String")
+      end
+
+      def self.Bool
+        new("Bool")
+      end
+
+      def self.Ref
+        new("Ref")
+      end
+
+      def self.Node
+        new("Node")
+      end
     end
 
-    # ── Term ────────────────────────────────────────────────────
+    # -- Term ----------------------------------------------------
 
     def self.var(name:)
       { kind: :var, name: name }
@@ -46,7 +63,7 @@ module Provekit
       { kind: :ctor, name: name.to_s, args: args.flatten }
     end
 
-    # ── Formula ─────────────────────────────────────────────────
+    # -- Formula -------------------------------------------------
 
     def self.atomic(name, *args)
       { kind: :atomic, name: name.to_s, args: args.flatten }
@@ -56,21 +73,50 @@ module Provekit
       { kind: kind.to_s, operands: operands.flatten }
     end
 
-    def self.eq(a, b)     = atomic("=", a, b)
-    def self.neq(a, b)    = atomic("≠", a, b)
-    def self.gt(a, b)     = atomic(">", a, b)
-    def self.gte(a, b)    = atomic("≥", a, b)
-    def self.lt(a, b)     = atomic("<", a, b)
-    def self.lte(a, b)    = atomic("≤", a, b)
-    def self.and(*ops)    = connective(:and, *ops)
-    def self.or_(*ops)    = connective(:or, *ops)
-    def self.implies(a, b) = connective(:implies, a, b)
-    def self.not_(a)      = connective(:not, a)
+    def self.eq(a, b)
+      atomic("=", a, b)
+    end
+
+    def self.neq(a, b)
+      atomic("!=", a, b)
+    end
+
+    def self.gt(a, b)
+      atomic(">", a, b)
+    end
+
+    def self.gte(a, b)
+      atomic(">=", a, b)
+    end
+
+    def self.lt(a, b)
+      atomic("<", a, b)
+    end
+
+    def self.lte(a, b)
+      atomic("<=", a, b)
+    end
+
+    def self.and(*ops)
+      connective(:and, *ops)
+    end
+
+    def self.or_(*ops)
+      connective(:or, *ops)
+    end
+
+    def self.implies(a, b)
+      connective(:implies, a, b)
+    end
+
+    def self.not_(a)
+      connective(:not, a)
+    end
     def self.forall(name:, sort:, body:)
       { kind: "forall", name: name.to_s, sort: sort, body: body }
     end
 
-    # ── Declaration ─────────────────────────────────────────────
+    # -- Declaration ---------------------------------------------
 
     ContractDecl = Struct.new(:name, :out_binding, :pre, :post, :inv, keyword_init: true) do
       def initialize(name:, out_binding: "out", pre: nil, post: nil, inv: nil)
@@ -78,13 +124,13 @@ module Provekit
       end
     end
 
-    # ── JCS canonical JSON emitter ──────────────────────────────
+    # -- JCS canonical JSON emitter ------------------------------
 
     module Jcs
       def self.encode(value)
         case value
         when Symbol
-          # Symbol values in IR → string (e.g., :atomic → "atomic")
+          # Symbol values in IR -> string (e.g., :atomic -> "atomic")
           emit_string(value.to_s)
         when nil
           emit_const(nil)
@@ -153,7 +199,7 @@ module Provekit
       end
     end
 
-    # ── Declaration marshaling ──────────────────────────────────
+    # -- Declaration marshaling ----------------------------------
 
     def self.marshal_declarations(decls)
       arr = decls.map do |d|
