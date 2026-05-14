@@ -48,8 +48,8 @@ use provekit_ir_types::{
     ConceptSiteProvenance, Discharge, EvidenceMemento, EvidenceRef, IrFormula, LossRecord,
     ObservationWrapperMemento, PolicyMemento, PromotionDecisionEnvelope, PromotionDecisionHeader,
     PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult,
-    ProofGatePolicyMemento, RealizationPlanMemento, SourceKind, SourceLocator,
-    SourceLocatorPoint, SourceLocatorSpan,
+    ProofGatePolicyMemento, RealizationPlanMemento, SourceKind, SourceLocator, SourceLocatorPoint,
+    SourceLocatorSpan,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -91,6 +91,30 @@ pub struct BindArgs {
     /// refactor or annotate). Cross-language port when different from source.
     #[arg(long)]
     pub target_language: Option<String>,
+
+    /// Source library surface for migration rewrite, for example typescript-better-sqlite3.
+    #[arg(long)]
+    pub library_from: Option<String>,
+
+    /// Target library surface for migration rewrite, for example typescript-pg.
+    #[arg(long)]
+    pub library_to: Option<String>,
+
+    /// Source directory for migration rewrite.
+    #[arg(long)]
+    pub source_dir: Option<PathBuf>,
+
+    /// Output directory for migration rewrite.
+    #[arg(long)]
+    pub out_dir: Option<PathBuf>,
+
+    /// Receipt path for migration rewrite.
+    #[arg(long)]
+    pub receipt: Option<PathBuf>,
+
+    /// Write migrated source to out-dir. Without this flag the migration path is a dry run.
+    #[arg(long)]
+    pub write: bool,
 
     /// Quiet: suppress non-error output.
     #[arg(long)]
@@ -151,6 +175,16 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
 // ============================================================================
 
 pub fn run(args: BindArgs) -> u8 {
+    if args.library_from.is_some()
+        || args.library_to.is_some()
+        || args.source_dir.is_some()
+        || args.out_dir.is_some()
+        || args.receipt.is_some()
+        || args.write
+    {
+        return crate::cmd_bind_migrate::run(args);
+    }
+
     // PEP 1.7.0: seal the plugin registry before running any pipeline work (§9).
     // The registry CID must appear in every output's provenance (§9.4).
     let sealed_at = chrono::Utc::now()
@@ -404,9 +438,10 @@ pub fn run(args: BindArgs) -> u8 {
     // Write realization-plan and observation-wrapper mementos (Blocker #1, #4).
     let _ = std::fs::create_dir_all(output_dir.join("realization-plans"));
     for plan in &realization_plan_mementos {
-        let path = output_dir
-            .join("realization-plans")
-            .join(format!("{}.json", safe_filename(&plan.selected_realization_cid)));
+        let path = output_dir.join("realization-plans").join(format!(
+            "{}.json",
+            safe_filename(&plan.selected_realization_cid)
+        ));
         let _ = std::fs::write(
             &path,
             serde_json::to_string_pretty(plan).unwrap_or_default(),
@@ -1390,7 +1425,11 @@ fn apply_canonical_rewrite(
     to_disk: bool,
     output_dir: &Path,
     sugar_plugins: &[serde_json::Value],
-) -> (Vec<String>, Vec<RealizationPlanMemento>, Vec<ObservationWrapperMemento>) {
+) -> (
+    Vec<String>,
+    Vec<RealizationPlanMemento>,
+    Vec<ObservationWrapperMemento>,
+) {
     // The realize plugin owns mode-aware emission; bind passes the selected
     // mode plus the married contract payload so the kit can choose target
     // sugar without Rust knowing the target syntax.
