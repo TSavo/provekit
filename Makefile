@@ -529,9 +529,22 @@ protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
 .PHONY: conformance
-conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-self-contracts conformance-region-fixture cross-kit-conformance
+conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-mint-kit-integration-pins test-self-contracts conformance-region-fixture cross-kit-conformance
 	@echo ""
 	@echo "==== conformance: PASS ===="
+
+.PHONY: test-mint-kit-integration-pins
+test-mint-kit-integration-pins: all-mint
+	@echo "=== mint kit integration pins: rust/cpp CID gates ==="
+	CI=1 cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test mint_kit_integration \
+		kits_with_real_contracts_produce_nonempty_contract_set
+	CI=1 cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test mint_kit_integration \
+		rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical
+	CI=1 cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test mint_kit_integration \
+		cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical
 
 # --- Self-contracts contract-assertion tests --------------------------------
 #
