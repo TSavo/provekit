@@ -728,29 +728,69 @@ fn extract_concept_annotation(src: &str, fn_name: &str) -> Option<String> {
     for (i, line) in lines.iter().enumerate() {
         if line.contains(&needle) {
             let mut j = i;
+            let mut comment_annotation: Option<String> = None;
             while j > 0 {
                 let prev = lines[j - 1].trim_start();
+                if let Some(tag) = extract_emitted_concept_tag(prev) {
+                    return Some(tag);
+                }
                 if let Some(rest) = prev.strip_prefix("// concept:") {
-                    let trimmed = rest.trim().to_string();
-                    if trimmed.starts_with("UNNAMED-CONCEPT-") {
-                        return None;
+                    if comment_annotation.is_none() {
+                        comment_annotation = normalize_concept_annotation(rest);
                     }
-                    return Some(trimmed);
                 }
                 if prev.starts_with("#[")
                     || prev.starts_with("// substrate-origin:")
                     || prev.starts_with("// memento-cid:")
                     || prev.starts_with("// witness-inherited-from:")
+                    || prev.starts_with("// concept:")
                 {
                     j -= 1;
                     continue;
                 }
                 break;
             }
-            return None;
+            return comment_annotation;
         }
     }
     None
+}
+
+fn extract_emitted_concept_tag(line: &str) -> Option<String> {
+    for marker in ["provekit_monitor", "provekit_emitter", "provekit_witness"] {
+        let Some(marker_pos) = line.find(marker) else {
+            continue;
+        };
+        let rest = &line[marker_pos + marker.len()..];
+        let Some(concept_pos) = rest.find("concept") else {
+            continue;
+        };
+        let after_key = rest[concept_pos + "concept".len()..].trim_start();
+        let Some(after_eq) = after_key.strip_prefix('=') else {
+            continue;
+        };
+        let after_eq = after_eq.trim_start();
+        let Some(quoted) = after_eq.strip_prefix('"') else {
+            continue;
+        };
+        let Some(end) = quoted.find('"') else {
+            continue;
+        };
+        if let Some(name) = normalize_concept_annotation(&quoted[..end]) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn normalize_concept_annotation(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let name = trimmed.strip_prefix("concept:").unwrap_or(trimmed).trim();
+    if name.is_empty() || name.starts_with("UNNAMED-CONCEPT-") {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn term_shape_for_fn(item_fn: &syn::ItemFn) -> std::sync::Arc<CValue> {
@@ -960,6 +1000,40 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn concept_annotation_reads_human_edited_emitted_monitor_tag() {
+        let src = r#"
+// concept: deposit-then-balance
+// substrate-origin: annotation-lift
+// memento-cid: blake3-512:abc
+#[cfg_attr(any(), requires(amount > 0))]
+#[cfg_attr(any(), provekit_monitor(concept = "ledger-deposit"))]
+pub fn deposit(balance: i64, amount: i64) -> i64 {
+    balance + amount
+}
+"#;
+
+        assert_eq!(
+            extract_concept_annotation(src, "deposit").as_deref(),
+            Some("ledger-deposit")
+        );
+    }
+
+    #[test]
+    fn concept_annotation_strips_prefix_from_emitted_observation_tag() {
+        let src = r#"
+#[cfg_attr(any(), provekit_emitter(concept = "concept:ledger-deposit"))]
+pub fn deposit(balance: i64, amount: i64) -> i64 {
+    balance + amount
+}
+"#;
+
+        assert_eq!(
+            extract_concept_annotation(src, "deposit").as_deref(),
+            Some("ledger-deposit")
+        );
     }
 
     fn temp_workspace(name: &str) -> PathBuf {
