@@ -96,6 +96,49 @@ fn ensure_rust_lift_rpc_built() -> PathBuf {
     rpc_bin
 }
 
+fn ensure_rust_realize_rpc_built() -> PathBuf {
+    let provekit = provekit_bin();
+    let bin_dir = provekit
+        .parent()
+        .expect("provekit binary path has parent directory");
+    let rpc_bin = bin_dir.join(exe_name("provekit-realize-rust"));
+    let rust_workspace = rust_workspace_root();
+    let target_dir = bin_dir
+        .parent()
+        .expect("cargo target dir has profile parent");
+
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.current_dir(&rust_workspace)
+        .env("CARGO_TARGET_DIR", target_dir);
+    cmd.arg("build")
+        .arg("--manifest-path")
+        .arg(rust_workspace.join("Cargo.toml"))
+        .arg("-p")
+        .arg("provekit-realize-rust-core")
+        .arg("--bin")
+        .arg("provekit-realize-rust");
+    if bin_dir.file_name().and_then(|n| n.to_str()) == Some("release") {
+        cmd.arg("--release");
+    }
+
+    let output = cmd
+        .output()
+        .expect("spawn cargo build for rust realize rpc");
+    assert!(
+        output.status.success(),
+        "cargo build failed for rust realize rpc\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        rpc_bin.exists(),
+        "rust realize rpc missing after cargo build at {}",
+        rpc_bin.display()
+    );
+    rpc_bin
+}
+
 fn install_rust_lift_manifest(fixture_root: &Path, rpc_bin: &Path) {
     let manifest = fixture_root
         .join(".provekit")
@@ -109,6 +152,21 @@ fn install_rust_lift_manifest(fixture_root: &Path, rpc_bin: &Path) {
         rpc_bin.display()
     );
     fs::write(&manifest, manifest_text).expect("write fixture rust lift manifest");
+}
+
+fn install_rust_realize_manifest(fixture_root: &Path, rpc_bin: &Path) {
+    let manifest = fixture_root
+        .join(".provekit")
+        .join("realize")
+        .join("rust")
+        .join("manifest.toml");
+    fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
+        .expect("create fixture rust realize manifest dir");
+    let manifest_text = format!(
+        "name = \"rust-realize\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+        rpc_bin.display()
+    );
+    fs::write(&manifest, manifest_text).expect("write fixture rust realize manifest");
 }
 
 fn copy_dir(src: &Path, dst: &Path) {
@@ -240,11 +298,13 @@ fn normalize_whitespace(s: &str) -> String {
 #[test]
 fn trinity_round_trip() {
     let rust_lift_rpc = ensure_rust_lift_rpc_built();
+    let rust_realize_rpc = ensure_rust_realize_rpc_built();
 
     // Copy fixture to a tempdir so annotate writes cannot corrupt checked-in source.
     let fixture_tmp = tempfile::tempdir().expect("tempdir").into_path();
     copy_dir(&trinity_fixture_root(), &fixture_tmp);
     install_rust_lift_manifest(&fixture_tmp, &rust_lift_rpc);
+    install_rust_realize_manifest(&fixture_tmp, &rust_realize_rpc);
 
     // ── Leg 1: Rust → Java ────────────────────────────────────────────────────
     let out1 = tempfile::tempdir().expect("tempdir").into_path();

@@ -176,3 +176,13 @@ fn c_canonical_bodies_cid_self_consistent() {
         "blake3-512:8ef55920ab677d4fb44260ed9993295585fd76cc7df67c28673424a2cf49c2f76164e4cc9f1f2739a063ed2f27cb11cd34024c54a6cdfa9af2828e9946d1ff0e",
     );
 }
+
+#[test]
+fn rust_canonical_bodies_cid_self_consistent() {
+    let path = repo_root()
+        .join("menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json");
+    assert_self_consistent(
+        path,
+        "blake3-512:f4a13083c93185636c3116bd0ba55bae949d4b89b9736184552400d4dd93b4906e8d99be2837e592679b8e6df08352318b78b8563b38251c356fabc1e2761cec",
+    );
+}
