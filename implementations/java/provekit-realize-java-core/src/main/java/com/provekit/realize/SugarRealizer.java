@@ -97,10 +97,23 @@ final class SugarRealizer {
             String mode,
             ContractPayload contract,
             List<String> sugarPluginJson) {
+        return emitStub(function, params, paramTypes, returnType, conceptName, mode, modeList(mode), contract, sugarPluginJson);
+    }
+
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            String returnType,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson) {
 
         String className = snakeToPascal(function) + "Transported";
         String mappedReturn = mapSourceType(returnType);
-        List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson);
+        List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, modeList(mode, modes));
         boolean hasBeanValidationNotNull = sugarEmissions.stream()
                 .anyMatch(e -> e.surfaceLocator().startsWith("annotation:"));
         boolean hasJUnitWitness = sugarEmissions.stream()
@@ -154,6 +167,23 @@ final class SugarRealizer {
                 + "}\n"
                 + witnessClass;
         return new Realization(source, isStub, observedLossRecordJson(sugarEmissions), usedSugarsJson(sugarEmissions));
+    }
+
+    private static List<String> modeList(String mode) {
+        return mode == null || mode.isBlank() ? List.of() : List.of(mode);
+    }
+
+    private static List<String> modeList(String mode, List<String> modes) {
+        List<String> out = new ArrayList<>();
+        if (modes != null) {
+            for (String m : modes) {
+                if (m != null && !m.isBlank() && !out.contains(m)) out.add(m);
+            }
+        }
+        if (out.isEmpty() && mode != null && !mode.isBlank()) {
+            out.add(mode);
+        }
+        return out;
     }
 
     private static String observedLossRecordJson(List<SugarEmission> emissions) {
@@ -509,7 +539,7 @@ record SugarEmission(
 final class SugarDictionary {
     private SugarDictionary() {}
 
-    static List<SugarEmission> emitAll(ContractPayload contract, List<String> pluginJson) {
+    static List<SugarEmission> emitAll(ContractPayload contract, List<String> pluginJson, List<String> requestModes) {
         if (contract == null || pluginJson == null || pluginJson.isEmpty()) {
             return List.of();
         }
@@ -520,6 +550,7 @@ final class SugarDictionary {
             for (ContractWitness witness : contract.witnesses()) {
                 Jcs.Json predicate = witness.predicate();
                 for (SugarEntry entry : plugin.entries()) {
+                    if (!modeMatches(entry.mode(), requestModes)) continue;
                     Match match = match(predicate, entry.pattern(), witness);
                     if (match != null) {
                         out.add(new SugarEmission(
@@ -535,6 +566,11 @@ final class SugarDictionary {
             }
         }
         return out;
+    }
+
+    private static boolean modeMatches(String entryMode, List<String> requestModes) {
+        if (entryMode == null || entryMode.isBlank()) return true;
+        return requestModes != null && requestModes.contains(entryMode);
     }
 
     private static Match match(Jcs.Json predicate, Jcs.Json pattern, ContractWitness witness) {
@@ -639,7 +675,7 @@ final class SugarDictionary {
         }
     }
 
-    private record SugarEntry(String surfaceLocator, String template, Jcs.Json pattern, Jcs.Json lossRecord) {
+    private record SugarEntry(String surfaceLocator, String template, String mode, Jcs.Json pattern, Jcs.Json lossRecord) {
         static SugarEntry fromJson(Jcs.Obj entry) {
             Jcs.Json templateJson = entry.get("emission_template");
             if (!(templateJson instanceof Jcs.Obj templateObj)) return null;
@@ -651,6 +687,7 @@ final class SugarDictionary {
             return new SugarEntry(
                     templateObj.stringFieldOrNull("surface_locator"),
                     templateObj.stringFieldOrNull("template"),
+                    entry.stringFieldOrNull("mode"),
                     pattern,
                     value == null ? new Jcs.Obj(List.of()) : value
             );

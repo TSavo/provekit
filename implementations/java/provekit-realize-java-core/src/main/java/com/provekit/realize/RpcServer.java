@@ -89,12 +89,13 @@ public final class RpcServer {
         String returnType = JsonUtil.decodeJsonStringField(paramsObj, "return_type");
         String conceptName = JsonUtil.decodeJsonStringField(paramsObj, "concept_name");
         String mode = JsonUtil.decodeJsonStringField(paramsObj, "mode");
+        List<String> modes = JsonUtil.decodeJsonStringArray(paramsObj, "modes");
         ContractPayload contract = ContractPayload.fromJson(JsonUtil.extractObjectField(paramsObj, "contract"));
         List<String> sugarPlugins = JsonUtil.decodeJsonObjectArray(paramsObj, "sugar_plugins");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
         SugarRealizer.Realization r =
-                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, contract, sugarPlugins);
+                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins);
         return "{\"source\":" + JsonUtil.quoted(r.source())
                 + ",\"emitted_artifact_cid\":"
                 + JsonUtil.quoted(Blake3.blake3_512(r.source().getBytes(StandardCharsets.UTF_8)))

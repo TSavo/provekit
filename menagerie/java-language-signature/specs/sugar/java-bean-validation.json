@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:dbfbb31b64445c500281daf4577285a2f5ac1073336a1e8f9fcc7d745508d2eeba0e5974e5d258ce88998d19630119c9a06fa665764369e910e7d466fc742ca1",
+    "cid": "blake3-512:279b2ff4bc9dedf5144d83a4dc41f08ec46038a92c04139f865892fea88380fecb302bda9c23e541050b39fe4e7a3870fd90f175a57ea76239fa1ef5517b492c",
     "content": {
       "entries": [
         {
@@ -18,6 +18,7 @@
             "form": "literal",
             "value": {}
           },
+          "mode": "gate",
           "predicate_pattern": {
             "args": [
               {"kind": "var", "name": "${symbol}"},
@@ -39,7 +40,7 @@
     "version": "1.0.0"
   },
   "metadata": {
-    "note": "Java Bean Validation contract sugar for exact non-null boundary clauses.",
+    "note": "Java Bean Validation contract sugar for exact non-null boundary clauses. Applies to contract-observation gate mode.",
     "source_url": "menagerie/java-language-signature/specs/sugar/java-bean-validation.json"
   }
 }

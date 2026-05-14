@@ -104,7 +104,7 @@ fn java_bean_validation_sugar_cid_self_consistent() {
         repo_root().join("menagerie/java-language-signature/specs/sugar/java-bean-validation.json");
     assert_self_consistent(
         path,
-        "blake3-512:dbfbb31b64445c500281daf4577285a2f5ac1073336a1e8f9fcc7d745508d2eeba0e5974e5d258ce88998d19630119c9a06fa665764369e910e7d466fc742ca1",
+        "blake3-512:279b2ff4bc9dedf5144d83a4dc41f08ec46038a92c04139f865892fea88380fecb302bda9c23e541050b39fe4e7a3870fd90f175a57ea76239fa1ef5517b492c",
     );
 }
 
@@ -113,7 +113,7 @@ fn java_junit5_sugar_cid_self_consistent() {
     let path = repo_root().join("menagerie/java-language-signature/specs/sugar/java-junit5.json");
     assert_self_consistent(
         path,
-        "blake3-512:eb878a4dd45a863bacdd6b86c9a0c32fac3d91be2a33a4ce3ffbbc0d372f2e5dbc074305bed7a51248b47ab0305ff63411428655cc3f015497b19ee6538bdf49",
+        "blake3-512:95f3f61d9c904c43c0965e483c70db7d293fea01e2993664b1050260466d101bf1366b9bddf53ab4b287b90866295c3a5bee9d877f07c9b0f8355db70b3a6e16",
     );
 }
 

@@ -15,9 +15,9 @@
 
 ## §1. Purpose
 
-Canonical contract clauses produced by the core-form realizer are abstract `IrFormula` trees. To be readable by a target-language tool (a Spring app, a JML-annotated Java method, a JUnit 5 test, or a comment-as-documentation line), they MUST be rendered into surface syntax. The rendering is NOT a single fixed function: it is plural by construction. Different surfaces compete for the same canonical clause; the substrate picks the rendering that incurs the LOWEST loss against the loaded loss function (`2026-05-12-loss-function-memento.md`).
+Canonical contract clauses produced by the core-form realizer are abstract `IrFormula` trees. To be readable by a target-language tool (a Spring app, a JML-annotated Java method, a JUnit 5 test, or a comment-as-documentation line), they MUST be rendered into surface syntax. The rendering is NOT a single fixed function: it is plural by construction. Different surfaces compete for the same canonical clause under best-only policy; under inclusive policy, multiple selected surfaces intentionally compose. Every selected surface carries its own loss record, scored against the loaded loss function (`2026-05-12-loss-function-memento.md`).
 
-A `sugar` plugin is a content-addressed dictionary of rendering entries. Multiple sugar plugins MAY be loaded simultaneously; per-clause selection is loss-minimizing (§4). The mechanism replaces the "cosmetic re-sugaring after the core-form realizer" item parked in `implementations/rust/provekit-cli/src/cmd_transport.rs` line 296 (`deferred` field of `TransportReport`).
+A `sugar` plugin is a content-addressed dictionary of rendering entries. Multiple sugar plugins MAY be loaded simultaneously; per-clause selection is loss-minimizing or inclusive depending on the active emission policy (§4). The mechanism replaces the "cosmetic re-sugaring after the core-form realizer" item parked in `implementations/rust/provekit-cli/src/cmd_transport.rs` line 296 (`deferred` field of `TransportReport`).
 
 ### §1.1 What a sugar dict is NOT
 
@@ -51,11 +51,12 @@ sugar-content = {
 }
 
 ; Locked JCS key order: applicability_guard, emission_template,
-; loss_record_contribution, predicate_pattern
+; loss_record_contribution, mode, predicate_pattern
 sugar-entry = {
   ? applicability_guard:     ir-formula,       ; OPTIONAL; if present, MUST evaluate to true for the entry to apply
   emission_template:         emission-template,
   loss_record_contribution:  loss-record-contribution,
+  ? mode:                    tstr,             ; OPTIONAL; when present, entry applies only when request modes include it
   predicate_pattern:         ir-formula        ; with named holes (free variables) the matcher binds
 }
 
@@ -94,10 +95,21 @@ loss-record-contribution = {
 | `sugar-entry.applicability_guard`        | no       | OPTIONAL `IrFormula` over the bound holes. If present, MUST evaluate to `true` for the entry to apply (e.g., a Spring `@Min` entry MIGHT guard on `is_integer_literal(${k})` to refuse non-literal lower bounds). OMITTED when absent. |
 | `sugar-entry.emission_template`          | yes      | The surface-syntax template, plus a `surface_locator` placing it relative to the host code element. |
 | `sugar-entry.loss_record_contribution`   | yes      | The loss-record this entry incurs when selected. Under v1.0.0 the `form` MUST be `"literal"`; the `value` is a `loss-record` literal as defined in `2026-05-14-transport-gap-and-partial-morphism-protocol.md` §1.3. |
+| `sugar-entry.mode`                       | no       | OPTIONAL runtime observation mode applicability filter. When present, the entry applies only if the current realization request's mode vector includes the same mode string (for example `"witness"` for JUnit witness harness sugar, or `"gate"` for Bean Validation gate sugar). When absent, the entry is mode-agnostic and remains compatible with non-observation clauses. |
 
 ### §2.2 Pattern matching
 
 The matcher unifies `predicate_pattern` against the canonical clause's `IrFormula` per `2026-04-30-ir-formal-grammar.md` first-order syntactic unification, treating any free variable as a hole. Bound holes flow into `applicability_guard` (if present) and into `emission_template.template` via `${name}` substitution. Unification failure means the entry does NOT match.
+
+### §2.3 Observation-mode applicability
+
+`concept:contract-observation(callsite_cid, contract_cid, mode)` routes
+Witness, Monitor, Emitter, and Gate through the same concept hub. Sugar entries
+that are meaningful for only one of those modes MUST declare `mode`. For
+example, a JUnit witness harness entry declares `"mode": "witness"` so it cannot
+render for a request whose mode vector omits `witness`; a Bean Validation entry
+declares `"mode": "gate"` so it renders only when gate sugar is requested.
+Comment-floor entries and other universal fallbacks omit `mode`.
 
 ## §3. CLI surface
 
@@ -117,17 +129,29 @@ Additional sugar-specific flags:
 | `--strict-sugar`              | When no entry in any LOADED sugar dict matches a clause, refuse instead of falling through. §5.   |
 | `--allow-comment-fallback`    | Permits the special `comment` sugar to act as a final fallback even when other sugars matched. §5.|
 
-## §4. Selection algorithm
+## §4. Selection and emission algorithm
 
 For each canonical contract clause C produced by the realizer:
+
+### §4.0 Emission policy
+
+A sugar consumer MUST apply one of these policies for a clause:
+
+| Policy | Meaning |
+|--------|---------|
+| `best-only` | Candidate surfaces compete. The consumer emits exactly one selected candidate: the lowest-loss candidate after §4.2 scoring and §4.4 tie-break. |
+| `inclusive` | Candidate surfaces compose. The consumer emits every applicable candidate that survives §4.1, ordered by §4.2 scoring and §4.4 tie-break. No candidate is discarded merely because another applicable candidate has lower loss. |
+
+`best-only` is the default for ordinary single-surface contract rendering. `inclusive` is REQUIRED when a realization request carries a `concept:contract-observation` mode vector and the selected sugars cover different requested modes. A kit MUST NOT drop a `witness` sugar because a `gate` sugar has lower loss, or vice versa; those are additive observations over the same contract. Mode-agnostic entries (for example comment-floor sugar) also participate under `inclusive` and MUST carry their declared loss record if emitted.
 
 ### §4.1 Step 1: enumerate matching entries
 
 For each sugar plugin S in the registry's `load_order` (CLI flag order plus built-ins at end), for each entry E in `S.content.entries`:
 
 1. Attempt unification of `E.predicate_pattern` against C. If unification fails, skip E.
-2. If `E.applicability_guard` is present, evaluate it under the bound holes. If it evaluates to anything other than `true`, skip E.
-3. Otherwise, record `(S, E, bindings)` as a candidate.
+2. If `E.mode` is present and the current realization request mode vector does not include it, skip E.
+3. If `E.applicability_guard` is present, evaluate it under the bound holes. If it evaluates to anything other than `true`, skip E.
+4. Otherwise, record `(S, E, bindings)` as a candidate.
 
 The matcher MUST be deterministic: two runs with identical inputs MUST produce the same candidate list in the same order.
 
@@ -135,9 +159,13 @@ The matcher MUST be deterministic: two runs with identical inputs MUST produce t
 
 For each candidate `(S, E, bindings)`, the candidate's loss-record is `E.loss_record_contribution.value` (literal form; v1.0.0). Hand the loss-record to the LOADED loss function (`2026-05-12-loss-function-memento.md`); the loss function returns a score.
 
-### §4.3 Step 3: rank and pick
+### §4.3 Step 3: rank and select
 
-Sort candidates by score ascending (lower = better). The TOP candidate (lowest score) wins.
+Sort candidates by score ascending (lower = better).
+
+Under `best-only`, the TOP candidate (lowest score after tie-break) wins and all other candidates are rejected for this clause.
+
+Under `inclusive`, every candidate remains selected. Ranking is still normative because it defines deterministic emission order and audit order, but it does not discard lower-ranked candidates.
 
 ### §4.4 Step 4: tie-break
 
@@ -145,11 +173,13 @@ If two or more candidates tie, break ties as follows:
 
 1. Prefer the candidate whose sugar dict appears LATER in `load_order` (later flags win; matches the §7 rule of the protocol spec for "user-loaded plugins beat built-ins of the same kind").
 2. If still tied, prefer the candidate whose entry index within its sugar dict is LOWER (entries earlier in `entries` win).
-3. If still tied (impossible by §2.1 sort INVARIANT, but recorded for completeness), refuse with `reason_kind = "sugar-tiebreak-ambiguity"`.
+3. If still tied (impossible by §2.1 sort INVARIANT, but recorded for completeness), refuse with `reason_kind = "sugar-tiebreak-ambiguity"` under `best-only`; under `inclusive`, preserve deterministic registry order and include both candidates.
 
 ### §4.5 Step 5: emit
 
-Render the winning candidate's `emission_template` with the bound holes substituted. Attach the candidate's `loss_record_contribution` to the emission's audit trail (carried forward in any compound that aggregates the emission, per `2026-05-13-compound-contract-memento.md` §6.2).
+Render each selected candidate's `emission_template` with the bound holes substituted. Attach each selected candidate's `loss_record_contribution` to the emission's audit trail (carried forward in any compound that aggregates the emission, per `2026-05-13-compound-contract-memento.md` §6.2).
+
+For example, when a `witness,gate` Java realization has matching JUnit witness sugar and Bean Validation gate sugar for the same canonical non-null clause, an inclusive consumer MUST emit both. Those surfaces are not competing alternatives in inclusive mode; they are two observation wrappers with separate loss records.
 
 ## §5. Strict mode
 
