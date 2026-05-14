@@ -20,6 +20,37 @@ test("http request uses fetch and emits an async TypeScript function", () => {
   );
 });
 
+test("contract observation witness body template emits provekit witness call", () => {
+  const result = emitStub({
+    functionName: "observeContract",
+    params: ["callsiteCid", "contractCid", "mode"],
+    paramTypes: ["string", "string", "string"],
+    returnType: "ContractObservationResult",
+    conceptName: "concept:contract-observation",
+    mode: "witness",
+  });
+
+  assert.equal(result.is_stub, false);
+  assert.match(result.source, /provekit_witness\.observe/);
+  assert.match(result.source, /callsiteCid/);
+  assert.match(result.source, /contractCid/);
+  assert.match(result.source, /mode/);
+});
+
+test("contract observation gate mode does not render witness body template", () => {
+  const result = emitStub({
+    functionName: "observeContract",
+    params: ["callsiteCid", "contractCid", "mode"],
+    paramTypes: ["string", "string", "string"],
+    returnType: "ContractObservationResult",
+    conceptName: "concept:contract-observation",
+    mode: "gate",
+  });
+
+  assert.equal(result.is_stub, true);
+  assert.doesNotMatch(result.source, /provekit_witness\.observe/);
+});
+
 test("unknown concept falls back to a TypeScript stub", () => {
   const result = emitStub({
     functionName: "missing",

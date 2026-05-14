@@ -113,6 +113,19 @@ fn validate_accepts_well_formed_wrapper() {
 }
 
 #[test]
+fn validate_accepts_core_observation_modes() {
+    for mode in ["witness", "monitor", "emitter", "gate"] {
+        let mut m = wrapper();
+        m.mode = mode.to_string();
+        assert_eq!(
+            m.validate(&object_effects(), &wrapper_effects(), &[]),
+            Ok(()),
+            "{mode} must be a core observation mode"
+        );
+    }
+}
+
+#[test]
 fn validate_accepts_namespaced_extension_mode_when_allowed() {
     let mut m = wrapper();
     m.mode = "acme:probe".to_string();

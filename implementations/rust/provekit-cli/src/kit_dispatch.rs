@@ -529,6 +529,8 @@ pub struct RealizeRequest {
     pub concept_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub modes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contract: Option<RealizeContractPayload>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -563,9 +565,8 @@ pub struct RealizedSource {
     pub observed_loss_record: Value,
     pub used_sugars: Vec<Value>,
     /// Raw `observation_wrapper_emission_record` from the kit response, present
-    /// when mode ∈ {witness, monitor, dispatcher} and the kit emitted a wrapper
-    /// FCM. Expected fields: wrapper_fcm_cid, observer_effects,
-    /// preservation_claim_cid.
+    /// when an observation mode emitted a wrapper FCM. Expected fields:
+    /// wrapper_fcm_cid, observer_effects, preservation_claim_cid.
     pub observation_wrapper_emission_record: Option<Value>,
 }
 
@@ -1091,6 +1092,7 @@ mod tests {
             return_type: "String".to_string(),
             concept_name: "concept:lookup".to_string(),
             mode: Some("monitor".to_string()),
+            modes: vec!["monitor".to_string(), "witness".to_string()],
             contract: Some(RealizeContractPayload {
                 concept_site_cid: "blake3-512:site".to_string(),
                 local_contract_cid: "blake3-512:compound".to_string(),
@@ -1117,6 +1119,8 @@ mod tests {
         let params = realize_request_params(&request);
 
         assert_eq!(params["mode"], "monitor");
+        assert_eq!(params["modes"][0], "monitor");
+        assert_eq!(params["modes"][1], "witness");
         assert!(params.get("total_loss_record").is_none());
         assert_eq!(params["contract"]["concept_site_cid"], "blake3-512:site");
         assert_eq!(

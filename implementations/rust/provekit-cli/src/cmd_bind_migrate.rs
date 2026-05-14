@@ -784,6 +784,7 @@ fn probe_realize_binding(
         },
         concept_name: concept_name.to_string(),
         mode: None,
+        modes: Vec::new(),
         contract: None,
         sugar_cids: Vec::new(),
         sugar_plugins: Vec::new(),

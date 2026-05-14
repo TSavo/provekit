@@ -133,7 +133,7 @@ fn java_canonical_bodies_cid_self_consistent() {
         .join("menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:8070d5de8bedf4a21c765b6b7f48518c43a1a8547b5e893b7af045467541d7d085d7b1b64857f64f05927a6fabee55002310db293adec3e59b17b56730bd22b9",
+        "blake3-512:f8bd005fdfdd22864e463e8daa20873eb4a093e34260ebaf2c89333295be968204206a18208c476910058032166a24474f93adb697cbb4a7cd98ef96f09e301b",
     );
 }
 
@@ -176,7 +176,7 @@ fn typescript_canonical_bodies_cid_self_consistent() {
     );
     assert_self_consistent(
         path,
-        "blake3-512:eea9d2551c91d8d9da056e504dbf00f5792136e5beea6d0a733ca7a1134dd82b8fc2f945355d58b696be0f4e28f407f68cdb9d2bf4448ade8d2ba95418a7fc65",
+        "blake3-512:b0beecd35a50a57fd8cd6b3455b15c6a2638cef7033f247b012f7056ca99d53c808ba190b4f9d33457bb0187d2d1ee8fe73c83de3cdfaee163d80a8d030736b3",
     );
 }
 
@@ -227,6 +227,6 @@ fn rust_canonical_bodies_cid_self_consistent() {
         .join("menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:aa5946b88c2798cd7399ec22db6f170970a8d0f9dac88b1e81fc0a31ab40eddada236730450594894f745096cf033607dbbb35d0cd2a59300fa9ac5e2df340cd",
+        "blake3-512:148269a6fa8da03d34618d575a252bb0152143af993453f153a48f4bb0b26adfa838c3b96e720428ee9b96147c4ba542966f9d48435842874c9ae67b0091f20c",
     );
 }

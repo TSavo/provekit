@@ -20,6 +20,7 @@ pub struct Realization {
 #[derive(Debug, Clone)]
 struct BodyTemplateEntry {
     concept_name: String,
+    mode: Option<String>,
     template_kind: String,
     template: String,
     min_params: Option<usize>,
@@ -35,7 +36,25 @@ pub fn emit_stub(
     return_type: &str,
     concept_name: &str,
 ) -> Realization {
-    let body = body_template_for(concept_name, params, param_types, return_type);
+    emit_stub_with_mode(
+        function,
+        params,
+        param_types,
+        return_type,
+        concept_name,
+        None,
+    )
+}
+
+pub fn emit_stub_with_mode(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    concept_name: &str,
+    mode: Option<&str>,
+) -> Realization {
+    let body = body_template_for(concept_name, params, param_types, return_type, mode);
     let is_stub = body.is_none();
     let body = body.unwrap_or_else(|| stub_body_for(concept_name));
     let source = function_source(function, params, param_types, return_type, &body);
@@ -79,14 +98,16 @@ pub fn dispatch(request: &Value) -> Value {
                 .get("concept_name")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            let mode = params.get("mode").and_then(Value::as_str);
             let param_names = string_array(params.get("params"));
             let param_types = string_array(params.get("param_types"));
-            let realized = emit_stub(
+            let realized = emit_stub_with_mode(
                 function,
                 &param_names,
                 &param_types,
                 return_type,
                 concept_name,
+                mode,
             );
             serde_json::json!({
                 "jsonrpc": "2.0",
@@ -145,12 +166,16 @@ fn body_template_for(
     params: &[String],
     param_types: &[String],
     return_type: &str,
+    mode: Option<&str>,
 ) -> Option<String> {
     let mapped_param_types: Vec<String> =
         param_types.iter().map(|ty| map_source_type(ty)).collect();
     let mapped_return_type = map_source_type(return_type);
     for entry in entries() {
         if !concept_matches(&entry.concept_name, concept_name) {
+            continue;
+        }
+        if !mode_matches(entry.mode.as_deref(), mode) {
             continue;
         }
         if entry.min_params.is_some_and(|min| params.len() < min) {
@@ -298,6 +323,13 @@ fn concept_matches(entry_name: &str, request_name: &str) -> bool {
             .is_some_and(|name| name == entry_name)
 }
 
+fn mode_matches(entry_mode: Option<&str>, request_mode: Option<&str>) -> bool {
+    match entry_mode {
+        Some(entry) => request_mode.is_some_and(|request| request == entry),
+        None => true,
+    }
+}
+
 fn string_array(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
@@ -362,6 +394,7 @@ fn parse_entry(item: &Value) -> Option<BodyTemplateEntry> {
         });
     Some(BodyTemplateEntry {
         concept_name: item.get("concept_name")?.as_str()?.to_string(),
+        mode: item.get("mode").and_then(Value::as_str).map(str::to_string),
         template_kind: template.get("kind")?.as_str()?.to_string(),
         template: template.get("template")?.as_str()?.to_string(),
         min_params: guard
@@ -430,6 +463,39 @@ mod tests {
             "pub fn wrap_identity(x: i64) -> i64 {\n    x\n}\n"
         );
         assert!(rendered.emitted_artifact_cid.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn renders_contract_observation_witness_body_template() {
+        let rendered = emit_stub_with_mode(
+            "observe_contract",
+            &strings(&["callsite_cid", "contract_cid", "mode"]),
+            &strings(&["String", "String", "String"]),
+            "ContractObservationResult",
+            "concept:contract-observation",
+            Some("witness"),
+        );
+
+        assert!(!rendered.is_stub);
+        assert!(rendered.source.contains("provekit_witness::observe"));
+        assert!(rendered.source.contains("callsite_cid"));
+        assert!(rendered.source.contains("contract_cid"));
+        assert!(rendered.source.contains("mode"));
+    }
+
+    #[test]
+    fn refuses_contract_observation_witness_template_for_gate_mode() {
+        let rendered = emit_stub_with_mode(
+            "observe_contract",
+            &strings(&["callsite_cid", "contract_cid", "mode"]),
+            &strings(&["String", "String", "String"]),
+            "ContractObservationResult",
+            "concept:contract-observation",
+            Some("gate"),
+        );
+
+        assert!(rendered.is_stub);
+        assert!(!rendered.source.contains("provekit_witness::observe"));
     }
 
     #[test]

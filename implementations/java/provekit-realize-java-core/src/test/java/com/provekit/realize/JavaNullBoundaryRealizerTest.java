@@ -156,6 +156,32 @@ public class JavaNullBoundaryRealizerTest {
         assertTrue(output.usedSugarsJson().contains("java-function-comment"));
     }
 
+    @Test
+    public void contractObservationWitnessBodyTemplateEmitsWitnessCall() {
+        java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
+            "concept:contract-observation",
+            java.util.List.of("callsiteCid", "contractCid", "mode"),
+            "witness"
+        );
+
+        assertTrue(body.isPresent());
+        assertTrue(body.get().contains("provekit_witness.observe"));
+        assertTrue(body.get().contains("callsiteCid"));
+        assertTrue(body.get().contains("contractCid"));
+        assertTrue(body.get().contains("mode"));
+    }
+
+    @Test
+    void contractObservationGateModeDoesNotRenderWitnessBodyTemplate() {
+        java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
+            "concept:contract-observation",
+            java.util.List.of("callsiteCid", "contractCid", "mode"),
+            "gate"
+        );
+
+        assertTrue(body.isEmpty());
+    }
+
     private static String beanValidationSugar() {
         return sugar(
             "java-bean-validation",

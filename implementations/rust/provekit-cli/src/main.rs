@@ -161,7 +161,7 @@ enum Cmd {
     Compose(ComposeArgs),
     /// Bind concept contracts to source code: lift, cluster, name, scope, identify, realize, witness.
     /// Implements the eight-verb pipeline (paper 20 §9) against arbitrary user code.
-    /// --rewrite={annotate,canonical,invisible} --mode={witness,emitter,monitor} --target-language=<lang>
+    /// --rewrite={annotate,canonical,invisible} --mode={witness,emitter,monitor,gate} --target-language=<lang>
     Bind(cmd_bind::BindArgs),
 }
 
