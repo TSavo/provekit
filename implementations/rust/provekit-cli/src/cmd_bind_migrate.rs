@@ -2,8 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 
+use chrono::{SecondsFormat, Utc};
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, PropagationDecision,
     PropagationInput,
@@ -14,9 +16,9 @@ use provekit_ir_types::{
     MigrateReceiptSignature, MigrationConceptSiteMemento, MigrationEffectDelta,
     MigrationSourceLocation, PromotionDecisionEnvelope, PromotionDecisionHeader,
     PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult,
-    RefusalMemento,
+    RefusalMemento, WitnessMemento,
 };
-use serde_json::json;
+use serde_json::{json, Value as JsonValue};
 
 use crate::cmd_bind::BindArgs;
 use crate::{EXIT_OK, EXIT_USER_ERROR};
@@ -51,6 +53,11 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         require_path(args.receipt.as_ref(), "--receipt")?,
         &repo_root,
     )?;
+    let witness_fixture = args
+        .witness_fixture
+        .as_ref()
+        .map(|path| resolve_user_path(path, &repo_root))
+        .transpose()?;
 
     let (source_lang, source_tag) = split_library_surface(library_from)?;
     let (target_lang, target_tag) = split_library_surface(library_to)?;
@@ -87,12 +94,17 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         callsite.after = after_location_for_callsite(&migrated_source, &callsite.function)?;
     }
 
-    let receipt = build_receipt(
+    let mut receipt = build_receipt(
         &plan.decisions,
         &sql_callsites,
         &source_binding_cid,
         &target_binding_cid,
     )?;
+    if let Some(fixture) = witness_fixture.as_ref() {
+        receipt.witnesses = emit_witnesses(fixture, &sql_callsites)?;
+        receipt.root_cid = receipt.recompute_root_cid().map_err(|e| e.to_string())?;
+        receipt.validate().map_err(|e| e.to_string())?;
+    }
 
     if args.write {
         write_migrated_project(&out_dir, &migrated_source)?;
@@ -185,6 +197,8 @@ struct SqlCallsite {
     concept_cid: String,
     function: String,
     lossy: bool,
+    sample_args: Vec<JsonValue>,
+    sql: String,
     substituted_body: String,
 }
 
@@ -360,6 +374,8 @@ fn extract_sql_callsites(
         } else {
             SQL_QUERY_CONCEPT_CID
         };
+        let sql = extract_prepare_sql(&function.body, local_prepare, &function.name)?;
+        let sample_args = extract_sample_args(function, &function.body)?;
         let cid = cid_for_json(&json!({
             "concept": concept_name,
             "function": function.name,
@@ -377,10 +393,170 @@ fn extract_sql_callsites(
             concept_cid: concept_cid.to_string(),
             function: function.name.clone(),
             lossy: function.body.contains("lastInsertRowid"),
+            sample_args,
+            sql,
             substituted_body: substituted_body_for(&function.name),
         });
     }
     Ok(out)
+}
+
+fn extract_prepare_sql(
+    body: &str,
+    prepare_offset: usize,
+    function: &str,
+) -> Result<String, String> {
+    let args_start = prepare_offset + ".prepare(".len();
+    let mut chars = body[args_start..].char_indices();
+    let Some((leading_offset, quote)) = chars.find(|(_, ch)| !ch.is_whitespace()) else {
+        return Err(format!("{function} prepare call missing SQL string"));
+    };
+    if quote != '"' && quote != '\'' && quote != '`' {
+        return Err(format!("{function} prepare call must use a string literal"));
+    }
+    let literal_start = args_start + leading_offset + quote.len_utf8();
+    let mut sql = String::new();
+    let mut escaped = false;
+    for (offset, ch) in body[literal_start..].char_indices() {
+        if escaped {
+            sql.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == quote {
+            let literal_end = literal_start + offset;
+            let close_paren = body[literal_end + quote.len_utf8()..]
+                .find(')')
+                .ok_or_else(|| format!("{function} prepare call missing closing paren"))?;
+            let _ = close_paren;
+            return Ok(sql);
+        }
+        sql.push(ch);
+    }
+    Err(format!(
+        "{function} prepare call has unterminated SQL literal"
+    ))
+}
+
+fn extract_sample_args(function: &TsFunction, body: &str) -> Result<Vec<JsonValue>, String> {
+    for method in [".get(", ".all(", ".run("] {
+        if let Some(pos) = body.find(method) {
+            let open = pos + method.len() - 1;
+            let close = find_matching_delimiter(body, open, '(', ')')
+                .ok_or_else(|| format!("{} has unbalanced {method} call", function.name))?;
+            let args = body[open + 1..close].trim();
+            if args.is_empty() {
+                return Ok(Vec::new());
+            }
+            return split_top_level_commas(args)
+                .into_iter()
+                .map(|arg| sample_arg_value(function, arg.trim()))
+                .collect();
+        }
+    }
+    Ok(Vec::new())
+}
+
+fn split_top_level_commas(args: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for (idx, ch) in args.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(current_quote) = quote {
+            if ch == current_quote {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' || ch == '`' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch == '(' || ch == '[' || ch == '{' {
+            depth += 1;
+            continue;
+        }
+        if ch == ')' || ch == ']' || ch == '}' {
+            depth = depth.saturating_sub(1);
+            continue;
+        }
+        if ch == ',' && depth == 0 {
+            out.push(args[start..idx].trim());
+            start = idx + 1;
+        }
+    }
+    out.push(args[start..].trim());
+    out
+}
+
+fn sample_arg_value(function: &TsFunction, arg: &str) -> Result<JsonValue, String> {
+    if arg.is_empty() {
+        return Err(format!("{} has empty sample argument", function.name));
+    }
+    if let Ok(value) = arg.parse::<i64>() {
+        return Ok(json!(value));
+    }
+    if let Some(value) = parse_string_literal(arg) {
+        return Ok(json!(value));
+    }
+    if arg == "true" {
+        return Ok(json!(true));
+    }
+    if arg == "false" {
+        return Ok(json!(false));
+    }
+    if arg == "null" {
+        return Ok(JsonValue::Null);
+    }
+    let lowered = arg.to_ascii_lowercase();
+    if lowered == "kind" {
+        return Ok(json!("login"));
+    }
+    if lowered == "id" || lowered.ends_with("id") || lowered.ends_with("_id") {
+        return Ok(json!(1));
+    }
+    Err(format!(
+        "{} sample argument {arg} needs an explicit fixture value",
+        function.name
+    ))
+}
+
+fn parse_string_literal(arg: &str) -> Option<String> {
+    let mut chars = arg.chars();
+    let quote = chars.next()?;
+    if quote != '"' && quote != '\'' && quote != '`' {
+        return None;
+    }
+    if !arg.ends_with(quote) || arg.len() < 2 {
+        return None;
+    }
+    let mut out = String::new();
+    let mut escaped = false;
+    for ch in arg[quote.len_utf8()..arg.len() - quote.len_utf8()].chars() {
+        if escaped {
+            out.push(ch);
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else {
+            out.push(ch);
+        }
+    }
+    Some(out)
 }
 
 fn build_propagation_input(
@@ -647,6 +823,7 @@ fn build_receipt(
             signed: false,
             signer: None,
         },
+        witnesses: Vec::new(),
     };
     receipt.root_cid = receipt.recompute_root_cid().map_err(|e| e.to_string())?;
     receipt.validate().map_err(|e| e.to_string())?;
@@ -917,6 +1094,298 @@ fn migrated_tsconfig() -> &'static str {
   "include": ["src/**/*.ts"]
 }
 "#
+}
+
+struct SqlObservation {
+    measurements: JsonValue,
+    sample_count: u64,
+}
+
+fn emit_witnesses(
+    fixture: &Path,
+    sql_callsites: &[SqlCallsite],
+) -> Result<Vec<WitnessMemento>, String> {
+    let fixture_bytes =
+        std::fs::read(fixture).map_err(|e| format!("read {}: {e}", fixture.display()))?;
+    let fixture_state_cid = blake3_512_of(&fixture_bytes);
+    let observed_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let mut witnesses = Vec::new();
+    for callsite in sql_callsites {
+        let observation = observe_sql(fixture, &callsite.sql, &callsite.sample_args)?;
+        let mut witness = WitnessMemento {
+            cid: String::new(),
+            fixture_state_cid: fixture_state_cid.clone(),
+            kind: "witness".to_string(),
+            measurements: observation.measurements,
+            observed_at: observed_at.clone(),
+            outcome: "pass".to_string(),
+            sample_count: observation.sample_count,
+            schema_version: "1".to_string(),
+            signature: None,
+            signed_by: None,
+            subject: callsite.cid.clone(),
+            witness_for: callsite.concept_cid.clone(),
+        };
+        witness.cid = witness.recompute_cid().map_err(|e| e.to_string())?;
+        witnesses.push(witness);
+    }
+    Ok(witnesses)
+}
+
+fn observe_sql(
+    fixture: &Path,
+    sql: &str,
+    sample_args: &[JsonValue],
+) -> Result<SqlObservation, String> {
+    let expanded_sql = substitute_sql_args(sql, sample_args)?;
+    let names = select_column_names(sql);
+    if names.is_empty() {
+        run_sqlite(fixture, &format!("EXPLAIN {expanded_sql}"))?;
+        return Ok(SqlObservation {
+            measurements: json!({
+                "query": {
+                    "sample_args": sample_args,
+                    "sql": sql
+                },
+                "row_schema": {
+                    "columns": []
+                },
+                "sample_row": {}
+            }),
+            sample_count: 0,
+        });
+    }
+
+    let rows = run_sqlite_json(fixture, &expanded_sql)?;
+    let Some(row) = rows.as_array().and_then(|rows| rows.first()) else {
+        return Err(format!("witnessed SQL `{sql}` produced no sample row"));
+    };
+    let row = row
+        .as_object()
+        .ok_or_else(|| format!("witnessed SQL `{sql}` produced a non-object row"))?;
+    let declared_types = declared_types(fixture, sql, &names)?;
+    let mut columns = Vec::new();
+    let mut sample_row = serde_json::Map::new();
+    for (idx, name) in names.iter().enumerate() {
+        let value = row
+            .get(name)
+            .ok_or_else(|| format!("witnessed SQL row missing column {name}"))?
+            .clone();
+        columns.push(json!({
+            "declared_type": declared_types[idx],
+            "name": name,
+            "observed_typeof": sqlite_json_typeof(&value)
+        }));
+        sample_row.insert(name.clone(), value);
+    }
+
+    Ok(SqlObservation {
+        measurements: json!({
+            "query": {
+                "sample_args": sample_args,
+                "sql": sql
+            },
+            "row_schema": {
+                "columns": columns
+            },
+            "sample_row": JsonValue::Object(sample_row)
+        }),
+        sample_count: 1,
+    })
+}
+
+fn run_sqlite(fixture: &Path, sql: &str) -> Result<String, String> {
+    let output = Command::new("sqlite3")
+        .arg("-readonly")
+        .arg(fixture)
+        .arg(sql)
+        .output()
+        .map_err(|e| format!("spawn sqlite3: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "sqlite3 failed for `{sql}`\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    String::from_utf8(output.stdout).map_err(|e| format!("sqlite3 output was not UTF-8: {e}"))
+}
+
+fn run_sqlite_json(fixture: &Path, sql: &str) -> Result<JsonValue, String> {
+    let output = Command::new("sqlite3")
+        .arg("-readonly")
+        .arg("-json")
+        .arg(fixture)
+        .arg(sql)
+        .output()
+        .map_err(|e| format!("spawn sqlite3: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "sqlite3 json failed for `{sql}`\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let text = String::from_utf8(output.stdout)
+        .map_err(|e| format!("sqlite3 json output was not UTF-8: {e}"))?;
+    if text.trim().is_empty() {
+        return Ok(json!([]));
+    }
+    serde_json::from_str(&text).map_err(|e| format!("parse sqlite3 json for `{sql}`: {e}"))
+}
+
+fn declared_types(fixture: &Path, sql: &str, names: &[String]) -> Result<Vec<String>, String> {
+    let Some(table) = table_name(sql) else {
+        return Ok(names.iter().map(|_| "UNKNOWN".to_string()).collect());
+    };
+    let rows = run_sqlite_json(fixture, &format!("PRAGMA table_info({table})"))?;
+    let mut by_name = BTreeMap::new();
+    let Some(rows) = rows.as_array() else {
+        return Err(format!("table_info for {table} did not return rows"));
+    };
+    for row in rows {
+        let name = row
+            .get("name")
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| format!("table_info for {table} missing name"))?;
+        let declared_type = row
+            .get("type")
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| format!("table_info for {table} missing type"))?;
+        by_name.insert(name.to_string(), declared_type.to_string());
+    }
+    Ok(names
+        .iter()
+        .map(|name| {
+            by_name
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| expression_declared_type(name))
+        })
+        .collect())
+}
+
+fn select_column_names(sql: &str) -> Vec<String> {
+    let lower = sql.to_ascii_lowercase();
+    let Some(select_pos) = lower.find("select ") else {
+        return Vec::new();
+    };
+    let Some(from_pos) = lower.find(" from ") else {
+        return Vec::new();
+    };
+    let projection = &sql[select_pos + "select ".len()..from_pos];
+    split_top_level_commas(projection)
+        .into_iter()
+        .map(column_name_for_projection)
+        .collect()
+}
+
+fn column_name_for_projection(projection: &str) -> String {
+    let tokens = projection.split_whitespace().collect::<Vec<_>>();
+    for idx in 0..tokens.len() {
+        if tokens[idx].eq_ignore_ascii_case("as") && idx + 1 < tokens.len() {
+            return clean_identifier(tokens[idx + 1]);
+        }
+    }
+    clean_identifier(tokens.last().copied().unwrap_or(projection))
+}
+
+fn clean_identifier(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches(|ch: char| ch == '"' || ch == '`' || ch == '[' || ch == ']')
+        .to_string()
+}
+
+fn table_name(sql: &str) -> Option<String> {
+    let lower = sql.to_ascii_lowercase();
+    let from_pos = lower.find(" from ")?;
+    let after_from = &sql[from_pos + " from ".len()..];
+    after_from.split_whitespace().next().map(|table| {
+        table
+            .trim_matches(|ch: char| ch == '"' || ch == '`')
+            .to_string()
+    })
+}
+
+fn expression_declared_type(name: &str) -> String {
+    if name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("id") {
+        "INTEGER".to_string()
+    } else {
+        "UNKNOWN".to_string()
+    }
+}
+
+fn substitute_sql_args(sql: &str, sample_args: &[JsonValue]) -> Result<String, String> {
+    let mut out = String::new();
+    let mut arg_idx = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for ch in sql.chars() {
+        if escaped {
+            out.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            out.push(ch);
+            escaped = true;
+            continue;
+        }
+        if let Some(current_quote) = quote {
+            out.push(ch);
+            if ch == current_quote {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' || ch == '`' {
+            out.push(ch);
+            quote = Some(ch);
+            continue;
+        }
+        if ch == '?' {
+            let value = sample_args
+                .get(arg_idx)
+                .ok_or_else(|| format!("SQL `{sql}` needs more sample args"))?;
+            out.push_str(&sql_literal(value)?);
+            arg_idx += 1;
+        } else {
+            out.push(ch);
+        }
+    }
+    if arg_idx != sample_args.len() {
+        return Err(format!("SQL `{sql}` has unused sample args"));
+    }
+    Ok(out)
+}
+
+fn sql_literal(value: &JsonValue) -> Result<String, String> {
+    match value {
+        JsonValue::Null => Ok("NULL".to_string()),
+        JsonValue::Bool(value) => Ok(if *value { "1" } else { "0" }.to_string()),
+        JsonValue::Number(value) => Ok(value.to_string()),
+        JsonValue::String(value) => Ok(format!("'{}'", value.replace('\'', "''"))),
+        JsonValue::Array(_) | JsonValue::Object(_) => {
+            Err("sample args must be scalar JSON values".to_string())
+        }
+    }
+}
+
+fn sqlite_json_typeof(value: &JsonValue) -> &'static str {
+    match value {
+        JsonValue::Null => "null",
+        JsonValue::Bool(_) => "integer",
+        JsonValue::Number(value) => {
+            if value.as_i64().is_some() || value.as_u64().is_some() {
+                "integer"
+            } else {
+                "real"
+            }
+        }
+        JsonValue::String(_) => "text",
+        JsonValue::Array(_) | JsonValue::Object(_) => "blob",
+    }
 }
 
 fn write_receipt(path: &Path, receipt: &MigrateReceiptEnvelope) -> Result<(), String> {

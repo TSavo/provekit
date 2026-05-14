@@ -4451,6 +4451,28 @@ pub struct LossRecordMemento {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WitnessMemento {
+    pub kind: String,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "witness_for")]
+    pub witness_for: String,
+    pub subject: String,
+    #[serde(rename = "fixture_state_cid")]
+    pub fixture_state_cid: String,
+    #[serde(rename = "observed_at")]
+    pub observed_at: String,
+    #[serde(rename = "sample_count")]
+    pub sample_count: u64,
+    pub measurements: serde_json::Value,
+    pub outcome: String,
+    #[serde(rename = "signed_by")]
+    pub signed_by: Option<String>,
+    pub signature: Option<String>,
+    pub cid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MigrateReceiptSignature {
     #[serde(rename = "key_source")]
     pub key_source: String,
@@ -4480,6 +4502,8 @@ pub struct MigrateReceiptEnvelope {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     pub signature: MigrateReceiptSignature,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub witnesses: Vec<WitnessMemento>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4498,6 +4522,8 @@ pub struct MigrateReceiptIndex {
     pub refusal_cids: Vec<String>,
     #[serde(rename = "root_cid")]
     pub root_cid: String,
+    #[serde(rename = "witness_cids")]
+    pub witness_cids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4597,6 +4623,30 @@ impl LossRecordMemento {
     }
 }
 
+impl WitnessMemento {
+    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
+        migration_cid_without_keys(self, &["cid"])
+    }
+
+    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
+        require_kind(&self.kind, "witness")?;
+        require_schema(&self.schema_version)?;
+        require_non_empty(&self.witness_for, "witness_for")?;
+        require_non_empty(&self.subject, "subject")?;
+        require_non_empty(&self.fixture_state_cid, "fixture_state_cid")?;
+        require_non_empty(&self.observed_at, "observed_at")?;
+        match self.outcome.as_str() {
+            "pass" | "fail" | "inconclusive" => {}
+            other => {
+                return Err(MigrationReceiptError::new(format!(
+                    "WitnessMemento outcome {other} is not pass, fail, or inconclusive"
+                )));
+            }
+        }
+        require_matching_cid(&self.cid, self.recompute_cid()?, "WitnessMemento")
+    }
+}
+
 impl MigrateReceiptEnvelope {
     pub fn parse_json_str(text: &str) -> Result<Self, MigrationReceiptError> {
         let receipt: Self = serde_json::from_str(text)?;
@@ -4660,6 +4710,9 @@ impl MigrateReceiptEnvelope {
         for loss in &self.loss_records {
             loss.validate()?;
         }
+        for witness in &self.witnesses {
+            witness.validate()?;
+        }
         Ok(())
     }
 
@@ -4681,6 +4734,7 @@ impl MigrateReceiptEnvelope {
                 .map(|m| m.cid.clone())
                 .collect(),
             root_cid: self.root_cid.clone(),
+            witness_cids: self.witnesses.iter().map(|m| m.cid.clone()).collect(),
         })
     }
 }
