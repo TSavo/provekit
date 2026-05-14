@@ -5,6 +5,7 @@ pub mod ci;
 pub mod compose;
 pub mod core;
 pub mod desugar;
+pub mod effect_propagation;
 pub mod ffi;
 pub mod transport;
 pub mod wp;
