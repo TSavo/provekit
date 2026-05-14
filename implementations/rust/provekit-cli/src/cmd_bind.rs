@@ -613,23 +613,26 @@ struct ContractWitness {
 /// reaches the eight-verb engine; there is no language-specific path.
 fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLift {
     let mut witnesses = Vec::new();
-    if let Some(pre) = entry.attr_pre.as_deref() {
-        witnesses.push(annotation_contract_witness(
-            "pre",
-            pre,
-            entry.fn_line as usize,
-            &entry.file,
-            &entry.fn_name,
-        ));
-    }
-    if let Some(post) = entry.attr_post.as_deref() {
-        witnesses.push(annotation_contract_witness(
-            "post",
-            post,
-            entry.fn_line as usize,
-            &entry.file,
-            &entry.fn_name,
-        ));
+    let use_legacy_attr_shim = entry.witnesses.is_empty();
+    if use_legacy_attr_shim {
+        if let Some(pre) = entry.attr_pre.as_deref() {
+            witnesses.push(annotation_contract_witness(
+                "pre",
+                pre,
+                entry.fn_line as usize,
+                &entry.file,
+                &entry.fn_name,
+            ));
+        }
+        if let Some(post) = entry.attr_post.as_deref() {
+            witnesses.push(annotation_contract_witness(
+                "post",
+                post,
+                entry.fn_line as usize,
+                &entry.file,
+                &entry.fn_name,
+            ));
+        }
     }
     witnesses.extend(
         entry
@@ -642,8 +645,16 @@ fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLif
         file: entry.file.clone(),
         fn_name: entry.fn_name.clone(),
         fn_line: entry.fn_line as usize,
-        attr_pre: entry.attr_pre.clone(),
-        attr_post: entry.attr_post.clone(),
+        attr_pre: if use_legacy_attr_shim {
+            entry.attr_pre.clone()
+        } else {
+            None
+        },
+        attr_post: if use_legacy_attr_shim {
+            entry.attr_post.clone()
+        } else {
+            None
+        },
         witnesses,
         concept_annotation: entry.concept_annotation.clone(),
         term_shape: TermShape::from_kit(entry.term_shape.clone(), entry.term_shape_cid.clone()),
@@ -895,22 +906,22 @@ fn run_bind_engine(
             .or_else(|| shape_to_concept.get(&shape_cid))
             .expect("shape was clustered");
 
-        // Contract origin priority: attribute > test > algebra-synthesis > empty.
+        // Contract origin priority: normalized witnesses > legacy attr shim > test >
+        // algebra-synthesis > empty. Non-empty witnesses[] are the primary contract
+        // channel; attr_pre/attr_post only feed the compatibility shim above.
         let explicit_pre = contract_text_from_witnesses(&lift.witnesses, "pre");
         let explicit_post = contract_text_from_witnesses(&lift.witnesses, "post");
-        let (origin, pre, post) = if lift.attr_pre.is_some() || lift.attr_post.is_some() {
+        let (origin, pre, post) = if explicit_pre.is_some() || explicit_post.is_some() {
+            (
+                contract_origin_for_witnesses(&lift.witnesses),
+                explicit_pre,
+                explicit_post,
+            )
+        } else if lift.attr_pre.is_some() || lift.attr_post.is_some() {
             (
                 ContractOrigin::AttributeLift,
                 lift.attr_pre.clone(),
                 lift.attr_post.clone(),
-            )
-        } else if explicit_pre.is_some() || explicit_post.is_some() {
-            (
-                ContractOrigin::EvidenceLift {
-                    source_kind: dominant_source_kind_label(&lift.witnesses),
-                },
-                explicit_pre,
-                explicit_post,
             )
         } else if let Some(test_post) = test_post_map.get(&lift.fn_name) {
             (ContractOrigin::TestLift, None, Some(test_post.clone()))
@@ -2143,6 +2154,20 @@ fn dominant_source_kind_label(witnesses: &[ContractWitness]) -> String {
             .next()
             .unwrap_or_else(|| "unspecified".to_string()),
         _ => "mixed".to_string(),
+    }
+}
+
+fn contract_origin_for_witnesses(witnesses: &[ContractWitness]) -> ContractOrigin {
+    if !witnesses.is_empty()
+        && witnesses
+            .iter()
+            .all(|w| matches!(w.source_kind, SourceKind::Annotation))
+    {
+        ContractOrigin::AttributeLift
+    } else {
+        ContractOrigin::EvidenceLift {
+            source_kind: dominant_source_kind_label(witnesses),
+        }
     }
 }
 
