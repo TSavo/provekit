@@ -1,0 +1,60 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:op-application",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Cid"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "List<Term>"
+    }
+  ],
+  "formals": [
+    "op_definition_cid",
+    "args"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Cid",
+      "List<Term>"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        "op_definition_cid",
+        "args"
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "op-application",
+    "result": "Term",
+    "slot_terms": [
+      {
+        "kind": "var",
+        "name": "op_definition_cid"
+      },
+      {
+        "kind": "var",
+        "name": "args"
+      }
+    ],
+    "wp_note": "Mints an op-application citation. Well-formed iff op_definition_cid resolves to a minted op-definition AND args.length == op_definition.formals.length AND each args[i] sort-checks against op_definition.formal_sorts[i]. The returned Term is the composition's content-addressed CCL term."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Term"
+  }
+}

@@ -222,3 +222,19 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | Concept | Shape CID | Notes |
 | --- | --- | --- |
 | `concept:log-emit` | `blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333` | effect is IO; per-language logger sugars carry honest loss dimensions |
+
+## Op Definition Concept Shape
+
+`concept:op-definition(name, arg_sorts, return_sort, effects, wp_rule)` describes a hub op definition; CCL's meta-layer primitive.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:op-definition` | `blake3-512:bbbafea8e3c6d3b24e183a1a2254f1645d8520c6a48571f2631e4fe6516db8d03e8109f31152d789401ea8ae57f30eacb1797db9c53495c25e5d14344c48e852` | describes a hub op definition; CCL's meta-layer primitive |
+
+## Op Application Concept Shape
+
+`concept:op-application(op_definition_cid, args)` describes an application of a minted CCL op definition.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:op-application` | `blake3-512:b98ae1ac8b8f06800db51e648c3a3567200b73e256fcb4d3f664262c95e928979b93f946362c88c14c91d57e0daaabef4dc97ba8617b39828d802db153b36981` | applies a minted op definition to sorted term arguments |
