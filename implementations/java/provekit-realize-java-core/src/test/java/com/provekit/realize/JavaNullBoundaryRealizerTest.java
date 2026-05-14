@@ -132,9 +132,10 @@ public class JavaNullBoundaryRealizerTest {
             java.util.List.of("String"),
             "String",
             "concept:lookup",
-            "monitor",
+            "witness",
+            java.util.List.of("witness", "gate"),
             contract,
-            java.util.List.of(beanValidationSugar(), junitSugar(), commentSugar())
+            java.util.List.of(modeScopedBeanValidationSugar("gate"), modeScopedJunitSugar("witness"), commentSugar())
         );
 
         assertTrue(output.source().contains("import jakarta.validation.constraints.NotNull;"));
@@ -154,6 +155,33 @@ public class JavaNullBoundaryRealizerTest {
         assertTrue(output.usedSugarsJson().contains("java-bean-validation"));
         assertTrue(output.usedSugarsJson().contains("java-junit5"));
         assertTrue(output.usedSugarsJson().contains("java-function-comment"));
+    }
+
+    @Test
+    public void modeScopedJunitWitnessSugarDoesNotApplyToMonitor() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[type-signature]",
+            "exact",
+            java.util.List.of(new ContractWitness("pre", "non_null(name)", "type-signature"))
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "lookup",
+            java.util.List.of("name"),
+            java.util.List.of("String"),
+            "String",
+            "concept:lookup",
+            "monitor",
+            contract,
+            java.util.List.of(modeScopedJunitSugar("witness"))
+        );
+
+        assertFalse(output.source().contains("org.junit.jupiter.api"));
+        assertFalse(output.source().contains("WitnessTest"));
+        assertFalse(output.source().contains("assertNotNull(name);"));
+        assertFalse(output.usedSugarsJson().contains("java-junit5"));
     }
 
     @Test
@@ -182,24 +210,12 @@ public class JavaNullBoundaryRealizerTest {
         assertTrue(body.isEmpty());
     }
 
-    private static String beanValidationSugar() {
-        return sugar(
-            "java-bean-validation",
-            "bean-validation",
-            "annotation:before-parameter",
-            "@NotNull",
-            "{}"
-        );
+    private static String modeScopedBeanValidationSugar(String mode) {
+        return "{\"header\":{\"cid\":\"java-bean-validation\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"annotation:before-parameter\",\"template\":\"@NotNull\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"bean-validation\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
 
-    private static String junitSugar() {
-        return sugar(
-            "java-junit5",
-            "junit5",
-            "witness:junit5-test",
-            "assertNotNull(${symbol});",
-            "{\"domain_narrowing\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_requires_test_execution\"},\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_skeleton_requires_concrete_values\"}}"
-        );
+    private static String modeScopedJunitSugar(String mode) {
+        return "{\"header\":{\"cid\":\"java-junit5\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"witness:junit5-test\",\"template\":\"assertNotNull(${symbol});\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{\"domain_narrowing\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_requires_test_execution\"},\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_skeleton_requires_concrete_values\"}}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"junit5\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
 
     private static String commentSugar() {
