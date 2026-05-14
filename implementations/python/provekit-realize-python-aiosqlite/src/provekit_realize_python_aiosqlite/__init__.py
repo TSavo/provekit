@@ -1,0 +1,1 @@
+"""Python aiosqlite realize kit."""

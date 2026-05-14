@@ -4451,6 +4451,30 @@ pub struct LossRecordMemento {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LanguageTransitionMemento {
+    pub cid: String,
+    #[serde(rename = "function_language_source")]
+    pub function_language_source: String,
+    #[serde(rename = "function_language_target")]
+    pub function_language_target: String,
+    #[serde(rename = "function_name_source")]
+    pub function_name_source: String,
+    #[serde(rename = "function_name_target")]
+    pub function_name_target: String,
+    pub kind: String,
+    #[serde(rename = "naming_convention")]
+    pub naming_convention: String,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "signature_equivalence")]
+    pub signature_equivalence: String,
+    #[serde(rename = "source_signature_cid")]
+    pub source_signature_cid: String,
+    #[serde(rename = "target_signature_cid")]
+    pub target_signature_cid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WitnessMemento {
     pub kind: String,
     #[serde(rename = "schemaVersion")]
@@ -4473,6 +4497,18 @@ pub struct WitnessMemento {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrossLanguageWitnessPair {
+    #[serde(rename = "concept_site_cid")]
+    pub concept_site_cid: String,
+    #[serde(rename = "equivalence_outcome")]
+    pub equivalence_outcome: String,
+    #[serde(rename = "source_witness_cid")]
+    pub source_witness_cid: String,
+    #[serde(rename = "target_witness_cid")]
+    pub target_witness_cid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MigrateReceiptSignature {
     #[serde(rename = "key_source")]
     pub key_source: String,
@@ -4491,6 +4527,9 @@ pub struct MigrateReceiptEnvelope {
     pub concept_sites: Vec<MigrationConceptSiteMemento>,
     #[serde(rename = "halt_mementos")]
     pub halt_mementos: Vec<HaltMemento>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "language_transitions")]
+    pub language_transitions: Vec<LanguageTransitionMemento>,
     #[serde(rename = "loss_records")]
     pub loss_records: Vec<LossRecordMemento>,
     #[serde(rename = "promotion_decisions")]
@@ -4502,6 +4541,9 @@ pub struct MigrateReceiptEnvelope {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     pub signature: MigrateReceiptSignature,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "cross_language_witness_pairs")]
+    pub cross_language_witness_pairs: Vec<CrossLanguageWitnessPair>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub witnesses: Vec<WitnessMemento>,
 }
@@ -4623,6 +4665,30 @@ impl LossRecordMemento {
     }
 }
 
+impl LanguageTransitionMemento {
+    pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
+        migration_cid_without_keys(self, &["cid"])
+    }
+
+    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
+        require_kind(&self.kind, "language-transition")?;
+        require_schema(&self.schema_version)?;
+        require_non_empty(&self.function_language_source, "function_language_source")?;
+        require_non_empty(&self.function_language_target, "function_language_target")?;
+        require_non_empty(&self.function_name_source, "function_name_source")?;
+        require_non_empty(&self.function_name_target, "function_name_target")?;
+        require_non_empty(&self.naming_convention, "naming_convention")?;
+        require_non_empty(&self.signature_equivalence, "signature_equivalence")?;
+        require_non_empty(&self.source_signature_cid, "source_signature_cid")?;
+        require_non_empty(&self.target_signature_cid, "target_signature_cid")?;
+        require_matching_cid(
+            &self.cid,
+            self.recompute_cid()?,
+            "LanguageTransitionMemento",
+        )
+    }
+}
+
 impl WitnessMemento {
     pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
         migration_cid_without_keys(self, &["cid"])
@@ -4644,6 +4710,20 @@ impl WitnessMemento {
             }
         }
         require_matching_cid(&self.cid, self.recompute_cid()?, "WitnessMemento")
+    }
+}
+
+impl CrossLanguageWitnessPair {
+    pub fn validate(&self) -> Result<(), MigrationReceiptError> {
+        require_non_empty(&self.concept_site_cid, "concept_site_cid")?;
+        require_non_empty(&self.source_witness_cid, "source_witness_cid")?;
+        require_non_empty(&self.target_witness_cid, "target_witness_cid")?;
+        match self.equivalence_outcome.as_str() {
+            "pass" | "fail" | "inconclusive" => Ok(()),
+            other => Err(MigrationReceiptError::new(format!(
+                "CrossLanguageWitnessPair outcome {other} is not pass, fail, or inconclusive"
+            ))),
+        }
     }
 }
 
@@ -4692,6 +4772,9 @@ impl MigrateReceiptEnvelope {
         for site in &self.concept_sites {
             site.validate()?;
         }
+        for transition in &self.language_transitions {
+            transition.validate()?;
+        }
         for decision in &self.promotion_decisions {
             decision.validate().map_err(|err| {
                 MigrationReceiptError::new(format!("PromotionDecisionMemento: {err}"))
@@ -4712,6 +4795,9 @@ impl MigrateReceiptEnvelope {
         }
         for witness in &self.witnesses {
             witness.validate()?;
+        }
+        for pair in &self.cross_language_witness_pairs {
+            pair.validate()?;
         }
         Ok(())
     }
