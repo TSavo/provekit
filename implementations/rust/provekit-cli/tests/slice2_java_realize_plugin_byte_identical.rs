@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Slice 2 of #760 — Trinity byte-identical assertion:
+// Slice 2 of #760 scoped Java realization parity:
 //   Java RPC plugin (provekit.plugin.invoke) MUST produce byte-identical
 //   Java source to Rust's realize_for_bind("java", ...) for all 11 trinity
 //   fixture functions.
+//
+// This is not the trinity Branch 1 byte-identity receipt. Current trinity
+// status is v0 loudly-bounded-lossy, fresh-target hermetic, Branch 2 mode.
+// See docs/incidents/2026-05-14-trinity-baseline-diagnosis.md and closure PRs
+// #860, #861, #862, #863. The trinity gate is the PR #861 hermetic fixture plus
+// the v0 lossy expectations in trinity_roundtrip_test.rs; Branch 1 still needs
+// Java and Python lift fixture wiring.
 //
 // The bind path uses Term::Unit (no term graph yet), so every function
 // becomes a compilable stub: a final class wrapping a static method that

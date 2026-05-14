@@ -2,8 +2,16 @@
 //
 // Trinity round-trip integration test.
 //
-// Claim: k(k'(k''(I)))=t — three composed transport keys over the 11 trinity
-// concepts, with loss characterized at each boundary.
+// Current status: v0 loudly-bounded-lossy, fresh-target hermetic, Branch 2 mode.
+// This is not the Branch 1 byte-identity receipt. See
+// docs/incidents/2026-05-14-trinity-baseline-diagnosis.md and closure PRs
+// #860, #861, #862, #863.
+// The gate is the PR #861 hermetic fixture plus the v0 lossy expectations
+// enforced by this test.
+//
+// Future Branch 1 target: k(k'(k''(I)))=t, three composed transport keys over
+// the 11 trinity concepts with empty loss at each boundary. Java and Python
+// lift fixture wiring is still missing and is out of scope for #859.
 //
 // Three chained legs:
 //   Leg 1  Rust fixture  → Java   (--lang rust  --target-language java)
@@ -15,9 +23,9 @@
 // bind's own gap emission (F2: source-language-not-supported records).
 //
 // Trichotomy (Supra omnia, rectum):
-//   composed_loss.is_empty()  → byte-identical round-trip assertion (Branch 1)
-//   else                      → v0: assert REAL + EXPECTED gap kinds in composed loss
-//                               (Branch 2 per-line characterization gated — see F3 fix)
+//   composed_loss.is_empty()  -> future byte-identical round-trip assertion (Branch 1)
+//   else                      -> v0: assert REAL + EXPECTED gap kinds in composed loss
+//                                (Branch 2 per-line characterization gated; see F3 fix)
 //
 // v0 expected outcome: legs 2 and 3 receive non-Rust sources; bind detects
 // java/python via auto-detect, emits source-language-not-supported gap records
@@ -435,10 +443,16 @@ fn trinity_round_trip() {
 
     // ── Trichotomy assertion (Supra omnia, rectum) ────────────────────────────
     //
-    // Branch 1: empty composed loss → byte-identical round-trip required.
-    // Branch 2: non-empty composed loss → diff vs original must be precisely
+    // Branch 1: future empty composed loss -> byte-identical round-trip required.
+    // Branch 2: non-empty composed loss -> diff vs original must be precisely
     //           characterised by the composed loss record.
     //           The loss record must be REAL (from bind's gaps.json), not synthetic.
+    //
+    // Current #859 state is Branch 2 v0 loudly-bounded-lossy, gated by the
+    // PR #861 hermetic fixture and the v0 lossy expectations below. See
+    // docs/incidents/2026-05-14-trinity-baseline-diagnosis.md and closure PRs
+    // #860, #861, #862, #863. Branch 1 byte-identity still needs Java and
+    // Python lift fixture wiring.
     //
     // v0 expected outcome: legs 2 and 3 receive non-Rust sources; bind detects
     // java/python via auto-detect and emits source-language-not-supported gaps.
@@ -469,7 +483,9 @@ fn trinity_round_trip() {
     };
 
     if composed_loss.is_empty() {
-        // Branch 1: every concept survived all three hops byte-identical.
+        // Future Branch 1: every concept survived all three hops byte-identical.
+        // NOT YET REACHABLE in the current #859 state; Java and Python lift
+        // fixture wiring is still missing.
         // Leg-3 must have run and its rust output must match the original fixture.
         let out3_dir = out3.as_ref().expect(
             "Branch 1 (empty loss) requires leg 3 to have run; \
