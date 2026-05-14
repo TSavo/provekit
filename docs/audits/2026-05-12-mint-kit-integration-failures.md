@@ -11,6 +11,17 @@
 
 All three failures share one root cause: the `mint-self-contracts` (rust) and `mint_cpp_self_contracts` (cpp) self-contracts binaries are not present in the worktree at the paths their manifests declare. When the dispatcher cannot spawn the binary (ENOENT), it falls back to a well-formed empty-set attestation and exits 0. The `!ok` skip guards inside the tests don't fire -- the spawn succeeds in the sense that `run_mint` returns `ok=true`. The tests then read the attestation, find the canonical empty-set CID (`d53d18c2...`), and fail.
 
+## Resolution
+
+Issue #70 wires these three checks into the Linux conformance gate with
+`make test-mint-kit-integration-pins`. The target runs after `all-mint`, so
+CI has already built and minted the rust and cpp self-contract surfaces before
+the release-mode `mint_kit_integration` pin tests execute with `CI=1`.
+
+That makes the local-dev behavior and CI behavior intentionally different:
+local test runs may still skip the pin assertion when the self-contract binary
+is absent, but CI treats the same empty-set CID as a hard failure.
+
 ---
 
 ## Failing tests
@@ -147,9 +158,13 @@ if cset == EMPTY_SET_CID {
 
 ---
 
-## Why main CI stays green
+## Why main CI stayed green
 
-The conformance test runner excludes `mint_kit_integration` from the gating suite (per the task description and confirmed by the fact that these 3 tests are pre-existing failures on `origin/main`). CI runs these tests but does not fail the build on them. The 16 other tests in this file pass cleanly, including other pinned-CID tests (go, java, ts, python, ruby, c, swift, zig) that either have the required binaries present or have correct empty-set skip guards.
+Before issue #70, the conformance test runner excluded these targeted
+`mint_kit_integration` checks from the gating suite. The 16 other tests in this
+file passed cleanly, including other pinned-CID tests (go, java, ts, python,
+ruby, c, swift, zig) that either had the required binaries present or had
+correct empty-set skip guards.
 
 ---
 
