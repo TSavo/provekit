@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for canonical Python body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=python.
+name = "python-realize"
+library_tag = "urllib"
+command = ["implementations/python/target/release/provekit-realize-python", "--rpc"]
+working_dir = "."

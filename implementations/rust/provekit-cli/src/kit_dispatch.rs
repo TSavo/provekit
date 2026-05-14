@@ -16,10 +16,11 @@
 //      and decodes `ir-document.ir[]` into `BindLiftEntry` records per
 //      `2026-05-13-bind-ir-lift-result.md`.
 //
-//   2. `dispatch_realize(target_lang, request)`
+//   2. `dispatch_realize(target_lang, library_tag, request)`
 //      Resolves a `kind = "realize"` (sugar/body-template) plugin for
-//      `target_lang` via convention (`.provekit/realize/<lang>/manifest.toml`
-//      or a built-in path; the Java built-in path is
+//      `(target_lang, library_tag.unwrap_or("default"))` via convention
+//      (`.provekit/realize/<surface>/manifest.toml` or a built-in path; the
+//      Java built-in path is
 //      `implementations/java/provekit-realize-java-core/target/...`).
 //      Invokes the PEP 1.7.0 `provekit.plugin.invoke` method and returns
 //      `{ source, is_stub }`.
@@ -299,6 +300,7 @@ struct ParsedManifest {
     name: String,
     command: Vec<String>,
     working_dir: Option<PathBuf>,
+    library_tag: Option<String>,
 }
 
 fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
@@ -307,6 +309,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut name = String::new();
     let mut command: Vec<String> = Vec::new();
     let mut working_dir: Option<PathBuf> = None;
+    let mut library_tag: Option<String> = None;
     for line in text.lines() {
         let line = match line.find('#') {
             Some(pos) => &line[..pos],
@@ -322,6 +325,16 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         match key {
             "name" => name = val.trim_matches('"').to_string(),
             "working_dir" => working_dir = Some(PathBuf::from(val.trim_matches('"'))),
+            "library_tag" => {
+                let tag = val.trim_matches('"').to_string();
+                validate_library_tag(&tag).map_err(|detail| {
+                    format!(
+                        "manifest {} has invalid `library_tag` `{tag}`: {detail}",
+                        path.display()
+                    )
+                })?;
+                library_tag = Some(tag);
+            }
             "command" => {
                 let inner = val.trim_matches(|c| c == '[' || c == ']');
                 command = inner
@@ -340,7 +353,22 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         name,
         command,
         working_dir,
+        library_tag,
     })
+}
+
+fn validate_library_tag(tag: &str) -> Result<(), &'static str> {
+    let mut chars = tag.chars();
+    let Some(first) = chars.next() else {
+        return Err("expected [a-z][a-z0-9-]*");
+    };
+    if !first.is_ascii_lowercase() {
+        return Err("expected [a-z][a-z0-9-]*");
+    }
+    if !chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err("expected [a-z][a-z0-9-]*");
+    }
+    Ok(())
 }
 
 fn rpc_lift(
@@ -540,16 +568,19 @@ pub struct RealizedSource {
     pub observation_wrapper_emission_record: Option<Value>,
 }
 
-/// Dispatch a realize call for `target_lang`. Returns `Err(KitUnavailable)`
-/// when no realize plugin exists. Callers turn this into a
+const DEFAULT_LIBRARY_TAG: &str = "default";
+
+/// Dispatch a realize call for `(target_lang, library_tag)`. Returns
+/// `Err(KitUnavailable)` when no realize plugin exists. Callers turn this into a
 /// `kit-plugin-unavailable` gap record so the run is loudly-bounded-lossy
 /// at the realize boundary rather than silently empty.
 pub fn dispatch_realize(
     workspace_root: &Path,
     target_lang: &str,
+    library_tag: Option<&str>,
     request: &RealizeRequest,
 ) -> Result<RealizedSource, KitUnavailable> {
-    let resolved = resolve_realize_command(workspace_root, target_lang)?;
+    let resolved = resolve_realize_command(workspace_root, target_lang, library_tag)?;
     invoke_realize(target_lang, &resolved, request).map_err(|e| KitUnavailable {
         kit_kind: "realize",
         language: target_lang.to_string(),
@@ -560,70 +591,194 @@ pub fn dispatch_realize(
 fn resolve_realize_command(
     workspace_root: &Path,
     target_lang: &str,
+    library_tag: Option<&str>,
 ) -> Result<ResolvedCommand, KitUnavailable> {
-    // 1: manifest at .provekit/realize/<lang>/manifest.toml.
-    let manifest = workspace_root
-        .join(".provekit")
-        .join("realize")
-        .join(target_lang)
-        .join("manifest.toml");
-    if manifest.exists() {
-        if let Ok(parsed) = parse_manifest(&manifest) {
-            let working_dir = parsed
-                .working_dir
-                .map(|wd| {
-                    if wd.is_absolute() {
-                        wd
-                    } else {
-                        workspace_root.join(wd)
-                    }
-                })
-                .or_else(|| Some(workspace_root.to_path_buf()));
-            return Ok(ResolvedCommand {
-                argv: parsed.command,
-                working_dir,
+    if let Some(tag) = library_tag {
+        if let Err(detail) = validate_library_tag(tag) {
+            return Err(KitUnavailable {
+                kit_kind: "realize",
+                language: target_lang.to_string(),
+                detail: format!("invalid requested library_tag `{tag}`: {detail}"),
             });
         }
     }
 
-    // 2: env-var override.
+    let candidates = registered_realize_candidates(workspace_root, target_lang)?;
+    let requested = library_tag.unwrap_or(DEFAULT_LIBRARY_TAG);
+    if let Some(candidate) = candidates
+        .iter()
+        .find(|candidate| candidate.tag == requested)
+    {
+        return Ok(candidate.command.clone());
+    }
+
+    if library_tag.is_none() {
+        if candidates.len() == 1 {
+            return Ok(candidates[0].command.clone());
+        }
+        if !candidates.is_empty() {
+            let tags = candidates
+                .iter()
+                .map(|candidate| format!("{} from {}", candidate.tag, candidate.source))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(KitUnavailable {
+                kit_kind: "realize",
+                language: target_lang.to_string(),
+                detail: format!(
+                    "multiple realize plugins registered for language `{target_lang}` but none \
+                     has library_tag `default`; pass an explicit library_tag. registered: {tags}"
+                ),
+            });
+        }
+    }
+
     let env_var = format!("PROVEKIT_REALIZE_{}_BIN", target_lang.to_uppercase());
-    if let Ok(bin) = std::env::var(&env_var) {
-        return Ok(ResolvedCommand {
-            argv: vec![bin, "--rpc".to_string()],
-            working_dir: Some(workspace_root.to_path_buf()),
-        });
-    }
-
-    // 3: substrate-convention built-in binaries. Same shape as lift:
-    // the dispatcher consults the FILESYSTEM, not a hard-coded list.
-    for candidate in builtin_realize_candidates(workspace_root, target_lang) {
-        if candidate.path.exists() {
-            return Ok(ResolvedCommand {
-                argv: candidate.argv,
-                working_dir: Some(workspace_root.to_path_buf()),
-            });
-        }
-    }
-
-    // 4: PATH probe.
-    let bin = format!("provekit-realize-{target_lang}");
-    if which_on_path(&bin).is_some() {
-        return Ok(ResolvedCommand {
-            argv: vec![bin, "--rpc".to_string()],
-            working_dir: Some(workspace_root.to_path_buf()),
-        });
-    }
-
+    let registered = if candidates.is_empty() {
+        "none".to_string()
+    } else {
+        candidates
+            .iter()
+            .map(|candidate| format!("{} from {}", candidate.tag, candidate.source))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     Err(KitUnavailable {
         kit_kind: "realize",
         language: target_lang.to_string(),
         detail: format!(
-            "no manifest at .provekit/realize/{target_lang}/, no env {env_var}, \
-             no built-in binary under implementations/{target_lang}/, \
-             no `provekit-realize-{target_lang}` on PATH"
+            "no realize plugin for language `{target_lang}` and library_tag `{requested}`. \
+             looked in .provekit/realize/*/manifest.toml, env {env_var}, built-in binaries \
+             under implementations/{target_lang}/, and `provekit-realize-{target_lang}` on \
+             PATH. registered: {registered}"
         ),
     })
+}
+
+#[derive(Debug, Clone)]
+struct RealizeCandidate {
+    tag: String,
+    command: ResolvedCommand,
+    source: String,
+}
+
+fn registered_realize_candidates(
+    workspace_root: &Path,
+    target_lang: &str,
+) -> Result<Vec<RealizeCandidate>, KitUnavailable> {
+    let mut candidates =
+        project_realize_candidates(workspace_root, target_lang).map_err(|e| KitUnavailable {
+            kit_kind: "realize",
+            language: target_lang.to_string(),
+            detail: e,
+        })?;
+
+    // Env-var, built-in, and PATH fallbacks have no manifest tag, so they occupy
+    // the back-compatible default slot.
+    let env_var = format!("PROVEKIT_REALIZE_{}_BIN", target_lang.to_uppercase());
+    if let Ok(bin) = std::env::var(&env_var) {
+        candidates.push(RealizeCandidate {
+            tag: DEFAULT_LIBRARY_TAG.to_string(),
+            command: ResolvedCommand {
+                argv: vec![bin, "--rpc".to_string()],
+                working_dir: Some(workspace_root.to_path_buf()),
+            },
+            source: env_var,
+        });
+    }
+
+    // Substrate-convention built-in binaries. Same shape as lift:
+    // the dispatcher consults the FILESYSTEM, not a hard-coded list.
+    for candidate in builtin_realize_candidates(workspace_root, target_lang) {
+        if candidate.path.exists() {
+            candidates.push(RealizeCandidate {
+                tag: DEFAULT_LIBRARY_TAG.to_string(),
+                command: ResolvedCommand {
+                    argv: candidate.argv,
+                    working_dir: Some(workspace_root.to_path_buf()),
+                },
+                source: candidate.path.display().to_string(),
+            });
+        }
+    }
+
+    // PATH probe.
+    let bin = format!("provekit-realize-{target_lang}");
+    if which_on_path(&bin).is_some() {
+        candidates.push(RealizeCandidate {
+            tag: DEFAULT_LIBRARY_TAG.to_string(),
+            command: ResolvedCommand {
+                argv: vec![bin.clone(), "--rpc".to_string()],
+                working_dir: Some(workspace_root.to_path_buf()),
+            },
+            source: format!("PATH:{bin}"),
+        });
+    }
+
+    Ok(candidates)
+}
+
+fn project_realize_candidates(
+    workspace_root: &Path,
+    target_lang: &str,
+) -> Result<Vec<RealizeCandidate>, String> {
+    let realize_dir = workspace_root.join(".provekit").join("realize");
+    let Ok(entries) = std::fs::read_dir(&realize_dir) else {
+        return Ok(Vec::new());
+    };
+    let mut surfaces = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            let surface = path.file_name()?.to_str()?.to_string();
+            Some((surface, path))
+        })
+        .collect::<Vec<_>>();
+    surfaces.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut out = Vec::new();
+    for (surface, path) in surfaces {
+        if !realize_surface_matches_target(&surface, target_lang) {
+            continue;
+        }
+        let manifest = path.join("manifest.toml");
+        if !manifest.exists() {
+            continue;
+        }
+        let parsed = parse_manifest(&manifest)?;
+        let working_dir = parsed
+            .working_dir
+            .map(|wd| {
+                if wd.is_absolute() {
+                    wd
+                } else {
+                    workspace_root.join(wd)
+                }
+            })
+            .or_else(|| Some(workspace_root.to_path_buf()));
+        out.push(RealizeCandidate {
+            tag: parsed
+                .library_tag
+                .unwrap_or_else(|| DEFAULT_LIBRARY_TAG.to_string()),
+            command: ResolvedCommand {
+                argv: parsed.command,
+                working_dir,
+            },
+            source: manifest.display().to_string(),
+        });
+    }
+    Ok(out)
+}
+
+fn realize_surface_matches_target(surface: &str, target_lang: &str) -> bool {
+    surface == target_lang
+        || surface
+            .strip_prefix(target_lang)
+            .and_then(|suffix| suffix.strip_prefix('-'))
+            .is_some()
 }
 
 struct RealizeBuiltin {
@@ -807,9 +962,8 @@ fn invoke_realize(
             }
         }
     }
-    let observation_wrapper_emission_record = result
-        .get("observation_wrapper_emission_record")
-        .cloned();
+    let observation_wrapper_emission_record =
+        result.get("observation_wrapper_emission_record").cloned();
     Ok(RealizedSource {
         extension,
         source,
@@ -947,5 +1101,16 @@ mod tests {
         );
         assert_eq!(params["sugar_plugins"][0]["header"]["kind"], "sugar");
         assert_eq!(params["sugar_cids"][0], "blake3-512:sugar");
+    }
+
+    #[test]
+    fn library_tag_validation_accepts_stable_identifier_shape() {
+        assert!(validate_library_tag("urllib").is_ok());
+        assert!(validate_library_tag("apache-httpclient").is_ok());
+        assert!(validate_library_tag("httpx2").is_ok());
+        assert!(validate_library_tag("").is_err());
+        assert!(validate_library_tag("Requests").is_err());
+        assert!(validate_library_tag("urllib.request").is_err());
+        assert!(validate_library_tag("1requests").is_err());
     }
 }

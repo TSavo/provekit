@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for canonical C body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=c.
+name = "c-realize"
+library_tag = "libcurl"
+command = ["implementations/c/provekit-realize-c-core/target/release/provekit-realize-c", "--rpc"]
+working_dir = "."

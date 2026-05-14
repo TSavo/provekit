@@ -1346,7 +1346,7 @@ fn realize_function(
         sugar_cids,
         sugar_plugins,
     };
-    let realized = crate::kit_dispatch::dispatch_realize(&workspace_root, language, &request)
+    let realized = crate::kit_dispatch::dispatch_realize(&workspace_root, language, None, &request)
         .map_err(|e| {
             TransportCliError::Refusal(format!("realize-time:kit-plugin-unavailable {e}"))
         })?;

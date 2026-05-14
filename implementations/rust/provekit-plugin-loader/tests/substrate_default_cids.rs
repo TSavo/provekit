@@ -159,6 +159,17 @@ fn python_canonical_bodies_cid_self_consistent() {
 }
 
 #[test]
+fn python_requests_canonical_bodies_cid_self_consistent() {
+    let path = repo_root().join(
+        "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-requests.json",
+    );
+    assert_self_consistent(
+        path,
+        "blake3-512:6612c844a35e288836a838e2a7615be2791eee36e159b3df333db0f63266cbe56db8754e33a8b33cce4fb89927f6e9236c2c5b0cc093eb6d80b1f1f124a2c52b",
+    );
+}
+
+#[test]
 fn c_canonical_sugar_cid_self_consistent() {
     let path = repo_root().join("menagerie/c-language-signature/specs/sugar/c-canonical.json");
     assert_self_consistent(

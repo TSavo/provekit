@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for Python requests body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=python and library_tag=requests.
+name = "python-realize-requests"
+library_tag = "requests"
+command = ["implementations/python/target/release/provekit-realize-python-requests", "--rpc"]
+working_dir = "."

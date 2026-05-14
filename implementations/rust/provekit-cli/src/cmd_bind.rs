@@ -1454,7 +1454,7 @@ fn apply_canonical_rewrite(
                     .collect(),
                 sugar_plugins: sugar_plugins.to_vec(),
             };
-            match crate::kit_dispatch::dispatch_realize(root, target_lang, &request) {
+            match crate::kit_dispatch::dispatch_realize(root, target_lang, None, &request) {
                 Ok(realized) => {
                     let r = crate::cmd_transport::RealizedSource {
                         extension: Box::leak(realized.extension.into_boxed_str()),

@@ -1,0 +1,3 @@
+#!/bin/bash
+DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+PYTHONPATH="$DIR/provekit-realize-python-requests/src:$PYTHONPATH" exec python3 -m provekit_realize_python_requests "$@"
