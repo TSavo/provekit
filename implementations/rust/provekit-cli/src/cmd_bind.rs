@@ -112,6 +112,10 @@ pub struct BindArgs {
     #[arg(long)]
     pub receipt: Option<PathBuf>,
 
+    /// Fixture sqlite database for row-shape witnesses during migration.
+    #[arg(long)]
+    pub witness_fixture: Option<PathBuf>,
+
     /// Write migrated source to out-dir. Without this flag the migration path is a dry run.
     #[arg(long)]
     pub write: bool,
@@ -180,6 +184,7 @@ pub fn run(args: BindArgs) -> u8 {
         || args.source_dir.is_some()
         || args.out_dir.is_some()
         || args.receipt.is_some()
+        || args.witness_fixture.is_some()
         || args.write
     {
         return crate::cmd_bind_migrate::run(args);
