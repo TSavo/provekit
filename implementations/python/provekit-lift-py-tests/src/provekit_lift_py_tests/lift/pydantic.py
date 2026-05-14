@@ -16,10 +16,23 @@
 from __future__ import annotations
 
 import inspect
+import json
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Type, Union, get_type_hints
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
+from ..canonicalizer import encode_jcs
 from ..ir import (
     ContractDecl,
     Formula,
@@ -41,6 +54,7 @@ from ..ir import (
     ctor,
     and_,
     or_,
+    formula_to_value,
 )
 
 
@@ -179,3 +193,182 @@ def _fold_and(parts: List[Formula]) -> Formula:
     if len(parts) == 1:
         return parts[0]
     return and_(parts)
+
+
+# ---------------------------------------------------------------------------
+# Sugar bridge helpers: pydantic source/witness shape
+# ---------------------------------------------------------------------------
+
+
+def emit_pydantic_model_source(model_name: str, fields: List[Dict[str, Any]]) -> str:
+    """Emit a small pydantic model surface from structured field specs."""
+    lines = [f"class {model_name}(BaseModel):"]
+    if not fields:
+        lines.append("    pass")
+        return "\n".join(lines) + "\n"
+    for field in fields:
+        name = str(field["name"])
+        type_name = str(field.get("type", "Any"))
+        args = field.get("field_args") if isinstance(field.get("field_args"), dict) else {}
+        if args:
+            rendered_args = ", ".join(
+                f"{key}={_py_literal(value)}" for key, value in sorted(args.items())
+            )
+            lines.append(f"    {name}: {type_name} = Field(..., {rendered_args})")
+        else:
+            lines.append(f"    {name}: {type_name}")
+    return "\n".join(lines) + "\n"
+
+
+def lift_pydantic_model_witnesses(
+    model_cls: Type,
+    *,
+    concept_site_cid: str | None = None,
+    contract_cid: str | None = None,
+    original_predicate_text: str | None = None,
+) -> List[Dict[str, Any]]:
+    """Lift pydantic fields into bind witness records with honest loss."""
+    fields = _get_fields(model_cls)
+    if fields is None:
+        return []
+    try:
+        annotations = get_type_hints(model_cls, include_extras=True)
+    except Exception:
+        annotations = getattr(model_cls, "__annotations__", {})
+
+    witnesses: List[Dict[str, Any]] = []
+    for field_name, field_info in fields.items():
+        annotation = annotations.get(field_name, getattr(field_info, "annotation", None))
+        formulas: List[Formula] = []
+        if _field_required(field_info) and not _is_optional_annotation(annotation):
+            formulas.append(ne(make_var(field_name), ctor("None", [])))
+        type_name = _annotation_name(annotation)
+        if type_name and type_name != "Any":
+            formulas.append(atomic("is_type", [make_var(field_name), str_const(type_name)]))
+        formulas.extend(_lift_field_constraints(field_name, field_info))
+
+        for formula in formulas:
+            predicate = _formula_to_json(formula)
+            predicate_text = _formula_text(predicate)
+            extension_fields: Dict[str, Any] = {
+                "field": field_name,
+                "loss_record": _pydantic_loss_record(
+                    original_predicate_text,
+                    predicate_text,
+                ),
+                "surface": "pydantic-field",
+            }
+            if concept_site_cid is not None:
+                extension_fields["concept_site_cid"] = concept_site_cid
+            if contract_cid is not None:
+                extension_fields["contract_cid"] = contract_cid
+            witnesses.append(
+                {
+                    "col": None,
+                    "confidence_basis_points": 10000,
+                    "extension_fields": extension_fields,
+                    "line": None,
+                    "predicate": predicate,
+                    "predicate_text": predicate_text,
+                    "role": "pre",
+                    "source_kind": "native-surface",
+                }
+            )
+    return witnesses
+
+
+def _py_literal(value: Any) -> str:
+    if isinstance(value, str):
+        return repr(value)
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if value is None:
+        return "None"
+    return str(value)
+
+
+def _field_required(field_info: Any) -> bool:
+    is_required = getattr(field_info, "is_required", None)
+    if callable(is_required):
+        try:
+            return bool(is_required())
+        except Exception:
+            return False
+    required = getattr(field_info, "required", None)
+    if required is not None:
+        return bool(required)
+    return getattr(field_info, "default", None) is ...
+
+
+def _is_optional_annotation(annotation: Any) -> bool:
+    args = get_args(annotation)
+    return any(arg is type(None) for arg in args)
+
+
+def _annotation_name(annotation: Any) -> str:
+    if annotation is None:
+        return "Any"
+    origin = get_origin(annotation)
+    if origin is not None and str(origin).endswith("Annotated"):
+        args = get_args(annotation)
+        if args:
+            return _annotation_name(args[0])
+    if annotation in (str, int, bool, float):
+        return annotation.__name__
+    name = getattr(annotation, "__name__", None)
+    if isinstance(name, str):
+        return name
+    text = str(annotation)
+    return text.replace("<class '", "").replace("'>", "")
+
+
+def _formula_to_json(formula: Formula) -> Dict[str, Any]:
+    return json.loads(encode_jcs(formula_to_value(formula)))
+
+
+def _pydantic_loss_record(
+    original_predicate_text: str | None,
+    surface_predicate_text: str,
+) -> Dict[str, Any]:
+    if original_predicate_text is None or original_predicate_text == surface_predicate_text:
+        return {}
+    return {
+        "pydantic_expressivity_gap": {
+            "original_predicate_text": original_predicate_text,
+            "surface_predicate_text": surface_predicate_text,
+        }
+    }
+
+
+def _formula_text(formula: Dict[str, Any]) -> str:
+    if formula.get("kind") == "atomic":
+        name = formula.get("name")
+        args = formula.get("args")
+        if name == "is_type" and isinstance(args, list) and len(args) == 2:
+            return f"type({_term_text(args[0])}) == {_term_text(args[1])}"
+        if isinstance(name, str) and isinstance(args, list):
+            if len(args) == 2:
+                return f"{_term_text(args[0])} {_operator_text(name)} {_term_text(args[1])}"
+            return f"{name}({', '.join(_term_text(arg) for arg in args)})"
+    if formula.get("kind") in {"and", "or"} and isinstance(formula.get("operands"), list):
+        sep = f" {formula['kind']} "
+        return sep.join(_formula_text(part) for part in formula["operands"])
+    return "<formula>"
+
+
+def _operator_text(name: str) -> str:
+    return {"=": "==", "≠": "!=", "≥": ">=", "≤": "<="}.get(name, name)
+
+
+def _term_text(term: Dict[str, Any]) -> str:
+    if term.get("kind") == "var":
+        return str(term.get("name"))
+    if term.get("kind") == "const":
+        value = term.get("value")
+        return "None" if value is None else str(value)
+    if term.get("kind") == "ctor":
+        name = str(term.get("name"))
+        args = term.get("args")
+        if isinstance(args, list):
+            return f"{name}({', '.join(_term_text(arg) for arg in args)})"
+    return "<?>"
