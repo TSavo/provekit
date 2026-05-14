@@ -2,15 +2,15 @@
 //
 // §9 Registry semantics.
 //
-// PluginRegistry — in-memory store indexed by (kind, cid).
+// PluginRegistry - in-memory store indexed by (kind, cid).
 //
-// §9.1 — PluginRegistryMemento sealed after all --plugin flags processed.
-// §9.2 — Duplicate-CID collision rule: second registration of (kind, cid)
+// §9.1 - PluginRegistryMemento sealed after all --plugin flags processed.
+// §9.2 - Duplicate-CID collision rule: second registration of (kind, cid)
 //         is silently deduplicated UNLESS the content differs (which can't
 //         happen with content-addressing: same CID implies same content,
 //         §6.2), so duplicate is a no-op.
-// §9.3 — Registry CID computed over JCS(header_without_cid).
-// §9.4 — Every output's provenance MUST cite the registry CID.
+// §9.3 - Registry CID computed over JCS(header_without_cid).
+// §9.4 - Every output's provenance MUST cite the registry CID.
 //
 // Built-in plugins (when not suppressed) are appended AT THE END of the
 // `load_order` array per §7.  This crate ships no built-ins; the
@@ -114,7 +114,7 @@ impl PluginRegistry {
     pub fn register(&mut self, p: PluginMemento, source: &str) -> Result<bool, LoadError> {
         let key: RegistryKey = (p.kind().to_string(), p.cid().to_string());
         if self.plugins.contains_key(&key) {
-            // Deduplicated — same content, no error.
+            // Deduplicated - same content, no error.
             return Ok(false);
         }
         self.load_order
@@ -176,7 +176,7 @@ impl PluginRegistry {
 
         // Build load_order as {kind, cid, source} objects per §9.1.
         // Preserves CLI insertion order (B4 correctness depends on caller
-        // passing plugins in input order — see build_registry in cmd_plugin.rs).
+        // passing plugins in input order - see build_registry in cmd_plugin.rs).
         let load_order: Vec<LoadOrderEntry> = self
             .load_order
             .iter()
@@ -383,7 +383,6 @@ mod tests {
     #[test]
     fn loaded_is_sorted_by_cid() {
         // B2: loaded must be sorted by cid ascending, regardless of insertion order.
-        use crate::types::LoadedEntry;
         let mut reg = PluginRegistry::new();
         reg.register(dummy_memento("sugar", "blake3-512:zzz"), "./z.json")
             .unwrap();

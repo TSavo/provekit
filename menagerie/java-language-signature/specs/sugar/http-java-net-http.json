@@ -1,0 +1,109 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-14T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:2475eea5ffcc2aa65479f58f0a4fdffbca81eb831d5540ef6eee136f35b7c4709874486238e1407d5b3c95f6bbb3e4a006c0a861a108a77a03c9481974e1f0b0",
+    "content": {
+      "concept_bindings": [
+        {
+          "concept": "concept:http-request",
+          "concept_cid": "blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43",
+          "loss_record": {
+            "body-encoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"BodyPublisher is explicit; strings use the charset chosen by the caller"}],"kind":"atomic","name":"http_loss_value"},
+            "cancellation": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported for sendAsync through CompletableFuture.cancel; blocking send cancellation is thread interruption only"}],"kind":"atomic","name":"http_loss_value"},
+            "cookie-jar": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by HttpClient.Builder.cookieHandler"}],"kind":"atomic","name":"http_loss_value"},
+            "redirect-policy": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by HttpClient.Redirect policy"}],"kind":"atomic","name":"http_loss_value"},
+            "retries": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"refused: java.net.http has no automatic retry policy; caller must retry"}],"kind":"atomic","name":"http_loss_value"},
+            "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by BodyPublisher, ofInputStream, and fromPublisher"}],"kind":"atomic","name":"http_loss_value"},
+            "sync-vs-async": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"both sync and async through HttpClient.send and HttpClient.sendAsync"}],"kind":"atomic","name":"http_loss_value"},
+            "timeout": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by HttpRequest.Builder.timeout and HttpClient.Builder.connectTimeout"}],"kind":"atomic","name":"http_loss_value"},
+            "tls-pinning": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"manual-only: custom SSLContext or TrustManager; no first-class pin API"}],"kind":"atomic","name":"http_loss_value"}
+          },
+          "surface": {
+            "executing_operations": ["java.net.http.HttpClient.send", "java.net.http.HttpClient.sendAsync"],
+            "request_slots": {
+              "body": ["HttpRequest.BodyPublisher"],
+              "headers": ["HttpRequest.headers"],
+              "method": ["HttpRequest.method"],
+              "url": ["HttpRequest.uri"]
+            },
+            "request_types": ["java.net.http.HttpRequest"]
+          }
+        },
+        {
+          "concept": "concept:http-response",
+          "concept_cid": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5",
+          "loss_record": {
+            "body-decoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"BodyHandler controls bytes, strings, streams, or custom decoding; content encoding remains caller policy"}],"kind":"atomic","name":"http_loss_value"},
+            "header-case-sensitivity": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"HttpHeaders exposes case-insensitive header lookup"}],"kind":"atomic","name":"http_loss_value"},
+            "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by BodyHandlers.ofInputStream and BodyHandlers.ofPublisher"}],"kind":"atomic","name":"http_loss_value"}
+          },
+          "surface": {
+            "response_slots": {
+              "body": ["HttpResponse.body", "HttpResponse.BodyHandler"],
+              "headers": ["HttpResponse.headers"],
+              "status": ["HttpResponse.statusCode"]
+            },
+            "response_types": ["java.net.http.HttpResponse"]
+          }
+        }
+      ],
+      "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "concept-binding:http-request",
+            "template": "HttpClient.send and sendAsync bind HttpRequest fields to concept:http-request"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "body-encoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"BodyPublisher is explicit; strings use the charset chosen by the caller"}],"kind":"atomic","name":"http_loss_value"},
+              "cancellation": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported for sendAsync through CompletableFuture.cancel; blocking send cancellation is thread interruption only"}],"kind":"atomic","name":"http_loss_value"},
+              "cookie-jar": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by HttpClient.Builder.cookieHandler"}],"kind":"atomic","name":"http_loss_value"},
+              "redirect-policy": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by HttpClient.Redirect policy"}],"kind":"atomic","name":"http_loss_value"},
+              "retries": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"refused: java.net.http has no automatic retry policy; caller must retry"}],"kind":"atomic","name":"http_loss_value"},
+              "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by BodyPublisher, ofInputStream, and fromPublisher"}],"kind":"atomic","name":"http_loss_value"},
+              "sync-vs-async": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"both sync and async through HttpClient.send and HttpClient.sendAsync"}],"kind":"atomic","name":"http_loss_value"},
+              "timeout": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by HttpRequest.Builder.timeout and HttpClient.Builder.connectTimeout"}],"kind":"atomic","name":"http_loss_value"},
+              "tls-pinning": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"manual-only: custom SSLContext or TrustManager; no first-class pin API"}],"kind":"atomic","name":"http_loss_value"}
+            }
+          },
+          "predicate_pattern": {"args":[{"kind":"var","name":"${surface}"}],"kind":"atomic","name":"concept:http-request"}
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "concept-binding:http-response",
+            "template": "HttpResponse statusCode, headers, and body bind to concept:http-response"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "body-decoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"BodyHandler controls bytes, strings, streams, or custom decoding; content encoding remains caller policy"}],"kind":"atomic","name":"http_loss_value"},
+              "header-case-sensitivity": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"HttpHeaders exposes case-insensitive header lookup"}],"kind":"atomic","name":"http_loss_value"},
+              "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by BodyHandlers.ofInputStream and BodyHandlers.ofPublisher"}],"kind":"atomic","name":"http_loss_value"}
+            }
+          },
+          "predicate_pattern": {"args":[{"kind":"var","name":"${surface}"}],"kind":"atomic","name":"concept:http-response"}
+        }
+      ],
+      "library": "java.net.http.HttpClient",
+      "sugar_name": "http-java-net-http",
+      "target_language": "java"
+    },
+    "critical": false,
+    "kind": "sugar",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "HTTP concept sugar cell for Java 11 java.net.http.HttpClient.",
+    "source_url": "menagerie/java-language-signature/specs/sugar/http-java-net-http.json"
+  }
+}

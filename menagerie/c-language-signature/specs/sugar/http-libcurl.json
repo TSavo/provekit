@@ -1,0 +1,108 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-14T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:61f7e58b2c310920b420c9f16519589b8ed39d652e67d025502ca291492a999687deaaad3e8f8555e7d50dd74e42a9f4d4f57469cefd798d983a9f3b1106dc96",
+    "content": {
+      "concept_bindings": [
+        {
+          "concept": "concept:http-request",
+          "concept_cid": "blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43",
+          "loss_record": {
+            "body-encoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"caller-provided bytes or upload callbacks; libcurl does not impose text encoding"}],"kind":"atomic","name":"http_loss_value"},
+            "cancellation": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"manual callback abort through progress callbacks or easy handle cleanup"}],"kind":"atomic","name":"http_loss_value"},
+            "cookie-jar": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_COOKIEFILE, CURLOPT_COOKIEJAR, and CURLOPT_COOKIELIST"}],"kind":"atomic","name":"http_loss_value"},
+            "redirect-policy": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_FOLLOWLOCATION and CURLOPT_MAXREDIRS"}],"kind":"atomic","name":"http_loss_value"},
+            "retries": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"refused: curl_easy_perform has no automatic retry policy; caller must retry"}],"kind":"atomic","name":"http_loss_value"},
+            "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_READFUNCTION, CURLOPT_READDATA, and upload mode"}],"kind":"atomic","name":"http_loss_value"},
+            "sync-vs-async": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"sync-only for curl_easy_perform; async requires the multi interface outside this cell"}],"kind":"atomic","name":"http_loss_value"},
+            "timeout": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_TIMEOUT_MS and CURLOPT_CONNECTTIMEOUT_MS"}],"kind":"atomic","name":"http_loss_value"},
+            "tls-pinning": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_PINNEDPUBLICKEY and TLS verification options"}],"kind":"atomic","name":"http_loss_value"}
+          },
+          "surface": {
+            "executing_operations": ["curl_easy_perform"],
+            "request_slots": {
+              "body": ["CURLOPT_POSTFIELDS", "CURLOPT_READFUNCTION", "CURLOPT_READDATA", "CURLOPT_POSTFIELDSIZE_LARGE"],
+              "headers": ["CURLOPT_HTTPHEADER", "curl_slist"],
+              "method": ["CURLOPT_CUSTOMREQUEST", "CURLOPT_HTTPGET", "CURLOPT_POST", "CURLOPT_UPLOAD", "CURLOPT_NOBODY"],
+              "url": ["CURLOPT_URL"]
+            }
+          }
+        },
+        {
+          "concept": "concept:http-response",
+          "concept_cid": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5",
+          "loss_record": {
+            "body-decoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"caller-controlled bytes; content decoding occurs only when configured with CURLOPT_ACCEPT_ENCODING"}],"kind":"atomic","name":"http_loss_value"},
+            "header-case-sensitivity": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"raw header callback preserves received casing; case-insensitive lookup is caller responsibility"}],"kind":"atomic","name":"http_loss_value"},
+            "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_WRITEFUNCTION streaming response chunks"}],"kind":"atomic","name":"http_loss_value"}
+          },
+          "surface": {
+            "response_slots": {
+              "body": ["CURLOPT_WRITEFUNCTION", "CURLOPT_WRITEDATA"],
+              "headers": ["CURLOPT_HEADERFUNCTION", "CURLOPT_HEADERDATA"],
+              "status": ["CURLINFO_RESPONSE_CODE"]
+            },
+            "response_types": ["CURLcode plus easy handle info and callbacks"]
+          }
+        }
+      ],
+      "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "concept-binding:http-request",
+            "template": "curl_easy_perform binds configured easy handle request fields to concept:http-request"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "body-encoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"caller-provided bytes or upload callbacks; libcurl does not impose text encoding"}],"kind":"atomic","name":"http_loss_value"},
+              "cancellation": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"manual callback abort through progress callbacks or easy handle cleanup"}],"kind":"atomic","name":"http_loss_value"},
+              "cookie-jar": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_COOKIEFILE, CURLOPT_COOKIEJAR, and CURLOPT_COOKIELIST"}],"kind":"atomic","name":"http_loss_value"},
+              "redirect-policy": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_FOLLOWLOCATION and CURLOPT_MAXREDIRS"}],"kind":"atomic","name":"http_loss_value"},
+              "retries": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"refused: curl_easy_perform has no automatic retry policy; caller must retry"}],"kind":"atomic","name":"http_loss_value"},
+              "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_READFUNCTION, CURLOPT_READDATA, and upload mode"}],"kind":"atomic","name":"http_loss_value"},
+              "sync-vs-async": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"sync-only for curl_easy_perform; async requires the multi interface outside this cell"}],"kind":"atomic","name":"http_loss_value"},
+              "timeout": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_TIMEOUT_MS and CURLOPT_CONNECTTIMEOUT_MS"}],"kind":"atomic","name":"http_loss_value"},
+              "tls-pinning": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_PINNEDPUBLICKEY and TLS verification options"}],"kind":"atomic","name":"http_loss_value"}
+            }
+          },
+          "predicate_pattern": {"args":[{"kind":"var","name":"${surface}"}],"kind":"atomic","name":"concept:http-request"}
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "concept-binding:http-response",
+            "template": "libcurl response info and callbacks bind to concept:http-response"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "body-decoding": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"caller-controlled bytes; content decoding occurs only when configured with CURLOPT_ACCEPT_ENCODING"}],"kind":"atomic","name":"http_loss_value"},
+              "header-case-sensitivity": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"raw header callback preserves received casing; case-insensitive lookup is caller responsibility"}],"kind":"atomic","name":"http_loss_value"},
+              "streaming-body": {"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"supported by CURLOPT_WRITEFUNCTION streaming response chunks"}],"kind":"atomic","name":"http_loss_value"}
+            }
+          },
+          "predicate_pattern": {"args":[{"kind":"var","name":"${surface}"}],"kind":"atomic","name":"concept:http-response"}
+        }
+      ],
+      "library": "libcurl easy interface",
+      "sugar_name": "http-libcurl",
+      "target_language": "c"
+    },
+    "critical": false,
+    "kind": "sugar",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "note": "HTTP concept sugar cell for C libcurl easy interface.",
+    "source_url": "menagerie/c-language-signature/specs/sugar/http-libcurl.json"
+  }
+}
