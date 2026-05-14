@@ -58,10 +58,20 @@ body-template-entry = {
 composition-point = "before" / "after-return" / "after-throw" / "around"
 observation-mode  = "witness" / "monitor" / "emitter" / "gate"
 
-; Locked JCS key order: kind, template
+; Locked JCS key order: citations, kind, template
 body-emission-template = {
-  kind:      "verbatim",
-  template:  tstr
+  ? citations: [+ concept-citation],
+  kind:       "verbatim",
+  template:   tstr
+}
+
+; Locked JCS key order: at, concept_name, mode, params, placeholder
+concept-citation = {
+  ? at:           tstr,
+  concept_name:   tstr,
+  ? mode:         observation-mode,
+  params:        [* tstr],
+  placeholder:    tstr
 }
 
 ; Locked JCS key order: form, value
@@ -90,6 +100,7 @@ signature-guard = {
 | `mode` | no | Runtime observation mode this entry covers when `concept_name == "concept:contract-observation"`. Absent means the entry is mode-agnostic and remains v1.0.0-compatible. |
 | `composition_point` | no | Wrapper insertion point for observation-body entries. Values are `before`, `after-return`, `after-throw`, or `around`. Absent means the entry is an ordinary function body template. |
 | `emission_template.template` | yes | Surface-syntax template. `${param0}`, `${param1}`, ... bind to parameter names in order. `${return_type}` binds to the target-language return type after `map_source_type` resolution. Unbound placeholders MUST cause the entry to refuse-match (treated as non-applicable). |
+| `emission_template.citations` | no | Nested concept realization cells to substitute before the final unbound-placeholder check. Each citation names a placeholder in `template`, a `concept_name`, optional `mode`, and `params` rendered in the outer template scope before recursive realization. |
 | `loss_record_contribution` | yes | Loss-record incurred when selected. v1.0.0 form MUST be `"literal"`. |
 | `signature_guard` | no | If present, an entry MAY refuse-match when the binding's signature violates the guard (e.g., a 2-arg entry MUST NOT match a 1-arg binding). Used to bound entry applicability beyond bare concept-name match. |
 
@@ -114,8 +125,14 @@ For each binding with resolved `concept_name = C`:
 2. Drop candidates whose `mode` is present unless the binding carries the same observation mode.
 3. For each candidate, check `signature_guard` (if present) against the binding's signature; drop on mismatch.
 4. Of the remaining candidates, select the one whose `loss_record_contribution` minimizes against the loaded loss function (`2026-05-12-loss-function-memento.md`).
-5. Render `emission_template.template` with the binding's parameter and type bindings.
+5. Render `emission_template.template` with the binding's parameter and type bindings. If the template carries `citations`, render each citation's `params` in the outer template scope, recursively realize `citation.concept_name` in the same target language and optional `citation.mode`, and replace `${citation.placeholder}` with the recursive body.
 6. If no candidate remains, fall through to the language stub (`cmd_transport.rs::stub_body_for`) under default mode, or refuse under `--strict-body-template`.
+
+Recursive citation realization MUST fail closed: if a citation cannot be
+resolved, if any citation parameter retains an unbound placeholder, or if a
+cycle is detected in the `(concept_name, mode)` stack, the outer candidate
+refuse-matches. Realizers SHOULD bound recursion depth; the default Java
+realizer uses a depth limit of eight cells.
 
 ### §2.3 Template substitution
 
@@ -125,7 +142,45 @@ The renderer substitutes:
 - `${return_type}` → mapped target-language return type.
 - `${param_type_0}`, ... `${param_type_N-1}` → mapped target-language parameter types.
 
+Target kits MAY define deterministic target-local derived placeholders when a
+body-template cell needs a surface enum or library constant rather than the raw
+ProofIR value. A derived placeholder MUST fail closed when the source value is
+outside the declared source sort. The Java default logger cell defines
+`${paramN_jul_level}` for canonical `LogLevel` values, mapping `trace -> FINEST`,
+`debug -> FINE`, `info -> INFO`, `warn -> WARNING`, and `error|fatal -> SEVERE`.
+
 Any other `${...}` placeholder is unbound and causes refuse-match per §2.1.
+Citation placeholders are not ordinary template variables. They MUST be
+declared by `emission_template.citations[]` and are resolved before the final
+unbound-placeholder check.
+
+### §2.4 Nested concept citations
+
+Nested citations let one body-template cell delegate part of its emission to
+another concept hub. This is how monitor and emitter wrappers stay logger-agnostic:
+
+```json
+{
+  "concept_name": "concept:contract-observation",
+  "mode": "monitor",
+  "emission_template": {
+    "kind": "verbatim",
+    "template": "${log_emit}",
+    "citations": [
+      {
+        "placeholder": "log_emit",
+        "concept_name": "concept:log-emit",
+        "mode": "emitter",
+        "params": ["INFO", "\"observed \" + ${param0}", "${param1}"]
+      }
+    ]
+  }
+}
+```
+
+The substrate still sees a body-template plugin. The kit owns the target-language
+surface and recursively realizes the cited concept using the already-loaded
+catalog entries for that target. No new memento family is introduced.
 
 ## §3. CLI surface
 
