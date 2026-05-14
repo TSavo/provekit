@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:fb35f2196ebca55a964e1829a5f0f2842a0d3de53406fcca504e93b0aa1e55c09b7735740c382564817d279146479d8e4a3963377ee42878c6bb979da44a5cc7",
+    "cid": "blake3-512:f211f2509d6a7deacc2d23d33f87d1259d2835ba7292231f377d7f234f3d22f56dbd2f348314f313accc62ec50ffcec40df6266ca9eb78ca2160a5b80468725e",
     "content": {
       "entries": [
         {
@@ -57,6 +57,64 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
+          }
+        },
+        {
+          "concept_name": "http-request",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "import urllib.request\nwith urllib.request.urlopen(${param0}) as response:\n    return response.status"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5"
+                  }
+                ],
+                "head": "atomic",
+                "name": "bridge-b-http-request-cites-concept-cids"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "http-response",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.status"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5"
+                  }
+                ],
+                "head": "atomic",
+                "name": "bridge-b-http-response-cites-concept-cid"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "int"
           }
         },
         {

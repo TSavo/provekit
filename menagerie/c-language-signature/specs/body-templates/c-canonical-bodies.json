@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:8ef55920ab677d4fb44260ed9993295585fd76cc7df67c28673424a2cf49c2f76164e4cc9f1f2739a063ed2f27cb11cd34024c54a6cdfa9af2828e9946d1ff0e",
+    "cid": "blake3-512:f0948c8f4f00359bfdafb3c1bc19227ffc70f95807dcc53450f4c84be2d44bc77770aaa54f3058014febbad276a759ebcf8cc2acabf5e6e6bddada8167c684a2",
     "content": {
       "entries": [
         {
@@ -73,6 +73,69 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
+          }
+        },
+        {
+          "concept_name": "http-request",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "long status = 0;\nCURL *curl = curl_easy_init();\nif (curl == NULL) return 0;\ncurl_easy_setopt(curl, CURLOPT_URL, ${param0});\ncurl_easy_setopt(curl, CURLOPT_NOBODY, 1L);\ncurl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);\nif (curl_easy_perform(curl) == CURLE_OK) {\n    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);\n}\ncurl_easy_cleanup(curl);\nreturn status;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5"
+                  }
+                ],
+                "head": "atomic",
+                "name": "bridge-b-http-request-cites-concept-cids"
+              },
+              "header_dependency": {
+                "args": [],
+                "head": "atomic",
+                "name": "c-libcurl-template-requires-curl-header"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "long"
+          }
+        },
+        {
+          "concept_name": "http-response",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "long status = 0;\ncurl_easy_getinfo(${param0}, CURLINFO_RESPONSE_CODE, &status);\nreturn status;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5"
+                  }
+                ],
+                "head": "atomic",
+                "name": "bridge-b-http-response-cites-concept-cid"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "long"
           }
         },
         {

@@ -133,7 +133,7 @@ fn java_canonical_bodies_cid_self_consistent() {
         .join("menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:e9c5dd414a182211d5b85e3f2052d491e85c90db5ed29fb1145c7d1ad7f4e34f71de80c12a210202c6bd7efe26639da0e4e1c446beca786245d4a3dc6708204b",
+        "blake3-512:8070d5de8bedf4a21c765b6b7f48518c43a1a8547b5e893b7af045467541d7d085d7b1b64857f64f05927a6fabee55002310db293adec3e59b17b56730bd22b9",
     );
 }
 
@@ -154,7 +154,7 @@ fn python_canonical_bodies_cid_self_consistent() {
     );
     assert_self_consistent(
         path,
-        "blake3-512:fb35f2196ebca55a964e1829a5f0f2842a0d3de53406fcca504e93b0aa1e55c09b7735740c382564817d279146479d8e4a3963377ee42878c6bb979da44a5cc7",
+        "blake3-512:f211f2509d6a7deacc2d23d33f87d1259d2835ba7292231f377d7f234f3d22f56dbd2f348314f313accc62ec50ffcec40df6266ca9eb78ca2160a5b80468725e",
     );
 }
 
@@ -173,7 +173,7 @@ fn c_canonical_bodies_cid_self_consistent() {
         .join("menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:8ef55920ab677d4fb44260ed9993295585fd76cc7df67c28673424a2cf49c2f76164e4cc9f1f2739a063ed2f27cb11cd34024c54a6cdfa9af2828e9946d1ff0e",
+        "blake3-512:f0948c8f4f00359bfdafb3c1bc19227ffc70f95807dcc53450f4c84be2d44bc77770aaa54f3058014febbad276a759ebcf8cc2acabf5e6e6bddada8167c684a2",
     );
 }
 
@@ -183,6 +183,6 @@ fn rust_canonical_bodies_cid_self_consistent() {
         .join("menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:f4a13083c93185636c3116bd0ba55bae949d4b89b9736184552400d4dd93b4906e8d99be2837e592679b8e6df08352318b78b8563b38251c356fabc1e2761cec",
+        "blake3-512:aa5946b88c2798cd7399ec22db6f170970a8d0f9dac88b1e81fc0a31ab40eddada236730450594894f745096cf033607dbbb35d0cd2a59300fa9ac5e2df340cd",
     );
 }
