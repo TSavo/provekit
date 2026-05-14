@@ -1454,18 +1454,18 @@ fn apply_canonical_rewrite(
                     .collect(),
                 sugar_plugins: sugar_plugins.to_vec(),
             };
-            match crate::cmd_transport::realize_for_bind_with_contract(
-                target_lang,
-                &b.site_fn,
-                &b.param_names,
-                &b.param_types,
-                &b.return_type,
-                &concept_name,
-                Some(mode_label(mode)),
-                request.contract.clone(),
-                sugar_plugins.to_vec(),
-            ) {
-                Ok(r) => {
+            match crate::kit_dispatch::dispatch_realize(root, target_lang, &request) {
+                Ok(realized) => {
+                    let r = crate::cmd_transport::RealizedSource {
+                        extension: Box::leak(realized.extension.into_boxed_str()),
+                        source: realized.source,
+                        is_stub: realized.is_stub,
+                        emitted_artifact_cid: realized.emitted_artifact_cid,
+                        observed_loss_record: realized.observed_loss_record,
+                        used_sugars: realized.used_sugars,
+                        observation_wrapper_emission_record: realized
+                            .observation_wrapper_emission_record,
+                    };
                     if r.is_stub {
                         stub_concepts.insert(concept_name.to_string());
                     }

@@ -2106,6 +2106,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-realize-rust-core"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-self-contracts"
 version = "0.1.0"
 dependencies = [

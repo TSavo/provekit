@@ -1,0 +1,250 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-14T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:f4a13083c93185636c3116bd0ba55bae949d4b89b9736184552400d4dd93b4906e8d99be2837e592679b8e6df08352318b78b8563b38251c356fabc1e2761cec",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "assert",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0} <= 0 {\n    panic!(\"assertion failed: concept:assert violated\");\n}\n${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_message": {
+                "args": [],
+                "head": "atomic",
+                "name": "assert-panic-message-not-preserved"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "bool-cell",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "!${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "identity",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "list",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let mut acc = 0i64;\nfor &v in ${param0} {\n    acc += v;\n}\nacc"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "option",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0}.is_empty() {\n    -1\n} else {\n    ${param0}[0]\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "sentinel_for_none": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-none-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "option-bind",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0}.is_empty() {\n    -1\n} else {\n    let v = ${param0}[0];\n    if v <= 0 {\n        -1\n    } else {\n        v * 2\n    }\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_bind_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "option-bind-body-is-fixture-specific-doubling"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "pair",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "(${param1}, ${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "argument_order_swap": {
+                "args": [],
+                "head": "atomic",
+                "name": "pair-swap-baked-into-template-from-fixture"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "result",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param1} == 0 {\n    -1\n} else {\n    ${param0} / ${param1}\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "sentinel_for_err": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-err-encoded-as-negative-one-sentinel"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "result-bind",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param1} == 0 {\n    -1\n} else {\n    let q = ${param0} / ${param1};\n    if q < 0 {\n        -1\n    } else {\n        q * 2\n    }\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_bind_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "result-bind-body-is-fixture-specific-doubling"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "retry-loop",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let mut attempt = 0;\nwhile attempt < ${param0} {\n    attempt += 1;\n    if attempt >= 1 {\n        return true;\n    }\n}\nfalse"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_termination": {
+                "args": [],
+                "head": "atomic",
+                "name": "retry-loop-termination-condition-is-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "tagged-union",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0} < 0 {\n    0\n} else if ${param0} == 0 {\n    1\n} else {\n    2\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_labels": {
+                "args": [],
+                "head": "atomic",
+                "name": "tagged-union-labels-0-1-2-are-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "unit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0
+          }
+        }
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies"
+    },
+    "critical": false,
+    "kind": "body-template",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  }
+}

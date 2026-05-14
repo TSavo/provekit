@@ -24,6 +24,7 @@ members = [
     "provekit-baseline-rust-std",
     "libprovekit",
     "provekit-cli",
+    "provekit-realize-rust-core",
     "provekit-macros",
     "provekit-macros-rt",
     "provekit-lift",
