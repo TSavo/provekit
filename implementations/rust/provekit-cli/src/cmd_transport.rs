@@ -5,13 +5,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use clap::Parser;
 use libprovekit::core::{Cid, Term};
 use libprovekit::desugar::{load_desugaring_rules_from_dir, DesugaringSet};
 use libprovekit::transport::{transport_term, OperationTransport, TermTransport};
 use owo_colors::OwoColorize;
-use provekit_canonicalizer::blake3_512_of;
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
 use provekit_ir_symbolic::{ConstValue, Formula, Term as SymTerm};
 use provekit_ir_types::{
     EffectOccurrence, EffectSlotDescriptor, ObservationWrapperMemento,
@@ -1034,7 +1035,8 @@ pub struct RealizedSource {
     pub used_sugars: Vec<serde_json::Value>,
     /// Raw `observation_wrapper_emission_record` object from the kit response,
     /// present when the kit emitted a wrapper FCM for an observation mode.
-    /// Fields: wrapper_fcm_cid, observer_effects, preservation_claim_cid.
+    /// Fields: object_fcm_cid, wrapper_fcm_cid, observer_effects,
+    /// preservation_claim_cid.
     pub observation_wrapper_emission_record: Option<serde_json::Value>,
 }
 
@@ -1043,11 +1045,45 @@ pub struct RealizedSource {
 /// pipeline identity without tying it to the lift.
 const REALIZE_PROVENANCE_CID_SEED: &[u8] = b"provekit-cli/realize-v0/provenance";
 
+pub fn cid_for_serializable<T: Serialize>(value: &T) -> Result<String, String> {
+    let json =
+        serde_json::to_value(value).map_err(|err| format!("serialize value for cid: {err}"))?;
+    cid_for_json_value(&json)
+}
+
+pub fn cid_for_json_value(value: &serde_json::Value) -> Result<String, String> {
+    let canonical = canonical_value_from_json(value)?;
+    Ok(blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes()))
+}
+
+fn canonical_value_from_json(value: &serde_json::Value) -> Result<Arc<CanonicalValue>, String> {
+    match value {
+        serde_json::Value::Null => Ok(CanonicalValue::null()),
+        serde_json::Value::Bool(value) => Ok(CanonicalValue::boolean(*value)),
+        serde_json::Value::Number(number) => {
+            number.as_i64().map(CanonicalValue::integer).ok_or_else(|| {
+                format!("non-i64 JSON number is not supported in JCS CID input: {number}")
+            })
+        }
+        serde_json::Value::String(value) => Ok(CanonicalValue::string(value.clone())),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(canonical_value_from_json)
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::array),
+        serde_json::Value::Object(entries) => entries
+            .iter()
+            .map(|(key, value)| canonical_value_from_json(value).map(|value| (key.clone(), value)))
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::object),
+    }
+}
+
 /// Pure function: given the RealizeRequest and RealizedSource, mint the
 /// `RealizationPlanMemento` (and, when the kit returned an
 /// `observation_wrapper_emission_record`, the `ObservationWrapperMemento`).
 ///
-/// Returns `(plan_memento, wrapper_memento_option)`.
+/// Returns `(plan_memento, wrapper_memento_option, wrapper_fcm_option)`.
 ///
 /// Blocker #1, #2, #4 implementation.  The ParametricRealizationMemento is
 /// constructed synthetically (one slot per param) because the catalog lookup
@@ -1059,7 +1095,14 @@ pub fn mint_realization_artifacts(
     request: &crate::kit_dispatch::RealizeRequest,
     realized: &RealizedSource,
     concept_site_cid: &str,
-) -> Result<(RealizationPlanMemento, Option<ObservationWrapperMemento>), String> {
+) -> Result<
+    (
+        RealizationPlanMemento,
+        Option<ObservationWrapperMemento>,
+        Option<serde_json::Value>,
+    ),
+    String,
+> {
     let provenance_cid = blake3_512_of(REALIZE_PROVENANCE_CID_SEED);
 
     // ---- Build synthetic ParametricRealizationMemento (Blocker #3 inline) ----
@@ -1135,7 +1178,10 @@ pub fn mint_realization_artifacts(
         mode_str,
         "witness" | "monitor" | "emitter" | "gate" | "dispatcher"
     );
-    let wrapper_memento: Option<ObservationWrapperMemento> = if is_observation_mode {
+    let (wrapper_memento, wrapper_fcm): (
+        Option<ObservationWrapperMemento>,
+        Option<serde_json::Value>,
+    ) = if is_observation_mode {
         if let Some(record) = &realized.observation_wrapper_emission_record {
             let wrapper_fcm_cid = record
                 .get("wrapper_fcm_cid")
@@ -1149,6 +1195,13 @@ pub fn mint_realization_artifacts(
                 .and_then(Value::as_str)
                 .ok_or_else(|| {
                     "observation_wrapper_emission_record missing preservation_claim_cid".to_string()
+                })?
+                .to_string();
+            let object_fcm_cid = record
+                .get("object_fcm_cid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    "observation_wrapper_emission_record missing object_fcm_cid".to_string()
                 })?
                 .to_string();
             let emitted = realized
@@ -1172,7 +1225,38 @@ pub fn mint_realization_artifacts(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let object_fcm_cid = concept_site_cid.to_string();
+            let wrapper_fcm = record
+                .get("wrapper_fcm")
+                .ok_or_else(|| {
+                    "observation_wrapper_emission_record missing wrapper_fcm".to_string()
+                })?
+                .clone();
+            let computed_wrapper_fcm_cid = cid_for_json_value(&wrapper_fcm).map_err(|err| {
+                format!("observation_wrapper_emission_record wrapper_fcm invalid: {err}")
+            })?;
+            if computed_wrapper_fcm_cid != wrapper_fcm_cid {
+                return Err(format!(
+                    "observation_wrapper_emission_record wrapper_fcm_cid mismatch: \
+                     declared {wrapper_fcm_cid}, computed {computed_wrapper_fcm_cid}"
+                ));
+            }
+            let raw_wrapper_effects = wrapper_fcm
+                .get("effects")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    "observation_wrapper_emission_record wrapper_fcm missing effects".to_string()
+                })?;
+            let wrapper_effects: Vec<EffectOccurrence> = raw_wrapper_effects
+                .iter()
+                .enumerate()
+                .map(|(idx, v)| {
+                    serde_json::from_value(v.clone()).map_err(|err| {
+                        format!(
+                            "observation_wrapper_emission_record wrapper_fcm.effects[{idx}] malformed: {err}"
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             let w = ObservationWrapperMemento {
                 emitted_artifact_cid: emitted,
                 mode: mode_str.to_string(),
@@ -1183,28 +1267,26 @@ pub fn mint_realization_artifacts(
                 wrapper_fcm_cid,
             };
             // validate before persisting (spec §7, fail-closed).
-            // v1: object FCM effects are unknown at realize-time (we only
-            // receive the observer-side effects from the kit). We pass
-            // observer_effects as wrapper_effects so the "each observer
-            // effect is present in the wrapper" invariant trivially holds.
-            // The "observer effect not present in object" check uses &[]
-            // (no object effects known), which is safe because the kit
-            // is contractually responsible for not crossing that boundary.
-            let wrapper_effects_for_validate = w.observer_effects.clone();
-            w.validate(&[], &wrapper_effects_for_validate, &[])
+            // The kit must return the concrete wrapper FCM object so the CID
+            // is resolvable and observer_effects can be checked against the
+            // wrapper's declared effects. Object effects are still not carried
+            // through this v1 dispatch path, so the object side remains an
+            // empty set until the source FCM catalog is threaded here.
+            w.validate(&[], &wrapper_effects, &[])
                 .map_err(|e| format!("ObservationWrapperMemento invariant violation: {e:?}"))?;
-            Some(w)
+            (Some(w), Some(wrapper_fcm))
         } else {
-            None
+            (None, None)
         }
     } else {
-        None
+        (None, None)
     };
 
     // ---- Blocker #1: RealizationPlanMemento ----
     let observation_wrapper_cid = wrapper_memento
         .as_ref()
-        .map(|w| blake3_512_of(serde_json::to_string(w).unwrap_or_default().as_bytes()));
+        .map(cid_for_serializable)
+        .transpose()?;
     let plan = RealizationPlanMemento {
         candidate_set_cid: selected_realization_cid.clone(),
         concept_site_cid: concept_site_cid.to_string(),
@@ -1222,7 +1304,7 @@ pub fn mint_realization_artifacts(
     plan.validate_against(&realization)
         .map_err(|e| format!("RealizationPlanMemento validation failed: {e}"))?;
 
-    Ok((plan, wrapper_memento))
+    Ok((plan, wrapper_memento, wrapper_fcm))
 }
 
 /// Public-crate bridge for `cmd_bind`'s canonical-mode path.
@@ -1391,13 +1473,54 @@ mod mint_realization_artifacts_tests {
         }
     }
 
+    fn valid_effect() -> serde_json::Value {
+        serde_json::json!({
+            "args": [],
+            "discharge_key": "informational-dischargeable",
+            "locator": null,
+            "occurrence_kind": "Io",
+            "role": "body",
+            "signature_cid": "sig-cid-1"
+        })
+    }
+
+    fn valid_wrapper_fcm(effect: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "autoMintedMementos": [],
+            "bodyCid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "effects": [effect],
+            "fnName": "foo$provekit_emitter",
+            "formalSorts": [],
+            "formals": [],
+            "kind": "function-contract",
+            "locus": {"function": "foo", "surface": "java-emitter-wrapper"},
+            "post": {"args": [], "kind": "atomic", "name": "true"},
+            "pre": {"args": [], "kind": "atomic", "name": "true"},
+            "returnSort": {"args": [], "kind": "ctor", "name": "int"},
+            "schemaVersion": "1"
+        })
+    }
+
+    fn valid_wrapper_record() -> serde_json::Value {
+        let effect = valid_effect();
+        let wrapper_fcm = valid_wrapper_fcm(effect.clone());
+        let wrapper_fcm_cid = cid_for_json_value(&wrapper_fcm).expect("wrapper fcm cid");
+        serde_json::json!({
+            "object_fcm_cid": "object-fcm-cid-xyz",
+            "wrapper_fcm": wrapper_fcm,
+            "wrapper_fcm_cid": wrapper_fcm_cid,
+            "preservation_claim_cid": "preservation-claim-cid-xyz",
+            "observer_effects": [effect]
+        })
+    }
+
     /// Blocker #1 + #2: RealizationPlanMemento IS minted on a successful
     /// realize call and validate_against passes.
     #[test]
     fn realization_plan_memento_minted_on_success() {
         let req = make_request(Some("monitor"));
         let realized = make_realized(None);
-        let (plan, wrapper) =
+        let (plan, wrapper, wrapper_fcm) =
             mint_realization_artifacts(&req, &realized, "concept-site-cid-123").unwrap();
         assert_eq!(plan.concept_site_cid, "concept-site-cid-123");
         assert_eq!(
@@ -1409,6 +1532,10 @@ mod mint_realization_artifacts_tests {
             wrapper.is_none(),
             "no wrapper_emission_record => no wrapper"
         );
+        assert!(
+            wrapper_fcm.is_none(),
+            "no wrapper_emission_record => no wrapper FCM"
+        );
     }
 
     /// Blocker #2: validate_against passes (no slot-count mismatch).
@@ -1416,7 +1543,7 @@ mod mint_realization_artifacts_tests {
     fn plan_validate_against_passes() {
         let req = make_request(None);
         let realized = make_realized(None);
-        let (plan, _) =
+        let (plan, _, _) =
             mint_realization_artifacts(&req, &realized, "concept-site-cid-999").unwrap();
         // If validate_against failed, mint_realization_artifacts would have
         // returned Err. Reaching here proves it passed.
@@ -1435,24 +1562,13 @@ mod mint_realization_artifacts_tests {
     fn observation_wrapper_memento_minted_for_observation_modes() {
         for mode in ["witness", "monitor", "emitter", "gate"] {
             let req = make_request(Some(mode));
-            // Supply a minimal valid observation_wrapper_emission_record.
-            // observer_effects must be non-empty (spec CDDL invariant).
-            let wrapper_record = serde_json::json!({
-                "wrapper_fcm_cid": "wrapper-fcm-cid-xyz",
-                "preservation_claim_cid": "preservation-claim-cid-xyz",
-                "observer_effects": [
-                    {
-                        "args": [],
-                        "discharge_key": "informational-dischargeable",
-                        "locator": null,
-                        "occurrence_kind": "Io",
-                        "role": "body",
-                        "signature_cid": "sig-cid-1"
-                    }
-                ]
-            });
+            let wrapper_record = valid_wrapper_record();
+            let expected_wrapper_fcm_cid = wrapper_record["wrapper_fcm_cid"]
+                .as_str()
+                .expect("wrapper_fcm_cid")
+                .to_string();
             let realized = make_realized(Some(wrapper_record));
-            let (plan, wrapper) =
+            let (plan, wrapper, wrapper_fcm) =
                 mint_realization_artifacts(&req, &realized, "concept-site-cid-w").unwrap();
             assert!(
                 wrapper.is_some(),
@@ -1460,8 +1576,12 @@ mod mint_realization_artifacts_tests {
             );
             let w = wrapper.unwrap();
             assert_eq!(w.mode, mode);
-            assert_eq!(w.wrapper_fcm_cid, "wrapper-fcm-cid-xyz");
-            assert_eq!(w.object_fcm_cid, "concept-site-cid-w");
+            assert_eq!(w.wrapper_fcm_cid, expected_wrapper_fcm_cid);
+            assert_eq!(w.object_fcm_cid, "object-fcm-cid-xyz");
+            assert!(
+                wrapper_fcm.is_some(),
+                "{mode} mode + wrapper record => wrapper FCM must be returned"
+            );
             assert!(
                 plan.observation_wrapper_cid.is_some(),
                 "plan.observation_wrapper_cid must be set when wrapper is minted"
@@ -1472,20 +1592,15 @@ mod mint_realization_artifacts_tests {
     #[test]
     fn malformed_observer_effects_fail_closed() {
         let req = make_request(Some("witness"));
-        let wrapper_record = serde_json::json!({
-            "wrapper_fcm_cid": "wrapper-fcm-cid-xyz",
-            "preservation_claim_cid": "preservation-claim-cid-xyz",
-            "observer_effects": [
-                {
-                    "args": [],
-                    "discharge_key": "informational-dischargeable",
-                    "locator": null,
-                    "occurrence_kind": "NotARealKind",
-                    "role": "body",
-                    "signature_cid": "sig-cid-1"
-                }
-            ]
-        });
+        let mut wrapper_record = valid_wrapper_record();
+        wrapper_record["observer_effects"] = serde_json::json!([{
+            "args": [],
+            "discharge_key": "informational-dischargeable",
+            "locator": null,
+            "occurrence_kind": "NotARealKind",
+            "role": "body",
+            "signature_cid": "sig-cid-1"
+        }]);
         let realized = make_realized(Some(wrapper_record));
         let err = mint_realization_artifacts(&req, &realized, "concept-site-cid-w").unwrap_err();
         assert!(
@@ -1497,15 +1612,48 @@ mod mint_realization_artifacts_tests {
     #[test]
     fn missing_observer_effects_fail_closed() {
         let req = make_request(Some("witness"));
-        let wrapper_record = serde_json::json!({
-            "wrapper_fcm_cid": "wrapper-fcm-cid-xyz",
-            "preservation_claim_cid": "preservation-claim-cid-xyz"
-        });
+        let mut wrapper_record = valid_wrapper_record();
+        wrapper_record
+            .as_object_mut()
+            .expect("wrapper record object")
+            .remove("observer_effects");
         let realized = make_realized(Some(wrapper_record));
         let err = mint_realization_artifacts(&req, &realized, "concept-site-cid-w").unwrap_err();
         assert!(
             err.contains("missing observer_effects"),
             "missing observer_effects must fail closed, got {err}"
+        );
+    }
+
+    #[test]
+    fn missing_wrapper_fcm_fails_closed() {
+        let req = make_request(Some("emitter"));
+        let mut wrapper_record = valid_wrapper_record();
+        wrapper_record
+            .as_object_mut()
+            .expect("wrapper record object")
+            .remove("wrapper_fcm");
+        let realized = make_realized(Some(wrapper_record));
+        let err = mint_realization_artifacts(&req, &realized, "concept-site-cid-w").unwrap_err();
+        assert!(
+            err.contains("missing wrapper_fcm"),
+            "wrapper_fcm_cid must resolve to a concrete wrapper FCM object, got {err}"
+        );
+    }
+
+    #[test]
+    fn missing_object_fcm_cid_fails_closed() {
+        let req = make_request(Some("witness"));
+        let mut wrapper_record = valid_wrapper_record();
+        wrapper_record
+            .as_object_mut()
+            .expect("wrapper record object")
+            .remove("object_fcm_cid");
+        let realized = make_realized(Some(wrapper_record));
+        let err = mint_realization_artifacts(&req, &realized, "concept-site-cid-w").unwrap_err();
+        assert!(
+            err.contains("missing object_fcm_cid"),
+            "missing object_fcm_cid must fail closed, got {err}"
         );
     }
 }

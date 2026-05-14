@@ -1,5 +1,6 @@
 package com.provekit.realize;
 
+import com.provekit.ir.Blake3;
 import com.provekit.ir.Jcs;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -55,7 +56,8 @@ final class SugarRealizer {
             String source,
             boolean isStub,
             String observedLossRecord,
-            String usedSugarsJson) {}
+            String usedSugarsJson,
+            String observationWrapperEmissionRecord) {}
 
     /**
      * Emit a Java method for a single function. Body source comes from the
@@ -114,7 +116,8 @@ final class SugarRealizer {
 
         String className = snakeToPascal(function) + "Transported";
         String mappedReturn = mapSourceType(returnType);
-        List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, modeList(mode, modes));
+        List<String> requestedModes = modeList(mode, modes);
+        List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, requestedModes);
         boolean hasBeanValidationNotNull = sugarEmissions.stream()
                 .anyMatch(e -> e.surfaceLocator().startsWith("annotation:") && e.rendered().startsWith("@NotNull"));
         boolean hasJUnitWitness = sugarEmissions.stream()
@@ -142,6 +145,22 @@ final class SugarRealizer {
         boolean isStub = bodyTemplate.isEmpty();
         String bodyContent = bodyTemplate.map(RenderedBody::body)
                 .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
+        Jcs.Json bodyLossRecord = bodyTemplate.map(RenderedBody::lossRecord).orElse(Jcs.object());
+        String observationWrapperEmissionRecord = null;
+        if (!isStub) {
+            Optional<ObservationComposition> observation = composeEmitterAfterReturn(
+                    requestedModes,
+                    bodyContent,
+                    mappedReturn,
+                    function,
+                    conceptName,
+                    contract);
+            if (observation.isPresent()) {
+                bodyContent = observation.get().body();
+                bodyLossRecord = combineLossRecords(bodyLossRecord, observation.get().lossRecord());
+                observationWrapperEmissionRecord = observation.get().observationWrapperEmissionRecord();
+            }
+        }
         // Multi-line templates: each internal line gets the same 8-space
         // method-body indent. Single-line bodies are unaffected (no \n).
         String indentedBody = bodyContent.replace("\n", "\n        ");
@@ -170,8 +189,9 @@ final class SugarRealizer {
         return new Realization(
                 source,
                 isStub,
-                observedLossRecordJson(sugarEmissions, bodyTemplate.map(RenderedBody::lossRecord).orElse(Jcs.object())),
-                usedSugarsJson(sugarEmissions));
+                observedLossRecordJson(sugarEmissions, bodyLossRecord),
+                usedSugarsJson(sugarEmissions),
+                observationWrapperEmissionRecord);
     }
 
     private static String parameterAnnotations(List<SugarEmission> emissions, String paramName) {
@@ -246,6 +266,162 @@ final class SugarRealizer {
                 "kind", Jcs.string("and"),
                 "operands", Jcs.array(existing, next)
         );
+    }
+
+    private static Optional<ObservationComposition> composeEmitterAfterReturn(
+            List<String> requestedModes,
+            String operationBody,
+            String mappedReturn,
+            String function,
+            String conceptName,
+            ContractPayload contract) {
+        if (!isEmitterOnly(requestedModes)
+                || contract == null
+                || !validCid(contract.conceptSiteCid())
+                || !validCid(contract.objectFcmCid())
+                || !validCid(contract.localContractCid())
+                || conceptMatches("concept:contract-observation", conceptName)) {
+            return Optional.empty();
+        }
+        Optional<RenderedBody> observation = renderBodyTemplateFor(
+                "concept:contract-observation",
+                List.of(contract.conceptSiteCid(), contract.localContractCid(), "emitter"),
+                "emitter");
+        if (observation.isEmpty()) {
+            return Optional.empty();
+        }
+        String policyCid = emitterTagPolicyCid();
+        String observationBody = observationTagBlock(contract, policyCid) + "\n" + observation.get().body();
+        Optional<String> composed = composeAfterReturn(operationBody, observationBody, mappedReturn);
+        if (composed.isEmpty()) {
+            return Optional.empty();
+        }
+        String record = observationWrapperEmissionRecord(function, conceptName, mappedReturn, composed.get(), contract, policyCid);
+        return Optional.of(new ObservationComposition(composed.get(), observation.get().lossRecord(), record));
+    }
+
+    private static boolean isEmitterOnly(List<String> requestedModes) {
+        return requestedModes != null
+                && requestedModes.size() == 1
+                && "emitter".equals(requestedModes.get(0));
+    }
+
+    private static Optional<String> composeAfterReturn(String operationBody, String observationBody, String mappedReturn) {
+        String trimmed = operationBody.stripTrailing();
+        String[] lines = trimmed.split("\\R", -1);
+        if (lines.length == 0) return Optional.empty();
+        String last = lines[lines.length - 1].trim();
+        if ("void".equals(mappedReturn)) {
+            return Optional.of(trimmed + "\n" + observationBody);
+        }
+        if (!last.startsWith("return ") || !last.endsWith(";")) {
+            return Optional.empty();
+        }
+        String expression = last.substring("return ".length(), last.length() - 1).trim();
+        if (expression.isEmpty()) return Optional.empty();
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < lines.length - 1; i++) {
+            out.add(lines[i]);
+        }
+        out.add(mappedReturn + " __provekit_result = " + expression + ";");
+        out.add(observationBody);
+        out.add("return __provekit_result;");
+        return Optional.of(String.join("\n", out));
+    }
+
+    private static String observationWrapperEmissionRecord(
+            String function,
+            String conceptName,
+            String mappedReturn,
+            String composedBody,
+            ContractPayload contract,
+            String policyCid) {
+        Jcs.Obj effect = logIoEffect(function, contract.localContractCid());
+        Jcs.Obj wrapperFcm = Jcs.object(
+                "autoMintedMementos", Jcs.array(),
+                "bodyCid", Jcs.string(Blake3.blake3_512(composedBody.getBytes(StandardCharsets.UTF_8))),
+                "effects", Jcs.array(effect),
+                "fnName", Jcs.string(function + "$provekit_emitter"),
+                "formalSorts", Jcs.array(),
+                "formals", Jcs.array(),
+                "kind", Jcs.string("function-contract"),
+                "locus", Jcs.object("function", Jcs.string(function), "surface", Jcs.string("java-emitter-wrapper")),
+                "post", Jcs.object("args", Jcs.array(), "kind", Jcs.string("atomic"), "name", Jcs.string("true")),
+                "pre", Jcs.object("args", Jcs.array(), "kind", Jcs.string("atomic"), "name", Jcs.string("true")),
+                "returnSort", Jcs.object("args", Jcs.array(), "kind", Jcs.string("ctor"), "name", Jcs.string(mappedReturn)),
+                "schemaVersion", Jcs.string("1")
+        );
+        String wrapperFcmCid = Jcs.cid(wrapperFcm);
+        Jcs.Obj preservationClaim = Jcs.object(
+                "concept_name", Jcs.string(conceptName),
+                "kind", Jcs.string("observation-preservation-claim"),
+                "local_contract_cid", Jcs.string(contract.localContractCid()),
+                "mode", Jcs.string("emitter"),
+                "object_fcm_cid", Jcs.string(contract.objectFcmCid()),
+                "policy_cid", Jcs.string(policyCid),
+                "wrapper_fcm_cid", Jcs.string(wrapperFcmCid)
+        );
+        String preservationClaimCid = Jcs.cid(preservationClaim);
+        return Jcs.encode(Jcs.object(
+                "object_fcm_cid", Jcs.string(contract.objectFcmCid()),
+                "observer_effects", Jcs.array(effect),
+                "policy_cid", Jcs.string(policyCid),
+                "preservation_claim_cid", Jcs.string(preservationClaimCid),
+                "wrapper_fcm", wrapperFcm,
+                "wrapper_fcm_cid", Jcs.string(wrapperFcmCid)
+        ));
+    }
+
+    private static Jcs.Obj logIoEffect(String function, String contractCid) {
+        return Jcs.object(
+                "args", Jcs.object(
+                        "channel", Jcs.string("java.util.logging"),
+                        "contract_cid", Jcs.string(contractCid),
+                        "operation", Jcs.string("log")
+                ),
+                "discharge_key", Jcs.string("io:java-util-logging:log"),
+                "locator", Jcs.object("function", Jcs.string(function), "mode", Jcs.string("emitter")),
+                "occurrence_kind", Jcs.string("Io"),
+                "role", Jcs.string("body"),
+                "signature_cid", Jcs.string(Blake3.blake3_512("java.util.logging.Logger.log(Level,String)".getBytes(StandardCharsets.UTF_8)))
+        );
+    }
+
+    private static String observationTagBlock(ContractPayload contract, String policyCid) {
+        return String.join("\n",
+                "// provekit-observation: concept:contract-observation",
+                "// provekit-observation-term: concept:contract-observation("
+                        + contract.conceptSiteCid() + "," + contract.localContractCid() + ",emitter)",
+                "// provekit-observation-mode: emitter",
+                "// provekit-concept-site-cid: " + contract.conceptSiteCid(),
+                "// provekit-object-fcm-cid: " + contract.objectFcmCid(),
+                "// provekit-contract-cid: " + contract.localContractCid(),
+                "// provekit-emitted-concept: concept:log-emit",
+                "// provekit-observation-policy-cid: " + policyCid
+        );
+    }
+
+    private static String emitterTagPolicyCid() {
+        return Jcs.cid(Jcs.object(
+                "emit_tags", Jcs.bool(true),
+                "kind", Jcs.string("realization-emission-policy"),
+                "modes", Jcs.array(Jcs.string("emitter")),
+                "schemaVersion", Jcs.string("1"),
+                "surface", Jcs.string("java-comment-tags")
+        ));
+    }
+
+    private static boolean validCid(String cid) {
+        if (cid == null || !cid.startsWith("blake3-512:") || cid.length() != "blake3-512:".length() + 128) {
+            return false;
+        }
+        for (int i = "blake3-512:".length(); i < cid.length(); i++) {
+            char ch = cid.charAt(i);
+            if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String usedSugarsJson(List<SugarEmission> emissions) {
@@ -480,6 +656,11 @@ final class SugarRealizer {
             List<String> params) {}
 
     private record RenderedBody(String body, Jcs.Json lossRecord) {}
+
+    private record ObservationComposition(
+            String body,
+            Jcs.Json lossRecord,
+            String observationWrapperEmissionRecord) {}
 
     /**
      * Render a body string for the given concept + signature, or empty when
@@ -1016,16 +1197,27 @@ record ContractWitness(String role, Jcs.Json predicate, String predicateText, St
 
 record ContractPayload(
         String conceptSiteCid,
+        String objectFcmCid,
         String localContractCid,
         String origin,
         String dischargeVerdict,
         List<ContractWitness> witnesses) {
     ContractPayload {
         conceptSiteCid = conceptSiteCid == null ? "" : conceptSiteCid;
+        objectFcmCid = objectFcmCid == null ? "" : objectFcmCid;
         localContractCid = localContractCid == null ? "" : localContractCid;
         origin = origin == null ? "" : origin;
         dischargeVerdict = dischargeVerdict == null ? "" : dischargeVerdict;
         witnesses = witnesses == null ? List.of() : List.copyOf(witnesses);
+    }
+
+    ContractPayload(
+            String conceptSiteCid,
+            String localContractCid,
+            String origin,
+            String dischargeVerdict,
+            List<ContractWitness> witnesses) {
+        this(conceptSiteCid, localContractCid, localContractCid, origin, dischargeVerdict, witnesses);
     }
 
     static ContractPayload fromJson(String json) {
@@ -1038,6 +1230,7 @@ record ContractPayload(
                 .toList();
         return new ContractPayload(
                 JsonUtil.decodeJsonStringField(json, "concept_site_cid"),
+                JsonUtil.decodeJsonStringField(json, "object_fcm_cid"),
                 JsonUtil.decodeJsonStringField(json, "local_contract_cid"),
                 JsonUtil.decodeJsonStringField(json, "origin"),
                 JsonUtil.decodeJsonStringField(json, "discharge_verdict"),

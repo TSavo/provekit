@@ -90,6 +90,13 @@ public final class JavaBindLifter {
         return new Result(entries, diagnostics);
     }
 
+    Result liftPathsFromSource(String sourcePath, String source) {
+        List<Jcs.Json> entries = new ArrayList<>();
+        List<Jcs.Json> diagnostics = new ArrayList<>();
+        liftSource(sourcePath, source, entries, diagnostics);
+        return new Result(entries, diagnostics);
+    }
+
     private void liftFile(Path root, Path javaFile, List<Jcs.Json> entries, List<Jcs.Json> diagnostics) {
         String rel = root.relativize(javaFile).toString().replace('\\', '/');
         String source;
@@ -99,7 +106,10 @@ public final class JavaBindLifter {
             diagnostics.add(diag("error", "read failed for " + javaFile + ": " + e.getMessage()));
             return;
         }
+        liftSource(rel, source, entries, diagnostics);
+    }
 
+    private void liftSource(String rel, String source, List<Jcs.Json> entries, List<Jcs.Json> diagnostics) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             diagnostics.add(diag("error", "JDK compiler API unavailable; cannot parse " + rel));
@@ -185,6 +195,17 @@ public final class JavaBindLifter {
             String termShapeCid = Jcs.cid(termShape);
 
             String conceptAnnotation = extractConceptAnnotation(source, fnLine);
+            long bodyStartOffset = trees.getSourcePositions().getStartPosition(
+                path.getCompilationUnit(), method.getBody());
+            long bodyEndOffset = trees.getSourcePositions().getEndPosition(
+                path.getCompilationUnit(), method.getBody());
+            int bodyStartLine = bodyStartOffset >= 0 && bodyStartOffset <= Integer.MAX_VALUE
+                ? lineOf(source, (int) bodyStartOffset)
+                : fnLine;
+            int bodyEndLine = bodyEndOffset >= 0 && bodyEndOffset <= Integer.MAX_VALUE
+                ? lineOf(source, (int) bodyEndOffset)
+                : fnLine;
+            List<Jcs.Json> observationWitnesses = observationTagWitnesses(source, bodyStartLine, bodyEndLine);
 
             Jcs.Obj entry = Jcs.object(
                 "attr_post", Jcs.nullValue(),
@@ -198,7 +219,8 @@ public final class JavaBindLifter {
                 "param_types", Jcs.array(paramTypes),
                 "return_type", Jcs.string(returnType),
                 "term_shape", termShape,
-                "term_shape_cid", Jcs.string(termShapeCid)
+                "term_shape_cid", Jcs.string(termShapeCid),
+                "witnesses", Jcs.array(observationWitnesses)
             );
             entries.add(entry);
             return super.visitMethod(method, unused);
@@ -322,6 +344,71 @@ public final class JavaBindLifter {
         return null;
     }
 
+    private static List<Jcs.Json> observationTagWitnesses(String source, int startLine, int endLine) {
+        List<TagLine> tags = scanObservationTags(source, startLine, endLine);
+        if (tags.isEmpty()) return List.of();
+        String concept = tagValue(tags, "provekit-observation");
+        String mode = tagValue(tags, "provekit-observation-mode");
+        String term = tagValue(tags, "provekit-observation-term");
+        if (concept == null || concept.isBlank()) return List.of();
+        if (term == null || term.isBlank()) {
+            term = concept;
+        }
+        Jcs.Obj extensionFields = Jcs.object(
+            "concept_site_cid", stringOrNull(tagValue(tags, "provekit-concept-site-cid")),
+            "contract_cid", stringOrNull(tagValue(tags, "provekit-contract-cid")),
+            "emitted_concept", stringOrNull(tagValue(tags, "provekit-emitted-concept")),
+            "mode", stringOrNull(mode),
+            "object_fcm_cid", stringOrNull(tagValue(tags, "provekit-object-fcm-cid")),
+            "observation_concept", Jcs.string(concept),
+            "observation_term", Jcs.string(term),
+            "policy_cid", stringOrNull(tagValue(tags, "provekit-observation-policy-cid")),
+            "role", Jcs.string("observation"),
+            "surface", Jcs.string("java-comment-tag")
+        );
+        return List.of(Jcs.object(
+            "col", Jcs.integer(0),
+            "confidence_basis_points", Jcs.integer(10000),
+            "extension_fields", extensionFields,
+            "line", Jcs.integer(tags.get(0).line()),
+            "predicate", Jcs.object("args", Jcs.array(), "kind", Jcs.string("atomic"), "name", Jcs.string(term)),
+            "predicate_text", Jcs.string(term),
+            "role", Jcs.string("observation"),
+            "source_kind", Jcs.string("native-surface")
+        ));
+    }
+
+    private static List<TagLine> scanObservationTags(String source, int startLine, int endLine) {
+        if (startLine <= 0 || endLine < startLine) return List.of();
+        String[] lines = source.split("\n", -1);
+        int start = Math.max(0, startLine - 1);
+        int end = Math.min(lines.length, endLine);
+        List<TagLine> tags = new ArrayList<>();
+        for (int idx = start; idx < end; idx++) {
+            String stripped = lines[idx].stripLeading();
+            if (!stripped.startsWith("// provekit-")) continue;
+            int colon = stripped.indexOf(':');
+            if (colon < 0) continue;
+            String key = stripped.substring("// ".length(), colon).trim();
+            String value = stripped.substring(colon + 1).trim();
+            if (key.startsWith("provekit-")) {
+                tags.add(new TagLine(idx + 1, key, value));
+            }
+        }
+        return tags;
+    }
+
+    private static String tagValue(List<TagLine> tags, String key) {
+        for (TagLine tag : tags) {
+            if (tag.key().equals(key)) return tag.value();
+        }
+        return null;
+    }
+
+    private static Jcs.Json stringOrNull(String value) {
+        return value == null || value.isBlank() ? Jcs.nullValue() : Jcs.string(value);
+    }
+
     // ---- Helpers -----------------------------------------------------------
 
     private static int lineOf(String source, int offset) {
@@ -357,6 +444,8 @@ public final class JavaBindLifter {
             );
         }
     }
+
+    private record TagLine(int line, String key, String value) {}
 
     private static final class JavaFileSource extends SimpleJavaFileObject {
         private final String source;
