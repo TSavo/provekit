@@ -1040,22 +1040,29 @@ pub struct WitnessRef {
 ///
 /// Per the spec §2 trichotomy and §1.2 verdict-consistency table.
 /// Silent contract-dropping is NOT in the substrate's vocabulary.
+///
+/// This type is the serde wire shape only. Verdict-consistency invariants
+/// are enforced by producers and validators, not by this struct.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Discharge {
     /// The discharge method: "wp" | "witness" | "wp+witness".
     pub method: String,
-    /// Required iff verdict == "refuse"; OMITTED otherwise.
+    /// Optional refusal reason. Serialized when `Some`; omitted when `None`.
+    /// The spec requires producers and validators to use this for `refuse`.
     #[serde(rename = "refusal_reason")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refusal_reason: Option<String>,
     /// "exact" | "loudly-bounded-lossy" | "refuse".
     pub verdict: String,
-    /// CID of a MorphismDischargeReceipt. OMITTED iff verdict == "refuse".
+    /// Optional CID of a MorphismDischargeReceipt. Serialized when `Some`;
+    /// omitted when `None`. The spec requires producers and validators to omit
+    /// this for `refuse`.
     #[serde(rename = "discharge_receipt_cid")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discharge_receipt_cid: Option<String>,
-    /// Per the 2026-05-15 §2.4 five-dimension loss-record. An empty map
-    /// is valid (means "no loss in any dimension"; required for `exact`).
+    /// Per the 2026-05-15 §2.4 five-dimension loss-record. This field is
+    /// always present in the wire struct. An empty map means "no loss in any
+    /// dimension"; the spec requires that shape for `exact`.
     #[serde(rename = "loss_record")]
     pub loss_record: LossRecord,
 }
