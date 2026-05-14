@@ -1,0 +1,73 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Async"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "IO"
+      }
+    ]
+  },
+  "fn_name": "concept:sql-query",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Sql"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "SqlArgs"
+    }
+  ],
+  "formals": [
+    "sql",
+    "args"
+  ],
+  "kind": "algorithm",
+  "loss_dimensions": [
+    "cursor-lifetime",
+    "row-order",
+    "sync-vs-async",
+    "transaction-isolation"
+  ],
+  "post": {
+    "arity": [
+      "Sql",
+      "SqlArgs"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "sql"
+        },
+        {
+          "name": "args"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "sql-query",
+    "result": "SqlRowSet",
+    "row_shape_sketch": {
+      "row_set_sort": "SqlRowSet",
+      "row_sort": "SqlRow"
+    },
+    "wp_note": "Executes a parameterized SQL read operation and returns a row set. Sql is the parameterized query string. SqlArgs carries positional or named parameters. SqlRowSet is the result iteration. Row order, cursor lifetime, transaction isolation, and sync versus async behavior are realization loss dimensions."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SqlRowSet"
+  }
+}

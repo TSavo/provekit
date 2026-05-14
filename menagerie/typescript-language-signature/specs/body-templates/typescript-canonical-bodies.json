@@ -1,0 +1,82 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-14T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:eea9d2551c91d8d9da056e504dbf00f5792136e5beea6d0a733ca7a1134dd82b8fc2f945355d58b696be0f4e28f407f68cdb9d2bf4448ade8d2ba95418a7fc65",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:http-request",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "const response = await fetch(${param0});\nreturn response.status;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5"
+                  }
+                ],
+                "head": "atomic",
+                "name": "bridge-b-http-request-cites-concept-cids"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "number"
+          }
+        },
+        {
+          "concept_name": "concept:http-response",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.status;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5"
+                  }
+                ],
+                "head": "atomic",
+                "name": "bridge-b-http-response-cites-concept-cid"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "number"
+          }
+        }
+      ],
+      "target_language": "typescript",
+      "template_name": "typescript-canonical-bodies"
+    },
+    "critical": false,
+    "kind": "body-template",
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
+    "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  }
+}

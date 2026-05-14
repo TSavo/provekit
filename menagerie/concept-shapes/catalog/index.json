@@ -139,6 +139,12 @@
       "name": "morphism:c11:pre_dec:to:concept:predec",
       "path": "algorithms/morphism:c11:pre_dec:to:concept:predec.blake3-512:1c3d84d0dc521d789f0b2c4083c2101ea6c4389b2dd52f71adb7bc4c46081c1a171ac71e5a441aadbd85a0706fd2c64a4227f2906dc58d97caaebba2273e1927.json"
     },
+    "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9": {
+      "cid": "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9",
+      "kind": "algorithm",
+      "name": "concept:sql-execute",
+      "path": "algorithms/concept:sql-execute.blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9.json"
+    },
     "blake3-512:204b5c8bef3208a9b24e7a185e40167ebb2ae734608079d49d907afff8a4a44b1ba6e75e40b553a1dfe7cb00cb6800eef6612c19909c9ad01c185210ede04014": {
       "cid": "blake3-512:204b5c8bef3208a9b24e7a185e40167ebb2ae734608079d49d907afff8a4a44b1ba6e75e40b553a1dfe7cb00cb6800eef6612c19909c9ad01c185210ede04014",
       "kind": "algorithm",
@@ -1218,6 +1224,12 @@
       "kind": "algorithm",
       "name": "morphism:csharp:skip:to:concept:skip",
       "path": "algorithms/morphism:csharp:skip:to:concept:skip.blake3-512:dbeb66a34871d25dbeb824770a2b3f01c700f8697f6374ecd89e81014310e873a47ce2c092bed3504c81d1438b354948bf0d09134141d8929df45d86d70da560.json"
+    },
+    "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1": {
+      "cid": "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1",
+      "kind": "algorithm",
+      "name": "concept:sql-query",
+      "path": "algorithms/concept:sql-query.blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1.json"
     },
     "blake3-512:dfcffd1198d0fc612b9ccbdc11ab6e5922ed8a451f858df6fed988426acbb56052af035f53397e74cd861bb25257bd2bd9bf97b65de12003d5d6510b8cc98216": {
       "cid": "blake3-512:dfcffd1198d0fc612b9ccbdc11ab6e5922ed8a451f858df6fed988426acbb56052af035f53397e74cd861bb25257bd2bd9bf97b65de12003d5d6510b8cc98216",

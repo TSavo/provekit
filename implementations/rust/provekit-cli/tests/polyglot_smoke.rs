@@ -34,31 +34,58 @@ use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
 // -------------------------------------------------------------------
 
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener as StdUnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 fn daemon_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    // CARGO_MANIFEST_DIR = .../provekit-cli; binary is two levels up in target/{release,debug}/
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-    // CI builds with --release; local cargo test uses debug. Try release first
-    // (CI), fall back to debug (local). The binary is built by `cargo build`
-    // before `cargo test` runs in CI's `make test-all` flow.
-    let release = workspace
-        .join("target")
-        .join("release")
-        .join("provekit-linkerd");
-    let debug = workspace
-        .join("target")
-        .join("debug")
-        .join("provekit-linkerd");
-    if release.exists() {
-        release
+
+    let current_exe = std::env::current_exe().expect("current test binary path");
+    let deps_dir = current_exe.parent().expect("test binary has parent");
+    let profile_dir = if deps_dir.file_name().and_then(|name| name.to_str()) == Some("deps") {
+        deps_dir.parent().expect("deps dir has profile parent")
     } else {
-        debug
+        deps_dir
+    };
+    let daemon = profile_dir.join(format!(
+        "provekit-linkerd{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    if daemon.exists() {
+        return daemon;
     }
+
+    let target_dir = profile_dir.parent().expect("profile dir has target parent");
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.current_dir(&workspace)
+        .env("CARGO_TARGET_DIR", target_dir)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(workspace.join("Cargo.toml"))
+        .arg("-p")
+        .arg("provekit-linkerd")
+        .arg("--bin")
+        .arg("provekit-linkerd");
+    if profile_dir.file_name().and_then(|name| name.to_str()) == Some("release") {
+        cmd.arg("--release");
+    }
+    let output = cmd.output().expect("spawn cargo build for provekit-linkerd");
+    assert!(
+        output.status.success(),
+        "cargo build failed for provekit-linkerd\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        daemon.exists(),
+        "provekit-linkerd missing after cargo build at {}",
+        daemon.display()
+    );
+    daemon
 }
 
 fn polyglot_sock() -> PathBuf {
@@ -69,6 +96,22 @@ fn polyglot_sock() -> PathBuf {
             .map(|d| d.subsec_nanos())
             .unwrap_or(0)
     ))
+}
+
+fn unix_socket_bind_available() -> bool {
+    let sock = polyglot_sock();
+    let _ = std::fs::remove_file(&sock);
+    match StdUnixListener::bind(&sock) {
+        Ok(listener) => {
+            drop(listener);
+            let _ = std::fs::remove_file(&sock);
+            true
+        }
+        Err(err) => {
+            eprintln!("provekit-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})");
+            false
+        }
+    }
 }
 
 fn spawn_linkerd(sock: &PathBuf, idle_ms: u64) -> Child {
@@ -403,6 +446,10 @@ fn test_failure_and_success_cids_differ() {
 
 #[test]
 fn test_daemon_polyglot_smoke() {
+    if !unix_socket_bind_available() {
+        return;
+    }
+
     let sock = polyglot_sock();
     let _ = std::fs::remove_file(&sock);
 

@@ -1,0 +1,13 @@
+{
+  "name": "provekit-realize-typescript-pg",
+  "version": "0.1.0",
+  "description": "PEP 1.7.0 TypeScript pg realize kit for ProvekIt bind canonical output",
+  "type": "commonjs",
+  "main": "src/main.js",
+  "bin": {
+    "provekit-realize-typescript-pg": "src/main.js"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

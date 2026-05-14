@@ -1,0 +1,88 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Async"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "IO"
+      }
+    ]
+  },
+  "fn_name": "concept:sql-execute",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Sql"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "SqlArgs"
+    }
+  ],
+  "formals": [
+    "sql",
+    "args"
+  ],
+  "kind": "algorithm",
+  "loss_dimensions": [
+    "last-insert-id",
+    "sync-vs-async",
+    "transaction-isolation"
+  ],
+  "post": {
+    "arity": [
+      "Sql",
+      "SqlArgs"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "sql"
+        },
+        {
+          "name": "args"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "last_insert_id_loss_claim": {
+      "field": "last_insert_id",
+      "kind": "library-dependent-field",
+      "loss_dimension": "last-insert-id"
+    },
+    "operator": "sql-execute",
+    "result": "SqlExecuteResult",
+    "result_shape_sketch": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "rows_affected",
+          "sort": "Int"
+        },
+        {
+          "loss_dimension": "last-insert-id",
+          "name": "last_insert_id",
+          "optional": true,
+          "sort": "Optional<SqlId>"
+        }
+      ]
+    },
+    "wp_note": "Executes a parameterized SQL write operation and returns rows_affected plus an optional last_insert_id. The last_insert_id field is a loss dimension because database engines and client libraries expose it differently."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SqlExecuteResult"
+  }
+}
