@@ -7,6 +7,7 @@ pub mod core;
 pub mod desugar;
 pub mod effect_propagation;
 pub mod ffi;
+pub mod promotion_decision_registry;
 pub mod transport;
 pub mod witness_registry;
 pub mod wp;
