@@ -303,11 +303,26 @@ pub struct VerifyProtocolArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct WitnessArgs {
-    /// CID of the contract to witness from (the base theorem).
-    pub contract_cid: String,
-    /// Path to an IR-JSON formula file representing the property to prove.
-    /// Use `-` for stdin.
-    pub property: PathBuf,
+    /// Legacy witness contract CID, or the mode name `consensus`.
+    pub command_or_contract: String,
+    /// Legacy path to an IR-JSON formula file representing the property to prove.
+    /// Use `-` for stdin. Not used by `witness consensus`.
+    pub property: Option<PathBuf>,
+    /// Concept identifier required by `witness consensus`.
+    #[arg(long)]
+    pub concept: Option<String>,
+    /// Fixture-state CID required for consensus.
+    #[arg(long = "require-fixture")]
+    pub require_fixture: Option<String>,
+    /// Minimum passing witnesses required before admission.
+    #[arg(long = "min-witnesses", default_value_t = 1)]
+    pub min_witnesses: usize,
+    /// File or directory to scan for WitnessMementos or migration receipts.
+    #[arg(long = "catalog")]
+    pub catalogs: Vec<PathBuf>,
+    /// Path where the PromotionDecisionMemento should be written.
+    #[arg(long)]
+    pub emit: Option<PathBuf>,
     /// Project root to load the contract from. Defaults to current directory.
     #[arg(long)]
     pub project: Option<PathBuf>,
