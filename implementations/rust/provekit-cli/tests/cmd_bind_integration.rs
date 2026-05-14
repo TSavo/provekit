@@ -424,6 +424,35 @@ fn annotate_witness_injects_witness_attribute() {
     );
 }
 
+#[test]
+fn annotate_multi_mode_injects_each_requested_observation_attribute() {
+    let tmp = copy_fixture_with_bind_lift_manifest();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&tmp, &out, "annotate", "witness,gate", None);
+    assert!(
+        result.status.success(),
+        "annotate+witness,gate should succeed\nstderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let rewritten = fs::read_to_string(tmp.join("src").join("account.rs")).unwrap();
+    assert!(
+        rewritten.contains("provekit_witness"),
+        "witness mode must inject provekit_witness"
+    );
+    assert!(
+        rewritten.contains("provekit_gate"),
+        "gate mode must inject provekit_gate"
+    );
+    assert!(
+        rewritten.contains("provekit_gate(contract = \"blake3-512:"),
+        "gate mode must cite the local contract CID"
+    );
+    assert!(
+        !rewritten.contains("provekit_gate(contract = \"deposit-then-balance\")"),
+        "gate mode must not cite the concept name as the local contract"
+    );
+}
+
 // ============================================================================
 // Tests 5-7: canonical x {monitor, emitter, witness}
 // ============================================================================

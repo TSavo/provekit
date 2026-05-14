@@ -124,7 +124,7 @@ final class SugarRealizer {
                 + commentPrefix(sugarEmissions);
 
         // Body: try body-template first, fall through to language stub.
-        Optional<String> bodyTemplate = bodyTemplateFor(conceptName, params);
+        Optional<String> bodyTemplate = bodyTemplateFor(conceptName, params, mode);
         boolean isStub = bodyTemplate.isEmpty();
         String bodyContent = bodyTemplate
                 .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
@@ -382,6 +382,7 @@ final class SugarRealizer {
      */
     private record BodyTemplateEntry(
             String conceptName,
+            String mode,
             String templateKind,
             String template,
             Integer minParams,
@@ -397,9 +398,14 @@ final class SugarRealizer {
      * refuse-match.
      */
     static Optional<String> bodyTemplateFor(String conceptName, List<String> params) {
+        return bodyTemplateFor(conceptName, params, "");
+    }
+
+    static Optional<String> bodyTemplateFor(String conceptName, List<String> params, String mode) {
         List<BodyTemplateEntry> entries = entries();
         for (BodyTemplateEntry e : entries) {
-            if (!e.conceptName().equals(conceptName)) continue;
+            if (!conceptMatches(e.conceptName(), conceptName)) continue;
+            if (!modeMatches(e.mode(), mode)) continue;
             if (e.minParams() != null && params.size() < e.minParams()) continue;
             if (e.maxParams() != null && params.size() > e.maxParams()) continue;
             if (!"verbatim".equals(e.templateKind())) continue;
@@ -415,6 +421,20 @@ final class SugarRealizer {
             return Optional.of(rendered);
         }
         return Optional.empty();
+    }
+
+    private static boolean conceptMatches(String entryName, String requestName) {
+        if (entryName.equals(requestName)) return true;
+        if (entryName.startsWith("concept:") && entryName.substring("concept:".length()).equals(requestName)) {
+            return true;
+        }
+        return requestName.startsWith("concept:")
+                && requestName.substring("concept:".length()).equals(entryName);
+    }
+
+    private static boolean modeMatches(String entryMode, String requestMode) {
+        if (entryMode == null || entryMode.isBlank()) return true;
+        return requestMode != null && !requestMode.isBlank() && entryMode.equals(requestMode);
     }
 
     private static List<BodyTemplateEntry> entries() {
@@ -451,6 +471,7 @@ final class SugarRealizer {
                 if (!(item instanceof Jcs.Obj itemObj)) continue;
                 String conceptName = itemObj.stringFieldOrNull("concept_name");
                 if (conceptName == null) continue;
+                String mode = itemObj.stringFieldOrNull("mode");
 
                 Jcs.Json template = itemObj.get("emission_template");
                 if (!(template instanceof Jcs.Obj templateObj)) continue;
@@ -467,7 +488,7 @@ final class SugarRealizer {
                     if (minJ instanceof Jcs.Num minN) minParams = (int) minN.value();
                     if (maxJ instanceof Jcs.Num maxN) maxParams = (int) maxN.value();
                 }
-                out.add(new BodyTemplateEntry(conceptName, kind, tmpl, minParams, maxParams));
+                out.add(new BodyTemplateEntry(conceptName, mode, kind, tmpl, minParams, maxParams));
             }
             return out;
         } catch (IOException e) {

@@ -15,8 +15,8 @@ const coreRealizer = createRealizer(BODY_TEMPLATE_REL);
 function createRealizer(bodyTemplateRel) {
   let cachedEntries = null;
 
-  function emitStub({ functionName, params, paramTypes, returnType, conceptName }) {
-    const body = bodyTemplateFor(conceptName, params, paramTypes, returnType);
+  function emitStub({ functionName, params, paramTypes, returnType, conceptName, mode }) {
+    const body = bodyTemplateFor(conceptName, params, paramTypes, returnType, mode);
     const isStub = body === null;
     const finalBody = body ?? `throw new Error("provekit-bind canonical: ${conceptName}");`;
     return {
@@ -26,12 +26,13 @@ function createRealizer(bodyTemplateRel) {
     };
   }
 
-  function bodyTemplateFor(conceptName, params, paramTypes, returnType) {
+  function bodyTemplateFor(conceptName, params, paramTypes, returnType, mode) {
     const mappedParamTypes = paramTypes.map(mapSourceType);
     const mappedReturnType = mapSourceType(returnType);
     const candidateNames = [conceptName, conceptName.replace(/^concept:/, "")];
     for (const entry of entries()) {
       if (!candidateNames.includes(entry.concept_name)) continue;
+      if (!modeMatches(entry.mode, mode)) continue;
       const guard = entry.signature_guard ?? {};
       if (Number.isInteger(guard.min_params) && params.length < guard.min_params) continue;
       if (Number.isInteger(guard.max_params) && params.length > guard.max_params) continue;
@@ -113,6 +114,11 @@ function renderTemplate(template, params, paramTypes, returnType) {
   rendered = rendered.replaceAll("${param_count}", String(params.length));
   rendered = rendered.replaceAll("${return_type}", returnType);
   return PLACEHOLDER_RE.test(rendered) ? null : rendered;
+}
+
+function modeMatches(entryMode, requestMode) {
+  if (typeof entryMode !== "string" || entryMode === "") return true;
+  return typeof requestMode === "string" && requestMode !== "" && entryMode === requestMode;
 }
 
 function functionSource(functionName, params, body) {

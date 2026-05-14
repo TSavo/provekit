@@ -2335,10 +2335,11 @@ impl ObservationWrapperMemento {
     /// in order to remove the footgun of silently dropping non-`effects` fields.
     ///
     /// `allowed_extension_modes` is the caller's allowlist of namespaced extension
-    /// modes (e.g. `["acme:probe"]`). Per spec §7, unimplemented extension modes
-    /// MUST fail closed; passing `&[]` accepts only the core monitor/witness/dispatcher
-    /// modes. A namespaced mode that is well-formed but absent from the allowlist
-    /// returns `UnimplementedExtensionMode`.
+    /// modes (e.g. `["acme:probe"]`). Per spec §7, unimplemented extension
+    /// modes MUST fail closed; passing `&[]` accepts only the core
+    /// witness/monitor/emitter/gate modes plus legacy dispatcher. A namespaced
+    /// mode that is well-formed but absent from the allowlist returns
+    /// `UnimplementedExtensionMode`.
     pub fn validate(
         &self,
         object_effects: &[EffectOccurrence],
@@ -2587,7 +2588,8 @@ impl PromotionDecisionMemento {
 }
 
 enum ModeClassification {
-    /// Core wrapper-mode from the spec: monitor / witness / dispatcher.
+    /// Core wrapper-mode from the spec: witness / monitor / emitter / gate.
+    /// `dispatcher` remains accepted for legacy wrapper records.
     Core,
     /// Namespaced extension that the caller explicitly admitted via the allowlist.
     AllowedExtension,
@@ -2598,7 +2600,10 @@ enum ModeClassification {
 }
 
 fn classify_mode(mode: &str, allowed_extension_modes: &[&str]) -> ModeClassification {
-    if matches!(mode, "monitor" | "witness" | "dispatcher") {
+    if matches!(
+        mode,
+        "witness" | "monitor" | "emitter" | "gate" | "dispatcher"
+    ) {
         return ModeClassification::Core;
     }
     // Spec: extension modes are `<namespace>:<kind>` with EXACTLY one

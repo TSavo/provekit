@@ -50,10 +50,7 @@ fn daemon_bin() -> PathBuf {
     } else {
         deps_dir
     };
-    let daemon = profile_dir.join(format!(
-        "provekit-linkerd{}",
-        std::env::consts::EXE_SUFFIX
-    ));
+    let daemon = profile_dir.join(format!("provekit-linkerd{}", std::env::consts::EXE_SUFFIX));
     if daemon.exists() {
         return daemon;
     }
@@ -73,7 +70,9 @@ fn daemon_bin() -> PathBuf {
     if profile_dir.file_name().and_then(|name| name.to_str()) == Some("release") {
         cmd.arg("--release");
     }
-    let output = cmd.output().expect("spawn cargo build for provekit-linkerd");
+    let output = cmd
+        .output()
+        .expect("spawn cargo build for provekit-linkerd");
     assert!(
         output.status.success(),
         "cargo build failed for provekit-linkerd\nstdout:\n{}\nstderr:\n{}",
@@ -108,7 +107,9 @@ fn unix_socket_bind_available() -> bool {
             true
         }
         Err(err) => {
-            eprintln!("provekit-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})");
+            eprintln!(
+                "provekit-linkerd daemon smoke skipped: Unix socket bind unavailable ({err})"
+            );
             false
         }
     }

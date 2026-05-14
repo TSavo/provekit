@@ -130,7 +130,7 @@ Each `effect-slot-descriptor` names one effect transform. `concept_effect` is th
 | `concept_site_cid` | yes | CID of the `ConceptSiteMemento` being realized. |
 | `effect_occurrence_transform` | yes | JCS-canonical JSON mapping from concrete concept-side effect occurrences at this site to concrete target-side effects or wrappers. Empty object `{}` means no site effects were transformed. |
 | `loss_function_cid` | yes | CID of the `LossFunctionMemento` used to rank candidates. This is part of the plan so replay uses the same scorer. |
-| `observation_wrapper_cid` | yes | CID of the wrapper used for monitor, witness, or dispatcher emission, or `null` when no wrapper is emitted. The wrapper MUST NOT mutate the wrapped function contract memento's `effects`. |
+| `observation_wrapper_cid` | yes | CID of the wrapper used for witness, monitor, emitter, gate, or legacy dispatcher emission, or `null` when no wrapper is emitted. The wrapper MUST NOT mutate the wrapped function contract memento's `effects`. |
 | `provenance_cid` | yes | CID for the provenance statement supporting this site-specific selection. |
 | `selected_candidate_cid` | yes | CID of the selected candidate from `candidate_set_cid`. This records the concrete winner after slot filling and loss calculation. |
 | `selected_realization_cid` | yes | CID of the selected `ParametricRealizationMemento`. |
@@ -167,9 +167,9 @@ The selected `LossFunctionMemento` CID is mandatory in every plan. Selection is 
 
 If the referenced loss function is unavailable, unknown, nondeterministic, or rejects its own parameters, plan verification MUST refuse. If the loss function reports multiple equally-low-loss candidates and there is no explicit tie-break policy, the orchestrator MUST refuse instead of minting a plan.
 
-## §7. Monitor, witness, and dispatcher wrapper emission
+## §7. Observation wrapper emission
 
-Monitor, witness, and dispatcher emission is represented by `observation_wrapper_cid`. When absent, the field value is `null`. When present, it names a wrapper artifact that observes, witnesses, dispatches, or records boundary behavior around the realized object function.
+Witness, monitor, emitter, gate, and legacy dispatcher emission is represented by `observation_wrapper_cid`. When absent, the field value is `null`. When present, it names a wrapper artifact that observes, witnesses, emits, enforces, dispatches, or records boundary behavior around the realized object function.
 
 The wrapper's effects belong to the wrapper. They MUST NOT be inserted into, removed from, or otherwise used to mutate the wrapped object function's `FunctionContractMemento.effects`. This follows TSavo/provekit#793: observer effects belong to wrappers, not wrapped programs. A plan or emitter that needs observer behavior MUST attach a wrapper and cite it through `observation_wrapper_cid`.
 

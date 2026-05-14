@@ -1,0 +1,83 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:contract-observation",
+    "formals": [
+      "callsite_cid",
+      "contract_cid",
+      "mode"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Cid"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Cid"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "ContractObservationMode"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "Cid",
+        "Cid",
+        "ContractObservationMode"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          "callsite_cid",
+          "contract_cid",
+          "mode"
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "contract-observation",
+      "result": "ContractObservationResult",
+      "slot_terms": [
+        {
+          "kind": "var",
+          "name": "callsite_cid"
+        },
+        {
+          "kind": "var",
+          "name": "contract_cid"
+        },
+        {
+          "kind": "var",
+          "name": "mode"
+        }
+      ],
+      "wp_note": "Observes the contract at a callsite in the selected mode. Observer effects belong to the generated ObservationWrapperMemento and wrapper FCM, not to the wrapped object FunctionContractMemento. Composition point is explicit per realization body-template cell."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "ContractObservationResult"
+    }
+  },
+  "cid": "blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "9TAlFwDYCCeSbDU6cVjBPYdc09mfTRg0kUlA1fC8hxJNtPQH7xwDin6iADUcEkZpQa2USJaVDEZIEqp1RkBNAg=="
+  }
+}

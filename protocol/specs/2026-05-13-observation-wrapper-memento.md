@@ -15,14 +15,14 @@
 
 The master-frame invariant is: observer effects belong to wrappers, not wrapped programs.
 
-Witness, monitor, and dispatcher machinery emit wrapper-side effects. They do not mutate the wrapped object function's `FunctionContractMemento.effects`.
+Witness, monitor, emitter, and gate machinery emit wrapper-side effects. Legacy dispatcher wrapper records are still valid. None of these modes mutate the wrapped object function's `FunctionContractMemento.effects`.
 
 ## §1 Wire Shape
 
 ```cddl
 observation-wrapper-memento = {
   emitted_artifact_cid: cid,               ; emitted wrapper artifact
-  mode: wrapper-mode,                      ; monitor, witness, dispatcher, or namespaced extension
+  mode: wrapper-mode,                      ; witness, monitor, emitter, gate, legacy dispatcher, or namespaced extension
   object_fcm_cid: cid,                     ; object FunctionContractMemento, unchanged by wrapping
   observer_effects: [+ effect-occurrence], ; per #793, live on the wrapper
   preservation_claim_cid: cid,             ; semantic relationship the wrapper preserves
@@ -30,7 +30,7 @@ observation-wrapper-memento = {
   wrapper_fcm_cid: cid,                    ; wrapper FunctionContractMemento, carries observer effects
 }
 
-wrapper-mode = "monitor" / "witness" / "dispatcher" / namespaced-wrapper-mode
+wrapper-mode = "witness" / "monitor" / "emitter" / "gate" / "dispatcher" / namespaced-wrapper-mode
 namespaced-wrapper-mode = tstr             ; MUST be namespace-qualified by §2
 ```
 
@@ -42,7 +42,7 @@ All keys are mandatory. Encoders MUST emit keys in JCS-canonical alphabetical or
 
 `emitted_artifact_cid` is the CID of the artifact emitted for this wrapper.
 
-`mode` identifies the wrapper behavior. The only core modes are `monitor`, `witness`, and `dispatcher`. Extension modes MUST be namespace-qualified strings in `<namespace>:<mode>` form. Verifiers MUST refuse extension modes when they do not implement that namespace and its semantics.
+`mode` identifies the wrapper behavior. The core modes are `witness`, `monitor`, `emitter`, and `gate`. `dispatcher` remains accepted as a legacy core mode for already-minted wrapper records. Extension modes MUST be namespace-qualified strings in `<namespace>:<mode>` form. Verifiers MUST refuse extension modes when they do not implement that namespace and its semantics.
 
 `object_fcm_cid` is the CID of the object `FunctionContractMemento`. It identifies the wrapped object function. The object FCM is unchanged by wrapping.
 
@@ -73,6 +73,18 @@ The `preservation_claim_cid` MUST resolve to a claim asserting that the witness 
 A `dispatcher` wrapper interposes routing or dispatch. Its `observer_effects` MAY include `UnresolvedCall` effect occurrences on the routing target when the selected target is not statically resolved at memento construction time.
 
 The `preservation_claim_cid` MUST resolve to a claim asserting that the dispatched function is a member of the declared dispatch set and that selection follows the declared selection semantics.
+
+### §3.4 emitter
+
+An `emitter` wrapper emits structured runtime events for a call boundary. Its `observer_effects` typically include `Io` effect occurrences for the event sink. Emission is wrapper behavior and MUST NOT widen the object FCM.
+
+The `preservation_claim_cid` MUST resolve to a claim asserting that the emitted event is causally downstream of the object call boundary it describes.
+
+### §3.5 gate
+
+A `gate` wrapper enforces a contract by refusing or throwing when the observed boundary violates the selected predicate. Its `observer_effects` typically include the effect occurrence used to signal refusal, throw, or policy failure. Enforcement is wrapper behavior and MUST NOT widen the object FCM.
+
+The `preservation_claim_cid` MUST resolve to a claim asserting that successful execution through the gate preserves the object's preconditions and postconditions for the admitted path.
 
 ## §4 Object vs Wrapper Separation
 

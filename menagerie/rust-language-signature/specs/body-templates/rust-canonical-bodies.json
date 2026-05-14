@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:aa5946b88c2798cd7399ec22db6f170970a8d0f9dac88b1e81fc0a31ab40eddada236730450594894f745096cf033607dbbb35d0cd2a59300fa9ac5e2df340cd",
+    "cid": "blake3-512:148269a6fa8da03d34618d575a252bb0152143af993453f153a48f4bb0b26adfa838c3b96e720428ee9b96147c4ba542966f9d48435842874c9ae67b0091f20c",
     "content": {
       "entries": [
         {
@@ -42,6 +42,29 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
+          }
+        },
+        {
+          "composition_point": "after-return",
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "provekit_witness::observe(${param0}, ${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "runtime_dependency": {
+                "args": [],
+                "head": "atomic",
+                "name": "requires-provekit-witness-runtime"
+              }
+            }
+          },
+          "mode": "witness",
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
           }
         },
         {

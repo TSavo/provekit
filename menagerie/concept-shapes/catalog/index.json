@@ -883,6 +883,12 @@
       "name": "morphism:c11:if:to:concept:conditional",
       "path": "algorithms/morphism:c11:if:to:concept:conditional.blake3-512:a1a2aca047364ecc13e30f2a26f3dd28d5c81979551b1f4110fa4fa71a5828e543480e41c0acfc9b05e9fd799100dc2f14ef7ea8037daf1c402ab071a5ae4751.json"
     },
+    "blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063": {
+      "cid": "blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063",
+      "kind": "algorithm",
+      "name": "concept:contract-observation",
+      "path": "algorithms/concept:contract-observation.blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063.json"
+    },
     "blake3-512:a33706b4f08d6a9353b1b3223bdf9ea586593263efe4d6fb735b31fd3e68ee85859a8d4d0949ad0c792369ced097367c9896fb6f32ec12f2a7d684e8ec611ec9": {
       "cid": "blake3-512:a33706b4f08d6a9353b1b3223bdf9ea586593263efe4d6fb735b31fd3e68ee85859a8d4d0949ad0c792369ced097367c9896fb6f32ec12f2a7d684e8ec611ec9",
       "kind": "algorithm",

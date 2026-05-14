@@ -65,6 +65,7 @@ fn http_request_realize_request() -> RealizeRequest {
         return_type: "int".to_string(),
         concept_name: "concept:http-request".to_string(),
         mode: None,
+        modes: Vec::new(),
         contract: None,
         sugar_cids: Vec::new(),
         sugar_plugins: Vec::new(),
@@ -83,7 +84,11 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
         .join("manifest.toml");
     fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
         .expect("create manifest dir");
-    let script = script.display().to_string().replace('\\', "\\\\").replace('"', "\\\"");
+    let script = script
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
     let manifest_text = format!(
         "name = \"typescript-realize-{library_tag}\"\n\
          library_tag = \"{library_tag}\"\n\
@@ -103,6 +108,7 @@ fn sql_query_realize_request() -> RealizeRequest {
         return_type: "unknown[]".to_string(),
         concept_name: "concept:sql-query".to_string(),
         mode: None,
+        modes: Vec::new(),
         contract: None,
         sugar_cids: Vec::new(),
         sugar_plugins: Vec::new(),
@@ -177,8 +183,13 @@ fn dispatch_realize_routes_typescript_sql_library_tags_to_distinct_kits() {
     std::env::set_var("PROVEKIT_REPO_ROOT", repo);
 
     let request = sql_query_realize_request();
-    let sqlite = dispatch_realize(workspace.path(), "typescript", Some("better-sqlite3"), &request)
-        .expect("dispatch better-sqlite3 realize kit");
+    let sqlite = dispatch_realize(
+        workspace.path(),
+        "typescript",
+        Some("better-sqlite3"),
+        &request,
+    )
+    .expect("dispatch better-sqlite3 realize kit");
     let pg = dispatch_realize(workspace.path(), "typescript", Some("pg"), &request)
         .expect("dispatch pg realize kit");
 

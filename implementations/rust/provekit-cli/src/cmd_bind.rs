@@ -9,14 +9,14 @@
 // prototype demonstrated. v0 scope:
 //   - Rust source only (multi-lang lift_plugin dispatch deferred; see gaps.json).
 //   - Three rewrite shapes: annotate / canonical / invisible.
-//   - Three runtime modes:  witness / emitter / monitor.
+//   - Four runtime observation modes: witness / emitter / monitor / gate.
 //   - Target-language axis: rust / python / java / go / csharp / typescript /
 //     zig / ruby / php (default = source language).
 //   - canonical rewrite delegates to cmd_transport::realize_for_bind (ORP); falls
 //     back to emit_target_stub only when the ORP realizer refuses (unknown language).
 //   - invisible writes to stdout instead of disk.
-//   - All 9 (rewrite x mode) combinations handled; canonical-mode branches
-//     converge to ORP.
+//   - Rewrite x mode combinations converge to ORP; comma-separated modes
+//     request multiple observation wrappers at the same callsite.
 //
 // Output layout:
 //   .provekit/bindings/evidence/<cid>.json — one EvidenceMemento per contract source
@@ -82,10 +82,10 @@ pub struct BindArgs {
     #[arg(long, default_value = "invisible", value_parser = parse_rewrite)]
     pub rewrite: RewriteShape,
 
-    /// Runtime mode: monitor (throw on violation), emitter (emit structured event),
-    /// or witness (sample inputs/outputs per call).
-    #[arg(long, default_value = "monitor", value_parser = parse_mode)]
-    pub mode: RuntimeMode,
+    /// Runtime observation mode(s). Comma-separated values are accepted:
+    /// witness, emitter, monitor, gate.
+    #[arg(long, value_delimiter = ',', default_value = "monitor", value_parser = parse_mode)]
+    pub mode: Vec<RuntimeMode>,
 
     /// Target language for canonical rewrite. Defaults to source language (same-language
     /// refactor or annotate). Cross-language port when different from source.
@@ -144,12 +144,14 @@ pub enum RewriteShape {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeMode {
-    /// Throw on contract violation with clean stack.
+    /// Pass-through marker/observer.
     Monitor,
     /// Emit structured event per call (substrate as APM).
     Emitter,
     /// Sample inputs/outputs per call, contribute to WitnessMemento.
     Witness,
+    /// Throw/refuse on contract violation with clean stack.
+    Gate,
 }
 
 fn parse_rewrite(s: &str) -> Result<RewriteShape, String> {
@@ -168,8 +170,9 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
         "monitor" => Ok(RuntimeMode::Monitor),
         "emitter" => Ok(RuntimeMode::Emitter),
         "witness" => Ok(RuntimeMode::Witness),
+        "gate" => Ok(RuntimeMode::Gate),
         other => Err(format!(
-            "unknown runtime mode '{other}'; expected monitor, emitter, or witness"
+            "unknown runtime mode '{other}'; expected monitor, emitter, witness, or gate"
         )),
     }
 }
@@ -247,6 +250,7 @@ pub fn run(args: BindArgs) -> u8 {
         .target_language
         .clone()
         .unwrap_or_else(|| source_lang.clone());
+    let modes = normalize_modes(&args.mode);
 
     if !args.quiet {
         eprintln!("bind: root={}", root.display());
@@ -254,7 +258,7 @@ pub fn run(args: BindArgs) -> u8 {
         eprintln!(
             "bind: rewrite={} mode={}",
             rewrite_label(&args.rewrite),
-            mode_label(&args.mode)
+            mode_labels(&modes).join(",")
         );
     }
 
@@ -402,16 +406,14 @@ pub fn run(args: BindArgs) -> u8 {
                 );
                 return EXIT_USER_ERROR;
             }
-            apply_annotate_rewrite(
-                &root, &src_files, &result, &args.mode, /*to_disk=*/ true,
-            );
+            apply_annotate_rewrite(&root, &src_files, &result, &modes, /*to_disk=*/ true);
             (Vec::new(), Vec::new(), Vec::new())
         }
         RewriteShape::Canonical => apply_canonical_rewrite(
             &root,
             &src_files,
             &result,
-            &args.mode,
+            &modes,
             &target_lang,
             /*to_disk=*/ true,
             &output_dir,
@@ -421,16 +423,14 @@ pub fn run(args: BindArgs) -> u8 {
             // Invisible: stream to stdout. Apply annotate-shape for same-language,
             // canonical for cross-language.
             if target_lang == source_lang {
-                apply_annotate_rewrite(
-                    &root, &src_files, &result, &args.mode, /*to_disk=*/ false,
-                );
+                apply_annotate_rewrite(&root, &src_files, &result, &modes, /*to_disk=*/ false);
                 (Vec::new(), Vec::new(), Vec::new())
             } else {
                 apply_canonical_rewrite(
                     &root,
                     &src_files,
                     &result,
-                    &args.mode,
+                    &modes,
                     &target_lang,
                     /*to_disk=*/ false,
                     &output_dir,
@@ -507,7 +507,7 @@ pub struct EngineResult {
     pub gaps: Vec<GapRecord>,
     /// Minted per realize call per spec §1.2 (Blocker #1).
     pub realization_plan_mementos: Vec<RealizationPlanMemento>,
-    /// Minted when mode ∈ {witness, monitor, dispatcher} and the kit returned
+    /// Minted when mode is an observation wrapper mode and the kit returned
     /// an observation_wrapper_emission_record (Blocker #4).
     pub observation_wrapper_mementos: Vec<ObservationWrapperMemento>,
 }
@@ -1220,7 +1220,7 @@ fn apply_annotate_rewrite(
     root: &Path,
     src_files: &[PathBuf],
     result: &EngineResult,
-    mode: &RuntimeMode,
+    modes: &[RuntimeMode],
     to_disk: bool,
 ) {
     // Group bindings by file.
@@ -1234,7 +1234,7 @@ fn apply_annotate_rewrite(
         let Ok(orig) = std::fs::read_to_string(&in_path) else {
             continue;
         };
-        let rewritten = inject_annotations(&orig, bindings, &result.concepts, mode);
+        let rewritten = inject_annotations(&orig, bindings, &result.concepts, modes);
         if to_disk {
             let _ = std::fs::write(&in_path, rewritten);
         } else {
@@ -1275,7 +1275,7 @@ fn inject_annotations(
     orig: &str,
     bindings: &[&BindingRecord],
     concepts: &[ConceptRecord],
-    mode: &RuntimeMode,
+    modes: &[RuntimeMode],
 ) -> String {
     let mut by_fn: BTreeMap<String, &BindingRecord> = BTreeMap::new();
     for b in bindings {
@@ -1316,6 +1316,7 @@ fn inject_annotations(
                     || prev.starts_with("#[cfg_attr(any(), provekit_monitor")
                     || prev.starts_with("#[cfg_attr(any(), provekit_emitter")
                     || prev.starts_with("#[cfg_attr(any(), provekit_witness")
+                    || prev.starts_with("#[cfg_attr(any(), provekit_gate")
                 {
                     start -= 1;
                 } else {
@@ -1346,32 +1347,36 @@ fn inject_annotations(
                 if let Some(post) = &b.pretty_post {
                     out_lines.push(format!("{indent}#[cfg_attr(any(), ensures({post}))]"));
                 }
-                // Mode-specific attribute injection.
-                match mode {
-                    RuntimeMode::Monitor => {
-                        // Monitor: wrap body with contract violation check.
-                        // The runtime macro provekit_monitor asserts the contract
-                        // on each call; contract violation = panic with clean message.
-                        if b.pretty_pre.is_some() || b.pretty_post.is_some() {
+                // Mode-specific attribute injection. Multiple modes are
+                // independent wrapper requests at the same callsite.
+                for mode in modes {
+                    match mode {
+                        RuntimeMode::Monitor => {
                             out_lines.push(format!(
-                                "{indent}#[cfg_attr(any(), provekit_monitor(contract = \"{}\"))]",
+                                "{indent}#[cfg_attr(any(), provekit_monitor(concept = \"{}\"))]",
                                 concept_name
                             ));
                         }
-                    }
-                    RuntimeMode::Emitter => {
-                        // Emitter: emit structured substrate event per call.
-                        out_lines.push(format!(
-                            "{indent}#[cfg_attr(any(), provekit_emitter(concept = \"{}\"))]",
-                            concept_name
-                        ));
-                    }
-                    RuntimeMode::Witness => {
-                        // Witness: sample inputs/outputs, contribute to WitnessMemento.
-                        out_lines.push(format!(
-                            "{indent}#[cfg_attr(any(), provekit_witness(concept = \"{}\"))]",
-                            concept_name
-                        ));
+                        RuntimeMode::Emitter => {
+                            out_lines.push(format!(
+                                "{indent}#[cfg_attr(any(), provekit_emitter(concept = \"{}\"))]",
+                                concept_name
+                            ));
+                        }
+                        RuntimeMode::Witness => {
+                            out_lines.push(format!(
+                                "{indent}#[cfg_attr(any(), provekit_witness(concept = \"{}\"))]",
+                                concept_name
+                            ));
+                        }
+                        RuntimeMode::Gate => {
+                            if let Some(contract_cid) = &b.local_contract_cid {
+                                out_lines.push(format!(
+                                    "{indent}#[cfg_attr(any(), provekit_gate(contract = \"{}\"))]",
+                                    contract_cid
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -1405,6 +1410,7 @@ fn inject_annotations(
             || trimmed.starts_with("#[cfg_attr(any(), provekit_monitor")
             || trimmed.starts_with("#[cfg_attr(any(), provekit_emitter")
             || trimmed.starts_with("#[cfg_attr(any(), provekit_witness")
+            || trimmed.starts_with("#[cfg_attr(any(), provekit_gate")
         {
             i += 1;
             continue;
@@ -1436,7 +1442,7 @@ fn apply_canonical_rewrite(
     root: &Path,
     src_files: &[PathBuf],
     result: &EngineResult,
-    mode: &RuntimeMode,
+    modes: &[RuntimeMode],
     target_lang: &str,
     to_disk: bool,
     output_dir: &Path,
@@ -1495,7 +1501,8 @@ fn apply_canonical_rewrite(
                 param_types: b.param_types.clone(),
                 return_type: b.return_type.clone(),
                 concept_name: concept_name.to_string(),
-                mode: Some(mode_label(mode).to_string()),
+                mode: primary_mode_label(modes).map(str::to_string),
+                modes: mode_labels(modes),
                 contract: contract_payload,
                 sugar_cids: sugar_plugins
                     .iter()
@@ -2693,6 +2700,7 @@ fn mode_label(m: &RuntimeMode) -> &'static str {
         RuntimeMode::Monitor => "monitor",
         RuntimeMode::Emitter => "emitter",
         RuntimeMode::Witness => "witness",
+        RuntimeMode::Gate => "gate",
     }
 }
 
@@ -2701,7 +2709,32 @@ fn mode_label_for_hint(m: &RuntimeMode) -> String {
         RuntimeMode::Monitor => "monitor".to_string(),
         RuntimeMode::Emitter => "emitter".to_string(),
         RuntimeMode::Witness => "witness".to_string(),
+        RuntimeMode::Gate => "gate".to_string(),
     }
+}
+
+fn normalize_modes(modes: &[RuntimeMode]) -> Vec<RuntimeMode> {
+    let mut out = Vec::new();
+    for mode in modes {
+        if !out.iter().any(|existing| existing == mode) {
+            out.push(mode.clone());
+        }
+    }
+    if out.is_empty() {
+        out.push(RuntimeMode::Monitor);
+    }
+    out
+}
+
+fn mode_labels(modes: &[RuntimeMode]) -> Vec<String> {
+    modes
+        .iter()
+        .map(|mode| mode_label(mode).to_string())
+        .collect()
+}
+
+fn primary_mode_label(modes: &[RuntimeMode]) -> Option<&'static str> {
+    modes.first().map(mode_label)
 }
 
 // ============================================================================

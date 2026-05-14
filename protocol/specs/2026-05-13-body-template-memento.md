@@ -44,13 +44,19 @@ body-template-content = {
   template_name:   tstr
 }
 
-; Locked JCS key order: concept_name, emission_template, loss_record_contribution, signature_guard
+; Locked JCS key order: composition_point, concept_name, emission_template,
+; loss_record_contribution, mode, signature_guard
 body-template-entry = {
+  ? composition_point:       composition-point,
   concept_name:              tstr,
   emission_template:         body-emission-template,
   loss_record_contribution:  loss-record-contribution,
+  ? mode:                    observation-mode,
   ? signature_guard:         signature-guard
 }
+
+composition-point = "before" / "after-return" / "after-throw" / "around"
+observation-mode  = "witness" / "monitor" / "emitter" / "gate"
 
 ; Locked JCS key order: kind, template
 body-emission-template = {
@@ -81,19 +87,35 @@ signature-guard = {
 | `target_language` | yes | Target language identifier (`"java"`, `"python"`, `"rust"`, `"csharp"`, etc.). |
 | `template_name` | yes | Free-form label (e.g., `"java-canonical-bodies"`). Part of the plugin CID. |
 | `concept_name` | yes | The canonical concept name this entry covers (e.g., `"concept:identity"`, `"concept:bool-cell"`). Exact-string match against the binding's resolved concept name; no pattern matching. |
+| `mode` | no | Runtime observation mode this entry covers when `concept_name == "concept:contract-observation"`. Absent means the entry is mode-agnostic and remains v1.0.0-compatible. |
+| `composition_point` | no | Wrapper insertion point for observation-body entries. Values are `before`, `after-return`, `after-throw`, or `around`. Absent means the entry is an ordinary function body template. |
 | `emission_template.template` | yes | Surface-syntax template. `${param0}`, `${param1}`, ... bind to parameter names in order. `${return_type}` binds to the target-language return type after `map_source_type` resolution. Unbound placeholders MUST cause the entry to refuse-match (treated as non-applicable). |
 | `loss_record_contribution` | yes | Loss-record incurred when selected. v1.0.0 form MUST be `"literal"`. |
 | `signature_guard` | no | If present, an entry MAY refuse-match when the binding's signature violates the guard (e.g., a 2-arg entry MUST NOT match a 1-arg binding). Used to bound entry applicability beyond bare concept-name match. |
+
+### §2.1.1 Observation entries
+
+`concept:contract-observation(callsite_cid, contract_cid, mode)` is the
+runtime-observation hub concept. Body-template entries for this concept SHOULD
+set both `mode` and `composition_point`. The mode is part of applicability, not
+metadata; a `mode = "witness"` entry MUST NOT match a `gate` request unless a
+separate entry declares that mode.
+
+Observer effects belong to the emitted wrapper and any
+`ObservationWrapperMemento`, not to the wrapped object FCM. A body-template cell
+MAY record runtime-dependency or surface-enforcement loss when the target
+language/library cannot express the selected observation mode exactly.
 
 ### §2.2 Selection
 
 For each binding with resolved `concept_name = C`:
 
 1. Look up entries where `entry.concept_name == C` across all LOADED body-template plugins.
-2. For each candidate, check `signature_guard` (if present) against the binding's signature; drop on mismatch.
-3. Of the remaining candidates, select the one whose `loss_record_contribution` minimizes against the loaded loss function (`2026-05-12-loss-function-memento.md`).
-4. Render `emission_template.template` with the binding's parameter and type bindings.
-5. If no candidate remains, fall through to the language stub (`cmd_transport.rs::stub_body_for`) under default mode, or refuse under `--strict-body-template`.
+2. Drop candidates whose `mode` is present unless the binding carries the same observation mode.
+3. For each candidate, check `signature_guard` (if present) against the binding's signature; drop on mismatch.
+4. Of the remaining candidates, select the one whose `loss_record_contribution` minimizes against the loaded loss function (`2026-05-12-loss-function-memento.md`).
+5. Render `emission_template.template` with the binding's parameter and type bindings.
+6. If no candidate remains, fall through to the language stub (`cmd_transport.rs::stub_body_for`) under default mode, or refuse under `--strict-body-template`.
 
 ### §2.3 Template substitution
 
@@ -141,4 +163,4 @@ A binding for which no body-template matches falls through to the existing `stub
 
 - v1.1.0: `kind: "computed"` emission templates that evaluate an `ir-formula` to a string.
 - v1.1.0: cross-language template inheritance (`extends: "<other-plugin-cid>"`).
-- v1.1.0: per-mode templates (witness/emitter/monitor distinct bodies for the same concept).
+- v1.1.0: multi-cell wrapper composition where one operation body composes with several observation-mode body-template cells at explicit before/after-return/after-throw/around points.

@@ -206,3 +206,11 @@ Bridge B mints the HTTP request and response concept shapes used by later HTTP s
 | `concept:byte-stream` | `blake3-512:d5c8fe062ffe4004ccef5c49a90eaebe4f2a3cf46c315c3d966d0214c9ee5311a94355a103094669ea4634bac0fb0e82e703eb35fcbf174810defa86ee02c128` | ordered byte chunks with optional length hint |
 
 Examples: `examples.md` in this directory shows high-level bindings for libcurl, `java.net.http`, and `urllib.request`.
+
+## Contract Observation Concept Shape
+
+`concept:contract-observation(callsite_cid, contract_cid, mode)` is the hub op for witness, monitor, emitter, and gate observation wrappers.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:contract-observation` | `blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063` | mode is a formal slot; observer effects live on the wrapper memento, not the object FCM |

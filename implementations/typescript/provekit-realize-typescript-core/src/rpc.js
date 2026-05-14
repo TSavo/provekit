@@ -35,6 +35,7 @@ function dispatch(request) {
         paramTypes: stringList(params.param_types),
         returnType: String(params.return_type ?? ""),
         conceptName: String(params.concept_name ?? ""),
+        mode: typeof params.mode === "string" ? params.mode : undefined,
       }),
     };
   }
