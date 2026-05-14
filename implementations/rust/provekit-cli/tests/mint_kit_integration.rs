@@ -1074,7 +1074,7 @@ fn java_kit_pins_expected_contract_set_cid() {
 ///
 /// macOS-only: the swift release binary requires the swift toolchain.
 const SWIFT_CONTRACT_SET_CID: &str =
-    "blake3-512:272543efe7c47b911659e1fc6a7368431b6eaa6010d2560a5d3e6717fcd470b50b24b607b481272941764b731d890d6973ab88e6000bde96fd306163a5742c56";
+    "blake3-512:cb743058283d836c7336c43f726bd8a63ef34223e8246af4985e3976f422fd17dd597b32984a4385dbef53c3cca08e16adb58007275dbc7c012845ae3b37f04b";
 
 #[test]
 #[serial(mint_kit_files)]

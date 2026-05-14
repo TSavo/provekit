@@ -2,9 +2,9 @@
   "schemaVersion": "1",
   "kind": "self-contracts-attestation",
   "lang": "swift",
-  "cid": "blake3-512:180fbf31fa8cd82eb5c0404615fa218795768d5533cd67c7dbfabbd457bb629e19157012b51f1496c1b2c0e5b579bb12ec975db57fd75ca9d26242e5cd708e09",
-  "contractSetCid": "blake3-512:272543efe7c47b911659e1fc6a7368431b6eaa6010d2560a5d3e6717fcd470b50b24b607b481272941764b731d890d6973ab88e6000bde96fd306163a5742c56",
-  "declaredAt": "2026-05-03T18:00:00Z",
+  "cid": "blake3-512:1f0deef84510348d76d4c923416da9e1d17a8ab9e84c0c91663d17ba3dcdfc9bdc41b1db77a0c16041016bc3bafabef66c206258f9d6ae4f7d7261147b01f838",
+  "contractSetCid": "blake3-512:cb743058283d836c7336c43f726bd8a63ef34223e8246af4985e3976f422fd17dd597b32984a4385dbef53c3cca08e16adb58007275dbc7c012845ae3b37f04b",
+  "declaredAt": "2026-05-05T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:3R1RdubV3Q8BzCCLzQfuuE2zudBazFNEMfNTPjGqVWqPllwaX9lr7OVOs339VJnscOwYLeeQwp10B/vLllMzBA=="
+  "signature": "ed25519:y7zlSsp4tF8i+Fft/M5psTWpd3+6Vzbdo3rlE3hYuyGTfX2uwb/3E97ni1VaD0RmE5+k8lbmXmFmORagP6ttAA=="
 }
