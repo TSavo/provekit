@@ -48,8 +48,8 @@ use provekit_ir_types::{
     ConceptSiteProvenance, Discharge, EvidenceMemento, EvidenceRef, IrFormula, LossRecord,
     ObservationWrapperMemento, PolicyMemento, PromotionDecisionEnvelope, PromotionDecisionHeader,
     PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult,
-    ProofGatePolicyMemento, RealizationPlanMemento, SourceKind, SourceLocator,
-    SourceLocatorPoint, SourceLocatorSpan,
+    ProofGatePolicyMemento, RealizationPlanMemento, SourceKind, SourceLocator, SourceLocatorPoint,
+    SourceLocatorSpan,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -91,6 +91,34 @@ pub struct BindArgs {
     /// refactor or annotate). Cross-language port when different from source.
     #[arg(long)]
     pub target_language: Option<String>,
+
+    /// Source library surface for migration rewrite, for example typescript-better-sqlite3.
+    #[arg(long)]
+    pub library_from: Option<String>,
+
+    /// Target library surface for migration rewrite, for example typescript-pg.
+    #[arg(long)]
+    pub library_to: Option<String>,
+
+    /// Source directory for migration rewrite.
+    #[arg(long)]
+    pub source_dir: Option<PathBuf>,
+
+    /// Output directory for migration rewrite.
+    #[arg(long)]
+    pub out_dir: Option<PathBuf>,
+
+    /// Receipt path for migration rewrite.
+    #[arg(long)]
+    pub receipt: Option<PathBuf>,
+
+    /// Fixture sqlite database for row-shape witnesses during migration.
+    #[arg(long)]
+    pub witness_fixture: Option<PathBuf>,
+
+    /// Write migrated source to out-dir. Without this flag the migration path is a dry run.
+    #[arg(long)]
+    pub write: bool,
 
     /// Quiet: suppress non-error output.
     #[arg(long)]
@@ -151,6 +179,17 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
 // ============================================================================
 
 pub fn run(args: BindArgs) -> u8 {
+    if args.library_from.is_some()
+        || args.library_to.is_some()
+        || args.source_dir.is_some()
+        || args.out_dir.is_some()
+        || args.receipt.is_some()
+        || args.witness_fixture.is_some()
+        || args.write
+    {
+        return crate::cmd_bind_migrate::run(args);
+    }
+
     // PEP 1.7.0: seal the plugin registry before running any pipeline work (§9).
     // The registry CID must appear in every output's provenance (§9.4).
     let sealed_at = chrono::Utc::now()
@@ -404,9 +443,10 @@ pub fn run(args: BindArgs) -> u8 {
     // Write realization-plan and observation-wrapper mementos (Blocker #1, #4).
     let _ = std::fs::create_dir_all(output_dir.join("realization-plans"));
     for plan in &realization_plan_mementos {
-        let path = output_dir
-            .join("realization-plans")
-            .join(format!("{}.json", safe_filename(&plan.selected_realization_cid)));
+        let path = output_dir.join("realization-plans").join(format!(
+            "{}.json",
+            safe_filename(&plan.selected_realization_cid)
+        ));
         let _ = std::fs::write(
             &path,
             serde_json::to_string_pretty(plan).unwrap_or_default(),
@@ -573,23 +613,26 @@ struct ContractWitness {
 /// reaches the eight-verb engine; there is no language-specific path.
 fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLift {
     let mut witnesses = Vec::new();
-    if let Some(pre) = entry.attr_pre.as_deref() {
-        witnesses.push(annotation_contract_witness(
-            "pre",
-            pre,
-            entry.fn_line as usize,
-            &entry.file,
-            &entry.fn_name,
-        ));
-    }
-    if let Some(post) = entry.attr_post.as_deref() {
-        witnesses.push(annotation_contract_witness(
-            "post",
-            post,
-            entry.fn_line as usize,
-            &entry.file,
-            &entry.fn_name,
-        ));
+    let use_legacy_attr_shim = entry.witnesses.is_empty();
+    if use_legacy_attr_shim {
+        if let Some(pre) = entry.attr_pre.as_deref() {
+            witnesses.push(annotation_contract_witness(
+                "pre",
+                pre,
+                entry.fn_line as usize,
+                &entry.file,
+                &entry.fn_name,
+            ));
+        }
+        if let Some(post) = entry.attr_post.as_deref() {
+            witnesses.push(annotation_contract_witness(
+                "post",
+                post,
+                entry.fn_line as usize,
+                &entry.file,
+                &entry.fn_name,
+            ));
+        }
     }
     witnesses.extend(
         entry
@@ -602,8 +645,16 @@ fn raw_lift_from_kit_entry(entry: &crate::kit_dispatch::BindLiftEntry) -> RawLif
         file: entry.file.clone(),
         fn_name: entry.fn_name.clone(),
         fn_line: entry.fn_line as usize,
-        attr_pre: entry.attr_pre.clone(),
-        attr_post: entry.attr_post.clone(),
+        attr_pre: if use_legacy_attr_shim {
+            entry.attr_pre.clone()
+        } else {
+            None
+        },
+        attr_post: if use_legacy_attr_shim {
+            entry.attr_post.clone()
+        } else {
+            None
+        },
         witnesses,
         concept_annotation: entry.concept_annotation.clone(),
         term_shape: TermShape::from_kit(entry.term_shape.clone(), entry.term_shape_cid.clone()),
@@ -855,22 +906,22 @@ fn run_bind_engine(
             .or_else(|| shape_to_concept.get(&shape_cid))
             .expect("shape was clustered");
 
-        // Contract origin priority: attribute > test > algebra-synthesis > empty.
+        // Contract origin priority: normalized witnesses > legacy attr shim > test >
+        // algebra-synthesis > empty. Non-empty witnesses[] are the primary contract
+        // channel; attr_pre/attr_post only feed the compatibility shim above.
         let explicit_pre = contract_text_from_witnesses(&lift.witnesses, "pre");
         let explicit_post = contract_text_from_witnesses(&lift.witnesses, "post");
-        let (origin, pre, post) = if lift.attr_pre.is_some() || lift.attr_post.is_some() {
+        let (origin, pre, post) = if explicit_pre.is_some() || explicit_post.is_some() {
+            (
+                contract_origin_for_witnesses(&lift.witnesses),
+                explicit_pre,
+                explicit_post,
+            )
+        } else if lift.attr_pre.is_some() || lift.attr_post.is_some() {
             (
                 ContractOrigin::AttributeLift,
                 lift.attr_pre.clone(),
                 lift.attr_post.clone(),
-            )
-        } else if explicit_pre.is_some() || explicit_post.is_some() {
-            (
-                ContractOrigin::EvidenceLift {
-                    source_kind: dominant_source_kind_label(&lift.witnesses),
-                },
-                explicit_pre,
-                explicit_post,
             )
         } else if let Some(test_post) = test_post_map.get(&lift.fn_name) {
             (ContractOrigin::TestLift, None, Some(test_post.clone()))
@@ -1390,7 +1441,11 @@ fn apply_canonical_rewrite(
     to_disk: bool,
     output_dir: &Path,
     sugar_plugins: &[serde_json::Value],
-) -> (Vec<String>, Vec<RealizationPlanMemento>, Vec<ObservationWrapperMemento>) {
+) -> (
+    Vec<String>,
+    Vec<RealizationPlanMemento>,
+    Vec<ObservationWrapperMemento>,
+) {
     // The realize plugin owns mode-aware emission; bind passes the selected
     // mode plus the married contract payload so the kit can choose target
     // sugar without Rust knowing the target syntax.
@@ -2099,6 +2154,20 @@ fn dominant_source_kind_label(witnesses: &[ContractWitness]) -> String {
             .next()
             .unwrap_or_else(|| "unspecified".to_string()),
         _ => "mixed".to_string(),
+    }
+}
+
+fn contract_origin_for_witnesses(witnesses: &[ContractWitness]) -> ContractOrigin {
+    if !witnesses.is_empty()
+        && witnesses
+            .iter()
+            .all(|w| matches!(w.source_kind, SourceKind::Annotation))
+    {
+        ContractOrigin::AttributeLift
+    } else {
+        ContractOrigin::EvidenceLift {
+            source_kind: dominant_source_kind_label(witnesses),
+        }
     }
 }
 

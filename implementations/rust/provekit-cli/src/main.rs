@@ -21,6 +21,7 @@ use clap::{Parser, Subcommand};
 mod cmd_agent;
 mod cmd_ask;
 mod cmd_bind;
+mod cmd_bind_migrate;
 mod cmd_ci;
 mod cmd_compose;
 mod cmd_dump;

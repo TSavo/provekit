@@ -25,8 +25,8 @@ This spec defines the JSON shape every entry of `ir-document.ir[]` MUST take whe
 ; Locked JCS key order: alphabetical within the object.
 
 bind-lift-entry = {
-  attr_post:          tstr / null,    ; user-declared postcondition formula text, JSON-encoded
-  attr_pre:           tstr / null,    ; user-declared precondition formula text, JSON-encoded
+  attr_post:          tstr / null,    ; LEGACY compatibility postcondition text; see §1.1
+  attr_pre:           tstr / null,    ; LEGACY compatibility precondition text; see §1.1
   concept_annotation: tstr / null,    ; the `// concept: NAME` annotation, NAME only (no prefix)
   file:               tstr,           ; project-root-relative path of the source file
   fn_line:            uint,           ; 1-based line number of the `fn` keyword
@@ -68,8 +68,8 @@ source-kind = "annotation"
 
 | Field                | Required | Meaning |
 |----------------------|----------|---------|
-| `attr_pre`           | yes      | The user-supplied precondition formula text extracted from the language's contract annotation surface (e.g., Rust `#[requires(...)]`, Java `@requires`, Python `# @requires:`). `null` when no annotation is present. |
-| `attr_post`          | yes      | The user-supplied postcondition formula text. `null` when absent. |
+| `attr_pre`           | yes      | LEGACY compatibility precondition text extracted from older annotation-only lift kits. New producers SHOULD emit `null` and place all contract evidence in `witnesses[]`. Consumers MUST use this field only when `witnesses[]` is empty. |
+| `attr_post`          | yes      | LEGACY compatibility postcondition text extracted from older annotation-only lift kits. New producers SHOULD emit `null` and place all contract evidence in `witnesses[]`. Consumers MUST use this field only when `witnesses[]` is empty. |
 | `concept_annotation` | yes      | The NAME from a `// concept: NAME` (or language-equivalent) comment immediately preceding the function. The kit MUST strip the `concept:` prefix; producers emit `identity`, not `concept:identity`. `null` when absent. |
 | `file`               | yes      | Path relative to the project root (the `workspace_root` lift-params field). Forward slashes only; the kit MUST normalize. |
 | `fn_line`            | yes      | The 1-based line number of the function declaration (the line containing the `fn`/`def`/method keyword). |
@@ -80,13 +80,15 @@ source-kind = "annotation"
 | `return_type`        | yes      | The source-language return type, or `"()"` for unit/void. |
 | `term_shape`         | yes      | A language-neutral structural fingerprint of the function body, defined per §2. |
 | `term_shape_cid`     | yes      | `"blake3-512:" + hex(BLAKE3-512(JCS-canonical bytes of `term_shape`))`. Used as the bucket key for clustering. |
-| `witnesses`          | yes      | Contract witnesses already married to this function/concept site. Each witness is promoted directly to an `EvidenceMemento` by cmd_bind. Legacy `attr_pre` / `attr_post` producers MAY leave this empty; cmd_bind auto-promotes those fields as `source_kind = "annotation"` witnesses for backward compatibility. |
+| `witnesses`          | yes      | Authoritative contract witnesses already married to this function/concept site. Each witness is promoted directly to an `EvidenceMemento` by cmd_bind. Legacy `attr_pre` / `attr_post` producers MAY leave this empty; cmd_bind auto-promotes those fields as `source_kind = "annotation"` witnesses for backward compatibility. |
 
 ### §1.2 Contract witness semantics
 
 `bind-contract-witness-entry.source_kind` MUST use the existing `EvidenceMemento.source_kind` vocabulary from `2026-05-13-compound-contract-memento.md` §10. Lift kits MUST NOT invent a parallel bind-only source-kind enum. Unknown future labels are carried as open extensions and map to `SourceKind::Other`.
 
 `predicate` is preferred when the lifter has an `IrFormula`. `predicate_text` is the compatibility surface for existing annotation strings and native extractor ecosystems that have not yet lowered their predicate into IR. When both are present, `predicate` is authoritative for evidence minting and `predicate_text` is retained only for source re-emission surfaces.
+
+When `witnesses[]` is non-empty, it is the complete contract evidence set for the bind entry. `attr_pre` and `attr_post` MUST NOT add predicates, override predicates, or alter the composed contract in a conforming consumer. They are ignored except for diagnostics. A producer that still has only legacy annotation strings MAY set `witnesses[] = []`; the consumer compatibility shim then lifts `attr_pre` / `attr_post` as annotation witnesses.
 
 ### §1.3 What is OUT OF scope for this entry
 

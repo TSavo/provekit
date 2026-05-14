@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for TypeScript better-sqlite3 body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=typescript and library_tag=better-sqlite3.
+name = "typescript-realize-better-sqlite3"
+library_tag = "better-sqlite3"
+command = ["implementations/typescript/target/release/provekit-realize-typescript-better-sqlite3", "--rpc"]
+working_dir = "."

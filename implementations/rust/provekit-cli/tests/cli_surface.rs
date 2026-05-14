@@ -863,7 +863,8 @@ surface = "zig"
     write_executable(
         &shim,
         &format!(
-            "#!/usr/bin/env sh\ncd '{}'\nexec zig build run -- \"$@\"\n",
+            "#!/usr/bin/env sh\nmkdir -p '{0}/.zig-global-cache' '{0}/.zig-local-cache'\nexport ZIG_GLOBAL_CACHE_DIR='{0}/.zig-global-cache'\nexport ZIG_LOCAL_CACHE_DIR='{0}/.zig-local-cache'\ncd '{1}'\nexec zig build run -- \"$@\"\n",
+            project.path().display(),
             root.join("implementations/zig/provekit-lift-zig").display()
         ),
     );

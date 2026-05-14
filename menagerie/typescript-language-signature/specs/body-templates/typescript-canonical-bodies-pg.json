@@ -1,0 +1,81 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-14T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:382f1ed59e3066d75c2f330f5ae007ab6726ccbe782bcac618bcade5e15ba80cc5e98c361a7d68500a01cba23f46e087442c1f86cb4b11d2a0abe5b82015927a",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "const result = await pool.query(${param0}, ${param1});\nreturn result.rows;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1"
+                  }
+                ],
+                "head": "atomic",
+                "name": "sql-query-cites-concept-cid"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "const result = await pool.query(${param0} + \" RETURNING id\", ${param1});\nreturn { rows_affected: result.rowCount ?? 0, last_insert_id: result.rows[0]?.id ?? null };"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9"
+                  }
+                ],
+                "head": "atomic",
+                "name": "sql-execute-cites-concept-cid"
+              },
+              "last_insert_id_loss_claim": {
+                "args": [],
+                "head": "atomic",
+                "name": "pg-last-insert-id-from-returning-id"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        }
+      ],
+      "target_language": "typescript",
+      "template_name": "typescript-canonical-bodies-pg"
+    },
+    "critical": false,
+    "kind": "body-template",
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
+    "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  }
+}

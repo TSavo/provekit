@@ -301,6 +301,7 @@ fn build_evm_lifter() {
         .arg("--release")
         .arg("-p")
         .arg("provekit-lift-evm-bytecode")
+        .env_remove("CARGO_TARGET_DIR")
         .current_dir(&workspace)
         .output()
         .expect("spawn cargo build for EVM lifter");

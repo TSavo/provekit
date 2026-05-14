@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for canonical TypeScript body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=typescript.
+name = "typescript-realize"
+library_tag = "fetch"
+command = ["implementations/typescript/target/release/provekit-realize-typescript", "--rpc"]
+working_dir = "."

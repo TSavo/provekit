@@ -197,6 +197,75 @@ for line in sys.stdin:
     root
 }
 
+fn copy_fixture_with_attrs_and_authoritative_witness_manifest() -> PathBuf {
+    let root = copy_fixture_to_temp();
+    let kit_path = root.join("bind-lift-kit.py");
+    let shape_cid = format!("blake3-512:{}", "2".repeat(128));
+    let script = format!(
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+SHAPE_CID = {shape_cid:?}
+
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method")
+    request_id = request.get("id")
+    if method == "initialize":
+        result = {{}}
+    elif method == "lift":
+        result = {{
+            "kind": "ir-document",
+            "diagnostics": [],
+            "ir": [{{
+                "kind": "bind-lift-entry",
+                "file": "src/account.rs",
+                "fn_name": "deposit",
+                "fn_line": 14,
+                "attr_pre": "amount > 0",
+                "attr_post": "out >= 0",
+                "concept_annotation": "deposit-then-balance",
+                "param_names": ["balance", "amount"],
+                "param_types": ["i64", "i64"],
+                "return_type": "i64",
+                "term_shape": {{"kind": "body", "stmts": [{{"kind": "opaque"}}]}},
+                "term_shape_cid": SHAPE_CID,
+                "witnesses": [
+                    {{
+                        "role": "post",
+                        "predicate_text": "out == balance + amount",
+                        "source_kind": "test-assertion",
+                        "line": 7,
+                        "col": 8
+                    }}
+                ]
+            }}]
+        }}
+    elif method == "shutdown":
+        result = {{}}
+    else:
+        print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "error": {{"message": "unknown method"}}}}), flush=True)
+        continue
+    print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "result": result}}), flush=True)
+    if method == "shutdown":
+        break
+"#
+    );
+    fs::write(&kit_path, script).expect("write bind lift kit");
+    let manifest_dir = root.join(".provekit").join("lift").join("rust");
+    fs::create_dir_all(&manifest_dir).expect("create lift manifest dir");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"test-bind-lift-authoritative-witness\"\ncommand = [\"python3\", \"{}\"]\n",
+            kit_path.display()
+        ),
+    )
+    .expect("write lift manifest");
+    root
+}
+
 fn bind_cmd(
     root: &Path,
     out: &Path,
@@ -300,6 +369,32 @@ fn annotate_monitor_injects_concept_and_monitor_attr() {
     assert!(
         rewritten.contains("provekit_monitor"),
         "monitor mode must inject provekit_monitor attribute"
+    );
+}
+
+#[test]
+fn witnesses_are_authoritative_over_legacy_attr_fields() {
+    let tmp = copy_fixture_with_attrs_and_authoritative_witness_manifest();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&tmp, &out, "annotate", "monitor", None);
+    assert!(
+        result.status.success(),
+        "annotate+monitor should succeed\nstderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let rewritten = fs::read_to_string(tmp.join("src").join("account.rs")).unwrap();
+    assert!(
+        rewritten.contains("ensures(out == balance + amount)"),
+        "non-empty witnesses[] must drive emitted postconditions:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains("ensures(out >= 0)"),
+        "legacy attr_post must not override non-empty witnesses[]:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains("requires(amount > 0)"),
+        "legacy attr_pre must not be promoted when witnesses[] is non-empty:\n{rewritten}"
     );
 }
 
