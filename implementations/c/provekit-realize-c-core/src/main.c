@@ -700,10 +700,66 @@ static TemplateCatalog load_catalog(const char *argv0) {
     return catalog;
 }
 
+static int is_passthrough_c_type(const char *src) {
+    if (src == NULL || src[0] == '\0') return 0;
+    for (const unsigned char *p = (const unsigned char *)src; *p; p++) {
+        if (isalnum(*p) || *p == '_' || *p == '*' || isspace(*p)) continue;
+        return 0;
+    }
+    if (strcmp(src, "char") == 0 ||
+        strcmp(src, "signed char") == 0 ||
+        strcmp(src, "unsigned char") == 0 ||
+        strcmp(src, "short") == 0 ||
+        strcmp(src, "unsigned short") == 0 ||
+        strcmp(src, "int") == 0 ||
+        strcmp(src, "unsigned int") == 0 ||
+        strcmp(src, "long") == 0 ||
+        strcmp(src, "unsigned long") == 0 ||
+        strcmp(src, "long long") == 0 ||
+        strcmp(src, "unsigned long long") == 0 ||
+        strcmp(src, "size_t") == 0 ||
+        strcmp(src, "float") == 0 ||
+        strcmp(src, "double") == 0 ||
+        strcmp(src, "long double") == 0 ||
+        strcmp(src, "bool") == 0 ||
+        strcmp(src, "_Bool") == 0 ||
+        strcmp(src, "void") == 0) {
+        return 1;
+    }
+    if (strncmp(src, "struct ", 7) == 0 ||
+        strncmp(src, "enum ", 5) == 0 ||
+        strncmp(src, "union ", 6) == 0) {
+        return 1;
+    }
+    if (strchr(src, '*') != NULL &&
+        (strstr(src, "char") != NULL ||
+         strstr(src, "short") != NULL ||
+         strstr(src, "int") != NULL ||
+         strstr(src, "long") != NULL ||
+         strstr(src, "size_t") != NULL ||
+         strstr(src, "float") != NULL ||
+         strstr(src, "double") != NULL ||
+         strstr(src, "bool") != NULL ||
+         strstr(src, "_Bool") != NULL ||
+         strstr(src, "void") != NULL)) {
+        return 1;
+    }
+    return 0;
+}
+
 static char *map_source_type(const char *src) {
+    if (src == NULL || src[0] == '\0') return NULL;
+    if (strcmp(src, "Unit") == 0 || strcmp(src, "()") == 0) return xstrdup("void");
+    if (strcmp(src, "Int") == 0) return xstrdup("int");
+    if (strcmp(src, "Bool") == 0 || strcmp(src, "Boolean") == 0) return xstrdup("bool");
+    if (strcmp(src, "Float") == 0) return xstrdup("float");
+    if (strcmp(src, "Real") == 0) return xstrdup("double");
+    if (strcmp(src, "String") == 0) return xstrdup("const char*");
     if (strcmp(src, "()") == 0) return xstrdup("void");
     if (strcmp(src, "void") == 0) return xstrdup("void");
     if (strcmp(src, "i64") == 0 || strcmp(src, "u64") == 0) return xstrdup("long");
+    if (strcmp(src, "isize") == 0) return xstrdup("long");
+    if (strcmp(src, "usize") == 0) return xstrdup("size_t");
     if (strcmp(src, "i32") == 0 || strcmp(src, "u32") == 0 || strcmp(src, "int") == 0) {
         return xstrdup("int");
     }
@@ -714,9 +770,10 @@ static char *map_source_type(const char *src) {
     if (strcmp(src, "bool") == 0) return xstrdup("bool");
     if (strcmp(src, "String") == 0 || strcmp(src, "&str") == 0 ||
         strcmp(src, "&String") == 0 || strcmp(src, "str") == 0) {
-        return xstrdup("char *");
+        return xstrdup("const char*");
     }
-    return xstrdup(src);
+    if (is_passthrough_c_type(src)) return xstrdup(src);
+    return NULL;
 }
 
 static int concept_matches(const char *entry_name, const char *request_name) {
@@ -810,34 +867,107 @@ static int entry_signature_matches(const BodyTemplateEntry *entry, const StringA
 }
 
 static char *body_template_for(const TemplateCatalog *catalog, const char *concept_name,
-                               const StringArray *params, const StringArray *param_types,
-                               const char *return_type) {
-    StringArray mapped_param_types;
-    char *mapped_return_type = map_source_type(return_type);
+                               const StringArray *params,
+                               const StringArray *mapped_param_types,
+                               const char *mapped_return_type) {
     char *rendered = NULL;
-    string_array_init(&mapped_param_types);
-    if (mapped_return_type == NULL) return NULL;
-    for (size_t i = 0; i < param_types->len; i++) {
-        char *mapped = map_source_type(param_types->items[i]);
-        if (mapped == NULL || string_array_push(&mapped_param_types, mapped) != 0) {
-            free(mapped);
-            string_array_free(&mapped_param_types);
-            free(mapped_return_type);
-            return NULL;
-        }
-    }
     for (size_t i = 0; i < catalog->len; i++) {
         const BodyTemplateEntry *entry = &catalog->entries[i];
         if (!concept_matches(entry->concept_name, concept_name)) continue;
-        if (!entry_signature_matches(entry, params, &mapped_param_types, mapped_return_type)) {
+        if (!entry_signature_matches(entry, params, mapped_param_types, mapped_return_type)) {
             continue;
         }
-        rendered = render_template(entry, params, &mapped_param_types, mapped_return_type);
+        rendered = render_template(entry, params, mapped_param_types, mapped_return_type);
         if (rendered != NULL) break;
     }
-    string_array_free(&mapped_param_types);
-    free(mapped_return_type);
     return rendered;
+}
+
+static char *unsupported_sort_message(const char *sort) {
+    Buf b;
+    buf_init(&b);
+    if (buf_append(&b, "UNSUPPORTED_SORT: no C type mapping for ") != 0 ||
+        buf_append(&b, sort != NULL ? sort : "") != 0) {
+        buf_free(&b);
+        return NULL;
+    }
+    return buf_steal(&b);
+}
+
+static int map_signature_types(const StringArray *param_types, const char *return_type,
+                               StringArray *mapped_param_types,
+                               char **mapped_return_type,
+                               char **error_message) {
+    *mapped_return_type = map_source_type(return_type);
+    if (*mapped_return_type == NULL) {
+        *error_message = unsupported_sort_message(return_type);
+        return *error_message == NULL ? -2 : -1;
+    }
+    for (size_t i = 0; i < param_types->len; i++) {
+        char *mapped = map_source_type(param_types->items[i]);
+        if (mapped == NULL) {
+            *error_message = unsupported_sort_message(param_types->items[i]);
+            return *error_message == NULL ? -2 : -1;
+        }
+        if (strcmp(mapped, "void") == 0) {
+            free(mapped);
+            *error_message = unsupported_sort_message(param_types->items[i]);
+            return *error_message == NULL ? -2 : -1;
+        }
+        if (string_array_push(mapped_param_types, mapped) != 0) {
+            free(mapped);
+            return -2;
+        }
+    }
+    return 0;
+}
+
+static char *indent_body(const char *body);
+
+static int append_typed_param(Buf *out, const char *type, const char *name) {
+    size_t len = strlen(type);
+    if (buf_append(out, type) != 0) return -1;
+    if (!(len >= 2 && type[len - 1] == '*' && isspace((unsigned char)type[len - 2]))) {
+        if (buf_append_char(out, ' ') != 0) return -1;
+    }
+    return buf_append(out, name);
+}
+
+static char *function_source(const char *function, const StringArray *params,
+                             const StringArray *mapped_param_types,
+                             const char *mapped_return_type, const char *body) {
+    Buf out;
+    char *indented_body = indent_body(body);
+    if (indented_body == NULL) return NULL;
+    buf_init(&out);
+    if (buf_append(&out, mapped_return_type) != 0 ||
+        buf_append_char(&out, ' ') != 0 ||
+        buf_append(&out, function) != 0 ||
+        buf_append_char(&out, '(') != 0) {
+        goto oom;
+    }
+    if (params->len == 0) {
+        if (buf_append(&out, "void") != 0) goto oom;
+    } else {
+        for (size_t i = 0; i < params->len; i++) {
+            if (i > 0 && buf_append(&out, ", ") != 0) goto oom;
+            if (append_typed_param(&out, mapped_param_types->items[i], params->items[i]) != 0) {
+                goto oom;
+            }
+        }
+    }
+    if (buf_append(&out, ") {\n") != 0 ||
+        buf_append(&out, indented_body) != 0 ||
+        buf_append(&out, "}\n") != 0) {
+        goto oom;
+    }
+    free(indented_body);
+    return buf_steal(&out);
+
+oom:
+    free(indented_body);
+    buf_free(&out);
+    return NULL;
 }
 
 static char *indent_body(const char *body) {
@@ -866,7 +996,9 @@ static char *indent_body(const char *body) {
 }
 
 static int return_type_is_void(const char *return_type) {
-    return strcmp(return_type, "void") == 0 || strcmp(return_type, "()") == 0;
+    return strcmp(return_type, "void") == 0 ||
+           strcmp(return_type, "()") == 0 ||
+           strcmp(return_type, "Unit") == 0;
 }
 
 static char *stub_body_for(const char *concept_name, const char *return_type) {
@@ -904,15 +1036,18 @@ static void handle_invoke(const char *id, const char *line, const char *end,
     char *concept_name = NULL;
     StringArray params;
     StringArray param_types;
+    StringArray mapped_param_types;
     int params_present = 0;
     int param_types_present = 0;
+    char *mapped_return_type = NULL;
+    char *error_message = NULL;
     char *body = NULL;
     char *source = NULL;
     char *source_json = NULL;
     int is_stub = 0;
-    (void)function;
     string_array_init(&params);
     string_array_init(&param_types);
+    string_array_init(&mapped_param_types);
     if (params_obj == NULL || *params_obj != '{') {
         send_error(id, -32602, "INVALID_PARAMS: params must be an object");
         return;
@@ -932,13 +1067,33 @@ static void handle_invoke(const char *id, const char *line, const char *end,
         send_error(id, -32602, "INVALID_PARAMS: missing function, signature, or concept_name");
         goto done;
     }
-    body = body_template_for(catalog, concept_name, &params, &param_types, return_type);
+    if (params.len != param_types.len) {
+        send_error(id, -32602, "INVALID_PARAMS: params and param_types length mismatch");
+        goto done;
+    }
+    int map_status = map_signature_types(&param_types, return_type, &mapped_param_types,
+                                         &mapped_return_type, &error_message);
+    if (map_status != 0) {
+        send_error(id, map_status == -2 ? -32603 : -32602,
+                   error_message != NULL ? error_message : "out of memory");
+        goto done;
+    }
+    body = body_template_for(catalog, concept_name, &params, &mapped_param_types,
+                             mapped_return_type);
     if (body == NULL) {
-        body = stub_body_for(concept_name, return_type);
+        body = stub_body_for(concept_name, mapped_return_type);
         is_stub = 1;
     }
-    source = indent_body(body);
-    source_json = json_quote(source != NULL ? source : "");
+    if (body == NULL) {
+        send_error(id, -32603, "out of memory");
+        goto done;
+    }
+    source = function_source(function, &params, &mapped_param_types, mapped_return_type, body);
+    if (source == NULL) {
+        send_error(id, -32603, "out of memory");
+        goto done;
+    }
+    source_json = json_quote(source);
     if (source_json == NULL) {
         send_error(id, -32603, "out of memory");
         goto done;
@@ -955,6 +1110,9 @@ done:
     free(concept_name);
     string_array_free(&params);
     string_array_free(&param_types);
+    string_array_free(&mapped_param_types);
+    free(mapped_return_type);
+    free(error_message);
     free(body);
     free(source);
     free(source_json);
