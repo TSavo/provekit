@@ -5,6 +5,7 @@
 // Uses the 11 trinity catalog concepts:
 //   option, pair, result, tagged-union, identity, list,
 //   unit, assert, bool-cell, option-bind, result-bind
+// Plus one API-tier HTTP request concept for the Bridge D receipt.
 //
 // Also includes a retry-loop shape so that seed_catalog() produces
 // at least one classified binding on leg 1, giving the test a
@@ -127,6 +128,13 @@ pub fn retry_until_success(max_attempts: i64) -> bool {
         }
     }
     false
+}
+
+// -- http-request ------------------------------------------------------------
+// concept: http-request
+pub async fn fetch_url_status(url: String) -> i64 {
+    let response = reqwest::get(&url).await.unwrap();
+    response.status().as_u16() as i64
 }
 
 // ── unit tests ────────────────────────────────────────────────────────────────
