@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -9,6 +10,66 @@ if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
 from provekit_realize_python_core.realizer import emit_stub
+
+
+def _cid(ch: str) -> str:
+    return "blake3-512:" + ch * 128
+
+
+def _formula_gte_x_zero() -> dict:
+    return {
+        "args": [
+            {"kind": "var", "name": "x"},
+            {
+                "kind": "const",
+                "sort": {"kind": "primitive", "name": "Int"},
+                "value": 0,
+            },
+        ],
+        "kind": "atomic",
+        "name": "≥",
+    }
+
+
+def _formula_out_eq_x() -> dict:
+    return {
+        "args": [{"kind": "var", "name": "out"}, {"kind": "var", "name": "x"}],
+        "kind": "atomic",
+        "name": "=",
+    }
+
+
+def _contract_payload() -> dict:
+    return {
+        "concept_site_cid": _cid("1"),
+        "local_contract_cid": _cid("2"),
+        "object_fcm_cid": _cid("3"),
+        "origin": "evidence-lift[native-surface]",
+        "discharge_verdict": "exact",
+        "witnesses": [
+            {
+                "role": "pre",
+                "predicate": _formula_gte_x_zero(),
+                "predicate_text": "x >= 0",
+                "source_kind": "native-surface",
+            },
+            {
+                "role": "post",
+                "predicate": _formula_out_eq_x(),
+                "predicate_text": "out == x",
+                "source_kind": "native-surface",
+            },
+        ],
+    }
+
+
+def _contract_comment_payloads(source: str) -> list[dict]:
+    payloads: list[dict] = []
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# provekit-contract: "):
+            payloads.append(json.loads(stripped.removeprefix("# provekit-contract: ")))
+    return payloads
 
 
 def test_identity_renders_python_function_from_body_template() -> None:
@@ -99,3 +160,34 @@ def test_unknown_concept_falls_back_to_python_stub() -> None:
         "is_stub": True,
         "extension": "py",
     }
+
+
+def test_contract_witnesses_emit_liftable_contract_comment_payloads() -> None:
+    result = emit_stub(
+        function="wrap_identity",
+        params=["x"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="identity",
+        contract=_contract_payload(),
+    )
+
+    source = result["source"]
+    assert source.index("# provekit-contract:") < source.index("def wrap_identity")
+    assert source.count("# provekit-contract-payload-cid: blake3-512:") == 2
+
+    payloads = _contract_comment_payloads(source)
+    assert [payload["role"] for payload in payloads] == ["pre", "post"]
+    for payload in payloads:
+        assert payload["artifact_kind"] == "provekit-contract-comment-sugar"
+        assert payload["schema_version"] == "1"
+        assert payload["concept_site_cid"] == _cid("1")
+        assert payload["contract_cid"] == _cid("2")
+        assert payload["local_contract_cid"] == _cid("2")
+        assert payload["emitted_by"]["kit_kind"] == "realize"
+        assert payload["emitted_by"]["target_language"] == "python"
+        assert payload["ir_formula_jcs_cid"].startswith("blake3-512:")
+        assert payload["loss_record_cid"].startswith("blake3-512:")
+        assert payload["policy_cid"].startswith("blake3-512:")
+        assert payload["sugar_dict_cid"].startswith("blake3-512:")
+        assert isinstance(payload["ir_formula_jcs"], dict)
