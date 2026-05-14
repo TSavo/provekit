@@ -367,6 +367,7 @@ final class SugarRealizer {
                 "observer_effects", Jcs.array(effect),
                 "policy_cid", Jcs.string(policyCid),
                 "preservation_claim_cid", Jcs.string(preservationClaimCid),
+                "wrapper_fcm", wrapperFcm,
                 "wrapper_fcm_cid", Jcs.string(wrapperFcmCid)
         ));
     }

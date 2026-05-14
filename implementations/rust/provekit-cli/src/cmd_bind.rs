@@ -24,6 +24,9 @@
 //   .provekit/bindings/policies/<cid>.json — bind-default-policy PolicyMemento
 //   .provekit/bindings/promotion-decisions/<cid>.json — one admission record per evidence
 //   .provekit/bindings/sites/<cid>.json   — one ConceptSiteMemento per match
+//   .provekit/bindings/realization-plans/<cid>.json — one RealizationPlanMemento per emit
+//   .provekit/bindings/observation-wrappers/<cid>.json — one ObservationWrapperMemento per wrapper
+//   .provekit/bindings/wrapper-fcms/<cid>.json — one emitted wrapper FunctionContractMemento
 //   .provekit/bindings/index.json         — summary map
 //   .provekit/bindings/gaps.json          — coverage gaps / deferred capabilities
 //   <src-file> (or stdout)                — annotated/canonical/streamed source
@@ -389,10 +392,11 @@ pub fn run(args: BindArgs) -> u8 {
     // Rewrite output. Canonical-rewrite returns the set of concepts whose body
     // fell through to the language stub so we can emit per-concept gap entries
     // per `body-template-memento.md` §5.
-    let (stub_concepts, realization_plan_mementos, observation_wrapper_mementos): (
+    let (stub_concepts, realization_plan_mementos, observation_wrapper_mementos, wrapper_fcms): (
         Vec<String>,
         Vec<RealizationPlanMemento>,
         Vec<ObservationWrapperMemento>,
+        Vec<serde_json::Value>,
     ) = match &args.rewrite {
         RewriteShape::Annotate => {
             // annotate rewrites in-place in source-language syntax.
@@ -407,7 +411,7 @@ pub fn run(args: BindArgs) -> u8 {
                 return EXIT_USER_ERROR;
             }
             apply_annotate_rewrite(&root, &src_files, &result, &modes, /*to_disk=*/ true);
-            (Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new())
         }
         RewriteShape::Canonical => apply_canonical_rewrite(
             &root,
@@ -424,7 +428,7 @@ pub fn run(args: BindArgs) -> u8 {
             // canonical for cross-language.
             if target_lang == source_lang {
                 apply_annotate_rewrite(&root, &src_files, &result, &modes, /*to_disk=*/ false);
-                (Vec::new(), Vec::new(), Vec::new())
+                (Vec::new(), Vec::new(), Vec::new(), Vec::new())
             } else {
                 apply_canonical_rewrite(
                     &root,
@@ -454,12 +458,30 @@ pub fn run(args: BindArgs) -> u8 {
     }
     let _ = std::fs::create_dir_all(output_dir.join("observation-wrappers"));
     for wrapper in &observation_wrapper_mementos {
+        let Ok(wrapper_cid) = crate::cmd_transport::cid_for_serializable(wrapper) else {
+            eprintln!("bind: failed to compute observation wrapper memento CID");
+            continue;
+        };
         let path = output_dir
             .join("observation-wrappers")
-            .join(format!("{}.json", safe_filename(&wrapper.wrapper_fcm_cid)));
+            .join(format!("{}.json", safe_filename(&wrapper_cid)));
         let _ = std::fs::write(
             &path,
             serde_json::to_string_pretty(wrapper).unwrap_or_default(),
+        );
+    }
+    let _ = std::fs::create_dir_all(output_dir.join("wrapper-fcms"));
+    for wrapper_fcm in &wrapper_fcms {
+        let Ok(wrapper_fcm_cid) = crate::cmd_transport::cid_for_json_value(wrapper_fcm) else {
+            eprintln!("bind: failed to compute wrapper FCM CID");
+            continue;
+        };
+        let path = output_dir
+            .join("wrapper-fcms")
+            .join(format!("{}.json", safe_filename(&wrapper_fcm_cid)));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(wrapper_fcm).unwrap_or_default(),
         );
     }
 
@@ -1455,6 +1477,7 @@ fn apply_canonical_rewrite(
     Vec<String>,
     Vec<RealizationPlanMemento>,
     Vec<ObservationWrapperMemento>,
+    Vec<serde_json::Value>,
 ) {
     // The realize plugin owns mode-aware emission; bind passes the selected
     // mode plus the married contract payload so the kit can choose target
@@ -1478,6 +1501,7 @@ fn apply_canonical_rewrite(
     let mut file_extension: Option<String> = None;
     let mut realization_plan_mementos: Vec<RealizationPlanMemento> = Vec::new();
     let mut observation_wrapper_mementos: Vec<ObservationWrapperMemento> = Vec::new();
+    let mut wrapper_fcms: Vec<serde_json::Value> = Vec::new();
 
     for (rel_file, bindings) in &by_file {
         let mut chunks: Vec<String> = Vec::new();
@@ -1546,10 +1570,13 @@ fn apply_canonical_rewrite(
                         &r,
                         &b.site_memento_cid,
                     ) {
-                        Ok((plan, wrapper)) => {
+                        Ok((plan, wrapper, wrapper_fcm)) => {
                             realization_plan_mementos.push(plan);
                             if let Some(w) = wrapper {
                                 observation_wrapper_mementos.push(w);
+                            }
+                            if let Some(fcm) = wrapper_fcm {
+                                wrapper_fcms.push(fcm);
                             }
                         }
                         Err(e) => {
@@ -1618,6 +1645,7 @@ fn apply_canonical_rewrite(
         stub_concepts.into_iter().collect(),
         realization_plan_mementos,
         observation_wrapper_mementos,
+        wrapper_fcms,
     )
 }
 

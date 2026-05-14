@@ -247,6 +247,41 @@ class TrinityRoundtripLiftTest {
         assertTrue(encoded.contains("\"contract_cid\":\"blake3-512:333333"), encoded);
     }
 
+    @Test
+    void bindLifterDoesNotBleedObservationTagsIntoAdjacentMethods() {
+        String source = """
+            final class AdjacentTransported {
+                // concept: first
+                public static long first(long x) {
+                    long __provekit_result = x;
+                    // provekit-observation: concept:contract-observation
+                    // provekit-observation-term: concept:contract-observation(blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111,blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222,emitter)
+                    // provekit-observation-mode: emitter
+                    // provekit-concept-site-cid: blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+                    // provekit-object-fcm-cid: blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+                    // provekit-contract-cid: blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333
+                    // provekit-observation-policy-cid: blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
+                    java.util.logging.Logger.getLogger("provekit").log(java.util.logging.Level.INFO, "observed");
+                    return __provekit_result;
+                }
+
+                // concept: second
+                public static long second(long y) {
+                    return y;
+                }
+            }
+            """;
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Adjacent.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(2, lift.entries().size(), encoded);
+        assertEquals(
+            1,
+            countOccurrences(encoded, "\"source_kind\":\"native-surface\""),
+            "observation native-surface witness must belong only to the method whose body contains the tag: " + encoded);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private Set<String> declarationFnNames() {
@@ -254,5 +289,15 @@ class TrinityRoundtripLiftTest {
             .filter(d -> d instanceof Jcs.Obj obj && "function-contract".equals(obj.stringFieldOrNull("kind")))
             .map(d -> ((Jcs.Obj) d).stringField("fnName"))
             .collect(Collectors.toSet());
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            count += 1;
+            idx += needle.length();
+        }
+        return count;
     }
 }

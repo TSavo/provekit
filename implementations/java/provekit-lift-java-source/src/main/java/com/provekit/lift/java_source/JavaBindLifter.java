@@ -195,7 +195,17 @@ public final class JavaBindLifter {
             String termShapeCid = Jcs.cid(termShape);
 
             String conceptAnnotation = extractConceptAnnotation(source, fnLine);
-            List<Jcs.Json> observationWitnesses = observationTagWitnesses(source, fnLine);
+            long bodyStartOffset = trees.getSourcePositions().getStartPosition(
+                path.getCompilationUnit(), method.getBody());
+            long bodyEndOffset = trees.getSourcePositions().getEndPosition(
+                path.getCompilationUnit(), method.getBody());
+            int bodyStartLine = bodyStartOffset >= 0 && bodyStartOffset <= Integer.MAX_VALUE
+                ? lineOf(source, (int) bodyStartOffset)
+                : fnLine;
+            int bodyEndLine = bodyEndOffset >= 0 && bodyEndOffset <= Integer.MAX_VALUE
+                ? lineOf(source, (int) bodyEndOffset)
+                : fnLine;
+            List<Jcs.Json> observationWitnesses = observationTagWitnesses(source, bodyStartLine, bodyEndLine);
 
             Jcs.Obj entry = Jcs.object(
                 "attr_post", Jcs.nullValue(),
@@ -334,8 +344,8 @@ public final class JavaBindLifter {
         return null;
     }
 
-    private static List<Jcs.Json> observationTagWitnesses(String source, int fnLine) {
-        List<TagLine> tags = scanObservationTags(source, fnLine);
+    private static List<Jcs.Json> observationTagWitnesses(String source, int startLine, int endLine) {
+        List<TagLine> tags = scanObservationTags(source, startLine, endLine);
         if (tags.isEmpty()) return List.of();
         String concept = tagValue(tags, "provekit-observation");
         String mode = tagValue(tags, "provekit-observation-mode");
@@ -368,11 +378,11 @@ public final class JavaBindLifter {
         ));
     }
 
-    private static List<TagLine> scanObservationTags(String source, int fnLine) {
-        if (fnLine <= 1) return List.of();
+    private static List<TagLine> scanObservationTags(String source, int startLine, int endLine) {
+        if (startLine <= 0 || endLine < startLine) return List.of();
         String[] lines = source.split("\n", -1);
-        int start = Math.max(0, fnLine - 25);
-        int end = Math.min(lines.length, fnLine + 25);
+        int start = Math.max(0, startLine - 1);
+        int end = Math.min(lines.length, endLine);
         List<TagLine> tags = new ArrayList<>();
         for (int idx = start; idx < end; idx++) {
             String stripped = lines[idx].stripLeading();

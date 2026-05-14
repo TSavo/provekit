@@ -402,6 +402,15 @@ fn read_json_dir(dir: &Path) -> Vec<serde_json::Value> {
         .collect()
 }
 
+fn safe_cid_filename(cid: &str) -> String {
+    cid.chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => ch,
+            _ => '_',
+        })
+        .collect()
+}
+
 static JAVA_REALIZE_BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn ensure_java_realize_jar_built() {
@@ -725,7 +734,43 @@ fn canonical_emitter_java_composes_result_preserving_observation_wrapper() {
     assert_eq!(effects[0]["occurrence_kind"], "Io");
     assert_eq!(effects[0]["role"], "body");
 
+    let wrapper_fcm_cid = wrapper["wrapper_fcm_cid"]
+        .as_str()
+        .expect("wrapper_fcm_cid");
+    let wrapper_fcm_path = out
+        .join("wrapper-fcms")
+        .join(format!("{}.json", safe_cid_filename(wrapper_fcm_cid)));
+    assert!(
+        wrapper_fcm_path.exists(),
+        "wrapper_fcm_cid must resolve to a persisted wrapper FCM at {}",
+        wrapper_fcm_path.display()
+    );
+    let wrapper_fcm: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&wrapper_fcm_path).expect("read wrapper fcm by cid"),
+    )
+    .expect("parse wrapper fcm by cid");
+    let wrapper_fcm_effects = wrapper_fcm["effects"]
+        .as_array()
+        .expect("wrapper FCM effects array");
+    for observer_effect in effects {
+        assert!(
+            wrapper_fcm_effects.contains(observer_effect),
+            "observer effect {observer_effect} must be present in persisted wrapper FCM effects: {wrapper_fcm}"
+        );
+    }
+
     let plans = read_json_dir(&out.join("realization-plans"));
+    let plan_wrapper_cids: Vec<&str> = plans
+        .iter()
+        .filter_map(|plan| plan["observation_wrapper_cid"].as_str())
+        .collect();
+    assert!(
+        plan_wrapper_cids.iter().all(|cid| out
+            .join("observation-wrappers")
+            .join(format!("{}.json", safe_cid_filename(cid)))
+            .exists()),
+        "every plan observation_wrapper_cid must resolve to a persisted wrapper memento: {plans:#?}"
+    );
     assert!(
         plans
             .iter()
