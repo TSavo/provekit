@@ -1,5 +1,6 @@
 # PEP 1.7.0 `kind = "realize"` plugin manifest for canonical Rust body emission.
 # cmd_bind dispatches canonical rewrite emission here when target-language=rust.
 name = "rust-realize"
+library_tag = "reqwest"
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

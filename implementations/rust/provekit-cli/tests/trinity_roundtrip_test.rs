@@ -323,7 +323,7 @@ fn install_rust_realize_manifest(fixture_root: &Path, rpc_bin: &Path) {
     fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
         .expect("create fixture rust realize manifest dir");
     let manifest_text = format!(
-        "name = \"rust-realize\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+        "name = \"rust-realize\"\nlibrary_tag = \"reqwest\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
         rpc_bin.display()
     );
     fs::write(&manifest, manifest_text).expect("write fixture rust realize manifest");
@@ -335,6 +335,16 @@ fn manifest_command(command: &[String]) -> String {
         .map(|arg| format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\"")))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn canonical_library_tag(lang: &str) -> &str {
+    match lang {
+        "c" => "libcurl",
+        "java" => "java-net-http",
+        "python" => "urllib",
+        "rust" => "reqwest",
+        _ => "default",
+    }
 }
 
 fn install_lift_manifest(fixture_root: &Path, surface: &str, name: &str, command: &[String]) {
@@ -361,7 +371,8 @@ fn install_realize_manifest(fixture_root: &Path, lang: &str, name: &str, command
     fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
         .expect("create fixture realize manifest dir");
     let manifest_text = format!(
-        "name = \"{name}\"\ncommand = [{}]\nworking_dir = \".\"\n",
+        "name = \"{name}\"\nlibrary_tag = \"{}\"\ncommand = [{}]\nworking_dir = \".\"\n",
+        canonical_library_tag(lang),
         manifest_command(command)
     );
     fs::write(&manifest, manifest_text).expect("write fixture realize manifest");

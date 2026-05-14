@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for canonical Java body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=java.
+name = "java-realize"
+library_tag = "java-net-http"
+command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
+working_dir = "."
