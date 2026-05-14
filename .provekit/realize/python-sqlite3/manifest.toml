@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for Python sqlite3 body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=python and library_tag=sqlite3.
+name = "python-realize-sqlite3"
+library_tag = "sqlite3"
+command = ["implementations/python/target/release/provekit-realize-python-sqlite3", "--rpc"]
+working_dir = "."

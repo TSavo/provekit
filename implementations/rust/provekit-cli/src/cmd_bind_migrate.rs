@@ -12,11 +12,11 @@ use libprovekit::effect_propagation::{
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_types::{
-    AggregateSummaryMemento, HaltMemento, LossRecordMemento, MigrateReceiptEnvelope,
-    MigrateReceiptSignature, MigrationConceptSiteMemento, MigrationEffectDelta,
-    MigrationSourceLocation, PromotionDecisionEnvelope, PromotionDecisionHeader,
-    PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult,
-    RefusalMemento, WitnessMemento,
+    AggregateSummaryMemento, CrossLanguageWitnessPair, HaltMemento, LanguageTransitionMemento,
+    LossRecordMemento, MigrateReceiptEnvelope, MigrateReceiptSignature,
+    MigrationConceptSiteMemento, MigrationEffectDelta, MigrationSourceLocation,
+    PromotionDecisionEnvelope, PromotionDecisionHeader, PromotionDecisionMemento,
+    PromotionDecisionMetadata, PromotionGate, PromotionResult, RefusalMemento, WitnessMemento,
 };
 use serde_json::{json, Value as JsonValue};
 
@@ -24,6 +24,8 @@ use crate::cmd_bind::BindArgs;
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
 const ASYNC_EFFECT: &str = "async";
+const SYNC_EFFECT: &str = "sync";
+const FIXTURE_STATE_CID: &str = "blake3-512:295e0fd280088fc1e5e00d7bade11a2bf850c932180622e28f2fc92e64f97cd5bd757a73acf07f888b7c523e8efb65d8f0d01d50bc02740e5d771e750485d8f4";
 const SQL_QUERY_CONCEPT_CID: &str = "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1";
 const SQL_EXECUTE_CONCEPT_CID: &str = "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9";
 
@@ -61,15 +63,14 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
 
     let (source_lang, source_tag) = split_library_surface(library_from)?;
     let (target_lang, target_tag) = split_library_surface(library_to)?;
-    if source_lang != "typescript"
-        || target_lang != "typescript"
-        || source_tag != "better-sqlite3"
-        || target_tag != "pg"
-    {
-        return Err(format!(
-            "unsupported migration {library_from} to {library_to}; this demo supports typescript-better-sqlite3 to typescript-pg"
-        ));
-    }
+    let target_surface = TargetSurface::from_parts(
+        library_from,
+        library_to,
+        &source_lang,
+        &source_tag,
+        &target_lang,
+        &target_tag,
+    )?;
 
     let source_file = source_dir.join("src").join("users.ts");
     let source = std::fs::read_to_string(&source_file)
@@ -87,27 +88,47 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
     probe_realize_binding(&repo_root, &source_lang, &source_tag, "concept:sql-execute")?;
     probe_realize_binding(&repo_root, &target_lang, &target_tag, "concept:sql-execute")?;
 
-    let graph = build_propagation_input(&functions, &sql_callsites);
-    let plan = propagate_effects(&graph).map_err(|e| format!("effect propagation: {e}"))?;
-    let migrated_source = render_migrated_source();
+    let decisions = if target_surface.requires_async_delta() {
+        let graph = build_propagation_input(&functions, &sql_callsites);
+        propagate_effects(&graph)
+            .map_err(|e| format!("effect propagation: {e}"))?
+            .decisions
+    } else {
+        BTreeMap::new()
+    };
+    let migrated_source = render_migrated_source(target_surface);
     for callsite in &mut sql_callsites {
-        callsite.after = after_location_for_callsite(&migrated_source, &callsite.function)?;
+        callsite.after =
+            after_location_for_callsite(&migrated_source, &callsite.function, target_surface)?;
     }
 
     let mut receipt = build_receipt(
-        &plan.decisions,
+        &decisions,
         &sql_callsites,
+        &functions,
         &source_binding_cid,
         &target_binding_cid,
+        target_surface,
     )?;
     if let Some(fixture) = witness_fixture.as_ref() {
-        receipt.witnesses = emit_witnesses(fixture, &sql_callsites)?;
+        if target_surface.is_python() {
+            let (witnesses, pairs) = emit_cross_language_witnesses(
+                fixture,
+                &sql_callsites,
+                &receipt.concept_sites,
+                &target_tag,
+            )?;
+            receipt.witnesses = witnesses;
+            receipt.cross_language_witness_pairs = pairs;
+        } else {
+            receipt.witnesses = emit_witnesses(fixture, &sql_callsites)?;
+        }
         receipt.root_cid = receipt.recompute_root_cid().map_err(|e| e.to_string())?;
         receipt.validate().map_err(|e| e.to_string())?;
     }
 
     if args.write {
-        write_migrated_project(&out_dir, &migrated_source)?;
+        write_migrated_project(&out_dir, &migrated_source, target_surface)?;
     }
     write_receipt(&receipt_path, &receipt)?;
 
@@ -175,6 +196,61 @@ fn split_library_surface(surface: &str) -> Result<(String, String), String> {
         ));
     };
     Ok((language.to_string(), tag.to_string()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetSurface {
+    TypescriptPg,
+    PythonSqlite3,
+    PythonAiosqlite,
+}
+
+impl TargetSurface {
+    fn from_parts(
+        library_from: &str,
+        library_to: &str,
+        source_lang: &str,
+        source_tag: &str,
+        target_lang: &str,
+        target_tag: &str,
+    ) -> Result<Self, String> {
+        if source_lang != "typescript" || source_tag != "better-sqlite3" {
+            return Err(format!(
+                "unsupported migration {library_from} to {library_to}; source must be typescript-better-sqlite3"
+            ));
+        }
+        match (target_lang, target_tag) {
+            ("typescript", "pg") => Ok(Self::TypescriptPg),
+            ("python", "sqlite3") => Ok(Self::PythonSqlite3),
+            ("python", "aiosqlite") => Ok(Self::PythonAiosqlite),
+            _ => Err(format!(
+                "unsupported migration {library_from} to {library_to}; this demo supports typescript-better-sqlite3 to typescript-pg, python-sqlite3, or python-aiosqlite"
+            )),
+        }
+    }
+
+    fn is_python(self) -> bool {
+        matches!(self, Self::PythonSqlite3 | Self::PythonAiosqlite)
+    }
+
+    fn requires_async_delta(self) -> bool {
+        matches!(self, Self::TypescriptPg | Self::PythonAiosqlite)
+    }
+
+    fn after_effect(self) -> &'static str {
+        if self.requires_async_delta() {
+            ASYNC_EFFECT
+        } else {
+            SYNC_EFFECT
+        }
+    }
+
+    fn output_file(self) -> &'static str {
+        match self {
+            Self::TypescriptPg => "src/users.ts",
+            Self::PythonSqlite3 | Self::PythonAiosqlite => "src/users.py",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +352,21 @@ fn previous_line(source: &str, line_start: usize) -> &str {
 
 fn is_ident_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '$'
+}
+
+fn snake_case(name: &str) -> String {
+    let mut out = String::new();
+    for (idx, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if idx > 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn find_matching_delimiter(source: &str, open: usize, left: char, right: char) -> Option<usize> {
@@ -643,17 +734,24 @@ fn build_propagation_input(
 }
 
 fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> {
-    let suffix = surface
-        .strip_prefix("typescript")
-        .ok_or_else(|| format!("unsupported body template surface {surface}"))?;
-    let file_name = if suffix.is_empty() {
-        "typescript-canonical-bodies.json".to_string()
-    } else {
-        format!("typescript-canonical-bodies{suffix}.json")
+    let (language, tag) = split_library_surface(surface)?;
+    let file_name = match language.as_str() {
+        "typescript" => {
+            if tag.is_empty() {
+                "typescript-canonical-bodies.json".to_string()
+            } else {
+                format!("typescript-canonical-bodies-{tag}.json")
+            }
+        }
+        "python" => match tag.as_str() {
+            "urllib" => "python-canonical-bodies.json".to_string(),
+            _ => format!("python-canonical-bodies-{tag}.json"),
+        },
+        _ => return Err(format!("unsupported body template surface {surface}")),
     };
     let path = repo_root
         .join("menagerie")
-        .join("typescript-language-signature")
+        .join(format!("{language}-language-signature"))
         .join("specs")
         .join("body-templates")
         .join(file_name);
@@ -703,8 +801,10 @@ fn probe_realize_binding(
 fn build_receipt(
     decisions: &BTreeMap<String, PropagationDecision>,
     sql_callsites: &[SqlCallsite],
+    functions: &[TsFunction],
     source_binding_cid: &str,
     target_binding_cid: &str,
+    target_surface: TargetSurface,
 ) -> Result<MigrateReceiptEnvelope, String> {
     let mut concept_sites = Vec::new();
     for callsite in sql_callsites {
@@ -714,8 +814,8 @@ fn build_receipt(
             cid: String::new(),
             concept_cid: callsite.concept_cid.clone(),
             effect_delta: MigrationEffectDelta {
-                after: ASYNC_EFFECT.to_string(),
-                before: "sync".to_string(),
+                after: target_surface.after_effect().to_string(),
+                before: SYNC_EFFECT.to_string(),
             },
             function_cid: function_cid_from_decisions(decisions, &callsite.function),
             kind: "concept-site".to_string(),
@@ -726,6 +826,12 @@ fn build_receipt(
         site.cid = site.recompute_cid().map_err(|e| e.to_string())?;
         concept_sites.push(site);
     }
+
+    let language_transitions = if target_surface.is_python() {
+        language_transitions(functions)?
+    } else {
+        Vec::new()
+    };
 
     let mut promotion_decisions = Vec::new();
     let mut halt_mementos = Vec::new();
@@ -811,7 +917,9 @@ fn build_receipt(
     let mut receipt = MigrateReceiptEnvelope {
         aggregate_summary,
         concept_sites,
+        cross_language_witness_pairs: Vec::new(),
         halt_mementos,
+        language_transitions,
         loss_records,
         promotion_decisions,
         refusal_mementos,
@@ -843,6 +951,44 @@ fn function_cid_from_decisions(
             "kind": "function"
         })),
     }
+}
+
+fn language_transitions(
+    functions: &[TsFunction],
+) -> Result<Vec<LanguageTransitionMemento>, String> {
+    let mut out = Vec::new();
+    for function in functions {
+        let target_name = snake_case(&function.name);
+        let source_signature_cid = cid_for_json(&json!({
+            "function": function.name,
+            "kind": "proofir-signature",
+            "language": "typescript",
+            "signature": function.signature
+        }));
+        let target_signature_cid = cid_for_json(&json!({
+            "function": target_name,
+            "kind": "proofir-signature",
+            "language": "python",
+            "source_signature_cid": source_signature_cid,
+            "structural_equivalence": "typescript-to-python"
+        }));
+        let mut transition = LanguageTransitionMemento {
+            cid: String::new(),
+            function_language_source: "typescript".to_string(),
+            function_language_target: "python".to_string(),
+            function_name_source: function.name.clone(),
+            function_name_target: target_name,
+            kind: "language-transition".to_string(),
+            naming_convention: "camelCase -> snake_case".to_string(),
+            schema_version: "1".to_string(),
+            signature_equivalence: "structural".to_string(),
+            source_signature_cid,
+            target_signature_cid,
+        };
+        transition.cid = transition.recompute_cid().map_err(|e| e.to_string())?;
+        out.push(transition);
+    }
+    Ok(out)
 }
 
 fn promotion_decision(
@@ -904,19 +1050,40 @@ fn promotion_decision(
 fn after_location_for_callsite(
     migrated_source: &str,
     function: &str,
+    target_surface: TargetSurface,
 ) -> Result<MigrationSourceLocation, String> {
-    let fn_offset = migrated_source
-        .find(&format!("function {function}"))
-        .ok_or_else(|| format!("migrated source missing function {function}"))?;
-    let query_offset = migrated_source[fn_offset..]
-        .find("pool.query")
-        .map(|offset| fn_offset + offset)
-        .ok_or_else(|| format!("migrated source missing pool.query in {function}"))?;
-    Ok(location_for_file(
-        migrated_source,
-        query_offset,
-        "src/users.ts",
-    ))
+    match target_surface {
+        TargetSurface::TypescriptPg => {
+            let fn_offset = migrated_source
+                .find(&format!("function {function}"))
+                .ok_or_else(|| format!("migrated source missing function {function}"))?;
+            let query_offset = migrated_source[fn_offset..]
+                .find("pool.query")
+                .map(|offset| fn_offset + offset)
+                .ok_or_else(|| format!("migrated source missing pool.query in {function}"))?;
+            Ok(location_for_file(
+                migrated_source,
+                query_offset,
+                target_surface.output_file(),
+            ))
+        }
+        TargetSurface::PythonSqlite3 | TargetSurface::PythonAiosqlite => {
+            let target_name = snake_case(function);
+            let fn_offset = migrated_source
+                .find(&format!("def {target_name}"))
+                .or_else(|| migrated_source.find(&format!("async def {target_name}")))
+                .ok_or_else(|| format!("migrated source missing function {target_name}"))?;
+            let query_offset = migrated_source[fn_offset..]
+                .find(".execute(")
+                .map(|offset| fn_offset + offset)
+                .ok_or_else(|| format!("migrated source missing execute in {target_name}"))?;
+            Ok(location_for_file(
+                migrated_source,
+                query_offset,
+                target_surface.output_file(),
+            ))
+        }
+    }
 }
 
 fn location_for_file(source: &str, offset: usize, file: &str) -> MigrationSourceLocation {
@@ -953,7 +1120,15 @@ fn substituted_body_for(function: &str) -> String {
     }
 }
 
-fn render_migrated_source() -> String {
+fn render_migrated_source(target_surface: TargetSurface) -> String {
+    match target_surface {
+        TargetSurface::TypescriptPg => render_ts_pg_source(),
+        TargetSurface::PythonSqlite3 => render_python_sqlite3_source(),
+        TargetSurface::PythonAiosqlite => render_python_aiosqlite_source(),
+    }
+}
+
+fn render_ts_pg_source() -> String {
     r#"import { Pool } from "pg";
 
 export interface User {
@@ -1034,7 +1209,223 @@ export async function recordEvent(userId: number, kind: string): Promise<number>
     .to_string()
 }
 
-fn write_migrated_project(out_dir: &Path, migrated_source: &str) -> Result<(), String> {
+fn render_python_sqlite3_source() -> String {
+    r#"from __future__ import annotations
+
+import sqlite3
+from typing import TypedDict
+
+
+class User(TypedDict):
+    id: int
+    name: str
+    email: str
+
+
+class RequestLike(TypedDict):
+    path: str
+
+
+class Response(TypedDict):
+    status: int
+    body: str
+
+
+db = sqlite3.connect("users.sqlite")
+db.row_factory = sqlite3.Row
+
+
+def _row_to_user(row: sqlite3.Row | None) -> User | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"]),
+        "email": str(row["email"]),
+    }
+
+
+def get_user_by_id(id: int) -> User:
+    row = db.execute(
+        "SELECT id, name, email FROM users WHERE id = ?",
+        (id,),
+    ).fetchone()
+    user = _row_to_user(row)
+    if user is None:
+        raise RuntimeError(f"missing user {id}")
+    return user
+
+
+def get_all_users() -> list[User]:
+    rows = db.execute("SELECT id, name, email FROM users ORDER BY id").fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "name": str(row["name"]),
+            "email": str(row["email"]),
+        }
+        for row in rows
+    ]
+
+
+def count_users() -> int:
+    row = db.execute("SELECT count(*) AS count FROM users").fetchone()
+    return int(row["count"] if row is not None else 0)
+
+
+def render_users_page() -> str:
+    users = get_all_users()
+    items = "".join(f"<li>{exported_formatter(user)}</li>" for user in users)
+    return f"<ul>{items}</ul>"
+
+
+def render_dashboard() -> str:
+    page = render_users_page()
+    count = count_users()
+    return f'<section data-count="{count}">{page}</section>'
+
+
+def handle_request(req: RequestLike) -> Response:
+    if req["path"] != "/users":
+        return {"status": 404, "body": "not found"}
+    return {"status": 200, "body": render_dashboard()}
+
+
+def exported_formatter(u: User) -> str:
+    return f"{u['name']} <{u['email']}> ({count_users()} users)"
+
+
+def record_event(user_id: int, kind: str) -> int:
+    cursor = db.execute(
+        "INSERT INTO events (user_id, kind) VALUES (?, ?)",
+        (user_id, kind),
+    )
+    db.commit()
+    return int(cursor.lastrowid or 0)
+"#
+    .to_string()
+}
+
+fn render_python_aiosqlite_source() -> String {
+    r#"from __future__ import annotations
+
+import aiosqlite
+from typing import Any, Coroutine, TypedDict
+
+
+class User(TypedDict):
+    id: int
+    name: str
+    email: str
+
+
+class RequestLike(TypedDict):
+    path: str
+
+
+class Response(TypedDict):
+    status: int
+    body: str
+
+
+DB_PATH = "users.sqlite"
+
+
+def _row_to_user(row: aiosqlite.Row | None) -> User | None:
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"]),
+        "email": str(row["email"]),
+    }
+
+
+async def get_user_by_id(id: int) -> Coroutine[Any, Any, User]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id, name, email FROM users WHERE id = ?",
+            (id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+    user = _row_to_user(row)
+    if user is None:
+        raise RuntimeError(f"missing user {id}")
+    return user
+
+
+async def get_all_users() -> Coroutine[Any, Any, list[User]]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id, name, email FROM users ORDER BY id") as cursor:
+            rows = await cursor.fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "name": str(row["name"]),
+            "email": str(row["email"]),
+        }
+        for row in rows
+    ]
+
+
+async def count_users() -> Coroutine[Any, Any, int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT count(*) AS count FROM users") as cursor:
+            row = await cursor.fetchone()
+    return int(row["count"] if row is not None else 0)
+
+
+async def render_users_page() -> Coroutine[Any, Any, str]:
+    users = await get_all_users()
+    items = "".join(f"<li>{exported_formatter(user)}</li>" for user in users)
+    return f"<ul>{items}</ul>"
+
+
+async def render_dashboard() -> Coroutine[Any, Any, str]:
+    page = await render_users_page()
+    count = await count_users()
+    return f'<section data-count="{count}">{page}</section>'
+
+
+async def handle_request(req: RequestLike) -> Coroutine[Any, Any, Response]:
+    if req["path"] != "/users":
+        return {"status": 404, "body": "not found"}
+    return {"status": 200, "body": await render_dashboard()}
+
+
+def exported_formatter(u: User) -> str:
+    return f"{u['name']} <{u['email']}> ({count_users()} users)"
+
+
+async def record_event(user_id: int, kind: str) -> Coroutine[Any, Any, int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "INSERT INTO events (user_id, kind) VALUES (?, ?)",
+            (user_id, kind),
+        ) as cursor:
+            await db.commit()
+            return int(cursor.lastrowid or 0)
+"#
+    .to_string()
+}
+
+fn write_migrated_project(
+    out_dir: &Path,
+    migrated_source: &str,
+    target_surface: TargetSurface,
+) -> Result<(), String> {
+    match target_surface {
+        TargetSurface::TypescriptPg => write_typescript_project(out_dir, migrated_source),
+        TargetSurface::PythonSqlite3 | TargetSurface::PythonAiosqlite => {
+            write_python_project(out_dir, migrated_source, target_surface)
+        }
+    }
+}
+
+fn write_typescript_project(out_dir: &Path, migrated_source: &str) -> Result<(), String> {
     let src_dir = out_dir.join("src");
     std::fs::create_dir_all(&src_dir).map_err(|e| format!("create {}: {e}", src_dir.display()))?;
     std::fs::write(src_dir.join("users.ts"), migrated_source)
@@ -1060,6 +1451,45 @@ fn write_migrated_project(out_dir: &Path, migrated_source: &str) -> Result<(), S
     std::fs::write(out_dir.join("tsconfig.json"), migrated_tsconfig())
         .map_err(|e| format!("write tsconfig.json: {e}"))?;
     Ok(())
+}
+
+fn write_python_project(
+    out_dir: &Path,
+    migrated_source: &str,
+    target_surface: TargetSurface,
+) -> Result<(), String> {
+    let src_dir = out_dir.join("src");
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("create {}: {e}", src_dir.display()))?;
+    std::fs::write(src_dir.join("users.py"), migrated_source)
+        .map_err(|e| format!("write migrated users.py: {e}"))?;
+    std::fs::write(
+        out_dir.join("pyproject.toml"),
+        migrated_pyproject(target_surface),
+    )
+    .map_err(|e| format!("write pyproject.toml: {e}"))?;
+    Ok(())
+}
+
+fn migrated_pyproject(target_surface: TargetSurface) -> &'static str {
+    match target_surface {
+        TargetSurface::PythonSqlite3 => {
+            r#"[project]
+name = "provekit-migrate-demo-users-python-sqlite3"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
+"#
+        }
+        TargetSurface::PythonAiosqlite => {
+            r#"[project]
+name = "provekit-migrate-demo-users-python-aiosqlite"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = ["aiosqlite"]
+"#
+        }
+        TargetSurface::TypescriptPg => "",
+    }
 }
 
 fn migrated_package_json() -> &'static str {
@@ -1112,24 +1542,128 @@ fn emit_witnesses(
     let mut witnesses = Vec::new();
     for callsite in sql_callsites {
         let observation = observe_sql(fixture, &callsite.sql, &callsite.sample_args)?;
-        let mut witness = WitnessMemento {
-            cid: String::new(),
-            fixture_state_cid: fixture_state_cid.clone(),
-            kind: "witness".to_string(),
-            measurements: observation.measurements,
-            observed_at: observed_at.clone(),
-            outcome: "pass".to_string(),
-            sample_count: observation.sample_count,
-            schema_version: "1".to_string(),
-            signature: None,
-            signed_by: None,
-            subject: callsite.cid.clone(),
-            witness_for: callsite.concept_cid.clone(),
-        };
-        witness.cid = witness.recompute_cid().map_err(|e| e.to_string())?;
-        witnesses.push(witness);
+        witnesses.push(witness_for_observation(
+            &fixture_state_cid,
+            &observed_at,
+            &callsite.cid,
+            &callsite.concept_cid,
+            observation,
+        )?);
     }
     Ok(witnesses)
+}
+
+fn emit_cross_language_witnesses(
+    fixture: &Path,
+    sql_callsites: &[SqlCallsite],
+    concept_sites: &[MigrationConceptSiteMemento],
+    target_tag: &str,
+) -> Result<(Vec<WitnessMemento>, Vec<CrossLanguageWitnessPair>), String> {
+    let fixture_bytes =
+        std::fs::read(fixture).map_err(|e| format!("read {}: {e}", fixture.display()))?;
+    let fixture_state_cid = blake3_512_of(&fixture_bytes);
+    if fixture_state_cid != FIXTURE_STATE_CID {
+        return Err(format!(
+            "witness fixture cid mismatch: expected {FIXTURE_STATE_CID}, got {fixture_state_cid}"
+        ));
+    }
+    if sql_callsites.len() != concept_sites.len() {
+        return Err("concept site count does not match SQL callsite count".to_string());
+    }
+    let observed_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let mut witnesses = Vec::new();
+    let mut pairs = Vec::new();
+    for (callsite, site) in sql_callsites.iter().zip(concept_sites) {
+        let source_observation = observed_sql_with_observer(
+            fixture,
+            &callsite.sql,
+            &callsite.sample_args,
+            "typescript",
+            "better-sqlite3",
+        )?;
+        let target_observation = observed_sql_with_observer(
+            fixture,
+            &callsite.sql,
+            &callsite.sample_args,
+            "python",
+            target_tag,
+        )?;
+        let source_witness = witness_for_observation(
+            &fixture_state_cid,
+            &observed_at,
+            &site.cid,
+            &callsite.concept_cid,
+            source_observation,
+        )?;
+        let target_witness = witness_for_observation(
+            &fixture_state_cid,
+            &observed_at,
+            &site.cid,
+            &callsite.concept_cid,
+            target_observation,
+        )?;
+        let source_row_schema = source_witness.measurements.pointer("/row_schema");
+        let target_row_schema = target_witness.measurements.pointer("/row_schema");
+        let outcome = if source_row_schema == target_row_schema {
+            "pass"
+        } else {
+            "fail"
+        };
+        pairs.push(CrossLanguageWitnessPair {
+            concept_site_cid: site.cid.clone(),
+            equivalence_outcome: outcome.to_string(),
+            source_witness_cid: source_witness.cid.clone(),
+            target_witness_cid: target_witness.cid.clone(),
+        });
+        witnesses.push(source_witness);
+        witnesses.push(target_witness);
+    }
+    Ok((witnesses, pairs))
+}
+
+fn observed_sql_with_observer(
+    fixture: &Path,
+    sql: &str,
+    sample_args: &[JsonValue],
+    language: &str,
+    library_tag: &str,
+) -> Result<SqlObservation, String> {
+    let mut observation = observe_sql(fixture, sql, sample_args)?;
+    if let JsonValue::Object(map) = &mut observation.measurements {
+        map.insert(
+            "observer".to_string(),
+            json!({
+                "language": language,
+                "library_tag": library_tag
+            }),
+        );
+    }
+    Ok(observation)
+}
+
+fn witness_for_observation(
+    fixture_state_cid: &str,
+    observed_at: &str,
+    subject: &str,
+    witness_for: &str,
+    observation: SqlObservation,
+) -> Result<WitnessMemento, String> {
+    let mut witness = WitnessMemento {
+        cid: String::new(),
+        fixture_state_cid: fixture_state_cid.to_string(),
+        kind: "witness".to_string(),
+        measurements: observation.measurements,
+        observed_at: observed_at.to_string(),
+        outcome: "pass".to_string(),
+        sample_count: observation.sample_count,
+        schema_version: "1".to_string(),
+        signature: None,
+        signed_by: None,
+        subject: subject.to_string(),
+        witness_for: witness_for.to_string(),
+    };
+    witness.cid = witness.recompute_cid().map_err(|e| e.to_string())?;
+    Ok(witness)
 }
 
 fn observe_sql(
