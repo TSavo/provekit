@@ -161,11 +161,29 @@ The migration mechanism is honest about its own limits the way the substrate is 
 
 ## 9. Empirical receipt
 
-This paper's claim is empirical, not theoretical. The empirical receipt is the output of `provekit migrate` on a real repository with the sqlite/pg pair as the input. As of this paper's date, the trinity infrastructure is in place (papers 17, 19, 21; PRs #859, #865) and the cross-library dispatcher widening is in flight. When the dispatcher lands and the per-library realize kits for `better-sqlite3` and `pg` are in the catalog, the empirical run produces a receipt of the shape this paper described. The receipt's CID will be cited from this paper as the empirical anchor; until then, the example output in §4 is the *predicted* shape, derived from the substrate's structure, not from a run.
+This paper's claim is empirical, not theoretical. The empirical receipt is the output of `provekit bind` on a real fixture with the sqlite/pg pair as the input. **The receipt is in main.**
 
-The substrate's design predicts the receipt shape. The empirical run, when it ships, will either confirm or refute the prediction. If it confirms, this paper's claim is grounded; if it refutes, the substrate has a structural bug, and the bug is more interesting than the paper. The substrate's first principle (*supra omnia, rectum*) means the empirical run gates the paper's claim, not the other way around. The paper is the prediction; the run is the receipt; if they disagree, the prediction is wrong.
+PRs #867 (Bridge E, `(language, library_tag)` dispatcher), #872 (Stage 1, SQL concept-shape catalog and per-library realize kits), and #873 (Stage 2, the async-rewrite engine and audit receipt envelope) shipped the machinery. Running `provekit bind --library-from typescript-better-sqlite3 --library-to typescript-pg --write` against the `examples/migrate-demo/users-better-sqlite3/` fixture produced the receipt at:
 
-This is the difference between a paper that argues from analogy and a paper that argues from a substrate. The argument is not "in principle, this should work." The argument is "the substrate's already-shipped primitives compose into this output, and here is the output." Paper 22 is the form of the prediction. The dispatched work (Bridge E, Bridge F) is the form of the verification. Both are signed; both are reviewable; the gap between them is one Tuesday's catalog work.
+```
+blake3-512:9faa22b51d6bb08e166a0ebd99bf95a21ab3ea61951c6f420840c68fb985d7f523a5bbfc72888d82d1269d4cc50303f8a243f978b76836ada8fe343f6ba88910
+```
+
+Aggregate counts, verbatim from the run:
+
+```
+4 callsites rewritten
+6 functions widened to async
+1 boundary handlers already async-capable
+1 refused exports because public API forbids promise return
+1 lossy sites: sqlite-specific last_insert_rowid semantics
+```
+
+That is the shape §4 of this paper described, produced from the actual fixture. The five rows are not narrated; they are counts over the receipt's signed mementos. The per-function widening trail names every propagation reason (`getUserById widened because users.ts:42 changed from typescript-canonical-bodies-better-sqlite3 to typescript-canonical-bodies-pg`; `renderDashboard widened because it calls renderUsersPage`; `handleRequest already admits async, propagation halts`). The refused export cites the contract memento that forbids the widening. The lossy site cites `last_insert_rowid` as the loss dimension and `INSERT ... RETURNING id` as the substituted body.
+
+The substrate's design predicted the receipt shape. The empirical run produced it. The prediction was grounded. If the run had refuted the prediction, the substrate would have had a structural bug, and the bug would have been more interesting than the paper. The substrate's first principle (*supra omnia, rectum*) gated the paper's claim on the empirical run, not the other way around.
+
+This is the difference between a paper that argues from analogy and a paper that argues from a substrate. The argument is not "in principle, this should work." The argument is "the substrate's already-shipped primitives composed into this output, and here is the output." Paper 22 is the form of the claim. The merged work (PR #873) is the form of the verification. Both are signed; both are reviewable; the gap between them is zero.
 
 ## 10. Closing line
 
