@@ -192,3 +192,17 @@ They are operation-contract shape mementos, not language-prefixed operations. Pe
 | `concept:source-unit` | `blake3-512:377bec17d4c9ea2e44216e244685c282b3ac83c19191699eab94a47ff0b123bf4899d6b5691ce88fa7bc70d4dd9f8d2566631bd02895f891ec67ca6d32a87285` | morphism_c11_source_unit_to_source_unit, morphism_csharp_source_unit_to_source_unit, morphism_python_source_unit_to_source_unit, morphism_typescript_source_unit_to_source_unit, morphism_zig_source_unit_to_source_unit, morphism_ruby_source_unit_to_source_unit, morphism_php_source_unit_to_source_unit, morphism_java_source_unit_to_source_unit |
 
 T Savo
+
+## HTTP Concept Shapes
+
+Bridge B mints the HTTP request and response concept shapes used by later HTTP sugar and trinity payload work.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:http-request` | `blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43` | method, URL, headers, optional stream or bytes body |
+| `concept:http-response` | `blake3-512:38a31226e5e2f593fa12b1e7a2b18d9f7755301ce537115b34ac486aedcc479ca599327dbea7de0e0cee0d035b831ad4933436c2b7c8c84d4f4694dc42d161f5` | status, headers, stream or bytes body |
+| `concept:url` | `blake3-512:ec39f4820bdac0fc1bfb60e30d7348e2273a89b0f13f7fd3be49b03d206026e5a1f9414aca64ac639aee6ec789dbbd2045309146d118e66c8bccd5b8be654463` | parsed URL component carrier |
+| `concept:header-map` | `blake3-512:53cb0113c4211d9c326868d5901d0c7e699f4ae23078bea4de54086c1cd59e92ca2accbd5986db0643b7689ea57011e3ed33514614f3626d774fd5cbf011cab7` | duplicate-preserving header multimap |
+| `concept:byte-stream` | `blake3-512:d5c8fe062ffe4004ccef5c49a90eaebe4f2a3cf46c315c3d966d0214c9ee5311a94355a103094669ea4634bac0fb0e82e703eb35fcbf174810defa86ee02c128` | ordered byte chunks with optional length hint |
+
+Examples: `examples.md` in this directory shows high-level bindings for libcurl, `java.net.http`, and `urllib.request`.

@@ -1,0 +1,157 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "NetworkRequest"
+      }
+    ]
+  },
+  "fn_name": "concept:http-request",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "HttpMethod"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Url"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "HeaderMap"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Optional<ByteStreamOrBytes>"
+    }
+  ],
+  "formals": [
+    "method",
+    "url",
+    "headers",
+    "body"
+  ],
+  "kind": "algorithm",
+  "loss_dimensions": [
+    "body-encoding",
+    "cancellation",
+    "cookie-jar",
+    "redirect-policy",
+    "retries",
+    "streaming-body",
+    "sync-vs-async",
+    "timeout",
+    "tls-pinning"
+  ],
+  "post": {
+    "arity": [
+      "HttpMethod",
+      "Url",
+      "HeaderMap",
+      "Optional<ByteStreamOrBytes>"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "method"
+        },
+        {
+          "name": "url"
+        },
+        {
+          "name": "headers"
+        },
+        {
+          "name": "body"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "http-request",
+    "result": "HttpResponse",
+    "wp_note": "Performs the HTTP request and returns concept:http-response. May raise an http error or refuse along any documented loss dimension. Library callsites like libcurl perform, Java HttpClient send, Python urllib.request.urlopen, JS fetch, Python requests.get, and Rust reqwest::get all bind to this operation and produce response data. Loss dimensions (catalog metadata): body-encoding, cancellation, cookie-jar, redirect-policy, retries, streaming-body, sync-vs-async, timeout, tls-pinning. Per-realization values for these dimensions live on the LossyMorphismMemento / RealizationDesugaringMemento for each (concept, language, library) cell, not on this shape."
+  },
+  "pre": {
+    "args": [
+      {
+        "kind": "var",
+        "name": "method"
+      },
+      {
+        "args": [
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "GET"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "POST"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "PUT"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "DELETE"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "PATCH"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "HEAD"
+          },
+          {
+            "kind": "const",
+            "sort": {
+              "kind": "primitive",
+              "name": "HttpMethod"
+            },
+            "value": "OPTIONS"
+          }
+        ],
+        "kind": "ctor",
+        "name": "http_method_set"
+      }
+    ],
+    "kind": "atomic",
+    "name": "in"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "HttpResponse"
+  }
+}

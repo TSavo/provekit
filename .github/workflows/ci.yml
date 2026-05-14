@@ -380,7 +380,7 @@ jobs:
       - name: cargo test swift_kit_pins
         # Redundant pin verification: the integration test asserts the
         # contractSetCid string equals the pinned constant
-        # SWIFT_CONTRACT_SET_CID (blake3-512:272543ef...) directly,
+        # SWIFT_CONTRACT_SET_CID (blake3-512:cb743058...) directly,
         # whereas `make mint-swift` checks against the JSON envelope.
         # The test silently skips when mint fails (run_mint returns ok=false);
         # the previous step is the loud gate, this is the in-rust-suite gate
