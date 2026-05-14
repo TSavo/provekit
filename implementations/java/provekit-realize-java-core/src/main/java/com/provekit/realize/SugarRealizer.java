@@ -115,7 +115,7 @@ final class SugarRealizer {
         String mappedReturn = mapSourceType(returnType);
         List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, modeList(mode, modes));
         boolean hasBeanValidationNotNull = sugarEmissions.stream()
-                .anyMatch(e -> e.surfaceLocator().startsWith("annotation:"));
+                .anyMatch(e -> e.surfaceLocator().startsWith("annotation:") && e.rendered().startsWith("@NotNull"));
         boolean hasJUnitWitness = sugarEmissions.stream()
                 .anyMatch(e -> e.surfaceLocator().startsWith("witness:junit5"));
 
@@ -125,8 +125,9 @@ final class SugarRealizer {
             String srcType = i < paramTypes.size() ? paramTypes.get(i) : "i64";
             String mapped = mapSourceType(srcType);
             if (i > 0) typedParamList.append(", ");
-            if (hasBeanValidationNotNull && contractHasNonNullPrecondition(contract, name)) {
-                typedParamList.append("@NotNull ");
+            String parameterAnnotations = parameterAnnotations(sugarEmissions, name);
+            if (!parameterAnnotations.isBlank()) {
+                typedParamList.append(parameterAnnotations).append(" ");
             }
             typedParamList.append(mapped).append(" ").append(name);
         }
@@ -146,7 +147,7 @@ final class SugarRealizer {
         String indentedBody = bodyContent.replace("\n", "\n        ");
         String body = "        " + indentedBody + "\n";
         String methodAnnotation = hasBeanValidationNotNull && contractHasNonNullPostcondition(contract) ? "    @NotNull\n" : "";
-        String imports = importsFor(hasBeanValidationNotNull, hasJUnitWitness);
+        String imports = importsFor(sugarEmissions, !methodAnnotation.isEmpty(), hasJUnitWitness);
         String witnessClass = hasJUnitWitness
                 ? "\nfinal class " + className + "WitnessTest {\n"
                         + "    @Disabled(\"provekit witness skeleton requires concrete values\")\n"
@@ -167,6 +168,17 @@ final class SugarRealizer {
                 + "}\n"
                 + witnessClass;
         return new Realization(source, isStub, observedLossRecordJson(sugarEmissions), usedSugarsJson(sugarEmissions));
+    }
+
+    private static String parameterAnnotations(List<SugarEmission> emissions, String paramName) {
+        StringBuilder out = new StringBuilder();
+        for (SugarEmission emission : emissions) {
+            if (!emission.surfaceLocator().startsWith("annotation:")) continue;
+            if (!paramName.equals(emission.symbol())) continue;
+            if (!out.isEmpty()) out.append(" ");
+            out.append(emission.rendered());
+        }
+        return out.toString();
     }
 
     private static List<String> modeList(String mode) {
@@ -225,10 +237,22 @@ final class SugarRealizer {
         return Jcs.encode(Jcs.array(used));
     }
 
-    private static String importsFor(boolean hasBeanValidationNotNull, boolean hasJUnitWitness) {
+    private static String importsFor(
+            List<SugarEmission> emissions,
+            boolean hasMethodNotNull,
+            boolean hasJUnitWitness) {
         StringBuilder imports = new StringBuilder();
-        if (hasBeanValidationNotNull) {
+        if (hasMethodNotNull || hasRenderedAnnotation(emissions, "@NotNull")) {
             imports.append("import jakarta.validation.constraints.NotNull;\n");
+        }
+        if (hasRenderedAnnotation(emissions, "@Min")) {
+            imports.append("import jakarta.validation.constraints.Min;\n");
+        }
+        if (hasRenderedAnnotation(emissions, "@Max")) {
+            imports.append("import jakarta.validation.constraints.Max;\n");
+        }
+        if (hasRenderedAnnotation(emissions, "@Size")) {
+            imports.append("import jakarta.validation.constraints.Size;\n");
         }
         if (hasJUnitWitness) {
             imports.append("import org.junit.jupiter.api.Disabled;\n");
@@ -239,6 +263,11 @@ final class SugarRealizer {
             imports.append("\n");
         }
         return imports.toString();
+    }
+
+    private static boolean hasRenderedAnnotation(List<SugarEmission> emissions, String annotationName) {
+        return emissions.stream().anyMatch(e ->
+                e.surfaceLocator().startsWith("annotation:") && e.rendered().startsWith(annotationName));
     }
 
     private static String junitWitnessBody(List<SugarEmission> emissions) {
@@ -551,7 +580,7 @@ final class SugarDictionary {
                 Jcs.Json predicate = witness.predicate();
                 for (SugarEntry entry : plugin.entries()) {
                     if (!modeMatches(entry.mode(), requestModes)) continue;
-                    Match match = match(predicate, entry.pattern(), witness);
+                    Match match = match(predicate, entry.pattern(), entry.template(), witness);
                     if (match != null) {
                         out.add(new SugarEmission(
                                 plugin.cid(),
@@ -573,11 +602,11 @@ final class SugarDictionary {
         return requestModes != null && requestModes.contains(entryMode);
     }
 
-    private static Match match(Jcs.Json predicate, Jcs.Json pattern, ContractWitness witness) {
+    private static Match match(Jcs.Json predicate, Jcs.Json pattern, String template, ContractWitness witness) {
         if (!(pattern instanceof Jcs.Obj patternObj)) return null;
         String patternName = patternObj.stringFieldOrNull("name");
         if (patternName != null && patternName.startsWith("${")) {
-            return new Match(witnessSymbol(witness), witness.predicateText(), witness.role());
+            return new Match(witnessSymbol(witness), witness.predicateText(), witness.role(), Map.of());
         }
         if (!(predicate instanceof Jcs.Obj predicateObj)) return null;
         if (!"atomic".equals(predicateObj.stringFieldOrNull("kind"))) return null;
@@ -589,28 +618,73 @@ final class SugarDictionary {
                 || patternArgs.values().size() != predicateArgs.values().size()) {
             return null;
         }
-        String symbol = "";
+        Map<String, String> bindings = new TreeMap<>();
         for (int i = 0; i < patternArgs.values().size(); i++) {
             Jcs.Json p = patternArgs.get(i);
             Jcs.Json actual = predicateArgs.get(i);
-            if (isHoleVar(p, "symbol") && actual instanceof Jcs.Obj actualObj) {
-                symbol = actualObj.stringFieldOrNull("name");
-                continue;
-            }
-            if (isConstNullPattern(p) && isConstNullPattern(actual)) {
+            if (bindTerm(p, actual, template, bindings)) {
                 continue;
             }
             if (!Jcs.encode(p).equals(Jcs.encode(actual))) {
                 return null;
             }
         }
-        return new Match(symbol, witness.predicateText(), witness.role());
+        return new Match(bindings.getOrDefault("symbol", ""), witness.predicateText(), witness.role(), bindings);
     }
 
-    private static boolean isHoleVar(Jcs.Json json, String name) {
-        return json instanceof Jcs.Obj obj
-                && "var".equals(obj.stringFieldOrNull("kind"))
-                && ("${" + name + "}").equals(obj.stringFieldOrNull("name"));
+    private static boolean bindTerm(Jcs.Json pattern, Jcs.Json actual, String template, Map<String, String> bindings) {
+        if (pattern instanceof Jcs.Obj patternObj
+                && "var".equals(patternObj.stringFieldOrNull("kind"))
+                && actual instanceof Jcs.Obj actualObj
+                && "var".equals(actualObj.stringFieldOrNull("kind"))) {
+            String hole = holeName(patternObj.stringFieldOrNull("name"));
+            String actualName = actualObj.stringFieldOrNull("name");
+            if (hole != null && actualName != null) {
+                bindings.put(hole, actualName);
+                return true;
+            }
+        }
+        if (pattern instanceof Jcs.Obj patternObj
+                && "const".equals(patternObj.stringFieldOrNull("kind"))
+                && patternObj.get("value") instanceof Jcs.Str holeValue
+                && actual instanceof Jcs.Obj actualObj
+                && "const".equals(actualObj.stringFieldOrNull("kind"))
+                && actualObj.get("value") instanceof Jcs.Num number) {
+            String hole = holeName(holeValue.value());
+            if (hole != null) {
+                long value = number.value();
+                String plusOne = null;
+                String minusOne = null;
+                try {
+                    if (referencesTemplateBinding(template, hole + "_plus_one")) {
+                        plusOne = Long.toString(Math.addExact(value, 1L));
+                    }
+                    if (referencesTemplateBinding(template, hole + "_minus_one")) {
+                        minusOne = Long.toString(Math.subtractExact(value, 1L));
+                    }
+                } catch (ArithmeticException overflow) {
+                    return false;
+                }
+                bindings.put(hole, Long.toString(value));
+                if (plusOne != null) {
+                    bindings.put(hole + "_plus_one", plusOne);
+                }
+                if (minusOne != null) {
+                    bindings.put(hole + "_minus_one", minusOne);
+                }
+                return true;
+            }
+        }
+        return isConstNullPattern(pattern) && isConstNullPattern(actual);
+    }
+
+    private static boolean referencesTemplateBinding(String template, String binding) {
+        return template != null && template.contains("${" + binding + "}");
+    }
+
+    private static String holeName(String raw) {
+        if (raw == null || !raw.startsWith("${") || !raw.endsWith("}")) return null;
+        return raw.substring(2, raw.length() - 1);
     }
 
     private static boolean isConstNullPattern(Jcs.Json json) {
@@ -631,10 +705,14 @@ final class SugarDictionary {
     }
 
     private static String render(String template, Match match) {
-        return template
+        String rendered = template
                 .replace("${symbol}", match.symbol())
                 .replace("${formula_pretty_print}", match.formulaPrettyPrint())
                 .replace("${contract_role}", roleKeyword(match.role()));
+        for (Map.Entry<String, String> binding : match.bindings().entrySet()) {
+            rendered = rendered.replace("${" + binding.getKey() + "}", binding.getValue());
+        }
+        return rendered;
     }
 
     private static String roleKeyword(String role) {
@@ -645,7 +723,7 @@ final class SugarDictionary {
         };
     }
 
-    private record Match(String symbol, String formulaPrettyPrint, String role) {}
+    private record Match(String symbol, String formulaPrettyPrint, String role, Map<String, String> bindings) {}
 
     private record SugarPlugin(String cid, String sugarName, String targetLanguage, List<SugarEntry> entries) {
         static SugarPlugin fromJson(String raw) {

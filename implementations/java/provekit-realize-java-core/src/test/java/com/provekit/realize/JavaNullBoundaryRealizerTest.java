@@ -185,6 +185,104 @@ public class JavaNullBoundaryRealizerTest {
     }
 
     @Test
+    public void bindContractNumericWitnessesEmitMinMaxGateSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[test-assertion]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", numericPredicate("gt", "age", 0), "age > 0", "test-assertion"),
+                new ContractWitness("pre", numericPredicate("le", "age", 130), "age <= 130", "test-assertion")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "admit",
+            java.util.List.of("age"),
+            java.util.List.of("i32"),
+            "()",
+            "concept:admit",
+            "gate",
+            java.util.List.of("gate"),
+            contract,
+            java.util.List.of(modeScopedBeanValidationNumericSugar("gate"))
+        );
+
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Min;"));
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Max;"));
+        assertTrue(output.source().contains("public static void admit(@Min(1) @Max(130) int age)"));
+        assertTrue(output.usedSugarsJson().contains("java-bean-validation"));
+        assertEquals("{}", output.observedLossRecord());
+    }
+
+    @Test
+    public void strictNumericBoundOverflowDoesNotEmitWrappedGateSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[test-assertion]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", numericPredicate("gt", "age", Long.MAX_VALUE), "age > Long.MAX_VALUE", "test-assertion"),
+                new ContractWitness("pre", numericPredicate("lt", "score", Long.MIN_VALUE), "score < Long.MIN_VALUE", "test-assertion")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "admit",
+            java.util.List.of("age", "score"),
+            java.util.List.of("i64", "i64"),
+            "()",
+            "concept:admit",
+            "gate",
+            java.util.List.of("gate"),
+            contract,
+            java.util.List.of(modeScopedBeanValidationNumericSugar("gate"))
+        );
+
+        assertFalse(output.source().contains("@Min("));
+        assertFalse(output.source().contains("@Max("));
+        assertFalse(output.source().contains("import jakarta.validation.constraints.Min;"));
+        assertFalse(output.source().contains("import jakarta.validation.constraints.Max;"));
+        assertFalse(output.usedSugarsJson().contains("java-bean-validation"));
+        assertEquals("{}", output.observedLossRecord());
+    }
+
+    @Test
+    public void inclusiveNumericBoundsAtLongExtremaStillEmitExactGateSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[test-assertion]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", numericPredicate("ge", "age", Long.MAX_VALUE), "age >= Long.MAX_VALUE", "test-assertion"),
+                new ContractWitness("pre", numericPredicate("le", "score", Long.MIN_VALUE), "score <= Long.MIN_VALUE", "test-assertion")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "admit",
+            java.util.List.of("age", "score"),
+            java.util.List.of("i64", "i64"),
+            "()",
+            "concept:admit",
+            "gate",
+            java.util.List.of("gate"),
+            contract,
+            java.util.List.of(modeScopedBeanValidationNumericSugar("gate"))
+        );
+
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Min;"));
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Max;"));
+        assertTrue(output.source().contains("@Min(9223372036854775807) long age"));
+        assertTrue(output.source().contains("@Max(-9223372036854775808) long score"));
+        assertTrue(output.usedSugarsJson().contains("java-bean-validation"));
+        assertEquals("{}", output.observedLossRecord());
+    }
+
+    @Test
     public void contractObservationWitnessBodyTemplateEmitsWitnessCall() {
         java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
             "concept:contract-observation",
@@ -214,6 +312,17 @@ public class JavaNullBoundaryRealizerTest {
         return "{\"header\":{\"cid\":\"java-bean-validation\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"annotation:before-parameter\",\"template\":\"@NotNull\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"bean-validation\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
 
+    private static String modeScopedBeanValidationNumericSugar(String mode) {
+        return """
+            {"header":{"cid":"java-bean-validation","content":{"entries":[
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Min(${k})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"ge"}},
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Min(${k_plus_one})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"gt"}},
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Max(${k})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"le"}},
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Max(${k_minus_one})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"lt"}}
+            ],"sugar_name":"bean-validation","target_language":"java"},"critical":false,"kind":"sugar","protocol_versions":["pep/1.7.0"],"provenance_cid":"blake3-512:0","schemaVersion":"1","version":"1.0.0"}}
+            """.replace("__MODE__", mode);
+    }
+
     private static String modeScopedJunitSugar(String mode) {
         return "{\"header\":{\"cid\":\"java-junit5\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"witness:junit5-test\",\"template\":\"assertNotNull(${symbol});\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{\"domain_narrowing\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_requires_test_execution\"},\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"witness_skeleton_requires_concrete_values\"}}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"junit5\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
@@ -224,5 +333,20 @@ public class JavaNullBoundaryRealizerTest {
 
     private static String sugar(String cid, String name, String locator, String template, String loss) {
         return "{\"header\":{\"cid\":\"" + cid + "\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"" + locator + "\",\"template\":\"" + template + "\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":" + loss + "},\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"" + name + "\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
+    }
+
+    private static com.provekit.ir.Jcs.Json numericPredicate(String op, String symbol, long value) {
+        return com.provekit.ir.Jcs.object(
+            "args", com.provekit.ir.Jcs.array(
+                com.provekit.ir.Jcs.object("kind", com.provekit.ir.Jcs.string("var"), "name", com.provekit.ir.Jcs.string(symbol)),
+                com.provekit.ir.Jcs.object(
+                    "kind", com.provekit.ir.Jcs.string("const"),
+                    "sort", com.provekit.ir.Jcs.object("kind", com.provekit.ir.Jcs.string("primitive"), "name", com.provekit.ir.Jcs.string("Int")),
+                    "value", new com.provekit.ir.Jcs.Num(value)
+                )
+            ),
+            "kind", com.provekit.ir.Jcs.string("atomic"),
+            "name", com.provekit.ir.Jcs.string(op)
+        );
     }
 }
