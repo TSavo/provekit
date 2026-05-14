@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use provekit_ir_types::{PromotionDecisionMemento, PromotionGate, PromotionResult, WitnessMemento};
@@ -17,6 +17,8 @@ fn witness_consensus_emits_promotion_decision_for_byte_equal_row_shape() {
     let catalog = tmp.path().join("catalog");
     fs::create_dir_all(&catalog).expect("create catalog dir");
     let out = tmp.path().join("promotion-receipt.proof");
+    let policy = tmp.path().join("consensus-policy.json");
+    write_consensus_policy(&policy, 4);
     let concept = "concept:sql-query";
     let fixture = format!("blake3-512:{}", "a".repeat(128));
     let row_schema = json!({
@@ -50,6 +52,8 @@ fn witness_consensus_emits_promotion_decision_for_byte_equal_row_shape() {
         .arg(&fixture)
         .arg("--min-witnesses")
         .arg("4")
+        .arg("--consensus-policy")
+        .arg(&policy)
         .arg("--catalog")
         .arg(&catalog)
         .arg("--emit")
@@ -84,6 +88,7 @@ fn witness_consensus_emits_promotion_decision_for_byte_equal_row_shape() {
     assert_eq!(decision.header.gate, PromotionGate::Threshold);
     assert_eq!(decision.header.result, PromotionResult::Admitted);
     assert_eq!(decision.header.evidence_cids.len(), 4);
+    assert!(decision.header.policy_cid.starts_with("blake3-512:"));
     assert_eq!(decision.header.decision_payload["promoted_op"], concept);
     assert_eq!(
         decision.header.decision_payload["promotion"],
@@ -96,6 +101,14 @@ fn witness_consensus_emits_promotion_decision_for_byte_equal_row_shape() {
         json!([fixture])
     );
     assert_eq!(decision.header.decision_payload["row_schema"], row_schema);
+    assert_eq!(
+        decision.header.decision_payload["consensus_vector"]["unique_fixtures"],
+        1
+    );
+    assert_eq!(
+        decision.header.decision_payload["consensus_vector"]["total_sample_count"],
+        4
+    );
 }
 
 #[test]
@@ -208,4 +221,25 @@ fn witness(
     };
     witness.cid = witness.recompute_cid().expect("witness cid");
     witness
+}
+
+fn write_consensus_policy(path: &Path, min_witnesses: usize) {
+    fs::write(
+        path,
+        format!(
+            r#"{{
+  "kind": "consensus-policy",
+  "schemaVersion": "1",
+  "name": "test-row-schema-consensus",
+  "thresholds": [
+    {{"axis": "min-witnesses-floor", "predicate": "n>={min_witnesses}"}},
+    {{"axis": "environment-diversity", "predicate": "unique_fixtures>=1"}},
+    {{"axis": "sample-depth", "predicate": "total_sample_count>={min_witnesses}"}}
+  ],
+  "allow_failures": false
+}}
+"#
+        ),
+    )
+    .expect("write consensus policy");
 }

@@ -17,14 +17,13 @@
 //   6. The witness can be shipped with the package
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
-use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use libprovekit::promotion_decision_registry::{PromotionDecisionKey, PromotionStatus};
 use provekit_ir_types::{
-    MigrateReceiptEnvelope, PromotionDecisionEnvelope, PromotionDecisionHeader,
-    PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult,
-    WitnessMemento,
+    CrossLanguageWitnessPair, MigrateReceiptEnvelope, PromotionDecisionEnvelope,
+    PromotionDecisionHeader, PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate,
+    PromotionResult, WitnessMemento,
 };
 use serde_json::json;
 use serde_json::Value as Json;
@@ -35,6 +34,9 @@ use crate::{EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 pub fn run(args: crate::WitnessArgs) -> u8 {
     if args.command_or_contract == "consensus" {
         return run_consensus(args);
+    }
+    if args.command_or_contract == "status" {
+        return run_status(args);
     }
 
     let project_root = args
@@ -157,55 +159,85 @@ fn run_consensus(args: crate::WitnessArgs) -> u8 {
             return EXIT_USER_ERROR;
         }
     };
-    let catalog_roots = if args.catalogs.is_empty() {
-        let project_catalog = project_root.join(".provekit");
-        if project_catalog.exists() {
-            vec![project_catalog]
-        } else {
-            vec![project_root]
-        }
-    } else {
-        args.catalogs.clone()
-    };
+    let catalog_roots = crate::promotion_query::catalog_roots(&project_root, &args.catalogs);
+    let concept_terms = crate::promotion_query::concept_query_terms(&project_root, &concept);
 
-    let witnesses = match collect_witnesses(&catalog_roots) {
-        Ok(witnesses) => witnesses,
+    let catalog = match collect_witness_catalog(&catalog_roots) {
+        Ok(catalog) => catalog,
         Err(err) => {
             eprintln!("error: witness consensus catalog scan failed: {err}");
             return EXIT_USER_ERROR;
         }
     };
-    let selected: Vec<WitnessMemento> = witnesses
+    let selected: Vec<WitnessMemento> = catalog
+        .witnesses
         .into_iter()
         .filter(|witness| {
-            witness.witness_for == concept
+            concept_terms
+                .iter()
+                .any(|candidate| candidate == &witness.witness_for)
                 && witness.fixture_state_cid == fixture
                 && witness.outcome == "pass"
         })
         .collect();
-    if selected.len() < args.min_witnesses {
-        eprintln!(
-            "witness consensus: rejected: {} matching passing witnesses, require {}",
-            selected.len(),
-            args.min_witnesses
-        );
-        return EXIT_VERIFY_FAIL;
-    }
 
-    let row_schema = match consensus_row_schema(&selected) {
-        Ok(row_schema) => row_schema,
+    let consensus = match consensus_evidence(&selected, &catalog.cross_language_pairs) {
+        Ok(consensus) => consensus,
         Err(err) => {
             eprintln!("witness consensus: rejected: {err}");
             return EXIT_VERIFY_FAIL;
         }
     };
 
+    if consensus.witnesses.len() < args.min_witnesses {
+        eprintln!(
+            "witness consensus: rejected: {} matching passing witnesses, require {}",
+            consensus.witnesses.len(),
+            args.min_witnesses
+        );
+        return EXIT_VERIFY_FAIL;
+    }
+
+    let policy_path = match args.consensus_policy.as_ref() {
+        Some(path) => path,
+        None => {
+            eprintln!("error: witness consensus requires --consensus-policy");
+            return EXIT_USER_ERROR;
+        }
+    };
+    let policy = match crate::promotion_query::load_consensus_policy(policy_path) {
+        Ok(policy) => policy,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return EXIT_USER_ERROR;
+        }
+    };
+    let policy_cid = policy
+        .cid
+        .clone()
+        .expect("load_consensus_policy fills missing policy cid");
+    let loss_dimensions = crate::promotion_query::concept_loss_dimensions(&project_root, &concept);
+    let consensus_vector = consensus_vector(&consensus.witnesses, &loss_dimensions);
+    let status_for_policy = PromotionStatus {
+        key: PromotionDecisionKey::new(concept.clone(), fixture.clone()),
+        decision_cids: Vec::new(),
+        decision_policy_cids: vec![policy_cid.clone()],
+        consensus_vector: consensus_vector.clone(),
+        witnesses_consulted: consensus.witnesses.len() as u64,
+    };
+    if let Err(err) = policy.admits(&status_for_policy) {
+        eprintln!("witness consensus: rejected by policy: {err}");
+        return EXIT_VERIFY_FAIL;
+    }
+
     let decision = match promotion_decision_for_consensus(
         &concept,
         &fixture,
         args.min_witnesses,
-        &selected,
-        row_schema,
+        &consensus.witnesses,
+        consensus.row_schema,
+        consensus_vector,
+        policy_cid,
     ) {
         Ok(decision) => decision,
         Err(err) => {
@@ -237,7 +269,7 @@ fn run_consensus(args: crate::WitnessArgs) -> u8 {
             "promotion_cid": decision.header.cid,
             "promotion_receipt": emit.display().to_string(),
             "result": "admitted",
-            "witnesses_consulted": selected.len()
+            "witnesses_consulted": consensus.witnesses.len()
         });
         println!(
             "{}",
@@ -247,11 +279,72 @@ fn run_consensus(args: crate::WitnessArgs) -> u8 {
         println!("witness consensus: admitted");
         println!("  concept: {concept}");
         println!("  fixture: {fixture}");
-        println!("  witnesses: {}", selected.len());
+        println!("  witnesses: {}", consensus.witnesses.len());
         println!("  agreement: byte-equal");
         println!("  receipt: {}", emit.display());
     }
     EXIT_OK
+}
+
+fn run_status(args: crate::WitnessArgs) -> u8 {
+    let project_root = args
+        .project
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+    let concept = match args.concept.as_deref() {
+        Some(concept) if !concept.trim().is_empty() => concept.to_string(),
+        _ => {
+            eprintln!("error: witness status requires --concept");
+            return EXIT_USER_ERROR;
+        }
+    };
+    let fixture = match args.require_fixture.as_deref() {
+        Some(fixture) if !fixture.trim().is_empty() => fixture.to_string(),
+        _ => {
+            eprintln!("error: witness status requires --require-fixture");
+            return EXIT_USER_ERROR;
+        }
+    };
+
+    match crate::promotion_query::query_consensus_vector(
+        &project_root,
+        &args.catalogs,
+        &concept,
+        &fixture,
+    ) {
+        Ok(Some(hit)) => {
+            if args.out.json {
+                let report = crate::promotion_query::status_json(&concept, &fixture, &hit, None);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report).unwrap_or_else(|_| report.to_string())
+                );
+            } else if !args.out.quiet {
+                println!("witness status: consensus-vector present");
+                println!("  concept: {concept}");
+                println!("  fixture: {fixture}");
+                println!("  promoted_op: {}", hit.status.key.promoted_op);
+                println!("  decisions: {}", hit.status.decision_cids.len());
+                println!("  witnesses_consulted: {}", hit.status.witnesses_consulted);
+            }
+            EXIT_OK
+        }
+        Ok(None) => {
+            if args.out.json {
+                let report = crate::promotion_query::missing_json(&concept, &fixture);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report).unwrap_or_else(|_| report.to_string())
+                );
+            } else {
+                eprintln!("witness status: missing consensus vector");
+            }
+            EXIT_VERIFY_FAIL
+        }
+        Err(err) => {
+            eprintln!("error: witness status catalog scan failed: {err}");
+            EXIT_USER_ERROR
+        }
+    }
 }
 
 fn extract_post(contract: &Json) -> Option<Json> {
@@ -282,11 +375,23 @@ fn build_witness_obligation(post: &Json, property: &Json) -> Result<Json, String
     }))
 }
 
-fn collect_witnesses(catalog_roots: &[PathBuf]) -> Result<Vec<WitnessMemento>, String> {
-    let mut witnesses = Vec::new();
+#[derive(Debug, Default)]
+struct WitnessCatalog {
+    witnesses: Vec<WitnessMemento>,
+    cross_language_pairs: Vec<CrossLanguageWitnessPair>,
+}
+
+#[derive(Debug)]
+struct ConsensusEvidence {
+    witnesses: Vec<WitnessMemento>,
+    row_schema: Json,
+}
+
+fn collect_witness_catalog(catalog_roots: &[PathBuf]) -> Result<WitnessCatalog, String> {
+    let mut catalog = WitnessCatalog::default();
     for root in catalog_roots {
         if root.is_file() {
-            collect_witnesses_from_file(root, &mut witnesses)?;
+            collect_witnesses_from_file(root, &mut catalog)?;
             continue;
         }
         if !root.exists() {
@@ -298,13 +403,24 @@ fn collect_witnesses(catalog_roots: &[PathBuf]) -> Result<Vec<WitnessMemento>, S
         {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_type().is_file() {
-                collect_witnesses_from_file(entry.path(), &mut witnesses)?;
+                collect_witnesses_from_file(entry.path(), &mut catalog)?;
             }
         }
     }
-    witnesses.sort_by(|left, right| left.cid.cmp(&right.cid));
-    witnesses.dedup_by(|left, right| left.cid == right.cid);
-    Ok(witnesses)
+    catalog
+        .witnesses
+        .sort_by(|left, right| left.cid.cmp(&right.cid));
+    catalog
+        .witnesses
+        .dedup_by(|left, right| left.cid == right.cid);
+    catalog.cross_language_pairs.sort_by(|left, right| {
+        left.concept_site_cid
+            .cmp(&right.concept_site_cid)
+            .then(left.source_witness_cid.cmp(&right.source_witness_cid))
+            .then(left.target_witness_cid.cmp(&right.target_witness_cid))
+    });
+    catalog.cross_language_pairs.dedup();
+    Ok(catalog)
 }
 
 fn should_descend(path: &Path) -> bool {
@@ -317,10 +433,7 @@ fn should_descend(path: &Path) -> bool {
     )
 }
 
-fn collect_witnesses_from_file(
-    path: &Path,
-    witnesses: &mut Vec<WitnessMemento>,
-) -> Result<(), String> {
+fn collect_witnesses_from_file(path: &Path, catalog: &mut WitnessCatalog) -> Result<(), String> {
     let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
         return Ok(());
     };
@@ -333,14 +446,86 @@ fn collect_witnesses_from_file(
     };
     if let Ok(witness) = serde_json::from_str::<WitnessMemento>(&text) {
         if witness.validate().is_ok() {
-            witnesses.push(witness);
+            catalog.witnesses.push(witness);
         }
         return Ok(());
     }
     if let Ok(receipt) = MigrateReceiptEnvelope::parse_json_str(&text) {
-        witnesses.extend(receipt.witnesses);
+        catalog.witnesses.extend(receipt.witnesses);
+        catalog
+            .cross_language_pairs
+            .extend(receipt.cross_language_witness_pairs);
     }
     Ok(())
+}
+
+fn consensus_evidence(
+    witnesses: &[WitnessMemento],
+    pairs: &[CrossLanguageWitnessPair],
+) -> Result<ConsensusEvidence, String> {
+    match consensus_row_schema(witnesses) {
+        Ok(row_schema) => {
+            return Ok(ConsensusEvidence {
+                witnesses: witnesses.to_vec(),
+                row_schema,
+            });
+        }
+        Err(err) if pairs.is_empty() => return Err(err),
+        Err(_) => {}
+    }
+    consensus_pairwise_row_schema(witnesses, pairs)
+}
+
+fn consensus_pairwise_row_schema(
+    witnesses: &[WitnessMemento],
+    pairs: &[CrossLanguageWitnessPair],
+) -> Result<ConsensusEvidence, String> {
+    let by_cid = witnesses
+        .iter()
+        .map(|witness| (witness.cid.as_str(), witness))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut evidence_cids = std::collections::BTreeSet::new();
+    let mut pair_count = 0usize;
+    for pair in pairs {
+        if pair.equivalence_outcome != "pass" {
+            continue;
+        }
+        let Some(source) = by_cid.get(pair.source_witness_cid.as_str()) else {
+            continue;
+        };
+        let Some(target) = by_cid.get(pair.target_witness_cid.as_str()) else {
+            continue;
+        };
+        let source_schema = source
+            .measurements
+            .get("row_schema")
+            .ok_or_else(|| format!("witness {} missing measurements.row_schema", source.cid))?;
+        let target_schema = target
+            .measurements
+            .get("row_schema")
+            .ok_or_else(|| format!("witness {} missing measurements.row_schema", target.cid))?;
+        if canonical_json_bytes(source_schema) != canonical_json_bytes(target_schema) {
+            return Err("cross_language_witness_pairs row_schema disagreement".to_string());
+        }
+        evidence_cids.insert(source.cid.clone());
+        evidence_cids.insert(target.cid.clone());
+        pair_count += 1;
+    }
+    if evidence_cids.is_empty() {
+        return Err("measurements.row_schema disagreement".to_string());
+    }
+    let consensus_witnesses = witnesses
+        .iter()
+        .filter(|witness| evidence_cids.contains(&witness.cid))
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(ConsensusEvidence {
+        witnesses: consensus_witnesses,
+        row_schema: json!({
+            "agreement_axis": "cross_language_witness_pairs.measurements.row_schema",
+            "pair_count": pair_count
+        }),
+    })
 }
 
 fn consensus_row_schema(witnesses: &[WitnessMemento]) -> Result<Json, String> {
@@ -371,32 +556,29 @@ fn promotion_decision_for_consensus(
     min_witnesses: usize,
     witnesses: &[WitnessMemento],
     row_schema: Json,
+    consensus_vector: Json,
+    policy_cid: String,
 ) -> Result<PromotionDecisionMemento, String> {
     let mut evidence_cids: Vec<String> = witnesses.iter().map(|w| w.cid.clone()).collect();
     evidence_cids.sort();
     let subjects: Vec<String> = witnesses.iter().map(|w| w.subject.clone()).collect();
     let total_observations: u64 = witnesses.iter().map(|w| w.sample_count).sum();
-    let policy_cid = cid_for_json(&json!({
-        "kind": "consensus-policy",
-        "min_witnesses": min_witnesses,
-        "name": "provekit-witness-consensus-row-schema-v1"
-    }));
-    let decider_cid = cid_for_json(&json!({
+    let decider_cid = crate::promotion_query::content_cid_for_json(&json!({
         "kind": "decider",
         "name": "provekit-witness-consensus"
     }));
-    let candidate_cid = cid_for_json(&json!({
+    let candidate_cid = crate::promotion_query::content_cid_for_json(&json!({
         "concept": concept,
         "kind": "concept-candidate"
     }));
-    let promoted_cid = cid_for_json(&json!({
+    let promoted_cid = crate::promotion_query::content_cid_for_json(&json!({
         "concept": concept,
         "fixture_state_cid": fixture,
         "kind": "promoted-concept-tier",
         "tier": "empirically-witnessed"
     }));
     let reason = format!(
-        "{} witnesses on 1 fixture, all measurements.row_schema byte-equal",
+        "{} witnesses selected; consensus vector records the observed axes",
         witnesses.len()
     );
     let mut decision = PromotionDecisionMemento {
@@ -419,7 +601,8 @@ fn promotion_decision_for_consensus(
                 "row_schema": row_schema,
                 "subjects_consulted": subjects,
                 "total_observations": total_observations,
-                "witnesses_consulted": evidence_cids
+                "witnesses_consulted": evidence_cids,
+                "consensus_vector": consensus_vector
             }),
             evidence_cids,
             gate: PromotionGate::Threshold,
@@ -440,40 +623,98 @@ fn promotion_decision_for_consensus(
     Ok(decision)
 }
 
-fn canonical_json_bytes(value: &Json) -> Vec<u8> {
-    let canonical = json_to_value(value);
-    encode_jcs(&canonical).into_bytes()
-}
-
-fn cid_for_json(value: &Json) -> String {
-    blake3_512_of(&canonical_json_bytes(value))
-}
-
-fn json_to_value(j: &Json) -> Arc<CValue> {
-    match j {
-        Json::String(s) => CValue::string(s.clone()),
-        Json::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                CValue::integer(i)
-            } else if let Some(u) = n.as_u64() {
-                if let Ok(i) = i64::try_from(u) {
-                    CValue::integer(i)
-                } else {
-                    CValue::string(n.to_string())
-                }
-            } else {
-                CValue::string(n.to_string())
-            }
-        }
-        Json::Bool(b) => CValue::boolean(*b),
-        Json::Null => CValue::null(),
-        Json::Array(items) => CValue::array(items.iter().map(json_to_value).collect()),
-        Json::Object(map) => CValue::object(
-            map.iter()
-                .map(|(key, value)| (key.as_str(), json_to_value(value)))
-                .collect::<Vec<_>>(),
-        ),
+fn consensus_vector(witnesses: &[WitnessMemento], loss_dimensions: &[String]) -> Json {
+    let mut signer_keys = witnesses
+        .iter()
+        .map(|witness| {
+            witness
+                .signed_by
+                .clone()
+                .unwrap_or_else(|| "unsigned".to_string())
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    if signer_keys.is_empty() {
+        signer_keys.insert("unsigned".to_string());
     }
+    let fixtures = witnesses
+        .iter()
+        .map(|witness| witness.fixture_state_cid.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let total_sample_count: u64 = witnesses.iter().map(|witness| witness.sample_count).sum();
+    let mut observed_times = witnesses
+        .iter()
+        .filter_map(|witness| {
+            chrono::DateTime::parse_from_rfc3339(&witness.observed_at)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        })
+        .collect::<Vec<_>>();
+    observed_times.sort();
+    let first_observed_at = observed_times
+        .first()
+        .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true));
+    let last_observed_at = observed_times
+        .last()
+        .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true));
+    let span_seconds = match (observed_times.first(), observed_times.last()) {
+        (Some(first), Some(last)) => (*last - *first).num_seconds().max(0),
+        _ => 0,
+    };
+    let mut outcomes = std::collections::BTreeMap::<String, u64>::new();
+    for witness in witnesses {
+        *outcomes.entry(witness.outcome.clone()).or_default() += 1;
+    }
+    let witnessed_loss_dims = witnesses
+        .iter()
+        .flat_map(|witness| {
+            witness
+                .measurements
+                .pointer("/observer/loss_dims_exercised")
+                .and_then(Json::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Json::as_str)
+                .map(str::to_string)
+        })
+        .filter(|dim| loss_dimensions.iter().any(|known| known == dim))
+        .collect::<std::collections::BTreeSet<_>>();
+    let named_loss_dims = loss_dimensions
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let unwitnessed_loss_dims = named_loss_dims
+        .difference(&witnessed_loss_dims)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    json!({
+        "unique_signers": signer_keys.len(),
+        "unique_signer_keys": signer_keys.into_iter().collect::<Vec<_>>(),
+        "unique_fixtures": fixtures.len(),
+        "total_sample_count": total_sample_count,
+        "loss_dim_coverage": {
+            "named_in_concept_spec": named_loss_dims.into_iter().collect::<Vec<_>>(),
+            "witnessed": witnessed_loss_dims.into_iter().collect::<Vec<_>>(),
+            "unwitnessed": unwitnessed_loss_dims
+        },
+        "input_distribution_summary": {
+            "shape": "unspanned"
+        },
+        "temporal_spread": {
+            "first_observed_at": first_observed_at,
+            "last_observed_at": last_observed_at,
+            "span_seconds": span_seconds
+        },
+        "failure_mode_distribution": [
+            {"outcome": "pass", "count": outcomes.get("pass").copied().unwrap_or(0)},
+            {"outcome": "fail", "count": outcomes.get("fail").copied().unwrap_or(0)},
+            {"outcome": "inconclusive", "count": outcomes.get("inconclusive").copied().unwrap_or(0)}
+        ]
+    })
+}
+
+fn canonical_json_bytes(value: &Json) -> Vec<u8> {
+    crate::promotion_query::canonical_json_bytes(value)
 }
 
 enum SolverOutput {

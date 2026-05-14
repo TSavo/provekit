@@ -47,6 +47,7 @@ mod cmd_witness;
 mod kit_dispatch;
 mod lift_plugin;
 mod project_config;
+mod promotion_query;
 mod prompts;
 mod protocol;
 mod report_fmt;
@@ -185,6 +186,15 @@ pub struct ProveArgs {
     /// Consumer policy proof/receipt used for policy admission checks.
     #[arg(long, requires = "proof")]
     pub policy: Option<PathBuf>,
+    /// Require that a concept has reached the empirically-witnessed promotion tier.
+    #[arg(long = "require-empirically-witnessed")]
+    pub require_empirically_witnessed: Option<String>,
+    /// Fixture-state CID for tier queries such as --require-empirically-witnessed.
+    #[arg(long = "require-fixture")]
+    pub require_fixture: Option<String>,
+    /// Consensus policy JSON used to evaluate a required empirical witness vector.
+    #[arg(long = "consensus-policy", requires = "require_empirically_witnessed")]
+    pub consensus_policy: Option<PathBuf>,
     /// Kit conformance gate: verify the named kit's lifter implements the
     /// canonical lift-plugin-protocol contracts (C1-C8). When set, the six-stage
     /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
@@ -314,9 +324,13 @@ pub struct WitnessArgs {
     /// Fixture-state CID required for consensus.
     #[arg(long = "require-fixture")]
     pub require_fixture: Option<String>,
-    /// Minimum passing witnesses required before admission.
+    /// Minimum passing witnesses required before evaluating consensus.
+    /// This is a cardinality floor, not the admission policy.
     #[arg(long = "min-witnesses", default_value_t = 1)]
     pub min_witnesses: usize,
+    /// Consensus policy JSON used to decide whether the observed vector admits promotion.
+    #[arg(long = "consensus-policy")]
+    pub consensus_policy: Option<PathBuf>,
     /// File or directory to scan for WitnessMementos or migration receipts.
     #[arg(long = "catalog")]
     pub catalogs: Vec<PathBuf>,
