@@ -1,0 +1,6 @@
+# PEP 1.7.0 `kind = "realize"` plugin manifest for TypeScript pg body emission.
+# cmd_bind dispatches canonical rewrite emission here when target-language=typescript and library_tag=pg.
+name = "typescript-realize-pg"
+library_tag = "pg"
+command = ["implementations/typescript/target/release/provekit-realize-typescript-pg", "--rpc"]
+working_dir = "."

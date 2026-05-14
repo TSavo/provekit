@@ -49,6 +49,39 @@ fn java_jar() -> PathBuf {
     manifest.join("../../java/provekit-realize-java-core/target/provekit-realize-java.jar")
 }
 
+fn exe_name(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+
+fn java_bin() -> String {
+    if let Some(java_home) = std::env::var_os("JAVA_HOME") {
+        let candidate = PathBuf::from(java_home).join("bin").join(exe_name("java"));
+        if candidate.exists() {
+            return candidate.display().to_string();
+        }
+    }
+
+    if let Ok(output) = Command::new("mvn").arg("-version").output() {
+        let combined = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for line in combined.lines() {
+            if let Some((_, runtime)) = line.split_once("runtime: ") {
+                let candidate = PathBuf::from(runtime.trim())
+                    .join("bin")
+                    .join(exe_name("java"));
+                if candidate.exists() {
+                    return candidate.display().to_string();
+                }
+            }
+        }
+    }
+
+    "java".to_string()
+}
+
 /// Serializes the one-time Maven build across parallel test threads.
 /// The `OnceLock` holds a `Mutex<()>` so that the first thread to arrive
 /// grabs the lock, runs `mvn package`, and releases it. Every subsequent
@@ -127,7 +160,7 @@ fn java_invoke(
         concept_q = format!("{:?}", concept_name),
     );
 
-    let mut child = Command::new("java")
+    let mut child = Command::new(java_bin())
         .args(["-jar", jar.to_str().unwrap(), "--rpc"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -301,7 +334,7 @@ fn pep_describe_returns_valid_sugar_plugin() {
     use provekit_plugin_loader::load_plugin_from_rpc;
     ensure_jar_built();
     let jar = java_jar();
-    let endpoint = format!("stdio:java -jar {} --rpc", jar.display());
+    let endpoint = format!("stdio:{} -jar {} --rpc", java_bin(), jar.display());
     let plugin = load_plugin_from_rpc(&endpoint)
         .unwrap_or_else(|e| panic!("load_plugin_from_rpc failed: {e}"));
 

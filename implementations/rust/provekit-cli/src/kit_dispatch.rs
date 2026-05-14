@@ -389,6 +389,7 @@ fn rpc_lift(
     if let Some(wd) = &cmd_spec.working_dir {
         command.current_dir(wd);
     }
+    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
@@ -857,6 +858,7 @@ fn invoke_realize(
     if let Some(wd) = &cmd_spec.working_dir {
         command.current_dir(wd);
     }
+    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
@@ -973,6 +975,33 @@ fn invoke_realize(
         used_sugars,
         observation_wrapper_emission_record,
     })
+}
+
+fn configure_java_runtime(command: &mut Command, argv0: &str) {
+    if argv0 != "java" || std::env::var_os("JAVA_HOME").is_some() {
+        return;
+    }
+    if let Some(java_home) = java_home_from_maven() {
+        command.env("JAVA_HOME", java_home);
+    }
+}
+
+fn java_home_from_maven() -> Option<String> {
+    let output = Command::new("mvn").arg("-version").output().ok()?;
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for line in combined.lines() {
+        if let Some((_, runtime)) = line.split_once("runtime: ") {
+            let runtime = runtime.trim();
+            if Path::new(runtime).join("bin").join("java").exists() {
+                return Some(runtime.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn realize_request_params(request: &RealizeRequest) -> Value {

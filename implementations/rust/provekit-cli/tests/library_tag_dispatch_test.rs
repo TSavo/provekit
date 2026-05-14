@@ -71,6 +71,44 @@ fn http_request_realize_request() -> RealizeRequest {
     }
 }
 
+fn node_bin() -> String {
+    std::env::var("NODE").unwrap_or_else(|_| "node".to_string())
+}
+
+fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag: &str) {
+    let manifest = root
+        .join(".provekit")
+        .join("realize")
+        .join(surface)
+        .join("manifest.toml");
+    fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
+        .expect("create manifest dir");
+    let script = script.display().to_string().replace('\\', "\\\\").replace('"', "\\\"");
+    let manifest_text = format!(
+        "name = \"typescript-realize-{library_tag}\"\n\
+         library_tag = \"{library_tag}\"\n\
+         command = [\"{}\", \"{}\", \"--rpc\"]\n\
+         working_dir = \".\"\n",
+        node_bin().replace('\\', "\\\\").replace('"', "\\\""),
+        script,
+    );
+    fs::write(manifest, manifest_text).expect("write manifest");
+}
+
+fn sql_query_realize_request() -> RealizeRequest {
+    RealizeRequest {
+        function: "selectRows".to_string(),
+        params: vec!["sql".to_string(), "args".to_string()],
+        param_types: vec!["string".to_string(), "unknown[]".to_string()],
+        return_type: "unknown[]".to_string(),
+        concept_name: "concept:sql-query".to_string(),
+        mode: None,
+        contract: None,
+        sugar_cids: Vec::new(),
+        sugar_plugins: Vec::new(),
+    }
+}
+
 #[test]
 fn dispatch_realize_routes_python_library_tags_to_distinct_kits() {
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -106,5 +144,53 @@ fn dispatch_realize_routes_python_library_tags_to_distinct_kits() {
         requests.source.contains("requests.get"),
         "requests output should use requests.get, got:\n{}",
         requests.source
+    );
+}
+
+#[test]
+fn dispatch_realize_routes_typescript_sql_library_tags_to_distinct_kits() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let repo = repo_root();
+    install_node_manifest(
+        workspace.path(),
+        "typescript-better-sqlite3",
+        &repo
+            .join("implementations")
+            .join("typescript")
+            .join("provekit-realize-typescript-better-sqlite3")
+            .join("src")
+            .join("main.js"),
+        "better-sqlite3",
+    );
+    install_node_manifest(
+        workspace.path(),
+        "typescript-pg",
+        &repo
+            .join("implementations")
+            .join("typescript")
+            .join("provekit-realize-typescript-pg")
+            .join("src")
+            .join("main.js"),
+        "pg",
+    );
+
+    std::env::set_var("PROVEKIT_REPO_ROOT", repo);
+
+    let request = sql_query_realize_request();
+    let sqlite = dispatch_realize(workspace.path(), "typescript", Some("better-sqlite3"), &request)
+        .expect("dispatch better-sqlite3 realize kit");
+    let pg = dispatch_realize(workspace.path(), "typescript", Some("pg"), &request)
+        .expect("dispatch pg realize kit");
+
+    assert_ne!(sqlite.source, pg.source);
+    assert!(
+        sqlite.source.contains("db.prepare(sql).all(args)"),
+        "better-sqlite3 output should use db.prepare().all(), got:\n{}",
+        sqlite.source
+    );
+    assert!(
+        pg.source.contains("await pool.query(sql, args)"),
+        "pg output should use awaited pool.query, got:\n{}",
+        pg.source
     );
 }

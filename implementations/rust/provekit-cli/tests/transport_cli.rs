@@ -8,6 +8,34 @@ fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
 }
 
+/// Returns a path to the rust realize kit binary if one can be found, or a
+/// non-existent sentinel path if none is available. Mirrors the resolution
+/// order in `builtin_realize_candidates`: workspace-relative built-in paths,
+/// then sibling-of-current-exe (the CARGO_TARGET_DIR case in cargo test).
+fn rust_realize_kit_path() -> PathBuf {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let impl_dir = root.join("implementations/rust");
+    for candidate in [
+        impl_dir.join("target/release/provekit-realize-rust"),
+        impl_dir.join("target/debug/provekit-realize-rust"),
+    ] {
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    // Sibling-of-current-exe: under cargo test with a custom CARGO_TARGET_DIR,
+    // all binaries land in the same directory.
+    let provekit = provekit_bin();
+    if let Some(bin_dir) = provekit.parent() {
+        let sibling = bin_dir.join("provekit-realize-rust");
+        if sibling.exists() {
+            return sibling;
+        }
+    }
+    // Return a non-existent sentinel so the caller can skip.
+    root.join("implementations/rust/target/debug/provekit-realize-rust")
+}
+
 #[test]
 fn help_lists_transport_command_for_program_ports() {
     let output = Command::new(provekit_bin())
@@ -38,6 +66,14 @@ fn transport_foo_c_to_rust_artifacts_when_c_projector_is_built() {
         eprintln!(
             "skipping transport integration test because {} is not built",
             projector.display()
+        );
+        return;
+    }
+    let rust_realize_kit = rust_realize_kit_path();
+    if !rust_realize_kit.exists() {
+        eprintln!(
+            "skipping transport integration test because {} is not built",
+            rust_realize_kit.display()
         );
         return;
     }
@@ -144,6 +180,14 @@ fn migrate_alias_transports_foo_c_to_rust_when_c_projector_is_built() {
         eprintln!(
             "skipping migrate integration test because {} is not built",
             projector.display()
+        );
+        return;
+    }
+    let rust_realize_kit = rust_realize_kit_path();
+    if !rust_realize_kit.exists() {
+        eprintln!(
+            "skipping migrate integration test because {} is not built",
+            rust_realize_kit.display()
         );
         return;
     }

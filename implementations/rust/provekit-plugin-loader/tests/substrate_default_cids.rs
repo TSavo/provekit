@@ -170,6 +170,39 @@ fn python_requests_canonical_bodies_cid_self_consistent() {
 }
 
 #[test]
+fn typescript_canonical_bodies_cid_self_consistent() {
+    let path = repo_root().join(
+        "menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies.json",
+    );
+    assert_self_consistent(
+        path,
+        "blake3-512:eea9d2551c91d8d9da056e504dbf00f5792136e5beea6d0a733ca7a1134dd82b8fc2f945355d58b696be0f4e28f407f68cdb9d2bf4448ade8d2ba95418a7fc65",
+    );
+}
+
+#[test]
+fn typescript_better_sqlite3_canonical_bodies_cid_self_consistent() {
+    let path = repo_root().join(
+        "menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-better-sqlite3.json",
+    );
+    assert_self_consistent(
+        path,
+        "blake3-512:5793dafda8c597efb885e89c8b9313fce75b1b10d08dee863a689e2867436a7173fa106abec67e8c6ee978c236c14ed87b33fc8566087ec95f5fde26e61cfe5a",
+    );
+}
+
+#[test]
+fn typescript_pg_canonical_bodies_cid_self_consistent() {
+    let path = repo_root().join(
+        "menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-pg.json",
+    );
+    assert_self_consistent(
+        path,
+        "blake3-512:382f1ed59e3066d75c2f330f5ae007ab6726ccbe782bcac618bcade5e15ba80cc5e98c361a7d68500a01cba23f46e087442c1f86cb4b11d2a0abe5b82015927a",
+    );
+}
+
+#[test]
 fn c_canonical_sugar_cid_self_consistent() {
     let path = repo_root().join("menagerie/c-language-signature/specs/sugar/c-canonical.json");
     assert_self_consistent(
