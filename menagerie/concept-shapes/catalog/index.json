@@ -1267,6 +1267,12 @@
       "name": "morphism:zig:seq:to:concept:seq",
       "path": "algorithms/morphism:zig:seq:to:concept:seq.blake3-512:e492e8f3c5541abc76bce077ef6bc43f244db5d682f03c0476502df7a04e639055549bbeb9f6ad669b90fd4b38bfd2555de7aad0e91b243d25bf33254d6dae40.json"
     },
+    "blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333": {
+      "cid": "blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333",
+      "kind": "algorithm",
+      "name": "concept:log-emit",
+      "path": "algorithms/concept:log-emit.blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333.json"
+    },
     "blake3-512:e6085f0d894f234c8bc7248b9c351bc80146decb0410d3ea1927d55118bf39ecc712e4bfedae19fa6b7f75987eb0782e6fcbe3f5d6788ca585ff782cf7bc9dc6": {
       "cid": "blake3-512:e6085f0d894f234c8bc7248b9c351bc80146decb0410d3ea1927d55118bf39ecc712e4bfedae19fa6b7f75987eb0782e6fcbe3f5d6788ca585ff782cf7bc9dc6",
       "kind": "algorithm",

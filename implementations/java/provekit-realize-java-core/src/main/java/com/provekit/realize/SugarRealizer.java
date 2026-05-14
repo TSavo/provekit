@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -137,10 +138,9 @@ final class SugarRealizer {
                 + contractPrefix(contract)
                 + commentPrefix(sugarEmissions);
 
-        // Body: try body-template first, fall through to language stub.
-        Optional<String> bodyTemplate = bodyTemplateFor(conceptName, params, mode);
+        Optional<RenderedBody> bodyTemplate = renderBodyTemplateFor(conceptName, params, mode);
         boolean isStub = bodyTemplate.isEmpty();
-        String bodyContent = bodyTemplate
+        String bodyContent = bodyTemplate.map(RenderedBody::body)
                 .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
         // Multi-line templates: each internal line gets the same 8-space
         // method-body indent. Single-line bodies are unaffected (no \n).
@@ -167,7 +167,11 @@ final class SugarRealizer {
                 + "    }\n"
                 + "}\n"
                 + witnessClass;
-        return new Realization(source, isStub, observedLossRecordJson(sugarEmissions), usedSugarsJson(sugarEmissions));
+        return new Realization(
+                source,
+                isStub,
+                observedLossRecordJson(sugarEmissions, bodyTemplate.map(RenderedBody::lossRecord).orElse(Jcs.object())),
+                usedSugarsJson(sugarEmissions));
     }
 
     private static String parameterAnnotations(List<SugarEmission> emissions, String paramName) {
@@ -199,19 +203,39 @@ final class SugarRealizer {
     }
 
     private static String observedLossRecordJson(List<SugarEmission> emissions) {
+        return observedLossRecordJson(emissions, Jcs.object());
+    }
+
+    private static String observedLossRecordJson(List<SugarEmission> emissions, Jcs.Json bodyTemplateLossRecord) {
         Map<String, Jcs.Json> byDimension = new TreeMap<>();
+        mergeLossRecord(byDimension, bodyTemplateLossRecord);
         for (SugarEmission emission : emissions) {
-            if (emission.lossRecord() instanceof Jcs.Obj lossObj) {
-                for (Jcs.Field field : lossObj.fields()) {
-                    byDimension.merge(field.key(), field.value(), SugarRealizer::combineLossFormula);
-                }
-            }
+            mergeLossRecord(byDimension, emission.lossRecord());
         }
         List<Jcs.Field> fields = new ArrayList<>();
         for (Map.Entry<String, Jcs.Json> entry : byDimension.entrySet()) {
             fields.add(new Jcs.Field(entry.getKey(), entry.getValue()));
         }
         return Jcs.encode(new Jcs.Obj(fields));
+    }
+
+    private static void mergeLossRecord(Map<String, Jcs.Json> byDimension, Jcs.Json lossRecord) {
+        if (lossRecord instanceof Jcs.Obj lossObj) {
+            for (Jcs.Field field : lossObj.fields()) {
+                byDimension.merge(field.key(), field.value(), SugarRealizer::combineLossFormula);
+            }
+        }
+    }
+
+    private static Jcs.Json combineLossRecords(Jcs.Json left, Jcs.Json right) {
+        Map<String, Jcs.Json> byDimension = new TreeMap<>();
+        mergeLossRecord(byDimension, left);
+        mergeLossRecord(byDimension, right);
+        List<Jcs.Field> fields = new ArrayList<>();
+        for (Map.Entry<String, Jcs.Json> entry : byDimension.entrySet()) {
+            fields.add(new Jcs.Field(entry.getKey(), entry.getValue()));
+        }
+        return new Jcs.Obj(fields);
     }
 
     private static Jcs.Json combineLossFormula(Jcs.Json existing, Jcs.Json next) {
@@ -444,8 +468,18 @@ final class SugarRealizer {
             String mode,
             String templateKind,
             String template,
+            List<TemplateCitation> citations,
+            Jcs.Json lossRecord,
             Integer minParams,
             Integer maxParams) {}
+
+    private record TemplateCitation(
+            String placeholder,
+            String conceptName,
+            String mode,
+            List<String> params) {}
+
+    private record RenderedBody(String body, Jcs.Json lossRecord) {}
 
     /**
      * Render a body string for the given concept + signature, or empty when
@@ -461,6 +495,35 @@ final class SugarRealizer {
     }
 
     static Optional<String> bodyTemplateFor(String conceptName, List<String> params, String mode) {
+        return renderBodyTemplateFor(conceptName, params, mode).map(RenderedBody::body);
+    }
+
+    private static Optional<RenderedBody> renderBodyTemplateFor(String conceptName, List<String> params, String mode) {
+        return renderBodyTemplateFor(conceptName, params, mode, new ArrayList<>());
+    }
+
+    private static Optional<RenderedBody> renderBodyTemplateFor(
+            String conceptName,
+            List<String> params,
+            String mode,
+            List<String> recursionStack) {
+        String stackKey = conceptName + "#" + (mode == null ? "" : mode);
+        if (recursionStack.contains(stackKey) || recursionStack.size() >= 8) {
+            return Optional.empty();
+        }
+        recursionStack.add(stackKey);
+        try {
+            return bodyTemplateForUntracked(conceptName, params, mode, recursionStack);
+        } finally {
+            recursionStack.remove(recursionStack.size() - 1);
+        }
+    }
+
+    private static Optional<RenderedBody> bodyTemplateForUntracked(
+            String conceptName,
+            List<String> params,
+            String mode,
+            List<String> recursionStack) {
         List<BodyTemplateEntry> entries = entries();
         for (BodyTemplateEntry e : entries) {
             if (!conceptMatches(e.conceptName(), conceptName)) continue;
@@ -468,18 +531,81 @@ final class SugarRealizer {
             if (e.minParams() != null && params.size() < e.minParams()) continue;
             if (e.maxParams() != null && params.size() > e.maxParams()) continue;
             if (!"verbatim".equals(e.templateKind())) continue;
-            String rendered = e.template();
-            for (int i = 0; i < params.size(); i++) {
-                rendered = rendered.replace("${param" + i + "}", params.get(i));
+            Optional<RenderedBody> rendered = renderTemplate(e, params, recursionStack);
+            if (rendered.isPresent()) {
+                return rendered;
             }
-            rendered = rendered.replace("${param_count}", Integer.toString(params.size()));
-            if (rendered.contains("${")) {
-                // Unbound placeholder: refuse-match per spec §2.1.
-                continue;
-            }
-            return Optional.of(rendered);
         }
         return Optional.empty();
+    }
+
+    private static Optional<RenderedBody> renderTemplate(
+            BodyTemplateEntry entry,
+            List<String> params,
+            List<String> recursionStack) {
+        Optional<String> renderedMaybe = substituteTemplateBindings(entry.template(), params);
+        if (renderedMaybe.isEmpty()) {
+            return Optional.empty();
+        }
+        String rendered = renderedMaybe.get();
+        Jcs.Json lossRecord = entry.lossRecord();
+        for (TemplateCitation citation : entry.citations()) {
+            List<String> citationParams = new ArrayList<>();
+            for (String rawParam : citation.params()) {
+                Optional<String> renderedParam = substituteTemplateBindings(rawParam, params);
+                if (renderedParam.isEmpty()) {
+                    return Optional.empty();
+                }
+                String renderedParamText = renderedParam.get();
+                if (renderedParamText.contains("${")) {
+                    return Optional.empty();
+                }
+                citationParams.add(renderedParamText);
+            }
+            Optional<RenderedBody> citationBody = renderBodyTemplateFor(
+                    citation.conceptName(),
+                    citationParams,
+                    citation.mode(),
+                    recursionStack);
+            if (citationBody.isEmpty()) {
+                return Optional.empty();
+            }
+            rendered = rendered.replace("${" + citation.placeholder() + "}", citationBody.get().body());
+            lossRecord = combineLossRecords(lossRecord, citationBody.get().lossRecord());
+        }
+        if (rendered.contains("${")) {
+            // Unbound placeholder: refuse-match per spec §2.1.
+            return Optional.empty();
+        }
+        return Optional.of(new RenderedBody(rendered, lossRecord));
+    }
+
+    private static Optional<String> substituteTemplateBindings(String template, List<String> params) {
+        String rendered = template;
+        for (int i = 0; i < params.size(); i++) {
+            String julLevel = "${param" + i + "_jul_level}";
+            if (rendered.contains(julLevel)) {
+                Optional<String> mappedLevel = javaUtilLoggingLevel(params.get(i));
+                if (mappedLevel.isEmpty()) {
+                    return Optional.empty();
+                }
+                rendered = rendered.replace(julLevel, mappedLevel.get());
+            }
+            rendered = rendered.replace("${param" + i + "}", params.get(i));
+        }
+        return Optional.of(rendered.replace("${param_count}", Integer.toString(params.size())));
+    }
+
+    private static Optional<String> javaUtilLoggingLevel(String rawLevel) {
+        if (rawLevel == null) return Optional.empty();
+        return switch (rawLevel.trim().toLowerCase(Locale.ROOT)) {
+            case "trace" -> Optional.of("FINEST");
+            case "debug" -> Optional.of("FINE");
+            case "info" -> Optional.of("INFO");
+            case "warn" -> Optional.of("WARNING");
+            case "error", "fatal" -> Optional.of("SEVERE");
+            default -> Optional.empty();
+        };
     }
 
     private static boolean conceptMatches(String entryName, String requestName) {
@@ -537,6 +663,8 @@ final class SugarRealizer {
                 String kind = templateObj.stringFieldOrNull("kind");
                 String tmpl = templateObj.stringFieldOrNull("template");
                 if (kind == null || tmpl == null) continue;
+                Optional<List<TemplateCitation>> citations = templateCitations(templateObj);
+                if (citations.isEmpty()) continue;
 
                 Integer minParams = null;
                 Integer maxParams = null;
@@ -547,13 +675,57 @@ final class SugarRealizer {
                     if (minJ instanceof Jcs.Num minN) minParams = (int) minN.value();
                     if (maxJ instanceof Jcs.Num maxN) maxParams = (int) maxN.value();
                 }
-                out.add(new BodyTemplateEntry(conceptName, mode, kind, tmpl, minParams, maxParams));
+                out.add(new BodyTemplateEntry(
+                        conceptName,
+                        mode,
+                        kind,
+                        tmpl,
+                        citations.get(),
+                        lossRecordValue(itemObj),
+                        minParams,
+                        maxParams));
             }
             return out;
         } catch (IOException e) {
             // I/O failure: degrade to "no entries"; stubs will emit.
             return List.of();
         }
+    }
+
+    private static Optional<List<TemplateCitation>> templateCitations(Jcs.Obj templateObj) {
+        Jcs.Json citationsJson = templateObj.get("citations");
+        if (citationsJson == null) return Optional.of(List.of());
+        if (!(citationsJson instanceof Jcs.Arr citationsArr)) return Optional.empty();
+        List<TemplateCitation> citations = new ArrayList<>();
+        for (Jcs.Json raw : citationsArr.values()) {
+            if (!(raw instanceof Jcs.Obj citationObj)) return Optional.empty();
+            String placeholder = citationObj.stringFieldOrNull("placeholder");
+            String conceptName = citationObj.stringFieldOrNull("concept_name");
+            if (placeholder == null || placeholder.isBlank() || conceptName == null || conceptName.isBlank()) {
+                return Optional.empty();
+            }
+            String mode = citationObj.stringFieldOrNull("mode");
+            List<String> params = new ArrayList<>();
+            Jcs.Json paramsJson = citationObj.get("params");
+            if (!(paramsJson instanceof Jcs.Arr paramsArr)) return Optional.empty();
+            for (Jcs.Json param : paramsArr.values()) {
+                if (param instanceof Jcs.Str stringParam) {
+                    params.add(stringParam.value());
+                } else {
+                    return Optional.empty();
+                }
+            }
+            citations.add(new TemplateCitation(placeholder, conceptName, mode, params));
+        }
+        return Optional.of(List.copyOf(citations));
+    }
+
+    private static Jcs.Json lossRecordValue(Jcs.Obj entryObj) {
+        Jcs.Json contribution = entryObj.get("loss_record_contribution");
+        if (!(contribution instanceof Jcs.Obj contributionObj)) return Jcs.object();
+        if (!"literal".equals(contributionObj.stringFieldOrNull("form"))) return Jcs.object();
+        Jcs.Json value = contributionObj.get("value");
+        return value instanceof Jcs.Obj ? value : Jcs.object();
     }
 }
 

@@ -214,3 +214,11 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | Concept | Shape CID | Notes |
 | --- | --- | --- |
 | `concept:contract-observation` | `blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063` | mode is a formal slot; observer effects live on the wrapper memento, not the object FCM |
+
+## Log Emit Concept Shape
+
+`concept:log-emit(level, message, structured_fields)` is the hub op for logger-agnostic monitor and emitter body-template composition.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:log-emit` | `blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333` | effect is IO; per-language logger sugars carry honest loss dimensions |

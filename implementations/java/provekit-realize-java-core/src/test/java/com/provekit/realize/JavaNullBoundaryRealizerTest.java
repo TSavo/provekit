@@ -308,6 +308,81 @@ public class JavaNullBoundaryRealizerTest {
         assertTrue(body.isEmpty());
     }
 
+    @Test
+    public void logEmitBodyTemplateRendersJavaUtilLoggingCall() {
+        java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
+            "concept:log-emit",
+            java.util.List.of("info", "\"observed \" + callsiteCid", "contractCid"),
+            "emitter"
+        );
+
+        assertTrue(body.isPresent());
+        assertTrue(body.get().contains("java.util.logging.Logger.getLogger(\"provekit\")"));
+        assertTrue(body.get().contains("java.util.logging.Level.INFO"));
+        assertTrue(body.get().contains("\"observed \" + callsiteCid"));
+        assertFalse(body.get().contains("${"));
+    }
+
+    @Test
+    public void logEmitBodyTemplateMapsCanonicalLevelsToJavaUtilLoggingLevels() {
+        java.util.Optional<String> warnBody = SugarRealizer.bodyTemplateFor(
+            "concept:log-emit",
+            java.util.List.of("warn", "\"warned\"", "contractCid"),
+            "emitter"
+        );
+        java.util.Optional<String> fatalBody = SugarRealizer.bodyTemplateFor(
+            "concept:log-emit",
+            java.util.List.of("fatal", "\"failed\"", "contractCid"),
+            "emitter"
+        );
+
+        assertTrue(warnBody.isPresent());
+        assertTrue(warnBody.get().contains("java.util.logging.Level.WARNING"));
+        assertFalse(warnBody.get().contains("Level.warn"));
+        assertTrue(fatalBody.isPresent());
+        assertTrue(fatalBody.get().contains("java.util.logging.Level.SEVERE"));
+        assertFalse(fatalBody.get().contains("Level.fatal"));
+    }
+
+    @Test
+    public void contractObservationMonitorRecursivelyRendersLogEmitCitation() {
+        java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
+            "concept:contract-observation",
+            java.util.List.of("callsiteCid", "contractCid", "mode"),
+            "monitor"
+        );
+
+        assertTrue(body.isPresent());
+        assertTrue(body.get().contains("java.util.logging.Logger.getLogger(\"provekit\")"));
+        assertTrue(body.get().contains("java.util.logging.Level.INFO"));
+        assertTrue(body.get().contains("\"observed \" + callsiteCid + \" contract \" + contractCid"));
+        assertTrue(body.get().contains("return null;"));
+        assertFalse(body.get().contains("${log_emit}"));
+        assertFalse(body.get().contains("concept:log-emit"));
+    }
+
+    @Test
+    public void emitStubForContractObservationMonitorUsesRecursiveLogEmitBody() {
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "observe_contract",
+            java.util.List.of("callsiteCid", "contractCid", "mode"),
+            java.util.List.of("String", "String", "String"),
+            "ContractObservationResult",
+            "concept:contract-observation",
+            "monitor",
+            null
+        );
+
+        assertFalse(output.isStub());
+        assertTrue(output.source().contains("java.util.logging.Logger.getLogger(\"provekit\")"));
+        assertTrue(output.source().contains("java.util.logging.Level.INFO"));
+        assertTrue(output.source().contains("return null;"));
+        assertFalse(output.source().contains("${log_emit}"));
+        assertTrue(output.observedLossRecord().contains("requires-java-util-logging-runtime"));
+        assertTrue(output.observedLossRecord().contains("java-util-logging-formats-structured-fields"));
+        assertTrue(output.observedLossRecord().contains("java-util-logging-level-taxonomy"));
+    }
+
     private static String modeScopedBeanValidationSugar(String mode) {
         return "{\"header\":{\"cid\":\"java-bean-validation\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"annotation:before-parameter\",\"template\":\"@NotNull\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"bean-validation\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
