@@ -96,12 +96,16 @@ public final class RpcServer {
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
         SugarRealizer.Realization r =
                 SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins);
+        String wrapperRecord = r.observationWrapperEmissionRecord() == null
+                ? ""
+                : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
         return "{\"source\":" + JsonUtil.quoted(r.source())
                 + ",\"emitted_artifact_cid\":"
                 + JsonUtil.quoted(Blake3.blake3_512(r.source().getBytes(StandardCharsets.UTF_8)))
                 + ",\"is_stub\":" + (r.isStub() ? "true" : "false")
                 + ",\"observed_loss_record\":" + r.observedLossRecord()
                 + ",\"used_sugars\":" + r.usedSugarsJson()
+                + wrapperRecord
                 + "}";
     }
 

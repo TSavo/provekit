@@ -525,6 +525,7 @@ pub struct BindingRecord {
     pub param_types: Vec<String>,
     pub return_type: String,
     pub site_memento_cid: String,
+    pub object_fcm_cid: Option<String>,
     pub local_contract_cid: Option<String>,
     pub contract_witnesses: Vec<crate::kit_dispatch::RealizeContractWitness>,
 }
@@ -973,12 +974,14 @@ fn run_bind_engine(
 
         // Mint ConceptSiteMemento when we have a contract.
         let mut local_contract_cid_for_binding: Option<String> = None;
+        let mut object_fcm_cid_for_binding: Option<String> = None;
         let mut realize_witnesses_for_binding = Vec::new();
         let site_memento_cid = if let Some(local_cid) = &_contract_content_cid {
             let source_bytes = std::fs::read(root.join(&lift.file)).unwrap_or_default();
             let source_cid = blake3_512_of(&source_bytes);
             let (span_start, span_end) = byte_span_for_line(&source_bytes, lift.fn_line);
             let fn_term_cid = local_cid.clone();
+            object_fcm_cid_for_binding = Some(fn_term_cid.clone());
             let binding_witnesses =
                 contract_witnesses_for_binding(lift, &origin, pre.as_deref(), post.as_deref());
             realize_witnesses_for_binding = binding_witnesses
@@ -1158,6 +1161,7 @@ fn run_bind_engine(
             param_types: lift.param_types.clone(),
             return_type: lift.return_type.clone(),
             site_memento_cid,
+            object_fcm_cid: object_fcm_cid_for_binding,
             local_contract_cid: local_contract_cid_for_binding,
             contract_witnesses: realize_witnesses_for_binding,
         });
@@ -1489,6 +1493,7 @@ fn apply_canonical_rewrite(
             let contract_payload = b.local_contract_cid.as_ref().map(|local_contract_cid| {
                 crate::kit_dispatch::RealizeContractPayload {
                     concept_site_cid: b.site_memento_cid.clone(),
+                    object_fcm_cid: b.object_fcm_cid.clone().unwrap_or_default(),
                     local_contract_cid: local_contract_cid.clone(),
                     origin: b.origin.label(),
                     discharge_verdict: discharge_verdict_label(&b.discharge_verdict),

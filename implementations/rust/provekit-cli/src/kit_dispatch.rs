@@ -542,6 +542,7 @@ pub struct RealizeRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct RealizeContractPayload {
     pub concept_site_cid: String,
+    pub object_fcm_cid: String,
     pub local_contract_cid: String,
     pub origin: String,
     pub discharge_verdict: String,
@@ -1095,6 +1096,7 @@ mod tests {
             modes: vec!["monitor".to_string(), "witness".to_string()],
             contract: Some(RealizeContractPayload {
                 concept_site_cid: "blake3-512:site".to_string(),
+                object_fcm_cid: "blake3-512:object".to_string(),
                 local_contract_cid: "blake3-512:compound".to_string(),
                 origin: "evidence-lift[type-signature]".to_string(),
                 discharge_verdict: "exact".to_string(),

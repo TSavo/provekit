@@ -18,6 +18,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 use provekit_ir_types::{PromotionDecisionMemento, PromotionGate, PromotionResult};
 
@@ -30,6 +31,17 @@ fn fixture_root() -> PathBuf {
         .join("tests")
         .join("fixtures")
         .join("cmd_bind")
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("provekit-cli parent")
+        .parent()
+        .expect("implementations parent")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
 }
 
 /// Copy fixture tree to a tempdir (protects checked-in source from annotate writes).
@@ -266,6 +278,82 @@ for line in sys.stdin:
     root
 }
 
+fn copy_fixture_with_identity_contract_manifest() -> PathBuf {
+    let root = copy_fixture_to_temp();
+    let kit_path = root.join("bind-lift-kit.py");
+    let shape_cid = format!("blake3-512:{}", "3".repeat(128));
+    let script = format!(
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+SHAPE_CID = {shape_cid:?}
+
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method")
+    request_id = request.get("id")
+    if method == "initialize":
+        result = {{}}
+    elif method == "lift":
+        result = {{
+            "kind": "ir-document",
+            "diagnostics": [],
+            "ir": [{{
+                "kind": "bind-lift-entry",
+                "file": "src/account.rs",
+                "fn_name": "identity",
+                "fn_line": 25,
+                "attr_pre": "x >= 0",
+                "attr_post": "out == x",
+                "concept_annotation": "identity",
+                "param_names": ["x"],
+                "param_types": ["i64"],
+                "return_type": "i64",
+                "term_shape": {{"kind": "body", "stmts": [{{"kind": "opaque"}}]}},
+                "term_shape_cid": SHAPE_CID
+            }}]
+        }}
+    elif method == "shutdown":
+        result = {{}}
+    else:
+        print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "error": {{"message": "unknown method"}}}}), flush=True)
+        continue
+    print(json.dumps({{"jsonrpc": "2.0", "id": request_id, "result": result}}), flush=True)
+    if method == "shutdown":
+        break
+"#
+    );
+    fs::write(&kit_path, script).expect("write bind lift kit");
+    let manifest_dir = root.join(".provekit").join("lift").join("rust");
+    fs::create_dir_all(&manifest_dir).expect("create lift manifest dir");
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"test-bind-lift-identity-contract\"\ncommand = [\"python3\", \"{}\"]\n",
+            kit_path.display()
+        ),
+    )
+    .expect("write lift manifest");
+    let jar = repo_root()
+        .join("implementations")
+        .join("java")
+        .join("provekit-realize-java-core")
+        .join("target")
+        .join("provekit-realize-java.jar");
+    let realize_manifest_dir = root.join(".provekit").join("realize").join("java");
+    fs::create_dir_all(&realize_manifest_dir).expect("create realize manifest dir");
+    fs::write(
+        realize_manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"test-java-realize\"\ncommand = [\"java\", \"-jar\", \"{}\", \"--rpc\"]\nlibrary_tag = \"default\"\n",
+            jar.display()
+        ),
+    )
+    .expect("write realize manifest");
+    root
+}
+
 fn bind_cmd(
     root: &Path,
     out: &Path,
@@ -312,6 +400,32 @@ fn read_json_dir(dir: &Path) -> Vec<serde_json::Value> {
             .unwrap_or_else(|err| panic!("parse {}: {err}", path.display()))
         })
         .collect()
+}
+
+static JAVA_REALIZE_BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn ensure_java_realize_jar_built() {
+    let lock = JAVA_REALIZE_BUILD_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let repo = repo_root();
+    let java_dir = repo.join("implementations").join("java");
+    let output = Command::new("mvn")
+        .args([
+            "package",
+            "-pl",
+            "provekit-realize-java-core",
+            "-am",
+            "-DskipTests",
+        ])
+        .current_dir(&java_dir)
+        .output()
+        .expect("spawn mvn package for java realize rpc");
+    assert!(
+        output.status.success(),
+        "mvn package failed for java realize rpc\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 // ============================================================================
@@ -505,6 +619,124 @@ fn canonical_emitter_java_creates_java_output_with_contract() {
     assert!(
         java_src.contains("@requires:") || java_src.contains("/* @requires"),
         "Java output must carry contract annotation for deposit\n{java_src}"
+    );
+}
+
+#[test]
+fn canonical_emitter_java_composes_result_preserving_observation_wrapper() {
+    ensure_java_realize_jar_built();
+    let root = copy_fixture_with_identity_contract_manifest();
+    let out = tempfile::tempdir().expect("tempdir").into_path();
+    let result = bind_cmd(&root, &out, "canonical", "emitter", Some("java"));
+    assert!(
+        result.status.success(),
+        "canonical+emitter+java should succeed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let java_dir = out.join("translated").join("java");
+    let java_file = first_file_with_ext(&java_dir, "java").expect("no .java output");
+    let java_src = fs::read_to_string(&java_file).expect("read emitted java");
+    assert!(
+        java_src.contains("long __provekit_result = x;"),
+        "{java_src}"
+    );
+    assert!(
+        java_src.contains("// provekit-observation: concept:contract-observation"),
+        "{java_src}"
+    );
+    assert!(
+        java_src.contains("// provekit-observation-mode: emitter"),
+        "{java_src}"
+    );
+    assert!(
+        java_src.contains("// provekit-observation-policy-cid: blake3-512:"),
+        "{java_src}"
+    );
+    assert!(
+        java_src.contains("java.util.logging.Logger.getLogger(\"provekit\")"),
+        "{java_src}"
+    );
+    assert!(
+        java_src.contains("java.util.logging.Level.INFO"),
+        "{java_src}"
+    );
+    assert!(java_src.contains("return __provekit_result;"), "{java_src}");
+    assert!(!java_src.contains("return null;"), "{java_src}");
+    assert!(
+        !java_src.contains("// provekit-wrapper-fcm-cid:"),
+        "{java_src}"
+    );
+    assert!(
+        java_src.find("long __provekit_result = x;").unwrap()
+            < java_src
+                .find("// provekit-observation: concept:contract-observation")
+                .unwrap(),
+        "{java_src}"
+    );
+    assert!(
+        java_src
+            .find("// provekit-observation: concept:contract-observation")
+            .unwrap()
+            < java_src
+                .find("java.util.logging.Logger.getLogger(\"provekit\")")
+                .unwrap(),
+        "{java_src}"
+    );
+    assert!(
+        java_src
+            .find("java.util.logging.Logger.getLogger(\"provekit\")")
+            .unwrap()
+            < java_src.find("return __provekit_result;").unwrap(),
+        "{java_src}"
+    );
+
+    let wrappers = read_json_dir(&out.join("observation-wrappers"));
+    assert_eq!(
+        wrappers.len(),
+        1,
+        "expected one observation wrapper: {wrappers:#?}"
+    );
+    let wrapper = &wrappers[0];
+    assert_eq!(wrapper["mode"], "emitter");
+    assert!(
+        wrapper["object_fcm_cid"]
+            .as_str()
+            .is_some_and(|cid| cid.starts_with("blake3-512:")),
+        "{wrapper:#?}"
+    );
+    assert_eq!(
+        wrapper["wrapper_fcm_cid"].as_str(),
+        wrapper["wrapper_fcm_cid"]
+            .as_str()
+            .filter(|cid| cid.starts_with("blake3-512:"))
+    );
+    assert!(
+        wrapper["preservation_claim_cid"]
+            .as_str()
+            .is_some_and(|cid| cid.starts_with("blake3-512:")),
+        "{wrapper:#?}"
+    );
+    let effects = wrapper["observer_effects"]
+        .as_array()
+        .expect("observer_effects array");
+    assert_eq!(effects.len(), 1, "{wrapper:#?}");
+    assert_eq!(effects[0]["occurrence_kind"], "Io");
+    assert_eq!(effects[0]["role"], "body");
+
+    let plans = read_json_dir(&out.join("realization-plans"));
+    assert!(
+        plans
+            .iter()
+            .any(|plan| plan["observation_wrapper_cid"].is_string()
+                && plan["total_loss_record"]
+                    .to_string()
+                    .contains("java-util-logging-level-taxonomy")
+                && plan["total_loss_record"]
+                    .to_string()
+                    .contains("java-util-logging-formats-structured-fields")),
+        "expected realization plan to cite wrapper and body-template/log loss: {plans:#?}"
     );
 }
 
