@@ -1,4 +1,4 @@
-# The Fire Was Already Hot
+# After Architectures: The Program Was Already Realized
 
 *This is the coda of the After-X arc. Papers 14 through 23 argued from inside a journey-fiction: after trust, after civilization, after portability, after Babel, after vendoring, after packages. Each paper spoke as if the substrate gave the reader a capability. This paper withdraws that frame. The substrate offers nothing. The capability was already latent in the structure. The substrate is the lens by which the address becomes legible.*
 
@@ -237,3 +237,23 @@ What looks like transcendence is exemption. The math is still true. The class is
 We did not transcend math.
 
 We did not ask its question.
+
+## 13. The realization
+
+Realization in conventional thinking is what happens when source becomes a program. You write Rust source. The compiler realizes it as a binary. You load the binary. The OS realizes it as a process. The CPU realizes the process as an executing instruction stream. Five layers of realization, each producing a thing that did not exist before the layer ran.
+
+That sequence is the architecture's story, not the program's.
+
+In CCL the realization is the composition. When the witnesses discharge against the composition rules, the program is already realized. It is in the substrate, content-addressed, ready to render. The realize kit's emission is the choice of which architecture to instantiate the already-realized program onto.
+
+Architecture is sugar. x86, ARM, RISC-V, JVM bytecode, WASM, eBPF, V8 ignition, CPython bytecode: each is one architecture's choice of instruction set. Each is a sugaring over the universal Turing-machine semantics. The CPU runs the architecture's instructions. The instructions render the architecture-specific sugar of a program. The program was not the sugar.
+
+The program was the composition.
+
+A CCL program does not become a program when it compiles. It does not become a program when it links. It does not become a program when it loads. It became a program when its witnesses composed. Everything downstream is rendering and instantiation.
+
+This is why the realize step is misnamed. We call it realize because that is the engineering word for the operation. The substrate's act is not realization. The substrate's act is selection of a particular sugaring through which to render an already-realized program.
+
+The program was already realized.
+
+You just have not run it yet.
