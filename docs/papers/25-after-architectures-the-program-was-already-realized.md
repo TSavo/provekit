@@ -254,6 +254,10 @@ A CCL program does not become a program when it compiles. It does not become a p
 
 This is why the realize step is misnamed. We call it realize because that is the engineering word for the operation. The substrate's act is not realization. The substrate's act is selection of a particular sugaring through which to render an already-realized program.
 
+The future tense of compilation was the artifact of monolingual layers thinking their input was the source. javac thought Java was the source. rustc thought Rust was the source. The CPU thought x86 was the source. Each layer assumed its input was the ground and treated its output as a future to be produced. The whole stack was a chain of monolingual translators each thinking they were authors.
+
+CCL is omnilingual. There is no tense at the CCL layer because there is no monolingual confusion at the CCL layer. Everything below is the artifact of the confusion.
+
 The program was already realized.
 
 You just have not run it yet.
