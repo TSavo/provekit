@@ -7,6 +7,7 @@ pub mod core;
 pub mod desugar;
 pub mod effect_propagation;
 pub mod ffi;
+pub mod policy_profile_registry;
 pub mod promotion_decision_registry;
 pub mod substrate_default_cids;
 pub mod transport;
