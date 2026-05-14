@@ -104,7 +104,7 @@ fn java_bean_validation_sugar_cid_self_consistent() {
         repo_root().join("menagerie/java-language-signature/specs/sugar/java-bean-validation.json");
     assert_self_consistent(
         path,
-        "blake3-512:279b2ff4bc9dedf5144d83a4dc41f08ec46038a92c04139f865892fea88380fecb302bda9c23e541050b39fe4e7a3870fd90f175a57ea76239fa1ef5517b492c",
+        "blake3-512:d0405739130eeb2c5814c81584bb61f9bf079989e7c4d5e1ecd3c5066660ba53fc0e29ba0ecbdf2fb615da4359c647c04e44654ea7a924d50bb9a06a439fc5ba",
     );
 }
 

@@ -5,9 +5,89 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:279b2ff4bc9dedf5144d83a4dc41f08ec46038a92c04139f865892fea88380fecb302bda9c23e541050b39fe4e7a3870fd90f175a57ea76239fa1ef5517b492c",
+    "cid": "blake3-512:d0405739130eeb2c5814c81584bb61f9bf079989e7c4d5e1ecd3c5066660ba53fc0e29ba0ecbdf2fb615da4359c647c04e44654ea7a924d50bb9a06a439fc5ba",
     "content": {
       "entries": [
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-parameter",
+            "template": "@Min(${k})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "mode": "gate",
+          "predicate_pattern": {
+            "args": [
+              {"kind": "var", "name": "${symbol}"},
+              {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": "${k}"}
+            ],
+            "kind": "atomic",
+            "name": "ge"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-parameter",
+            "template": "@Min(${k_plus_one})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "mode": "gate",
+          "predicate_pattern": {
+            "args": [
+              {"kind": "var", "name": "${symbol}"},
+              {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": "${k}"}
+            ],
+            "kind": "atomic",
+            "name": "gt"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-parameter",
+            "template": "@Max(${k})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "mode": "gate",
+          "predicate_pattern": {
+            "args": [
+              {"kind": "var", "name": "${symbol}"},
+              {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": "${k}"}
+            ],
+            "kind": "atomic",
+            "name": "le"
+          }
+        },
+        {
+          "emission_template": {
+            "kind": "verbatim",
+            "surface_locator": "annotation:before-parameter",
+            "template": "@Max(${k_minus_one})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "mode": "gate",
+          "predicate_pattern": {
+            "args": [
+              {"kind": "var", "name": "${symbol}"},
+              {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": "${k}"}
+            ],
+            "kind": "atomic",
+            "name": "lt"
+          }
+        },
         {
           "emission_template": {
             "kind": "verbatim",
@@ -40,7 +120,7 @@
     "version": "1.0.0"
   },
   "metadata": {
-    "note": "Java Bean Validation contract sugar for exact non-null boundary clauses. Applies to contract-observation gate mode.",
+    "note": "Java Bean Validation contract sugar for exact non-null and integer bound clauses. Applies to contract-observation gate mode.",
     "source_url": "menagerie/java-language-signature/specs/sugar/java-bean-validation.json"
   }
 }
