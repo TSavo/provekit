@@ -231,10 +231,38 @@ fn emit_term_mode(args: &[String]) -> ExitCode {
 }
 
 fn find_fn(file: &syn::File, name: &str) -> Option<syn::ItemFn> {
-    file.items.iter().find_map(|item| match item {
-        syn::Item::Fn(f) if f.sig.ident == name => Some(f.clone()),
-        _ => None,
-    })
+    find_fn_in_items(&file.items, name)
+}
+
+fn find_fn_in_items(items: &[syn::Item], name: &str) -> Option<syn::ItemFn> {
+    for item in items {
+        match item {
+            syn::Item::Fn(f) if f.sig.ident == name => return Some(f.clone()),
+            syn::Item::Impl(impl_block) => {
+                for impl_item in &impl_block.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        if method.sig.ident == name {
+                            return Some(syn::ItemFn {
+                                attrs: method.attrs.clone(),
+                                vis: method.vis.clone(),
+                                sig: method.sig.clone(),
+                                block: Box::new(method.block.clone()),
+                            });
+                        }
+                    }
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested_items)) = &module.content {
+                    if let Some(found) = find_fn_in_items(nested_items, name) {
+                        return Some(found);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn all_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
