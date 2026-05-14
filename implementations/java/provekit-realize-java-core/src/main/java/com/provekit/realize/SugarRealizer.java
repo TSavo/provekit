@@ -139,7 +139,7 @@ final class SugarRealizer {
         // annotation_prefix for Java: top_indent = "    "
         String annotationPrefix = "    // concept: " + conceptName + "\n"
                 + contractPrefix(contract)
-                + commentPrefix(sugarEmissions);
+                + commentPrefix(contract, sugarEmissions);
 
         Optional<RenderedBody> bodyTemplate = renderBodyTemplateFor(conceptName, params, mode);
         boolean isStub = bodyTemplate.isEmpty();
@@ -522,14 +522,68 @@ final class SugarRealizer {
         return out.toString();
     }
 
-    private static String commentPrefix(List<SugarEmission> emissions) {
+    private static String commentPrefix(ContractPayload contract, List<SugarEmission> emissions) {
         StringBuilder out = new StringBuilder();
         for (SugarEmission emission : emissions) {
             if (emission.surfaceLocator().startsWith("comment:")) {
+                if (contract != null) {
+                    out.append(contractCommentTagBlock(contract, emission));
+                }
                 out.append("    ").append(emission.rendered()).append("\n");
             }
         }
         return out.toString();
+    }
+
+    private static String contractCommentTagBlock(ContractPayload contract, SugarEmission emission) {
+        Jcs.Obj payload = contractCommentPayload(contract, emission);
+        StringBuilder out = new StringBuilder();
+        out.append("    // provekit-contract: ").append(Jcs.encode(payload)).append("\n");
+        out.append("    // provekit-contract-payload-cid: ").append(Jcs.cid(payload)).append("\n");
+        return out.toString();
+    }
+
+    private static Jcs.Obj contractCommentPayload(ContractPayload contract, SugarEmission emission) {
+        return Jcs.object(
+                "artifact_kind", Jcs.string("provekit-contract-comment-sugar"),
+                "concept_site_cid", Jcs.string(contract.conceptSiteCid()),
+                "contract_cid", Jcs.string(contract.localContractCid()),
+                "emitted_by", Jcs.object(
+                        "kit_cid", Jcs.string(contractCommentEmitterKitCid()),
+                        "kit_kind", Jcs.string("realize"),
+                        "target_language", Jcs.string("java")
+                ),
+                "fol_text", Jcs.string(commentLineValue(emission.predicateText())),
+                "ir_formula_jcs", emission.predicate(),
+                "ir_formula_jcs_cid", Jcs.string(Jcs.cid(emission.predicate())),
+                "local_contract_cid", Jcs.string(contract.localContractCid()),
+                "loss_record_cid", Jcs.string(Jcs.cid(emission.lossRecord())),
+                "policy_cid", Jcs.string(contractCommentPolicyCid()),
+                "role", Jcs.string(emission.role()),
+                "schema_version", Jcs.string("1"),
+                "sugar_dict_cid", Jcs.string(emission.sugarCid())
+        );
+    }
+
+    private static String contractCommentPolicyCid() {
+        return Jcs.cid(Jcs.object(
+                "emit_contract_tags", Jcs.bool(true),
+                "kind", Jcs.string("realization-emission-policy"),
+                "schemaVersion", Jcs.string("1"),
+                "surface", Jcs.string("java-contract-comment")
+        ));
+    }
+
+    private static String contractCommentEmitterKitCid() {
+        return Jcs.cid(Jcs.object(
+                "kit_kind", Jcs.string("realize"),
+                "name", Jcs.string("provekit-realize-java"),
+                "target_language", Jcs.string("java")
+        ));
+    }
+
+    private static String commentLineValue(String raw) {
+        return raw == null ? "" : raw.replace('\n', ' ').replace('\r', ' ').trim();
     }
 
     private static boolean contractHasNonNullPrecondition(ContractPayload contract, String param) {
@@ -916,6 +970,9 @@ record SugarEmission(
         String surfaceLocator,
         String rendered,
         String symbol,
+        String role,
+        Jcs.Json predicate,
+        String predicateText,
         Jcs.Json lossRecord) {}
 
 final class SugarDictionary {
@@ -941,6 +998,9 @@ final class SugarDictionary {
                                 entry.surfaceLocator(),
                                 render(entry.template(), match),
                                 match.symbol(),
+                                witness.role(),
+                                witness.predicate(),
+                                witness.predicateText(),
                                 entry.lossRecord()
                         ));
                     }
