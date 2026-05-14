@@ -192,3 +192,21 @@ The substrate only exists to compute and justify the patch.
 The patch is the product. The receipt is the proof. The substrate is the workshop. After the patch ships and the receipt signs, the workshop can be archived, federated, or shut down without changing anything in the migrated codebase. The codebase runs. The receipt verifies. The proofchain head records that on a Tuesday in the spring of 2026, a 50k-line TypeScript codebase migrated from `better-sqlite3` to `pg` in 47 widenings and 132 rewrites with 3 refusals and 2 named losses, signed by a developer whose only special skill was reading the receipt.
 
 That is what the substrate offers at the migration tier. It is not an abstraction. It is a transformation. The repository after the transformation is the repository that would have existed if the team had started on the new library. The substrate's only job was to make that repository computable from the one that existed.
+
+## Addendum: The fire was already hot
+
+Paper 22 reads as engineering. The substrate lifts TypeScript, transports through a concept hub, realizes new TypeScript, emits a receipt. That is a true description of the mechanics. It is the wrong frame for the claim.
+
+The honest frame is ontological. The structure the substrate addresses was already present in the source. The lift does not construct it; it recognizes it. The realize does not author the target; it renders an alternate emission of a shape that already had a content-addressed name. The TypeScript bytes were one presentation of that shape. The Python bytes are another. Neither is the shape; both are dialects of it.
+
+This generalizes §6's claim about libraries. A vendor who writes a TypeScript library is not a TypeScript vendor. The vendor ships a substrate-shape; TypeScript is the first emission the vendor chose to render. A Python consumer who reaches for that library is not porting; they are requesting an alternate realization off the same CID-vector. The vendor's competitive surface is the shape's quality at the substrate tier, not the language's idiom at the surface tier. §6 stated this as "library quality competes once it is not vendored." This addendum restates it: library quality always competed. The substrate only made the comparison visible.
+
+The empirical receipt in §9 makes the ontological frame inescapable. The migration succeeded because the structure was present in the source the whole time. The receipt's loss-record names the dimensions the source did not carry into the target language. Every dimension not named in the loss-record was already addressable, already content-equivalent across both library presentations. The transformation did not produce equivalence. It surfaced equivalence that had been waiting since the first compile.
+
+Paper 17's comment lemma reaches its limit here. `parse` forgets exactly the comments. Everything else survives the lift because everything else was the substrate. Per the program-is-structure result, a program's true name is its CID-vector. Languages are dialects. Libraries are realizations. The work of "porting" was always recognition work, performed by hand, undocumented, and unsigned. The substrate makes recognition mechanical, content-addressed, and federable. Recognition is the primitive operation. Synthesis is downstream.
+
+If we know the fire is hot, the meal was cooked a long time ago. Lift is reading the address that was always there. Realize is rendering it through the language the consumer happens to read. The substrate is the lens that brings both into focus. The codebase the migration produced was the codebase that was always available to be produced. The substrate's only job was to make the address legible.
+
+The corollary for the paper-22 / paper-23 / paper-24 trinity preamble: the substrate's pitch is not "we let you port libraries." That frames the substrate as a tool that adds capability. The substrate's pitch is: your library was always portable; the substrate is the lens that shows you the shape. The capability was latent. The substrate makes it actionable.
+
+This is what the migration receipt actually says, read at its honest depth. Not "we transformed your codebase." Your codebase already carried its own portability; the substrate read it back to you, signed.
