@@ -158,6 +158,47 @@ public class JavaNullBoundaryRealizerTest {
     }
 
     @Test
+    public void contractCommentSugarEmitsReliftablePreAndPostPayloads() {
+        String contractCid = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+            contractCid,
+            "evidence-lift[native-surface]",
+            "loudly-bounded-lossy",
+            java.util.List.of(
+                new ContractWitness("pre", "non_null(name)", "native-surface"),
+                new ContractWitness("post", "non_null(out)", "native-surface")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "lookup",
+            java.util.List.of("name"),
+            java.util.List.of("String"),
+            "String",
+            "concept:lookup",
+            "monitor",
+            java.util.List.of("monitor"),
+            contract,
+            java.util.List.of(validCommentSugar())
+        );
+
+        assertEquals(2, countOccurrences(output.source(), "// provekit-contract: {"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "// provekit-contract-payload-cid: blake3-512:"), output.source());
+        assertTrue(output.source().contains("\"artifact_kind\":\"provekit-contract-comment-sugar\""), output.source());
+        assertTrue(output.source().contains("\"schema_version\":\"1\""), output.source());
+        assertTrue(output.source().contains("\"role\":\"pre\""), output.source());
+        assertTrue(output.source().contains("\"role\":\"post\""), output.source());
+        assertTrue(output.source().contains("\"contract_cid\":\"" + contractCid + "\""), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"ir_formula_jcs_cid\":\"blake3-512:"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"policy_cid\":\"blake3-512:"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"sugar_dict_cid\":\"blake3-512:"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"loss_record_cid\":\"blake3-512:"), output.source());
+        assertTrue(output.source().contains("\"fol_text\":\"non_null(name)\""), output.source());
+        assertTrue(output.source().contains("\"fol_text\":\"non_null(out)\""), output.source());
+    }
+
+    @Test
     public void modeScopedJunitWitnessSugarDoesNotApplyToMonitor() {
         ContractPayload contract = new ContractPayload(
             "blake3-512:site",
@@ -493,6 +534,13 @@ public class JavaNullBoundaryRealizerTest {
         return "{\"header\":{\"cid\":\"java-function-comment\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"comment:above\",\"template\":\"// ${contract_role}: ${formula_pretty_print}\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"machine_uncheckable_prose\"}}},\"predicate_pattern\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"${any_formula}\"}}],\"sugar_name\":\"function-comment\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
 
+    private static String validCommentSugar() {
+        return commentSugar().replace(
+            "\"cid\":\"java-function-comment\"",
+            "\"cid\":\"blake3-512:574800417e6f4f57e561dbe9c437adc691b2cd2369d964cbc329348cb715b161f3b38f6f7ccfd41537d033741488c081ec01b6f7cb3f04ba724b7003fa05a7b6\""
+        );
+    }
+
     private static String sugar(String cid, String name, String locator, String template, String loss) {
         return "{\"header\":{\"cid\":\"" + cid + "\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"" + locator + "\",\"template\":\"" + template + "\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":" + loss + "},\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"" + name + "\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
@@ -510,5 +558,15 @@ public class JavaNullBoundaryRealizerTest {
             "kind", com.provekit.ir.Jcs.string("atomic"),
             "name", com.provekit.ir.Jcs.string(op)
         );
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            count += 1;
+            idx += needle.length();
+        }
+        return count;
     }
 }

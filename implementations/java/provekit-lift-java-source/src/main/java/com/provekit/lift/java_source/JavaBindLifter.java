@@ -45,6 +45,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
@@ -205,7 +206,9 @@ public final class JavaBindLifter {
             int bodyEndLine = bodyEndOffset >= 0 && bodyEndOffset <= Integer.MAX_VALUE
                 ? lineOf(source, (int) bodyEndOffset)
                 : fnLine;
-            List<Jcs.Json> observationWitnesses = observationTagWitnesses(source, bodyStartLine, bodyEndLine);
+            List<Jcs.Json> surfaceWitnesses = new ArrayList<>();
+            surfaceWitnesses.addAll(observationTagWitnesses(source, bodyStartLine, bodyEndLine));
+            surfaceWitnesses.addAll(contractTagWitnesses(source, fnLine, bodyStartLine, bodyEndLine));
 
             Jcs.Obj entry = Jcs.object(
                 "attr_post", Jcs.nullValue(),
@@ -220,7 +223,7 @@ public final class JavaBindLifter {
                 "return_type", Jcs.string(returnType),
                 "term_shape", termShape,
                 "term_shape_cid", Jcs.string(termShapeCid),
-                "witnesses", Jcs.array(observationWitnesses)
+                "witnesses", Jcs.array(surfaceWitnesses)
             );
             entries.add(entry);
             return super.visitMethod(method, unused);
@@ -378,6 +381,131 @@ public final class JavaBindLifter {
         ));
     }
 
+    private static List<Jcs.Json> contractTagWitnesses(String source, int fnLine, int startLine, int endLine) {
+        List<Jcs.Json> witnesses = new ArrayList<>();
+        for (List<TagLine> block : contractTagBlocks(scanContractTags(source, fnLine, startLine, endLine))) {
+            contractTagWitness(block).ifPresent(witnesses::add);
+        }
+        return witnesses;
+    }
+
+    private static Optional<Jcs.Json> contractTagWitness(List<TagLine> block) {
+        String payloadText = tagValue(block, "provekit-contract");
+        if (payloadText == null) return Optional.empty();
+        Jcs.Json payloadJson;
+        try {
+            payloadJson = Jcs.parse(payloadText);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+        if (!(payloadJson instanceof Jcs.Obj payload)) return Optional.empty();
+        if (!"provekit-contract-comment-sugar".equals(payload.stringFieldOrNull("artifact_kind"))) return Optional.empty();
+        if (!"1".equals(payload.stringFieldOrNull("schema_version"))) return Optional.empty();
+
+        String role = bindContractRole(payload.stringFieldOrNull("role"));
+        if (role == null) return Optional.empty();
+
+        String conceptSiteCid = payload.stringFieldOrNull("concept_site_cid");
+        String contractCid = payload.stringFieldOrNull("contract_cid");
+        String localContractCid = payload.stringFieldOrNull("local_contract_cid");
+        String formulaCid = payload.stringFieldOrNull("ir_formula_jcs_cid");
+        String policyCid = payload.stringFieldOrNull("policy_cid");
+        String sugarDictCid = payload.stringFieldOrNull("sugar_dict_cid");
+        String lossRecordCid = payload.stringFieldOrNull("loss_record_cid");
+        if (!validCid(conceptSiteCid) || !validCid(contractCid) || !validCid(formulaCid)
+                || !validCid(policyCid) || !validCid(sugarDictCid) || !validCid(lossRecordCid)
+                || (localContractCid != null && !localContractCid.isBlank() && !validCid(localContractCid))
+                || !validEmittedBy(payload.get("emitted_by"))) {
+            return Optional.empty();
+        }
+
+        Jcs.Json predicate = payload.get("ir_formula_jcs");
+        if (predicate == null || predicate instanceof Jcs.Null || !formulaCid.equals(Jcs.cid(predicate))) {
+            return Optional.empty();
+        }
+        String payloadCid = Jcs.cid(payload);
+        String emittedPayloadCid = tagValue(block, "provekit-contract-payload-cid");
+        if (emittedPayloadCid != null && (!validCid(emittedPayloadCid) || !payloadCid.equals(emittedPayloadCid))) {
+            return Optional.empty();
+        }
+        String predicateText = payload.stringFieldOrNull("fol_text");
+        if (predicateText == null) {
+            return Optional.empty();
+        }
+
+        List<Jcs.Field> extensionFieldList = new ArrayList<>();
+        extensionFieldList.add(new Jcs.Field("concept_site_cid", Jcs.string(conceptSiteCid)));
+        extensionFieldList.add(new Jcs.Field("contract_cid", Jcs.string(contractCid)));
+        extensionFieldList.add(new Jcs.Field("ir_formula_jcs_cid", Jcs.string(formulaCid)));
+        if (localContractCid != null && !localContractCid.isBlank()) {
+            extensionFieldList.add(new Jcs.Field("local_contract_cid", Jcs.string(localContractCid)));
+        }
+        extensionFieldList.add(new Jcs.Field("loss_record_cid", Jcs.string(lossRecordCid)));
+        extensionFieldList.add(new Jcs.Field("payload_cid", Jcs.string(payloadCid)));
+        extensionFieldList.add(new Jcs.Field("policy_cid", Jcs.string(policyCid)));
+        extensionFieldList.add(new Jcs.Field("sugar_dict_cid", Jcs.string(sugarDictCid)));
+        extensionFieldList.add(new Jcs.Field("surface", Jcs.string("contract-comment-sugar")));
+        Jcs.Obj extensionFields = new Jcs.Obj(extensionFieldList);
+        return Optional.of(Jcs.object(
+            "col", Jcs.integer(0),
+            "confidence_basis_points", Jcs.integer(10000),
+            "extension_fields", extensionFields,
+            "line", Jcs.integer(block.get(0).line()),
+            "predicate", predicate,
+            "predicate_text", Jcs.string(predicateText),
+            "role", Jcs.string(role),
+            "source_kind", Jcs.string("native-surface")
+        ));
+    }
+
+    private static List<List<TagLine>> contractTagBlocks(List<TagLine> tags) {
+        List<List<TagLine>> blocks = new ArrayList<>();
+        List<TagLine> current = null;
+        for (TagLine tag : tags) {
+            if ("provekit-contract".equals(tag.key())) {
+                current = new ArrayList<>();
+                current.add(tag);
+                blocks.add(current);
+                continue;
+            }
+            if (current != null && tag.key().startsWith("provekit-contract-")) {
+                current.add(tag);
+            }
+        }
+        return blocks;
+    }
+
+    private static List<TagLine> scanContractTags(String source, int fnLine, int startLine, int endLine) {
+        List<TagLine> tags = new ArrayList<>();
+        tags.addAll(scanPreMethodTags(source, fnLine));
+        tags.addAll(scanObservationTags(source, startLine, endLine));
+        return tags;
+    }
+
+    private static List<TagLine> scanPreMethodTags(String source, int fnLine) {
+        if (fnLine <= 1) return List.of();
+        String[] lines = source.split("\n", -1);
+        int cursor = Math.min(lines.length - 1, fnLine - 2);
+        while (cursor >= 0 && isMethodHeaderCompanionLine(lines[cursor].stripLeading())) {
+            cursor--;
+        }
+        int start = cursor + 1;
+        List<TagLine> tags = new ArrayList<>();
+        for (int idx = start; idx < fnLine - 1 && idx < lines.length; idx++) {
+            parseProvekitTagLine(lines[idx], idx + 1).ifPresent(tags::add);
+        }
+        return tags;
+    }
+
+    private static boolean isMethodHeaderCompanionLine(String line) {
+        return line.isEmpty()
+            || line.startsWith("//")
+            || line.startsWith("@")
+            || line.startsWith("/*")
+            || line.startsWith("*")
+            || line.startsWith("*/");
+    }
+
     private static List<TagLine> scanObservationTags(String source, int startLine, int endLine) {
         if (startLine <= 0 || endLine < startLine) return List.of();
         String[] lines = source.split("\n", -1);
@@ -385,17 +513,20 @@ public final class JavaBindLifter {
         int end = Math.min(lines.length, endLine);
         List<TagLine> tags = new ArrayList<>();
         for (int idx = start; idx < end; idx++) {
-            String stripped = lines[idx].stripLeading();
-            if (!stripped.startsWith("// provekit-")) continue;
-            int colon = stripped.indexOf(':');
-            if (colon < 0) continue;
-            String key = stripped.substring("// ".length(), colon).trim();
-            String value = stripped.substring(colon + 1).trim();
-            if (key.startsWith("provekit-")) {
-                tags.add(new TagLine(idx + 1, key, value));
-            }
+            parseProvekitTagLine(lines[idx], idx + 1).ifPresent(tags::add);
         }
         return tags;
+    }
+
+    private static Optional<TagLine> parseProvekitTagLine(String line, int lineNumber) {
+        String stripped = line.stripLeading();
+        if (!stripped.startsWith("// provekit-")) return Optional.empty();
+        int colon = stripped.indexOf(':');
+        if (colon < 0) return Optional.empty();
+        String key = stripped.substring("// ".length(), colon).trim();
+        String value = stripped.substring(colon + 1).trim();
+        if (!key.startsWith("provekit-")) return Optional.empty();
+        return Optional.of(new TagLine(lineNumber, key, value));
     }
 
     private static String tagValue(List<TagLine> tags, String key) {
@@ -407,6 +538,41 @@ public final class JavaBindLifter {
 
     private static Jcs.Json stringOrNull(String value) {
         return value == null || value.isBlank() ? Jcs.nullValue() : Jcs.string(value);
+    }
+
+    private static String bindContractRole(String payloadRole) {
+        return switch (payloadRole == null ? "" : payloadRole) {
+            case "pre" -> "pre";
+            case "post" -> "post";
+            case "invariant" -> "inv";
+            case "throws" -> "throws";
+            case "observation" -> "observation";
+            default -> null;
+        };
+    }
+
+    private static boolean validEmittedBy(Jcs.Json emittedBy) {
+        if (!(emittedBy instanceof Jcs.Obj emittedByObj)) return false;
+        return validCid(emittedByObj.stringFieldOrNull("kit_cid"))
+            && nonBlank(emittedByObj.stringFieldOrNull("kit_kind"))
+            && nonBlank(emittedByObj.stringFieldOrNull("target_language"));
+    }
+
+    private static boolean nonBlank(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static boolean validCid(String cid) {
+        if (cid == null || !cid.startsWith("blake3-512:") || cid.length() != "blake3-512:".length() + 128) {
+            return false;
+        }
+        for (int i = "blake3-512:".length(); i < cid.length(); i++) {
+            char ch = cid.charAt(i);
+            if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- Helpers -----------------------------------------------------------
