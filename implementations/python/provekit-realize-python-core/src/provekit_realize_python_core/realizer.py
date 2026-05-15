@@ -19,6 +19,9 @@ LIBPROVEKIT_BODY_TEMPLATE_REL = Path(
 RUST_RUNTIME_BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-rust-runtime.json"
 )
+BLAKE3_BODY_TEMPLATE_REL = Path(
+    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json"
+)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(
     b"provekit-realize-python-core@0.1.0"
@@ -52,6 +55,7 @@ class TermBody:
 class TermExpression:
     text: str | None = None
     stub_body: str | None = None
+    type_name: str = ""
 
 
 def emit_stub(
@@ -343,7 +347,10 @@ def _lower_term_expression(
         return _lower_call_expression(surface, params, param_types, return_type)
     if surface.startswith("let("):
         return None
-    return TermExpression(text=surface)
+    operation = _lower_operation_expression(surface, params, param_types, return_type)
+    if operation is not None:
+        return operation
+    return TermExpression(text=surface, type_name=_surface_type(surface, params, param_types))
 
 
 def _lower_method_template_body(
@@ -380,7 +387,22 @@ def _lower_method_expression(
     if template is not None:
         expression = _single_return_expression(template)
         if expression is not None:
-            return TermExpression(text=expression)
+            return TermExpression(text=expression, type_name=map_source_type(return_type))
+    template = _rust_runtime_method_template(
+        method_name,
+        receiver,
+        args,
+        params,
+        param_types,
+        return_type,
+    )
+    if template is not None:
+        expression = _single_return_expression(template)
+        if expression is not None:
+            return TermExpression(
+                text=expression,
+                type_name=_rust_runtime_method_return_type(method_name),
+            )
     receiver_expr = _lower_argument_expression(receiver, params, param_types, return_type)
     if receiver_expr.stub_body is not None:
         return receiver_expr
@@ -400,20 +422,27 @@ def _lower_call_expression(
     if parsed is None:
         return None
     path, args = parsed
-    arg_exprs = _lower_argument_list(args, params, param_types, return_type)
-    if arg_exprs is None:
+    arg_terms = _lower_argument_terms(args, params, param_types, return_type)
+    if arg_terms is None:
         return None
-    runtime_concept = _rust_runtime_call_concept(path)
-    if runtime_concept is not None:
-        arg_types = [_type_for_argument(arg, params, param_types) for arg in args]
-        template = _body_template_expression_for(
-            runtime_concept,
+    arg_exprs = [term.text or "" for term in arg_terms]
+    arg_types = [
+        _expression_type(term, arg, params, param_types)
+        for term, arg in zip(arg_terms, args, strict=True)
+    ]
+    runtime_concepts = _rust_runtime_call_concepts(path)
+    if runtime_concepts:
+        template = _body_template_expression_for_candidates(
+            runtime_concepts,
             arg_exprs,
             arg_types,
             return_type,
         )
         if template is not None:
-            return TermExpression(text=template)
+            return TermExpression(
+                text=template,
+                type_name=_rust_runtime_call_return_type(path),
+            )
     if "::" in path:
         return TermExpression(stub_body=_unsupported_call_stub(path, surface))
     return TermExpression(text=f"{path}({', '.join(arg_exprs)})")
@@ -495,13 +524,25 @@ def _lower_argument_list(
     param_types: list[str],
     return_type: str,
 ) -> list[str] | None:
-    lowered: list[str] = []
+    terms = _lower_argument_terms(args, params, param_types, return_type)
+    if terms is None:
+        return None
+    return [term.text or "" for term in terms]
+
+
+def _lower_argument_terms(
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> list[TermExpression] | None:
+    terms: list[TermExpression] = []
     for arg in args:
         expr = _lower_argument_expression(arg, params, param_types, return_type)
         if expr.stub_body is not None or expr.text is None:
             return None
-        lowered.append(expr.text)
-    return lowered
+        terms.append(expr)
+    return terms
 
 
 def _lower_argument_expression(
@@ -542,15 +583,65 @@ def _libprovekit_method_template(
     )
 
 
+def _rust_runtime_method_template(
+    method_name: str,
+    receiver: str,
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    candidates = _rust_runtime_method_concepts(method_name, receiver)
+    if not candidates:
+        return None
+    receiver_expr = _lower_argument_expression(receiver, params, param_types, return_type)
+    if receiver_expr.stub_body is not None or receiver_expr.text is None:
+        return None
+    arg_terms = _lower_argument_terms(args, params, param_types, return_type)
+    if arg_terms is None:
+        return None
+    template_params = [receiver_expr.text, *(term.text or "" for term in arg_terms)]
+    template_types = _rust_runtime_method_param_types(
+        method_name,
+        receiver_expr,
+        arg_terms,
+        receiver,
+        args,
+        params,
+        param_types,
+    )
+    return _body_template_for_entries(
+        entries(),
+        candidates,
+        template_params,
+        template_types,
+        return_type,
+    )
+
+
 def _body_template_expression_for(
     concept_name: str,
     params: list[str],
     param_types: list[str],
     return_type: str,
 ) -> str | None:
+    return _body_template_expression_for_candidates(
+        (concept_name, concept_name.removeprefix("concept:")),
+        params,
+        param_types,
+        return_type,
+    )
+
+
+def _body_template_expression_for_candidates(
+    candidate_names: tuple[str, ...],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
     body = _body_template_for_entries(
         entries(),
-        (concept_name, concept_name.removeprefix("concept:")),
+        candidate_names,
         params,
         param_types,
         return_type,
@@ -560,13 +651,137 @@ def _body_template_expression_for(
     return _single_return_expression(body)
 
 
-def _rust_runtime_call_concept(path: str) -> str | None:
+def _rust_runtime_call_concepts(path: str) -> tuple[str, ...]:
     match path:
+        case "blake3::Hasher::new":
+            return ("rust-call:blake3::Hasher::new",)
+        case "hex::encode":
+            return ("rust-call:hex::encode",)
         case "String::with_capacity":
-            return "concept:string-with-capacity"
+            return ("concept:string-with-capacity",)
     if path.endswith("::new"):
-        return "concept:new"
-    return None
+        return ("concept:new",)
+    return ()
+
+
+def _rust_runtime_call_return_type(path: str) -> str:
+    match path:
+        case "hex::encode" | "String::with_capacity":
+            return "str"
+    if path == "blake3::Hasher::new":
+        return "blake3.Hasher"
+    return ""
+
+
+def _lower_operation_expression(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermExpression | None:
+    head_args = _head_and_args(surface)
+    if head_args is None:
+        return None
+    op_name, inner = head_args
+    candidates = _rust_runtime_operation_concepts(op_name)
+    if not candidates:
+        return None
+    raw_args = _split_top_level(inner)
+    arg_terms = _lower_argument_terms(raw_args, params, param_types, return_type)
+    if arg_terms is None:
+        return None
+    arg_exprs = [term.text or "" for term in arg_terms]
+    arg_types = [
+        _expression_type(term, arg, params, param_types)
+        for term, arg in zip(arg_terms, raw_args, strict=True)
+    ]
+    template = _body_template_expression_for_candidates(
+        candidates,
+        arg_exprs,
+        arg_types,
+        return_type,
+    )
+    if template is None:
+        return None
+    return TermExpression(
+        text=template,
+        type_name=_rust_runtime_operation_return_type(op_name, arg_terms),
+    )
+
+
+def _rust_runtime_operation_concepts(op_name: str) -> tuple[str, ...]:
+    match op_name.strip():
+        case "array_repeat":
+            return ("concept:array-repeat",)
+        case "add":
+            return ("concept:add",)
+        case "borrow":
+            return ("concept:borrow",)
+    return ()
+
+
+def _rust_runtime_operation_return_type(
+    op_name: str, arg_terms: list[TermExpression]
+) -> str:
+    match op_name.strip():
+        case "add":
+            types = [term.type_name for term in arg_terms]
+            if types and all(type_name == "int" for type_name in types):
+                return "int"
+            if types and all(type_name == "str" for type_name in types):
+                return "str"
+        case "borrow":
+            return arg_terms[0].type_name if arg_terms else ""
+    return ""
+
+
+def _rust_runtime_method_concepts(
+    method_name: str, receiver: str
+) -> tuple[str, ...]:
+    method_key = _concept_key(method_name)
+    candidates: list[str] = []
+    match method_name:
+        case "len":
+            candidates.append("concept:method-len")
+        case "push_str":
+            candidates.append("concept:string-push-str")
+    receiver_key = _receiver_chain_key(receiver)
+    if receiver_key:
+        candidates.append(f"rust-method:{receiver_key}-{method_key}")
+    return tuple(candidates)
+
+
+def _rust_runtime_method_param_types(
+    method_name: str,
+    receiver_expr: TermExpression,
+    arg_terms: list[TermExpression],
+    receiver: str,
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+) -> list[str]:
+    if method_name == "push_str":
+        return ["str", "str"]
+    return [
+        _expression_type(receiver_expr, receiver, params, param_types),
+        *(
+            _expression_type(term, arg, params, param_types)
+            for term, arg in zip(arg_terms, args, strict=True)
+        ),
+    ]
+
+
+def _rust_runtime_method_return_type(method_name: str) -> str:
+    match method_name:
+        case "len":
+            return "int"
+        case "push_str":
+            return "str"
+        case "update" | "finalize_xof":
+            return "blake3.Hasher"
+        case "fill":
+            return "bytes"
+    return ""
 
 
 def _parse_method_surface(surface: str) -> tuple[str, str, list[str]] | None:
@@ -712,6 +927,55 @@ def _concept_key(value: str) -> str:
     return value.strip().replace("_", "-").lower()
 
 
+def _receiver_chain_key(receiver: str) -> str | None:
+    stripped = receiver.strip()
+    if _simple_receiver_name(stripped):
+        return _concept_key(_strip_ssa_suffix(stripped))
+    parsed = _parse_method_surface(stripped) if stripped.startswith("method:") else None
+    if parsed is None:
+        return None
+    method_name, inner_receiver, _args = parsed
+    inner_key = _receiver_chain_key(inner_receiver)
+    if inner_key is None:
+        return None
+    return f"{inner_key}-{_concept_key(method_name)}"
+
+
+def _strip_ssa_suffix(value: str) -> str:
+    return re.sub(r"_v\d+$", "", value.strip())
+
+
+def _expression_type(
+    expr: TermExpression,
+    raw_arg: str,
+    params: list[str],
+    param_types: list[str],
+) -> str:
+    if expr.type_name:
+        return expr.type_name
+    return _surface_type(raw_arg, params, param_types)
+
+
+def _surface_type(surface: str, params: list[str], param_types: list[str]) -> str:
+    from_param = _type_for_argument(surface, params, param_types)
+    if from_param:
+        return map_source_type(from_param)
+    stripped = surface.strip()
+    if re.fullmatch(r"-?\d+", stripped):
+        return "int"
+    if stripped in {"true", "false", "True", "False"}:
+        return "bool"
+    if (
+        len(stripped) >= 2
+        and stripped[0] == stripped[-1]
+        and stripped[0] in {"'", '"'}
+    ):
+        return "str"
+    if stripped == "BLAKE3_512_PREFIX":
+        return "str"
+    return ""
+
+
 def _type_for_argument(arg: str, params: list[str], param_types: list[str]) -> str:
     stripped = arg.strip()
     for index, param in enumerate(params):
@@ -770,7 +1034,9 @@ def render_template(
 
 @lru_cache(maxsize=1)
 def entries() -> tuple[BodyTemplateEntry, ...]:
-    return _entries_from_files((BODY_TEMPLATE_REL, RUST_RUNTIME_BODY_TEMPLATE_REL))
+    return _entries_from_files(
+        (BODY_TEMPLATE_REL, RUST_RUNTIME_BODY_TEMPLATE_REL, BLAKE3_BODY_TEMPLATE_REL)
+    )
 
 
 @lru_cache(maxsize=1)
