@@ -311,6 +311,47 @@ def test_rust_runtime_constructor_call_term_surface_uses_body_template() -> None
     }
 
 
+def test_blake3_512_term_surface_lowers_to_byte_correct_python() -> None:
+    term_surface = (
+        "let(pattern_bind(hasher), call:new(blake3::Hasher::new, []), "
+        "let(pattern_bind(hasher_v1), method:update(hasher, [bytes]), "
+        "let(pattern_bind(out), array_repeat(0, 64), "
+        "let(pattern_bind(hasher_v2), method:fill(method:finalize_xof(hasher_v1, []), [out]), "
+        "let(pattern_bind(out_v1), hasher_v2, "
+        "let(pattern_bind(hex), call:encode(hex::encode, [out_v1]), "
+        "let(pattern_bind(s), call:with_capacity(String::with_capacity, [add(method:len(BLAKE3_512_PREFIX, []), method:len(hex, []))]), "
+        "let(pattern_bind(s_v1), method:push_str(s, [BLAKE3_512_PREFIX]), "
+        "let(pattern_bind(s_v2), method:push_str(s_v1, [borrow(hex)]), "
+        "return(s_v2))))))))))"
+    )
+
+    result = emit_stub(
+        function="blake3_512_of",
+        params=["bytes"],
+        param_types=["bytes"],
+        return_type="String",
+        concept_name=term_surface,
+    )
+
+    assert result == {
+        "source": (
+            "def blake3_512_of(bytes):\n"
+            "    hasher = blake3.blake3()\n"
+            "    hasher_v1 = (hasher.update(bytes) or hasher)\n"
+            "    out = [0] * 64\n"
+            "    hasher_v2 = hasher_v1.digest(length=64)\n"
+            "    out_v1 = hasher_v2\n"
+            "    hex = out_v1.hex()\n"
+            "    s = \"\"\n"
+            "    s_v1 = s + BLAKE3_512_PREFIX\n"
+            "    s_v2 = s_v1 + hex\n"
+            "    return s_v2\n"
+        ),
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
 def test_unsupported_qualified_call_term_surface_emits_cited_stub() -> None:
     result = emit_stub(
         function="unknown_call",
