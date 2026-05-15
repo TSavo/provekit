@@ -1,0 +1,40 @@
+{
+  "version": "1",
+  "target": {
+    "crate": "provekit-canonicalizer",
+    "function": "impl Value::null",
+    "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs"
+  },
+  "pipeline": {
+    "step_1_fixture_cid": "blake3-512:f78e468e6f80e305c8abb4f1b5ccbe54cdea54bf3d5104a63970be8500f7f0a5e7a467fa2cf3bcd2894502ff045c4aede5dbc83f3b76d5818a0aeb2fcacaca3e",
+    "step_2_resolve": "summary=return(call:new(literal(\"new\"), literal([\"Null\"]))) -> sort {\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}; jcs={\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"Null\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+    "step_3_4_realize_command": "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, \"null\", &[], &[], \"Arc < Value >\")",
+    "step_3_4_realize_input": {
+      "resolved_term_json": "{\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"Null\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+      "function": "null",
+      "params": [],
+      "param_types": [],
+      "return_type": "Arc < Value >"
+    },
+    "step_3_4_regenerated_source": "pub fn null() -> Arc < Value > {\n    new(Value::Null)\n}\n",
+    "step_5_original_slice_cid": "blake3-512:12832f678b924c4503c8d5e5839471bffa8051e2dfbc6f4d455b302dbbc7c649c56b5aec0d31fbd336c532111dbd46091b6efed10f288e68a511a32d08d29450",
+    "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_null_regenerated_v2.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_null_original.rs>",
+    "step_7_byte_identical_post_rustfmt": false,
+    "step_8_unified_diff": "--- original_rustfmt\n+++ regenerated_rustfmt\n@@ -1,3 +1,3 @@\n pub fn null() -> Arc<Value> {\n-    Arc::new(Value::Null)\n+    new(Value::Null)\n }\n",
+    "step_9_diff_classification": [
+      {
+        "hunk": "@@ -1,3 +1,3 @@\n pub fn null() -> Arc<Value> {\n-    Arc::new(Value::Null)\n+    new(Value::Null)\n }",
+        "class": "name-difference",
+        "explanation": "provekit-realize-rust-core consumed the resolved body tree and emitted the constructor expression, but the resolved term lacks the receiver prefix recorded by #962 trait-path-truncated."
+      }
+    ],
+    "step_10_dominant_diff_class": "name-difference",
+    "step_11_expected_diff_shape": "-    Arc::new(Value::Null)\n+    new(Value::Null)",
+    "step_12_empirical_root_cause": "#962 trait-path-truncated: the resolved call:new body does not carry the Arc:: receiver prefix.",
+    "regenerated_source_cid": "blake3-512:792b3ac87dc00b54e3352d8157783af4bab98691b301f817d38c1bf75ce68a93777aea7c5ee08682d7bc48c2191679d9c062bb11ee6ce2ed8ef5d310a2190171",
+    "original_slice_post_rustfmt_cid": "blake3-512:97ec24c86c7b920e7e13d80541e7ec5fd066bf3cbceb47bb8df5bb9ec88717558a04e8f605d180ae93730f1f42c9b4420060bcf80df0ff544c1ad4ef5369f670"
+  },
+  "verdict": "CHARACTERIZED_DIFF",
+  "dominant_diff_class": "name-difference",
+  "next_action": "retire #962 trait-path-truncated by carrying the missing receiver path needed to restore Arc::new(Value::Null)."
+}
