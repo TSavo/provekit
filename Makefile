@@ -528,8 +528,13 @@ mint-typescript-language-signature:
 protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
+.PHONY: cid-stability-check
+cid-stability-check:
+	@echo "=== ProofIR resolved round-trip CID stability ==="
+	python3 bootstrap/scripts/cid_stability_check.py
+
 .PHONY: conformance
-conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-mint-kit-integration-pins test-self-contracts conformance-region-fixture cross-kit-conformance
+conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-mint-kit-integration-pins test-self-contracts conformance-region-fixture cross-kit-conformance cid-stability-check
 	@echo ""
 	@echo "==== conformance: PASS ===="
 
