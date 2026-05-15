@@ -733,12 +733,6 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
                         .to_string(),
                 );
             }
-            if matches!(&*method.receiver, Expr::MethodCall(_)) {
-                return Err(
-                    "unsupported statement-position method call chain: receiver Expr::MethodCall"
-                        .to_string(),
-                );
-            }
             lower_method_call_expr_to_value_term(method, ctx)
         }
         Expr::Try(try_expr) => Ok(AlgebraTerm::op(
