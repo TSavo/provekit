@@ -556,7 +556,6 @@ fn operation_kind(value: &Json) -> Option<String> {
     let normalized = match raw_kind {
         "body" | "block" => "seq",
         "if" => "conditional",
-        "exit" => "return",
         "let" => "decl",
         "bin" => value
             .get("op")
