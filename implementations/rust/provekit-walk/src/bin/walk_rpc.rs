@@ -348,62 +348,61 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         let witnesses_by_symbol =
             contract_witnesses_by_function_symbol(&file, &rel, src.as_bytes());
 
-        for item in &file.items {
-            if let syn::Item::Fn(item_fn) = item {
-                let fn_name = item_fn.sig.ident.to_string();
-                let fn_line = line_for_fn(&src, &fn_name) as u64;
-                let (attr_pre, attr_post) = extract_contract_attrs(&item_fn.attrs);
-                let concept_annotation = extract_concept_annotation(&src, &fn_name);
-                let term_shape = term_shape_for_fn(item_fn);
-                let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
-                let (param_names, param_types, return_type) = fn_signature(item_fn);
-                let function_symbol = format!("{fn_name}@{rel}");
-                let witnesses = witnesses_by_symbol
-                    .get(&function_symbol)
-                    .cloned()
-                    .unwrap_or_default();
+        for target in collect_bind_lift_targets(&file) {
+            let item_fn = &target.item_fn;
+            let fn_name = &target.fn_name;
+            let fn_line = target.line as u64;
+            let (attr_pre, attr_post) = extract_contract_attrs(&item_fn.attrs);
+            let concept_annotation = extract_concept_annotation(&src, &target.source_name);
+            let term_shape = term_shape_for_fn(item_fn);
+            let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+            let (param_names, param_types, return_type) = fn_signature(item_fn);
+            let function_symbol = format!("{fn_name}@{rel}");
+            let fallback_function_symbol = format!("{}@{rel}", target.source_name);
+            let witnesses = witnesses_by_symbol
+                .get(&function_symbol)
+                .or_else(|| witnesses_by_symbol.get(&fallback_function_symbol))
+                .cloned()
+                .unwrap_or_default();
 
+            entries.push(json!({
+                "kind": "bind-lift-entry",
+                "file": rel,
+                "fn_name": fn_name,
+                "fn_line": fn_line,
+                "attr_pre": attr_pre,
+                "attr_post": attr_post,
+                "concept_annotation": concept_annotation,
+                "param_names": param_names,
+                "param_types": param_types,
+                "return_type": return_type,
+                "term_shape": cvalue_to_json(&term_shape),
+                "term_shape_cid": term_shape_cid,
+                "witnesses": witnesses,
+            }));
+
+            for (index, callsite) in collect_bound_library_calls(item_fn, &library_bindings)
+                .into_iter()
+                .enumerate()
+            {
+                let term_shape =
+                    concept_citation_shape(&callsite.pattern.concept_cid, &callsite.resolved_args);
+                let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
                 entries.push(json!({
                     "kind": "bind-lift-entry",
                     "file": rel,
-                    "fn_name": fn_name,
-                    "fn_line": fn_line,
-                    "attr_pre": attr_pre,
-                    "attr_post": attr_post,
-                    "concept_annotation": concept_annotation,
-                    "param_names": param_names,
-                    "param_types": param_types,
-                    "return_type": return_type,
+                    "fn_name": format!("{fn_name}__bound_call_{}", index + 1),
+                    "fn_line": callsite.line as u64,
+                    "attr_pre": Value::Null,
+                    "attr_post": Value::Null,
+                    "concept_annotation": concept_annotation_name(&callsite.pattern.concept_name),
+                    "param_names": callsite.resolved_args,
+                    "param_types": vec!["unknown"; callsite.arity],
+                    "return_type": "unknown",
                     "term_shape": cvalue_to_json(&term_shape),
                     "term_shape_cid": term_shape_cid,
-                    "witnesses": witnesses,
+                    "witnesses": [],
                 }));
-
-                for (index, callsite) in collect_bound_library_calls(item_fn, &library_bindings)
-                    .into_iter()
-                    .enumerate()
-                {
-                    let term_shape = concept_citation_shape(
-                        &callsite.pattern.concept_cid,
-                        &callsite.resolved_args,
-                    );
-                    let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
-                    entries.push(json!({
-                        "kind": "bind-lift-entry",
-                        "file": rel,
-                        "fn_name": format!("{fn_name}__bound_call_{}", index + 1),
-                        "fn_line": callsite.line as u64,
-                        "attr_pre": Value::Null,
-                        "attr_post": Value::Null,
-                        "concept_annotation": concept_annotation_name(&callsite.pattern.concept_name),
-                        "param_names": callsite.resolved_args,
-                        "param_types": vec!["unknown"; callsite.arity],
-                        "return_type": "unknown",
-                        "term_shape": cvalue_to_json(&term_shape),
-                        "term_shape_cid": term_shape_cid,
-                        "witnesses": [],
-                    }));
-                }
             }
         }
     }
@@ -413,6 +412,122 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         "ir": entries,
         "diagnostics": diagnostics,
     }))
+}
+
+#[derive(Debug, Clone)]
+struct BindLiftTarget {
+    fn_name: String,
+    source_name: String,
+    line: usize,
+    item_fn: syn::ItemFn,
+}
+
+fn collect_bind_lift_targets(file: &syn::File) -> Vec<BindLiftTarget> {
+    let mut targets = Vec::new();
+    collect_bind_lift_targets_in_items(&file.items, &mut targets);
+    targets
+}
+
+fn collect_bind_lift_targets_in_items(items: &[syn::Item], targets: &mut Vec<BindLiftTarget>) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                let fn_name = item_fn.sig.ident.to_string();
+                targets.push(BindLiftTarget {
+                    source_name: fn_name.clone(),
+                    line: span_line(item_fn),
+                    fn_name,
+                    item_fn: item_fn.clone(),
+                });
+            }
+            syn::Item::Impl(impl_block) => {
+                let Some(qualifier) = impl_function_qualifier(impl_block) else {
+                    continue;
+                };
+                for impl_item in &impl_block.items {
+                    let syn::ImplItem::Fn(method) = impl_item else {
+                        continue;
+                    };
+                    if !is_liftable_impl_method(impl_block, method) {
+                        continue;
+                    }
+                    let source_name = method.sig.ident.to_string();
+                    targets.push(BindLiftTarget {
+                        fn_name: format!("{qualifier}::{source_name}"),
+                        source_name,
+                        line: span_line(method),
+                        item_fn: item_fn_from_impl_method(method),
+                    });
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested_items)) = &module.content {
+                    collect_bind_lift_targets_in_items(nested_items, targets);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn is_liftable_impl_method(impl_block: &syn::ItemImpl, method: &syn::ImplItemFn) -> bool {
+    impl_block.trait_.is_some() || matches!(method.vis, syn::Visibility::Public(_))
+}
+
+fn impl_function_qualifier(impl_block: &syn::ItemImpl) -> Option<String> {
+    let self_ty = rust_symbol_surface(&impl_block.self_ty);
+    if self_ty.is_empty() {
+        return None;
+    }
+    match &impl_block.trait_ {
+        Some((_, trait_path, _)) => {
+            let trait_name = rust_symbol_surface(trait_path);
+            if trait_name.is_empty() {
+                Some(self_ty)
+            } else {
+                Some(format!("<{self_ty} as {trait_name}>"))
+            }
+        }
+        None => Some(self_ty),
+    }
+}
+
+fn item_fn_from_impl_method(method: &syn::ImplItemFn) -> syn::ItemFn {
+    syn::ItemFn {
+        attrs: method.attrs.clone(),
+        vis: method.vis.clone(),
+        sig: method.sig.clone(),
+        block: Box::new(method.block.clone()),
+    }
+}
+
+fn span_line(node: &impl Spanned) -> usize {
+    let line = node.span().start().line;
+    if line == 0 {
+        1
+    } else {
+        line
+    }
+}
+
+fn rust_symbol_surface(node: &impl quote::ToTokens) -> String {
+    normalize_rust_symbol(&node.to_token_stream().to_string())
+}
+
+fn normalize_rust_symbol(raw: &str) -> String {
+    let mut s = normalize_ws(raw);
+    for (from, to) in [
+        (" :: ", "::"),
+        (" < ", "<"),
+        (" >", ">"),
+        (" <", "<"),
+        (" ,", ","),
+        (" & ", "&"),
+        (" * ", "*"),
+    ] {
+        s = s.replace(from, to);
+    }
+    s
 }
 
 #[derive(Debug, Clone)]
@@ -1016,16 +1131,6 @@ fn collect_rs_files_shallow(dir: &Path, visited: &mut std::collections::BTreeSet
     }
 }
 
-fn line_for_fn(src: &str, fn_name: &str) -> usize {
-    let needle = format!("fn {fn_name}(");
-    for (i, line) in src.lines().enumerate() {
-        if line.contains(&needle) {
-            return i + 1;
-        }
-    }
-    1
-}
-
 fn fn_signature(item_fn: &syn::ItemFn) -> (Vec<String>, Vec<String>, String) {
     let mut names = Vec::new();
     let mut types = Vec::new();
@@ -1535,6 +1640,53 @@ pub fn fetch_status(url: &str) -> i64 {
             .find(|entry| entry["concept_annotation"] == "http-request")
             .expect("second bound callsite entry");
         assert_eq!(bound_again["term_shape_cid"], bound["term_shape_cid"]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_includes_public_impl_methods_from_canonicalizer_value() {
+        let root = temp_workspace("bind_lift_impl_methods");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("value.rs"),
+            include_str!("../../../provekit-canonicalizer/src/value.rs"),
+        )
+        .expect("write value.rs fixture");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let fn_names = entries
+            .iter()
+            .filter_map(|entry| entry["fn_name"].as_str())
+            .collect::<Vec<_>>();
+        eprintln!("bind lift value.rs entries: {fn_names:?}");
+
+        for expected in [
+            "Value::kind",
+            "Value::null",
+            "Value::boolean",
+            "Value::integer",
+            "Value::string",
+            "Value::array",
+            "Value::object",
+        ] {
+            assert!(
+                fn_names.iter().any(|name| *name == expected),
+                "missing impl method entry {expected}; got {fn_names:?}"
+            );
+        }
+        assert!(
+            entries.len() >= 7,
+            "expected at least seven bind lift entries from value.rs impl methods, got {}",
+            entries.len()
+        );
 
         let _ = fs::remove_dir_all(root);
     }
