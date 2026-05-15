@@ -49,6 +49,7 @@ pub fn canonical_operation_name(surface_name: &str) -> Option<&str> {
         "field" => Some("field"),
         name if name.starts_with("method:") => Some("method_call"),
         name if name.starts_with("call:") => Some("call_result"),
+        name if name.starts_with("macro_call:") => Some("call_result"),
         op @ ("skip" | "seq" | "if" | "while" | "for" | "switch" | "call" | "return" | "break"
         | "continue" | "deref" | "member" | "assign" | "neg" | "panic" | "try"
         | "try_option" | "match" | "match_expr" | "borrow" | "borrow_mut" | "deref_raw"

@@ -99,5 +99,5 @@ fn accepts_statement_macro_as_named_loss() {
         "#,
         "checked",
     );
-    assert_partial_loss(&parsed, "statement-macro");
+    assert_partial_loss(&parsed, "macro-not-expanded");
 }
