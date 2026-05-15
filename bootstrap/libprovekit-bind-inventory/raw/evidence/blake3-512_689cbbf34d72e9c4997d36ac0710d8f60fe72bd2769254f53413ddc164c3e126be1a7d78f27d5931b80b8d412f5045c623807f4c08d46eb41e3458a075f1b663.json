@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:689cbbf34d72e9c4997d36ac0710d8f60fe72bd2769254f53413ddc164c3e126be1a7d78f27d5931b80b8d412f5045c623807f4c08d46eb41e3458a075f1b663",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "admit_identical_reuse@ci.rs",
+    "inner_type": "CIJobResultBodyClaim",
+    "lifetime": "_",
+    "return_type": "Result<CIReuseBodyClaim>",
+    "role": "pre",
+    "signature_position": "param:1",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:5a9f14efd1f370035cf6be4be86c1baf8ebcf6fa375dcca35e431e7a19a39f644b8d3c11a9feefc0ce29ef926e22c89b106ac55a21a425583033f64dcd98412b",
+    "span": {
+      "end": {
+        "col": 7,
+        "line": 391
+      },
+      "start": {
+        "col": 7,
+        "line": 391
+      }
+    }
+  }
+}

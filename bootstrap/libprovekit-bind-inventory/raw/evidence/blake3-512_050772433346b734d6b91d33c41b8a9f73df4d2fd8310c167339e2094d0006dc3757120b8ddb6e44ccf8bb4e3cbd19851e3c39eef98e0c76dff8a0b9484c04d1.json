@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:050772433346b734d6b91d33c41b8a9f73df4d2fd8310c167339e2094d0006dc3757120b8ddb6e44ccf8bb4e3cbd19851e3c39eef98e0c76dff8a0b9484c04d1",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "promote_fcm_to_compound@compose.rs",
+    "inner_type": "FunctionContractMemento",
+    "lifetime": "_",
+    "return_type": "(EvidenceMemento, CompoundContractMemento)",
+    "role": "pre",
+    "signature_position": "param:0",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:d0ffb2bb7d8c3909ededa15d1f4005045e01e42a3e908b624c70c3edd7f70f7765c9411cce73541aa805b64fed58f457b3fb3b82591483e08fdeb4769e751ed9",
+    "span": {
+      "end": {
+        "col": 7,
+        "line": 1666
+      },
+      "start": {
+        "col": 7,
+        "line": 1666
+      }
+    }
+  }
+}

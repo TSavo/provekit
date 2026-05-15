@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:3281565e4d18da1e8d59dfb8b2a9f32f32f83fe6f42256f0fede3c6f815d1231c3f00f1b0574f28672b6bb6699337ed60d0c3b94be3059a776ad638649cad06d",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "lift_request_from_input@core/lift_plugin.rs",
+    "inner_type": "Input",
+    "lifetime": "_",
+    "return_type": "Result<& Value, LiftPluginKitError>",
+    "role": "pre",
+    "signature_position": "param:0",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:fff8822e076ac4e5dca0a2310d992633307444cfa0e72046a5971fc913bc37d2d628a39f3c3f2752273a07ed34988da22badcf0974761897cd1f40a862624804",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 255
+      },
+      "start": {
+        "col": 3,
+        "line": 255
+      }
+    }
+  }
+}

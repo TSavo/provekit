@@ -1,0 +1,37 @@
+{
+  "aggregation_strategy": "conjunction",
+  "cid": "blake3-512:099f6357413ec035027055c789b16ee10b4e93d5f7543e5195c25dc1d1b307a6c66113ce2e730aa46f62b761b784d4d587b7aa82a20e04818de6e78a18245c47",
+  "composed_post": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "composed_pre": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    ]
+  },
+  "evidences": [
+    {
+      "evidence_cid": "blake3-512:8f2da4171aa619ad6a7c87269e1e9e171f44be0df8e8b19e2dac47ffc3819ee9a772edf14e4a4a1934dec7c3fac340204ff8a98ef0b9eb0a68748e005f9427d5",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:fb69f12f22b25d1828f32a9a99e9bd33875d99674604d23474bb8cb04902b84e410f234c7ac7c14be964c67a4dd3759c0e435d3b9f113bac9cf2e28686a7f1d2",
+      "weight_basis_points": 10000
+    }
+  ],
+  "function_term_cid": "blake3-512:66eed502ee4062b5ec656c6b576ff97fc1d3ccbac4099479a66e2c7d2abc2e3972c946d97ecbeee72b4446465a53de6830decd9aff29269894b17b85181647c2",
+  "kind": "compound-contract",
+  "schemaVersion": "1"
+}

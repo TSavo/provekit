@@ -1,0 +1,70 @@
+{
+  "aggregation_strategy": "conjunction",
+  "cid": "blake3-512:9e86a7820f4ba2236e0dc24fa0a523aec0c74afba79d73efb16b293e88f59b4cc4cc632ef49464a96cd693b9a9521619571dc4816b954cc658e1f07fe02603c4",
+  "composed_post": {
+    "kind": "or",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "is_err",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      }
+    ]
+  },
+  "composed_pre": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    ]
+  },
+  "evidences": [
+    {
+      "evidence_cid": "blake3-512:133d87f6fd0141f78cff1da13581a278ee7f689e78ec844766764baaa1a64a996c0a35232178bd41f98df1afcd9020ba852a7a06bb86724766e39067767fb61f",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:458a39dba7e24113c3221162e563f610309d149c5f997862a43f5d5186ea97ce046f5ffdd483c5e32d5a0bba8a60030990eb37eb21ebca7461c37a4d3b4af370",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:8cff1f10a52bb162cd201a068392c96c42dfaedd5f00a0a71232a7c27d593ce1db7e1beca1344bff35880bbc0c43e0b3d5a5f9b907182b2cfaec3631e4fad777",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:ad3e267da31b84f7aca1a344b44cdaae090e954ed3c82f28df37726b86c2407aa3681a8874fd345a8330df75bdfae1b81227f3aff0c4ea905839d30729e946fd",
+      "weight_basis_points": 10000
+    }
+  ],
+  "function_term_cid": "blake3-512:07e5ae7cbaffc845265291c3b99400f63b5bb46af4b0ef31c95bbf13bcd544408dc4f35b25162573032ace5077f7484b142a5323cf50c59570b82cf4692c3c1d",
+  "kind": "compound-contract",
+  "schemaVersion": "1"
+}

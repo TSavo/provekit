@@ -1,0 +1,59 @@
+{
+  "aggregation_strategy": "conjunction",
+  "cid": "blake3-512:1bf4941d397352fc800d1fb92f604ddbd335f4c374bc424f131c64923579179eb33453fdef040e4db97d0206718059d3da7b8128bc76b94e50f1ed3075840d6b",
+  "composed_post": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "composed_pre": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    ]
+  },
+  "evidences": [
+    {
+      "evidence_cid": "blake3-512:0eed37c1c5bd5ad8a3e0b5f5af40eb27d6c073c21eb1505c1ea57b98c5b1be76a8db24b6eb56c94ecead8b35228a89392a1592d0cca8042c646f1845633038cb",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:12bb1a96e7426633ebab8bb0c0de5b254c7d1c900ab1531567d96d163c7dfde58c86630b4933f0f2681f0fc72864e056bfdeb523dea4d70a55ad57cd194ebedb",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:5c33ab55b005777743bcb23e965abd1ce070c15ddeb57cec305561ad3ed2c2559f7913fe4a06b8e31ef4bdbdb13abe11b06354a82b8aabd87c255b17bc408ade",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:7daee186129c836bbb7c1efad28b62b2b5ffab4053b7e12efdd0fdba6ca0ac2067365ec60973d9e96398f2bafe376efc9cfd67f1f9ffe0f7f25369b52c55a267",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:a48f9ccc78bca1a9f13f528a734cf27f3ef9fd9d3fa7946cd5c1b91199d694ef8e70e61747231033c4cbe2c2d2e8b27f1b0d582f6c96f4d6bb3ffdf9732ef6e6",
+      "weight_basis_points": 10000
+    }
+  ],
+  "function_term_cid": "blake3-512:30db861c47dea57199434a0f6faa5fbbaefe9a5ee741c9cde558ae3e632c983e781e6c6149c18ff13cae78906571479b01920d18e4adc9c42b14bda0090ebf9e",
+  "kind": "compound-contract",
+  "schemaVersion": "1"
+}

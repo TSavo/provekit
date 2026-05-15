@@ -958,7 +958,8 @@ fn try_strip_prefix_ci<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
     if line.len() < prefix.len() {
         return None;
     }
-    if line[..prefix.len()].eq_ignore_ascii_case(prefix) {
+    let head = line.get(..prefix.len())?;
+    if head.eq_ignore_ascii_case(prefix) {
         Some(&line[prefix.len()..])
     } else {
         None
@@ -2456,6 +2457,22 @@ mod tests {
         assert!(
             out.evidences.is_empty(),
             "ambiguous prose must emit no evidence; got: {:?}",
+            out.evidences
+        );
+    }
+
+    /// Unrelated non-ASCII prose must be ignored without slicing through a char boundary.
+    #[test]
+    fn doc_unrelated_unicode_prose_emits_no_evidence() {
+        let src = r#"
+            /// Per CCP §2 + §9: this is the canonical primitive named in the spec.
+            fn primitive_name() -> &'static str { "ccp" }
+        "#;
+        let (f, bytes) = parse_doc_bytes(src);
+        let out = lift_file_with_docstring_evidence(&f, "test.rs", &bytes);
+        assert!(
+            out.evidences.is_empty(),
+            "unrelated unicode prose must emit no evidence; got: {:?}",
             out.evidences
         );
     }

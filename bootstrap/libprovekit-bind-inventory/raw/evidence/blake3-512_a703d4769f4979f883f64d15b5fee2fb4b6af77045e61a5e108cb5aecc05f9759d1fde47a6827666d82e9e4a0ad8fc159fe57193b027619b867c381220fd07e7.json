@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:a703d4769f4979f883f64d15b5fee2fb4b6af77045e61a5e108cb5aecc05f9759d1fde47a6827666d82e9e4a0ad8fc159fe57193b027619b867c381220fd07e7",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "require_equal@ci.rs",
+    "inner_type": "str",
+    "lifetime": "_",
+    "return_type": "Result<()>",
+    "role": "pre",
+    "signature_position": "param:0",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:5a9f14efd1f370035cf6be4be86c1baf8ebcf6fa375dcca35e431e7a19a39f644b8d3c11a9feefc0ce29ef926e22c89b106ac55a21a425583033f64dcd98412b",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 607
+      },
+      "start": {
+        "col": 3,
+        "line": 607
+      }
+    }
+  }
+}

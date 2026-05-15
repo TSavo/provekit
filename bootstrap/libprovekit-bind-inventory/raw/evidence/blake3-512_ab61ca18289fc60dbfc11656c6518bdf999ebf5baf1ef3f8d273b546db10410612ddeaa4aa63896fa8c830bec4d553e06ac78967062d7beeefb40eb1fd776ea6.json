@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:ab61ca18289fc60dbfc11656c6518bdf999ebf5baf1ef3f8d273b546db10410612ddeaa4aa63896fa8c830bec4d553e06ac78967062d7beeefb40eb1fd776ea6",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "consensus_vector@promotion_decision_registry.rs",
+    "inner_type": "Value",
+    "lifetime": "_",
+    "return_type": "Value",
+    "role": "pre",
+    "signature_position": "param:0",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:b741f8c963a3760874540bb1fa8ce02f049b4840a9077e255654f0a0ad6019b22ec241a6e9a5fdd0a1c1959123381fee306e5d872d599f8de3bf3f5be4430f2e",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 258
+      },
+      "start": {
+        "col": 3,
+        "line": 258
+      }
+    }
+  }
+}

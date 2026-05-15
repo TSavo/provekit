@@ -1,0 +1,34 @@
+{
+  "cid": "blake3-512:e36afa1d82bf5471ef06a2f551203c9244d68d7091fb1198e854c22a65e0b6807215e0e71f1f8dff1d2c536863a2bd12dcd70cfd865389c5140fa89e353bf81e",
+  "code_site": {
+    "function_term_cid": "blake3-512:dc7b622a2e2a6743418ee08309863403277db7f8f8800a3a1498e55cdf4c45a65e572309a59ea7d7ae0f231e2a25c53cb721d0e313b6faf60810a23cc460dc54",
+    "source_cid": "blake3-512:d0ffb2bb7d8c3909ededa15d1f4005045e01e42a3e908b624c70c3edd7f70f7765c9411cce73541aa805b64fed58f457b3fb3b82591483e08fdeb4769e751ed9",
+    "span": {
+      "end": 37543,
+      "start": 37512
+    }
+  },
+  "concept_cid": "blake3-512:fddc7761077c69f310f6158fdcdd405c6173c3ced3965a240593c28ed971604822736bef31edf382b66956949b080d79e7ae66ff011269779c60ccd981ea6d51",
+  "discharge": {
+    "method": "wp",
+    "verdict": "loudly-bounded-lossy",
+    "discharge_receipt_cid": "blake3-512:af916f5f0362e4eeef26829e78b3af755eeb540b983a614b0d249e556e835bb7e29e1e7fa46970c2a527e4000cf7156fe8c96f13cb28b05427c993494813ca22",
+    "loss_record": {
+      "structural_divergence": {
+        "kind": "atomic",
+        "name": "bind-v0-single-atom-encoding:evidence-lift[type-signature]: structural discharge not attempted (v0)",
+        "args": []
+      }
+    }
+  },
+  "kind": "concept-site",
+  "local_contract_cid": "blake3-512:a685368679a061d92407792d1cef42f877b8f8e7170c438d62fd6620fa5ab6306c0ef39a9d8bf239371d042fd8b3a2485f7e6de9c2054a5ab3f3e09cce6726bd",
+  "provenance": {
+    "clusterer_cid": "blake3-512:22289f270b73a77da544b987180fa52f834daca02908c8aec5d82f82f71e35246c98283552e86ff1bd0a5e97fee6612d60abac05c08e97b2cab44639e0b3eb3f",
+    "discharger_cid": "blake3-512:14f5e7f55a7007550b55df1925bd999a93b85f3da6b408194de8fd080f2c0b829eb37d1fb728f99f68e45789e15b7cdf51e10094bf9a0b28d9225704eb40ad06",
+    "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b"
+  },
+  "realization_mode_hint": "monitor",
+  "schemaVersion": "1",
+  "witnesses": []
+}

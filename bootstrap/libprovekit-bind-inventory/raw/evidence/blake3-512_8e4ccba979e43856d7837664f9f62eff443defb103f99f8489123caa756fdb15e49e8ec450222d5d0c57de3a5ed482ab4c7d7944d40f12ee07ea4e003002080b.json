@@ -1,0 +1,34 @@
+{
+  "cid": "blake3-512:8e4ccba979e43856d7837664f9f62eff443defb103f99f8489123caa756fdb15e49e8ec450222d5d0c57de3a5ed482ab4c7d7944d40f12ee07ea4e003002080b",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "read_jcs_input@ffi.rs",
+    "inner_type": "usize",
+    "return_type": "Result<& 'a str, FfiError>",
+    "role": "pre",
+    "signature_position": "param:1",
+    "type_shape": "bounded-primitive"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:1fed23f687b01aa6ff51cb662dba5d31ce5ed2a5214c5bfcbead047cd64570541ff52138efd5e6a1f9f2d120a4e1c096244d07bc9ee0389e997f448c0150e59a",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 436
+      },
+      "start": {
+        "col": 3,
+        "line": 436
+      }
+    }
+  }
+}
