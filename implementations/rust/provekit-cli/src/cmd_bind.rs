@@ -34,7 +34,7 @@ pub struct BindArgs {
     pub output: Option<PathBuf>,
 
     /// Legacy migration root. Kept for cmd_bind_migrate compatibility.
-    #[arg(long, default_value = ".")]
+    #[arg(long, alias = "project", default_value = ".")]
     pub root: PathBuf,
 
     /// Source language hint for diagnostics and named-term metadata.
@@ -203,6 +203,12 @@ pub struct NamedTerm {
     pub file: String,
     pub function: String,
     pub name: String,
+    #[serde(
+        default,
+        rename = "namedTermTree",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub named_term_tree: Option<NamedTermTree>,
     #[serde(rename = "paramTypes")]
     pub param_types: Vec<String>,
     pub params: Vec<String>,
@@ -215,6 +221,17 @@ pub struct NamedTerm {
     #[serde(rename = "termShapeCid")]
     pub term_shape_cid: String,
     pub witnesses: Vec<NamedWitness>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamedTermTree {
+    pub args: Vec<NamedTermTree>,
+    #[serde(rename = "conceptName")]
+    pub concept_name: String,
+    #[serde(rename = "operationKind")]
+    pub operation_kind: String,
+    #[serde(rename = "shapeCid")]
+    pub shape_cid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,6 +343,7 @@ fn bind_term_document(term_json: &Json, args: &BindArgs) -> Result<NamedTermDocu
     let mut seen_names: BTreeSet<String> = BTreeSet::new();
     let mut terms = Vec::with_capacity(entries.len());
     let mut decisions = Vec::new();
+    let mut operation_namer = UnnamedConceptNamer::default();
     for (idx, entry) in entries.into_iter().enumerate() {
         let concept_name = concept_name_for(&entry, idx + 1, &catalog);
         let name = unique_name(&concept_name, &mut seen_names);
@@ -338,6 +356,8 @@ fn bind_term_document(term_json: &Json, args: &BindArgs) -> Result<NamedTermDocu
         let site_memento_cid = site_cid(&entry, &name, &term_shape_cid)?;
         let witnesses = named_witnesses(&entry);
         let promoted_cid = blake3_512_of(format!("provekit-bind/promoted/{name}").as_bytes());
+        let named_term_tree =
+            named_operation_tree(&entry.term_shape, &catalog, &mut operation_namer)?;
         decisions.extend(promotion_decisions(
             &term_shape_cid,
             &promoted_cid,
@@ -354,6 +374,7 @@ fn bind_term_document(term_json: &Json, args: &BindArgs) -> Result<NamedTermDocu
             file: entry.file,
             function: entry.fn_name,
             name,
+            named_term_tree,
             param_types: entry.param_types,
             params: entry.param_names,
             return_type: if entry.return_type.is_empty() {
@@ -437,6 +458,144 @@ fn concept_name_for(entry: &BindLiftEntry, ordinal: usize, catalog: &Catalog) ->
         .match_shape(&shape.shape_cid(), &shape)
         .map(|entry| entry.name.clone())
         .unwrap_or_else(|| format!("UNNAMED-CONCEPT-{ordinal:x}"))
+}
+
+#[derive(Debug, Default)]
+struct UnnamedConceptNamer {
+    next: usize,
+}
+
+impl UnnamedConceptNamer {
+    fn next(&mut self) -> String {
+        self.next += 1;
+        format!("UNNAMED-CONCEPT-{:x}", self.next)
+    }
+}
+
+fn named_operation_tree(
+    value: &Json,
+    catalog: &Catalog,
+    namer: &mut UnnamedConceptNamer,
+) -> Result<Option<NamedTermTree>, String> {
+    let Some(operation_kind) = operation_kind(value) else {
+        return Ok(None);
+    };
+    let operation_shape = operation_lookup_shape(&operation_kind);
+    let shape_cid = libprovekit::canonical::json_cid(&operation_shape)
+        .map_err(|e| format!("cid operation shape `{operation_kind}`: {e}"))?;
+    let shape = TermShape::from_kit(operation_shape, shape_cid.clone());
+    let concept_name = catalog
+        .match_shape(&shape.shape_cid(), &shape)
+        .map(|entry| entry.name.clone())
+        .unwrap_or_else(|| namer.next());
+    let args = child_operation_trees(value, catalog, namer)?;
+    Ok(Some(NamedTermTree {
+        args,
+        concept_name,
+        operation_kind,
+        shape_cid,
+    }))
+}
+
+fn child_operation_trees(
+    value: &Json,
+    catalog: &Catalog,
+    namer: &mut UnnamedConceptNamer,
+) -> Result<Vec<NamedTermTree>, String> {
+    let mut out = Vec::new();
+    collect_child_operation_trees(value, catalog, namer, &mut out)?;
+    Ok(out)
+}
+
+fn collect_child_operation_trees(
+    value: &Json,
+    catalog: &Catalog,
+    namer: &mut UnnamedConceptNamer,
+    out: &mut Vec<NamedTermTree>,
+) -> Result<(), String> {
+    match value {
+        Json::Array(values) => {
+            for child in values {
+                collect_operation_tree_or_descendants(child, catalog, namer, out)?;
+            }
+        }
+        Json::Object(object) => {
+            for (key, child) in object {
+                if key == "kind" || key == "op" {
+                    continue;
+                }
+                collect_operation_tree_or_descendants(child, catalog, namer, out)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn collect_operation_tree_or_descendants(
+    value: &Json,
+    catalog: &Catalog,
+    namer: &mut UnnamedConceptNamer,
+    out: &mut Vec<NamedTermTree>,
+) -> Result<(), String> {
+    if let Some(tree) = named_operation_tree(value, catalog, namer)? {
+        out.push(tree);
+        return Ok(());
+    }
+    collect_child_operation_trees(value, catalog, namer, out)
+}
+
+fn operation_kind(value: &Json) -> Option<String> {
+    let raw_kind = value.get("kind").and_then(Json::as_str)?.trim();
+    if raw_kind.is_empty() {
+        return None;
+    }
+    let raw_kind = raw_kind
+        .rsplit_once(':')
+        .map_or(raw_kind, |(_, suffix)| suffix);
+    let normalized = match raw_kind {
+        "body" | "block" => "seq",
+        "if" => "conditional",
+        "let" => "decl",
+        "bin" => value
+            .get("op")
+            .and_then(Json::as_str)
+            .and_then(binary_operator_kind)
+            .unwrap_or("bin"),
+        "rel" => value
+            .get("op")
+            .and_then(Json::as_str)
+            .and_then(binary_operator_kind)
+            .unwrap_or("rel"),
+        other => other,
+    };
+    Some(normalized.replace('_', "-"))
+}
+
+fn binary_operator_kind(op: &str) -> Option<&'static str> {
+    match op {
+        "+" => Some("add"),
+        "-" => Some("sub"),
+        "*" => Some("mul"),
+        "/" => Some("div"),
+        "%" => Some("mod"),
+        "==" => Some("eq"),
+        "!=" => Some("ne"),
+        "<" => Some("lt"),
+        "<=" => Some("le"),
+        ">" => Some("gt"),
+        ">=" => Some("ge"),
+        "&&" => Some("and"),
+        "||" => Some("or"),
+        _ => None,
+    }
+}
+
+fn operation_lookup_shape(operation_kind: &str) -> Json {
+    json!({
+        "kind": "operation-shape",
+        "operator": operation_kind,
+    })
 }
 
 fn unique_name(concept_name: &str, seen: &mut BTreeSet<String>) -> String {
@@ -728,21 +887,50 @@ fn load_catalog_abstraction(path: &Path) -> Option<CatalogEntry> {
 
 fn load_catalog_specs(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
     let dir = concept_shapes_root.join("specs");
-    catalog_json_files(&dir, "_shape.spec.json")
+    catalog_json_files(&dir, ".spec.json")
         .into_iter()
-        .filter_map(|path| load_catalog_spec(&path))
+        .flat_map(|path| load_catalog_spec(&path))
         .collect()
 }
 
-fn load_catalog_spec(path: &Path) -> Option<CatalogEntry> {
-    let doc = read_json_file(path)?;
-    let name = doc.get("fn_name").and_then(Json::as_str)?.to_string();
-    let shape_cid = libprovekit::canonical::json_cid(&doc).ok()?;
-    Some(CatalogEntry {
-        name,
-        shape_cid,
-        classification: "catalog-shape",
-    })
+fn load_catalog_spec(path: &Path) -> Vec<CatalogEntry> {
+    let Some(doc) = read_json_file(path) else {
+        return Vec::new();
+    };
+    let Some(name) = doc
+        .get("fn_name")
+        .and_then(Json::as_str)
+        .map(str::to_string)
+    else {
+        return Vec::new();
+    };
+    let mut entries = Vec::new();
+    if let Ok(shape_cid) = libprovekit::canonical::json_cid(&doc) {
+        entries.push(CatalogEntry {
+            name: name.clone(),
+            shape_cid,
+            classification: "catalog-shape",
+        });
+    }
+    if name.starts_with("concept:") {
+        if let Some(operator) = doc
+            .get("post")
+            .and_then(|post| post.get("operator"))
+            .and_then(Json::as_str)
+            .map(|operator| operator.replace('_', "-"))
+        {
+            if let Ok(shape_cid) =
+                libprovekit::canonical::json_cid(&operation_lookup_shape(&operator))
+            {
+                entries.push(CatalogEntry {
+                    name,
+                    shape_cid,
+                    classification: "catalog-shape",
+                });
+            }
+        }
+    }
+    entries
 }
 
 fn catalog_json_files(dir: &Path, suffix: &str) -> Vec<PathBuf> {
@@ -866,5 +1054,95 @@ mod tests {
             .match_shape(identity_shape_cid, &unknown_shape)
             .expect("identity CID should match before classify fallback");
         assert_eq!(matched.name, "concept:identity");
+    }
+
+    #[test]
+    fn bind_names_blake3_512_of_operations_from_catalog() {
+        let term = json!({
+            "kind": "ir-document",
+            "sourceLanguage": "rust",
+            "workspaceRoot": "/tmp/provekit-bind-test",
+            "ir": [{
+                "kind": "bind-lift-entry",
+                "file": "implementations/rust/provekit-canonicalizer/src/hash.rs",
+                "fn_name": "blake3_512_of",
+                "param_names": ["bytes"],
+                "param_types": ["& [u8]"],
+                "return_type": "String",
+                "term_shape": {
+                    "kind": "body",
+                    "stmts": [
+                        {"kind": "let"},
+                        {"kind": "call"},
+                        {"kind": "let"},
+                        {"kind": "call"},
+                        {"kind": "let"},
+                        {"kind": "let"},
+                        {"kind": "call"},
+                        {"kind": "call"},
+                        {"kind": "opaque"}
+                    ]
+                },
+                "witnesses": []
+            }]
+        });
+        let args = BindArgs {
+            input: None,
+            output: None,
+            root: PathBuf::from("."),
+            lang: "rust".to_string(),
+            threshold: 1,
+            rewrite: RewriteShape::Invisible,
+            mode: vec![RuntimeMode::Monitor],
+            target_language: None,
+            library_from: None,
+            library_to: None,
+            source_dir: None,
+            out_dir: None,
+            receipt: None,
+            witness_fixture: None,
+            write: false,
+            quiet: true,
+            plugins: crate::PluginFlags::default(),
+        };
+
+        let named = bind_term_document(&term, &args).expect("bind succeeds");
+        let named_json = serde_json::to_value(&named).expect("named term serializes");
+        let tree = named_json["terms"][0]
+            .get("namedTermTree")
+            .expect("operation-level named term tree is emitted");
+        let nested_names = serde_json::to_string(tree).expect("tree stringifies");
+        let mut operation_concepts = Vec::new();
+        collect_tree_concept_names(tree, &mut operation_concepts);
+        operation_concepts.sort();
+        operation_concepts.dedup();
+        eprintln!(
+            "operation-level matches for blake3_512_of: {}",
+            operation_concepts.join(", ")
+        );
+
+        assert!(
+            nested_names.contains("\"conceptName\":\"concept:call\""),
+            "blake3_512_of call operations should match catalog concept:call; tree={nested_names}"
+        );
+        assert!(
+            tree.get("args")
+                .and_then(Json::as_array)
+                .is_some_and(|args| !args.is_empty()),
+            "operation tree should retain recursive children; tree={tree}"
+        );
+    }
+
+    fn collect_tree_concept_names(tree: &Json, out: &mut Vec<String>) {
+        if let Some(name) = tree.get("conceptName").and_then(Json::as_str) {
+            if name.starts_with("concept:") {
+                out.push(name.to_string());
+            }
+        }
+        if let Some(args) = tree.get("args").and_then(Json::as_array) {
+            for arg in args {
+                collect_tree_concept_names(arg, out);
+            }
+        }
     }
 }
