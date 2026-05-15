@@ -44,6 +44,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::Value;
 use provekit_ir_types::Sort;
+use quote::ToTokens;
 use syn::{File, Item, ItemEnum, ItemImpl, ItemStruct, ItemTrait};
 
 use crate::canonical::{cid_of_value, jcs_bytes_of_value};
@@ -52,10 +53,78 @@ use crate::locus::{Locus, LocusFromSpanExt};
 
 // ---- Struct ----
 
+const LOSS_GENERICS_BOUNDS_NOT_DISCHARGED: &str = "generics-bounds-not-discharged";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenericParameterMemento {
+    pub name: String,
+    pub kind: String,
+}
+
+impl GenericParameterMemento {
+    fn to_value(&self) -> Arc<Value> {
+        Value::object([
+            ("name", Value::string(self.name.clone())),
+            ("kind", Value::string(self.kind.clone())),
+        ])
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereBoundCitation {
+    pub concept: String,
+    pub predicate: String,
+}
+
+impl WhereBoundCitation {
+    fn to_value(&self) -> Arc<Value> {
+        Value::object([
+            ("concept", Value::string(self.concept.clone())),
+            ("predicate", Value::string(self.predicate.clone())),
+        ])
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDeclLossRecord {
+    pub loss: String,
+    pub detail: String,
+}
+
+impl TypeDeclLossRecord {
+    fn to_value(&self) -> Arc<Value> {
+        Value::object([
+            ("loss", Value::string(self.loss.clone())),
+            ("detail", Value::string(self.detail.clone())),
+        ])
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct GenericMementoParts {
+    parameters: Vec<GenericParameterMemento>,
+    where_bounds: Vec<WhereBoundCitation>,
+    loss_record: Vec<TypeDeclLossRecord>,
+}
+
+impl GenericMementoParts {
+    fn handling(&self) -> String {
+        if self.loss_record.is_empty() {
+            "handles-fully".to_string()
+        } else {
+            "handles-partially-with-loss-record".to_string()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StructDeclMemento {
     pub name: String,
     pub fields: Vec<(String, Sort)>,
+    pub generic_parameters: Vec<GenericParameterMemento>,
+    pub where_bounds: Vec<WhereBoundCitation>,
+    pub handling: String,
+    pub loss_record: Vec<TypeDeclLossRecord>,
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
@@ -85,6 +154,8 @@ pub fn lift_struct_decl(item: &ItemStruct, file_path: Option<&str>) -> StructDec
         syn::Fields::Unit => vec![],
     };
     let locus = Locus::from_span(item.ident.span(), file_path);
+    let generics = generic_memento_parts(&item.generics);
+    let handling = generics.handling();
 
     let fields_arr: Vec<Arc<Value>> = fields
         .iter()
@@ -100,6 +171,37 @@ pub fn lift_struct_decl(item: &ItemStruct, file_path: Option<&str>) -> StructDec
         ("kind", Value::string("type-decl-struct")),
         ("name", Value::string(name.clone())),
         ("fields", Value::array(fields_arr)),
+        (
+            "genericParameters",
+            Value::array(
+                generics
+                    .parameters
+                    .iter()
+                    .map(GenericParameterMemento::to_value)
+                    .collect(),
+            ),
+        ),
+        (
+            "whereBounds",
+            Value::array(
+                generics
+                    .where_bounds
+                    .iter()
+                    .map(WhereBoundCitation::to_value)
+                    .collect(),
+            ),
+        ),
+        ("handling", Value::string(handling.clone())),
+        (
+            "lossRecord",
+            Value::array(
+                generics
+                    .loss_record
+                    .iter()
+                    .map(TypeDeclLossRecord::to_value)
+                    .collect(),
+            ),
+        ),
         ("locus", locus.to_value()),
     ]);
     let canonical_bytes = jcs_bytes_of_value(&value);
@@ -108,6 +210,10 @@ pub fn lift_struct_decl(item: &ItemStruct, file_path: Option<&str>) -> StructDec
     StructDeclMemento {
         name,
         fields,
+        generic_parameters: generics.parameters,
+        where_bounds: generics.where_bounds,
+        handling,
+        loss_record: generics.loss_record,
         locus,
         canonical_bytes,
         cid,
@@ -168,6 +274,10 @@ impl VariantMemento {
 pub struct EnumDeclMemento {
     pub name: String,
     pub variants: Vec<VariantMemento>,
+    pub generic_parameters: Vec<GenericParameterMemento>,
+    pub where_bounds: Vec<WhereBoundCitation>,
+    pub handling: String,
+    pub loss_record: Vec<TypeDeclLossRecord>,
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
@@ -201,6 +311,8 @@ pub fn lift_enum_decl(item: &ItemEnum, file_path: Option<&str>) -> EnumDeclMemen
         })
         .collect();
     let locus = Locus::from_span(item.ident.span(), file_path);
+    let generics = generic_memento_parts(&item.generics);
+    let handling = generics.handling();
 
     let variants_arr: Vec<Arc<Value>> = variants.iter().map(|v| v.to_value()).collect();
     let value = Value::object([
@@ -208,6 +320,37 @@ pub fn lift_enum_decl(item: &ItemEnum, file_path: Option<&str>) -> EnumDeclMemen
         ("kind", Value::string("type-decl-enum")),
         ("name", Value::string(name.clone())),
         ("variants", Value::array(variants_arr)),
+        (
+            "genericParameters",
+            Value::array(
+                generics
+                    .parameters
+                    .iter()
+                    .map(GenericParameterMemento::to_value)
+                    .collect(),
+            ),
+        ),
+        (
+            "whereBounds",
+            Value::array(
+                generics
+                    .where_bounds
+                    .iter()
+                    .map(WhereBoundCitation::to_value)
+                    .collect(),
+            ),
+        ),
+        ("handling", Value::string(handling.clone())),
+        (
+            "lossRecord",
+            Value::array(
+                generics
+                    .loss_record
+                    .iter()
+                    .map(TypeDeclLossRecord::to_value)
+                    .collect(),
+            ),
+        ),
         ("locus", locus.to_value()),
     ]);
     let canonical_bytes = jcs_bytes_of_value(&value);
@@ -216,6 +359,10 @@ pub fn lift_enum_decl(item: &ItemEnum, file_path: Option<&str>) -> EnumDeclMemen
     EnumDeclMemento {
         name,
         variants,
+        generic_parameters: generics.parameters,
+        where_bounds: generics.where_bounds,
+        handling,
+        loss_record: generics.loss_record,
         locus,
         canonical_bytes,
         cid,
@@ -240,6 +387,10 @@ pub struct MethodSignatureMemento {
 pub struct TraitMemento {
     pub name: String,
     pub method_signature_cids: Vec<String>,
+    pub generic_parameters: Vec<GenericParameterMemento>,
+    pub where_bounds: Vec<WhereBoundCitation>,
+    pub handling: String,
+    pub loss_record: Vec<TypeDeclLossRecord>,
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
@@ -293,6 +444,8 @@ pub fn lift_trait_decl(
         }
     }
     let trait_locus = Locus::from_span(item.ident.span(), file_path);
+    let generics = generic_memento_parts(&item.generics);
+    let handling = generics.handling();
     let sig_cids: Vec<Arc<Value>> = signatures
         .iter()
         .map(|s| Value::string(s.cid.clone()))
@@ -302,6 +455,37 @@ pub fn lift_trait_decl(
         ("kind", Value::string("trait")),
         ("name", Value::string(trait_name.clone())),
         ("methodSignatures", Value::array(sig_cids.clone())),
+        (
+            "genericParameters",
+            Value::array(
+                generics
+                    .parameters
+                    .iter()
+                    .map(GenericParameterMemento::to_value)
+                    .collect(),
+            ),
+        ),
+        (
+            "whereBounds",
+            Value::array(
+                generics
+                    .where_bounds
+                    .iter()
+                    .map(WhereBoundCitation::to_value)
+                    .collect(),
+            ),
+        ),
+        ("handling", Value::string(handling.clone())),
+        (
+            "lossRecord",
+            Value::array(
+                generics
+                    .loss_record
+                    .iter()
+                    .map(TypeDeclLossRecord::to_value)
+                    .collect(),
+            ),
+        ),
         ("locus", trait_locus.to_value()),
     ]);
     let trait_bytes = jcs_bytes_of_value(&trait_value);
@@ -311,6 +495,10 @@ pub fn lift_trait_decl(
         TraitMemento {
             name: trait_name,
             method_signature_cids: signatures.iter().map(|s| s.cid.clone()).collect(),
+            generic_parameters: generics.parameters,
+            where_bounds: generics.where_bounds,
+            handling,
+            loss_record: generics.loss_record,
             locus: trait_locus,
             canonical_bytes: trait_bytes,
             cid: trait_cid,
@@ -326,6 +514,10 @@ pub struct ImplMemento {
     pub target_type: String,
     pub trait_name: Option<String>,
     pub method_cids: Vec<String>,
+    pub generic_parameters: Vec<GenericParameterMemento>,
+    pub where_bounds: Vec<WhereBoundCitation>,
+    pub handling: String,
+    pub loss_record: Vec<TypeDeclLossRecord>,
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
@@ -358,6 +550,8 @@ pub fn lift_impl_block(
     }
 
     let locus = Locus::from_span(item.impl_token.span, file_path);
+    let generics = generic_memento_parts(&item.generics);
+    let handling = generics.handling();
     let method_cids: Vec<String> = methods.iter().map(|m| m.cid.clone()).collect();
     let method_cids_arr: Vec<Arc<Value>> = method_cids
         .iter()
@@ -373,6 +567,37 @@ pub fn lift_impl_block(
         ("targetType", Value::string(target_type.clone())),
         ("traitName", trait_value),
         ("methodCids", Value::array(method_cids_arr)),
+        (
+            "genericParameters",
+            Value::array(
+                generics
+                    .parameters
+                    .iter()
+                    .map(GenericParameterMemento::to_value)
+                    .collect(),
+            ),
+        ),
+        (
+            "whereBounds",
+            Value::array(
+                generics
+                    .where_bounds
+                    .iter()
+                    .map(WhereBoundCitation::to_value)
+                    .collect(),
+            ),
+        ),
+        ("handling", Value::string(handling.clone())),
+        (
+            "lossRecord",
+            Value::array(
+                generics
+                    .loss_record
+                    .iter()
+                    .map(TypeDeclLossRecord::to_value)
+                    .collect(),
+            ),
+        ),
         ("locus", locus.to_value()),
     ]);
     let canonical_bytes = jcs_bytes_of_value(&value);
@@ -383,6 +608,10 @@ pub fn lift_impl_block(
             target_type,
             trait_name,
             method_cids,
+            generic_parameters: generics.parameters,
+            where_bounds: generics.where_bounds,
+            handling,
+            loss_record: generics.loss_record,
             locus,
             canonical_bytes,
             cid,
@@ -452,8 +681,127 @@ fn extract_formals_from_sig(sig: &syn::Signature) -> (Vec<String>, Vec<Sort>) {
     (names, sorts)
 }
 
+fn generic_memento_parts(generics: &syn::Generics) -> GenericMementoParts {
+    let mut parts = GenericMementoParts::default();
+
+    for param in &generics.params {
+        match param {
+            syn::GenericParam::Type(param) => {
+                parts.parameters.push(GenericParameterMemento {
+                    name: param.ident.to_string(),
+                    kind: "type".to_string(),
+                });
+                if !param.bounds.is_empty() {
+                    let predicate = format!(
+                        "{} : {}",
+                        param.ident,
+                        param
+                            .bounds
+                            .iter()
+                            .map(normalized_tokens)
+                            .collect::<Vec<_>>()
+                            .join(" + ")
+                    );
+                    push_where_bound(&mut parts, predicate, type_bounds_supported(&param.bounds));
+                }
+            }
+            syn::GenericParam::Lifetime(param) => {
+                parts.parameters.push(GenericParameterMemento {
+                    name: param.lifetime.to_string(),
+                    kind: "lifetime".to_string(),
+                });
+                if !param.bounds.is_empty() {
+                    let predicate = format!(
+                        "{} : {}",
+                        param.lifetime,
+                        param
+                            .bounds
+                            .iter()
+                            .map(normalized_tokens)
+                            .collect::<Vec<_>>()
+                            .join(" + ")
+                    );
+                    push_where_bound(&mut parts, predicate, true);
+                }
+            }
+            syn::GenericParam::Const(param) => {
+                parts.parameters.push(GenericParameterMemento {
+                    name: param.ident.to_string(),
+                    kind: "const".to_string(),
+                });
+            }
+        }
+    }
+
+    if let Some(where_clause) = &generics.where_clause {
+        for predicate in &where_clause.predicates {
+            let supported = where_predicate_supported(predicate);
+            push_where_bound(&mut parts, normalized_tokens(predicate), supported);
+        }
+    }
+
+    parts
+}
+
+fn push_where_bound(parts: &mut GenericMementoParts, predicate: String, supported: bool) {
+    parts.where_bounds.push(WhereBoundCitation {
+        concept: "concept:where-bound".to_string(),
+        predicate: predicate.clone(),
+    });
+    if !supported {
+        parts.loss_record.push(TypeDeclLossRecord {
+            loss: LOSS_GENERICS_BOUNDS_NOT_DISCHARGED.to_string(),
+            detail: predicate,
+        });
+    }
+}
+
+fn where_predicate_supported(predicate: &syn::WherePredicate) -> bool {
+    match predicate {
+        syn::WherePredicate::Lifetime(_) => true,
+        syn::WherePredicate::Type(predicate) => type_bounds_supported(&predicate.bounds),
+        _ => false,
+    }
+}
+
+fn type_bounds_supported(
+    bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::Token![+]>,
+) -> bool {
+    bounds.iter().all(type_bound_supported)
+}
+
+fn type_bound_supported(bound: &syn::TypeParamBound) -> bool {
+    match bound {
+        syn::TypeParamBound::Trait(bound) => trait_bound_supported(bound),
+        syn::TypeParamBound::Lifetime(_) => true,
+        syn::TypeParamBound::PreciseCapture(_) | syn::TypeParamBound::Verbatim(_) => false,
+        _ => false,
+    }
+}
+
+fn trait_bound_supported(bound: &syn::TraitBound) -> bool {
+    bound.paren_token.is_none()
+        && bound
+            .path
+            .segments
+            .iter()
+            .all(|segment| match &segment.arguments {
+                syn::PathArguments::None => true,
+                syn::PathArguments::AngleBracketed(args) => args.args.iter().all(|arg| {
+                    matches!(
+                        arg,
+                        syn::GenericArgument::Lifetime(_) | syn::GenericArgument::Type(_)
+                    )
+                }),
+                syn::PathArguments::Parenthesized(_) => false,
+            })
+}
+
+fn normalized_tokens<T: ToTokens>(node: T) -> String {
+    node.to_token_stream().to_string()
+}
+
 fn type_name(ty: &syn::Type) -> String {
-    use quote::ToTokens;
     ty.to_token_stream().to_string().replace(' ', "")
 }
 
@@ -468,7 +816,7 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
             ("name", Value::string(name.clone())),
         ]),
         // Function / Dependent sorts (added by #361) aren't yet
-        // produced by the type_decl lifter — emit as opaque so the
+        // produced by the type_decl lifter - emit as opaque so the
         // type_decl canonical bytes stay valid when Sort variants
         // expand. Translating them faithfully is part of #384 A.1.
         Sort::Function { .. } | Sort::Dependent { .. } => Value::object([

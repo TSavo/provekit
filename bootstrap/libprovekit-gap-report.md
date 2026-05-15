@@ -186,3 +186,15 @@ The D1 audit classified 64 rows as `term-emitter-unsupported`. D4 resolves all 6
 | `unsupported unit expression Expr::Match` | 4 | Extend. Unit tail matches lower as the match statement followed by `return(unit)`. |
 
 Totals: extend 58, accepted loss 6, bootstrap non-goal 0.
+
+### D5 resolution of complex-generic + nested-item
+
+D5 extends Rust TypeDeclMemento construction in `implementations/rust/provekit-walk/` with additive fields for generic parameter slots, where-bound citations, handling, and loss records. Generic parameters are recorded as typed slots with `type`, `lifetime`, or `const` kind. Inline generic bounds and where-clause predicates are recorded as `concept:where-bound` citations. Bounds that include associated type bindings, associated const bindings, precise captures, parenthesized trait bounds, or verbatim bound syntax remain accepted as `handles-partially-with-loss-record` under the named dimension `generics-bounds-not-discharged` instead of causing a `complex-generic` refusal.
+
+The three checked-in `nested-item` rows are:
+
+- `provekit-ir-types::lib::migration_json_to_canonical`
+- `provekit-ir-types::lib::proof_run_json_to_canonical`
+- `provekit-ir-types::lib::serde_json_to_canonical_value`
+
+Each row is caused by a function-local `use provekit_canonicalizer::Value as CanonicalValue;` item. D5 treats function-local item statements as non-executable for term emission, so they no longer cause a `nested-item` refusal. Any remaining refusal for these functions belongs to later unsupported expression classes, not to `nested-item`.
