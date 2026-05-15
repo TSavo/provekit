@@ -21,19 +21,26 @@
     },
     "post": {
       "homomorphism_obligation": {
-        "kind": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
+        "kind": "structural-wp-abstraction",
         "source": "blake3-512:7f57af775b85b8ffdfd32f994365489acf3485bd6f1505cd4d7da5d548e7fa1cf634d6e3c64f836fc0c2beb6f4e6d767a90fd2abe499cf0ed712f99d2d0aeea8",
-        "target": "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
+        "target": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
       },
       "kind": "contract-renaming-morphism",
       "literal_map": {},
+      "mode_bindings": {
+        "mode": {
+          "args": [],
+          "kind": "ctor",
+          "name": "Wrapping"
+        }
+      },
       "operator_map": {
         "go:add": "add"
       },
       "renaming_map": {},
       "representation_map": {},
       "source_contract_cid": "blake3-512:7f57af775b85b8ffdfd32f994365489acf3485bd6f1505cd4d7da5d548e7fa1cf634d6e3c64f836fc0c2beb6f4e6d767a90fd2abe499cf0ed712f99d2d0aeea8",
-      "target_shape_cid": "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
+      "target_shape_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
     },
     "effects": {
       "effects": []
@@ -46,13 +53,13 @@
     },
     "input_cids": [
       "blake3-512:7f57af775b85b8ffdfd32f994365489acf3485bd6f1505cd4d7da5d548e7fa1cf634d6e3c64f836fc0c2beb6f4e6d767a90fd2abe499cf0ed712f99d2d0aeea8",
-      "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
+      "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
     ]
   },
-  "cid": "blake3-512:6c616a41ae8da15229f39e6e4014426b78397d88c7c24dd88c501e7858e6662308f02eb93e41497bcf7908da378e0969c85abc1f2ee258ae9019cc29baf470e8",
+  "cid": "blake3-512:374977b42b11a27cd16c1b0a8566c584cd6af66450837d36c0598291881fff9b3baf2f904fc0732a7980cbd3cb26837b9ae783d2ddbfb7c3eb95f5122ef412bc",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "G6NRvh0+pkgGevRoSn9dwA5XSnQpRBoSSEYfuP0UwZvSQLTuod4gRReIrBkryBoUyhFqIXA71Df7Faom89feBA=="
+    "sig_b64": "lgabmxMnwxhC+3sXwsA+4QoIvF7R3orQfuIpnu3DH20wOtGAB4fyNOvJn0FRvqSkQ1KdpKNxWrJvkmWoztzJCw=="
   }
 }

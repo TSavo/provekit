@@ -21,17 +21,24 @@
     },
     "post": {
       "homomorphism_obligation": {
-        "kind": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
+        "kind": "structural-wp-abstraction",
         "source": "blake3-512:a05388843f2a7def6303e3d742c1fd458a159936f4a1b35017b4a50d6934b6160b2a09ce45afda3e08363b2b628ce58d30e44275cbe3221e0a858171f48ff918",
-        "target": "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
+        "target": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
       },
       "kind": "contract-renaming-morphism",
       "literal_map": {},
+      "mode_bindings": {
+        "mode": {
+          "args": [],
+          "kind": "ctor",
+          "name": "Wrapping"
+        }
+      },
       "operator_map": {},
       "renaming_map": {},
       "representation_map": {},
       "source_contract_cid": "blake3-512:a05388843f2a7def6303e3d742c1fd458a159936f4a1b35017b4a50d6934b6160b2a09ce45afda3e08363b2b628ce58d30e44275cbe3221e0a858171f48ff918",
-      "target_shape_cid": "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
+      "target_shape_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
     },
     "effects": {
       "effects": []
@@ -44,13 +51,13 @@
     },
     "input_cids": [
       "blake3-512:a05388843f2a7def6303e3d742c1fd458a159936f4a1b35017b4a50d6934b6160b2a09ce45afda3e08363b2b628ce58d30e44275cbe3221e0a858171f48ff918",
-      "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824"
+      "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
     ]
   },
-  "cid": "blake3-512:3cdc24ec7b5be3959d3361f24fca38ae105da5182356f52effb395f3a2b74fcdb3addb2381c3687c6e88c3efb542fe4e453e07e5606042cac762110ed9d7503f",
+  "cid": "blake3-512:65529c47a7b568202f69f57382574047e26b7b719f6a0707136b8fd4bc30059fb14d12e27809186545c332fb952d53df8ba577c45514a5fce02a4e8174b8b95a",
   "signature": {
     "alg": "ed25519",
     "key_id": "UNSIGNED_DEV_ONLY",
-    "sig_b64": "YzdiU0PiLRfxlL1m8zdeL6AwogOPZNhMjJ1F9WfdIonZJN+MvPmVZL2zjka5GiqauzPcVJ2Dy0HISTpslbS7Cg=="
+    "sig_b64": "xBnQsCAyHKtvq4CrffJDz4hcrlC41bYR0t8QZRZTzpPsxEWdtd8txKZs2/rwZyyv31BHT0lrE3LPmvRJnl3DCQ=="
   }
 }
