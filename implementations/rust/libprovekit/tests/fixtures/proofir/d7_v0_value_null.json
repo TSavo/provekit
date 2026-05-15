@@ -13,11 +13,7 @@
       "loss": "return-type-user-defined"
     },
     {
-      "detail": "Arc :: new",
-      "loss": "trait-path-truncated"
-    },
-    {
-      "detail": "new",
+      "detail": "Arc::new",
       "loss": "ffi-call-unresolved-effect"
     },
     {
@@ -25,7 +21,7 @@
       "loss": "trait-path-truncated"
     }
   ],
-  "term_surface": "return(call:new(new, [Null]))",
+  "term_surface": "return(call:new(Arc::new, [Null]))",
   "proofir_catalog_ops": [
     {
       "name": "return",
@@ -50,7 +46,7 @@
               "kind": "primitive",
               "name": "FnContract"
             },
-            "value": "new"
+            "value": "Arc::new"
           },
           {
             "kind": "const",
