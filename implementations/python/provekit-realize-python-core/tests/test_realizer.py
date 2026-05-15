@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import blake3
+
 ROOT = Path(__file__).resolve().parents[4]
 PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PKG_SRC) not in sys.path:
@@ -242,6 +244,46 @@ def test_let_term_surface_renders_python_assignment_with_type_ascription() -> No
 
     assert result == {
         "source": "def bind_value(source):\n    result: int = identity(source)\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
+def test_let_continuation_term_surface_flattens_python_statements() -> None:
+    result = emit_stub(
+        function="bind_then_return",
+        params=["source"],
+        param_types=["int"],
+        return_type="int",
+        concept_name=(
+            "let(pattern_bind(a), call:identity(source), "
+            "let(pattern_bind(b), call:identity(a), return(b)))"
+        ),
+    )
+
+    assert result == {
+        "source": (
+            "def bind_then_return(source):\n"
+            "    a = identity(source)\n"
+            "    b = identity(a)\n"
+            "    return b\n"
+        ),
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
+def test_let_continuation_term_surface_omits_skip_tail() -> None:
+    result = emit_stub(
+        function="bind_then_skip",
+        params=["source"],
+        param_types=["int"],
+        return_type="None",
+        concept_name="let(pattern_bind(result), call:identity(source), skip)",
+    )
+
+    assert result == {
+        "source": "def bind_then_skip(source):\n    result = identity(source)\n",
         "is_stub": False,
         "extension": "py",
     }

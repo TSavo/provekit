@@ -417,7 +417,7 @@ def _lower_let_body(
     if inner is None:
         return None
     args = _split_top_level(inner)
-    if len(args) != 2:
+    if len(args) not in {2, 3}:
         return None
     pattern = _lower_pattern(args[0])
     rhs = _lower_term_expression(args[1], params, param_types, return_type)
@@ -425,7 +425,44 @@ def _lower_let_body(
         return None
     if rhs.stub_body is not None:
         return TermBody(rhs.stub_body, True)
-    return TermBody(f"{pattern} = {rhs.text}", False)
+    head = f"{pattern} = {rhs.text}"
+    if len(args) == 2:
+        return TermBody(head, False)
+    continuation = _lower_term_body(args[2], params, param_types, return_type)
+    if continuation is None:
+        return None
+    if continuation.is_stub:
+        return continuation
+    if not continuation.body:
+        return TermBody(head, False)
+    return TermBody(f"{head}\n{continuation.body}", False)
+
+
+def _lower_term_body(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermBody | None:
+    stripped = surface.strip()
+    if stripped == "skip":
+        return TermBody("", False)
+    return_arg = _single_call_arg(stripped, "return")
+    if return_arg is not None:
+        expr = _lower_term_expression(return_arg, params, param_types, return_type)
+        if expr is None:
+            return None
+        if expr.stub_body is not None:
+            return TermBody(expr.stub_body, True)
+        return TermBody(f"return {expr.text}", False)
+    if stripped.startswith("let("):
+        return _lower_let_body(stripped, params, param_types, return_type)
+    expr = _lower_term_expression(stripped, params, param_types, return_type)
+    if expr is None:
+        return None
+    if expr.stub_body is not None:
+        return TermBody(expr.stub_body, True)
+    return TermBody(expr.text or "", False)
 
 
 def _lower_pattern(pattern: str) -> str:
