@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use libprovekit::proofir_bridge::{BridgeError, CatalogIndex, ResolvedNode, ResolvedTerm};
-use libprovekit::proofir_resolve;
+use libprovekit::{proofir_resolve, proofir_unresolve};
 use provekit_ir_types::{Sort, Term};
 use serde_json::json;
 
@@ -47,7 +47,10 @@ fn add_op_resolves_to_op_application_with_catalog_cid() {
         } => {
             assert_eq!(op_definition_cid, expected_cid);
             assert_eq!(args.len(), 2);
-            assert_eq!(resolved.sort, json!({"args": [], "kind": "ctor", "name": "Int"}));
+            assert_eq!(
+                resolved.sort,
+                json!({"args": [], "kind": "ctor", "name": "Int"})
+            );
         }
         ResolvedNode::Literal { .. } => panic!("expected op-application"),
     }
@@ -108,4 +111,56 @@ fn nested_ops_lift_to_nested_op_application_tree() {
         }
     ));
     assert!(matches!(args[1].node, ResolvedNode::Literal { .. }));
+}
+
+#[test]
+fn resolved_term_unresolves_to_original_proofir_term() {
+    let catalog = concept_catalog();
+    let term = add(vec![int_lit(1), int_lit(2)]);
+    let resolved = proofir_resolve(&term, &catalog).unwrap();
+
+    let unresolved = proofir_unresolve(&resolved, &catalog).unwrap();
+
+    assert_eq!(unresolved, term);
+}
+
+#[test]
+fn unknown_op_cid_refuses_with_cid() {
+    let catalog = concept_catalog();
+    let unknown_cid = "bafy-not-in-catalog".to_string();
+    let resolved = ResolvedTerm {
+        node: ResolvedNode::OpApplication {
+            op_definition_cid: unknown_cid.clone(),
+            args: Vec::new(),
+        },
+        sort: json!({"args": [], "kind": "ctor", "name": "Int"}),
+    };
+
+    let err = proofir_unresolve(&resolved, &catalog).unwrap_err();
+
+    assert_eq!(err, BridgeError::UnknownOpCid(unknown_cid));
+}
+
+#[test]
+fn resolved_literal_unresolves_to_const_with_same_value_and_sort() {
+    let catalog = concept_catalog();
+    let resolved = ResolvedTerm {
+        node: ResolvedNode::Literal { value: json!(42) },
+        sort: json!({"args": [], "kind": "ctor", "name": "Int"}),
+    };
+
+    let unresolved = proofir_unresolve(&resolved, &catalog).unwrap();
+
+    assert_eq!(unresolved, int_lit(42));
+}
+
+#[test]
+fn nested_resolved_term_unresolves_to_original_proofir_tree() {
+    let catalog = concept_catalog();
+    let term = add(vec![add(vec![int_lit(1), int_lit(2)]), int_lit(3)]);
+    let resolved = proofir_resolve(&term, &catalog).unwrap();
+
+    let unresolved = proofir_unresolve(&resolved, &catalog).unwrap();
+
+    assert_eq!(unresolved, term);
 }

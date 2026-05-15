@@ -32,6 +32,8 @@ pub enum ResolvedNode {
 pub enum BridgeError {
     #[error("unknown ProofIR op `{0}`")]
     UnknownOp(String),
+    #[error("unknown ProofIR op CID `{0}`")]
+    UnknownOpCid(String),
     #[error("arity mismatch: expected {expected}, got {actual}")]
     ArityMismatch { expected: usize, actual: usize },
     #[error("sort mismatch for `{op}` argument {index}: expected {expected}, got {actual}")]
@@ -71,7 +73,10 @@ pub struct CatalogOp {
     pub return_sort: Option<ResolvedSort>,
 }
 
-pub fn proofir_resolve(term: &ProofirTerm, catalog: &CatalogIndex) -> Result<ResolvedTerm, BridgeError> {
+pub fn proofir_resolve(
+    term: &ProofirTerm,
+    catalog: &CatalogIndex,
+) -> Result<ResolvedTerm, BridgeError> {
     match term {
         Term::Const { value, sort } => Ok(ResolvedTerm {
             node: ResolvedNode::Literal {
@@ -121,6 +126,35 @@ pub fn proofir_resolve(term: &ProofirTerm, catalog: &CatalogIndex) -> Result<Res
         }
         Term::Var { .. } | Term::Lambda { .. } | Term::Let { .. } => {
             Err(BridgeError::MalformedTerm)
+        }
+    }
+}
+
+pub fn proofir_unresolve(
+    term: &ResolvedTerm,
+    catalog: &CatalogIndex,
+) -> Result<ProofirTerm, BridgeError> {
+    match &term.node {
+        ResolvedNode::Literal { value } => Ok(Term::Const {
+            value: value.clone(),
+            sort: resolved_sort_to_proofir_sort(&term.sort)?,
+        }),
+        ResolvedNode::OpApplication {
+            op_definition_cid,
+            args,
+        } => {
+            let op = catalog
+                .op_by_definition_cid(op_definition_cid)
+                .ok_or_else(|| BridgeError::UnknownOpCid(op_definition_cid.clone()))?;
+            let args = args
+                .iter()
+                .map(|arg| proofir_unresolve(arg, catalog))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(Term::Ctor {
+                name: op.name.clone(),
+                args,
+            })
         }
     }
 }
@@ -200,6 +234,10 @@ impl CatalogIndex {
     fn op(&self, name: &str) -> Option<&CatalogOp> {
         self.ops.get(name)
     }
+
+    fn op_by_definition_cid(&self, cid: &str) -> Option<&CatalogOp> {
+        self.ops.values().find(|op| op.cid == cid)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,6 +291,30 @@ fn proofir_sort_to_resolved_sort(sort: &Sort) -> Result<ResolvedSort, BridgeErro
         | Sort::Float { .. }
         | Sort::Region { .. } => serde_json::to_value(sort).map_err(|_| BridgeError::MalformedTerm),
     }
+}
+
+fn resolved_sort_to_proofir_sort(sort: &ResolvedSort) -> Result<Sort, BridgeError> {
+    let mut sort = sort.clone();
+    if let JsonValue::Object(object) = &mut sort {
+        if object.get("kind") == Some(&JsonValue::String("ctor".to_string())) {
+            let name = object
+                .get("name")
+                .and_then(JsonValue::as_str)
+                .ok_or(BridgeError::MalformedTerm)?
+                .to_string();
+            let has_args = object
+                .get("args")
+                .and_then(JsonValue::as_array)
+                .is_some_and(|args| !args.is_empty());
+            if has_args {
+                return Err(BridgeError::MalformedTerm);
+            }
+
+            return Ok(Sort::Primitive { name });
+        }
+    }
+
+    serde_json::from_value(sort).map_err(|_| BridgeError::MalformedTerm)
 }
 
 fn normalize_sort_value(sort: ResolvedSort) -> ResolvedSort {
