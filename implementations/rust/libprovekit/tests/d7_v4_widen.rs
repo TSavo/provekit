@@ -11,7 +11,49 @@ use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::Term;
 use serde_json::{json, Value as JsonValue};
 
-const EXPECTED_FIXTURE_CID: &str = "blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32";
+struct MethodCase {
+    method: &'static str,
+    fixture_file: &'static str,
+    receipt_file: &'static str,
+    original_needle: &'static str,
+    realize_function: &'static str,
+    params: &'static [&'static str],
+    param_types: &'static [&'static str],
+    return_type: &'static str,
+}
+
+const CASES: &[MethodCase] = &[
+    MethodCase {
+        method: "boolean",
+        fixture_file: "d7_v4_value_boolean.json",
+        receipt_file: "boolean_source_round_trip_receipt.json",
+        original_needle: "pub fn boolean(",
+        realize_function: "boolean",
+        params: &["b"],
+        param_types: &["bool"],
+        return_type: "Arc < Value >",
+    },
+    MethodCase {
+        method: "integer",
+        fixture_file: "d7_v4_value_integer.json",
+        receipt_file: "integer_source_round_trip_receipt.json",
+        original_needle: "pub fn integer(",
+        realize_function: "integer",
+        params: &["n"],
+        param_types: &["i64"],
+        return_type: "Arc < Value >",
+    },
+    MethodCase {
+        method: "string",
+        fixture_file: "d7_v4_value_string.json",
+        receipt_file: "string_source_round_trip_receipt.json",
+        original_needle: "pub fn string<",
+        realize_function: "string<S: Into<String>>",
+        params: &["s"],
+        param_types: &["S"],
+        return_type: "Arc < Value >",
+    },
+];
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -20,7 +62,7 @@ fn repo_root() -> PathBuf {
         .expect("canonical repo root")
 }
 
-fn fixture_path(repo_root: &Path) -> PathBuf {
+fn fixture_path(repo_root: &Path, case: &MethodCase) -> PathBuf {
     repo_root
         .join("implementations")
         .join("rust")
@@ -28,7 +70,7 @@ fn fixture_path(repo_root: &Path) -> PathBuf {
         .join("tests")
         .join("fixtures")
         .join("proofir")
-        .join("d7_v0_value_null.json")
+        .join(case.fixture_file)
 }
 
 fn source_path(repo_root: &Path) -> PathBuf {
@@ -40,19 +82,20 @@ fn source_path(repo_root: &Path) -> PathBuf {
         .join("value.rs")
 }
 
-fn receipt_path(repo_root: &Path, phase: &str) -> PathBuf {
+fn receipt_path(repo_root: &Path, case: &MethodCase) -> PathBuf {
     repo_root
         .join("bootstrap")
-        .join(phase)
-        .join("value_null_source_round_trip_receipt.json")
+        .join("D7-v4")
+        .join(case.receipt_file)
 }
 
-fn scratch_path(repo_root: &Path, name: &str) -> PathBuf {
+fn scratch_path(repo_root: &Path, case: &MethodCase, name: &str) -> PathBuf {
     repo_root
         .join("implementations")
         .join("rust")
         .join("target")
-        .join("d7-v1")
+        .join("d7-v4")
+        .join(case.method)
         .join(name)
 }
 
@@ -84,7 +127,7 @@ fn op_name_for_cid(fixture: &JsonValue, cid: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn value_null_catalog(fixture: &JsonValue) -> CatalogIndex {
+fn value_constructor_catalog(fixture: &JsonValue) -> CatalogIndex {
     let mut catalog = CatalogIndex::new();
     catalog.insert_op(
         "return",
@@ -102,27 +145,6 @@ fn value_null_catalog(fixture: &JsonValue) -> CatalogIndex {
         Some(resolved_sort("Expr")),
     );
     catalog
-}
-
-fn function_name_from_target(fixture: &JsonValue) -> String {
-    fixture["target"]
-        .as_str()
-        .expect("target string")
-        .rsplit("::")
-        .next()
-        .expect("method name")
-        .to_string()
-}
-
-fn return_type_from_loss_record(fixture: &JsonValue) -> String {
-    fixture["loss_record"]
-        .as_array()
-        .expect("loss_record array")
-        .iter()
-        .find(|loss| loss["loss"] == "return-type-user-defined")
-        .and_then(|loss| loss["detail"].as_str())
-        .expect("return-type-user-defined detail")
-        .to_string()
 }
 
 fn root_concept_name(fixture: &JsonValue, resolved: &ResolvedTerm) -> String {
@@ -158,9 +180,8 @@ fn term_summary(fixture: &JsonValue, resolved: &ResolvedTerm) -> String {
     format!("{} -> sort {}", inner(fixture, resolved), resolved.sort)
 }
 
-fn extract_value_null_slice(source: &str) -> String {
-    let needle = "pub fn null(";
-    let method = source.find(needle).expect("find Value::null method");
+fn extract_method_slice(source: &str, needle: &str) -> String {
+    let method = source.find(needle).expect("find target Value method");
     let start = source[..method]
         .rfind('\n')
         .map(|index| index + 1)
@@ -188,7 +209,7 @@ fn extract_value_null_slice(source: &str) -> String {
         }
     }
 
-    panic!("unterminated Value::null body");
+    panic!("unterminated target Value method body");
 }
 
 fn rustfmt_config(repo_root: &Path) -> Option<PathBuf> {
@@ -245,9 +266,9 @@ fn rustfmt_source(repo_root: &Path, input_label: &str, source: &str) -> (String,
     )
 }
 
-fn unified_diff(repo_root: &Path, original: &str, regenerated: &str) -> String {
-    let original_path = scratch_path(repo_root, "value_null_original.rustfmt.rs");
-    let regenerated_path = scratch_path(repo_root, "value_null_regenerated.rustfmt.rs");
+fn unified_diff(repo_root: &Path, case: &MethodCase, original: &str, regenerated: &str) -> String {
+    let original_path = scratch_path(repo_root, case, "original.rustfmt.rs");
+    let regenerated_path = scratch_path(repo_root, case, "regenerated.rustfmt.rs");
     std::fs::create_dir_all(original_path.parent().expect("diff scratch parent"))
         .expect("create diff scratch dir");
     std::fs::write(&original_path, original).expect("write original rustfmt text");
@@ -303,22 +324,14 @@ fn classify_diff(diff: &str, realization_is_stub: bool, concept_name: &str) -> V
                     "hunk": hunk,
                     "class": "stub-body",
                     "explanation": format!(
-                        "provekit-realize-rust-core emitted its stub body because no body template matched the extracted root concept `{concept_name}`; the current flat API cannot consume the nested resolved body tree."
+                        "provekit-realize-rust-core emitted its stub body because the existing D7 resolved body lowering does not consume this widened Value constructor literal shape; the realized fallback concept is `{concept_name}`. Retire in v5 under the #964/#962 self-host follow-up without minting new ops."
                     ),
-                })
-            } else if hunk.contains("-    Arc::new(Value::Null)")
-                && hunk.contains("+    new(Value::Null)")
-            {
-                json!({
-                    "hunk": hunk,
-                    "class": "name-difference",
-                    "explanation": "provekit-realize-rust-core consumed the resolved body tree and emitted the constructor expression, but the resolved term lacks the receiver prefix recorded by #962 trait-path-truncated.",
                 })
             } else {
                 json!({
                     "hunk": hunk,
                     "class": "structural-difference",
-                    "explanation": "post-rustfmt text differs in AST shape rather than spelling-only identifier changes.",
+                    "explanation": "post-rustfmt text differs in AST shape rather than byte-only spelling.",
                 })
             }
         })
@@ -337,157 +350,187 @@ fn dominant_diff_class(byte_identical: bool, classification: &[JsonValue]) -> St
     }
 }
 
-#[test]
-fn value_null_source_round_trip_receipt_is_complete() {
-    let repo_root = repo_root();
+fn stub_concept_name(source: &str, fallback: &str) -> String {
+    let marker = "provekit-bind canonical: ";
+    source
+        .find(marker)
+        .and_then(|start| {
+            let value_start = start + marker.len();
+            source[value_start..]
+                .find('"')
+                .map(|end| source[value_start..value_start + end].to_string())
+        })
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn run_case(repo_root: &Path, case: &MethodCase) -> JsonValue {
     let fixture_text =
-        std::fs::read_to_string(fixture_path(&repo_root)).expect("read D7-v0 value null fixture");
-    let fixture: JsonValue = serde_json::from_str(&fixture_text).expect("parse D7-v0 fixture");
+        std::fs::read_to_string(fixture_path(repo_root, case)).expect("read D7-v4 fixture");
+    let fixture: JsonValue = serde_json::from_str(&fixture_text).expect("parse D7-v4 fixture");
     let fixture_cid = json_cid(&fixture).expect("fixture CID");
-    assert_eq!(fixture_cid, EXPECTED_FIXTURE_CID);
 
     let term: Term =
         serde_json::from_value(fixture["proofir_term"].clone()).expect("decode ProofIR term");
-    let catalog = value_null_catalog(&fixture);
-    let resolved = proofir_resolve(&term, &catalog).expect("resolve D7-v0 ProofIR term");
+    let catalog = value_constructor_catalog(&fixture);
+    let resolved = proofir_resolve(&term, &catalog).expect("resolve D7-v4 ProofIR term");
     let resolved_jcs = serializable_jcs(&resolved).expect("ResolvedTerm JCS");
     let resolved_summary = term_summary(&fixture, &resolved);
 
-    let function = function_name_from_target(&fixture);
-    let params: Vec<String> = Vec::new();
-    let param_types: Vec<String> = Vec::new();
-    let return_type = return_type_from_loss_record(&fixture);
+    let params: Vec<String> = case
+        .params
+        .iter()
+        .map(|param| (*param).to_string())
+        .collect();
+    let param_types: Vec<String> = case
+        .param_types
+        .iter()
+        .map(|ty| (*ty).to_string())
+        .collect();
     let concept_name = root_concept_name(&fixture, &resolved);
-    assert!(
-        !fixture["loss_record"]
-            .as_array()
-            .expect("loss_record array")
-            .iter()
-            .any(|loss| {
-                loss["loss"] == "trait-path-truncated" && loss["detail"] == "Arc :: new"
-            }),
-        "D7-v3 fixture must retire Arc::new trait-path-truncated loss"
-    );
 
     let source_text =
-        std::fs::read_to_string(source_path(&repo_root)).expect("read canonicalizer value.rs");
-    let original_slice = extract_value_null_slice(&source_text);
+        std::fs::read_to_string(source_path(repo_root)).expect("read canonicalizer value.rs");
+    let original_slice = extract_method_slice(&source_text, case.original_needle);
     let original_slice_cid = blake3_512_of(original_slice.as_bytes());
-    let (original_rustfmt, original_rustfmt_command) =
-        rustfmt_source(&repo_root, "value_null_original.rs", &original_slice);
+    let (original_rustfmt, original_rustfmt_command) = rustfmt_source(
+        repo_root,
+        &format!("value_{}_original.rs", case.method),
+        &original_slice,
+    );
 
-    let v3_realization = provekit_realize_rust_core::emit_from_resolved(
+    let realization = provekit_realize_rust_core::emit_from_resolved(
         &resolved_jcs,
-        &function,
+        case.realize_function,
         &params,
         &param_types,
-        &return_type,
+        case.return_type,
     );
-    let (v3_regenerated_rustfmt, v3_regenerated_rustfmt_command) = rustfmt_source(
-        &repo_root,
-        "value_null_regenerated_v3.rs",
-        &v3_realization.source,
+    let (regenerated_rustfmt, regenerated_rustfmt_command) = rustfmt_source(
+        repo_root,
+        &format!("value_{}_regenerated.rs", case.method),
+        &realization.source,
     );
-    let v3_byte_identical = v3_regenerated_rustfmt.as_bytes() == original_rustfmt.as_bytes();
-    let v3_diff = unified_diff(&repo_root, &original_rustfmt, &v3_regenerated_rustfmt);
-    let v3_classification = classify_diff(&v3_diff, v3_realization.is_stub, &concept_name);
-    let v3_verdict = if v3_byte_identical {
+    let byte_identical = regenerated_rustfmt.as_bytes() == original_rustfmt.as_bytes();
+    let diff = unified_diff(repo_root, case, &original_rustfmt, &regenerated_rustfmt);
+    let diff_concept_name = if realization.is_stub {
+        stub_concept_name(&realization.source, &concept_name)
+    } else {
+        concept_name
+    };
+    let classification = classify_diff(&diff, realization.is_stub, &diff_concept_name);
+    let verdict = if byte_identical {
         "BYTE_IDENTICAL"
     } else {
         "CHARACTERIZED_DIFF"
     };
-    let v3_dominant_diff_class = dominant_diff_class(v3_byte_identical, &v3_classification);
-    let v3_regenerated_source_cid = blake3_512_of(v3_regenerated_rustfmt.as_bytes());
+    let dominant_diff_class = dominant_diff_class(byte_identical, &classification);
+    let regenerated_source_cid = blake3_512_of(regenerated_rustfmt.as_bytes());
     let original_slice_post_rustfmt_cid = blake3_512_of(original_rustfmt.as_bytes());
 
-    if !v3_byte_identical {
+    if !byte_identical {
         assert!(
-            !v3_classification.is_empty(),
-            "non-identical source must have a classified diff hunk"
+            !classification.is_empty(),
+            "non-identical source must have a classified diff hunk for {}",
+            case.method
         );
     }
 
-    assert_eq!(v3_verdict, "BYTE_IDENTICAL");
-    assert_eq!(v3_dominant_diff_class, "byte-identical");
-    assert_eq!(v3_diff, "");
-    assert_eq!(v3_regenerated_source_cid, original_slice_post_rustfmt_cid);
-
-    let v3_receipt = json!({
+    json!({
         "version": "1",
         "target": {
             "crate": "provekit-canonicalizer",
-            "function": "impl Value::null",
+            "function": format!("impl Value::{}", case.method),
             "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs",
         },
         "pipeline": {
-            "step_1_fixture_cid": EXPECTED_FIXTURE_CID,
+            "step_1_fixture_cid": fixture_cid,
             "step_2_resolve": format!("summary={resolved_summary}; jcs={resolved_jcs}"),
             "step_3_4_realize_command": format!(
-                "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, {function:?}, &[], &[], {return_type:?})"
+                "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, {:?}, {:?}, {:?}, {:?})",
+                case.realize_function, params, param_types, case.return_type
             ),
             "step_3_4_realize_input": {
                 "resolved_term_json": resolved_jcs,
-                "function": function,
+                "function": case.realize_function,
                 "params": params,
                 "param_types": param_types,
-                "return_type": return_type,
+                "return_type": case.return_type,
             },
-            "step_3_4_regenerated_source": v3_realization.source,
+            "step_3_4_regenerated_source": realization.source,
             "step_5_original_slice_cid": original_slice_cid,
-            "step_6_rustfmt_command": format!("{v3_regenerated_rustfmt_command}\n{original_rustfmt_command}"),
-            "step_7_byte_identical_post_rustfmt": v3_byte_identical,
-            "step_8_unified_diff": v3_diff,
-            "step_9_diff_classification": v3_classification,
-            "step_10_dominant_diff_class": v3_dominant_diff_class.clone(),
-            "step_11_expected_diff_shape": "post-rustfmt byte-identical",
-            "step_12_empirical_root_cause": "#962 trait-path-truncated is retired for this call:new Value::null body because the resolved term now carries Arc::new.",
-            "regenerated_source_cid": v3_regenerated_source_cid,
+            "step_6_rustfmt_command": format!("{regenerated_rustfmt_command}\n{original_rustfmt_command}"),
+            "step_7_byte_identical_post_rustfmt": byte_identical,
+            "step_8_unified_diff": diff,
+            "step_9_diff_classification": classification,
+            "step_10_dominant_diff_class": dominant_diff_class.clone(),
+            "step_11_expected_diff_shape": "BYTE_IDENTICAL or CHARACTERIZED_DIFF; D7-v4 is diagnostic-only widening",
+            "step_12_empirical_root_cause": if byte_identical {
+                "The existing D7 resolved body lowering emitted the checked-in Value constructor body byte-for-byte after rustfmt.".to_string()
+            } else {
+                "The existing D7 resolved body lowering does not consume widened Value constructor literal shapes beyond Value::Null, so realize-rust-core falls through to the stub-body path; retire under #964/#962 follow-up without extending this diagnostic chunk.".to_string()
+            },
+            "regenerated_source_cid": regenerated_source_cid,
             "original_slice_post_rustfmt_cid": original_slice_post_rustfmt_cid,
         },
-        "verdict": v3_verdict,
-        "dominant_diff_class": v3_dominant_diff_class,
-        "next_action": "D7 single-function terminus reached for Value::null; next chunks widen the empirical claim to module-level source round trips.",
-    });
+        "verdict": verdict,
+        "dominant_diff_class": dominant_diff_class,
+        "next_action": "D7-v4 is diagnostic-only. v5 should retire any CHARACTERIZED_DIFF classes surfaced here without minting new ProofIR ops or substrate concepts.",
+    })
+}
 
-    if let Ok(out_dir) = std::env::var("D7_V3_RECEIPT_OUT_DIR") {
-        let v3_receipt_path =
-            PathBuf::from(out_dir).join("value_null_source_round_trip_receipt.json");
-        std::fs::create_dir_all(v3_receipt_path.parent().expect("receipt parent"))
-            .expect("create generated D7-v3 receipt dir");
-        std::fs::write(
-            &v3_receipt_path,
-            format!(
-                "{}\n",
-                serde_json::to_string_pretty(&v3_receipt).expect("pretty v3 receipt")
-            ),
-        )
-        .expect("write generated D7-v3 receipt");
-
-        let v3_parsed: JsonValue = serde_json::from_str(
-            &std::fs::read_to_string(&v3_receipt_path).expect("read generated D7-v3 receipt"),
-        )
-        .expect("parse generated D7-v3 receipt");
-        assert_eq!(v3_parsed["verdict"].as_str(), Some("BYTE_IDENTICAL"));
-        assert_eq!(
-            v3_parsed["dominant_diff_class"].as_str(),
-            Some("byte-identical")
+#[test]
+fn widened_value_constructor_receipts_are_produced() {
+    let repo_root = repo_root();
+    for case in CASES {
+        let receipt = run_case(&repo_root, case);
+        let verdict = receipt["verdict"].as_str().expect("receipt verdict");
+        assert!(
+            matches!(verdict, "BYTE_IDENTICAL" | "CHARACTERIZED_DIFF" | "BLOCKED"),
+            "unexpected verdict for {}: {verdict}",
+            case.method
         );
-        println!("v3_receipt_path={}", v3_receipt_path.display());
-        println!("v3_verdict={v3_verdict}");
-        return;
-    }
 
-    let v3_receipt_path = receipt_path(&repo_root, "D7-v3");
-    let v3_parsed: JsonValue = serde_json::from_str(
-        &std::fs::read_to_string(&v3_receipt_path).expect("read committed D7-v3 receipt"),
-    )
-    .expect("parse committed D7-v3 receipt");
-    assert_eq!(v3_parsed, v3_receipt, "committed D7-v3 receipt drifted");
-    assert_eq!(v3_parsed["verdict"].as_str(), Some("BYTE_IDENTICAL"));
-    assert_eq!(
-        v3_parsed["dominant_diff_class"].as_str(),
-        Some("byte-identical")
-    );
-    println!("v3_receipt_path={}", v3_receipt_path.display());
-    println!("v3_verdict={v3_verdict}");
+        if let Ok(out_dir) = std::env::var("D7_V4_RECEIPT_OUT_DIR") {
+            let path = PathBuf::from(out_dir).join(case.receipt_file);
+            std::fs::create_dir_all(path.parent().expect("receipt parent"))
+                .expect("create generated D7-v4 receipt dir");
+            std::fs::write(
+                &path,
+                format!(
+                    "{}\n",
+                    serde_json::to_string_pretty(&receipt).expect("pretty receipt")
+                ),
+            )
+            .expect("write generated D7-v4 receipt");
+            println!(
+                "d7_v4_{} verdict={} fixture_cid={} generated_receipt={}",
+                case.method,
+                verdict,
+                receipt["pipeline"]["step_1_fixture_cid"]
+                    .as_str()
+                    .expect("fixture cid"),
+                path.display()
+            );
+            continue;
+        }
+
+        let path = receipt_path(&repo_root, case);
+        let committed_text = std::fs::read_to_string(&path).expect("read committed D7-v4 receipt");
+        let committed: JsonValue =
+            serde_json::from_str(&committed_text).expect("parse committed D7-v4 receipt");
+        assert_eq!(
+            committed, receipt,
+            "committed D7-v4 receipt drifted for {}",
+            case.method
+        );
+        println!(
+            "d7_v4_{} verdict={} fixture_cid={} receipt={}",
+            case.method,
+            verdict,
+            receipt["pipeline"]["step_1_fixture_cid"]
+                .as_str()
+                .expect("fixture cid"),
+            path.display()
+        );
+    }
 }
