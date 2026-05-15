@@ -1040,6 +1040,80 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
         }
         Expr::Call(call) => lower_call_expr_to_value_term(call, ctx),
         Expr::MethodCall(method) => lower_method_call_expr_to_value_term(method, ctx),
+        Expr::Closure(closure) => {
+            if closure.asyncness.is_some() {
+                return Err("unsupported async closure in value position".to_string());
+            }
+            if closure.capture.is_some() {
+                return Err("unsupported move closure in value position".to_string());
+            }
+            let mut params = Vec::new();
+            let mut closure_ctx = ctx.clone();
+            for input in &closure.inputs {
+                let mut bindings = match input {
+                    syn::Pat::Ident(ident) => vec![(ident.ident.to_string(), None)],
+                    syn::Pat::Type(pat_type) => match &*pat_type.pat {
+                        syn::Pat::Ident(ident) => {
+                            vec![(ident.ident.to_string(), sort_from_type(&pat_type.ty))]
+                        }
+                        _ => {
+                            return Err(
+                                "unsupported closure parameter destructuring pattern".to_string()
+                            );
+                        }
+                    },
+                    syn::Pat::Tuple(tuple) if closure.inputs.len() == 1 => {
+                        let mut tuple_bindings = Vec::new();
+                        for elem in &tuple.elems {
+                            match elem {
+                                syn::Pat::Ident(ident) => {
+                                    tuple_bindings.push((ident.ident.to_string(), None))
+                                }
+                                syn::Pat::Type(pat_type) => {
+                                    let syn::Pat::Ident(ident) = &*pat_type.pat else {
+                                        return Err(
+                                            "unsupported closure parameter destructuring pattern"
+                                                .to_string(),
+                                        );
+                                    };
+                                    tuple_bindings.push((
+                                        ident.ident.to_string(),
+                                        sort_from_type(&pat_type.ty),
+                                    ));
+                                }
+                                _ => {
+                                    return Err(
+                                        "unsupported closure parameter destructuring pattern"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        tuple_bindings
+                    }
+                    _ => {
+                        return Err(
+                            "unsupported closure parameter destructuring pattern".to_string()
+                        );
+                    }
+                };
+                for (name, sort) in bindings.drain(..) {
+                    closure_ctx = closure_ctx.with_var(name.clone(), sort);
+                    params.push(AlgebraTerm::Symbol(name));
+                }
+            }
+            ctx.add_loss(
+                "closure-captures-environment",
+                closure.to_token_stream().to_string(),
+            );
+            Ok(AlgebraTerm::op(
+                "closure",
+                vec![
+                    AlgebraTerm::List(params),
+                    lower_expr_to_value_term(&closure.body, &closure_ctx)?,
+                ],
+            ))
+        }
         Expr::Array(array) => {
             let items = array
                 .elems
