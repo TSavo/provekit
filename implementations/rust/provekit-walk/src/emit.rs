@@ -158,6 +158,10 @@ const LOSS_ABI_ATTRIBUTE_NOT_CARRIED: &str = "abi-attribute-not-carried";
 /// retained only as an opaque no-op in the emitted term.
 const LOSS_STATEMENT_MACRO: &str = "statement-macro";
 
+/// Accepted-loss dimension for `let mut` bindings whose mutability marker is
+/// not represented in the let pattern term.
+const LOSS_LET_BINDING_MUTABILITY: &str = "let-binding-mutability";
+
 /// Accepted-loss dimension for boolean `let` expressions whose pattern test is
 /// kept but whose binding semantics are not fully represented during bootstrap.
 const LOSS_D4_EXPR_LET: &str = "Expr::Let";
@@ -626,24 +630,23 @@ fn lower_local_binding_to_stmt(
     rest: &[Stmt],
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
-    let Some(name) = simple_binding_name(&local.pat) else {
-        return Err("unsupported let-binding pattern".to_string());
-    };
+    let pattern = lower_local_let_pattern(&local.pat, ctx)?;
     let Some(init) = &local.init else {
         return Err("unsupported let-binding without initializer".to_string());
     };
     let value = lower_expr_to_value_term(&init.expr, ctx)?;
     let declared_sort = local_pat_type(&local.pat).and_then(sort_from_type);
     let inferred_sort = declared_sort.or_else(|| expr_sort(&init.expr, ctx));
-    let nested_ctx = ctx.with_var(name.clone(), inferred_sort);
-    let body = lower_stmts_to_stmt(rest, &nested_ctx)?;
+    let body = match pattern.binding_name() {
+        Some(name) => {
+            let nested_ctx = ctx.with_var(name, inferred_sort);
+            lower_stmts_to_stmt(rest, &nested_ctx)?
+        }
+        None => lower_stmts_to_stmt(rest, ctx)?,
+    };
     Ok(AlgebraTerm::op(
         "let",
-        vec![
-            AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(name)]),
-            value,
-            body,
-        ],
+        vec![pattern.into_term(), value, body],
     ))
 }
 
@@ -1478,11 +1481,44 @@ fn type_surface(ty: &Type) -> String {
     ty.to_token_stream().to_string()
 }
 
-fn simple_binding_name(pat: &syn::Pat) -> Option<String> {
+enum LocalLetPattern {
+    Bind(String),
+    Wild,
+}
+
+impl LocalLetPattern {
+    fn binding_name(&self) -> Option<String> {
+        match self {
+            LocalLetPattern::Bind(name) => Some(name.clone()),
+            LocalLetPattern::Wild => None,
+        }
+    }
+
+    fn into_term(self) -> AlgebraTerm {
+        match self {
+            LocalLetPattern::Bind(name) => {
+                AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(name)])
+            }
+            LocalLetPattern::Wild => AlgebraTerm::op("pattern_wild", vec![]),
+        }
+    }
+}
+
+fn lower_local_let_pattern(
+    pat: &syn::Pat,
+    ctx: &LoweringContext,
+) -> Result<LocalLetPattern, String> {
     match pat {
-        syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
-        syn::Pat::Type(pat_type) => simple_binding_name(&pat_type.pat),
-        _ => None,
+        syn::Pat::Ident(ident) => {
+            let name = ident.ident.to_string();
+            if ident.mutability.is_some() {
+                ctx.add_loss(LOSS_LET_BINDING_MUTABILITY, name.clone());
+            }
+            Ok(LocalLetPattern::Bind(name))
+        }
+        syn::Pat::Type(pat_type) => lower_local_let_pattern(&pat_type.pat, ctx),
+        syn::Pat::Wild(_) => Ok(LocalLetPattern::Wild),
+        _ => Err("unsupported let-binding pattern".to_string()),
     }
 }
 
