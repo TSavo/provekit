@@ -162,6 +162,91 @@ def test_unknown_concept_falls_back_to_python_stub() -> None:
     }
 
 
+def test_method_term_surface_renders_python_method_call() -> None:
+    result = emit_stub(
+        function="trim",
+        params=["value"],
+        param_types=["str"],
+        return_type="str",
+        concept_name="return(method:strip(value, []))",
+    )
+
+    assert result == {
+        "source": "def trim(value):\n    return value.strip()\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
+def test_method_term_surface_uses_libprovekit_body_template_binding() -> None:
+    result = emit_stub(
+        function="value_string",
+        params=["text"],
+        param_types=["str"],
+        return_type="Value",
+        concept_name="method:string(Value, [text])",
+    )
+
+    assert result == {
+        "source": "def value_string(text):\n    return Value.string(text)\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
+def test_call_term_surface_renders_python_call() -> None:
+    result = emit_stub(
+        function="reserve_text",
+        params=["capacity"],
+        param_types=["int"],
+        return_type="str",
+        concept_name="return(call:String::with_capacity(capacity))",
+    )
+
+    assert result == {
+        "source": "def reserve_text(capacity):\n    return str()\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
+def test_unsupported_qualified_call_term_surface_emits_cited_stub() -> None:
+    result = emit_stub(
+        function="unknown_call",
+        params=["x"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="return(call:Widget::build(x))",
+    )
+
+    assert result == {
+        "source": (
+            "def unknown_call(x):\n"
+            "    # provekit-realize-python: unsupported canonical call `Widget::build`; "
+            "no Python shim matched `call:Widget::build(x)`\n"
+            '    raise NotImplementedError("provekit-bind canonical: call:Widget::build")\n'
+        ),
+        "is_stub": True,
+        "extension": "py",
+    }
+
+
+def test_let_term_surface_renders_python_assignment_with_type_ascription() -> None:
+    result = emit_stub(
+        function="bind_value",
+        params=["source"],
+        param_types=["int"],
+        return_type="None",
+        concept_name="let(result: i64, call:identity(source))",
+    )
+
+    assert result == {
+        "source": "def bind_value(source):\n    result: int = identity(source)\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
 def test_contract_witnesses_emit_liftable_contract_comment_payloads() -> None:
     result = emit_stub(
         function="wrap_identity",
