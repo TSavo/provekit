@@ -1729,11 +1729,12 @@ fn classify_value(value: &serde_json::Value) -> &'static str {
     }
 }
 
-// ---- Seed catalog (v0 stub — production loads signed ConceptAbstractionMementos) ----
+// ---- Concept-shape catalog -------------------------------------------------
 
 struct CatalogEntry {
     id: String,
     name: String,
+    shape_cid: String,
     classification: &'static str,
 }
 
@@ -1742,7 +1743,11 @@ struct Catalog {
 }
 
 impl Catalog {
-    fn match_shape(&self, _shape_cid: &str, shape: &TermShape) -> Option<&CatalogEntry> {
+    fn match_shape(&self, shape_cid: &str, shape: &TermShape) -> Option<&CatalogEntry> {
+        if let Some(entry) = self.entries.iter().find(|e| e.shape_cid == shape_cid) {
+            return Some(entry);
+        }
+
         let cls = shape.classify();
         if cls == "unknown" {
             return None;
@@ -1752,22 +1757,140 @@ impl Catalog {
 }
 
 fn seed_catalog() -> Catalog {
-    // v0 stub: 3-entry classification-based catalog.
-    // Production loads signed ConceptAbstractionMementos from menagerie/concept-shapes/catalog/.
-    Catalog {
-        entries: vec![
-            CatalogEntry {
-                id: "shape:retry-with-bounded-attempts".into(),
-                name: "concept:retry-with-bounded-attempts".into(),
-                classification: "retry-loop",
-            },
-            CatalogEntry {
-                id: "shape:guard-then-commit".into(),
-                name: "concept:guard-then-commit".into(),
-                classification: "guard-then-commit",
-            },
-        ],
+    let mut entries = Vec::new();
+    if let Some(root) = find_concept_shapes_root() {
+        entries.extend(load_catalog_abstractions(&root));
+        entries.extend(load_catalog_specs(&root));
     }
+    entries.extend(legacy_classification_entries());
+    Catalog { entries }
+}
+
+fn legacy_classification_entries() -> Vec<CatalogEntry> {
+    vec![
+        CatalogEntry {
+            id: "shape:retry-with-bounded-attempts".into(),
+            name: "concept:retry-with-bounded-attempts".into(),
+            shape_cid: String::new(),
+            classification: "retry-loop",
+        },
+        CatalogEntry {
+            id: "shape:guard-then-commit".into(),
+            name: "concept:guard-then-commit".into(),
+            shape_cid: String::new(),
+            classification: "guard-then-commit",
+        },
+    ]
+}
+
+fn find_concept_shapes_root() -> Option<PathBuf> {
+    let mut starts = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        starts.push(cwd);
+    }
+    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+        starts.push(PathBuf::from(manifest_dir));
+    }
+
+    for start in starts {
+        for ancestor in start.ancestors() {
+            let candidate = ancestor.join("menagerie").join("concept-shapes");
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn load_catalog_abstractions(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
+    let dir = concept_shapes_root.join("catalog").join("abstractions");
+    catalog_json_files(&dir, ".json")
+        .into_iter()
+        .filter_map(|path| load_catalog_abstraction(concept_shapes_root, &path))
+        .collect()
+}
+
+fn load_catalog_abstraction(concept_shapes_root: &Path, path: &Path) -> Option<CatalogEntry> {
+    let doc = read_json_file(path)?;
+    let name = doc
+        .get("memento")
+        .and_then(|m| m.get("operator"))
+        .and_then(|operator| operator.as_str())?
+        .to_string();
+    let shape_cid = doc
+        .get("cid")
+        .and_then(|cid| cid.as_str())
+        .map(str::to_string)
+        .or_else(|| shape_cid_from_abstraction_filename(path))?;
+    Some(CatalogEntry {
+        id: catalog_source_id(concept_shapes_root, path),
+        name,
+        shape_cid,
+        classification: "catalog-shape",
+    })
+}
+
+fn load_catalog_specs(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
+    let dir = concept_shapes_root.join("specs");
+    catalog_json_files(&dir, "_shape.spec.json")
+        .into_iter()
+        .filter_map(|path| load_catalog_spec(concept_shapes_root, &path))
+        .collect()
+}
+
+fn load_catalog_spec(concept_shapes_root: &Path, path: &Path) -> Option<CatalogEntry> {
+    let doc = read_json_file(path)?;
+    let name = doc
+        .get("fn_name")
+        .and_then(|name| name.as_str())?
+        .to_string();
+    let shape_cid = blake3_512_of(encode_jcs(&json_to_value(&doc)).as_bytes());
+    Some(CatalogEntry {
+        id: catalog_source_id(concept_shapes_root, path),
+        name,
+        shape_cid,
+        classification: "catalog-shape",
+    })
+}
+
+fn catalog_json_files(dir: &Path, suffix: &str) -> Vec<PathBuf> {
+    if !dir.is_dir() {
+        return Vec::new();
+    }
+    let mut paths: Vec<PathBuf> = walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(suffix))
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
+fn read_json_file(path: &Path) -> Option<serde_json::Value> {
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn shape_cid_from_abstraction_filename(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_str()?;
+    let (_, cid_hex_with_suffix) = file_name.split_once(".blake3-512:")?;
+    let cid_hex = cid_hex_with_suffix.strip_suffix(".json")?;
+    Some(format!("blake3-512:{cid_hex}"))
+}
+
+fn catalog_source_id(concept_shapes_root: &Path, path: &Path) -> String {
+    let rel = path.strip_prefix(concept_shapes_root).unwrap_or(path);
+    format!(
+        "menagerie/concept-shapes/{}",
+        rel.display().to_string().replace('\\', "/")
+    )
 }
 
 // ---- Discharge verdict (trichotomy) ----------------------------------------
@@ -2848,7 +2971,7 @@ fn primary_mode_label(modes: &[RuntimeMode]) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_lang_detect, validate_library_bindings_config};
+    use super::{resolve_lang_detect, seed_catalog, validate_library_bindings_config, TermShape};
     use std::fs;
 
     /// Create a temporary directory for a test case, run the closure to populate it,
@@ -2927,5 +3050,47 @@ mod tests {
             err.contains("top-level language is `python`"),
             "error should mention the operator language mismatch; got: {err}"
         );
+    }
+
+    #[test]
+    fn seed_catalog_loads_real_concept_shape_catalog() {
+        let catalog = seed_catalog();
+        eprintln!("catalog_count={}", catalog.entries.len());
+        assert!(
+            catalog.entries.len() > 10,
+            "catalog should load real concept-shape entries, got {}",
+            catalog.entries.len()
+        );
+        assert!(
+            catalog
+                .entries
+                .iter()
+                .any(|entry| entry.name == "concept:identity"),
+            "catalog should include concept:identity"
+        );
+        assert!(
+            catalog
+                .entries
+                .iter()
+                .any(|entry| entry.name == "concept:new"),
+            "catalog should include algorithm-tier concept:new"
+        );
+    }
+
+    #[test]
+    fn catalog_matches_loaded_shape_cid_before_legacy_classification() {
+        let catalog = seed_catalog();
+        let identity_shape_cid = "blake3-512:6920f6e26184ca316f3dce6c02690b515c11b3d96d3b476bb5abe67cb55e1885031484c3add8a5f26b630e305ad3fe41eed10acca2e141898f9d6629c278867f";
+        let unknown_shape = TermShape::from_kit(
+            serde_json::json!({
+                "kind": "body",
+                "stmts": []
+            }),
+            identity_shape_cid.to_string(),
+        );
+        let matched = catalog
+            .match_shape(identity_shape_cid, &unknown_shape)
+            .expect("identity CID should match before classify fallback");
+        assert_eq!(matched.name, "concept:identity");
     }
 }
