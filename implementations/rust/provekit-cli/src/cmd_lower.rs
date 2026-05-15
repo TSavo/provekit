@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// `provekit lower` dispatches ORP witness plans to surface-specific lowerers
-// and exposes direct IR-formula lowering for external solver dispatch.
+// `provekit lower --target=<lang>` dispatches named substrate terms to the
+// per-language lower plugin and emits target-language source.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -12,7 +12,6 @@ use std::time::Instant;
 
 use clap::{Parser, ValueEnum};
 use owo_colors::OwoColorize;
-use provekit_ir_compiler::IrCompiler;
 use serde_json::{json, Value as Json};
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
@@ -21,6 +20,7 @@ use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 
+use crate::cmd_bind::NamedTermDocument;
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 const LOWER_PROTOCOL_VERSION: &str = "provekit-orp/1";
@@ -39,17 +39,17 @@ impl LowerMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum LowerTarget {
-    SmtLib,
-    Coq,
-    Tptp,
-    Vampire,
-}
-
 #[derive(Parser, Debug, Clone)]
 pub struct LowerArgs {
-    /// Project root containing `.provekit/lower/<surface>/manifest.toml`.
+    /// Named term JSON. Reads stdin when omitted or `-`.
+    pub input: Option<PathBuf>,
+    /// Target source language, for example python, java, c, rust.
+    #[arg(long)]
+    pub target: Option<String>,
+    /// Output file. Writes stdout when omitted or `-`.
+    #[arg(short = 'o', long = "output")]
+    pub output: Option<PathBuf>,
+    /// Project root containing `.provekit/realize/<target>/manifest.toml`.
     #[arg(long)]
     pub project: Option<PathBuf>,
     /// Lowering surface. Defaults to `surface` in the plan, then host kit.
@@ -61,9 +61,6 @@ pub struct LowerArgs {
     /// JSON RealizerPlan or witness requirement.
     #[arg(long)]
     pub plan: Option<PathBuf>,
-    /// Read an IR-JSON formula from stdin and emit this target on stdout.
-    #[arg(long, value_enum)]
-    pub to: Option<LowerTarget>,
     /// Output directory for the produced witness .proof.
     #[arg(long)]
     pub out: Option<PathBuf>,
@@ -109,15 +106,13 @@ struct PluginManifest {
 }
 
 pub fn run(args: LowerArgs) -> u8 {
-    if let Some(target) = args.to {
-        if args.plan.is_some() {
-            eprintln!(
-                "{}: --to reads an IR-JSON formula from stdin and cannot be combined with --plan",
-                "error".red().bold()
-            );
-            return EXIT_USER_ERROR;
-        }
-        return lower_formula_from_stdin(target);
+    if let Some(target) = args.target.as_deref() {
+        return lower_named_terms(
+            args.input.as_ref(),
+            args.output.as_ref(),
+            args.project.as_ref(),
+            target,
+        );
     }
 
     let project_root = args.project.unwrap_or_else(|| PathBuf::from("."));
@@ -131,7 +126,7 @@ pub fn run(args: LowerArgs) -> u8 {
     }
     let Some(plan_path) = args.plan else {
         eprintln!(
-            "{}: pass --plan for witness lowering or --to <smt-lib|coq|tptp|vampire> for formula lowering from stdin",
+            "{}: pass --target=<language> for named-term lowering",
             "error".red().bold()
         );
         return EXIT_USER_ERROR;
@@ -221,43 +216,109 @@ pub fn run(args: LowerArgs) -> u8 {
     }
 }
 
-fn lower_formula_from_stdin(target: LowerTarget) -> u8 {
-    let mut raw = String::new();
-    if let Err(error) = std::io::stdin().read_to_string(&mut raw) {
-        eprintln!("{}: read formula from stdin: {error}", "error".red().bold());
+fn lower_named_terms(
+    input: Option<&PathBuf>,
+    output: Option<&PathBuf>,
+    project: Option<&PathBuf>,
+    target: &str,
+) -> u8 {
+    if is_solver_target(target) {
+        eprintln!(
+            "{}: solver target `{target}` moved to `provekit prove --target={target}`",
+            "error".red().bold()
+        );
         return EXIT_USER_ERROR;
     }
-    let formula: Json = match serde_json::from_str(&raw) {
-        Ok(formula) => formula,
+    let raw = match read_bytes(input) {
+        Ok(raw) => raw,
         Err(error) => {
-            eprintln!("{}: parse formula JSON: {error}", "error".red().bold());
+            eprintln!("{}: {error}", "error".red().bold());
             return EXIT_USER_ERROR;
         }
     };
-    let lowered = match target {
-        LowerTarget::SmtLib | LowerTarget::Tptp | LowerTarget::Vampire => {
-            provekit_ir_compiler_smt_lib::emit_asserted(&formula)
-        }
-        LowerTarget::Coq => {
-            let compiler = provekit_ir_compiler_coq::CoqCompiler::new();
-            compiler
-                .compile(&formula, provekit_ir_compiler_coq::DIALECT)
-                .map(|compiled| {
-                    let mut text = compiled.preamble;
-                    text.push_str(&compiled.body);
-                    text
-                })
-                .map_err(|error| error.to_string())
+    let named: NamedTermDocument = match serde_json::from_slice(&raw) {
+        Ok(named) => named,
+        Err(error) => {
+            eprintln!("{}: parse named-term JSON: {error}", "error".red().bold());
+            return EXIT_USER_ERROR;
         }
     };
-    match lowered {
-        Ok(text) => {
-            print!("{text}");
-            EXIT_OK
-        }
+    let project_root = project
+        .cloned()
+        .or_else(|| named.workspace_root.as_ref().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let source = match lower_named_document(&project_root, target, &named) {
+        Ok(source) => source,
         Err(error) => {
-            eprintln!("{}: lower formula: {error}", "error".red().bold());
-            EXIT_USER_ERROR
+            eprintln!("{}: {error}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
+    if let Err(error) = write_bytes(output, source.as_bytes()) {
+        eprintln!("{}: {error}", "error".red().bold());
+        return EXIT_USER_ERROR;
+    }
+    EXIT_OK
+}
+
+fn lower_named_document(
+    project_root: &Path,
+    target: &str,
+    named: &NamedTermDocument,
+) -> Result<String, String> {
+    let mut out = String::new();
+    for term in &named.terms {
+        let request = crate::kit_dispatch::RealizeRequest {
+            function: term.function.clone(),
+            params: term.params.clone(),
+            param_types: term.param_types.clone(),
+            return_type: term.return_type.clone(),
+            concept_name: term.concept_name.clone(),
+            mode: None,
+            modes: Vec::new(),
+            contract: None,
+            sugar_cids: Vec::new(),
+            sugar_plugins: Vec::new(),
+        };
+        let realized = crate::kit_dispatch::dispatch_realize(project_root, target, None, &request)
+            .map_err(|e| format!("lower plugin unavailable for `{target}`: {e}"))?;
+        out.push_str(&realized.source);
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+fn is_solver_target(target: &str) -> bool {
+    matches!(target, "smt-lib" | "smtlib" | "coq" | "tptp" | "vampire")
+}
+
+fn read_bytes(path: Option<&PathBuf>) -> Result<Vec<u8>, String> {
+    match path {
+        Some(path) if path.as_os_str() != "-" => {
+            std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))
+        }
+        _ => {
+            let mut bytes = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut bytes)
+                .map_err(|e| format!("read stdin: {e}"))?;
+            Ok(bytes)
+        }
+    }
+}
+
+fn write_bytes(path: Option<&PathBuf>, bytes: &[u8]) -> Result<(), String> {
+    match path {
+        Some(path) if path.as_os_str() != "-" => {
+            std::fs::write(path, bytes).map_err(|e| format!("write {}: {e}", path.display()))
+        }
+        _ => {
+            let mut stdout = std::io::stdout().lock();
+            stdout
+                .write_all(bytes)
+                .map_err(|e| format!("write stdout: {e}"))
         }
     }
 }

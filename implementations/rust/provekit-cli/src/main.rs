@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 mod cmd_agent;
 mod cmd_ask;
@@ -203,12 +203,26 @@ pub struct ProveArgs {
     /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
+    /// Emit solver input for a named term or IR formula.
+    #[arg(long, value_enum)]
+    pub target: Option<ProveTarget>,
+    /// Output file for `--target`. Writes stdout when omitted or `-`.
+    #[arg(short = 'o', long = "output")]
+    pub output: Option<PathBuf>,
     #[command(flatten)]
     pub out: OutputFlags,
     /// Additional project directories whose .proof files should also be loaded
     /// (e.g., an OpenAPI spec project for cross-kit verification).
     #[arg(long = "with", num_args = 0..)]
     pub with: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ProveTarget {
+    SmtLib,
+    Coq,
+    Tptp,
+    Vampire,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -281,6 +295,9 @@ pub struct InitArgs {
 pub struct LiftArgs {
     /// Project root to lift. Defaults to the current directory.
     pub project: Option<PathBuf>,
+    /// Output file. Writes stdout when omitted or `-`.
+    #[arg(short = 'o', long = "output")]
+    pub output: Option<PathBuf>,
     /// Ask the configured lifter to report native contract identities without full ProofIR lowering.
     #[arg(long)]
     pub identify_only: bool,

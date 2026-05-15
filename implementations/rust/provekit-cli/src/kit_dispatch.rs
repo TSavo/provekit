@@ -101,6 +101,7 @@ pub struct BindContractWitness {
 /// Result of `dispatch_bind_lift`. Carries the lift entries plus any
 /// diagnostics the kit emitted (`ir-document.diagnostics[]`).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BindLiftResult {
     pub entries: Vec<BindLiftEntry>,
     pub diagnostics: Vec<Value>,
@@ -195,7 +196,7 @@ fn resolve_lift_command(
     }
 
     // 4: built-in convention for known kits. These resolve relative to the
-    // workspace root and are not language knowledge in cmd_bind — they're
+    // workspace root and are not language knowledge in cmd_bind; they are
     // the byte-stable substrate convention "per-language kit lives under
     // implementations/<lang>/". The dispatcher consults the FILESYSTEM, not
     // a hard-coded language list.
@@ -1038,8 +1039,9 @@ fn extension_from_convention(lang: &str) -> String {
 /// Probe the workspace for any source language a registered lift kit can
 /// handle. Returns the first kit whose manifest resolves successfully.
 /// This is a FILESYSTEM probe, not a hard-coded extension list.
+#[allow(dead_code)]
 pub fn detect_lift_language(workspace_root: &Path) -> Option<String> {
-    // 1. Scan .provekit/lift/*/manifest.toml — the operator's declared kits.
+    // 1. Scan .provekit/lift/*/manifest.toml, the operator's declared kits.
     let lift_dir = workspace_root.join(".provekit").join("lift");
     if let Ok(entries) = std::fs::read_dir(&lift_dir) {
         for entry in entries.flatten() {

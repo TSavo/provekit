@@ -11,16 +11,16 @@ fn provekit_bin() -> PathBuf {
 const CHECKED_CONTRADICTION: &[u8] = include_bytes!("fixtures/checked_contradiction.json");
 
 #[test]
-fn lower_formula_from_stdin_emits_direct_smt_lib_assertion() {
+fn prove_formula_from_stdin_emits_direct_smt_lib_assertion() {
     let mut child = Command::new(provekit_bin())
-        .arg("lower")
-        .arg("--to")
+        .arg("prove")
+        .arg("--target")
         .arg("smt-lib")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn provekit lower --to smt-lib");
+        .expect("spawn provekit prove --target smt-lib");
 
     child
         .stdin
@@ -34,7 +34,7 @@ fn lower_formula_from_stdin_emits_direct_smt_lib_assertion() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "lower failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "prove failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(stdout.contains("(set-logic ALL)"), "stdout:\n{stdout}");
     assert!(
@@ -55,16 +55,16 @@ fn lower_formula_from_stdin_emits_direct_smt_lib_assertion() {
 }
 
 #[test]
-fn lower_formula_from_stdin_emits_coq() {
+fn prove_formula_from_stdin_emits_coq() {
     let mut child = Command::new(provekit_bin())
-        .arg("lower")
-        .arg("--to")
+        .arg("prove")
+        .arg("--target")
         .arg("coq")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn provekit lower --to coq");
+        .expect("spawn provekit prove --target coq");
 
     child
         .stdin
@@ -78,11 +78,34 @@ fn lower_formula_from_stdin_emits_coq() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
-        "lower failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "prove failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         stdout.contains("Require Import ZArith"),
         "stdout:\n{stdout}"
     );
     assert!(stdout.contains("Goal"), "stdout:\n{stdout}");
+}
+
+#[test]
+fn lower_rejects_solver_target() {
+    let output = Command::new(provekit_bin())
+        .arg("lower")
+        .arg("--target")
+        .arg("smt-lib")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn provekit lower --target smt-lib");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "lower --target=smt-lib must be rejected"
+    );
+    assert!(
+        stderr.contains("provekit prove --target=smt-lib"),
+        "stderr should point to prove target path\n{stderr}"
+    );
 }
