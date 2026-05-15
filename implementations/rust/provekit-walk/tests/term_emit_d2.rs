@@ -198,3 +198,26 @@ fn lowers_simple_method_call_expression_with_unresolved_call_loss() {
         .iter()
         .any(|loss| loss["loss"] == "ffi-call-unresolved-effect"));
 }
+
+#[test]
+fn lowers_statement_method_chain_receiver_as_nested_method_term() {
+    let parsed = term_json(
+        r#"
+            struct Receiver;
+            fn caller(expr: Receiver) {
+                expr.method1().method2();
+            }
+        "#,
+        "caller",
+    );
+    assert_eq!(
+        parsed["term_surface"].as_str(),
+        Some("method:method2(method:method1(expr, []), [])")
+    );
+    assert_eq!(parsed["term"]["name"].as_str(), Some("method:method2"));
+    assert_eq!(
+        parsed["term"]["args"][0]["name"].as_str(),
+        Some("method:method1")
+    );
+    assert_eq!(parsed["term"]["args"][0]["args"][0]["name"], "expr");
+}
