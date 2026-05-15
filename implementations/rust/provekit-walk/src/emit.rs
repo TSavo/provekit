@@ -726,6 +726,21 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
         Expr::Block(block) => lower_stmts_to_stmt(&block.block.stmts, ctx),
         Expr::ForLoop(for_loop) => lower_for_loop_to_stmt(for_loop, ctx),
         Expr::Match(match_expr) => lower_match_to_stmt(match_expr, ctx),
+        Expr::MethodCall(method) => {
+            if method.turbofish.is_some() {
+                return Err(
+                    "unsupported statement-position method call with explicit turbofish"
+                        .to_string(),
+                );
+            }
+            if matches!(&*method.receiver, Expr::MethodCall(_)) {
+                return Err(
+                    "unsupported statement-position method call chain: receiver Expr::MethodCall"
+                        .to_string(),
+                );
+            }
+            lower_method_call_expr_to_value_term(method, ctx)
+        }
         Expr::Try(try_expr) => Ok(AlgebraTerm::op(
             "try",
             vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
@@ -1685,6 +1700,28 @@ mod tests {
             parsed["term_surface"].as_str(),
             Some("let(pattern_bind(y), add(x, 1), return(y))")
         );
+    }
+
+    #[test]
+    fn rust_term_json_lowers_statement_position_method_call() {
+        let src = r#"
+            struct Sink;
+            impl Sink {
+                fn write(&mut self, value: i32) {}
+            }
+            fn caller(mut sink: Sink, value: i32) {
+                sink.write(value);
+            }
+        "#;
+        let item_fn = parse_named(src, "caller");
+        let bytes = rust_function_term_json(&item_fn, "caller.rs").unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+
+        assert_eq!(
+            parsed["term_surface"].as_str(),
+            Some("method:write(sink, [value])")
+        );
+        assert_eq!(parsed["term"]["name"].as_str(), Some("method:write"));
     }
 
     #[test]
