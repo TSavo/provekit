@@ -1,0 +1,44 @@
+{
+  "version": "1",
+  "target": {
+    "crate": "provekit-canonicalizer",
+    "function": "impl Value::boolean",
+    "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs"
+  },
+  "pipeline": {
+    "step_1_fixture_cid": "blake3-512:b2c54035098e0bc287eca146fea6f697d56547d13d2e620cc38cbfda6b2f65d1994eeebe64aa3d8f3ac91843c45ab423b5917e95f2d62bc88f76500dd5f45b85",
+    "step_2_resolve": "summary=return(call:new(literal(\"Arc::new\"), literal([\"call:Bool(Value::Bool, [b])\"]))) -> sort {\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}; jcs={\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:Bool(Value::Bool, [b])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+    "step_3_4_realize_command": "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, \"boolean\", [\"b\"], [\"bool\"], \"Arc < Value >\")",
+    "step_3_4_realize_input": {
+      "resolved_term_json": "{\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:Bool(Value::Bool, [b])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+      "function": "boolean",
+      "params": [
+        "b"
+      ],
+      "param_types": [
+        "bool"
+      ],
+      "return_type": "Arc < Value >"
+    },
+    "step_3_4_regenerated_source": "pub fn boolean(b: bool) -> Arc < Value > {\n    panic!(\"provekit-bind canonical: literal\")\n}\n",
+    "step_5_original_slice_cid": "blake3-512:f6eaf0ebbb9589ce23cad273e29d19da6ddacf20d3c7d654a41ed3d718f8ec94f0793648808318b18a375da350a8d4de300594fe649d84ac260c5cab460d8c3d",
+    "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_boolean_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_boolean_original.rs>",
+    "step_7_byte_identical_post_rustfmt": false,
+    "step_8_unified_diff": "--- original_rustfmt\n+++ regenerated_rustfmt\n@@ -1,3 +1,3 @@\n pub fn boolean(b: bool) -> Arc<Value> {\n-    Arc::new(Value::Bool(b))\n+    panic!(\"provekit-bind canonical: literal\")\n }\n",
+    "step_9_diff_classification": [
+      {
+        "hunk": "@@ -1,3 +1,3 @@\n pub fn boolean(b: bool) -> Arc<Value> {\n-    Arc::new(Value::Bool(b))\n+    panic!(\"provekit-bind canonical: literal\")\n }",
+        "class": "stub-body",
+        "explanation": "provekit-realize-rust-core emitted its stub body because the existing D7 resolved body lowering does not consume this widened Value constructor literal shape; the realized fallback concept is `literal`. Retire in v5 under the #964/#962 self-host follow-up without minting new ops."
+      }
+    ],
+    "step_10_dominant_diff_class": "stub-body",
+    "step_11_expected_diff_shape": "BYTE_IDENTICAL or CHARACTERIZED_DIFF; D7-v4 is diagnostic-only widening",
+    "step_12_empirical_root_cause": "The existing D7 resolved body lowering does not consume widened Value constructor literal shapes beyond Value::Null, so realize-rust-core falls through to the stub-body path; retire under #964/#962 follow-up without extending this diagnostic chunk.",
+    "regenerated_source_cid": "blake3-512:2d1ca31ddb6ecd27e9cd0c2052df03d3eb93dfcc3b58447bc58217797e73e8d414ba60ad894a5425a74063d0e86fbeb8512a5a3236af27d4c07568ec81a3ff5a",
+    "original_slice_post_rustfmt_cid": "blake3-512:e4f464f54e93db6d8a14c682a3d2eb927d39c776ba0cc1dd62bc480a6de74918f3a25d94715840e957ed2d2d3b497e58cd02db8c3c9be4278b2e170d90d9982a"
+  },
+  "verdict": "CHARACTERIZED_DIFF",
+  "dominant_diff_class": "stub-body",
+  "next_action": "D7-v4 is diagnostic-only. v5 should retire any CHARACTERIZED_DIFF classes surfaced here without minting new ProofIR ops or substrate concepts."
+}
