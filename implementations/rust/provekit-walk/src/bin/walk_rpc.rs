@@ -33,6 +33,7 @@ use provekit_walk::{
     lift_function_precondition, CalleeContract,
 };
 use serde_json::{json, Value};
+use syn::spanned::Spanned;
 
 fn main() -> io::Result<()> {
     let stdin = io::stdin();
@@ -282,6 +283,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
     let root = PathBuf::from(workspace_root);
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
+    let library_bindings = LibraryBindingLookup::load(&root)?;
 
     let scan_roots: Vec<PathBuf> = if source_paths.is_empty() {
         vec![root.clone()]
@@ -376,6 +378,32 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "term_shape_cid": term_shape_cid,
                     "witnesses": witnesses,
                 }));
+
+                for (index, callsite) in collect_bound_library_calls(item_fn, &library_bindings)
+                    .into_iter()
+                    .enumerate()
+                {
+                    let term_shape = concept_citation_shape(
+                        &callsite.pattern.concept_cid,
+                        &callsite.resolved_args,
+                    );
+                    let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+                    entries.push(json!({
+                        "kind": "bind-lift-entry",
+                        "file": rel,
+                        "fn_name": format!("{fn_name}__bound_call_{}", index + 1),
+                        "fn_line": callsite.line as u64,
+                        "attr_pre": Value::Null,
+                        "attr_post": Value::Null,
+                        "concept_annotation": concept_annotation_name(&callsite.pattern.concept_name),
+                        "param_names": callsite.resolved_args,
+                        "param_types": vec!["unknown"; callsite.arity],
+                        "return_type": "unknown",
+                        "term_shape": cvalue_to_json(&term_shape),
+                        "term_shape_cid": term_shape_cid,
+                        "witnesses": [],
+                    }));
+                }
             }
         }
     }
@@ -385,6 +413,378 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         "ir": entries,
         "diagnostics": diagnostics,
     }))
+}
+
+#[derive(Debug, Clone)]
+struct LibraryBindingLookup {
+    patterns: Vec<LibraryCallPattern>,
+}
+
+#[derive(Debug, Clone)]
+struct LibraryCallPattern {
+    concept_name: String,
+    concept_cid: String,
+    callee: String,
+    min_params: Option<usize>,
+    max_params: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct BoundLibraryCall {
+    pattern: LibraryCallPattern,
+    resolved_args: Vec<String>,
+    arity: usize,
+    line: usize,
+}
+
+impl LibraryBindingLookup {
+    fn load(workspace_root: &Path) -> Result<Self, String> {
+        let config_path = workspace_root
+            .join(".provekit")
+            .join("library-bindings.json");
+        if !config_path.is_file() {
+            return Ok(Self {
+                patterns: Vec::new(),
+            });
+        }
+        let raw = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("read {}: {e}", config_path.display()))?;
+        let config: Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("parse {}: {e}", config_path.display()))?;
+        let language = config
+            .get("language")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "{} must contain non-empty string field `language`",
+                    config_path.display()
+                )
+            })?;
+        let bindings = config
+            .get("bindings")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                format!(
+                    "{} must contain object field `bindings`",
+                    config_path.display()
+                )
+            })?;
+
+        let mut pairs = bindings.iter().collect::<Vec<_>>();
+        pairs.sort_by(|a, b| a.0.cmp(b.0));
+        let mut patterns = Vec::new();
+        for (concept_name, surface_value) in pairs {
+            if !concept_name.starts_with("concept:") {
+                return Err(format!(
+                    "{} binding key `{concept_name}` must start with `concept:`",
+                    config_path.display()
+                ));
+            }
+            let surface = surface_value.as_str().ok_or_else(|| {
+                format!(
+                    "{} binding `{concept_name}` must be a string library surface",
+                    config_path.display()
+                )
+            })?;
+            let (surface_language, library_tag) = split_library_surface(surface)?;
+            if surface_language != language {
+                return Err(format!(
+                    "{} binding `{concept_name}` points to `{surface}` but top-level language is `{language}`",
+                    config_path.display()
+                ));
+            }
+            let concept_cid = concept_shape_cid(workspace_root, concept_name)?;
+            let entries = body_template_entries(workspace_root, &surface_language, &library_tag)?;
+            let mut matched = 0usize;
+            for entry in entries
+                .into_iter()
+                .filter(|entry| concept_names_match(&entry.concept_name, concept_name))
+            {
+                for callee in infer_call_patterns_from_template(&entry.emission_template) {
+                    matched += 1;
+                    patterns.push(LibraryCallPattern {
+                        concept_name: concept_name.to_string(),
+                        concept_cid: concept_cid.clone(),
+                        callee,
+                        min_params: entry.min_params,
+                        max_params: entry.max_params,
+                    });
+                }
+            }
+            if matched == 0 {
+                return Err(format!(
+                    "body template for `{surface}` contains no callable emission template for `{concept_name}`"
+                ));
+            }
+        }
+        Ok(Self { patterns })
+    }
+
+    fn match_call(&self, callee: &str, arity: usize) -> Option<&LibraryCallPattern> {
+        let normalized = normalize_call_pattern(callee);
+        self.patterns.iter().find(|pattern| {
+            pattern.callee == normalized
+                && pattern.min_params.is_none_or(|min| arity >= min)
+                && pattern.max_params.is_none_or(|max| arity <= max)
+        })
+    }
+}
+
+#[derive(Debug)]
+struct BodyTemplateCallEntry {
+    concept_name: String,
+    emission_template: String,
+    min_params: Option<usize>,
+    max_params: Option<usize>,
+}
+
+fn split_library_surface(surface: &str) -> Result<(String, String), String> {
+    let Some((language, tag)) = surface.split_once('-') else {
+        return Err(format!(
+            "library surface `{surface}` must look like `<language>-<library>`"
+        ));
+    };
+    if language.is_empty() || tag.is_empty() {
+        return Err(format!(
+            "library surface `{surface}` must have non-empty language and library"
+        ));
+    }
+    Ok((language.to_string(), tag.to_string()))
+}
+
+fn body_template_entries(
+    workspace_root: &Path,
+    language: &str,
+    library_tag: &str,
+) -> Result<Vec<BodyTemplateCallEntry>, String> {
+    let rel = PathBuf::from("menagerie")
+        .join(format!("{language}-language-signature"))
+        .join("specs")
+        .join("body-templates")
+        .join(format!("{language}-canonical-bodies-{library_tag}.json"));
+    let path = find_repo_file(workspace_root, &rel)
+        .ok_or_else(|| format!("missing body template {}", rel.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let root: Value =
+        serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let entries = root
+        .pointer("/header/content/entries")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{} missing /header/content/entries", path.display()))?;
+    Ok(entries
+        .iter()
+        .filter_map(|entry| {
+            let concept_name = entry.get("concept_name")?.as_str()?.to_string();
+            let emission_template = entry
+                .get("emission_template")?
+                .get("template")?
+                .as_str()?
+                .to_string();
+            let guard = entry.get("signature_guard");
+            Some(BodyTemplateCallEntry {
+                concept_name,
+                emission_template,
+                min_params: guard
+                    .and_then(|g| g.get("min_params"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize),
+                max_params: guard
+                    .and_then(|g| g.get("max_params"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize),
+            })
+        })
+        .collect())
+}
+
+fn concept_shape_cid(workspace_root: &Path, concept_name: &str) -> Result<String, String> {
+    let rel = Path::new("menagerie")
+        .join("concept-shapes")
+        .join("cids.tsv");
+    let path =
+        find_repo_file(workspace_root, &rel).ok_or_else(|| format!("missing {}", rel.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    for line in raw.lines() {
+        let cols = line.split('\t').collect::<Vec<_>>();
+        if cols.len() >= 3 && cols[0] == "shape" && cols[1] == concept_name {
+            return Ok(cols[2].to_string());
+        }
+    }
+    Err(format!(
+        "{} has no shape CID entry for `{concept_name}`",
+        path.display()
+    ))
+}
+
+fn find_repo_file(workspace_root: &Path, relative: &Path) -> Option<PathBuf> {
+    let mut bases = vec![workspace_root.to_path_buf()];
+    if let Some(root) = std::env::var_os("PROVEKIT_REPO_ROOT") {
+        bases.push(PathBuf::from(root));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        bases.extend(cwd.ancestors().map(Path::to_path_buf));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            bases.extend(parent.ancestors().map(Path::to_path_buf));
+        }
+    }
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    bases.extend(manifest_dir.ancestors().map(Path::to_path_buf));
+
+    for base in bases {
+        let candidate = base.join(relative);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn infer_call_patterns_from_template(template: &str) -> Vec<String> {
+    let bytes = template.as_bytes();
+    let mut out = Vec::new();
+    for (idx, ch) in template.char_indices() {
+        if ch != '(' {
+            continue;
+        }
+        let mut start = idx;
+        while start > 0 {
+            let prev = bytes[start - 1] as char;
+            if prev.is_ascii_alphanumeric() || matches!(prev, '_' | '.' | ':') {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        let token = &template[start..idx];
+        if token.contains('.') || token.contains("::") {
+            let normalized = normalize_call_pattern(token);
+            if !normalized.is_empty() && !out.contains(&normalized) {
+                out.push(normalized);
+            }
+        }
+    }
+    out
+}
+
+fn normalize_call_pattern(raw: &str) -> String {
+    raw.trim()
+        .replace("::", ".")
+        .split_whitespace()
+        .collect::<String>()
+}
+
+fn concept_names_match(entry_name: &str, requested: &str) -> bool {
+    entry_name == requested
+        || entry_name
+            .strip_prefix("concept:")
+            .is_some_and(|name| name == requested)
+        || requested
+            .strip_prefix("concept:")
+            .is_some_and(|name| name == entry_name)
+}
+
+fn collect_bound_library_calls(
+    item_fn: &syn::ItemFn,
+    bindings: &LibraryBindingLookup,
+) -> Vec<BoundLibraryCall> {
+    if bindings.patterns.is_empty() {
+        return Vec::new();
+    }
+    let mut collector = BoundCallCollector {
+        bindings,
+        calls: Vec::new(),
+    };
+    syn::visit::Visit::visit_item_fn(&mut collector, item_fn);
+    collector.calls
+}
+
+struct BoundCallCollector<'a> {
+    bindings: &'a LibraryBindingLookup,
+    calls: Vec<BoundLibraryCall>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for BoundCallCollector<'_> {
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let Some(callee) = callee_name_from_expr(&node.func) {
+            self.record_call(&callee, &node.args, node.span().start().line);
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        let receiver = expr_surface(&node.receiver);
+        let callee = format!("{receiver}.{}", node.method);
+        self.record_call(&callee, &node.args, node.span().start().line);
+        syn::visit::visit_expr_method_call(self, node);
+    }
+}
+
+impl BoundCallCollector<'_> {
+    fn record_call(
+        &mut self,
+        callee: &str,
+        args: &syn::punctuated::Punctuated<syn::Expr, syn::token::Comma>,
+        line: usize,
+    ) {
+        let arity = args.len();
+        let Some(pattern) = self.bindings.match_call(callee, arity) else {
+            return;
+        };
+        let resolved_args = args.iter().map(expr_surface).collect::<Vec<_>>();
+        self.calls.push(BoundLibraryCall {
+            pattern: pattern.clone(),
+            resolved_args,
+            arity,
+            line,
+        });
+    }
+}
+
+fn callee_name_from_expr(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Path(path) => Some(
+            path.path
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("."),
+        ),
+        _ => Some(expr_surface(expr)),
+    }
+}
+
+fn expr_surface(expr: &syn::Expr) -> String {
+    use quote::ToTokens;
+    normalize_ws(&expr.to_token_stream().to_string())
+}
+
+fn concept_citation_shape(concept_cid: &str, resolved_args: &[String]) -> std::sync::Arc<CValue> {
+    CValue::object([
+        (
+            "args",
+            CValue::array(
+                resolved_args
+                    .iter()
+                    .map(|arg| CValue::string(arg.clone()))
+                    .collect(),
+            ),
+        ),
+        ("concept_cid", CValue::string(concept_cid.to_string())),
+        ("kind", CValue::string("concept-citation")),
+    ])
+}
+
+fn concept_annotation_name(concept_name: &str) -> String {
+    concept_name
+        .strip_prefix("concept:")
+        .unwrap_or(concept_name)
+        .to_string()
 }
 
 fn contract_witnesses_by_function_symbol(
@@ -1034,6 +1434,109 @@ pub fn deposit(balance: i64, amount: i64) -> i64 {
             extract_concept_annotation(src, "deposit").as_deref(),
             Some("ledger-deposit")
         );
+    }
+
+    #[test]
+    fn bind_lift_applies_operator_library_binding_to_bound_callsites() {
+        let root = temp_workspace("bind_lift_library_bindings");
+        fs::create_dir_all(root.join(".provekit")).expect("create .provekit");
+        fs::write(
+            root.join(".provekit").join("library-bindings.json"),
+            r#"{
+  "language": "rust",
+  "bindings": {
+    "concept:http-request": "rust-reqwest"
+  }
+}
+"#,
+        )
+        .expect("write library bindings");
+        let template_dir = root
+            .join("menagerie")
+            .join("rust-language-signature")
+            .join("specs")
+            .join("body-templates");
+        fs::create_dir_all(&template_dir).expect("create body-template dir");
+        fs::write(
+            template_dir.join("rust-canonical-bodies-reqwest.json"),
+            r#"{
+  "header": {
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:http-request",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return reqwest::blocking::get(${param0});"
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        }
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-reqwest"
+    }
+  }
+}
+"#,
+        )
+        .expect("write body template");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn fetch_status(url: &str) -> i64 {
+    reqwest::blocking::get(url)
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let bound = entries
+            .iter()
+            .find(|entry| entry["concept_annotation"] == "http-request")
+            .expect("bound callsite entry");
+        let expected_shape = CValue::object([
+            ("args", CValue::array(vec![CValue::string("url")])),
+            (
+                "concept_cid",
+                CValue::string("blake3-512:784dab96537ebae452cba5fdbcf88e07395d5e0634099055008d819f21d0fb51930fc29877afda069cdf0c1ec893fba5de47b025717fd024919c687381baee43"),
+            ),
+            ("kind", CValue::string("concept-citation")),
+        ]);
+        let expected_cid = blake3_512_of(encode_jcs(&expected_shape).as_bytes());
+
+        assert_eq!(bound["file"], "src/lib.rs");
+        assert_eq!(bound["fn_name"], "fetch_status__bound_call_1");
+        assert_eq!(bound["param_names"], json!(["url"]));
+        assert_eq!(bound["param_types"], json!(["unknown"]));
+        assert_eq!(bound["term_shape"], cvalue_to_json(&expected_shape));
+        assert_eq!(bound["term_shape_cid"], expected_cid);
+
+        let out_again = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("second bind lift should succeed");
+        let bound_again = out_again["ir"]
+            .as_array()
+            .expect("second ir array")
+            .iter()
+            .find(|entry| entry["concept_annotation"] == "http-request")
+            .expect("second bound callsite entry");
+        assert_eq!(bound_again["term_shape_cid"], bound["term_shape_cid"]);
+
+        let _ = fs::remove_dir_all(root);
     }
 
     fn temp_workspace(name: &str) -> PathBuf {

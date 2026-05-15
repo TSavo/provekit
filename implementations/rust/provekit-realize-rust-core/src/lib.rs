@@ -56,7 +56,8 @@ pub fn emit_stub_with_mode(
     concept_name: &str,
     mode: Option<&str>,
 ) -> Realization {
-    let body = body_template_for(concept_name, params, param_types, return_type, mode);
+    let body = operator_body_template_for(concept_name, params, param_types, return_type, mode)
+        .or_else(|| body_template_for(concept_name, params, param_types, return_type, mode));
     let is_stub = body.is_none();
     let body = body.unwrap_or_else(|| stub_body_for(concept_name));
     emit_function(function, params, param_types, return_type, &body, is_stub)
@@ -317,10 +318,28 @@ fn body_template_for(
     return_type: &str,
     mode: Option<&str>,
 ) -> Option<String> {
+    body_template_for_entries(
+        entries(),
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        mode,
+    )
+}
+
+fn body_template_for_entries(
+    entries: &[BodyTemplateEntry],
+    concept_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    mode: Option<&str>,
+) -> Option<String> {
     let mapped_param_types: Vec<String> =
         param_types.iter().map(|ty| map_source_type(ty)).collect();
     let mapped_return_type = map_source_type(return_type);
-    for entry in entries() {
+    for entry in entries {
         if !concept_matches(&entry.concept_name, concept_name) {
             continue;
         }
@@ -356,6 +375,89 @@ fn body_template_for(
         }
     }
     None
+}
+
+fn operator_body_template_for(
+    concept_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    mode: Option<&str>,
+) -> Option<String> {
+    let root = operator_root()?;
+    let (language, library_tag) = operator_binding_surface(&root, concept_name)?;
+    if language != "rust" {
+        return None;
+    }
+    let template = load_library_body_template(&language, &library_tag)?;
+    body_template_for_entries(
+        &template,
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        mode,
+    )
+}
+
+fn operator_root() -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("PROVEKIT_OPERATOR_ROOT") {
+        let root = PathBuf::from(root);
+        if root
+            .join(".provekit")
+            .join("library-bindings.json")
+            .is_file()
+        {
+            return Some(root);
+        }
+    }
+    std::env::current_dir().ok().and_then(|cwd| {
+        cwd.ancestors()
+            .find(|base| {
+                base.join(".provekit")
+                    .join("library-bindings.json")
+                    .is_file()
+            })
+            .map(Path::to_path_buf)
+    })
+}
+
+fn operator_binding_surface(root: &Path, concept_name: &str) -> Option<(String, String)> {
+    let path = root.join(".provekit").join("library-bindings.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let doc: Value = serde_json::from_str(&raw).ok()?;
+    let config_language = doc.get("language")?.as_str()?;
+    let bindings = doc.get("bindings")?.as_object()?;
+    let surface = bindings
+        .iter()
+        .find(|(candidate, _)| concept_matches(candidate, concept_name))?
+        .1
+        .as_str()?;
+    let (language, tag) = split_library_surface(surface)?;
+    if language != config_language {
+        return None;
+    }
+    Some((language, tag))
+}
+
+fn split_library_surface(surface: &str) -> Option<(String, String)> {
+    let (language, tag) = surface.split_once('-')?;
+    if language.is_empty() || tag.is_empty() {
+        return None;
+    }
+    Some((language.to_string(), tag.to_string()))
+}
+
+fn load_library_body_template(language: &str, library_tag: &str) -> Option<Vec<BodyTemplateEntry>> {
+    let rel = PathBuf::from("menagerie")
+        .join(format!("{language}-language-signature"))
+        .join("specs")
+        .join("body-templates")
+        .join(format!("{language}-canonical-bodies-{library_tag}.json"));
+    find_repo_file(&rel)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .map(|root| parse_entries(&root))
 }
 
 fn render_template(
@@ -590,6 +692,7 @@ fn find_repo_file(relative: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()
@@ -796,6 +899,83 @@ mod tests {
     }
 
     #[test]
+    fn emit_from_resolved_uses_operator_library_binding_before_stub_fallback() {
+        let _guard = env_lock().lock().expect("env lock");
+        let root = temp_operator_root("realize_library_binding");
+        std::fs::create_dir_all(root.join(".provekit")).expect("create .provekit");
+        std::fs::write(
+            root.join(".provekit").join("library-bindings.json"),
+            r#"{
+  "language": "rust",
+  "bindings": {
+    "concept:custom-echo": "rust-demo"
+  }
+}
+"#,
+        )
+        .expect("write library bindings");
+        let template_dir = root
+            .join("menagerie")
+            .join("rust-language-signature")
+            .join("specs")
+            .join("body-templates");
+        std::fs::create_dir_all(&template_dir).expect("create body template dir");
+        std::fs::write(
+            template_dir.join("rust-canonical-bodies-demo.json"),
+            r#"{
+  "header": {
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:custom-echo",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.clone()"
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1,
+            "requires_return_type": "String"
+          }
+        }
+      ]
+    }
+  }
+}
+"#,
+        )
+        .expect("write body template");
+        std::env::set_var("PROVEKIT_OPERATOR_ROOT", &root);
+        std::env::set_var("PROVEKIT_REPO_ROOT", &root);
+
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [],
+                "kind": "concept:op-application",
+                "op_definition_cid": "concept:custom-echo",
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "echo",
+            &strings(&["value"]),
+            &strings(&["String"]),
+            "String",
+        );
+
+        std::env::remove_var("PROVEKIT_OPERATOR_ROOT");
+        std::env::remove_var("PROVEKIT_REPO_ROOT");
+        let _ = std::fs::remove_dir_all(root);
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn echo(value: String) -> String {\n    value.clone()\n}\n"
+        );
+    }
+
+    #[test]
     fn dispatch_invoke_returns_rpc_result_shape() {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -819,5 +999,20 @@ mod tests {
             response["result"]["source"],
             "pub fn toggle(flag: bool) -> bool {\n    !flag\n}\n"
         );
+    }
+
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    fn temp_operator_root(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
+        std::fs::create_dir_all(&root).expect("create temp operator root");
+        root
     }
 }
