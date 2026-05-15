@@ -608,7 +608,7 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
             Stmt::Local(local) => {
                 return lower_local_binding_to_stmt(local, &stmts[idx + 1..], ctx)
             }
-            Stmt::Item(_) => return Err("unsupported statement Stmt::Item".to_string()),
+            Stmt::Item(_) => {}
             Stmt::Macro(mac) => {
                 ctx.add_loss(
                     LOSS_STATEMENT_MACRO,
@@ -1594,7 +1594,7 @@ fn longest_chain(s: &ShadowSource) -> Option<Vec<&crate::shadow::ShadowArrival>>
     // Group arrivals by callee_root_cid and pick the chain with the most
     // arrivals. BTreeMap (sorted by callee_root_cid key) guarantees
     // deterministic iteration order so that when two chains have the same
-    // length the FIRST key in lexicographic order wins — result is
+    // length the FIRST key in lexicographic order wins - result is
     // byte-for-byte identical across calls regardless of HashMap seed.
     use std::collections::BTreeMap;
     let mut chains: BTreeMap<String, Vec<&crate::shadow::ShadowArrival>> = BTreeMap::new();
