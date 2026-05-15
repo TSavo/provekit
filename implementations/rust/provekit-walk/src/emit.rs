@@ -154,10 +154,6 @@ const LOSS_IMPL_ASSOCIATED_TYPE_NOT_LOWERED: &str = "impl-associated-type-not-lo
 /// are parsed on a function signature but not represented in the term.
 const LOSS_ABI_ATTRIBUTE_NOT_CARRIED: &str = "abi-attribute-not-carried";
 
-/// Accepted-loss dimension for statement-position macro invocations that are
-/// retained only as an opaque no-op in the emitted term.
-const LOSS_STATEMENT_MACRO: &str = "statement-macro";
-
 /// Accepted-loss dimension for `let mut` bindings whose mutability marker is
 /// not represented in the let pattern term.
 const LOSS_LET_BINDING_MUTABILITY: &str = "let-binding-mutability";
@@ -166,9 +162,9 @@ const LOSS_LET_BINDING_MUTABILITY: &str = "let-binding-mutability";
 /// kept but whose binding semantics are not fully represented during bootstrap.
 const LOSS_D4_EXPR_LET: &str = "Expr::Let";
 
-/// Accepted-loss dimension for expression-position macros that are retained as
-/// opaque macro-call terms because this lifter does not expand macro bodies.
-const LOSS_D4_EXPR_MACRO: &str = "Expr::Macro";
+/// Accepted-loss dimension for Rust macro invocations that are recorded without
+/// expanding their token streams.
+const LOSS_MACRO_NOT_EXPANDED: &str = "macro-not-expanded";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AlgebraTerm {
@@ -614,11 +610,7 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
             }
             Stmt::Item(_) => {}
             Stmt::Macro(mac) => {
-                ctx.add_loss(
-                    LOSS_STATEMENT_MACRO,
-                    mac.mac.path.to_token_stream().to_string(),
-                );
-                lowered.push(AlgebraTerm::skip());
+                lowered.push(lower_macro_to_value_term(&mac.mac, ctx)?);
             }
         }
     }
@@ -739,6 +731,7 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
             lower_method_call_expr_to_value_term(method, ctx)
         }
         Expr::Call(call) => lower_call_expr_to_value_term(call, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(&mac.mac, ctx),
         Expr::Try(try_expr) => Ok(AlgebraTerm::op(
             "try",
             vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
@@ -883,7 +876,7 @@ fn lower_expr_to_bool_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebra
             lower_expr_to_value_term(expr, ctx)
         }
         Expr::Let(let_expr) => lower_let_expr_to_bool_term(let_expr, ctx),
-        Expr::Macro(mac) => lower_macro_to_value_term(mac, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(&mac.mac, ctx),
         Expr::Match(match_expr) => lower_match_to_bool_term(match_expr, ctx),
         Expr::Paren(paren) => lower_expr_to_bool_term(&paren.expr, ctx),
         Expr::Block(block) => {
@@ -1165,8 +1158,7 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
                 vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
             ))
         }
-        Expr::Macro(mac) if mac.mac.path.is_ident("vec") => lower_vec_macro_to_value_term(mac, ctx),
-        Expr::Macro(mac) => lower_macro_to_value_term(mac, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(&mac.mac, ctx),
         Expr::Match(match_expr) => lower_match_to_value_term(match_expr, ctx),
         Expr::Reference(reference) => {
             let op = if reference.mutability.is_some() {
@@ -1346,39 +1338,43 @@ fn lower_struct_expr_to_value_term(
 }
 
 fn lower_macro_to_value_term(
-    mac: &syn::ExprMacro,
+    mac: &syn::Macro,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
     let name = mac
-        .mac
         .path
         .segments
         .last()
         .map(|segment| segment.ident.to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    ctx.add_loss(LOSS_D4_EXPR_MACRO, format!("{name}!"));
+    ctx.add_loss(LOSS_MACRO_NOT_EXPANDED, format!("{name}!"));
+    if mac.path.is_ident("vec") {
+        if let Some(term) = lower_vec_macro_to_value_term(mac, ctx)? {
+            return Ok(term);
+        }
+    }
     Ok(AlgebraTerm::op(
-        format!("call:macro:{name}"),
-        vec![AlgebraTerm::Symbol(name), AlgebraTerm::List(Vec::new())],
+        format!("macro_call:{name}"),
+        vec![AlgebraTerm::Symbol(mac.tokens.to_string())],
     ))
 }
 
 fn lower_vec_macro_to_value_term(
-    mac: &syn::ExprMacro,
+    mac: &syn::Macro,
     ctx: &LoweringContext,
-) -> Result<AlgebraTerm, String> {
-    ctx.add_loss("vec-macro-desugared-to-array", "vec!");
+) -> Result<Option<AlgebraTerm>, String> {
     let parser = syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated;
-    let items = match parser.parse2(mac.mac.tokens.clone()) {
+    let items = match parser.parse2(mac.tokens.clone()) {
         Ok(items) => items
             .iter()
             .map(|expr| lower_expr_to_value_term(expr, ctx))
             .collect::<Result<Vec<_>, _>>()?,
-        Err(err) => {
-            return Err(format!("unsupported vec! macro body: {err}"));
-        }
+        Err(_) => return Ok(None),
     };
-    Ok(AlgebraTerm::op("array", vec![AlgebraTerm::List(items)]))
+    Ok(Some(AlgebraTerm::op(
+        "array",
+        vec![AlgebraTerm::List(items)],
+    )))
 }
 
 fn expr_sort(expr: &Expr, ctx: &LoweringContext) -> Option<ExprSort> {

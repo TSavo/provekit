@@ -79,6 +79,7 @@ fn d7_lowers_wildcard_let_binding_with_path_call_rhs() {
 }
 
 #[test]
+<<<<<<< Updated upstream
 fn d7_lowers_closure_in_value_position_with_loss_record() {
     let parsed = term_json(
         r#"
@@ -87,11 +88,63 @@ fn d7_lowers_closure_in_value_position_with_loss_record() {
             }
         "#,
         "make_incrementer",
+=======
+fn d7_lowers_vec_macro_value_to_array_with_macro_loss() {
+    let parsed = term_json(
+        r#"
+            fn make_vec() -> Vec<i32> {
+                vec![1, 2, 3]
+            }
+        "#,
+        "make_vec",
+>>>>>>> Stashed changes
     );
 
     assert_eq!(
         parsed["term_surface"].as_str(),
+<<<<<<< Updated upstream
         Some("let(pattern_bind(inc), closure([x], add(x, 1)), skip)")
     );
     assert_loss(&parsed, "closure-captures-environment");
+=======
+        Some("return(array([1, 2, 3]))")
+    );
+    assert_loss(&parsed, "macro-not-expanded");
+}
+
+#[test]
+fn d7_lowers_println_statement_macro_to_opaque_macro_call() {
+    let parsed = term_json(
+        r#"
+            fn log_hi() {
+                println!("hi");
+            }
+        "#,
+        "log_hi",
+    );
+
+    assert_eq!(
+        parsed["term_surface"].as_str(),
+        Some("macro_call:println(\"hi\")")
+    );
+    assert_loss(&parsed, "macro-not-expanded");
+}
+
+#[test]
+fn d7_lowers_assert_statement_macro_to_opaque_macro_call() {
+    let parsed = term_json(
+        r#"
+            fn check(cond: bool) {
+                assert!(cond);
+            }
+        "#,
+        "check",
+    );
+
+    assert_eq!(
+        parsed["term_surface"].as_str(),
+        Some("macro_call:assert(cond)")
+    );
+    assert_loss(&parsed, "macro-not-expanded");
+>>>>>>> Stashed changes
 }

@@ -117,9 +117,9 @@ fn d4_accepts_boolean_macro_expression_as_named_loss() {
     );
     assert_eq!(
         parsed["term_surface"].as_str(),
-        Some("return(call:macro:matches(matches, []))")
+        Some("return(macro_call:matches(x , 1))")
     );
-    assert_loss(&parsed, "Expr::Macro");
+    assert_loss(&parsed, "macro-not-expanded");
 }
 
 #[test]
