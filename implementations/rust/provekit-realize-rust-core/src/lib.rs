@@ -91,7 +91,7 @@ pub fn emit_from_resolved(
         }
     };
 
-    match lower_resolved_body(&resolved) {
+    match lower_resolved_body(&resolved, params) {
         Ok(body) => emit_function(
             function_name,
             params,
@@ -128,7 +128,7 @@ fn emit_function(
     }
 }
 
-fn lower_resolved_body(term: &Value) -> Result<String, String> {
+fn lower_resolved_body(term: &Value, params: &[String]) -> Result<String, String> {
     let concept_name = resolved_concept_name(term);
     if concept_name != "return" {
         return Err(concept_name);
@@ -138,30 +138,74 @@ fn lower_resolved_body(term: &Value) -> Result<String, String> {
     if args.len() != 1 {
         return Err("return".to_string());
     }
-    lower_resolved_expr(&args[0])
+    lower_resolved_expr(&args[0], params)
 }
 
-fn lower_resolved_expr(term: &Value) -> Result<String, String> {
+fn lower_resolved_expr(term: &Value, params: &[String]) -> Result<String, String> {
     match resolved_concept_name(term).as_str() {
-        "call:new" => lower_call_new(term),
+        "call:new" => lower_call_new(term, params),
         "literal" => lower_literal(term),
         concept_name => Err(concept_name.to_string()),
     }
 }
 
-fn lower_call_new(term: &Value) -> Result<String, String> {
+fn lower_call_new(term: &Value, params: &[String]) -> Result<String, String> {
     let args = resolved_args(term).ok_or_else(|| "call:new".to_string())?;
     if args.len() != 2 {
         return Err("call:new".to_string());
     }
 
     let name = lower_literal(&args[0])?;
-    let lowered_args = lower_literal(&args[1])?;
+    let lowered_args = lower_call_new_args_literal(&args[1], params)?;
     if name != "new" && !name.ends_with("::new") {
         return Err("call:new".to_string());
     }
 
     Ok(format!("{name}({lowered_args})"))
+}
+
+fn lower_call_new_args_literal(term: &Value, params: &[String]) -> Result<String, String> {
+    let node = resolved_node(term).ok_or_else(|| "literal".to_string())?;
+    if node.get("kind").and_then(Value::as_str) != Some("literal") {
+        return Err(resolved_concept_name(term));
+    }
+
+    match node.get("value") {
+        Some(Value::Array(items)) if is_value_null_literal(items) => Ok("Value::Null".to_string()),
+        Some(Value::Array(items)) => lower_single_value_variant_application(items, params)
+            .ok_or_else(|| "literal".to_string()),
+        _ => Err("literal".to_string()),
+    }
+}
+
+fn lower_single_value_variant_application(items: &[Value], params: &[String]) -> Option<String> {
+    if items.len() != 1 {
+        return None;
+    }
+
+    let surface = items[0].as_str()?;
+    let call = surface.strip_prefix("call:")?;
+    let (ctor_name, rest) = call.split_once('(')?;
+    let inner = rest.strip_suffix(')')?;
+    let (variant_path, arg_list) = inner.split_once(", [")?;
+    let arg = arg_list.strip_suffix(']')?;
+    let first_param = params.first()?;
+
+    if arg != first_param {
+        return None;
+    }
+
+    let variant_name = variant_path.rsplit("::").next()?;
+    if ctor_name != variant_name {
+        return None;
+    }
+
+    match variant_path {
+        "Value::Bool" | "Value::Integer" | "Value::String" => {
+            Some(format!("{variant_path}({arg})"))
+        }
+        _ => None,
+    }
 }
 
 fn lower_literal(term: &Value) -> Result<String, String> {
@@ -698,6 +742,41 @@ mod tests {
         items.iter().map(|item| item.to_string()).collect()
     }
 
+    fn resolved_return_call_new_with_literal_args(args: Vec<Value>) -> Value {
+        serde_json::json!({
+            "node": {
+                "args": [
+                    {
+                        "node": {
+                            "args": [
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": "Arc::new",
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "FnContract"},
+                                },
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": args,
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "ListOfExpr"},
+                                },
+                            ],
+                            "kind": "concept:op-application",
+                            "op_definition_cid": CALL_NEW_OP_CID,
+                        },
+                        "sort": {"args": [], "kind": "ctor", "name": "Expr"},
+                    },
+                ],
+                "kind": "concept:op-application",
+                "op_definition_cid": RETURN_OP_CID,
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        })
+    }
+
     #[test]
     fn renders_identity_from_body_template() {
         let rendered = emit_stub(
@@ -870,6 +949,66 @@ mod tests {
         assert_eq!(
             rendered.source,
             "pub fn null() -> Arc < Value > {\n    Arc::new(Value::Null)\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_bool_from_resolved_call_new_variant_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:Bool(Value::Bool, [b])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "boolean",
+            &strings(&["b"]),
+            &strings(&["bool"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn boolean(b: bool) -> Arc < Value > {\n    Arc::new(Value::Bool(b))\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_integer_from_resolved_call_new_variant_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:Integer(Value::Integer, [n])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "integer",
+            &strings(&["n"]),
+            &strings(&["i64"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn integer(n: i64) -> Arc < Value > {\n    Arc::new(Value::Integer(n))\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_string_from_resolved_call_new_variant_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:String(Value::String, [s])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "string",
+            &strings(&["s"]),
+            &strings(&["String"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn string(s: String) -> Arc < Value > {\n    Arc::new(Value::String(s))\n}\n"
         );
     }
 
