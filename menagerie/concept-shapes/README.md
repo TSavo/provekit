@@ -145,7 +145,7 @@ They are operation-contract shape mementos, not language-prefixed operations. Pe
 
 | Concept op | Shape CID | Minted morphisms |
 | --- | --- | --- |
-| `concept:add` | `blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824` | morphism_c11_add_to_add, morphism_csharp_add_to_add, morphism_go_add_to_add, morphism_zig_add_to_add, morphism_java_add_to_add |
+| `concept:add` | `blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468` | morphism_csharp_add_to_add, morphism_go_add_to_add, morphism_zig_add_to_add, morphism_java_add_to_add |
 | `concept:sub` | `blake3-512:b7c54558573348bb3a9297732547a8e6e9d152403d292df7426b6bb8a248f705b4b030bf2a22ba547a17d6f1bfaf8e75a6843e02e8f23a8226ebc09e2a8622af` | morphism_c11_sub_to_sub, morphism_csharp_sub_to_sub, morphism_go_sub_to_sub, morphism_zig_sub_to_sub, morphism_java_sub_to_sub |
 | `concept:mul` | `blake3-512:46cd627de058c8d4f7d087ea33f4904af65ad4b2e3cfd3aff8f44bf27db96b33c2dae39cd30f53898c233c9465ba8d2701c69e5903d48935113103b4db00fd03` | morphism_c11_mul_to_mul, morphism_csharp_mul_to_mul, morphism_go_mul_to_mul, morphism_zig_mul_to_mul, morphism_java_mul_to_mul |
 | `concept:div` | `blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839` | morphism_c11_div_to_div, morphism_go_div_to_div, morphism_zig_div_to_div, morphism_java_div_to_div |

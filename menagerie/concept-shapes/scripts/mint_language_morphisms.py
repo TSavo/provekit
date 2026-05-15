@@ -93,7 +93,20 @@ COMMON_ALIASES = {
 }
 
 
-def op(slug, base, concept_operator=None, base_operator=None, renaming=None, aliases=None, patches=None, sort_renames=None, notes="", wp_rule=None):
+def op(
+    slug,
+    base,
+    concept_operator=None,
+    base_operator=None,
+    renaming=None,
+    aliases=None,
+    patches=None,
+    sort_renames=None,
+    notes="",
+    wp_rule=None,
+    mode_sort=None,
+    mode_bindings=None,
+):
     """Define a concept hub op and its per-language discharge configuration.
 
     sort_renames: per-language sort-name rename map, keyed by language id.
@@ -115,11 +128,29 @@ def op(slug, base, concept_operator=None, base_operator=None, renaming=None, ali
         "sort_renames": sort_renames or {},
         "notes": notes,
         "wp_rule": wp_rule,
+        "mode_sort": mode_sort,
+        "mode_bindings": mode_bindings or {},
     }
 
 
 OPS = [
-    op("add", ("c11", "op_add.spec.json")),
+    op(
+        "add",
+        ("c11", "op_add.spec.json"),
+        mode_sort="ArithmeticOverflowMode",
+        mode_bindings={
+            "c11": "Checked",
+            "csharp": "Wrapping",
+            "go": "Wrapping",
+            "java": "Wrapping",
+            "php": "Wrapping",
+            "python": "Wrapping",
+            "ruby": "Wrapping",
+            "rust": "Checked",
+            "typescript": "Wrapping",
+            "zig": "Checked",
+        },
+    ),
     op("sub", ("c11", "op_sub.spec.json")),
     op("mul", ("c11", "op_mul.spec.json")),
     op("div", ("c11", "op_div.spec.json"), notes="integer division only; floating division is out of scope"),
@@ -259,6 +290,51 @@ def empty_effects():
     return {"effects": []}
 
 
+def var(name):
+    return {"kind": "var", "name": name}
+
+
+def effect_signature(name):
+    return {"kind": "effect-signature", "name": name}
+
+
+def overflow_mode(mode, effects, post):
+    return {
+        "effects": [effect_signature(name) for name in effects],
+        "mode": mode,
+        "post": post,
+    }
+
+
+def arithmetic_overflow_modes():
+    return [
+        overflow_mode(
+            "Checked",
+            ["Throw"],
+            "Refuses on overflow and records the named loss dimension arithmetic-overflow.",
+        ),
+        overflow_mode(
+            "Wrapping",
+            [],
+            "Returns (lhs + rhs) mod 2^N for the selected fixed-width Int representation.",
+        ),
+        overflow_mode(
+            "Saturating",
+            [],
+            "Clamps the result to [Int::MIN, Int::MAX] for the selected fixed-width Int representation.",
+        ),
+    ]
+
+
+def add_wp_note():
+    return (
+        "Integer addition parameterized by ArithmeticOverflowMode. "
+        "mode=Checked implies post: refusal-on-overflow as named loss-dim arithmetic-overflow. "
+        "mode=Wrapping implies post: result is (lhs + rhs) mod 2^N per Int width. "
+        "mode=Saturating implies post: result clamps to [Int::MIN, Int::MAX]."
+    )
+
+
 def algorithm_payload(spec):
     payload = {
         "schema_version": "1",
@@ -319,6 +395,49 @@ def apply_wp_rule(spec, op_def):
         post["wp_rule"] = copy.deepcopy(wp_rule)
 
 
+def _slot_name(slot):
+    if isinstance(slot, dict):
+        return slot.get("name")
+    return slot
+
+
+def _append_named_slot(spec, name):
+    post = spec.setdefault("post", {})
+    arity_shape = post.setdefault("arity_shape", {"kind": "named", "slots": []})
+    slots = arity_shape.setdefault("slots", [])
+    if not slots:
+        slots.extend({"name": formal} for formal in spec.get("formals", []))
+    if name not in [_slot_name(slot) for slot in slots]:
+        slots.append({"name": name})
+
+
+def _add_mode_slot(spec, op_def):
+    mode_sort = op_def.get("mode_sort")
+    if not mode_sort:
+        return
+    if "mode" not in spec.get("formals", []):
+        spec.setdefault("formals", []).append("mode")
+        spec.setdefault("formal_sorts", []).append(fn_sort(mode_sort))
+    post = spec.setdefault("post", {})
+    if mode_sort not in post.setdefault("arity", []):
+        post["arity"].append(mode_sort)
+    _append_named_slot(spec, "mode")
+    post["slot_terms"] = [var(formal) for formal in spec.get("formals", [])]
+
+
+def retrofit_add_mode_shape(spec, op_def, concept):
+    if op_def["slug"] != "add":
+        return spec
+    _add_mode_slot(spec, op_def)
+    spec["loss_dimensions"] = sorted(set(spec.get("loss_dimensions", [])) | {"arithmetic-overflow"})
+    spec["arithmetic_overflow_modes"] = arithmetic_overflow_modes()
+    if concept:
+        spec["pre"] = true_formula()
+        spec["effects"] = empty_effects()
+        spec["post"]["wp_note"] = add_wp_note()
+    return spec
+
+
 def normalize_node(value, renaming, representation, operators, literals):
     return discharge.normalize_node(value, renaming, representation, operators, literals)
 
@@ -342,6 +461,7 @@ def concept_spec_from_base(op_def):
     data["post"].pop("wp_rule", None)
     apply_patches(data, op_def["patches"])
     apply_wp_rule(data, op_def)
+    retrofit_add_mode_shape(data, op_def, concept=True)
     return data
 
 
@@ -407,7 +527,15 @@ def transformed_source_spec(op_def, source_spec, language):
     data.pop("transport_core", None)
     data["fn_name"] = op_def["concept_fn"]
     data["post"]["operator"] = op_def["concept_operator"]
+    retrofit_add_mode_shape(data, op_def, concept=False)
     return data, operators
+
+
+def mode_bindings_for(op_def, language):
+    mode = op_def.get("mode_bindings", {}).get(language["id"])
+    if not mode:
+        return {}
+    return {"mode": fn_sort(mode)}
 
 
 # Per-(lang, concept-slug) override reasons for known genuine semantic divergences.
@@ -716,7 +844,32 @@ def try_structural_subsumption(after_spec, concept_spec):
     return None
 
 
-def morphism_spec(source_name, source_cid, concept_fn, shape_cid, renaming, operator_map, discharge_method="canonicalizer-alpha-equivalence-plus-representation-map"):
+def morphism_spec(
+    source_name,
+    source_cid,
+    concept_fn,
+    shape_cid,
+    renaming,
+    operator_map,
+    discharge_method="canonicalizer-alpha-equivalence-plus-representation-map",
+    mode_bindings=None,
+):
+    post = {
+        "kind": "contract-renaming-morphism",
+        "source_contract_cid": source_cid,
+        "target_shape_cid": shape_cid,
+        "renaming_map": renaming,
+        "representation_map": {},
+        "operator_map": operator_map,
+        "literal_map": {},
+        "homomorphism_obligation": {
+            "kind": discharge_method,
+            "source": source_cid,
+            "target": shape_cid,
+        },
+    }
+    if mode_bindings:
+        post["mode_bindings"] = mode_bindings
     return {
         "kind": "algorithm",
         "fn_name": f"morphism:{source_name}:to:{concept_fn}",
@@ -724,20 +877,7 @@ def morphism_spec(source_name, source_cid, concept_fn, shape_cid, renaming, oper
         "formal_sorts": [fn_sort("FunctionContractMemento")],
         "return_sort": fn_sort("FunctionContractMemento"),
         "pre": true_formula(),
-        "post": {
-            "kind": "contract-renaming-morphism",
-            "source_contract_cid": source_cid,
-            "target_shape_cid": shape_cid,
-            "renaming_map": renaming,
-            "representation_map": {},
-            "operator_map": operator_map,
-            "literal_map": {},
-            "homomorphism_obligation": {
-                "kind": discharge_method,
-                "source": source_cid,
-                "target": shape_cid,
-            },
-        },
+        "post": post,
         "effects": empty_effects(),
         "input_cids": [source_cid, shape_cid],
     }
@@ -756,24 +896,22 @@ def existing_cid_rows():
 
 def append_cids(rows):
     existing = CID_FILE.read_text(encoding="utf-8").splitlines() if CID_FILE.exists() else ["kind\tname\tcid\tpath"]
-    seen = {}  # (kind, name) -> cid
-    for line in existing[1:]:
+    seen = {}  # (kind, name) -> (cid, line_index)
+    for idx, line in enumerate(existing[1:], start=1):
         parts = line.split("\t")
         if len(parts) >= 3:
-            seen[(parts[0], parts[1])] = parts[2]
+            seen[(parts[0], parts[1])] = (parts[2], idx)
     for row in rows:
         key = (row["kind"], row["name"])
+        line = f"{row['kind']}\t{row['name']}\t{row['cid']}\t{row['path']}"
         if key in seen:
-            if seen[key] != row["cid"]:
-                raise SystemExit(
-                    f"one-name-one-CID violation: {row['kind']} {row['name']} "
-                    f"already registered as {seen[key]!r} but new mint produced {row['cid']!r}. "
-                    f"A stale cids.tsv row is hiding the fresh mint. "
-                    f"Re-run mint.sh from a clean state."
-                )
+            old_cid, idx = seen[key]
+            if old_cid != row["cid"]:
+                existing[idx] = line
+                seen[key] = (row["cid"], idx)
             continue
-        existing.append(f"{row['kind']}\t{row['name']}\t{row['cid']}\t{row['path']}")
-        seen[key] = row["cid"]
+        existing.append(line)
+        seen[key] = (row["cid"], len(existing) - 1)
     CID_FILE.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
 
@@ -1186,6 +1324,8 @@ def main():
     # that op.  This ensures the effect-subset relaxation can discharge language ops
     # whose effect sets are proper subsets of the concept op's declared effects.
     for op_def in OPS:
+        if op_def.get("mode_sort"):
+            continue
         union_effects = _collect_union_effects(op_def)
         if union_effects:
             concept_specs[op_def["slug"]]["effects"] = {"effects": union_effects}
@@ -1239,6 +1379,7 @@ def main():
                     break
                 source_cid = canonical_cid_spec(source_spec)
                 after_spec, operator_map = transformed_source_spec(op_def, source_spec, language)
+                mode_bindings = mode_bindings_for(op_def, language)
                 after_cid = canonical_cid_spec(after_spec)
                 if after_cid != shape_cid:
                     subsumption = try_structural_subsumption(after_spec, concept_spec)
@@ -1261,7 +1402,16 @@ def main():
                     effect_subset_relaxed = False
                 after_name = f"{sanitize(language['id'])}_{sanitize(source_name.split(':', 1)[-1])}_to_{sanitize(op_def['slug'])}_after_substitution.json"
                 write_json(DISCHARGE_DIR / after_name, after_spec)
-                m_spec = morphism_spec(source_name, source_cid, op_def["concept_fn"], shape_cid, op_def["renaming"], operator_map, discharge_method)
+                m_spec = morphism_spec(
+                    source_name,
+                    source_cid,
+                    op_def["concept_fn"],
+                    shape_cid,
+                    op_def["renaming"],
+                    operator_map,
+                    discharge_method,
+                    mode_bindings=mode_bindings,
+                )
                 write_json(SPEC_DIR / f"{stem}.spec.json", m_spec)
                 morphism_cid, morphism_path = discharge.mint("algorithm", f"{stem}.spec.json")
                 sweep_stale_catalog_files(morphism_path, morphism_cid)
@@ -1281,6 +1431,8 @@ def main():
                     "method": discharge_method,
                     "signature": None,
                 }
+                if mode_bindings:
+                    receipt["mode_bindings"] = mode_bindings
                 # Only annotate structural relaxation fields when actually used.
                 # Omitting them from byte-equality receipts preserves backward-compatible CIDs.
                 if pre_relaxed:

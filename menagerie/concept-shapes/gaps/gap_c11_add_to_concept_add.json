@@ -1,49 +1,26 @@
 {
-  "fn_name": "gap:python:add:to:concept:add",
-  "gap_kind": "polymorphic-source-op",
+  "fn_name": "gap:c11:add:to:concept:add",
+  "gap_kind": "sort-mismatch",
   "kind": "TransportGapMemento",
   "reason": {
-    "formal_sorts_delta": {
-      "got": [
-        {
-          "args": [],
-          "kind": "ctor",
-          "name": "Value"
-        },
-        {
-          "args": [],
-          "kind": "ctor",
-          "name": "Value"
-        },
-        {
-          "args": [],
-          "kind": "ctor",
-          "name": "ArithmeticOverflowMode"
-        }
-      ],
-      "want": [
-        {
-          "args": [],
-          "kind": "ctor",
-          "name": "Int"
-        },
-        {
-          "args": [],
-          "kind": "ctor",
-          "name": "Int"
-        },
-        {
-          "args": [],
-          "kind": "ctor",
-          "name": "ArithmeticOverflowMode"
-        }
-      ]
+    "effects_delta": {
+      "got": {
+        "effects": [
+          {
+            "kind": "effect-signature",
+            "name": "Trap"
+          }
+        ]
+      },
+      "want": {
+        "effects": []
+      }
     },
     "post_delta": {
       "got": {
         "arity": [
-          "Value",
-          "Value",
+          "Int",
+          "Int",
           "ArithmeticOverflowMode"
         ],
         "arity_shape": {
@@ -62,7 +39,7 @@
         },
         "kind": "operation-contract",
         "operator": "add",
-        "result": "Value",
+        "result": "Int",
         "slot_terms": [
           {
             "kind": "var",
@@ -77,7 +54,7 @@
             "name": "mode"
           }
         ],
-        "wp": "Python add expression"
+        "wp": "mathematical integer addition when no overflow holds"
       },
       "want": {
         "arity": [
@@ -118,25 +95,52 @@
         ],
         "wp_note": "Integer addition parameterized by ArithmeticOverflowMode. mode=Checked implies post: refusal-on-overflow as named loss-dim arithmetic-overflow. mode=Wrapping implies post: result is (lhs + rhs) mod 2^N per Int width. mode=Saturating implies post: result clamps to [Int::MIN, Int::MAX]."
       }
+    },
+    "pre_delta": {
+      "got": {
+        "args": [
+          {
+            "args": [
+              {
+                "kind": "var",
+                "name": "lhs"
+              },
+              {
+                "kind": "var",
+                "name": "rhs"
+              }
+            ],
+            "kind": "op",
+            "name": "add"
+          }
+        ],
+        "kind": "atomic",
+        "name": "no_signed_overflow"
+      },
+      "want": {
+        "args": [],
+        "kind": "atomic",
+        "name": "true"
+      }
     }
   },
-  "reason_note": "python:add is polymorphic (dispatches on operand type: int, float, str, list); concept:add is integer-only",
+  "reason_note": "precondition mismatch: got `{\"kind\":\"atomic\",\"name\":\"no_signed_overflow\",\"args\":[{\"kind\":\"op\",\"name\":\"add\",\"args\":[{\"kind\":\"var\",\"name\":\"lhs\"},{\"kind\":\"var\",\"name\":\"rhs\"}]}]}` want `{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]}`",
   "resolution_options": [
     {
-      "option_kind": "partial-morphism",
+      "option_kind": "add-representation-map",
       "status": "recommended",
-      "tradeoff": "requires the lift to establish operands_statically_int at every use-site; dynamic languages rarely carry enough static sort info"
+      "tradeoff": "extend the morphism's representation_map to rename the diverging sort; zero semantic change if the sorts are interchangeable aliases"
     },
     {
       "option_kind": "accept-permanent",
       "status": "deferred",
-      "tradeoff": "no exact bridge for the polymorphic case; gap is permanent unless the hub op is split or the lift learns sort-resolution"
+      "tradeoff": "no exact bridge for structurally distinct sorts"
     }
   ],
   "schema_version": "1",
   "signature": null,
-  "source_lang": "python",
-  "source_op_cid": "blake3-512:2818fd63a4fdcc4d6df720dc2b8b7bfc515b4ec4b49caacd0e089c40dece25c9941b602f5d7dd1cb5b3aee9d54d34a0aaeaf7510d148ec6d3a30fbff5a1e6407",
+  "source_lang": "c11",
+  "source_op_cid": "blake3-512:423be59ab82079cf2f8fa5263463bbb3cf1ce9320e5e57c65a29d3b0612a30f9dac405526b729f28e3524f5f620544e79ca0c0b9b27e9b2ce35e50ca58ba128d",
   "target_concept_op": "concept:add",
   "target_op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
 }

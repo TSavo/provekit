@@ -1,15 +1,28 @@
 {
+  "arithmetic_overflow_modes": [
+    {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Throw"
+        }
+      ],
+      "mode": "Checked",
+      "post": "Refuses on overflow and records the named loss dimension arithmetic-overflow."
+    },
+    {
+      "effects": [],
+      "mode": "Wrapping",
+      "post": "Returns (lhs + rhs) mod 2^N for the selected fixed-width Int representation."
+    },
+    {
+      "effects": [],
+      "mode": "Saturating",
+      "post": "Clamps the result to [Int::MIN, Int::MAX] for the selected fixed-width Int representation."
+    }
+  ],
   "effects": {
-    "effects": [
-      {
-        "kind": "effect-signature",
-        "name": "Trap"
-      },
-      {
-        "kind": "effect-signature",
-        "name": "Panic"
-      }
-    ]
+    "effects": []
   },
   "fn_name": "concept:add",
   "formal_sorts": [
@@ -22,17 +35,27 @@
       "args": [],
       "kind": "ctor",
       "name": "Int"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "ArithmeticOverflowMode"
     }
   ],
   "formals": [
     "lhs",
-    "rhs"
+    "rhs",
+    "mode"
   ],
   "kind": "algorithm",
+  "loss_dimensions": [
+    "arithmetic-overflow"
+  ],
   "post": {
     "arity": [
       "Int",
-      "Int"
+      "Int",
+      "ArithmeticOverflowMode"
     ],
     "arity_shape": {
       "kind": "named",
@@ -42,33 +65,35 @@
         },
         {
           "name": "rhs"
+        },
+        {
+          "name": "mode"
         }
       ]
     },
     "kind": "operation-contract",
     "operator": "add",
     "result": "Int",
-    "wp_note": "mathematical integer addition when no overflow holds"
-  },
-  "pre": {
-    "args": [
+    "slot_terms": [
       {
-        "args": [
-          {
-            "kind": "var",
-            "name": "lhs"
-          },
-          {
-            "kind": "var",
-            "name": "rhs"
-          }
-        ],
-        "kind": "op",
-        "name": "add"
+        "kind": "var",
+        "name": "lhs"
+      },
+      {
+        "kind": "var",
+        "name": "rhs"
+      },
+      {
+        "kind": "var",
+        "name": "mode"
       }
     ],
+    "wp_note": "Integer addition parameterized by ArithmeticOverflowMode. mode=Checked implies post: refusal-on-overflow as named loss-dim arithmetic-overflow. mode=Wrapping implies post: result is (lhs + rhs) mod 2^N per Int width. mode=Saturating implies post: result clamps to [Int::MIN, Int::MAX]."
+  },
+  "pre": {
+    "args": [],
     "kind": "atomic",
-    "name": "no_signed_overflow"
+    "name": "true"
   },
   "return_sort": {
     "args": [],
