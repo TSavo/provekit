@@ -47,7 +47,29 @@ pub fn rust_function_term_json(
     item_fn: &syn::ItemFn,
     source: impl Into<String>,
 ) -> Result<Vec<u8>, String> {
-    let value = rust_function_term_json_value(item_fn, source)?;
+    let value = rust_function_term_json_value_with_losses(item_fn, source, Vec::new())?;
+    let canonical = serde_to_canonical(value);
+    Ok(jcs_bytes_of_value(&canonical))
+}
+
+/// Emit a Rust algebra term for a function found inside a parsed source file.
+///
+/// D3 accepted-loss classes include context that a bare `syn::ItemFn` cannot
+/// carry, such as associated types on a containing impl block and derive or
+/// attribute macros elsewhere in the source file. This entrypoint preserves the
+/// normal term emission path while recording those syntactic losses by name.
+pub fn rust_function_term_json_for_file(
+    file: &syn::File,
+    function_name: &str,
+    source: impl Into<String>,
+) -> Result<Vec<u8>, String> {
+    let target = find_term_function(file, function_name)
+        .ok_or_else(|| format!("function `{function_name}` not found"))?;
+    let value = rust_function_term_json_value_with_losses(
+        &target.item_fn,
+        source,
+        target.contextual_losses,
+    )?;
     let canonical = serde_to_canonical(value);
     Ok(jcs_bytes_of_value(&canonical))
 }
@@ -57,7 +79,24 @@ pub fn rust_function_term_json_cid(
     item_fn: &syn::ItemFn,
     source: impl Into<String>,
 ) -> Result<String, String> {
-    let value = rust_function_term_json_value(item_fn, source)?;
+    let value = rust_function_term_json_value_with_losses(item_fn, source, Vec::new())?;
+    let canonical = serde_to_canonical(value);
+    Ok(cid_of_value(&canonical))
+}
+
+/// CID of the file-aware emitted Rust algebra term JSON document.
+pub fn rust_function_term_json_cid_for_file(
+    file: &syn::File,
+    function_name: &str,
+    source: impl Into<String>,
+) -> Result<String, String> {
+    let target = find_term_function(file, function_name)
+        .ok_or_else(|| format!("function `{function_name}` not found"))?;
+    let value = rust_function_term_json_value_with_losses(
+        &target.item_fn,
+        source,
+        target.contextual_losses,
+    )?;
     let canonical = serde_to_canonical(value);
     Ok(cid_of_value(&canonical))
 }
@@ -67,8 +106,20 @@ pub fn rust_function_term_json_value(
     item_fn: &syn::ItemFn,
     source: impl Into<String>,
 ) -> Result<JsonValue, String> {
-    let ctx = LoweringContext::from_item_fn(item_fn);
-    let term = lower_function_body_to_term(item_fn, &ctx)?;
+    rust_function_term_json_value_with_losses(item_fn, source, Vec::new())
+}
+
+fn rust_function_term_json_value_with_losses(
+    item_fn: &syn::ItemFn,
+    source: impl Into<String>,
+    contextual_losses: Vec<LossRecord>,
+) -> Result<JsonValue, String> {
+    let ctx = LoweringContext::from_item_fn_with_losses(item_fn, contextual_losses);
+    let term = match lower_function_body_to_term(item_fn, &ctx) {
+        Ok(term) => term,
+        Err(_) if ctx.allows_accepted_loss_placeholder() => AlgebraTerm::skip(),
+        Err(err) => return Err(err),
+    };
     let term_surface = term.surface();
     let loss_record = ctx.loss_record_json();
     let handling = if loss_record.is_empty() {
@@ -86,6 +137,26 @@ pub fn rust_function_term_json_value(
         "term": term.to_json()?,
     }))
 }
+
+/// Accepted-loss dimension for derive and attribute macros that are observed
+/// but not expanded by the Rust term lifter.
+const LOSS_PROCEDURAL_MACRO: &str = "procedural-macro";
+
+/// Accepted-loss dimension for qualified Rust paths whose leading segments are
+/// not preserved in the current algebra-term surface.
+const LOSS_TRAIT_PATH_TRUNCATED: &str = "trait-path-truncated";
+
+/// Accepted-loss dimension for associated type declarations on impl blocks
+/// that are not carried into the emitted function term.
+const LOSS_IMPL_ASSOCIATED_TYPE_NOT_LOWERED: &str = "impl-associated-type-not-lowered";
+
+/// Accepted-loss dimension for Rust ABI annotations such as `extern "C"` that
+/// are parsed on a function signature but not represented in the term.
+const LOSS_ABI_ATTRIBUTE_NOT_CARRIED: &str = "abi-attribute-not-carried";
+
+/// Accepted-loss dimension for statement-position macro invocations that are
+/// retained only as an opaque no-op in the emitted term.
+const LOSS_STATEMENT_MACRO: &str = "statement-macro";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AlgebraTerm {
@@ -263,7 +334,7 @@ struct LoweringContext {
 }
 
 impl LoweringContext {
-    fn from_item_fn(item_fn: &syn::ItemFn) -> Self {
+    fn from_item_fn_with_losses(item_fn: &syn::ItemFn, contextual_losses: Vec<LossRecord>) -> Self {
         let mut vars = HashMap::new();
         for arg in &item_fn.sig.inputs {
             let syn::FnArg::Typed(pat_type) = arg else {
@@ -277,12 +348,30 @@ impl LoweringContext {
             }
         }
         let losses = Rc::new(RefCell::new(Vec::new()));
+        for loss in contextual_losses {
+            push_loss(&losses, loss);
+        }
+        for loss in accepted_losses_for_attrs(&item_fn.attrs) {
+            push_loss(&losses, loss);
+        }
+        if let Some(abi) = &item_fn.sig.abi {
+            push_loss(
+                &losses,
+                LossRecord {
+                    loss: LOSS_ABI_ATTRIBUTE_NOT_CARRIED,
+                    detail: abi.to_token_stream().to_string(),
+                },
+            );
+        }
         let return_shape = return_shape_from_return_type(&item_fn.sig.output);
         if let ReturnShape::Partial { loss, rust_type } = &return_shape {
-            losses.borrow_mut().push(LossRecord {
-                loss,
-                detail: rust_type.clone(),
-            });
+            push_loss(
+                &losses,
+                LossRecord {
+                    loss,
+                    detail: rust_type.clone(),
+                },
+            );
         }
         Self {
             return_shape,
@@ -304,14 +393,13 @@ impl LoweringContext {
     }
 
     fn add_loss(&self, loss: &'static str, detail: impl Into<String>) {
-        let detail = detail.into();
-        let mut losses = self.losses.borrow_mut();
-        if !losses
-            .iter()
-            .any(|record| record.loss == loss && record.detail == detail)
-        {
-            losses.push(LossRecord { loss, detail });
-        }
+        push_loss(
+            &self.losses,
+            LossRecord {
+                loss,
+                detail: detail.into(),
+            },
+        );
     }
 
     fn loss_record_json(&self) -> Vec<JsonValue> {
@@ -326,6 +414,167 @@ impl LoweringContext {
             })
             .collect()
     }
+
+    fn has_loss(&self, loss: &'static str) -> bool {
+        self.losses
+            .borrow()
+            .iter()
+            .any(|record| record.loss == loss)
+    }
+
+    fn allows_accepted_loss_placeholder(&self) -> bool {
+        self.has_loss(LOSS_ABI_ATTRIBUTE_NOT_CARRIED)
+            || self.has_loss(LOSS_IMPL_ASSOCIATED_TYPE_NOT_LOWERED)
+    }
+}
+
+fn push_loss(losses: &Rc<RefCell<Vec<LossRecord>>>, loss: LossRecord) {
+    let mut losses = losses.borrow_mut();
+    if !losses
+        .iter()
+        .any(|record| record.loss == loss.loss && record.detail == loss.detail)
+    {
+        losses.push(loss);
+    }
+}
+
+struct TermFunctionContext {
+    item_fn: syn::ItemFn,
+    contextual_losses: Vec<LossRecord>,
+}
+
+fn find_term_function(file: &syn::File, name: &str) -> Option<TermFunctionContext> {
+    let file_losses = accepted_losses_for_file(file);
+    find_term_function_in_items(&file.items, name, &file_losses)
+}
+
+fn find_term_function_in_items(
+    items: &[syn::Item],
+    name: &str,
+    inherited_losses: &[LossRecord],
+) -> Option<TermFunctionContext> {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) if item_fn.sig.ident == name => {
+                return Some(TermFunctionContext {
+                    item_fn: item_fn.clone(),
+                    contextual_losses: inherited_losses.to_vec(),
+                });
+            }
+            syn::Item::Impl(impl_block) => {
+                let mut impl_losses = inherited_losses.to_vec();
+                impl_losses.extend(accepted_losses_for_attrs(&impl_block.attrs));
+                if impl_block
+                    .items
+                    .iter()
+                    .any(|item| matches!(item, syn::ImplItem::Type(_)))
+                {
+                    impl_losses.push(LossRecord {
+                        loss: LOSS_IMPL_ASSOCIATED_TYPE_NOT_LOWERED,
+                        detail: impl_block.self_ty.to_token_stream().to_string(),
+                    });
+                }
+                for impl_item in &impl_block.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        if method.sig.ident == name {
+                            return Some(TermFunctionContext {
+                                item_fn: syn::ItemFn {
+                                    attrs: method.attrs.clone(),
+                                    vis: method.vis.clone(),
+                                    sig: method.sig.clone(),
+                                    block: Box::new(method.block.clone()),
+                                },
+                                contextual_losses: impl_losses,
+                            });
+                        }
+                    }
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested_items)) = &module.content {
+                    let mut module_losses = inherited_losses.to_vec();
+                    module_losses.extend(accepted_losses_for_attrs(&module.attrs));
+                    if let Some(found) =
+                        find_term_function_in_items(nested_items, name, &module_losses)
+                    {
+                        return Some(found);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn accepted_losses_for_file(file: &syn::File) -> Vec<LossRecord> {
+    let mut losses = Vec::new();
+    for item in &file.items {
+        collect_procedural_macro_losses_from_item(item, &mut losses);
+    }
+    losses
+}
+
+fn collect_procedural_macro_losses_from_item(item: &syn::Item, losses: &mut Vec<LossRecord>) {
+    let attrs: &[syn::Attribute] = match item {
+        syn::Item::Const(item) => &item.attrs,
+        syn::Item::Enum(item) => &item.attrs,
+        syn::Item::Fn(item) => &item.attrs,
+        syn::Item::Impl(item) => {
+            losses.extend(accepted_losses_for_attrs(&item.attrs));
+            for impl_item in &item.items {
+                match impl_item {
+                    syn::ImplItem::Const(item) => {
+                        losses.extend(accepted_losses_for_attrs(&item.attrs))
+                    }
+                    syn::ImplItem::Fn(item) => {
+                        losses.extend(accepted_losses_for_attrs(&item.attrs))
+                    }
+                    syn::ImplItem::Type(item) => {
+                        losses.extend(accepted_losses_for_attrs(&item.attrs))
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+        syn::Item::Mod(item) => {
+            losses.extend(accepted_losses_for_attrs(&item.attrs));
+            if let Some((_, items)) = &item.content {
+                for item in items {
+                    collect_procedural_macro_losses_from_item(item, losses);
+                }
+            }
+            return;
+        }
+        syn::Item::Struct(item) => &item.attrs,
+        syn::Item::Trait(item) => &item.attrs,
+        syn::Item::Type(item) => &item.attrs,
+        syn::Item::Union(item) => &item.attrs,
+        _ => &[],
+    };
+    losses.extend(accepted_losses_for_attrs(attrs));
+}
+
+fn accepted_losses_for_attrs(attrs: &[syn::Attribute]) -> Vec<LossRecord> {
+    attrs
+        .iter()
+        .filter(|attr| attr_counts_as_procedural_macro(attr))
+        .map(|attr| LossRecord {
+            loss: LOSS_PROCEDURAL_MACRO,
+            detail: attr.path().to_token_stream().to_string(),
+        })
+        .collect()
+}
+
+fn attr_counts_as_procedural_macro(attr: &syn::Attribute) -> bool {
+    let Some(ident) = attr.path().get_ident() else {
+        return true;
+    };
+    !matches!(
+        ident.to_string().as_str(),
+        "allow" | "cfg" | "cfg_attr" | "deny" | "doc" | "forbid" | "inline" | "must_use" | "warn"
+    )
 }
 
 fn lower_function_body_to_term(
@@ -352,7 +601,13 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
                 return lower_local_binding_to_stmt(local, &stmts[idx + 1..], ctx)
             }
             Stmt::Item(_) => return Err("unsupported statement Stmt::Item".to_string()),
-            Stmt::Macro(_) => return Err("unsupported statement Stmt::Macro".to_string()),
+            Stmt::Macro(mac) => {
+                ctx.add_loss(
+                    LOSS_STATEMENT_MACRO,
+                    mac.mac.path.to_token_stream().to_string(),
+                );
+                lowered.push(AlgebraTerm::skip());
+            }
         }
     }
     Ok(seq_all(lowered))
@@ -525,7 +780,8 @@ fn lower_expr_to_bool_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebra
             _ => Err("non-bool literal in boolean term".to_string()),
         },
         Expr::Path(path) => {
-            let name = path_name(path).ok_or_else(|| "empty path in boolean term".to_string())?;
+            let name = path_name_for_expr(path, ctx)
+                .ok_or_else(|| "empty path in boolean term".to_string())?;
             match ctx.vars.get(&name).copied() {
                 Some(ExprSort::Bool) => Ok(AlgebraTerm::Var(name.clone())),
                 Some(sort) => Err(format!(
@@ -598,7 +854,7 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
             Lit::Bool(value) => Ok(AlgebraTerm::ConstBool(value.value)),
             _ => Err("unsupported literal expression".to_string()),
         },
-        Expr::Path(path) => path_name(path)
+        Expr::Path(path) => path_name_for_expr(path, ctx)
             .map(AlgebraTerm::Var)
             .ok_or_else(|| "empty path expression".to_string()),
         Expr::Paren(paren) => lower_expr_to_value_term(&paren.expr, ctx),
@@ -725,7 +981,7 @@ fn lower_call_expr_to_value_term(
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
     let callee = match &*call.func {
-        Expr::Path(path) => path_name(path).unwrap_or_else(|| "unknown".to_string()),
+        Expr::Path(path) => path_name_for_expr(path, ctx).unwrap_or_else(|| "unknown".to_string()),
         other => {
             ctx.add_loss(
                 "ffi-call-unresolved-callee",
@@ -811,7 +1067,9 @@ fn expr_sort(expr: &Expr, ctx: &LoweringContext) -> Option<ExprSort> {
             Lit::Int(_) => Some(ExprSort::Int),
             _ => None,
         },
-        Expr::Path(path) => path_name(path).and_then(|name| ctx.vars.get(&name).copied()),
+        Expr::Path(path) => {
+            path_name_for_expr(path, ctx).and_then(|name| ctx.vars.get(&name).copied())
+        }
         Expr::Paren(paren) => expr_sort(&paren.expr, ctx),
         Expr::Block(block) => {
             block_single_tail_expr(&block.block).and_then(|expr| expr_sort(expr, ctx))
@@ -1000,6 +1258,19 @@ fn path_name(path: &syn::ExprPath) -> Option<String> {
         .segments
         .last()
         .map(|segment| segment.ident.to_string())
+}
+
+fn path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<String> {
+    if path.qself.is_some() {
+        return None;
+    }
+    if path.path.segments.len() > 1 {
+        ctx.add_loss(
+            LOSS_TRAIT_PATH_TRUNCATED,
+            path.path.to_token_stream().to_string(),
+        );
+    }
+    path_name(path)
 }
 
 fn expr_kind(expr: &Expr) -> &'static str {

@@ -22,6 +22,14 @@ FN_RE = re.compile(
     r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<|\()"
 )
 
+ACCEPTED_LOSS_CLASSES = (
+    "procedural-macro",
+    "trait-path-truncated",
+    "impl-associated-type-not-lowered",
+    "abi-attribute-not-carried",
+    "statement-macro",
+)
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -58,8 +66,18 @@ def build_emitter(root: Path) -> Path:
 def classify_failure(stderr: str) -> str:
     if "Stmt::Local" in stderr or "let-binding" in stderr:
         return "let-binding"
+    if "Stmt::Macro" in stderr or "statement-macro" in stderr:
+        return "statement-macro"
     if "unsupported function return type" in stderr:
         return "unsupported-return-type"
+    if "procedural-macro" in stderr:
+        return "procedural-macro"
+    if "trait-path-truncated" in stderr:
+        return "trait-path-truncated"
+    if "impl-associated-type-not-lowered" in stderr:
+        return "impl-associated-type-not-lowered"
+    if "abi-attribute-not-carried" in stderr:
+        return "abi-attribute-not-carried"
     if "Expr::Call" in stderr or "Expr::MethodCall" in stderr:
         return "ffi-call"
     return "other"
@@ -146,6 +164,14 @@ def main() -> int:
         "handling "
         f"handles-fully={handling['handles-fully']} "
         f"handles-partially-with-loss-record={handling['handles-partially-with-loss-record']}"
+    )
+    print(
+        "accepted_loss_refusals "
+        + " ".join(f"{name}={refusals[name]}" for name in ACCEPTED_LOSS_CLASSES)
+    )
+    print(
+        "accepted_loss_dimensions "
+        + " ".join(f"{name}={losses[name]}" for name in ACCEPTED_LOSS_CLASSES)
     )
     if refusals:
         print("refusals_by_class=" + json.dumps(dict(sorted(refusals.items())), sort_keys=True))
