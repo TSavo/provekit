@@ -238,3 +238,23 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | Concept | Shape CID | Notes |
 | --- | --- | --- |
 | `concept:op-application` | `blake3-512:b98ae1ac8b8f06800db51e648c3a3567200b73e256fcb4d3f664262c95e928979b93f946362c88c14c91d57e0daaabef4dc97ba8617b39828d802db153b36981` | applies a minted op definition to sorted term arguments |
+
+## Core Sort Hierarchy
+
+`concept:sort(name, kind)` describes the core sort hierarchy primitive and the initial sort instances.
+
+| Concept | Kind | CID |
+| --- | --- | --- |
+| `concept:sort` | `shape` | `blake3-512:e26292703e3d9ae50f8332699c4f673c33443d4f857454de67039e8680a364eba2db2e63a33a2450cb4680759f83ba15b83b9f37468f410b8e31dd7f72abc789` |
+| `Int` | `sort-instance` | `blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58` |
+| `Bool` | `sort-instance` | `blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074` |
+| `String` | `sort-instance` | `blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10` |
+| `Bytes` | `sort-instance` | `blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b` |
+| `Cid` | `sort-instance` | `blake3-512:4a2bba3a8207f364e0ffea40fb4ea4c7ea2ce6edac9492e8b0364001821978a37d9e3f782587b19f086c7358c35bc237815f7a617b61c9194db93aaf938c9c48` |
+| `OpCid` | `sort-instance` | `blake3-512:3238b8edabae57231223e24f21644b3fa7720cdef57b85f548cd4946ff7b279a6a40eb0d7f064027888aad9a78e5ba0b04a432c83a16b56c7a34c6faf5cd0ba9` |
+| `SortCid` | `sort-instance` | `blake3-512:f5c63d82c8fabb1a2e4dd3a5b01cf5f22bddd8252b92602f18bed37062d76334a77f24941a95698c52836b6f11704ce1e7568f95493a5ebaf2b0836e291e97b0` |
+| `EffectName` | `sort-instance` | `blake3-512:2e8e8e72cb8563447f8887ace8013bccf789c460440706c6f72e14e4f292ddb7126c365bf04c65f121a69c1c778999530dd15cf2480110975122e451f7710616` |
+| `Formula` | `sort-instance` | `blake3-512:78296b0cb631f8ab9f66d369ac768c64ef29840c10c0ad378d778222af5af7e2335c5c48526fe2b61e51f74034e523859250d1443aa0d7200af5c91329b038ea` |
+| `Term` | `sort-instance` | `blake3-512:2b8bffc50e1a4fcae7e3954289941eb5811d14a6175420b06f71742e4ae9a9ce1a848a9251aec73f436123008fbdaf3d3c98d1c1fce04c3d89680051a7bdcafb` |
+| `List<T>` | `sort-instance` | `blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2` |
+| `Map<K,V>` | `sort-instance` | `blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1` |

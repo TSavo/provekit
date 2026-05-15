@@ -1,0 +1,60 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:sort",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    }
+  ],
+  "formals": [
+    "name",
+    "kind"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "String",
+      "String"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        "name",
+        "kind"
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "sort",
+    "result": "SortCid",
+    "slot_terms": [
+      {
+        "kind": "var",
+        "name": "name"
+      },
+      {
+        "kind": "var",
+        "name": "kind"
+      }
+    ],
+    "wp_note": "Mints a sort instance citation. Well-formed iff name is a non-empty string and kind is one of {primitive, parametric, refined, reference}."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}

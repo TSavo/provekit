@@ -1,0 +1,24 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "Map<K,V>",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "sort",
+  "post": {
+    "kind": "sort-instance",
+    "name": "Map<K,V>",
+    "sort_kind": "parametric"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}
