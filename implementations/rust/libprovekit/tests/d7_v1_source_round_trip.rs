@@ -40,10 +40,10 @@ fn source_path(repo_root: &Path) -> PathBuf {
         .join("value.rs")
 }
 
-fn receipt_path(repo_root: &Path) -> PathBuf {
+fn receipt_path(repo_root: &Path, phase: &str) -> PathBuf {
     repo_root
         .join("bootstrap")
-        .join("D7-v1")
+        .join(phase)
         .join("value_null_source_round_trip_receipt.json")
 }
 
@@ -306,6 +306,14 @@ fn classify_diff(diff: &str, realization_is_stub: bool, concept_name: &str) -> V
                         "provekit-realize-rust-core emitted its stub body because no body template matched the extracted root concept `{concept_name}`; the current flat API cannot consume the nested resolved body tree."
                     ),
                 })
+            } else if hunk.contains("-    Arc::new(Value::Null)")
+                && hunk.contains("+    new(Value::Null)")
+            {
+                json!({
+                    "hunk": hunk,
+                    "class": "name-difference",
+                    "explanation": "provekit-realize-rust-core consumed the resolved body tree and emitted the constructor expression, but the resolved term lacks the receiver prefix recorded by #962 trait-path-truncated.",
+                })
             } else {
                 json!({
                     "hunk": hunk,
@@ -315,6 +323,18 @@ fn classify_diff(diff: &str, realization_is_stub: bool, concept_name: &str) -> V
             }
         })
         .collect()
+}
+
+fn dominant_diff_class(byte_identical: bool, classification: &[JsonValue]) -> String {
+    if byte_identical {
+        "byte-identical".to_string()
+    } else {
+        classification
+            .iter()
+            .find_map(|item| item["class"].as_str())
+            .unwrap_or("unclassified")
+            .to_string()
+    }
 }
 
 #[test]
@@ -387,19 +407,19 @@ fn value_null_source_round_trip_receipt_is_complete() {
                 "provekit_realize_rust_core::emit_stub_with_mode({function:?}, &[], &[], {return_type:?}, {concept_name:?}, None)"
             ),
             "step_3_4_realize_input": {
-                "function": function,
-                "params": params,
-                "param_types": param_types,
-                "return_type": return_type,
-                "concept_name": concept_name,
+                "function": function.clone(),
+                "params": params.clone(),
+                "param_types": param_types.clone(),
+                "return_type": return_type.clone(),
+                "concept_name": concept_name.clone(),
                 "mode": JsonValue::Null,
             },
-            "step_3_4_regenerated_source": realization.source,
-            "step_5_original_slice_cid": original_slice_cid,
+            "step_3_4_regenerated_source": realization.source.clone(),
+            "step_5_original_slice_cid": original_slice_cid.clone(),
             "step_6_rustfmt_command": format!("{regenerated_rustfmt_command}\n{original_rustfmt_command}"),
             "step_7_byte_identical_post_rustfmt": byte_identical,
             "step_8_unified_diff": diff,
-            "step_9_diff_classification": classification,
+            "step_9_diff_classification": classification.clone(),
             "regenerated_source_cid": blake3_512_of(regenerated_rustfmt.as_bytes()),
             "original_slice_post_rustfmt_cid": blake3_512_of(original_rustfmt.as_bytes()),
         },
@@ -407,11 +427,11 @@ fn value_null_source_round_trip_receipt_is_complete() {
         "next_action": "if BYTE_IDENTICAL, D7 terminus reached for this fn; otherwise, file follow-up issue per dominant diff class (e.g., extend realize-rust-core to consume ResolvedTerm bodies for the stub-body class, retire concept:new ffi-effect-occurrence for the missing-concept class).",
     });
 
-    let receipt_path = receipt_path(&repo_root);
-    std::fs::create_dir_all(receipt_path.parent().expect("receipt parent"))
+    let v1_receipt_path = receipt_path(&repo_root, "D7-v1");
+    std::fs::create_dir_all(v1_receipt_path.parent().expect("receipt parent"))
         .expect("create D7-v1 receipt dir");
     std::fs::write(
-        &receipt_path,
+        &v1_receipt_path,
         format!(
             "{}\n",
             serde_json::to_string_pretty(&receipt).expect("pretty receipt")
@@ -420,13 +440,101 @@ fn value_null_source_round_trip_receipt_is_complete() {
     .expect("write D7-v1 receipt");
 
     let parsed: JsonValue = serde_json::from_str(
-        &std::fs::read_to_string(&receipt_path).expect("read written D7-v1 receipt"),
+        &std::fs::read_to_string(&v1_receipt_path).expect("read written D7-v1 receipt"),
     )
     .expect("parse written D7-v1 receipt");
     assert!(matches!(
         parsed["verdict"].as_str(),
         Some("BYTE_IDENTICAL" | "CHARACTERIZED_DIFF")
     ));
-    println!("receipt_path={}", receipt_path.display());
+
+    let v2_realization = provekit_realize_rust_core::emit_from_resolved(
+        &resolved_jcs,
+        &function,
+        &params,
+        &param_types,
+        &return_type,
+    );
+    let (v2_regenerated_rustfmt, v2_regenerated_rustfmt_command) = rustfmt_source(
+        &repo_root,
+        "value_null_regenerated_v2.rs",
+        &v2_realization.source,
+    );
+    let v2_byte_identical = v2_regenerated_rustfmt.as_bytes() == original_rustfmt.as_bytes();
+    let v2_diff = unified_diff(&repo_root, &original_rustfmt, &v2_regenerated_rustfmt);
+    let v2_classification = classify_diff(&v2_diff, v2_realization.is_stub, &concept_name);
+    let v2_verdict = if v2_byte_identical {
+        "BYTE_IDENTICAL"
+    } else {
+        "CHARACTERIZED_DIFF"
+    };
+    let v2_dominant_diff_class = dominant_diff_class(v2_byte_identical, &v2_classification);
+
+    assert_eq!(v2_verdict, "CHARACTERIZED_DIFF");
+    assert_eq!(v2_dominant_diff_class, "name-difference");
+    assert!(v2_diff.contains("-    Arc::new(Value::Null)"));
+    assert!(v2_diff.contains("+    new(Value::Null)"));
+
+    let v2_receipt = json!({
+        "version": "1",
+        "target": {
+            "crate": "provekit-canonicalizer",
+            "function": "impl Value::null",
+            "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs",
+        },
+        "pipeline": {
+            "step_1_fixture_cid": EXPECTED_FIXTURE_CID,
+            "step_2_resolve": format!("summary={resolved_summary}; jcs={resolved_jcs}"),
+            "step_3_4_realize_command": format!(
+                "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, {function:?}, &[], &[], {return_type:?})"
+            ),
+            "step_3_4_realize_input": {
+                "resolved_term_json": resolved_jcs,
+                "function": function,
+                "params": params,
+                "param_types": param_types,
+                "return_type": return_type,
+            },
+            "step_3_4_regenerated_source": v2_realization.source,
+            "step_5_original_slice_cid": original_slice_cid,
+            "step_6_rustfmt_command": format!("{v2_regenerated_rustfmt_command}\n{original_rustfmt_command}"),
+            "step_7_byte_identical_post_rustfmt": v2_byte_identical,
+            "step_8_unified_diff": v2_diff,
+            "step_9_diff_classification": v2_classification,
+            "step_10_dominant_diff_class": v2_dominant_diff_class.clone(),
+            "step_11_expected_diff_shape": "-    Arc::new(Value::Null)\n+    new(Value::Null)",
+            "step_12_empirical_root_cause": "#962 trait-path-truncated: the resolved call:new body does not carry the Arc:: receiver prefix.",
+            "regenerated_source_cid": blake3_512_of(v2_regenerated_rustfmt.as_bytes()),
+            "original_slice_post_rustfmt_cid": blake3_512_of(original_rustfmt.as_bytes()),
+        },
+        "verdict": v2_verdict,
+        "dominant_diff_class": v2_dominant_diff_class,
+        "next_action": "retire #962 trait-path-truncated by carrying the missing receiver path needed to restore Arc::new(Value::Null).",
+    });
+
+    let v2_receipt_path = receipt_path(&repo_root, "D7-v2");
+    std::fs::create_dir_all(v2_receipt_path.parent().expect("receipt parent"))
+        .expect("create D7-v2 receipt dir");
+    std::fs::write(
+        &v2_receipt_path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&v2_receipt).expect("pretty v2 receipt")
+        ),
+    )
+    .expect("write D7-v2 receipt");
+
+    let v2_parsed: JsonValue = serde_json::from_str(
+        &std::fs::read_to_string(&v2_receipt_path).expect("read written D7-v2 receipt"),
+    )
+    .expect("parse written D7-v2 receipt");
+    assert_eq!(v2_parsed["verdict"].as_str(), Some("CHARACTERIZED_DIFF"));
+    assert_eq!(
+        v2_parsed["dominant_diff_class"].as_str(),
+        Some("name-difference")
+    );
+    println!("receipt_path={}", v1_receipt_path.display());
     println!("verdict={verdict}");
+    println!("v2_receipt_path={}", v2_receipt_path.display());
+    println!("v2_verdict={v2_verdict}");
 }

@@ -8,6 +8,8 @@ use serde_json::Value;
 
 const BODY_TEMPLATE_REL: &str =
     "menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json";
+const RETURN_OP_CID: &str = "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6";
+const CALL_NEW_OP_CID: &str = "blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Realization {
@@ -57,13 +59,158 @@ pub fn emit_stub_with_mode(
     let body = body_template_for(concept_name, params, param_types, return_type, mode);
     let is_stub = body.is_none();
     let body = body.unwrap_or_else(|| stub_body_for(concept_name));
-    let source = function_source(function, params, param_types, return_type, &body);
+    emit_function(function, params, param_types, return_type, &body, is_stub)
+}
+
+/// Emits Rust for exactly one D7-v2 resolved body shape:
+/// `return(call:new(literal("new"), literal(["Null"])))`.
+///
+/// The trailing `return` node is lowered as a Rust tail expression. The nested
+/// `call:new` shape lowers to `new(Value::Null)` because the resolved term
+/// records the constructor call but not the missing receiver prefix (`Arc::`).
+/// Unsupported resolved concepts or literal shapes fall back to the existing
+/// `panic!("provekit-bind canonical: <concept>")` stub body.
+pub fn emit_from_resolved(
+    resolved_term_json: &str,
+    function_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+) -> Realization {
+    let resolved = match serde_json::from_str::<Value>(resolved_term_json) {
+        Ok(resolved) => resolved,
+        Err(_) => {
+            return emit_stub(
+                function_name,
+                params,
+                param_types,
+                return_type,
+                "malformed-resolved-term",
+            );
+        }
+    };
+
+    match lower_resolved_body(&resolved) {
+        Ok(body) => emit_function(
+            function_name,
+            params,
+            param_types,
+            return_type,
+            &body,
+            false,
+        ),
+        Err(concept_name) => emit_stub(
+            function_name,
+            params,
+            param_types,
+            return_type,
+            &concept_name,
+        ),
+    }
+}
+
+fn emit_function(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    body: &str,
+    is_stub: bool,
+) -> Realization {
+    let source = function_source(function, params, param_types, return_type, body);
     let emitted_artifact_cid = blake3_512_of(source.as_bytes());
     Realization {
         source,
         is_stub,
         extension: "rs".to_string(),
         emitted_artifact_cid,
+    }
+}
+
+fn lower_resolved_body(term: &Value) -> Result<String, String> {
+    let concept_name = resolved_concept_name(term);
+    if concept_name != "return" {
+        return Err(concept_name);
+    }
+
+    let args = resolved_args(term).ok_or(concept_name)?;
+    if args.len() != 1 {
+        return Err("return".to_string());
+    }
+    lower_resolved_expr(&args[0])
+}
+
+fn lower_resolved_expr(term: &Value) -> Result<String, String> {
+    match resolved_concept_name(term).as_str() {
+        "call:new" => lower_call_new(term),
+        "literal" => lower_literal(term),
+        concept_name => Err(concept_name.to_string()),
+    }
+}
+
+fn lower_call_new(term: &Value) -> Result<String, String> {
+    let args = resolved_args(term).ok_or_else(|| "call:new".to_string())?;
+    if args.len() != 2 {
+        return Err("call:new".to_string());
+    }
+
+    let name = lower_literal(&args[0])?;
+    let lowered_args = lower_literal(&args[1])?;
+    if name != "new" {
+        return Err("call:new".to_string());
+    }
+
+    Ok(format!("new({lowered_args})"))
+}
+
+fn lower_literal(term: &Value) -> Result<String, String> {
+    let node = resolved_node(term).ok_or_else(|| "literal".to_string())?;
+    if node.get("kind").and_then(Value::as_str) != Some("literal") {
+        return Err(resolved_concept_name(term));
+    }
+
+    match node.get("value") {
+        Some(Value::String(value)) if value == "new" => Ok(value.to_string()),
+        Some(Value::Array(items)) if is_value_null_literal(items) => Ok("Value::Null".to_string()),
+        _ => Err("literal".to_string()),
+    }
+}
+
+fn is_value_null_literal(items: &[Value]) -> bool {
+    items.len() == 1 && items[0].as_str() == Some("Null")
+}
+
+fn resolved_args(term: &Value) -> Option<&[Value]> {
+    resolved_node(term)?
+        .get("args")?
+        .as_array()
+        .map(Vec::as_slice)
+}
+
+fn resolved_node(term: &Value) -> Option<&serde_json::Map<String, Value>> {
+    term.get("node")?.as_object()
+}
+
+fn resolved_concept_name(term: &Value) -> String {
+    let Some(node) = resolved_node(term) else {
+        return "malformed-resolved-term".to_string();
+    };
+    match node.get("kind").and_then(Value::as_str) {
+        Some("literal") => "literal".to_string(),
+        Some("concept:op-application") => node
+            .get("op_definition_cid")
+            .and_then(Value::as_str)
+            .map(op_concept_name)
+            .unwrap_or_else(|| "malformed-resolved-term".to_string()),
+        _ => "malformed-resolved-term".to_string(),
+    }
+}
+
+fn op_concept_name(op_definition_cid: &str) -> String {
+    match op_definition_cid {
+        RETURN_OP_CID => "return".to_string(),
+        CALL_NEW_OP_CID => "call:new".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -520,6 +667,80 @@ mod tests {
         assert_eq!(
             rendered.source,
             "pub fn unknown_cell(x: i64) -> i64 {\n    panic!(\"provekit-bind canonical: missing-cell\")\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_null_from_resolved_return_call_new_literal_shape() {
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [
+                    {
+                        "node": {
+                            "args": [
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": "new",
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "FnContract"},
+                                },
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": ["Null"],
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "ListOfExpr"},
+                                },
+                            ],
+                            "kind": "concept:op-application",
+                            "op_definition_cid": CALL_NEW_OP_CID,
+                        },
+                        "sort": {"args": [], "kind": "ctor", "name": "Expr"},
+                    },
+                ],
+                "kind": "concept:op-application",
+                "op_definition_cid": RETURN_OP_CID,
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "null",
+            &[],
+            &[],
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn null() -> Arc < Value > {\n    new(Value::Null)\n}\n"
+        );
+    }
+
+    #[test]
+    fn unsupported_resolved_shape_falls_back_to_stub() {
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [],
+                "kind": "concept:op-application",
+                "op_definition_cid": "unsupported-concept",
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "unknown_cell",
+            &strings(&["x"]),
+            &strings(&["i64"]),
+            "i64",
+        );
+
+        assert!(rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn unknown_cell(x: i64) -> i64 {\n    panic!(\"provekit-bind canonical: unsupported-concept\")\n}\n"
         );
     }
 
