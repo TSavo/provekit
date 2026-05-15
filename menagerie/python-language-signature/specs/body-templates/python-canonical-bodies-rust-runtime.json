@@ -1,0 +1,160 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-15T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "cid": "blake3-512:2cb0cfbcc3c88d1253704a2abdd8925883e942687f65a64d32231b4d948b19ceccbe4f62e15c80b8e7eb650fbf741a30e2968a90fbca6ed6a33d2ac405f9b5e8",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:new",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:return",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:string-with-capacity",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return \"\""
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"]
+          }
+        },
+        {
+          "concept_name": "concept:string-push-str",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} + ${param1}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_param_types": ["str", "str"]
+          }
+        },
+        {
+          "concept_name": "concept:array-repeat",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return [${param0}] * ${param1}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:str-len",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return len(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:method-len",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return len(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:add",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} + ${param1}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_param_types": ["int", "int"]
+          }
+        },
+        {
+          "concept_name": "concept:borrow",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        }
+      ],
+      "target_language": "python",
+      "template_name": "python-canonical-bodies-rust-runtime"
+    },
+    "critical": false,
+    "kind": "body-template",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "schemaVersion": "1",
+    "version": "1.0.0"
+  }
+}
