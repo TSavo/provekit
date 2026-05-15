@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:retry-with-bounded-attempts",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "kind": "or",
+      "operands": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "result"
+            }
+          ],
+          "kind": "atomic",
+          "name": "is_ok"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "result"
+            }
+          ],
+          "kind": "atomic",
+          "name": "is_err"
+        }
+      ]
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unknown"
+    },
+    "locus": "21 witnesses selected; consensus vector records the observed axes"
+  },
+  "cid": "blake3-512:263728665e2513206f3d015db90791d559943fa920c7ec520555ef77485d9843bda671b5839dec4ee05d87bf2d09e5c6726a7ebf05be36dd8f36ff4f68e18192",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "3gy1NJnCuiUBQPCM/x02ZrLYVXa5Mi/rAT3FBpQQ00I6aAIHvC5rHXU7nYZB1a3yf3Nk1b8Ean1MbC+E+iUQBg=="
+  }
+}
