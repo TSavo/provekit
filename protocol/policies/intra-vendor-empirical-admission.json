@@ -1,0 +1,31 @@
+{
+  "admission_rule": "consensus_vector.total_sample_count >= threshold_value",
+  "count_field_path": ["consensus_vector", "total_sample_count"],
+  "decision_payload_schema": {
+    "$comment": "Conforms to PromotionDecisionMemento.decision_payload shape per protocol/specs/2026-05-14-witness-consensus-promotion.md and the v1.1 consensus_vector amendment.",
+    "required_fields": [
+      "agreement",
+      "fixtures_consulted",
+      "min_witnesses",
+      "promotion",
+      "promoted_op",
+      "reason",
+      "subjects_consulted",
+      "total_observations",
+      "witnesses_consulted",
+      "consensus_vector"
+    ]
+  },
+  "input_requirements": {
+    "min_witnesses": 4,
+    "require_loss_dim_coverage": "all",
+    "scope": "intra-vendor"
+  },
+  "policy_kind": "threshold",
+  "policy_version": "1.0.0",
+  "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "refusal_rule": "consensus_vector.total_sample_count < threshold_value",
+  "score_field_path": ["consensus_vector", "total_sample_count"],
+  "threshold_comparator": "gte",
+  "threshold_value": 4
+}
