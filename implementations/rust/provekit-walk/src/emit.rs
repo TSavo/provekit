@@ -1173,14 +1173,15 @@ fn lower_call_expr_to_value_term(
     call: &syn::ExprCall,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
-    let callee = match &*call.func {
-        Expr::Path(path) => path_name_for_expr(path, ctx).unwrap_or_else(|| "unknown".to_string()),
+    let (op_name, callee) = match &*call.func {
+        Expr::Path(path) => path_call_name_for_expr(path)
+            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string())),
         other => {
             ctx.add_loss(
                 "ffi-call-unresolved-callee",
                 format!("non-path callee {}", expr_kind(other)),
             );
-            "unknown".to_string()
+            ("unknown".to_string(), "unknown".to_string())
         }
     };
     ctx.add_loss("ffi-call-unresolved-effect", callee.clone());
@@ -1190,7 +1191,7 @@ fn lower_call_expr_to_value_term(
         .map(|arg| lower_expr_to_value_term(arg, ctx))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(AlgebraTerm::op(
-        format!("call:{callee}"),
+        format!("call:{op_name}"),
         vec![AlgebraTerm::Symbol(callee), AlgebraTerm::List(args)],
     ))
 }
@@ -1469,6 +1470,24 @@ fn path_name(path: &syn::ExprPath) -> Option<String> {
         .segments
         .last()
         .map(|segment| segment.ident.to_string())
+}
+
+fn path_call_name_for_expr(path: &syn::ExprPath) -> Option<(String, String)> {
+    if path.qself.is_some() {
+        return None;
+    }
+    let op_name = path.path.segments.last()?.ident.to_string();
+    let mut callee = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::");
+    if path.path.leading_colon.is_some() {
+        callee = format!("::{callee}");
+    }
+    Some((op_name, callee))
 }
 
 fn path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<String> {

@@ -14,12 +14,12 @@ For this D7-v0 bridge smoke, that envelope was trimmed to one bridge-compatible 
 The fixture keeps the target, source, handling, term surface, op CIDs, and loss record from the raw lift.
 The fixture path is implementations/rust/libprovekit/tests/fixtures/proofir/d7_v0_value_null.json.
 
-The ProofIR term is return(call:new(new, [Null])).
+The ProofIR term is return(call:new(Arc::new, [Null])).
 The test resolves that term through libprovekit::proofir_resolve.
 The test then unresolves it through libprovekit::proofir_unresolve.
 The reassembled fixture is JCS-canonicalized and compared against the input fixture.
 
-The fixture CID is blake3-512:f78e468e6f80e305c8abb4f1b5ccbe54cdea54bf3d5104a63970be8500f7f0a5e7a467fa2cf3bcd2894502ff045c4aede5dbc83f3b76d5818a0aeb2fcacaca3e.
+The fixture CID is blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32.
 The round-trip output CID is the same CID.
 The byte-identity check passed.
 The loss-record preservation check passed.
@@ -27,14 +27,14 @@ The loss-record preservation check passed.
 The carried loss record is intentionally non-empty.
 It records procedural-macro detail derive.
 It records return-type-user-defined detail Arc < Value >.
-It records trait-path-truncated details Arc :: new and Value :: Null.
-It records ffi-call-unresolved-effect detail new.
+It records trait-path-truncated detail Value :: Null.
+It records ffi-call-unresolved-effect detail Arc::new.
 
 ## Loss-record framing
 
 Source-layer equivalence is evaluated in formatter-normal form. The contract is k(formatter(I)) = t(formatter(I) == formatter(I')), where formatter is the language's canonical formatter (rustfmt for Rust). The formatter is the canonicalizer, so whitespace, blank lines, trailing commas, and hex-vs-decimal literal rendering are NOT substrate concerns. The substrate carries concept:comment but NOT concept:formatting-hint.
 
-The v2 audit gap classes captured in this fixture's loss_record are engineering debt with named retirement tickets:
+The audit gap classes captured in this fixture's loss_record are engineering debt with named retirement tickets:
 
 - #961 procedural-macro -> concept:proc-macro-invocation + concept:derive-attribute
 - #962 trait-path-truncated -> concept:fully-qualified-path + rustc name resolution

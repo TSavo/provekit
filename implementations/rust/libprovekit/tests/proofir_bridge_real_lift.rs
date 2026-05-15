@@ -8,6 +8,8 @@ use libprovekit::{proofir_resolve, proofir_unresolve};
 use provekit_ir_types::Term;
 use serde_json::{json, Value as JsonValue};
 
+const EXPECTED_FIXTURE_CID: &str = "blake3-512:bcb10be48ad632abc71c406355b6d11b0191a959b523aa755ee00ad7496afa2270ce28821af4abcd5949427026fb16d8d8b38af702b1810dec3bdff810ec8f32";
+
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -86,6 +88,7 @@ fn value_null_lift_round_trips_byte_identical() {
 
     let fixture_cid = json_cid(&original_json).expect("fixture CID");
     let round_trip_cid = json_cid(&round_trip_json).expect("round-trip CID");
+    assert_eq!(fixture_cid, EXPECTED_FIXTURE_CID);
     assert_eq!(fixture_cid, round_trip_cid);
     println!("fixture_cid={fixture_cid}");
     println!("round_trip_cid={round_trip_cid}");

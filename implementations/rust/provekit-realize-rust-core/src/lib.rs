@@ -62,12 +62,12 @@ pub fn emit_stub_with_mode(
     emit_function(function, params, param_types, return_type, &body, is_stub)
 }
 
-/// Emits Rust for exactly one D7-v2 resolved body shape:
-/// `return(call:new(literal("new"), literal(["Null"])))`.
+/// Emits Rust for the D7 resolved Value::null body shape:
+/// `return(call:new(literal("new" | "*::new"), literal(["Null"])))`.
 ///
 /// The trailing `return` node is lowered as a Rust tail expression. The nested
-/// `call:new` shape lowers to `new(Value::Null)` because the resolved term
-/// records the constructor call but not the missing receiver prefix (`Arc::`).
+/// `call:new` shape lowers to `<callee>(Value::Null)`. D7-v2 fixtures used a
+/// bare `new`; D7-v3 fixtures carry the receiver-prefixed `Arc::new` spelling.
 /// Unsupported resolved concepts or literal shapes fall back to the existing
 /// `panic!("provekit-bind canonical: <concept>")` stub body.
 pub fn emit_from_resolved(
@@ -156,11 +156,11 @@ fn lower_call_new(term: &Value) -> Result<String, String> {
 
     let name = lower_literal(&args[0])?;
     let lowered_args = lower_literal(&args[1])?;
-    if name != "new" {
+    if name != "new" && !name.ends_with("::new") {
         return Err("call:new".to_string());
     }
 
-    Ok(format!("new({lowered_args})"))
+    Ok(format!("{name}({lowered_args})"))
 }
 
 fn lower_literal(term: &Value) -> Result<String, String> {
@@ -170,7 +170,9 @@ fn lower_literal(term: &Value) -> Result<String, String> {
     }
 
     match node.get("value") {
-        Some(Value::String(value)) if value == "new" => Ok(value.to_string()),
+        Some(Value::String(value)) if value == "new" || value.ends_with("::new") => {
+            Ok(value.to_string())
+        }
         Some(Value::Array(items)) if is_value_null_literal(items) => Ok("Value::Null".to_string()),
         _ => Err("literal".to_string()),
     }
@@ -716,6 +718,55 @@ mod tests {
         assert_eq!(
             rendered.source,
             "pub fn null() -> Arc < Value > {\n    new(Value::Null)\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_null_from_resolved_call_new_with_receiver_prefix() {
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [
+                    {
+                        "node": {
+                            "args": [
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": "Arc::new",
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "FnContract"},
+                                },
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": ["Null"],
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "ListOfExpr"},
+                                },
+                            ],
+                            "kind": "concept:op-application",
+                            "op_definition_cid": CALL_NEW_OP_CID,
+                        },
+                        "sort": {"args": [], "kind": "ctor", "name": "Expr"},
+                    },
+                ],
+                "kind": "concept:op-application",
+                "op_definition_cid": RETURN_OP_CID,
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "null",
+            &[],
+            &[],
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn null() -> Arc < Value > {\n    Arc::new(Value::Null)\n}\n"
         );
     }
 
