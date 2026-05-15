@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-13T00:00:00.000Z",
+    "signature": "",
+    "signer": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b"
+  },
+  "header": {
+    "candidate_cid": "blake3-512:6d7df55fa1bed41af5c34e9f20d6a66525bcf57bc22ac065f411bbce9ee554368f906090a2b00f2206ddb5bb120ad1a88b06386aa26ebded127531a55bf0b851",
+    "cid": "blake3-512:b9ccb9360f5321ef4b53cb18cc11f5cc0fb241167d24f98cc64e7a8eb0bc980fdec914fc8c691019eaf1b28411997b8e427dc15121b6864665c8a360844f7ec9",
+    "decider_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+    "decision_payload": {
+      "evidence_count": 1,
+      "gate_evaluated": "proof",
+      "result": "admitted"
+    },
+    "evidence_cids": [
+      "blake3-512:219534cb0a4805077844ac70bfccab7e8172d34ec55087655b9c061a3a0fcb38336f5d15e555296878c2f1974be12486148a21f2b4b81c6d2424fe0bfc7b1d6f"
+    ],
+    "gate": "proof",
+    "kind": "promotion-decision",
+    "policy_cid": "blake3-512:ac758f8cee9736937a2aa875253f2c6f64c2000e17769e7365b6048e5ca3ff9d0f736e7b97689534c0cc113509197cf658591e3dca3d00b374cdfe272cb81e8e",
+    "promoted_cid": "blake3-512:33cb2945e8eddffaa0fe2689612bca6bcbc36b25cf5d11963f942c1844a79baa2699ff23282a386715d9db6ee4c2018464cebc6ce4dab783608785a5b4fedfae",
+    "result": "admitted",
+    "schemaVersion": "1"
+  },
+  "metadata": {
+    "note": "bind admitted type-signature evidence into compound contract"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "aggregation_strategy": "conjunction",
+  "cid": "blake3-512:39ee3a4e3ce48baa3b9bcd6969bbabe5737897d2e2bbdc421695f8c2783f9aa0e5b2e5102ccf8071bc57d2fea2f71012d3e7e31da3812f6775ced861e0be8db6",
+  "composed_post": {
+    "kind": "or",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "is_err",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      }
+    ]
+  },
+  "composed_pre": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "evidences": [
+    {
+      "evidence_cid": "blake3-512:860143df3d8ccd93518b7194d6f02b9e63c8e8d5eeb2741695ae37160d88b245cd9c882c9868a3cce33bbc1dddae1f5367c69129441b8f057b48d7fffeaf34a0",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:86578b1a9cbdeeb6c38e01cb1745151abe3eb4c56758dbd1025a8d15b8bb11f53af6d32ee1a8113c7405c3a3744399a18a16aecd7d34dba3fadbacccfd95765a",
+      "weight_basis_points": 10000
+    }
+  ],
+  "function_term_cid": "blake3-512:5b83d213eb5432e805e805fa0c99d7fb2dfe0236ad8b3f16f4e181406424ac120d4dea5e904e4a43eb213b46ea330c952134feb4b97ff2261279c4ae54f5de3d",
+  "kind": "compound-contract",
+  "schemaVersion": "1"
+}

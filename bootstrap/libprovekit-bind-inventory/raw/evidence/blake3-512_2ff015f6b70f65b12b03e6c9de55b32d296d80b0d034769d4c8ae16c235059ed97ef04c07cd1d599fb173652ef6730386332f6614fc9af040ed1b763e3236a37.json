@@ -1,0 +1,33 @@
+{
+  "cid": "blake3-512:2ff015f6b70f65b12b03e6c9de55b32d296d80b0d034769d4c8ae16c235059ed97ef04c07cd1d599fb173652ef6730386332f6614fc9af040ed1b763e3236a37",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "wp_of_leaves@wp/tests.rs",
+    "return_type": "()",
+    "role": "post",
+    "signature_position": "return",
+    "type_shape": "unit"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:741847586abc2d10e7a27d5ffd07d2623497803f72424662f4347f1170866bd563c61ec38fc986d47da0f1e1df631e10944aebbf5a2508896385946e3b141f96",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 456
+      },
+      "start": {
+        "col": 3,
+        "line": 456
+      }
+    }
+  }
+}

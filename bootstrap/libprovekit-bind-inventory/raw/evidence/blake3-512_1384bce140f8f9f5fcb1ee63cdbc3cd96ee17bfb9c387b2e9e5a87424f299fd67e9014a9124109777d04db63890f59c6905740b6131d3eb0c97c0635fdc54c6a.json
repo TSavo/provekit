@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:1384bce140f8f9f5fcb1ee63cdbc3cd96ee17bfb9c387b2e9e5a87424f299fd67e9014a9124109777d04db63890f59c6905740b6131d3eb0c97c0635fdc54c6a",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "sign@core/primitives.rs",
+    "inner_type": "SigningKey",
+    "lifetime": "_",
+    "return_type": "DomainClaim",
+    "role": "pre",
+    "signature_position": "param:1",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:a36bfe2251b2ede618575f771b830d219efc908853820c0eff3653791b15c017502e4362092a6eb6d77bb77d860d86d2e6f7a01bd7f3b3c1c2894cabdb3d49c7",
+    "span": {
+      "end": {
+        "col": 7,
+        "line": 73
+      },
+      "start": {
+        "col": 7,
+        "line": 73
+      }
+    }
+  }
+}

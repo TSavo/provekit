@@ -1,0 +1,234 @@
+{
+  "version": "1",
+  "target": {
+    "crate": "libprovekit",
+    "source_root": "implementations/rust/libprovekit/src/"
+  },
+  "bind_command": "cd /Users/tsavo/provekit-worktrees/pk-971-bind-libprovekit/implementations/rust && ./target/release/provekit bind --root libprovekit/src/ --lang rust --rewrite invisible --output /private/tmp/pk971-bind-raw/",
+  "bind_run_cid": "blake3-512:f40b65364b1541a894dd66a19b295413fd3a7299461eb84806de812e5d286c5c4de37bfd02b5430329a8a25c98f17e025b5b4dcf98c7cc68112455bd65e3b7f9",
+  "counts": {
+    "evidence_mementos": 434,
+    "contracts": 200,
+    "promotion_decisions": 434,
+    "sites": 200,
+    "realization_plans": 0,
+    "gaps": 0
+  },
+  "cluster_histogram": [
+    {
+      "canonical_contract_cid": "blake3-512:8612ec7c4a4b3a2620a67a71f3714aaa0c408aaa967aab475a67d8e0fdc6ce64f1cab2362d7fd885972aee6d3f132aa1c50b4ebab176888089c2f93585e84fb8",
+      "cardinality": 52
+    },
+    {
+      "canonical_contract_cid": "blake3-512:fddc7761077c69f310f6158fdcdd405c6173c3ced3965a240593c28ed971604822736bef31edf382b66956949b080d79e7ae66ff011269779c60ccd981ea6d51",
+      "cardinality": 30
+    },
+    {
+      "canonical_contract_cid": "blake3-512:81c00cc7e33c2cb7da06842d69083e269b860f95bf83c1bd3701d217eed6a27cb166eb8d7a8c48fafbfb741bdebaad1254404ca490c5f3156875649ef7b03508",
+      "cardinality": 29
+    },
+    {
+      "canonical_contract_cid": "blake3-512:eb5c3bf0c572ced28c7ecba119154e170eeadc695743bf9a2ca6575162a5e88ebaab955e10ecf5e981cdd7d9bebcc1d2b8ed410a46aebd0018c8699d7ed302cb",
+      "cardinality": 21
+    },
+    {
+      "canonical_contract_cid": "blake3-512:9e51187b9e1f7b50789875c8ab8a62bd0935c614efdc25810862f353514072750f853e42e9e4b7f95e9889b41fa1eb70e706520943d54fdb9747ab4ff375a526",
+      "cardinality": 13
+    },
+    {
+      "canonical_contract_cid": "blake3-512:7c5817e527ebdfc4c3692e716663d4c6f219a085e6c311f19e37fad5cbb10a4861abad6d6e6ec10dddf60a00cee2a5ed1f22cdcd3bbc55d1638687953f5cdc4b",
+      "cardinality": 4
+    },
+    {
+      "canonical_contract_cid": "blake3-512:7a6dc9baaf89dc1cf86e2a38846d420f8d4609677cc2e43335d76638bb4a08b5f406615902b8b3116e9adc3498ca52f3a6aa155ec2855eb442d6f6161069a37d",
+      "cardinality": 3
+    },
+    {
+      "canonical_contract_cid": "blake3-512:3f0d20accd7c0375601a4c0f6be0c73d716623ae1a2113519d1de341122cc1c57fe7a85bb4f79b150de8c2863f36d5aae49f6709f54e963605e8486712170683",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:40573a5f4a0a3a1a5f4bed9a270e9a084c17f54a97f2023d1872e3d7e5179ee0067631eccfb3705242182ab3b7440ecc33e52a97e24276f67aa5a51cb24e9fe3",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:539f23452d6810ada80f8f61fe7812ea4469909fc3c4d7bf61e532eeaa4de3160bc272431d5a6486f272f564db2e275ad72a39f3ed7b45eaf6b4578c4d228b4b",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:5aa627e4d36ee42adde0d2ff011c2e16e518991e0fdf1bee576406ff069e43130098da9276587d3b2b8a730332d1418f7c4ea73be7edc2dc023ef6528622beb0",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:63170a271b0831d376d5372dc6de300b74f49a68f5dc21e696ff4970955be292ccf7af07858468e5de8f4ea514652330187f40ec317f0d6a768a281ca071dcf3",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:64fae34493e313ff61fb0282c69a915210514991ad7fb39faae982fd5d1fe14b08706c5b983c6719c14534e3030d73983ea98204524539f6f16018064e4cf585",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:95240c8b064c20fd85bc5dbe774ed6212e51dd7bbbeaaa3c9ad0fc95e09b4219bed4954a994c94a46b06eb7e2c625bc50138dac96048375e8d11f0dea0d92acc",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:c07c198db8d91935025977d8866a49b097a83ba7208478b97b8dbe52f66abcb6f97d0ede13cf51ecab03cfc332f15c7c95a70215ad0b6e574c736221815d8d05",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:ca1b8e6cb95efa5794ef163ce34ef45adf13fd4fb838355dcef4d15587a13a7cbaa084adf18e7d12634d47a93ecb56d82c3aed86d7b2ccf9eef1b8fe5ed4a564",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:d05bd9cb4ffc29add2e0ab8f113214138e7a779b48841bd794a25abd5d6cf9e2cfda9a72a13d62b34606402cbcc4a05acf51d021953b6f80b9c1616d62f02970",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:f69c0b1a710e40d68e947afc83a641be6989173abb7d784c5c65341655d4e07efa3cec9c935a07e70631a68654f0833f8f37f6f77ce15ba2a17e613db936f2d7",
+      "cardinality": 2
+    },
+    {
+      "canonical_contract_cid": "blake3-512:001fc53186505f9a76c5ed55aad1199e418824155d0801c18ec1c95a7e2e8e4c18b345aa63ca1557973fb263996f3b3f3ad1c29625bdce13d6dc30048210118b",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:063239c1cffd3c2f4a988bdee335799ce654386d9bf004f482ba0fc80dc040a4f0b891e9f30beefbe8e17624fd3e7ce708233d24325c12539cab25d724bfeb77",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:10acaaf51cc62f8f73c08c188d63ea099cd8bbcb34e622db1f7df94f872a70c431f91b366c1eec596029bea1b63118ceafb495ed0df08f9d39271bb30059df9b",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:13712c2cd1707901d28b10b387efaba756d523735bfe4ced5f9d61d3664bdbbfb603de9d53bd0c7137787e5b5cbac6b0321ae6dec18e17d1914d150804c87dda",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:361841dcaf9fdab336ae65a54d702000ba865a33d91a71389bbd15f06359f569bb84bb3f759eaa9b42bd460d4815362cb9eab0e48c549d0cc9f6b471ea946948",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:3b652893bf80418213e1f819fc153bf64dac1f595d8517c24f2d6b2a39e4d4779a29b8c1292ed20708196e9699a908b09d77e25b45ed201291b3c3e2c01c9b67",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:454a06f7cd10c4d73e132bd41e4a829be68e772de50176d2285eac770b797c1eb7b1b966a1a844adbaafd3cef1df6da3ceaad96f6cbb35baa463302fb5a63bcb",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:51e8eeff4a71404851947f98ed5f6359b98c51f9770210650e74d8fe2067297b1b5a16b35f901a8548200ddc18c03c1a0ed2b21362658ce4ca4311974816e712",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:6118bfe64f462f501fdac88dd4188145f979419178a9ca8f016d1979a8c8d469d75efe501432edd36c770dfe46319cede7b795825d0c90317ec06b1928fa49ed",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:627286fd9c7c7976bc53da9a9cb4d8dcd62c5499c47651437f1721db4b39e6106d55b9fcff7bf0ef4dd13cef447a2cf25ae5284ce8d6e1a009d40eb7972f0c7d",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:7641cfb447d969ea50925a693df4f31e639b7d393f4bdc9ba9dc84531e4f2f532aa5ef5e9cf4ece9a8dfc43a41bd0c097f54d264b4e6bd7f1fa67c4c90cd4f4a",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:8f0f91ee58cd5b197e6fab9dd47c0c1f5859c6765ff74850df0f8b7f5af2696f2e14a80c188c8f020d9838bbf8a2ac12efc97a1b732f03922e24cc91a39bdc3e",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:9120400da277c4cfd7452e4438b809c135e52a12f4d512fc3bffa6d5f389366ac0299276772c5c9e2a4dece7302af84fd80f1e04902bd386e5c40557baadd607",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:969b573fc9c85c066d967e35a25809948b9933681f94778922775b4043d756a5d96da7c48ce8c55d404c4c644798a2b30dceb4365a81bf0c4b4cc382a10d5fb3",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:9ab08391572f1eec5ad65cee5e5452a3cbd5fe24f2ab745a17e45afa5df9ee7f6b2aa545dafcd25b1b3b2507e1398423e740c04df48bc77aff14966b04f040b9",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:a0ee5dd02ccf3261fa71a0147d9e33800fd1b9b68eccb9feb84fc1a4e28b4bd994448b60bd135ed6480a9c81154e39de935f2d39849706fcb1132842ad619d9a",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:a12f8e0f6209cd54c3a9e1236c67d6c4cfd10679560235ceec0229064645082372cc89804bd77e044950ff9198a7eee5b043a108f106ab252f35ba9c80be7807",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:ad384e4341d83dff37ba8d49e3606bc9328852fda85fa4a0553c97c4a2b53a36d880ca8d6c185bc91c34e4756747e3b6d67d6f0df14d07cb6639002587b8c82a",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:b4bf3eb2d99df8c3dfa03551e4792ef802e4d9a842c55a5dfa210cfac015b8ef9744d1b878f3cfbd80ddc032ce4d4c9b5f58610ec41fd640b5afd02cdd846ccb",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:b75c69612ae09c71a5a3c4049bff55bb9e946be17ce2a2529c7ebf85709cb48c1926aac32ae4363e0eb49fcf36318b4bb490d62a2739582c47843ece933dfd3b",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:be06080f0ecee5d6d72ce51831313ef3d0eaf6e54c5b94fa8db12835f7e718023435a8add849db538646bd65288e0e8d8ec7e489cb3ded45cde160f009fce7cb",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:c1472f549ea42a03aba5ef54bd9e90128f93f73993fa108ff7331686a44272cd9893ff88fd7ef8215c5f18e41526f026f700ca297ffeedfd404e68ecd1d030ab",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:d67650925a3d2082542239c1906da9b8122ac8b7315db5bfb0c6dac7f0f62679c50ebe375a41ea4a6c39cd5e66678d7071565c07e5eb9ea5b9797a6ad8215923",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:dcdf7d2c2f1e9d253ea0af0e81277f458655e9ed1ba35eadd778fd92457e702290d6b6668745798112ca338a69ea31f0c1644e701931f36289e4059534725a2e",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:df12217a1cc6f929d38a30d42fea92f4ffbc46ddd3f41c2aa8354b8a3e18f59dc7d5e5e3028dec6365402397bfffac3bbefd16c84c41d874aeb6b1a2c3066ff3",
+      "cardinality": 1
+    },
+    {
+      "canonical_contract_cid": "blake3-512:fd3937daaa27e984be2edd1c708c358dee510303dea8deaad8a27c29dd7d5d82b077c1a6ef338bb274180840d02551a2548b45b74f28a407ce5ac3627851bec5",
+      "cardinality": 1
+    }
+  ],
+  "top_5_clusters_by_cardinality": [
+    {
+      "canonical_contract_cid": "blake3-512:8612ec7c4a4b3a2620a67a71f3714aaa0c408aaa967aab475a67d8e0fdc6ce64f1cab2362d7fd885972aee6d3f132aa1c50b4ebab176888089c2f93585e84fb8",
+      "cardinality": 67,
+      "name": "UNNAMED-CONCEPT-d",
+      "catalog_id": null,
+      "persisted_site_mementos": 52
+    },
+    {
+      "canonical_contract_cid": "blake3-512:fddc7761077c69f310f6158fdcdd405c6173c3ced3965a240593c28ed971604822736bef31edf382b66956949b080d79e7ae66ff011269779c60ccd981ea6d51",
+      "cardinality": 35,
+      "name": "UNNAMED-CONCEPT-6",
+      "catalog_id": null,
+      "persisted_site_mementos": 30
+    },
+    {
+      "canonical_contract_cid": "blake3-512:81c00cc7e33c2cb7da06842d69083e269b860f95bf83c1bd3701d217eed6a27cb166eb8d7a8c48fafbfb741bdebaad1254404ca490c5f3156875649ef7b03508",
+      "cardinality": 29,
+      "name": "concept:guard-then-commit",
+      "catalog_id": "shape:guard-then-commit",
+      "persisted_site_mementos": 29
+    },
+    {
+      "canonical_contract_cid": "blake3-512:eb5c3bf0c572ced28c7ecba119154e170eeadc695743bf9a2ca6575162a5e88ebaab955e10ecf5e981cdd7d9bebcc1d2b8ed410a46aebd0018c8699d7ed302cb",
+      "cardinality": 21,
+      "name": "concept:retry-with-bounded-attempts",
+      "catalog_id": "shape:retry-with-bounded-attempts",
+      "persisted_site_mementos": 21
+    },
+    {
+      "canonical_contract_cid": "blake3-512:9e51187b9e1f7b50789875c8ab8a62bd0935c614efdc25810862f353514072750f853e42e9e4b7f95e9889b41fa1eb70e706520943d54fdb9747ab4ff375a526",
+      "cardinality": 13,
+      "name": "UNNAMED-CONCEPT-1",
+      "catalog_id": null,
+      "persisted_site_mementos": 13
+    }
+  ],
+  "anonymous_concept_count": 43,
+  "catalog_matched_concept_count": 2
+}
