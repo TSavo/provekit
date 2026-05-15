@@ -18,6 +18,15 @@ fn int_lit(value: i64) -> Term {
     }
 }
 
+fn overflow_mode(value: &str) -> Term {
+    Term::Const {
+        value: json!(value),
+        sort: Sort::Primitive {
+            name: "ArithmeticOverflowMode".into(),
+        },
+    }
+}
+
 fn add(args: Vec<Term>) -> Term {
     Term::Ctor {
         name: "concept:add".into(),
@@ -38,7 +47,11 @@ fn add_op_resolves_to_op_application_with_catalog_cid() {
         .expect("concept:add is cataloged")
         .to_string();
 
-    let resolved = proofir_resolve(&add(vec![int_lit(1), int_lit(2)]), &catalog).unwrap();
+    let resolved = proofir_resolve(
+        &add(vec![int_lit(1), int_lit(2), overflow_mode("Checked")]),
+        &catalog,
+    )
+    .unwrap();
 
     match resolved.node {
         ResolvedNode::OpApplication {
@@ -46,7 +59,7 @@ fn add_op_resolves_to_op_application_with_catalog_cid() {
             args,
         } => {
             assert_eq!(op_definition_cid, expected_cid);
-            assert_eq!(args.len(), 2);
+            assert_eq!(args.len(), 3);
             assert_eq!(
                 resolved.sort,
                 json!({"args": [], "kind": "ctor", "name": "Int"})
@@ -79,7 +92,7 @@ fn arity_mismatch_refuses_with_expected_and_actual_counts() {
     assert_eq!(
         err,
         BridgeError::ArityMismatch {
-            expected: 2,
+            expected: 3,
             actual: 1,
         }
     );
@@ -89,7 +102,11 @@ fn arity_mismatch_refuses_with_expected_and_actual_counts() {
 fn nested_ops_lift_to_nested_op_application_tree() {
     let catalog = concept_catalog();
     let resolved = proofir_resolve(
-        &add(vec![add(vec![int_lit(1), int_lit(2)]), int_lit(3)]),
+        &add(vec![
+            add(vec![int_lit(1), int_lit(2), overflow_mode("Checked")]),
+            int_lit(3),
+            overflow_mode("Checked"),
+        ]),
         &catalog,
     )
     .unwrap();
@@ -102,7 +119,7 @@ fn nested_ops_lift_to_nested_op_application_tree() {
         panic!("expected outer op-application");
     };
 
-    assert_eq!(args.len(), 2);
+    assert_eq!(args.len(), 3);
     assert!(matches!(
         args[0].node,
         ResolvedNode::OpApplication {
@@ -111,12 +128,13 @@ fn nested_ops_lift_to_nested_op_application_tree() {
         }
     ));
     assert!(matches!(args[1].node, ResolvedNode::Literal { .. }));
+    assert!(matches!(args[2].node, ResolvedNode::Literal { .. }));
 }
 
 #[test]
 fn resolved_term_unresolves_to_original_proofir_term() {
     let catalog = concept_catalog();
-    let term = add(vec![int_lit(1), int_lit(2)]);
+    let term = add(vec![int_lit(1), int_lit(2), overflow_mode("Checked")]);
     let resolved = proofir_resolve(&term, &catalog).unwrap();
 
     let unresolved = proofir_unresolve(&resolved, &catalog).unwrap();
@@ -157,7 +175,11 @@ fn resolved_literal_unresolves_to_const_with_same_value_and_sort() {
 #[test]
 fn nested_resolved_term_unresolves_to_original_proofir_tree() {
     let catalog = concept_catalog();
-    let term = add(vec![add(vec![int_lit(1), int_lit(2)]), int_lit(3)]);
+    let term = add(vec![
+        add(vec![int_lit(1), int_lit(2), overflow_mode("Checked")]),
+        int_lit(3),
+        overflow_mode("Checked"),
+    ]);
     let resolved = proofir_resolve(&term, &catalog).unwrap();
 
     let unresolved = proofir_unresolve(&resolved, &catalog).unwrap();
