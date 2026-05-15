@@ -15,7 +15,7 @@ pub mod transport;
 pub mod witness_registry;
 pub mod wp;
 
-pub use proofir_bridge::proofir_resolve;
+pub use proofir_bridge::{proofir_resolve, proofir_unresolve};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProvekitError {
