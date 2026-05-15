@@ -1,0 +1,64 @@
+{
+  "version": "1",
+  "target": {
+    "crate": "provekit-canonicalizer",
+    "function": "impl Value::integer",
+    "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs"
+  },
+  "lift": {
+    "tool": "provekit-walk",
+    "command": "cd implementations/rust && target/debug/provekit-walk-emit term provekit-canonicalizer/src/value.rs integer /private/tmp/d7-v7-walk/integer.raw.json",
+    "fixture_path": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_integer.json",
+    "fixture_cid": "blake3-512:e69f9d9cf2ffac684c58502e416d722b4a94bf2269f7ac135010520e57a65660e7093b517bf17f01bfe1a574794881f3e7d28c091fb0a6b5507cddb2ec9e279a",
+    "outcome": "handles-partially-with-loss-record",
+    "term_surface": "return(call:new(Arc::new, [call:Integer(Value::Integer, [n])]))",
+    "loss_record": [
+      {
+        "detail": "derive",
+        "loss": "procedural-macro"
+      },
+      {
+        "detail": "Arc < Value >",
+        "loss": "return-type-user-defined"
+      },
+      {
+        "detail": "Arc::new",
+        "loss": "ffi-call-unresolved-effect"
+      },
+      {
+        "detail": "Value::Integer",
+        "loss": "ffi-call-unresolved-effect"
+      }
+    ]
+  },
+  "pipeline": {
+    "step_1_fixture_cid": "blake3-512:e69f9d9cf2ffac684c58502e416d722b4a94bf2269f7ac135010520e57a65660e7093b517bf17f01bfe1a574794881f3e7d28c091fb0a6b5507cddb2ec9e279a",
+    "step_2_resolve": "summary=return(call:new(literal(\"Arc::new\"), literal([\"call:Integer(Value::Integer, [n])\"]))) -> sort {\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}; jcs={\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:Integer(Value::Integer, [n])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+    "step_3_4_realize_command": "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, \"integer\", [\"n\"], [\"i64\"], \"Arc < Value >\")",
+    "step_3_4_realize_input": {
+      "resolved_term_json": "{\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:Integer(Value::Integer, [n])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+      "function": "integer",
+      "params": [
+        "n"
+      ],
+      "param_types": [
+        "i64"
+      ],
+      "return_type": "Arc < Value >"
+    },
+    "step_3_4_regenerated_source": "pub fn integer(n: i64) -> Arc < Value > {\n    Arc::new(Value::Integer(n))\n}\n",
+    "step_5_original_slice_cid": "blake3-512:16fb069e21ea947daa7ab28932a6ac3e59a68b64db291a698212446b273d25892a14de2b9b4ee1cd046b3832236c5c414fe67159b1a7964804c8e97355628f42",
+    "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_integer_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_integer_original.rs>",
+    "step_7_byte_identical_post_rustfmt": true,
+    "step_8_unified_diff": "",
+    "step_9_diff_classification": [],
+    "step_10_dominant_diff_class": "byte-identical",
+    "step_11_expected_diff_shape": "BYTE_IDENTICAL required for every D7-v7 in-scope value.rs function",
+    "step_12_empirical_root_cause": "The D7-v6 resolved body lowering emits this in-scope Value constructor body byte-for-byte after rustfmt.",
+    "regenerated_source_cid": "blake3-512:7cfdae9bf999160132cede4141307afcd664d0609e24263059761edf6033861abc85a2f437ea2637b598aafca7091d40b745ce24c52fcb605a3cbf4862373baf",
+    "original_slice_post_rustfmt_cid": "blake3-512:7cfdae9bf999160132cede4141307afcd664d0609e24263059761edf6033861abc85a2f437ea2637b598aafca7091d40b745ce24c52fcb605a3cbf4862373baf"
+  },
+  "verdict": "BYTE_IDENTICAL",
+  "dominant_diff_class": "byte-identical",
+  "next_action": "No per-function D7 debt remains for this in-scope Value constructor."
+}

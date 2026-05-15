@@ -1,0 +1,69 @@
+{
+  "version": "1",
+  "target_module": "provekit-canonicalizer::value",
+  "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs",
+  "base_commit": "63a0bc1a",
+  "branch": "bootstrap/D7-v7-value-module-sweep",
+  "walk_emit_command": "cd implementations/rust && target/debug/provekit-walk-emit term provekit-canonicalizer/src/value.rs <fn> /private/tmp/d7-v7-walk/<fn>.raw.json",
+  "in_scope_functions": [
+    "null",
+    "boolean",
+    "integer",
+    "string"
+  ],
+  "non_goal_functions": [
+    {
+      "name": "kind",
+      "audit_class": "handles-partially-with-loss-record",
+      "lift_refuse_class": "not-bridge-compatible-match_expr-var",
+      "walk_emit_result": "accepted",
+      "reason": "the raw term contains match_expr plus var nodes; proofir_resolve rejects Var terms, so no D7-v0 style bridge-compatible single-term fixture is available without extending the bridge or realizer"
+    },
+    {
+      "name": "array",
+      "audit_class": "handles-partially-with-loss-record",
+      "lift_refuse_class": "value-array-separate-debt",
+      "walk_emit_result": "accepted",
+      "reason": "the raw term is a Value::Array constructor surface, but D7-v6 explicitly guards Value::Array out of the scalar constructor closure and this v7 sweep does not extend the realizer"
+    },
+    {
+      "name": "object",
+      "audit_class": "refuses-with-typed-reason",
+      "lift_refuse_class": "unsupported-value-closure",
+      "walk_emit_result": "refused",
+      "reason": "provekit-walk-emit refused object with unsupported value expression Expr::Closure"
+    }
+  ],
+  "per_function_verdicts": {
+    "kind": "NON_GOAL:not-bridge-compatible-match_expr-var",
+    "null": "BYTE_IDENTICAL",
+    "boolean": "BYTE_IDENTICAL",
+    "integer": "BYTE_IDENTICAL",
+    "string": "BYTE_IDENTICAL",
+    "array": "NON_GOAL:value-array-separate-debt",
+    "object": "NON_GOAL:unsupported-value-closure"
+  },
+  "per_function_receipts": {
+    "null": "bootstrap/D7-v7/value_null_source_round_trip_receipt.json",
+    "boolean": "bootstrap/D7-v7/value_boolean_source_round_trip_receipt.json",
+    "integer": "bootstrap/D7-v7/value_integer_source_round_trip_receipt.json",
+    "string": "bootstrap/D7-v7/value_string_source_round_trip_receipt.json"
+  },
+  "per_function_fixtures": {
+    "null": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_null.json",
+    "boolean": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_boolean.json",
+    "integer": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_integer.json",
+    "string": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v7_value_string.json"
+  },
+  "fixture_cids": {
+    "null": "blake3-512:754c6ff2c9a0ff92d96bcce0d1269385809944e613c11696df0458703a4e5e187714866b9e35171eb09d7753b66274a5e0d51a99ff1e0a0be3d9da6c1082d23f",
+    "boolean": "blake3-512:fe4f9d22916f33696f6a318c559948f445c0e61f353370c8d8a007e64bc56057e937fd844685e7120fa6346a0a4abd1cd2301190020b7c4bfec41fccb77abe89",
+    "integer": "blake3-512:e69f9d9cf2ffac684c58502e416d722b4a94bf2269f7ac135010520e57a65660e7093b517bf17f01bfe1a574794881f3e7d28c091fb0a6b5507cddb2ec9e279a",
+    "string": "blake3-512:87a7b7bedc6615347bf6e01483804337dbeba211bc7bb5566e56f5d38e52d44b5d422af48d5a68a98cd88fd1a9011b940b229e53cdcb91f878f8e0aa2b731b60"
+  },
+  "module_verdict": "TERMINUS",
+  "byte_identical_count": 4,
+  "characterized_diff_count": 0,
+  "non_goal_count": 3,
+  "terminus_rule": "module_verdict is TERMINUS because every in-scope function reached BYTE_IDENTICAL; non-goal functions are excluded from the terminus check"
+}
