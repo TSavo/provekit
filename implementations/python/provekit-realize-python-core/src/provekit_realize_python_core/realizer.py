@@ -48,14 +48,34 @@ class BodyTemplateEntry:
 @dataclass(frozen=True)
 class TermBody:
     body: str
-    is_stub: bool
 
 
 @dataclass(frozen=True)
 class TermExpression:
     text: str | None = None
-    stub_body: str | None = None
     type_name: str = ""
+
+
+@dataclass(frozen=True)
+class MissingTemplateEntry:
+    operation_kind: str
+    args_shape: tuple[str, ...]
+    function: str
+    term_position: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "operation_kind": self.operation_kind,
+            "args_shape": list(self.args_shape),
+            "function": self.function,
+            "term_position": self.term_position,
+        }
+
+
+class MissingTemplateError(Exception):
+    def __init__(self, entries: tuple[MissingTemplateEntry, ...]):
+        super().__init__("missing body-template entry")
+        self.entries = entries
 
 
 def emit_stub(
@@ -68,25 +88,53 @@ def emit_stub(
     sugar_cids: list[str] | None = None,
     sugar_plugins: list[Any] | None = None,
 ) -> dict[str, Any]:
+    missing = missing_templates_for(
+        function,
+        params,
+        param_types,
+        return_type,
+        concept_name,
+    )
+    if missing:
+        raise MissingTemplateError(missing)
+
     term_body = term_body_for(concept_name, params, param_types, return_type)
     if term_body is not None:
         body = term_body.body
-        is_stub = term_body.is_stub
     else:
         body = body_template_for(concept_name, params, param_types, return_type)
-        is_stub = body is None
         if body is None:
-            body = f'raise NotImplementedError("provekit-bind canonical: {concept_name}")'
+            raise MissingTemplateError(
+                (
+                    MissingTemplateEntry(
+                        operation_kind=concept_name,
+                        args_shape=tuple(map_source_type(ty) for ty in param_types),
+                        function=function,
+                        term_position="body",
+                    ),
+                )
+            )
     contract_lines = contract_comment_lines(contract, sugar_cids or [], sugar_plugins or [])
     result = {
         "source": _function_source(function, params, body, leading_lines=contract_lines),
-        "is_stub": is_stub,
+        "is_stub": False,
         "extension": "py",
     }
     if contract_lines:
         result["observed_loss_record"] = {}
         result["used_sugars"] = [sugar_cids[0]] if sugar_cids else []
     return result
+
+
+def missing_templates_for(
+    function: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    concept_name: str,
+) -> tuple[MissingTemplateEntry, ...]:
+    collector = _MissingTemplateCollector(function, params, param_types, return_type)
+    return collector.collect(concept_name)
 
 
 def contract_comment_lines(
@@ -256,6 +304,205 @@ def body_template_for(
     )
 
 
+class _MissingTemplateCollector:
+    def __init__(
+        self,
+        function: str,
+        params: list[str],
+        param_types: list[str],
+        return_type: str,
+    ) -> None:
+        self.function = function
+        self.params = params
+        self.param_types = param_types
+        self.return_type = return_type
+        self.entries: list[MissingTemplateEntry] = []
+
+    def collect(self, surface: str) -> tuple[MissingTemplateEntry, ...]:
+        stripped = surface.strip()
+        if self._is_term_surface(stripped):
+            self._collect_body(stripped, "body")
+        elif body_template_for(stripped, self.params, self.param_types, self.return_type) is None:
+            self._add(
+                operation_kind=stripped,
+                args_shape=tuple(map_source_type(ty) for ty in self.param_types),
+                term_position="body",
+            )
+        return tuple(self.entries)
+
+    def _is_term_surface(self, surface: str) -> bool:
+        if surface == "skip":
+            return True
+        if surface.startswith(("method:", "call:", "let(")):
+            return True
+        head_args = _head_and_args(surface)
+        if head_args is None:
+            return False
+        head, _inner = head_args
+        return bool(head)
+
+    def _collect_body(self, surface: str, position: str) -> None:
+        stripped = surface.strip()
+        if stripped == "skip":
+            return
+        return_arg = _single_call_arg(stripped, "return")
+        if return_arg is not None:
+            self._collect_expression(return_arg, f"{position}.return")
+            return
+        if stripped.startswith("let("):
+            self._collect_let(stripped, position)
+            return
+        self._collect_expression(stripped, position)
+
+    def _collect_let(self, surface: str, position: str) -> None:
+        inner = _single_call_arg(surface, "let")
+        if inner is None:
+            self._add("let", self._args_shape([surface]), position)
+            return
+        args = _split_top_level(inner)
+        if len(args) not in {2, 3}:
+            self._add("let", self._args_shape(args), position)
+            return
+        self._collect_expression(args[1], f"{position}.let.rhs")
+        if len(args) == 3:
+            self._collect_body(args[2], f"{position}.let.cont")
+
+    def _collect_expression(self, surface: str, position: str) -> None:
+        stripped = surface.strip()
+        return_arg = _single_call_arg(stripped, "return")
+        if return_arg is not None:
+            self._collect_expression(return_arg, f"{position}.return")
+            return
+        if stripped.startswith("method:"):
+            self._collect_method(stripped, position)
+            return
+        if stripped.startswith("call:"):
+            self._collect_call(stripped, position)
+            return
+        if stripped.startswith("let("):
+            self._collect_let(stripped, position)
+            return
+        head_args = _head_and_args(stripped)
+        if head_args is None:
+            return
+        op_name, inner = head_args
+        raw_args = _split_top_level(inner)
+        candidates = _rust_runtime_operation_concepts(op_name)
+        op_position = f"{position}.{op_name}"
+        if not candidates:
+            self._add(op_name, self._args_shape(raw_args), op_position)
+            for index, arg in enumerate(raw_args):
+                self._collect_expression(arg, f"{op_position}.args[{index}]")
+            return
+        for index, arg in enumerate(raw_args):
+            self._collect_expression(arg, f"{op_position}.args[{index}]")
+        if not self._operation_template_matches(candidates, raw_args):
+            self._add(candidates[0], self._args_shape(raw_args), op_position)
+
+    def _collect_call(self, surface: str, position: str) -> None:
+        parsed = _parse_call_surface(surface)
+        if parsed is None:
+            self._add("call", self._args_shape([surface]), position)
+            return
+        path, args = parsed
+        op_position = f"{position}.call:{path}"
+        for index, arg in enumerate(args):
+            self._collect_expression(arg, f"{op_position}.args[{index}]")
+        candidates = _rust_runtime_call_concepts(path)
+        if candidates:
+            if not self._operation_template_matches(candidates, args):
+                self._add(candidates[0], self._args_shape(args), op_position)
+            return
+        if "::" in path:
+            self._add(f"call:{path}", self._args_shape(args), op_position)
+
+    def _collect_method(self, surface: str, position: str) -> None:
+        parsed = _parse_method_surface(surface)
+        if parsed is None:
+            self._add("method", self._args_shape([surface]), position)
+            return
+        method_name, receiver, args = parsed
+        op_position = f"{position}.method:{method_name}"
+        self._collect_expression(receiver, f"{op_position}.receiver")
+        for index, arg in enumerate(args):
+            self._collect_expression(arg, f"{op_position}.args[{index}]")
+        if _libprovekit_method_template(
+            method_name,
+            receiver,
+            args,
+            self.params,
+            self.param_types,
+            self.return_type,
+        ) is not None:
+            return
+        rust_candidates = _rust_runtime_method_concepts(method_name, receiver)
+        if _rust_runtime_method_template(
+            method_name,
+            receiver,
+            args,
+            self.params,
+            self.param_types,
+            self.return_type,
+        ) is not None:
+            return
+        if rust_candidates and _requires_rust_method_template(method_name):
+            self._add(
+                rust_candidates[0],
+                self._args_shape([receiver, *args]),
+                op_position,
+            )
+
+    def _operation_template_matches(
+        self,
+        candidates: tuple[str, ...],
+        raw_args: list[str],
+    ) -> bool:
+        arg_terms = _lower_argument_terms(
+            raw_args,
+            self.params,
+            self.param_types,
+            self.return_type,
+        )
+        if arg_terms is None:
+            return True
+        arg_exprs = [term.text or "" for term in arg_terms]
+        arg_types = [
+            _expression_type(term, arg, self.params, self.param_types)
+            for term, arg in zip(arg_terms, raw_args, strict=True)
+        ]
+        return (
+            _body_template_expression_for_candidates(
+                candidates,
+                arg_exprs,
+                arg_types,
+                self.return_type,
+            )
+            is not None
+        )
+
+    def _args_shape(self, args: list[str]) -> tuple[str, ...]:
+        return tuple(
+            _arg_shape(arg, self.params, self.param_types)
+            for arg in args
+            if arg.strip()
+        )
+
+    def _add(
+        self,
+        operation_kind: str,
+        args_shape: tuple[str, ...],
+        term_position: str,
+    ) -> None:
+        self.entries.append(
+            MissingTemplateEntry(
+                operation_kind=operation_kind,
+                args_shape=args_shape,
+                function=self.function,
+                term_position=term_position,
+            )
+        )
+
+
 def term_body_for(
     term_surface: str,
     params: list[str],
@@ -271,28 +518,22 @@ def term_body_for(
         expr = _lower_term_expression(return_arg, params, param_types, return_type)
         if expr is None:
             return None
-        if expr.stub_body is not None:
-            return TermBody(expr.stub_body, True)
-        return TermBody(f"return {expr.text}", False)
+        return TermBody(f"return {expr.text}")
 
     if surface.startswith("method:"):
         method_body = _lower_method_template_body(surface, params, param_types, return_type)
         if method_body is not None:
-            return TermBody(method_body, False)
+            return TermBody(method_body)
         expr = _lower_term_expression(surface, params, param_types, return_type)
         if expr is None:
             return None
-        if expr.stub_body is not None:
-            return TermBody(expr.stub_body, True)
-        return TermBody(f"return {expr.text}", False)
+        return TermBody(f"return {expr.text}")
 
     if surface.startswith("call:"):
         expr = _lower_term_expression(surface, params, param_types, return_type)
         if expr is None:
             return None
-        if expr.stub_body is not None:
-            return TermBody(expr.stub_body, True)
-        return TermBody(f"return {expr.text}", False)
+        return TermBody(f"return {expr.text}")
 
     if surface.startswith("let("):
         return _lower_let_body(surface, params, param_types, return_type)
@@ -404,8 +645,6 @@ def _lower_method_expression(
                 type_name=_rust_runtime_method_return_type(method_name),
             )
     receiver_expr = _lower_argument_expression(receiver, params, param_types, return_type)
-    if receiver_expr.stub_body is not None:
-        return receiver_expr
     arg_exprs = _lower_argument_list(args, params, param_types, return_type)
     if arg_exprs is None:
         return None
@@ -444,7 +683,7 @@ def _lower_call_expression(
                 type_name=_rust_runtime_call_return_type(path),
             )
     if "::" in path:
-        return TermExpression(stub_body=_unsupported_call_stub(path, surface))
+        return None
     return TermExpression(text=f"{path}({', '.join(arg_exprs)})")
 
 
@@ -464,19 +703,15 @@ def _lower_let_body(
     rhs = _lower_term_expression(args[1], params, param_types, return_type)
     if rhs is None:
         return None
-    if rhs.stub_body is not None:
-        return TermBody(rhs.stub_body, True)
     head = f"{pattern} = {rhs.text}"
     if len(args) == 2:
-        return TermBody(head, False)
+        return TermBody(head)
     continuation = _lower_term_body(args[2], params, param_types, return_type)
     if continuation is None:
         return None
-    if continuation.is_stub:
-        return continuation
     if not continuation.body:
-        return TermBody(head, False)
-    return TermBody(f"{head}\n{continuation.body}", False)
+        return TermBody(head)
+    return TermBody(f"{head}\n{continuation.body}")
 
 
 def _lower_term_body(
@@ -487,23 +722,19 @@ def _lower_term_body(
 ) -> TermBody | None:
     stripped = surface.strip()
     if stripped == "skip":
-        return TermBody("", False)
+        return TermBody("")
     return_arg = _single_call_arg(stripped, "return")
     if return_arg is not None:
         expr = _lower_term_expression(return_arg, params, param_types, return_type)
         if expr is None:
             return None
-        if expr.stub_body is not None:
-            return TermBody(expr.stub_body, True)
-        return TermBody(f"return {expr.text}", False)
+        return TermBody(f"return {expr.text}")
     if stripped.startswith("let("):
         return _lower_let_body(stripped, params, param_types, return_type)
     expr = _lower_term_expression(stripped, params, param_types, return_type)
     if expr is None:
         return None
-    if expr.stub_body is not None:
-        return TermBody(expr.stub_body, True)
-    return TermBody(expr.text or "", False)
+    return TermBody(expr.text or "")
 
 
 def _lower_pattern(pattern: str) -> str:
@@ -539,7 +770,7 @@ def _lower_argument_terms(
     terms: list[TermExpression] = []
     for arg in args:
         expr = _lower_argument_expression(arg, params, param_types, return_type)
-        if expr.stub_body is not None or expr.text is None:
+        if expr.text is None:
             return None
         terms.append(expr)
     return terms
@@ -595,7 +826,7 @@ def _rust_runtime_method_template(
     if not candidates:
         return None
     receiver_expr = _lower_argument_expression(receiver, params, param_types, return_type)
-    if receiver_expr.stub_body is not None or receiver_expr.text is None:
+    if receiver_expr.text is None:
         return None
     arg_terms = _lower_argument_terms(args, params, param_types, return_type)
     if arg_terms is None:
@@ -784,6 +1015,10 @@ def _rust_runtime_method_return_type(method_name: str) -> str:
     return ""
 
 
+def _requires_rust_method_template(method_name: str) -> bool:
+    return method_name in {"len", "push_str", "update", "finalize_xof", "fill"}
+
+
 def _parse_method_surface(surface: str) -> tuple[str, str, list[str]] | None:
     head_args = _head_and_args(surface.removeprefix("method:"))
     if head_args is None:
@@ -905,20 +1140,6 @@ def _single_return_expression(body: str) -> str | None:
     return stripped.removeprefix("return ").strip()
 
 
-def _unsupported_call_stub(path: str, surface: str) -> str:
-    message = _double_quoted(f"provekit-bind canonical: call:{path}")
-    return (
-        f"# provekit-realize-python: unsupported canonical call `{path}`; "
-        f"no Python shim matched `{surface}`\n"
-        f"raise NotImplementedError({message})"
-    )
-
-
-def _double_quoted(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
 def _simple_receiver_name(receiver: str) -> bool:
     return re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", receiver.strip()) is not None
 
@@ -982,6 +1203,24 @@ def _type_for_argument(arg: str, params: list[str], param_types: list[str]) -> s
         if stripped == param and index < len(param_types):
             return param_types[index]
     return ""
+
+
+def _arg_shape(arg: str, params: list[str], param_types: list[str]) -> str:
+    stripped = arg.strip()
+    parsed_call = _parse_call_surface(stripped) if stripped.startswith("call:") else None
+    if parsed_call is not None:
+        path, _args = parsed_call
+        return f"call:{path}"
+    parsed_method = _parse_method_surface(stripped) if stripped.startswith("method:") else None
+    if parsed_method is not None:
+        method_name, _receiver, _args = parsed_method
+        return f"method:{method_name}"
+    head_args = _head_and_args(stripped)
+    if head_args is not None:
+        head, _inner = head_args
+        return head
+    type_name = _surface_type(stripped, params, param_types)
+    return type_name or "expr"
 
 
 def map_source_type(src: str) -> str:
