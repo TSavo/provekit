@@ -11,7 +11,7 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_core.realizer import emit_stub
+from provekit_realize_python_core.realizer import MissingTemplateError, emit_stub
 
 
 def _cid(ch: str) -> str:
@@ -154,14 +154,20 @@ def test_trinity_concepts_render_real_bodies() -> None:
         assert result["extension"] == "py"
 
 
-def test_unknown_concept_falls_back_to_python_stub() -> None:
-    result = emit_stub("missing", ["x"], ["int"], "int", "missing-concept")
-
-    assert result == {
-        "source": 'def missing(x):\n    raise NotImplementedError("provekit-bind canonical: missing-concept")\n',
-        "is_stub": True,
-        "extension": "py",
-    }
+def test_unknown_concept_refuses_missing_body_template() -> None:
+    try:
+        emit_stub("missing", ["x"], ["int"], "int", "missing-concept")
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "missing-concept",
+                "args_shape": ["int"],
+                "function": "missing",
+                "term_position": "body",
+            }
+        ]
+    else:
+        raise AssertionError("missing body-template should refuse")
 
 
 def test_method_term_surface_renders_python_method_call() -> None:
@@ -352,25 +358,65 @@ def test_blake3_512_term_surface_lowers_to_byte_correct_python() -> None:
     }
 
 
-def test_unsupported_qualified_call_term_surface_emits_cited_stub() -> None:
-    result = emit_stub(
-        function="unknown_call",
-        params=["x"],
-        param_types=["int"],
-        return_type="int",
-        concept_name="return(call:Widget::build(x))",
+def test_unsupported_qualified_call_term_surface_refuses_missing_template() -> None:
+    try:
+        emit_stub(
+            function="unknown_call",
+            params=["x"],
+            param_types=["int"],
+            return_type="int",
+            concept_name="return(call:Widget::build(x))",
+        )
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "call:Widget::build",
+                "args_shape": ["int"],
+                "function": "unknown_call",
+                "term_position": "body.return.call:Widget::build",
+            }
+        ]
+    else:
+        raise AssertionError("unsupported qualified call should refuse")
+
+
+def test_term_surface_collects_all_missing_templates() -> None:
+    term_surface = (
+        "let(pattern_bind(a), call:Widget::build(x), "
+        "let(pattern_bind(b), mystery_op(call:Gadget::make(x), x), return(x)))"
     )
 
-    assert result == {
-        "source": (
-            "def unknown_call(x):\n"
-            "    # provekit-realize-python: unsupported canonical call `Widget::build`; "
-            "no Python shim matched `call:Widget::build(x)`\n"
-            '    raise NotImplementedError("provekit-bind canonical: call:Widget::build")\n'
-        ),
-        "is_stub": True,
-        "extension": "py",
-    }
+    try:
+        emit_stub(
+            function="both_missing",
+            params=["x"],
+            param_types=["int"],
+            return_type="int",
+            concept_name=term_surface,
+        )
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "call:Widget::build",
+                "args_shape": ["int"],
+                "function": "both_missing",
+                "term_position": "body.let.rhs.call:Widget::build",
+            },
+            {
+                "operation_kind": "mystery_op",
+                "args_shape": ["call:Gadget::make", "int"],
+                "function": "both_missing",
+                "term_position": "body.let.cont.let.rhs.mystery_op",
+            },
+            {
+                "operation_kind": "call:Gadget::make",
+                "args_shape": ["int"],
+                "function": "both_missing",
+                "term_position": "body.let.cont.let.rhs.mystery_op.args[0].call:Gadget::make",
+            },
+        ]
+    else:
+        raise AssertionError("all missing body-templates should be collected")
 
 
 def test_let_term_surface_renders_python_assignment_with_type_ascription() -> None:

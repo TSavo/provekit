@@ -5,7 +5,7 @@ import sys
 import traceback
 from typing import Any
 
-from .realizer import emit_stub
+from .realizer import MissingTemplateError, emit_stub
 
 
 def run_rpc() -> None:
@@ -35,25 +35,56 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     if method == "provekit.plugin.invoke":
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        try:
+            result = _emit_one(params)
+        except MissingTemplateError as exc:
+            return _missing_template_error(msg_id, exc)
+        return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+    if method == "provekit.plugin.emit_module":
+        if not isinstance(params, dict):
+            return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        functions = params.get("functions")
+        if not isinstance(functions, list):
+            return _error(msg_id, -32602, "INVALID_PARAMS: functions must be an array")
+        results: list[dict[str, Any]] = []
+        missing = []
+        for item in functions:
+            if not isinstance(item, dict):
+                continue
+            try:
+                results.append(_emit_one(item))
+            except MissingTemplateError as exc:
+                missing.extend(exc.entries)
+        if missing:
+            return _missing_template_error(msg_id, MissingTemplateError(tuple(missing)))
+        source = "\n".join(result["source"] for result in results)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
-            "result": emit_stub(
-                function=str(params.get("function", "")),
-                params=_string_list(params.get("params")),
-                param_types=_string_list(params.get("param_types")),
-                return_type=str(params.get("return_type", "")),
-                concept_name=str(params.get("concept_name", "")),
-                contract=params.get("contract") if isinstance(params.get("contract"), dict) else None,
-                sugar_cids=_string_list(params.get("sugar_cids")),
-                sugar_plugins=params.get("sugar_plugins")
-                if isinstance(params.get("sugar_plugins"), list)
-                else [],
-            ),
+            "result": {
+                "source": source,
+                "is_stub": False,
+                "extension": "py",
+            },
         }
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
+
+
+def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
+    return emit_stub(
+        function=str(params.get("function", "")),
+        params=_string_list(params.get("params")),
+        param_types=_string_list(params.get("param_types")),
+        return_type=str(params.get("return_type", "")),
+        concept_name=str(params.get("concept_name", "")),
+        contract=params.get("contract") if isinstance(params.get("contract"), dict) else None,
+        sugar_cids=_string_list(params.get("sugar_cids")),
+        sugar_plugins=params.get("sugar_plugins")
+        if isinstance(params.get("sugar_plugins"), list)
+        else [],
+    )
 
 
 def _string_list(value: Any) -> list[str]:
@@ -72,4 +103,16 @@ def _error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
         "jsonrpc": "2.0",
         "id": msg_id,
         "error": {"code": code, "message": message},
+    }
+
+
+def _missing_template_error(msg_id: Any, exc: MissingTemplateError) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "error": {
+            "code": -32100,
+            "message": "missing body-template entry",
+            "data": [entry.to_json() for entry in exc.entries],
+        },
     }

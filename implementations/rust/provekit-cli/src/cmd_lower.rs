@@ -98,6 +98,20 @@ impl LowerFailure {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MissingTemplateEntry {
+    operation: String,
+    args_shape: Vec<String>,
+    function: String,
+    term_position: String,
+}
+
+#[derive(Debug, Clone)]
+enum LowerNamedError {
+    Message(String),
+    MissingTemplates(Vec<MissingTemplateEntry>),
+}
+
 #[derive(Debug, Default)]
 struct PluginManifest {
     name: String,
@@ -249,7 +263,11 @@ fn lower_named_terms(
         .unwrap_or_else(|| PathBuf::from("."));
     let source = match lower_named_document(&project_root, target, &named) {
         Ok(source) => source,
-        Err(error) => {
+        Err(LowerNamedError::MissingTemplates(entries)) => {
+            eprintln!("{}", missing_template_receipt(target, &entries));
+            return EXIT_VERIFY_FAIL;
+        }
+        Err(LowerNamedError::Message(error)) => {
             eprintln!("{}: {error}", "error".red().bold());
             return EXIT_USER_ERROR;
         }
@@ -265,8 +283,9 @@ fn lower_named_document(
     project_root: &Path,
     target: &str,
     named: &NamedTermDocument,
-) -> Result<String, String> {
+) -> Result<String, LowerNamedError> {
     let mut out = String::new();
+    let mut missing_templates = Vec::new();
     for term in &named.terms {
         let request = crate::kit_dispatch::RealizeRequest {
             function: term.function.clone(),
@@ -280,14 +299,166 @@ fn lower_named_document(
             sugar_cids: Vec::new(),
             sugar_plugins: Vec::new(),
         };
-        let realized = crate::kit_dispatch::dispatch_realize(project_root, target, None, &request)
-            .map_err(|e| format!("lower plugin unavailable for `{target}`: {e}"))?;
+        let realized =
+            match crate::kit_dispatch::dispatch_realize(project_root, target, None, &request) {
+                Ok(realized) => realized,
+                Err(error) => {
+                    if let Some(entries) = missing_templates_from_detail(&error.detail) {
+                        missing_templates.extend(entries);
+                        continue;
+                    }
+                    return Err(LowerNamedError::Message(format!(
+                        "lower plugin unavailable for `{target}`: {error}"
+                    )));
+                }
+            };
         out.push_str(&realized.source);
         if !out.ends_with('\n') {
             out.push('\n');
         }
     }
+    if !missing_templates.is_empty() {
+        return Err(LowerNamedError::MissingTemplates(missing_templates));
+    }
     Ok(out)
+}
+
+fn missing_templates_from_detail(detail: &str) -> Option<Vec<MissingTemplateEntry>> {
+    let json_start = detail.find('{')?;
+    let error: Json = serde_json::from_str(&detail[json_start..]).ok()?;
+    missing_templates_from_error_json(&error)
+}
+
+fn missing_templates_from_error_json(error: &Json) -> Option<Vec<MissingTemplateEntry>> {
+    let code_matches = error.get("code").and_then(Json::as_i64) == Some(-32100);
+    let message_matches = error
+        .get("message")
+        .and_then(Json::as_str)
+        .is_some_and(|message| message == "missing body-template entry");
+    if !code_matches && !message_matches {
+        return None;
+    }
+    let data = error.get("data")?;
+    let items: Vec<&Json> = match data {
+        Json::Array(items) => items.iter().collect(),
+        Json::Object(_) => vec![data],
+        _ => return None,
+    };
+    let entries = items
+        .into_iter()
+        .filter_map(missing_template_entry_from_json)
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        None
+    } else {
+        Some(entries)
+    }
+}
+
+fn missing_template_entry_from_json(value: &Json) -> Option<MissingTemplateEntry> {
+    let operation = value
+        .get("operation_kind")
+        .or_else(|| value.get("operation"))
+        .and_then(Json::as_str)?
+        .to_string();
+    let args_shape = value
+        .get("args_shape")
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Json::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let function = value
+        .get("function")
+        .or_else(|| value.get("function_context"))
+        .and_then(Json::as_str)
+        .unwrap_or("<unknown>")
+        .to_string();
+    let term_position = value
+        .get("term_position")
+        .and_then(Json::as_str)
+        .unwrap_or("<unknown>")
+        .to_string();
+    Some(MissingTemplateEntry {
+        operation,
+        args_shape,
+        function,
+        term_position,
+    })
+}
+
+fn missing_template_receipt(target: &str, entries: &[MissingTemplateEntry]) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "ERROR: provekit lower --target={target} refused.\n"
+    ));
+    out.push_str("The substrate could not realize the input via body-templates.\n\n");
+    out.push_str(&format!(
+        "{} body-template {} needed:\n",
+        entries.len(),
+        if entries.len() == 1 {
+            "entry"
+        } else {
+            "entries"
+        }
+    ));
+    for (index, entry) in entries.iter().enumerate() {
+        let args_shape = format_args_shape(&entry.args_shape);
+        out.push_str(&format!(
+            "\n  {}. operation: {}\n     args_shape: {}\n     function: {}\n     term_position: {}\n     suggest adding to: {}\n",
+            index + 1,
+            entry.operation,
+            args_shape,
+            entry.function,
+            entry.term_position,
+            suggested_body_template_file(&entry.operation),
+        ));
+    }
+    out.push_str("\nAuthor these entries in the appropriate body-template JSON, then re-run.");
+    out
+}
+
+fn format_args_shape(args_shape: &[String]) -> String {
+    if args_shape.is_empty() {
+        return "[]".to_string();
+    }
+    let rendered = args_shape
+        .iter()
+        .map(|value| serde_json::to_string(value).unwrap_or_else(|_| "\"<invalid>\"".to_string()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{rendered}]")
+}
+
+fn suggested_body_template_file(operation: &str) -> &'static str {
+    if operation == "rust-call:hex::encode"
+        || operation.starts_with("rust-call:blake3::")
+        || operation.starts_with("rust-method:hasher-")
+    {
+        return "python-canonical-bodies-blake3.json";
+    }
+    if operation.starts_with("rust-call:")
+        || operation.starts_with("rust-method:")
+        || matches!(
+            operation,
+            "concept:add"
+                | "concept:array-repeat"
+                | "concept:borrow"
+                | "concept:method-len"
+                | "concept:new"
+                | "concept:return"
+                | "concept:str-len"
+                | "concept:string-push-str"
+                | "concept:string-with-capacity"
+        )
+    {
+        return "python-canonical-bodies-rust-runtime.json";
+    }
+    "python-canonical-bodies.json"
 }
 
 fn is_solver_target(target: &str) -> bool {
@@ -797,5 +968,49 @@ mod tests {
         assert_eq!(plan["mode"], "attest");
         assert_eq!(plan["obligation"]["name"], "checked_add_u8.postcondition");
         assert_eq!(plan["policyCid"], "builtin:bridgeworks.checked-add-u8");
+    }
+
+    #[test]
+    fn parses_missing_template_error_detail() {
+        let detail = r#"realize kit error: {"code":-32100,"message":"missing body-template entry","data":[{"operation_kind":"call:Widget::build","args_shape":["int"],"function":"unknown_call","term_position":"body.return.call:Widget::build"},{"operation_kind":"missing-concept","args_shape":["str"],"function":"second","term_position":"body"}]}"#;
+        let parsed = missing_templates_from_detail(detail).expect("structured detail parses");
+
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].operation, "call:Widget::build");
+        assert_eq!(parsed[0].args_shape, vec!["int"]);
+        assert_eq!(parsed[0].function, "unknown_call");
+        assert_eq!(parsed[0].term_position, "body.return.call:Widget::build");
+        assert_eq!(parsed[1].operation, "missing-concept");
+    }
+
+    #[test]
+    fn formats_missing_template_receipt_with_all_entries() {
+        let entries = vec![
+            MissingTemplateEntry {
+                operation: "match_arm".to_string(),
+                args_shape: vec!["pattern".to_string(), "result".to_string()],
+                function: "encode_value".to_string(),
+                term_position: "let.rhs.match.arm[0]".to_string(),
+            },
+            MissingTemplateEntry {
+                operation: "rust-call:hex::encode".to_string(),
+                args_shape: vec!["bytes".to_string()],
+                function: "blake3_512_of".to_string(),
+                term_position: "body.let.rhs".to_string(),
+            },
+        ];
+
+        let receipt = missing_template_receipt("python", &entries);
+
+        assert!(receipt.contains("ERROR: provekit lower --target=python refused."));
+        assert!(receipt.contains("2 body-template entries needed:"));
+        assert!(receipt.contains("operation: match_arm"));
+        assert!(receipt.contains("args_shape: [\"pattern\", \"result\"]"));
+        assert!(receipt.contains("function: encode_value"));
+        assert!(receipt.contains("term_position: let.rhs.match.arm[0]"));
+        assert!(receipt.contains("suggest adding to: python-canonical-bodies.json"));
+        assert!(receipt.contains("operation: rust-call:hex::encode"));
+        assert!(receipt.contains("suggest adding to: python-canonical-bodies-blake3.json"));
+        assert!(receipt.contains("Author these entries in the appropriate body-template JSON"));
     }
 }

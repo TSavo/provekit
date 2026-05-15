@@ -1,41 +1,36 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
-PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
+PKG_SRC = ROOT / "implementations/python/provekit-realize-python-aiosqlite/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_core.rpc import dispatch
+from provekit_realize_python_aiosqlite.rpc import dispatch
 
 
-def test_plugin_invoke_returns_source_and_stub_flag() -> None:
+def test_rpc_invoke_renders_aiosqlite_body() -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "provekit.plugin.invoke",
             "params": {
-                "function": "wrap_identity",
-                "params": ["x"],
-                "param_types": ["int"],
-                "return_type": "int",
-                "concept_name": "identity",
+                "function": "select_rows",
+                "params": ["sql", "args"],
+                "param_types": ["str", "list[object]"],
+                "return_type": "list[object]",
+                "concept_name": "concept:sql-query",
             },
         }
     )
 
-    assert response == {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "source": "def wrap_identity(x):\n    return x\n",
-            "is_stub": False,
-            "extension": "py",
-        },
-    }
+    assert response["id"] == 1
+    assert response["result"]["is_stub"] is False
+    assert "async with db.execute" in response["result"]["source"]
 
 
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:
@@ -45,11 +40,11 @@ def test_plugin_invoke_returns_structured_missing_template_error() -> None:
             "id": 7,
             "method": "provekit.plugin.invoke",
             "params": {
-                "function": "unknown_call",
+                "function": "missing",
                 "params": ["x"],
                 "param_types": ["int"],
                 "return_type": "int",
-                "concept_name": "return(call:Widget::build(x))",
+                "concept_name": "missing-concept",
             },
         }
     )
@@ -62,10 +57,10 @@ def test_plugin_invoke_returns_structured_missing_template_error() -> None:
             "message": "missing body-template entry",
             "data": [
                 {
-                    "operation_kind": "call:Widget::build",
+                    "operation_kind": "missing-concept",
                     "args_shape": ["int"],
-                    "function": "unknown_call",
-                    "term_position": "body.return.call:Widget::build",
+                    "function": "missing",
+                    "term_position": "body",
                 }
             ],
         },
@@ -85,14 +80,14 @@ def test_emit_module_returns_all_missing_template_errors() -> None:
                         "params": ["x"],
                         "param_types": ["int"],
                         "return_type": "int",
-                        "concept_name": "return(call:Widget::build(x))",
+                        "concept_name": "first-missing",
                     },
                     {
                         "function": "second",
                         "params": ["y"],
                         "param_types": ["str"],
                         "return_type": "str",
-                        "concept_name": "missing-concept",
+                        "concept_name": "second-missing",
                     },
                 ]
             },
@@ -107,13 +102,13 @@ def test_emit_module_returns_all_missing_template_errors() -> None:
             "message": "missing body-template entry",
             "data": [
                 {
-                    "operation_kind": "call:Widget::build",
+                    "operation_kind": "first-missing",
                     "args_shape": ["int"],
                     "function": "first",
-                    "term_position": "body.return.call:Widget::build",
+                    "term_position": "body",
                 },
                 {
-                    "operation_kind": "missing-concept",
+                    "operation_kind": "second-missing",
                     "args_shape": ["str"],
                     "function": "second",
                     "term_position": "body",
@@ -123,13 +118,8 @@ def test_emit_module_returns_all_missing_template_errors() -> None:
     }
 
 
-def test_plugin_shutdown_returns_null() -> None:
-    response = dispatch(
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "provekit.plugin.shutdown",
-        }
-    )
+def test_rpc_error_for_unknown_method_is_json_serializable() -> None:
+    response = dispatch({"jsonrpc": "2.0", "id": 2, "method": "missing"})
 
-    assert response == {"jsonrpc": "2.0", "id": 2, "result": None}
+    assert response["error"]["code"] == -32601
+    json.dumps(response)
