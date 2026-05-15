@@ -77,3 +77,21 @@ fn d7_lowers_wildcard_let_binding_with_path_call_rhs() {
     );
     assert_loss(&parsed, "ffi-call-unresolved-effect");
 }
+
+#[test]
+fn d7_lowers_closure_in_value_position_with_loss_record() {
+    let parsed = term_json(
+        r#"
+            fn make_incrementer() {
+                let inc = |x| x + 1;
+            }
+        "#,
+        "make_incrementer",
+    );
+
+    assert_eq!(
+        parsed["term_surface"].as_str(),
+        Some("let(pattern_bind(inc), closure([x], add(x, 1)), skip)")
+    );
+    assert_loss(&parsed, "closure-captures-environment");
+}
