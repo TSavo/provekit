@@ -190,21 +190,22 @@ fn emit_term_mode(args: &[String]) -> ExitCode {
             return ExitCode::from(3);
         }
     };
-    let item_fn = match find_fn(&file, function_name) {
-        Some(f) => f,
-        None => {
-            eprintln!("function `{}` not found in {}", function_name, source_path);
-            return ExitCode::from(4);
-        }
-    };
-    let bytes = match provekit_walk::emit::rust_function_term_json(&item_fn, source_path) {
+    let bytes = match provekit_walk::emit::rust_function_term_json_for_file(
+        &file,
+        function_name,
+        source_path,
+    ) {
         Ok(bytes) => bytes,
         Err(e) => {
             eprintln!("term-emit skipped fn={}: {}", function_name, e);
             return ExitCode::from(5);
         }
     };
-    let cid = match provekit_walk::emit::rust_function_term_json_cid(&item_fn, source_path) {
+    let cid = match provekit_walk::emit::rust_function_term_json_cid_for_file(
+        &file,
+        function_name,
+        source_path,
+    ) {
         Ok(cid) => cid,
         Err(e) => {
             eprintln!("term-emit skipped fn={}: {}", function_name, e);
