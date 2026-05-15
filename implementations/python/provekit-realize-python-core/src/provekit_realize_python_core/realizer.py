@@ -16,6 +16,9 @@ BODY_TEMPLATE_REL = Path(
 LIBPROVEKIT_BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-libprovekit.json"
 )
+RUST_RUNTIME_BODY_TEMPLATE_REL = Path(
+    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-rust-runtime.json"
+)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(
     b"provekit-realize-python-core@0.1.0"
@@ -397,13 +400,22 @@ def _lower_call_expression(
     if parsed is None:
         return None
     path, args = parsed
-    if path == "String::with_capacity":
-        return TermExpression(text="str()")
-    if "::" in path:
-        return TermExpression(stub_body=_unsupported_call_stub(path, surface))
     arg_exprs = _lower_argument_list(args, params, param_types, return_type)
     if arg_exprs is None:
         return None
+    runtime_concept = _rust_runtime_call_concept(path)
+    if runtime_concept is not None:
+        arg_types = [_type_for_argument(arg, params, param_types) for arg in args]
+        template = _body_template_expression_for(
+            runtime_concept,
+            arg_exprs,
+            arg_types,
+            return_type,
+        )
+        if template is not None:
+            return TermExpression(text=template)
+    if "::" in path:
+        return TermExpression(stub_body=_unsupported_call_stub(path, surface))
     return TermExpression(text=f"{path}({', '.join(arg_exprs)})")
 
 
@@ -528,6 +540,33 @@ def _libprovekit_method_template(
         arg_types,
         return_type,
     )
+
+
+def _body_template_expression_for(
+    concept_name: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    body = _body_template_for_entries(
+        entries(),
+        (concept_name, concept_name.removeprefix("concept:")),
+        params,
+        param_types,
+        return_type,
+    )
+    if body is None:
+        return None
+    return _single_return_expression(body)
+
+
+def _rust_runtime_call_concept(path: str) -> str | None:
+    match path:
+        case "String::with_capacity":
+            return "concept:string-with-capacity"
+    if path.endswith("::new"):
+        return "concept:new"
+    return None
 
 
 def _parse_method_surface(surface: str) -> tuple[str, str, list[str]] | None:
@@ -685,7 +724,21 @@ def map_source_type(src: str) -> str:
     match src:
         case "()":
             return "None"
-        case "i64" | "u64" | "i32" | "u32" | "i16" | "u16" | "i8" | "u8" | "int":
+        case (
+            "i128"
+            | "u128"
+            | "i64"
+            | "u64"
+            | "i32"
+            | "u32"
+            | "i16"
+            | "u16"
+            | "i8"
+            | "u8"
+            | "isize"
+            | "usize"
+            | "int"
+        ):
             return "int"
         case "f64" | "f32" | "float":
             return "float"
@@ -717,12 +770,19 @@ def render_template(
 
 @lru_cache(maxsize=1)
 def entries() -> tuple[BodyTemplateEntry, ...]:
-    return _entries_from_file(BODY_TEMPLATE_REL)
+    return _entries_from_files((BODY_TEMPLATE_REL, RUST_RUNTIME_BODY_TEMPLATE_REL))
 
 
 @lru_cache(maxsize=1)
 def libprovekit_entries() -> tuple[BodyTemplateEntry, ...]:
     return _entries_from_file(LIBPROVEKIT_BODY_TEMPLATE_REL)
+
+
+def _entries_from_files(relatives: tuple[Path, ...]) -> tuple[BodyTemplateEntry, ...]:
+    out: list[BodyTemplateEntry] = []
+    for relative in relatives:
+        out.extend(_entries_from_file(relative))
+    return tuple(out)
 
 
 def _entries_from_file(relative: Path) -> tuple[BodyTemplateEntry, ...]:

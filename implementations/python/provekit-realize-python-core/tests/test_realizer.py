@@ -196,6 +196,89 @@ def test_method_term_surface_uses_libprovekit_body_template_binding() -> None:
     }
 
 
+def test_rust_runtime_concepts_render_from_body_template_catalog() -> None:
+    cases = [
+        (
+            "identity_new",
+            ["value"],
+            ["Value"],
+            "Arc<Value>",
+            "concept:new",
+            "def identity_new(value):\n    return value\n",
+        ),
+        (
+            "literal_return",
+            ["value"],
+            ["Value"],
+            "Value",
+            "concept:return",
+            "def literal_return(value):\n    return value\n",
+        ),
+        (
+            "reserve_string",
+            ["capacity"],
+            ["usize"],
+            "String",
+            "concept:string-with-capacity",
+            "def reserve_string(capacity):\n    return \"\"\n",
+        ),
+        (
+            "append_string",
+            ["target", "suffix"],
+            ["String", "&str"],
+            "String",
+            "concept:string-push-str",
+            "def append_string(target, suffix):\n    return target + suffix\n",
+        ),
+        (
+            "repeat_array",
+            ["value", "count"],
+            ["Value", "usize"],
+            "list[Value]",
+            "concept:array-repeat",
+            "def repeat_array(value, count):\n    return [value] * count\n",
+        ),
+        (
+            "string_len",
+            ["value"],
+            ["String"],
+            "usize",
+            "concept:str-len",
+            "def string_len(value):\n    return len(value)\n",
+        ),
+        (
+            "method_len",
+            ["value"],
+            ["String"],
+            "usize",
+            "concept:method-len",
+            "def method_len(value):\n    return len(value)\n",
+        ),
+        (
+            "checked_add",
+            ["left", "right"],
+            ["i64", "u32"],
+            "i64",
+            "concept:add",
+            "def checked_add(left, right):\n    return left + right\n",
+        ),
+        (
+            "borrow_value",
+            ["value"],
+            ["Value"],
+            "&Value",
+            "concept:borrow",
+            "def borrow_value(value):\n    return value\n",
+        ),
+    ]
+
+    for function, params, param_types, return_type, concept_name, expected in cases:
+        result = emit_stub(function, params, param_types, return_type, concept_name)
+        assert result["source"] == expected
+        assert result["is_stub"] is False
+        assert result["extension"] == "py"
+
+
 def test_call_term_surface_renders_python_call() -> None:
     result = emit_stub(
         function="reserve_text",
@@ -206,7 +289,23 @@ def test_call_term_surface_renders_python_call() -> None:
     )
 
     assert result == {
-        "source": "def reserve_text(capacity):\n    return str()\n",
+        "source": "def reserve_text(capacity):\n    return \"\"\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+
+
+def test_rust_runtime_constructor_call_term_surface_uses_body_template() -> None:
+    result = emit_stub(
+        function="null",
+        params=[],
+        param_types=[],
+        return_type="Arc<Value>",
+        concept_name="return(call:new(Arc::new, [Null]))",
+    )
+
+    assert result == {
+        "source": "def null():\n    return Null\n",
         "is_stub": False,
         "extension": "py",
     }
