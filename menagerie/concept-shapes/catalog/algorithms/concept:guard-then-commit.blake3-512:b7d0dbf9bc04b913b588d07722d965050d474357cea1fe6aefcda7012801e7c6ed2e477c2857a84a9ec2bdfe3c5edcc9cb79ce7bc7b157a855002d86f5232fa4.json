@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:guard-then-commit",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "args": [],
+      "kind": "atomic",
+      "name": "(out >= 0) || (out == before_state)"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unknown"
+    },
+    "locus": "29 witnesses selected; consensus vector records the observed axes"
+  },
+  "cid": "blake3-512:b7d0dbf9bc04b913b588d07722d965050d474357cea1fe6aefcda7012801e7c6ed2e477c2857a84a9ec2bdfe3c5edcc9cb79ce7bc7b157a855002d86f5232fa4",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "6J9d0xYUY4zdYvVyn5bVx4wwy/dMFrXr0YDJaDkr/vnvlIGGjWgH++r670TjTEjIxWkNIPt/JTsen9IAiz4dBA=="
+  }
+}

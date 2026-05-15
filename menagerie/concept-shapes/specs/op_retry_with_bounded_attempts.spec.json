@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:retry-with-bounded-attempts",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "algorithm",
+  "locus": "21 witnesses selected; consensus vector records the observed axes",
+  "post": {
+    "kind": "or",
+    "operands": [
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ],
+        "kind": "atomic",
+        "name": "is_ok"
+      },
+      {
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ],
+        "kind": "atomic",
+        "name": "is_err"
+      }
+    ]
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unknown"
+  }
+}
