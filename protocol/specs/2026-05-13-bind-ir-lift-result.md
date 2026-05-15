@@ -70,7 +70,7 @@ source-kind = "annotation"
 |----------------------|----------|---------|
 | `attr_pre`           | yes      | LEGACY compatibility precondition text extracted from older annotation-only lift kits. New producers SHOULD emit `null` and place all contract evidence in `witnesses[]`. Consumers MUST use this field only when `witnesses[]` is empty. |
 | `attr_post`          | yes      | LEGACY compatibility postcondition text extracted from older annotation-only lift kits. New producers SHOULD emit `null` and place all contract evidence in `witnesses[]`. Consumers MUST use this field only when `witnesses[]` is empty. |
-| `concept_annotation` | yes      | The NAME from a `// concept: NAME` (or language-equivalent) comment immediately preceding the function. The kit MUST strip the `concept:` prefix; producers emit `identity`, not `concept:identity`. `null` when absent. |
+| `concept_annotation` | yes      | The NAME from a `// concept: NAME` (or language-equivalent) comment immediately preceding the function, or from an emitted observation tag such as `provekit_monitor(concept = "NAME")` when that tag is the edited source surface. The kit MUST strip the `concept:` prefix; producers emit `identity`, not `concept:identity`. `null` when absent. |
 | `file`               | yes      | Path relative to the project root (the `workspace_root` lift-params field). Forward slashes only; the kit MUST normalize. |
 | `fn_line`            | yes      | The 1-based line number of the function declaration (the line containing the `fn`/`def`/method keyword). |
 | `fn_name`            | yes      | The function identifier exactly as it appears in source (no module qualification). |
