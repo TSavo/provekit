@@ -1,0 +1,53 @@
+{
+  "annotated_source_root": "/private/var/folders/dl/h8xjlg0134z8fwmv6c_k_rb40000gn/T/tmpxps8n1tn",
+  "anonymous_tags_found": 3,
+  "dry_run": false,
+  "em_dash_sweep": {
+    "clean": true,
+    "matches": []
+  },
+  "entries": [
+    {
+      "anchor_function": "deposit_then_balance",
+      "anchor_line": 3,
+      "anonymous_name": "UNNAMED-CONCEPT-1",
+      "edit_succeeded": true,
+      "line": 1,
+      "new_tag": "// concept: deposit-then-balance",
+      "original_tag": "// concept: UNNAMED-CONCEPT-1",
+      "proposed_name": "deposit-then-balance",
+      "source_file": "sample.rs",
+      "tag_kind": "concept_comment"
+    },
+    {
+      "anchor_function": "deposit_then_balance",
+      "anchor_line": 3,
+      "anonymous_name": "UNNAMED-CONCEPT-1",
+      "edit_succeeded": true,
+      "line": 2,
+      "new_tag": "// provekit:concept[blake3-512:0123456789abcdef](deposit-then-balance)",
+      "original_tag": "// provekit:concept[blake3-512:0123456789abcdef](UNNAMED-CONCEPT-1)",
+      "proposed_name": "deposit-then-balance",
+      "source_file": "sample.rs",
+      "tag_kind": "provekit_concept_tag"
+    },
+    {
+      "anchor_function": "checked_withdraw",
+      "anchor_line": 9,
+      "anonymous_name": "UNNAMED-CONCEPT-2",
+      "edit_succeeded": true,
+      "line": 8,
+      "new_tag": "// concept: checked-withdraw",
+      "original_tag": "// concept: UNNAMED-CONCEPT-2",
+      "proposed_name": "checked-withdraw",
+      "source_file": "sample.rs",
+      "tag_kind": "concept_comment"
+    }
+  ],
+  "files_changed": [
+    "sample.rs"
+  ],
+  "files_scanned": 1,
+  "llm_mode": "deterministic",
+  "tool": "auto-name-anonymous-concepts"
+}
