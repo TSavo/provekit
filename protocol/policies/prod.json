@@ -1,0 +1,65 @@
+{
+  "cid": "blake3-512:7f9c6b9f754ce5e41150ea9d8733920bd18f081f733a5f820aae0fba099f67e376928103fa6bd1b2651cd548650a6a52a23b1579512ea60d900cb2f7322da856",
+  "decisions": [
+    {
+      "decision_kind": "emission-gating",
+      "emission_mode": "monitor",
+      "policy_cid": "blake3-512:66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
+      "required": true,
+      "requires_witnessed_decision": true,
+      "thresholds": [
+        {
+          "axis": "witnessed-decision",
+          "predicate": "witnessed_decisions>=1"
+        },
+        {
+          "axis": "wrapper-mode",
+          "predicate": "wrapper_modes>=1"
+        }
+      ]
+    },
+    {
+      "decision_kind": "sugar-selection",
+      "policy_cid": "blake3-512:55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555",
+      "required": true,
+      "requires_witnessed_decision": false,
+      "thresholds": [
+        {
+          "axis": "max-loss-score",
+          "predicate": "loss_score<=0"
+        },
+        {
+          "axis": "selected-surfaces",
+          "predicate": "selected_surfaces>=1"
+        }
+      ]
+    },
+    {
+      "decision_kind": "witness-consensus",
+      "policy_cid": "blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444",
+      "required": true,
+      "requires_witnessed_decision": false,
+      "thresholds": [
+        {
+          "axis": "min-witnesses-floor",
+          "predicate": "n>=8"
+        },
+        {
+          "axis": "observer-diversity",
+          "predicate": "unique_signers>=2"
+        },
+        {
+          "axis": "environment-diversity",
+          "predicate": "unique_fixtures>=3"
+        },
+        {
+          "axis": "sample-depth",
+          "predicate": "total_sample_count>=100"
+        }
+      ]
+    }
+  ],
+  "kind": "policy-profile",
+  "name": "prod",
+  "schemaVersion": "1"
+}
