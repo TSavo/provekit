@@ -1,0 +1,24 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "SortCid",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "sort",
+  "post": {
+    "kind": "sort-instance",
+    "name": "SortCid",
+    "sort_kind": "primitive"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}
