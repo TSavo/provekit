@@ -158,6 +158,14 @@ const LOSS_ABI_ATTRIBUTE_NOT_CARRIED: &str = "abi-attribute-not-carried";
 /// retained only as an opaque no-op in the emitted term.
 const LOSS_STATEMENT_MACRO: &str = "statement-macro";
 
+/// Accepted-loss dimension for boolean `let` expressions whose pattern test is
+/// kept but whose binding semantics are not fully represented during bootstrap.
+const LOSS_D4_EXPR_LET: &str = "Expr::Let";
+
+/// Accepted-loss dimension for expression-position macros that are retained as
+/// opaque macro-call terms because this lifter does not expand macro bodies.
+const LOSS_D4_EXPR_MACRO: &str = "Expr::Macro";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AlgebraTerm {
     Op {
@@ -648,6 +656,14 @@ fn seq_all(terms: Vec<AlgebraTerm>) -> AlgebraTerm {
 }
 
 fn lower_tail_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm, String> {
+    if ctx.return_shape.sort() == Some(ExprSort::Unit)
+        && matches!(expr, Expr::ForLoop(_) | Expr::If(_) | Expr::Match(_))
+    {
+        return Ok(seq_all(vec![
+            lower_expr_to_stmt(expr, ctx)?,
+            AlgebraTerm::op("return", vec![AlgebraTerm::Unit]),
+        ]));
+    }
     if let Expr::If(if_expr) = expr {
         if let Some(term) = lower_tail_if_expr_to_stmt(if_expr, ctx)? {
             return Ok(term);
@@ -706,11 +722,70 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
             };
             Ok(AlgebraTerm::op("if", vec![cond, then_branch, else_branch]))
         }
+        Expr::Assign(assign) => lower_assign_expr_to_stmt(assign, ctx),
         Expr::Block(block) => lower_stmts_to_stmt(&block.block.stmts, ctx),
+        Expr::ForLoop(for_loop) => lower_for_loop_to_stmt(for_loop, ctx),
+        Expr::Match(match_expr) => lower_match_to_stmt(match_expr, ctx),
+        Expr::Try(try_expr) => Ok(AlgebraTerm::op(
+            "try",
+            vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
+        )),
+        Expr::Tuple(tuple) if tuple.elems.is_empty() => Ok(AlgebraTerm::skip()),
         _ => Err(format!(
             "unsupported expression statement {}",
             expr_kind(expr)
         )),
+    }
+}
+
+fn lower_assign_expr_to_stmt(
+    assign: &syn::ExprAssign,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "assign",
+        vec![
+            lower_expr_to_value_term(&assign.left, ctx)?,
+            lower_expr_to_value_term(&assign.right, ctx)?,
+        ],
+    ))
+}
+
+fn lower_for_loop_to_stmt(
+    for_loop: &syn::ExprForLoop,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "for",
+        vec![
+            lower_pat_to_pattern_term(&for_loop.pat),
+            AlgebraTerm::op(
+                "into_iter",
+                vec![lower_expr_to_value_term(&for_loop.expr, ctx)?],
+            ),
+            lower_stmts_to_stmt(&for_loop.body.stmts, ctx)?,
+        ],
+    ))
+}
+
+fn lower_match_to_stmt(
+    match_expr: &syn::ExprMatch,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "match",
+        vec![
+            lower_expr_to_value_term(&match_expr.expr, ctx)?,
+            lower_match_arms_to_terms(&match_expr.arms, ctx, lower_match_arm_body_to_stmt)?,
+        ],
+    ))
+}
+
+fn lower_match_arm_body_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm, String> {
+    match expr {
+        Expr::Tuple(tuple) if tuple.elems.is_empty() => Ok(AlgebraTerm::skip()),
+        Expr::Block(block) if block.block.stmts.is_empty() => Ok(AlgebraTerm::skip()),
+        _ => lower_expr_to_stmt(expr, ctx),
     }
 }
 
@@ -733,7 +808,7 @@ fn lower_return_expr_to_value_term(
                 lower_expr_to_int_term(expr, ctx)
             }
         }
-        ReturnShape::Full(ExprSort::Unit) => lower_expr_to_unit_term(expr),
+        ReturnShape::Full(ExprSort::Unit) => lower_expr_to_unit_term(expr, ctx),
         ReturnShape::Partial { .. } => lower_expr_to_value_term(expr, ctx),
         ReturnShape::Unsupported => {
             Err("unsupported function return type for term emission".to_string())
@@ -768,6 +843,13 @@ fn lower_expr_to_bool_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebra
             "not",
             vec![lower_expr_to_bool_term(&unary.expr, ctx)?],
         )),
+        Expr::Field(_) => {
+            ctx.add_loss("type-inference-assumed-bool", expr_kind(expr));
+            lower_expr_to_value_term(expr, ctx)
+        }
+        Expr::Let(let_expr) => lower_let_expr_to_bool_term(let_expr, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(mac, ctx),
+        Expr::Match(match_expr) => lower_match_to_bool_term(match_expr, ctx),
         Expr::Paren(paren) => lower_expr_to_bool_term(&paren.expr, ctx),
         Expr::Block(block) => {
             let Some(tail) = block_single_tail_expr(&block.block) else {
@@ -836,10 +918,25 @@ fn lower_expr_to_int_term(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraT
     }
 }
 
-fn lower_expr_to_unit_term(expr: &Expr) -> Result<AlgebraTerm, String> {
+fn lower_let_expr_to_bool_term(
+    let_expr: &syn::ExprLet,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    ctx.add_loss(LOSS_D4_EXPR_LET, let_expr.to_token_stream().to_string());
+    Ok(AlgebraTerm::op(
+        "if_let",
+        vec![
+            lower_pat_to_pattern_term(&let_expr.pat),
+            lower_expr_to_value_term(&let_expr.expr, ctx)?,
+        ],
+    ))
+}
+
+fn lower_expr_to_unit_term(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm, String> {
     match expr {
         Expr::Tuple(tuple) if tuple.elems.is_empty() => Ok(AlgebraTerm::Unit),
         Expr::Block(block) if block.block.stmts.is_empty() => Ok(AlgebraTerm::Unit),
+        Expr::ForLoop(_) | Expr::If(_) | Expr::Match(_) => lower_expr_to_stmt(expr, ctx),
         _ => Err(format!("unsupported unit expression {}", expr_kind(expr))),
     }
 }
@@ -960,6 +1057,8 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
             ))
         }
         Expr::Macro(mac) if mac.mac.path.is_ident("vec") => lower_vec_macro_to_value_term(mac, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(mac, ctx),
+        Expr::Match(match_expr) => lower_match_to_value_term(match_expr, ctx),
         Expr::Reference(reference) => {
             let op = if reference.mutability.is_some() {
                 "borrow_mut"
@@ -973,6 +1072,100 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
         }
         Expr::Cast(_) => Err("unsupported value expression Expr::Cast".to_string()),
         _ => Err(format!("unsupported value expression {}", expr_kind(expr))),
+    }
+}
+
+fn lower_match_to_value_term(
+    match_expr: &syn::ExprMatch,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "match_expr",
+        vec![
+            lower_expr_to_value_term(&match_expr.expr, ctx)?,
+            lower_match_arms_to_terms(&match_expr.arms, ctx, lower_expr_to_value_term)?,
+        ],
+    ))
+}
+
+fn lower_match_to_bool_term(
+    match_expr: &syn::ExprMatch,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "match_expr",
+        vec![
+            lower_expr_to_value_term(&match_expr.expr, ctx)?,
+            lower_match_arms_to_terms(&match_expr.arms, ctx, lower_expr_to_bool_term)?,
+        ],
+    ))
+}
+
+fn lower_match_arms_to_terms(
+    arms: &[syn::Arm],
+    ctx: &LoweringContext,
+    mut lower_body: impl FnMut(&Expr, &LoweringContext) -> Result<AlgebraTerm, String>,
+) -> Result<AlgebraTerm, String> {
+    let arms = arms
+        .iter()
+        .map(|arm| {
+            let pattern = lower_pat_to_pattern_term(&arm.pat);
+            let body = lower_body(&arm.body, ctx)?;
+            if let Some((_, guard)) = &arm.guard {
+                return Ok(AlgebraTerm::op(
+                    "guarded_arm",
+                    vec![pattern, lower_expr_to_bool_term(guard, ctx)?, body],
+                ));
+            }
+            Ok(AlgebraTerm::op("arm", vec![pattern, body]))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(AlgebraTerm::op("arms", vec![AlgebraTerm::List(arms)]))
+}
+
+fn lower_pat_to_pattern_term(pat: &syn::Pat) -> AlgebraTerm {
+    match pat {
+        syn::Pat::Ident(ident) => AlgebraTerm::op(
+            "pattern_bind",
+            vec![AlgebraTerm::Symbol(ident.ident.to_string())],
+        ),
+        syn::Pat::Lit(lit) => AlgebraTerm::op(
+            "pattern_bind",
+            vec![AlgebraTerm::Symbol(lit.to_token_stream().to_string())],
+        ),
+        syn::Pat::Path(path) => AlgebraTerm::op(
+            "pattern_bind",
+            vec![AlgebraTerm::Symbol(path.to_token_stream().to_string())],
+        ),
+        syn::Pat::Reference(reference) => lower_pat_to_pattern_term(&reference.pat),
+        syn::Pat::TupleStruct(tuple) => {
+            let name = tuple
+                .path
+                .segments
+                .last()
+                .map(|segment| segment.ident.to_string());
+            let args = tuple
+                .elems
+                .iter()
+                .map(lower_pat_to_pattern_term)
+                .collect::<Vec<_>>();
+            match name.as_deref() {
+                Some("Ok") => AlgebraTerm::op("pattern_ok", args),
+                Some("Err") => AlgebraTerm::op("pattern_err", args),
+                Some("Some") => AlgebraTerm::op("pattern_some", args),
+                Some("None") => AlgebraTerm::op("pattern_none", args),
+                _ => AlgebraTerm::op(
+                    "pattern_bind",
+                    vec![AlgebraTerm::Symbol(tuple.to_token_stream().to_string())],
+                ),
+            }
+        }
+        syn::Pat::Type(pat_type) => lower_pat_to_pattern_term(&pat_type.pat),
+        syn::Pat::Wild(_) => AlgebraTerm::op("pattern_wild", vec![]),
+        _ => AlgebraTerm::op(
+            "pattern_bind",
+            vec![AlgebraTerm::Symbol(pat.to_token_stream().to_string())],
+        ),
     }
 }
 
@@ -1040,6 +1233,24 @@ fn lower_struct_expr_to_value_term(
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(AlgebraTerm::Struct { name, fields })
+}
+
+fn lower_macro_to_value_term(
+    mac: &syn::ExprMacro,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    let name = mac
+        .mac
+        .path
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    ctx.add_loss(LOSS_D4_EXPR_MACRO, format!("{name}!"));
+    Ok(AlgebraTerm::op(
+        format!("call:macro:{name}"),
+        vec![AlgebraTerm::Symbol(name), AlgebraTerm::List(Vec::new())],
+    ))
 }
 
 fn lower_vec_macro_to_value_term(

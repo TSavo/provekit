@@ -163,3 +163,26 @@ Total items audited: 1109
 - Direct dependency crates are included only because `libprovekit` composes them through its manifest. Other workspace consumers of `libprovekit`, such as `provekit-mint-amp`, are outside this D1 surface pass.
 - Build scripts, benches, external `tests/`, and third-party dependency sources are excluded.
 - `derive`, `serde`, `repr`, `no_mangle`, and `cfg_attr` entries are treated as current lifter loss because the type/function mementos do not expand or encode those attributes.
+
+### D4 resolution of term-emitter-unsupported
+
+The D1 audit classified 64 rows as `term-emitter-unsupported`. D4 resolves all 64 rows with no bootstrap non-goal residue.
+
+| D1 subclass | Count | Resolution |
+| --- | ---: | --- |
+| `cannot prove expression is Int for term emission: Expr::Field` | 5 | Extend. Field expressions lower through `field(...)` with existing assumed-int loss when the field sort is not known. |
+| `cannot prove expression is Int for term emission: Expr::Path` | 6 | Extend. Path expressions lower as variables with existing assumed-int loss when the path sort is not known. |
+| `cannot prove expression is Int for term emission: Expr::Unary` | 2 | Extend. Unary integer expressions lower through existing `neg`, `bit_not`, or `deref` term emission. |
+| `unsupported boolean expression Expr::Field` | 1 | Extend. Boolean field expressions lower through `field(...)` with existing assumed-bool loss when the field sort is not known. |
+| `unsupported boolean expression Expr::Let` | 3 | Accepted loss. Emits `if_let(...)` and records `Expr::Let` because bootstrap preserves the pattern test but not full binding semantics. |
+| `unsupported boolean expression Expr::Macro` | 3 | Accepted loss. Emits an opaque `call:macro:<name>(...)` term and records `Expr::Macro` because this lifter does not expand expression macros. |
+| `unsupported boolean expression Expr::Match` | 4 | Extend. Boolean match expressions lower through `match_expr(...)` with lowered arms. |
+| `unsupported expression statement Expr::Assign` | 3 | Extend. Assignment statements lower through `assign(...)`. |
+| `unsupported expression statement Expr::ForLoop` | 6 | Extend. For-loop statements lower through `for(pattern, into_iter(...), body)`. |
+| `unsupported expression statement Expr::Match` | 3 | Extend. Statement-position matches lower through `match(...)` with statement arms. |
+| `unsupported expression statement Expr::Try` | 21 | Extend. Statement-position try expressions lower through `try(...)`. |
+| `unsupported unit expression Expr::ForLoop` | 1 | Extend. Unit tail for-loops lower as the loop statement followed by `return(unit)`. |
+| `unsupported unit expression Expr::If` | 2 | Extend. Unit tail if-expressions lower as the if statement followed by `return(unit)`. |
+| `unsupported unit expression Expr::Match` | 4 | Extend. Unit tail matches lower as the match statement followed by `return(unit)`. |
+
+Totals: extend 58, accepted loss 6, bootstrap non-goal 0.
