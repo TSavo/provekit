@@ -228,6 +228,11 @@ pub fn run(args: BindArgs) -> u8 {
         .clone()
         .unwrap_or_else(|| root.join(".provekit").join("bindings"));
 
+    if let Err(msg) = validate_library_bindings_config(&root) {
+        eprintln!("bind: {msg}");
+        return EXIT_USER_ERROR;
+    }
+
     let source_lang = match resolve_lang(&args.lang, &root) {
         Ok(lang) => lang,
         Err(msg) => {
@@ -2123,6 +2128,73 @@ fn resolve_lang(lang: &str, root: &Path) -> Result<String, String> {
     resolve_lang_detect(root)
 }
 
+fn validate_library_bindings_config(root: &Path) -> Result<(), String> {
+    let path = root.join(".provekit").join("library-bindings.json");
+    if !path.is_file() {
+        return Ok(());
+    }
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let doc: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let language = doc
+        .get("language")
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            format!(
+                "{} must contain non-empty string field `language`",
+                path.display()
+            )
+        })?;
+    let bindings = doc
+        .get("bindings")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| format!("{} must contain object field `bindings`", path.display()))?;
+    for (concept_name, surface_value) in bindings {
+        if !concept_name.starts_with("concept:") {
+            return Err(format!(
+                "{} binding key `{concept_name}` must start with `concept:`",
+                path.display()
+            ));
+        }
+        let surface = surface_value.as_str().ok_or_else(|| {
+            format!(
+                "{} binding `{concept_name}` must be a string `<language>-<library>` surface",
+                path.display()
+            )
+        })?;
+        let (surface_language, library_tag) = split_library_binding_surface(surface)?;
+        if surface_language != language {
+            return Err(format!(
+                "{} binding `{concept_name}` points to `{surface}` but top-level language is `{language}`",
+                path.display()
+            ));
+        }
+        if library_tag.trim().is_empty() {
+            return Err(format!(
+                "{} binding `{concept_name}` has empty library tag in `{surface}`",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn split_library_binding_surface(surface: &str) -> Result<(&str, &str), String> {
+    let Some((language, tag)) = surface.split_once('-') else {
+        return Err(format!(
+            "library surface `{surface}` must look like `<language>-<library>`"
+        ));
+    };
+    if language.trim().is_empty() || tag.trim().is_empty() {
+        return Err(format!(
+            "library surface `{surface}` must have non-empty language and library"
+        ));
+    }
+    Ok((language, tag))
+}
+
 fn line_for_fn(src: &str, fn_name: &str) -> usize {
     let needle = format!("fn {fn_name}(");
     for (i, line) in src.lines().enumerate() {
@@ -2776,7 +2848,7 @@ fn primary_mode_label(modes: &[RuntimeMode]) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_lang_detect;
+    use super::{resolve_lang_detect, validate_library_bindings_config};
     use std::fs;
 
     /// Create a temporary directory for a test case, run the closure to populate it,
@@ -2825,6 +2897,35 @@ mod tests {
         assert!(
             msg.contains("cannot determine source language"),
             "Err message should explain the problem; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_library_bindings_missing_config_is_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        validate_library_bindings_config(dir.path()).expect("missing config is allowed");
+    }
+
+    #[test]
+    fn validate_library_bindings_rejects_language_surface_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join(".provekit")).expect("create .provekit");
+        fs::write(
+            dir.path().join(".provekit").join("library-bindings.json"),
+            r#"{
+  "language": "python",
+  "bindings": {
+    "concept:http-request": "rust-reqwest"
+  }
+}
+"#,
+        )
+        .expect("write config");
+
+        let err = validate_library_bindings_config(dir.path()).expect_err("config should fail");
+        assert!(
+            err.contains("top-level language is `python`"),
+            "error should mention the operator language mismatch; got: {err}"
         );
     }
 }
