@@ -9,10 +9,13 @@ pub mod effect_propagation;
 pub mod ffi;
 pub mod policy_profile_registry;
 pub mod promotion_decision_registry;
+pub mod proofir_bridge;
 pub mod substrate_default_cids;
 pub mod transport;
 pub mod witness_registry;
 pub mod wp;
+
+pub use proofir_bridge::proofir_resolve;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProvekitError {
