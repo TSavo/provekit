@@ -739,12 +739,34 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
             "try",
             vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
         )),
-        Expr::Tuple(tuple) if tuple.elems.is_empty() => Ok(AlgebraTerm::skip()),
+        Expr::Index(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Field(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Tuple(tuple) => {
+            if tuple.elems.is_empty() {
+                Ok(AlgebraTerm::skip())
+            } else {
+                lower_discarded_value_expr_to_stmt(expr, ctx)
+            }
+        }
+        Expr::Array(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Reference(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Path(_) => Ok(AlgebraTerm::skip()),
+        Expr::Lit(_) => Ok(AlgebraTerm::skip()),
         _ => Err(format!(
             "unsupported expression statement {}",
             expr_kind(expr)
         )),
     }
+}
+
+fn lower_discarded_value_expr_to_stmt(
+    expr: &Expr,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "drop",
+        vec![lower_expr_to_value_term(expr, ctx)?],
+    ))
 }
 
 fn lower_assign_expr_to_stmt(
