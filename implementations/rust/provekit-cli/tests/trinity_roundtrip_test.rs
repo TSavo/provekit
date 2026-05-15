@@ -102,6 +102,14 @@ import sys
 for line in sys.stdin:
     request = json.loads(line)
     request_id = request.get("id")
+    method = request.get("method")
+    if method != "provekit.plugin.invoke":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": f"METHOD_NOT_FOUND: {method}"}
+        }), flush=True)
+        continue
     params = request.get("params", {})
     source = f"# concept: {params.get('concept_name', '')}\ndef {params.get('function', 'f')}({', '.join(params.get('params', []))}):\n    raise NotImplementedError(\"trinity lower\")\n"
     print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": {"source": source, "is_stub": True, "extension": "py", "observed_loss_record": {}, "used_sugars": []}}), flush=True)

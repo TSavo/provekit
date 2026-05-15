@@ -27,7 +27,10 @@ use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::{lift_file_with_docstring_evidence, lift_file_with_sig_evidence};
-use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
+use provekit_walk::emit::{
+    rust_function_term_json, rust_function_term_json_for_file, shadow_proof_ir_cid,
+    shadow_to_proof_ir,
+};
 use provekit_walk::{
     build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
     lift_function_precondition, CalleeContract,
@@ -354,8 +357,15 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let fn_line = target.line as u64;
             let (attr_pre, attr_post) = extract_contract_attrs(&item_fn.attrs);
             let concept_annotation = extract_concept_annotation(&src, &target.source_name);
-            let term_shape = term_shape_for_fn(item_fn);
-            let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+            let term_shape =
+                rust_function_term_json_for_file(&file, &target.source_name, rel.clone())
+                    .or_else(|_| rust_function_term_json(item_fn, rel.clone()))
+                    .and_then(|bytes| {
+                        serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())
+                    })
+                    .unwrap_or_else(|_| cvalue_to_json(&term_shape_for_fn(item_fn)));
+            let term_shape_cid = libprovekit::canonical::json_cid(&term_shape)
+                .map_err(|e| format!("cid term shape for {fn_name}: {e}"))?;
             let (param_names, param_types, return_type) = fn_signature(item_fn);
             let function_symbol = format!("{fn_name}@{rel}");
             let fallback_function_symbol = format!("{}@{rel}", target.source_name);
@@ -376,7 +386,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "param_names": param_names,
                 "param_types": param_types,
                 "return_type": return_type,
-                "term_shape": cvalue_to_json(&term_shape),
+                "term_shape": term_shape,
                 "term_shape_cid": term_shape_cid,
                 "witnesses": witnesses,
             }));
@@ -1686,6 +1696,36 @@ pub fn fetch_status(url: &str) -> i64 {
             entries.len() >= 7,
             "expected at least seven bind lift entries from value.rs impl methods, got {}",
             entries.len()
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_function_entries_carry_term_surface() {
+        let root = temp_workspace("bind_lift_term_surface");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            "pub fn add_one(x: i64) -> i64 {\n    x + 1\n}\n",
+        )
+        .expect("write lib.rs");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let add_one = entries
+            .iter()
+            .find(|entry| entry["fn_name"] == "add_one")
+            .expect("add_one bind entry");
+        assert_eq!(
+            add_one["term_shape"]["term_surface"].as_str(),
+            Some("return(add(x, 1))")
         );
 
         let _ = fs::remove_dir_all(root);

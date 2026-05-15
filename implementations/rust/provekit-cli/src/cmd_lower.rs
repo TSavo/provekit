@@ -266,6 +266,16 @@ fn lower_named_document(
     target: &str,
     named: &NamedTermDocument,
 ) -> Result<String, String> {
+    // Prefer the module-shaped realize RPC when a target plugin implements it.
+    // File shape is language syntax, so lower only dispatches the whole named
+    // document and lets the plugin decide how to group free functions, methods,
+    // classes, imports, and target-specific receipts. Older plugins may only
+    // implement per-function `provekit.plugin.invoke`; for them we degrade to
+    // the legacy concatenation path below.
+    if let Some(source) = dispatch_realize_module_if_supported(project_root, target, named)? {
+        return Ok(source);
+    }
+
     let mut out = String::new();
     for term in &named.terms {
         let request = crate::kit_dispatch::RealizeRequest {
@@ -273,7 +283,7 @@ fn lower_named_document(
             params: term.params.clone(),
             param_types: term.param_types.clone(),
             return_type: term.return_type.clone(),
-            concept_name: term.concept_name.clone(),
+            concept_name: lower_concept_surface(term),
             mode: None,
             modes: Vec::new(),
             contract: None,
@@ -288,6 +298,150 @@ fn lower_named_document(
         }
     }
     Ok(out)
+}
+
+fn lower_concept_surface(term: &crate::cmd_bind::NamedTerm) -> String {
+    term_surface(&term.term_shape).unwrap_or_else(|| term.concept_name.clone())
+}
+
+fn term_surface(value: &Json) -> Option<String> {
+    value
+        .as_str()
+        .filter(|surface| !surface.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("term_surface")
+                .or_else(|| value.get("termSurface"))
+                .and_then(Json::as_str)
+                .filter(|surface| !surface.trim().is_empty())
+                .map(str::to_string)
+        })
+}
+
+fn dispatch_realize_module_if_supported(
+    project_root: &Path,
+    target: &str,
+    named: &NamedTermDocument,
+) -> Result<Option<String>, String> {
+    let manifest = match find_realize_manifest(project_root, target) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok(None),
+    };
+    let response = match invoke_realize_module(project_root, &manifest, named) {
+        Ok(response) => response,
+        Err(error) if is_emit_module_unsupported(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let source = response
+        .get("source")
+        .and_then(Json::as_str)
+        .ok_or_else(|| format!("realize emit_module response missing source: {response}"))?;
+    Ok(Some(source.to_string()))
+}
+
+fn find_realize_manifest(project_root: &Path, target: &str) -> Result<PluginManifest, String> {
+    let realize_dir = project_root.join(".provekit").join("realize");
+    let mut candidates = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&realize_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(surface) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if surface != target
+                && !surface
+                    .strip_prefix(target)
+                    .and_then(|suffix| suffix.strip_prefix('-'))
+                    .is_some()
+            {
+                continue;
+            }
+            let manifest = path.join("manifest.toml");
+            if manifest.exists() {
+                candidates.push((surface.to_string(), manifest));
+            }
+        }
+    }
+    candidates.sort_by(|a, b| {
+        let a_exact = a.0 == target;
+        let b_exact = b.0 == target;
+        b_exact.cmp(&a_exact).then_with(|| a.0.cmp(&b.0))
+    });
+    if let Some((_, manifest)) = candidates.into_iter().next() {
+        return parse_manifest(&manifest);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let user_global = PathBuf::from(home)
+            .join(".config")
+            .join("provekit")
+            .join("realize")
+            .join(target)
+            .join("manifest.toml");
+        if user_global.exists() {
+            return parse_manifest(&user_global);
+        }
+    }
+    Err(format!("no realize plugin manifest for target `{target}`"))
+}
+
+fn invoke_realize_module(
+    project_root: &Path,
+    manifest: &PluginManifest,
+    named: &NamedTermDocument,
+) -> Result<Json, String> {
+    let mut cmd = Command::new(&manifest.command[0]);
+    if manifest.command.len() > 1 {
+        cmd.args(&manifest.command[1..]);
+    }
+    if let Some(wd) = &manifest.working_dir {
+        let resolved = if wd.is_absolute() {
+            wd.clone()
+        } else {
+            project_root.join(wd)
+        };
+        cmd.current_dir(resolved);
+    }
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::inherit());
+
+    let mut child = cmd.spawn().map_err(|e| {
+        format!(
+            "spawn realize emit_module plugin {:?}: {e}",
+            manifest.command
+        )
+    })?;
+    let params = serde_json::to_value(named).expect("serialize named term document");
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.emit_module",
+        "params": params,
+    });
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "realize emit_module plugin stdin unavailable".to_string())?;
+        writeln!(stdin, "{req}").map_err(|e| format!("write realize emit_module request: {e}"))?;
+    }
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "realize emit_module plugin stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+    let response = read_response(&mut reader, 1);
+    let _ = child.kill();
+    let _ = child.wait();
+    response
+}
+
+fn is_emit_module_unsupported(error: &str) -> bool {
+    error.contains("METHOD_NOT_FOUND") || error.contains("provekit.plugin.emit_module")
 }
 
 fn is_solver_target(target: &str) -> bool {

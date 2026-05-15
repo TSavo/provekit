@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use serde_json::json;
+
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
 }
@@ -97,6 +99,14 @@ import sys
 for line in sys.stdin:
     request = json.loads(line)
     request_id = request.get("id")
+    method = request.get("method")
+    if method != "provekit.plugin.invoke":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": f"METHOD_NOT_FOUND: {method}"}
+        }), flush=True)
+        continue
     params = request.get("params", {})
     function = params.get("function", "unknown")
     args = ", ".join(params.get("params", []))
@@ -151,6 +161,51 @@ fn assert_success(label: &str, output: &std::process::Output) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn write_python_realize_manifest(root: &Path, script: &Path) {
+    let lower_manifest = root.join(".provekit/realize/python");
+    fs::create_dir_all(&lower_manifest).expect("create lower manifest dir");
+    fs::write(
+        lower_manifest.join("manifest.toml"),
+        format!(
+            "name = \"test-python-lower\"\ncommand = [\"python3\", \"{}\"]\nlibrary_tag = \"default\"\nworking_dir = \".\"\n",
+            manifest_command(script)
+        ),
+    )
+    .expect("write lower manifest");
+}
+
+fn write_named_doc(
+    root: &Path,
+    path: &Path,
+    function: &str,
+    concept_name: &str,
+    term_surface: &str,
+) {
+    let doc = json!({
+        "kind": "named-term-document",
+        "promotionDecisionMementos": [],
+        "schemaVersion": "1",
+        "sourceLanguage": "rust",
+        "workspaceRoot": root.display().to_string(),
+        "terms": [{
+            "conceptName": concept_name,
+            "dischargeVerdict": "loudly-bounded-lossy",
+            "file": "src/lib.rs",
+            "function": function,
+            "name": function,
+            "paramTypes": ["i64"],
+            "params": ["x"],
+            "returnType": "i64",
+            "siteMementoCid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "termShape": {"term_surface": term_surface},
+            "termShapeCid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "witnesses": []
+        }]
+    });
+    fs::write(path, serde_json::to_vec(&doc).expect("serialize named doc"))
+        .expect("write named doc");
 }
 
 #[test]
@@ -238,5 +293,121 @@ fn lift_bind_lower_pipe_and_file_forms_emit_byte_equivalent_python() {
     assert_eq!(
         String::from_utf8_lossy(&file_bytes),
         "# concept: concept:add-one\ndef add_one(x):\n    raise NotImplementedError(\"provekit test lower\")\n"
+    );
+}
+
+#[test]
+fn lower_prefers_emit_module_when_realize_plugin_supports_it() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+
+    let lower = project.join("module-lower-python.py");
+    write_script(
+        &lower,
+        r##"#!/usr/bin/env python3
+import json
+import sys
+
+for line in sys.stdin:
+    request = json.loads(line)
+    request_id = request.get("id")
+    method = request.get("method")
+    if method == "provekit.plugin.emit_module":
+        terms = request.get("params", {}).get("terms", [])
+        names = ",".join(term.get("function", "") for term in terms)
+        source = f"# module terms: {names}\n"
+        result = {"source": source, "is_stub": False, "extension": "py"}
+        print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+    elif method == "provekit.plugin.invoke":
+        result = {"source": "# invoke fallback used\n", "is_stub": True, "extension": "py"}
+        print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+    else:
+        print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": None}), flush=True)
+"##,
+    );
+    write_python_realize_manifest(&project, &lower);
+
+    let named = project.join("named.json");
+    write_named_doc(
+        &project,
+        &named,
+        "wrap_identity",
+        "UNNAMED-CONCEPT-1",
+        "return(x)",
+    );
+
+    let lower_output = Command::new(provekit_bin())
+        .arg("lower")
+        .arg("--target")
+        .arg("python")
+        .arg(&named)
+        .output()
+        .expect("spawn lower");
+    assert_success("lower", &lower_output);
+    assert_eq!(
+        String::from_utf8_lossy(&lower_output.stdout),
+        "# module terms: wrap_identity\n"
+    );
+}
+
+#[test]
+fn lower_fallback_passes_term_surface_to_per_function_invoke() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+
+    let lower = project.join("invoke-only-lower-python.py");
+    write_script(
+        &lower,
+        r##"#!/usr/bin/env python3
+import json
+import sys
+
+for line in sys.stdin:
+    request = json.loads(line)
+    request_id = request.get("id")
+    method = request.get("method")
+    if method == "provekit.plugin.emit_module":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": "METHOD_NOT_FOUND: provekit.plugin.emit_module"}
+        }), flush=True)
+    elif method == "provekit.plugin.invoke":
+        params = request.get("params", {})
+        args = ", ".join(params.get("params", []))
+        source = f"# concept: {params.get('concept_name', '')}\ndef {params.get('function', 'f')}({args}):\n    return x\n"
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"source": source, "is_stub": False, "extension": "py"}
+        }), flush=True)
+    else:
+        print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": None}), flush=True)
+"##,
+    );
+    write_python_realize_manifest(&project, &lower);
+
+    let named = project.join("named.json");
+    write_named_doc(
+        &project,
+        &named,
+        "wrap_identity",
+        "UNNAMED-CONCEPT-1",
+        "return(x)",
+    );
+
+    let lower_output = Command::new(provekit_bin())
+        .arg("lower")
+        .arg("--target")
+        .arg("python")
+        .arg(&named)
+        .output()
+        .expect("spawn lower");
+    assert_success("lower", &lower_output);
+    assert_eq!(
+        String::from_utf8_lossy(&lower_output.stdout),
+        "# concept: return(x)\ndef wrap_identity(x):\n    return x\n"
     );
 }

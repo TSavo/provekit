@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import blake3
 
@@ -11,7 +12,7 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_core.realizer import emit_stub
+from provekit_realize_python_core.realizer import emit_module, emit_stub
 
 
 def _cid(ch: str) -> str:
@@ -162,6 +163,174 @@ def test_unknown_concept_falls_back_to_python_stub() -> None:
         "is_stub": True,
         "extension": "py",
     }
+
+
+def test_unknown_concept_with_quotes_escapes_python_stub_message() -> None:
+    result = emit_stub("quoted_stub", [], [], "()", 'macro_call:assert_eq(value, "{}")')
+
+    assert result == {
+        "source": (
+            "def quoted_stub():\n"
+            "    raise NotImplementedError(\"provekit-bind canonical: "
+            "macro_call:assert_eq(value, \\\"{}\\\")\")\n"
+        ),
+        "is_stub": True,
+        "extension": "py",
+    }
+    compile(result["source"], "<quoted-stub>", "exec")
+
+
+def test_unlowered_raw_term_surface_emits_valid_python_stub() -> None:
+    result = emit_stub(
+        "ctor1",
+        ["name", "arg"],
+        ["String", "IrTerm"],
+        "IrTerm",
+        "return(Ctor{name: method:into(name, []), args: array([arg])})",
+    )
+
+    assert result == {
+        "source": (
+            "def ctor1(name, arg):\n"
+            "    # provekit-realize-python: unsupported canonical term "
+            "`Ctor{name: method:into(name, []), args: array([arg])}`\n"
+            "    raise NotImplementedError(\"provekit-bind canonical: "
+            "Ctor{name: method:into(name, []), args: array([arg])}\")\n"
+        ),
+        "is_stub": True,
+        "extension": "py",
+    }
+    compile(result["source"], "<raw-term-stub>", "exec")
+
+
+def test_emit_stub_refuses_unrepresentable_python_function_name() -> None:
+    result = emit_stub("Value::kind", ["__self"], ["Self"], "ValueKind", "return(__self)")
+
+    assert result == {
+        "source": "# provekit-realize-python: function name unrepresentable in python: Value::kind\n",
+        "is_stub": True,
+        "extension": "py",
+        "receipts": [
+            {
+                "status": "refused",
+                "message": "function name unrepresentable in python: Value::kind",
+            }
+        ],
+    }
+
+
+def test_emit_module_groups_impl_methods_and_free_functions() -> None:
+    result = emit_module(
+        {
+            "kind": "named-term-document",
+            "terms": [
+                {
+                    "function": "Value::kind",
+                    "params": ["__self"],
+                    "paramTypes": ["Self"],
+                    "returnType": "ValueKind",
+                    "conceptName": "UNNAMED-CONCEPT-1",
+                    "termShape": {"term_surface": "return(__self)"},
+                },
+                {
+                    "function": "Value::null",
+                    "params": [],
+                    "paramTypes": [],
+                    "returnType": "Arc<Value>",
+                    "conceptName": "UNNAMED-CONCEPT-2",
+                    "termShape": {"term_surface": "return(call:new(Arc::new, [Null]))"},
+                },
+                {
+                    "function": "wrap_identity",
+                    "params": ["x"],
+                    "paramTypes": ["i64"],
+                    "returnType": "i64",
+                    "conceptName": "UNNAMED-CONCEPT-3",
+                    "termShape": {"term_surface": "return(x)"},
+                },
+            ],
+        }
+    )
+
+    assert result == {
+        "source": (
+            "class Value:\n"
+            "    def kind(self):\n"
+            "        return self\n"
+            "\n"
+            "    @staticmethod\n"
+            "    def null():\n"
+            "        return Null\n"
+            "\n"
+            "def wrap_identity(x):\n"
+            "    return x\n"
+        ),
+        "is_stub": False,
+        "extension": "py",
+        "receipts": [],
+    }
+
+
+def test_emit_module_refuses_unrepresentable_python_function_name() -> None:
+    result = emit_module(
+        {
+            "kind": "named-term-document",
+            "terms": [
+                {
+                    "function": "Value:bad",
+                    "params": [],
+                    "paramTypes": [],
+                    "returnType": "()",
+                    "conceptName": "UNNAMED-CONCEPT-1",
+                    "termShape": {"term_surface": "unit"},
+                }
+            ],
+        }
+    )
+
+    assert result == {
+        "source": "# provekit-realize-python: function name unrepresentable in python: Value:bad\n",
+        "is_stub": True,
+        "extension": "py",
+        "receipts": [
+            {
+                "status": "refused",
+                "message": "function name unrepresentable in python: Value:bad",
+            }
+        ],
+    }
+
+
+def test_emit_module_canonical_value_and_jcs_runtime_operates() -> None:
+    result = emit_module(
+        {
+            "kind": "named-term-document",
+            "terms": [
+                {"function": "Value::kind", "params": ["__self"], "paramTypes": ["Self"], "returnType": "ValueKind", "conceptName": "UNNAMED-CONCEPT-1", "termShape": {"kind": "body"}},
+                {"function": "Value::null", "params": [], "paramTypes": [], "returnType": "Arc<Value>", "conceptName": "UNNAMED-CONCEPT-2", "termShape": {"kind": "body"}},
+                {"function": "Value::boolean", "params": ["b"], "paramTypes": ["bool"], "returnType": "Arc<Value>", "conceptName": "UNNAMED-CONCEPT-3", "termShape": {"kind": "body"}},
+                {"function": "Value::integer", "params": ["n"], "paramTypes": ["i64"], "returnType": "Arc<Value>", "conceptName": "UNNAMED-CONCEPT-4", "termShape": {"kind": "body"}},
+                {"function": "Value::string", "params": ["s"], "paramTypes": ["String"], "returnType": "Arc<Value>", "conceptName": "UNNAMED-CONCEPT-5", "termShape": {"kind": "body"}},
+                {"function": "Value::array", "params": ["items"], "paramTypes": ["Vec<Arc<Value>>"], "returnType": "Arc<Value>", "conceptName": "UNNAMED-CONCEPT-6", "termShape": {"kind": "body"}},
+                {"function": "Value::object", "params": ["entries"], "paramTypes": ["Vec<(String, Arc<Value>)>"], "returnType": "Arc<Value>", "conceptName": "UNNAMED-CONCEPT-7", "termShape": {"kind": "body"}},
+                {"function": "encode_jcs", "params": ["v"], "paramTypes": ["&Value"], "returnType": "String", "conceptName": "UNNAMED-CONCEPT-8", "termShape": {"kind": "body"}},
+                {"function": "encode_value", "params": ["v", "out"], "paramTypes": ["&Value", "&mut String"], "returnType": "()", "conceptName": "UNNAMED-CONCEPT-9", "termShape": {"kind": "body"}},
+                {"function": "encode_string", "params": ["s", "out"], "paramTypes": ["&str", "&mut String"], "returnType": "()", "conceptName": "UNNAMED-CONCEPT-a", "termShape": {"kind": "body"}},
+            ],
+        }
+    )
+
+    namespace: dict[str, Any] = {}
+    exec(result["source"], namespace)
+
+    value = namespace["Value"].object(
+        [
+            ("b", namespace["Value"].integer(1)),
+            ("a", namespace["Value"].string('x"y')),
+            ("xs", namespace["Value"].array([namespace["Value"].boolean(True)])),
+        ]
+    )
+    assert namespace["encode_jcs"](value) == '{"a":"x\\"y","b":1,"xs":[true]}'
 
 
 def test_method_term_surface_renders_python_method_call() -> None:

@@ -38,6 +38,40 @@ def test_plugin_invoke_returns_source_and_stub_flag() -> None:
     }
 
 
+def test_plugin_emit_module_returns_single_source() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "provekit.plugin.emit_module",
+            "params": {
+                "kind": "named-term-document",
+                "terms": [
+                    {
+                        "function": "wrap_identity",
+                        "params": ["x"],
+                        "paramTypes": ["i64"],
+                        "returnType": "i64",
+                        "conceptName": "UNNAMED-CONCEPT-1",
+                        "termShape": {"term_surface": "return(x)"},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+            "source": "def wrap_identity(x):\n    return x\n",
+            "is_stub": False,
+            "extension": "py",
+            "receipts": [],
+        },
+    }
+
+
 def test_plugin_shutdown_returns_null() -> None:
     response = dispatch(
         {

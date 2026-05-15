@@ -1,14 +1,33 @@
 from __future__ import annotations
 
 import json
+import keyword
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import blake3
+try:
+    import blake3
+except ModuleNotFoundError:  # pragma: no cover - depends on host Python env
+    blake3 = None
+
+
+def _blake3_digest(data: bytes, length: int = 64) -> bytes:
+    if blake3 is not None:
+        return blake3.blake3(data).digest(length=length)
+    completed = subprocess.run(
+        ["b3sum", "--length", str(length), "--no-names"],
+        input=data,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return bytes.fromhex(completed.stdout.decode("ascii").strip().split()[0])
+
 
 BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json"
@@ -23,15 +42,15 @@ BLAKE3_BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json"
 )
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
-DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(
+DEFAULT_KIT_CID = "blake3-512:" + _blake3_digest(
     b"provekit-realize-python-core@0.1.0"
-).digest(length=64).hex()
-DEFAULT_POLICY_CID = "blake3-512:" + blake3.blake3(
+).hex()
+DEFAULT_POLICY_CID = "blake3-512:" + _blake3_digest(
     b"provekit-realize-python-core/default-contract-comment-policy"
-).digest(length=64).hex()
-DEFAULT_SUGAR_DICT_CID = "blake3-512:" + blake3.blake3(
+).hex()
+DEFAULT_SUGAR_DICT_CID = "blake3-512:" + _blake3_digest(
     b"provekit-realize-python-core/contract-comment-sugar-v1"
-).digest(length=64).hex()
+).hex()
 
 
 @dataclass(frozen=True)
@@ -58,7 +77,263 @@ class TermExpression:
     type_name: str = ""
 
 
+@dataclass(frozen=True)
+class PythonFunctionName:
+    kind: str
+    function: str
+    class_name: str | None = None
+    method_name: str | None = None
+
+
 def emit_stub(
+    function: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    concept_name: str,
+    contract: dict[str, Any] | None = None,
+    sugar_cids: list[str] | None = None,
+    sugar_plugins: list[Any] | None = None,
+) -> dict[str, Any]:
+    parsed_name = _parse_python_function_name(function)
+    if parsed_name is None or parsed_name.kind != "free":
+        return _unrepresentable_function_result(function)
+    return _emit_function(
+        function=function,
+        params=params,
+        param_types=param_types,
+        return_type=return_type,
+        concept_name=concept_name,
+        contract=contract,
+        sugar_cids=sugar_cids,
+        sugar_plugins=sugar_plugins,
+    )
+
+
+def emit_module(document: dict[str, Any]) -> dict[str, Any]:
+    terms = document.get("terms")
+    if not isinstance(terms, list):
+        terms = []
+    canonical_runtime = any(
+        isinstance(item, dict)
+        and str(item.get("function", "")) in {"encode_jcs", "encode_value", "encode_string"}
+        for item in terms
+    )
+
+    class_methods: dict[str, list[str]] = {}
+    free_functions: list[str] = []
+    receipts: list[dict[str, str]] = []
+    is_stub = False
+
+    for item in terms:
+        if not isinstance(item, dict):
+            continue
+        function = str(item.get("function", ""))
+        parsed_name = _parse_python_function_name(function)
+        if parsed_name is None:
+            receipts.append(_unrepresentable_function_receipt(function))
+            is_stub = True
+            continue
+
+        params = _string_list(item.get("params"))
+        param_types = _string_list(item.get("paramTypes", item.get("param_types")))
+        return_type = str(item.get("returnType", item.get("return_type", "")))
+        concept_name = _entry_term_surface(item) or str(
+            item.get("conceptName", item.get("concept_name", ""))
+        )
+
+        if parsed_name.kind == "free":
+            if canonical_runtime:
+                canonical_source = _canonical_free_function_source(parsed_name.function)
+                if canonical_source is not None:
+                    free_functions.append(canonical_source.rstrip())
+                    continue
+            emitted = _emit_function(
+                function=parsed_name.function,
+                params=params,
+                param_types=param_types,
+                return_type=return_type,
+                concept_name=concept_name,
+            )
+            free_functions.append(emitted["source"].rstrip())
+            is_stub = is_stub or bool(emitted.get("is_stub"))
+            continue
+
+        assert parsed_name.class_name is not None
+        assert parsed_name.method_name is not None
+        if canonical_runtime and parsed_name.class_name == "Value":
+            _ensure_value_runtime_init(class_methods)
+            canonical_source = _canonical_value_method_source(parsed_name.method_name)
+            if canonical_source is not None:
+                class_methods.setdefault("Value", []).append(
+                    _indent_block(canonical_source.rstrip(), "    ")
+                )
+                continue
+
+        method_params, method_types, method_concept, is_static = _method_signature(
+            params, param_types, concept_name
+        )
+        emitted = _emit_function(
+            function=parsed_name.method_name,
+            params=method_params,
+            param_types=method_types,
+            return_type=return_type,
+            concept_name=method_concept,
+        )
+        method_source = emitted["source"].rstrip()
+        if is_static:
+            method_source = "@staticmethod\n" + method_source
+        class_methods.setdefault(parsed_name.class_name, []).append(
+            _indent_block(method_source, "    ")
+        )
+        is_stub = is_stub or bool(emitted.get("is_stub"))
+
+    if canonical_runtime:
+        helper_source = _canonical_runtime_helper_source("_value_from_python")
+        if helper_source is not None:
+            free_functions.append(helper_source.rstrip())
+
+    parts: list[str] = []
+    for class_name, methods in class_methods.items():
+        if methods:
+            parts.append(f"class {class_name}:\n" + "\n\n".join(methods))
+        else:
+            parts.append(f"class {class_name}:\n    pass")
+    parts.extend(free_functions)
+
+    source = "\n\n".join(part for part in parts if part)
+    if source:
+        source += "\n"
+    if receipts and not source:
+        source = "".join(f"# provekit-realize-python: {r['message']}\n" for r in receipts)
+    source = _module_prelude(source) + source
+    return {
+        "source": source,
+        "is_stub": is_stub,
+        "extension": "py",
+        "receipts": receipts,
+    }
+
+
+def _ensure_value_runtime_init(class_methods: dict[str, list[str]]) -> None:
+    methods = class_methods.setdefault("Value", [])
+    if methods:
+        return
+    methods.append(
+        _indent_block(
+            (
+                "def __init__(self, kind, value=None):\n"
+                "    self._kind = kind\n"
+                "    self.value = value"
+            ),
+            "    ",
+        )
+    )
+
+
+def _canonical_value_method_source(method_name: str) -> str | None:
+    match method_name:
+        case "kind":
+            return "def kind(self):\n    return self._kind\n"
+        case "null":
+            return '@staticmethod\ndef null():\n    return Value("Null")\n'
+        case "boolean":
+            return '@staticmethod\ndef boolean(b):\n    return Value("Bool", bool(b))\n'
+        case "integer":
+            return '@staticmethod\ndef integer(n):\n    return Value("Integer", int(n))\n'
+        case "string":
+            return '@staticmethod\ndef string(s):\n    return Value("String", str(s))\n'
+        case "array":
+            return '@staticmethod\ndef array(items):\n    return Value("Array", list(items))\n'
+        case "object":
+            return (
+                "@staticmethod\n"
+                "def object(entries):\n"
+                "    return Value(\"Object\", [(str(k), v) for k, v in entries])\n"
+            )
+    return None
+
+
+def _canonical_free_function_source(function: str) -> str | None:
+    match function:
+        case "blake3_512_hex":
+            return (
+                "def blake3_512_hex(s):\n"
+                "    data = bytes(s) if isinstance(s, bytearray) else s\n"
+                "    if isinstance(data, str):\n"
+                "        data = data.encode()\n"
+                "    return blake3_512_of(data)\n"
+            )
+        case "encode_jcs":
+            return "def encode_jcs(v):\n    return encode_value(v)\n"
+        case "encode_value":
+            return (
+                "def encode_value(v, out=None):\n"
+                "    if not isinstance(v, Value):\n"
+                "        v = _value_from_python(v)\n"
+                "    if v.kind() == \"Null\":\n"
+                "        rendered = \"null\"\n"
+                "    elif v.kind() == \"Bool\":\n"
+                "        rendered = \"true\" if v.value else \"false\"\n"
+                "    elif v.kind() == \"Integer\":\n"
+                "        rendered = str(int(v.value))\n"
+                "    elif v.kind() == \"String\":\n"
+                "        rendered = encode_string(v.value)\n"
+                "    elif v.kind() == \"Array\":\n"
+                "        rendered = \"[\" + \",\".join(encode_value(item) for item in v.value) + \"]\"\n"
+                "    elif v.kind() == \"Object\":\n"
+                "        items = sorted(v.value, key=lambda item: item[0])\n"
+                "        rendered = \"{\" + \",\".join(encode_string(k) + \":\" + encode_value(val) for k, val in items) + \"}\"\n"
+                "    else:\n"
+                "        raise TypeError(f\"unknown Value kind: {v.kind()}\")\n"
+                "    return rendered if out is None else out + rendered\n"
+            )
+        case "encode_string":
+            return (
+                "def encode_string(s, out=None):\n"
+                "    pieces = [\"\\\"\"]\n"
+                "    for c in str(s):\n"
+                "        code = ord(c)\n"
+                "        if c == \"\\\"\":\n"
+                "            pieces.append(\"\\\\\\\"\")\n"
+                "        elif c == \"\\\\\":\n"
+                "            pieces.append(\"\\\\\\\\\")\n"
+                "        elif code < 0x20:\n"
+                "            pieces.append(f\"\\\\u{code:04x}\")\n"
+                "        else:\n"
+                "            pieces.append(c)\n"
+                "    pieces.append(\"\\\"\")\n"
+                "    rendered = \"\".join(pieces)\n"
+                "    return rendered if out is None else out + rendered\n"
+            )
+    return _canonical_runtime_helper_source(function)
+
+
+def _canonical_runtime_helper_source(function: str) -> str | None:
+    if function != "_value_from_python":
+        return None
+    return (
+        "def _value_from_python(value):\n"
+        "    if isinstance(value, Value):\n"
+        "        return value\n"
+        "    if value is None:\n"
+        "        return Value.null()\n"
+        "    if isinstance(value, bool):\n"
+        "        return Value.boolean(value)\n"
+        "    if isinstance(value, int):\n"
+        "        return Value.integer(value)\n"
+        "    if isinstance(value, str):\n"
+        "        return Value.string(value)\n"
+        "    if isinstance(value, list):\n"
+        "        return Value.array([_value_from_python(item) for item in value])\n"
+        "    if isinstance(value, dict):\n"
+        "        return Value.object((k, _value_from_python(v)) for k, v in value.items())\n"
+        "    raise TypeError(f\"cannot convert to Value: {type(value).__name__}\")\n"
+    )
+
+
+def _emit_function(
+    *,
     function: str,
     params: list[str],
     param_types: list[str],
@@ -76,7 +351,10 @@ def emit_stub(
         body = body_template_for(concept_name, params, param_types, return_type)
         is_stub = body is None
         if body is None:
-            body = f'raise NotImplementedError("provekit-bind canonical: {concept_name}")'
+            body = (
+                "raise NotImplementedError("
+                f"{_double_quoted(f'provekit-bind canonical: {concept_name}')})"
+            )
     contract_lines = contract_comment_lines(contract, sugar_cids or [], sugar_plugins or [])
     result = {
         "source": _function_source(function, params, body, leading_lines=contract_lines),
@@ -87,6 +365,137 @@ def emit_stub(
         result["observed_loss_record"] = {}
         result["used_sugars"] = [sugar_cids[0]] if sugar_cids else []
     return result
+
+
+def _parse_python_function_name(function: str) -> PythonFunctionName | None:
+    if _is_python_identifier(function):
+        return PythonFunctionName(kind="free", function=function)
+    if function.count("::") == 1:
+        class_name, method_name = function.split("::", 1)
+        if _is_python_identifier(class_name) and _is_python_identifier(method_name):
+            return PythonFunctionName(
+                kind="method",
+                function=function,
+                class_name=class_name,
+                method_name=method_name,
+            )
+    return None
+
+
+def _is_python_identifier(value: str) -> bool:
+    return (
+        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
+        and not keyword.iskeyword(value)
+    )
+
+
+def _unrepresentable_function_result(function: str) -> dict[str, Any]:
+    receipt = _unrepresentable_function_receipt(function)
+    return {
+        "source": f"# provekit-realize-python: {receipt['message']}\n",
+        "is_stub": True,
+        "extension": "py",
+        "receipts": [receipt],
+    }
+
+
+def _unrepresentable_function_receipt(function: str) -> dict[str, str]:
+    return {
+        "status": "refused",
+        "message": f"function name unrepresentable in python: {function}",
+    }
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _entry_term_surface(item: dict[str, Any]) -> str | None:
+    term_shape = item.get("termShape", item.get("term_shape"))
+    if isinstance(term_shape, str) and term_shape.strip():
+        return term_shape
+    if isinstance(term_shape, dict):
+        for key in ("term_surface", "termSurface"):
+            value = term_shape.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    return None
+
+
+def _method_signature(
+    params: list[str],
+    param_types: list[str],
+    concept_name: str,
+) -> tuple[list[str], list[str], str, bool]:
+    if not params:
+        return [], [], concept_name, True
+    first_name = params[0]
+    first_type = param_types[0] if param_types else ""
+    is_receiver = first_name in {"self", "__self"} or first_type.replace(" ", "") in {
+        "Self",
+        "&Self",
+        "&mutSelf",
+    }
+    if not is_receiver:
+        return params, param_types, concept_name, True
+    method_params = ["self", *params[1:]]
+    method_types = [first_type, *param_types[1:]] if param_types else []
+    method_concept = _replace_identifier(concept_name, first_name, "self")
+    return method_params, method_types, method_concept, False
+
+
+def _replace_identifier(text: str, old: str, new: str) -> str:
+    if old == new or not old:
+        return text
+    return re.sub(rf"\b{re.escape(old)}\b", new, text)
+
+
+def _indent_block(source: str, prefix: str) -> str:
+    return "\n".join(f"{prefix}{line}" if line else "" for line in source.splitlines())
+
+
+def _module_prelude(source: str) -> str:
+    lines: list[str] = []
+    if "blake3." in source:
+        lines.extend(
+            [
+                "try:",
+                "    import blake3",
+                "except ModuleNotFoundError:",
+                "    import subprocess",
+                "",
+                "    class _ProvekitBlake3Hasher:",
+                "        def __init__(self):",
+                "            self._chunks = []",
+                "",
+                "        def update(self, data):",
+                "            self._chunks.append(bytes(data))",
+                "",
+                "        def digest(self, length=64):",
+                "            completed = subprocess.run(",
+                "                [\"b3sum\", \"--length\", str(length), \"--no-names\"],",
+                "                input=b\"\".join(self._chunks),",
+                "                stdout=subprocess.PIPE,",
+                "                stderr=subprocess.PIPE,",
+                "                check=True,",
+                "            )",
+                "            return bytes.fromhex(completed.stdout.decode(\"ascii\").strip().split()[0])",
+                "",
+                "    class _ProvekitBlake3Module:",
+                "        @staticmethod",
+                "        def blake3():",
+                "            return _ProvekitBlake3Hasher()",
+                "",
+                "    blake3 = _ProvekitBlake3Module()",
+            ]
+        )
+    if "BLAKE3_512_PREFIX" in source:
+        lines.append('BLAKE3_512_PREFIX = "blake3-512:"')
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n\n"
 
 
 def contract_comment_lines(
@@ -202,10 +611,7 @@ def _sugar_dict_cid(sugar_cids: list[str], sugar_plugins: list[Any]) -> str:
 
 
 def _cid_of_json(value: Any) -> str:
-    return (
-        "blake3-512:"
-        + blake3.blake3(_canonical_json_bytes(value)).digest(length=64).hex()
-    )
+    return "blake3-512:" + _blake3_digest(_canonical_json_bytes(value)).hex()
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -350,7 +756,9 @@ def _lower_term_expression(
     operation = _lower_operation_expression(surface, params, param_types, return_type)
     if operation is not None:
         return operation
-    return TermExpression(text=surface, type_name=_surface_type(surface, params, param_types))
+    if _safe_python_atom(surface):
+        return TermExpression(text=surface, type_name=_surface_type(surface, params, param_types))
+    return TermExpression(stub_body=_unsupported_term_stub(surface))
 
 
 def _lower_method_template_body(
@@ -912,6 +1320,31 @@ def _unsupported_call_stub(path: str, surface: str) -> str:
         f"no Python shim matched `{surface}`\n"
         f"raise NotImplementedError({message})"
     )
+
+
+def _unsupported_term_stub(surface: str) -> str:
+    message = _double_quoted(f"provekit-bind canonical: {surface}")
+    return (
+        f"# provekit-realize-python: unsupported canonical term `{surface}`\n"
+        f"raise NotImplementedError({message})"
+    )
+
+
+def _safe_python_atom(surface: str) -> bool:
+    stripped = surface.strip()
+    if _simple_receiver_name(stripped):
+        return True
+    if stripped in {"True", "False", "None"}:
+        return True
+    if re.fullmatch(r"-?\d+", stripped):
+        return True
+    if (
+        len(stripped) >= 2
+        and stripped[0] == stripped[-1]
+        and stripped[0] in {"'", '"'}
+    ):
+        return True
+    return False
 
 
 def _double_quoted(value: str) -> str:

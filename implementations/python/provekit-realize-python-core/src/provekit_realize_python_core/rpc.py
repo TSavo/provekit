@@ -5,7 +5,7 @@ import sys
 import traceback
 from typing import Any
 
-from .realizer import emit_stub
+from .realizer import emit_module, emit_stub
 
 
 def run_rpc() -> None:
@@ -50,6 +50,14 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(params.get("sugar_plugins"), list)
                 else [],
             ),
+        }
+    if method == "provekit.plugin.emit_module":
+        if not isinstance(params, dict):
+            return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": emit_module(params),
         }
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
