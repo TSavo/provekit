@@ -16,7 +16,12 @@
 // JCS+BLAKE3-addressed bundle that downstream substrate tools (lift,
 // linker, mint) can consume.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 
 use provekit_canonicalizer::Value;
 use quote::ToTokens;
@@ -338,12 +343,16 @@ struct LossRecord {
 struct LoweringContext {
     return_shape: ReturnShape,
     vars: HashMap<String, ExprSort>,
+    mutable_vars: HashSet<String>,
+    ssa_aliases: HashMap<String, String>,
+    ssa_versions: HashMap<String, usize>,
     losses: Rc<RefCell<Vec<LossRecord>>>,
 }
 
 impl LoweringContext {
     fn from_item_fn_with_losses(item_fn: &syn::ItemFn, contextual_losses: Vec<LossRecord>) -> Self {
         let mut vars = HashMap::new();
+        let mut mutable_vars = HashSet::new();
         for arg in &item_fn.sig.inputs {
             let syn::FnArg::Typed(pat_type) = arg else {
                 continue;
@@ -351,8 +360,12 @@ impl LoweringContext {
             let syn::Pat::Ident(ident) = &*pat_type.pat else {
                 continue;
             };
+            let name = ident.ident.to_string();
             if let Some(sort) = sort_from_type(&pat_type.ty) {
-                vars.insert(ident.ident.to_string(), sort);
+                vars.insert(name.clone(), sort);
+            }
+            if ident.mutability.is_some() {
+                mutable_vars.insert(name);
             }
         }
         let losses = Rc::new(RefCell::new(Vec::new()));
@@ -384,20 +397,89 @@ impl LoweringContext {
         Self {
             return_shape,
             vars,
+            mutable_vars,
+            ssa_aliases: HashMap::new(),
+            ssa_versions: HashMap::new(),
             losses,
         }
     }
 
     fn with_var(&self, name: impl Into<String>, sort: Option<ExprSort>) -> Self {
+        self.with_local_var(name, sort, false)
+    }
+
+    fn with_local_var(
+        &self,
+        name: impl Into<String>,
+        sort: Option<ExprSort>,
+        is_mutable: bool,
+    ) -> Self {
+        let name = name.into();
         let mut vars = self.vars.clone();
         if let Some(sort) = sort {
-            vars.insert(name.into(), sort);
+            vars.insert(name.clone(), sort);
         }
+        let mut mutable_vars = self.mutable_vars.clone();
+        if is_mutable {
+            mutable_vars.insert(name.clone());
+        } else {
+            mutable_vars.remove(&name);
+        }
+        let mut ssa_aliases = self.ssa_aliases.clone();
+        ssa_aliases.remove(&name);
+        let mut ssa_versions = self.ssa_versions.clone();
+        ssa_versions.remove(&name);
         Self {
             return_shape: self.return_shape.clone(),
             vars,
+            mutable_vars,
+            ssa_aliases,
+            ssa_versions,
             losses: Rc::clone(&self.losses),
         }
+    }
+
+    fn current_name(&self, source_name: &str) -> String {
+        self.ssa_aliases
+            .get(source_name)
+            .cloned()
+            .unwrap_or_else(|| source_name.to_string())
+    }
+
+    fn is_mutable_source(&self, source_name: &str) -> bool {
+        self.mutable_vars.contains(source_name)
+    }
+
+    fn with_ssa_rebinding(&self, source_name: &str) -> (String, Self) {
+        let current_name = self.current_name(source_name);
+        let next_version = self.ssa_versions.get(source_name).copied().unwrap_or(0) + 1;
+        let rebound_name = format!("{source_name}_v{next_version}");
+        let mut vars = self.vars.clone();
+        if let Some(sort) = self
+            .vars
+            .get(&current_name)
+            .copied()
+            .or_else(|| self.vars.get(source_name).copied())
+        {
+            vars.insert(rebound_name.clone(), sort);
+        }
+        let mut mutable_vars = self.mutable_vars.clone();
+        if mutable_vars.contains(source_name) {
+            mutable_vars.insert(rebound_name.clone());
+        }
+        let mut ssa_aliases = self.ssa_aliases.clone();
+        ssa_aliases.insert(source_name.to_string(), rebound_name.clone());
+        let mut ssa_versions = self.ssa_versions.clone();
+        ssa_versions.insert(source_name.to_string(), next_version);
+        let ctx = Self {
+            return_shape: self.return_shape.clone(),
+            vars,
+            mutable_vars,
+            ssa_aliases,
+            ssa_versions,
+            losses: Rc::clone(&self.losses),
+        };
+        (rebound_name, ctx)
     }
 
     fn add_loss(&self, loss: &'static str, detail: impl Into<String>) {
@@ -597,6 +679,9 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
         if let Stmt::Local(local) = first {
             return lower_local_binding_to_stmt(local, rest, ctx);
         }
+        if let Stmt::Expr(Expr::MethodCall(method), Some(_)) = first {
+            return lower_method_call_statement_to_stmt(method, rest, ctx);
+        }
     }
 
     let mut lowered = Vec::new();
@@ -604,9 +689,14 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
         let is_tail = idx + 1 == stmts.len();
         match stmt {
             Stmt::Expr(expr, None) if is_tail => lowered.push(lower_tail_expr_to_stmt(expr, ctx)?),
+            Stmt::Expr(Expr::MethodCall(method), Some(_)) => {
+                let tail = lower_method_call_statement_to_stmt(method, &stmts[idx + 1..], ctx)?;
+                return Ok(seq_all_then(lowered, tail));
+            }
             Stmt::Expr(expr, _) => lowered.push(lower_expr_to_stmt(expr, ctx)?),
             Stmt::Local(local) => {
-                return lower_local_binding_to_stmt(local, &stmts[idx + 1..], ctx)
+                let tail = lower_local_binding_to_stmt(local, &stmts[idx + 1..], ctx)?;
+                return Ok(seq_all_then(lowered, tail));
             }
             Stmt::Item(_) => {}
             Stmt::Macro(mac) => {
@@ -631,7 +721,7 @@ fn lower_local_binding_to_stmt(
     let inferred_sort = declared_sort.or_else(|| expr_sort(&init.expr, ctx));
     let body = match pattern.binding_name() {
         Some(name) => {
-            let nested_ctx = ctx.with_var(name, inferred_sort);
+            let nested_ctx = ctx.with_local_var(name, inferred_sort, pattern.is_mutable());
             lower_stmts_to_stmt(rest, &nested_ctx)?
         }
         None => lower_stmts_to_stmt(rest, ctx)?,
@@ -648,6 +738,14 @@ fn seq_all(terms: Vec<AlgebraTerm>) -> AlgebraTerm {
         return AlgebraTerm::skip();
     };
     iter.fold(first, |acc, term| AlgebraTerm::op("seq", vec![acc, term]))
+}
+
+fn seq_all_then(mut terms: Vec<AlgebraTerm>, tail: AlgebraTerm) -> AlgebraTerm {
+    if terms.is_empty() {
+        return tail;
+    }
+    terms.push(tail);
+    seq_all(terms)
 }
 
 fn lower_tail_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm, String> {
@@ -753,6 +851,101 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
             "unsupported expression statement {}",
             expr_kind(expr)
         )),
+    }
+}
+
+fn lower_method_call_statement_to_stmt(
+    method: &syn::ExprMethodCall,
+    rest: &[Stmt],
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    if method.turbofish.is_some() {
+        return Err(
+            "unsupported statement-position method call with explicit turbofish".to_string(),
+        );
+    }
+
+    let mut sources = Vec::new();
+    if let Some(receiver_source) = method_receiver_source_name(&method.receiver) {
+        if ctx.is_mutable_source(&receiver_source) {
+            push_unique(&mut sources, receiver_source);
+        }
+    }
+    for arg in &method.args {
+        if let Some(source) = mut_borrow_source_name(arg) {
+            push_unique(&mut sources, source);
+        }
+    }
+
+    if sources.is_empty() {
+        let value = lower_method_call_expr_to_value_term(method, ctx)?;
+        if rest.is_empty() {
+            return Ok(value);
+        }
+        let tail = lower_stmts_to_stmt(rest, ctx)?;
+        return Ok(seq_all_then(vec![value], tail));
+    }
+
+    let value = lower_method_call_expr_to_statement_value_term(method, ctx)?;
+    let mut rebound_ctx = ctx.clone();
+    let mut bindings = Vec::new();
+    for source in sources {
+        let (rebound_name, next_ctx) = rebound_ctx.with_ssa_rebinding(&source);
+        rebound_ctx = next_ctx;
+        bindings.push(rebound_name);
+    }
+
+    let mut binding_terms = Vec::new();
+    let mut previous_binding: Option<String> = None;
+    for binding in bindings {
+        let rhs = match &previous_binding {
+            Some(previous) => AlgebraTerm::Var(previous.clone()),
+            None => value.clone(),
+        };
+        previous_binding = Some(binding.clone());
+        binding_terms.push((binding, rhs));
+    }
+
+    let mut body = lower_stmts_to_stmt(rest, &rebound_ctx)?;
+    for (binding, rhs) in binding_terms.into_iter().rev() {
+        body = AlgebraTerm::op(
+            "let",
+            vec![
+                AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(binding.clone())]),
+                rhs,
+                body,
+            ],
+        );
+    }
+    Ok(body)
+}
+
+fn push_unique(items: &mut Vec<String>, item: String) {
+    if !items.iter().any(|existing| existing == &item) {
+        items.push(item);
+    }
+}
+
+fn method_receiver_source_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => path_name(path),
+        Expr::MethodCall(method) => method_receiver_source_name(&method.receiver),
+        Expr::Paren(paren) => method_receiver_source_name(&paren.expr),
+        Expr::Group(group) => method_receiver_source_name(&group.expr),
+        _ => None,
+    }
+}
+
+fn mut_borrow_source_name(expr: &Expr) -> Option<String> {
+    let Expr::Reference(reference) = expr else {
+        return None;
+    };
+    reference.mutability.as_ref()?;
+    match &*reference.expr {
+        Expr::Path(path) => path_name(path),
+        Expr::Paren(paren) => mut_borrow_source_name(&paren.expr),
+        Expr::Group(group) => mut_borrow_source_name(&group.expr),
+        _ => None,
     }
 }
 
@@ -1301,18 +1494,49 @@ fn lower_method_call_expr_to_value_term(
     method: &syn::ExprMethodCall,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
+    lower_method_call_expr_to_value_term_with_options(method, ctx, true, false)
+}
+
+fn lower_method_call_expr_to_statement_value_term(
+    method: &syn::ExprMethodCall,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    lower_method_call_expr_to_value_term_with_options(method, ctx, false, true)
+}
+
+fn lower_method_call_expr_to_value_term_with_options(
+    method: &syn::ExprMethodCall,
+    ctx: &LoweringContext,
+    record_outer_effect: bool,
+    statement_mut_args: bool,
+) -> Result<AlgebraTerm, String> {
     let method_name = method.method.to_string();
-    ctx.add_loss("ffi-call-unresolved-effect", method_name.clone());
+    if record_outer_effect {
+        ctx.add_loss("ffi-call-unresolved-effect", method_name.clone());
+    }
     let receiver = lower_expr_to_value_term(&method.receiver, ctx)?;
     let args = method
         .args
         .iter()
-        .map(|arg| lower_expr_to_value_term(arg, ctx))
+        .map(|arg| lower_method_arg_expr_to_value_term(arg, ctx, statement_mut_args))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(AlgebraTerm::op(
         format!("method:{method_name}"),
         vec![receiver, AlgebraTerm::List(args)],
     ))
+}
+
+fn lower_method_arg_expr_to_value_term(
+    arg: &Expr,
+    ctx: &LoweringContext,
+    statement_mut_args: bool,
+) -> Result<AlgebraTerm, String> {
+    if statement_mut_args {
+        if let Some(source) = mut_borrow_source_name(arg) {
+            return Ok(AlgebraTerm::Var(ctx.current_name(&source)));
+        }
+    }
+    lower_expr_to_value_term(arg, ctx)
 }
 
 fn lower_struct_expr_to_value_term(
@@ -1553,21 +1777,28 @@ fn type_surface(ty: &Type) -> String {
 }
 
 enum LocalLetPattern {
-    Bind(String),
+    Bind { name: String, is_mutable: bool },
     Wild,
 }
 
 impl LocalLetPattern {
     fn binding_name(&self) -> Option<String> {
         match self {
-            LocalLetPattern::Bind(name) => Some(name.clone()),
+            LocalLetPattern::Bind { name, .. } => Some(name.clone()),
             LocalLetPattern::Wild => None,
+        }
+    }
+
+    fn is_mutable(&self) -> bool {
+        match self {
+            LocalLetPattern::Bind { is_mutable, .. } => *is_mutable,
+            LocalLetPattern::Wild => false,
         }
     }
 
     fn into_term(self) -> AlgebraTerm {
         match self {
-            LocalLetPattern::Bind(name) => {
+            LocalLetPattern::Bind { name, .. } => {
                 AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(name)])
             }
             LocalLetPattern::Wild => AlgebraTerm::op("pattern_wild", vec![]),
@@ -1582,10 +1813,11 @@ fn lower_local_let_pattern(
     match pat {
         syn::Pat::Ident(ident) => {
             let name = ident.ident.to_string();
+            let is_mutable = ident.mutability.is_some();
             if ident.mutability.is_some() {
                 ctx.add_loss(LOSS_LET_BINDING_MUTABILITY, name.clone());
             }
-            Ok(LocalLetPattern::Bind(name))
+            Ok(LocalLetPattern::Bind { name, is_mutable })
         }
         syn::Pat::Type(pat_type) => lower_local_let_pattern(&pat_type.pat, ctx),
         syn::Pat::Wild(_) => Ok(LocalLetPattern::Wild),
@@ -1638,7 +1870,7 @@ fn path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<Str
             path.path.to_token_stream().to_string(),
         );
     }
-    path_name(path)
+    path_name(path).map(|name| ctx.current_name(&name))
 }
 
 fn expr_kind(expr: &Expr) -> &'static str {
@@ -1842,9 +2074,9 @@ mod tests {
 
         assert_eq!(
             parsed["term_surface"].as_str(),
-            Some("method:write(sink, [value])")
+            Some("let(pattern_bind(sink_v1), method:write(sink, [value]), skip)")
         );
-        assert_eq!(parsed["term"]["name"].as_str(), Some("method:write"));
+        assert_eq!(parsed["term"]["name"].as_str(), Some("let"));
     }
 
     #[test]
