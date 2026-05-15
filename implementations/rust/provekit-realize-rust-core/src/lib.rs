@@ -191,21 +191,40 @@ fn lower_single_value_variant_application(items: &[Value], params: &[String]) ->
     let arg = arg_list.strip_suffix(']')?;
     let first_param = params.first()?;
 
-    if arg != first_param {
-        return None;
-    }
-
     let variant_name = variant_path.rsplit("::").next()?;
     if ctor_name != variant_name {
         return None;
     }
 
+    let lowered_arg = lower_value_variant_arg(arg, first_param)?;
     match variant_path {
         "Value::Bool" | "Value::Integer" | "Value::String" => {
-            Some(format!("{variant_path}({arg})"))
+            Some(format!("{variant_path}({lowered_arg})"))
         }
         _ => None,
     }
+}
+
+fn lower_value_variant_arg(arg: &str, first_param: &str) -> Option<String> {
+    if arg == first_param {
+        return Some(arg.to_string());
+    }
+
+    let method_call = arg.strip_prefix("method:")?;
+    let (method_name, rest) = method_call.split_once('(')?;
+    if method_name.is_empty() {
+        return None;
+    }
+    let inner = rest.strip_suffix(')')?;
+    let (receiver, method_args) = inner.split_once(", [")?;
+    if receiver != first_param {
+        return None;
+    }
+    if !method_args.strip_suffix(']')?.is_empty() {
+        return None;
+    }
+
+    Some(format!("{first_param}.{method_name}()"))
 }
 
 fn lower_literal(term: &Value) -> Result<String, String> {
@@ -1009,6 +1028,26 @@ mod tests {
         assert_eq!(
             rendered.source,
             "pub fn string(s: String) -> Arc < Value > {\n    Arc::new(Value::String(s))\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_string_from_resolved_call_new_variant_method_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:String(Value::String, [method:into(s, [])])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "string<S: Into<String>>",
+            &strings(&["s"]),
+            &strings(&["S"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    Arc::new(Value::String(s.into()))\n}\n"
         );
     }
 

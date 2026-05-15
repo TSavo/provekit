@@ -20,25 +20,19 @@
       ],
       "return_type": "Arc < Value >"
     },
-    "step_3_4_regenerated_source": "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    panic!(\"provekit-bind canonical: literal\")\n}\n",
+    "step_3_4_regenerated_source": "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    Arc::new(Value::String(s.into()))\n}\n",
     "step_5_original_slice_cid": "blake3-512:2326ad724a2dfd96c463b1a1ae71d025e953d35a850ecbdd6954a409e2f4c0b100174ca0a6a62121b15b3a2f374b891110750617dc2b9466e11533df286122a7",
     "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_string_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_string_original.rs>",
-    "step_7_byte_identical_post_rustfmt": false,
-    "step_8_unified_diff": "--- original_rustfmt\n+++ regenerated_rustfmt\n@@ -1,3 +1,3 @@\n pub fn string<S: Into<String>>(s: S) -> Arc<Value> {\n-    Arc::new(Value::String(s.into()))\n+    panic!(\"provekit-bind canonical: literal\")\n }\n",
-    "step_9_diff_classification": [
-      {
-        "hunk": "@@ -1,3 +1,3 @@\n pub fn string<S: Into<String>>(s: S) -> Arc<Value> {\n-    Arc::new(Value::String(s.into()))\n+    panic!(\"provekit-bind canonical: literal\")\n }",
-        "class": "stub-body",
-        "explanation": "provekit-realize-rust-core emitted its stub body because the existing D7 resolved body lowering does not consume this widened Value constructor literal shape; the realized fallback concept is `literal`. Retire in v5 under the #964/#962 self-host follow-up without minting new ops."
-      }
-    ],
-    "step_10_dominant_diff_class": "stub-body",
+    "step_7_byte_identical_post_rustfmt": true,
+    "step_8_unified_diff": "",
+    "step_9_diff_classification": [],
+    "step_10_dominant_diff_class": "byte-identical",
     "step_11_expected_diff_shape": "BYTE_IDENTICAL or CHARACTERIZED_DIFF; D7-v4 is diagnostic-only widening",
-    "step_12_empirical_root_cause": "The existing D7 resolved body lowering does not consume widened Value constructor literal shapes beyond Value::Null, so realize-rust-core falls through to the stub-body path; retire under #964/#962 follow-up without extending this diagnostic chunk.",
-    "regenerated_source_cid": "blake3-512:5a1eab3177aab96ca611d3a3ea7bf4284f3b7ffbdbe2e4cdf7e1c805ab2253fa0a7fae31b811df532deeed93660944c5dd4d769d0017e54146b34f160e933c48",
+    "step_12_empirical_root_cause": "The existing D7 resolved body lowering emitted the checked-in Value constructor body byte-for-byte after rustfmt.",
+    "regenerated_source_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43",
     "original_slice_post_rustfmt_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43"
   },
-  "verdict": "CHARACTERIZED_DIFF",
-  "dominant_diff_class": "stub-body",
+  "verdict": "BYTE_IDENTICAL",
+  "dominant_diff_class": "byte-identical",
   "next_action": "D7-v4 is diagnostic-only. v5 should retire any CHARACTERIZED_DIFF classes surfaced here without minting new ProofIR ops or substrate concepts."
 }
