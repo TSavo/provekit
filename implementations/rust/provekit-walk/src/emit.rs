@@ -738,6 +738,7 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
             }
             lower_method_call_expr_to_value_term(method, ctx)
         }
+        Expr::Call(call) => lower_call_expr_to_value_term(call, ctx),
         Expr::Try(try_expr) => Ok(AlgebraTerm::op(
             "try",
             vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
