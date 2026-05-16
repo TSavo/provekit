@@ -21,6 +21,13 @@ from provekit_lift_python_source.canonical import cid_of_json
 from provekit_realize_python_core.realizer import emit_stub
 
 
+CONCEPT_SKIP_CID = (
+    "blake3-512:"
+    "9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e"
+    "610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb"
+)
+
+
 def _cid(ch: str) -> str:
     return "blake3-512:" + ch * 128
 
@@ -78,6 +85,54 @@ def _comment_lines(payload: dict, payload_cid: str) -> str:
         + "\n"
         + f"# provekit-contract-payload-cid: {payload_cid}\n"
     )
+
+
+def _concept_citation_payload(overrides: dict | None = None) -> tuple[dict, str]:
+    args = [{"kind": "var", "name": "x"}]
+    payload = {
+        "args_jcs": args,
+        "args_jcs_cid": cid_of_json(args),
+        "artifact_kind": "provekit-concept-citation-comment-sugar",
+        "concept_cid": CONCEPT_SKIP_CID,
+        "concept_name": "concept:skip",
+        "concept_site_cid": _cid("a"),
+        "emitted_by": {
+            "kit_cid": _cid("b"),
+            "kit_id": "provekit-realize-python-core@0.1.0",
+            "kit_kind": "realize",
+            "target_language": "python",
+            "target_library_tag": "python",
+        },
+        "loss_record_cid": _cid("c"),
+        "operation_kind": "skip",
+        "policy_cid": _cid("d"),
+        "schema_version": "1",
+        "shape_cid": CONCEPT_SKIP_CID,
+        "sugar_dict_cid": _cid("e"),
+        "term_position": [0],
+    }
+    if overrides:
+        payload.update(overrides)
+    return payload, cid_of_json(payload)
+
+
+def _concept_comment_lines(payload: dict, payload_cid: str) -> str:
+    return (
+        "# provekit-concept: "
+        + json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n"
+        + f"# provekit-concept-payload-cid: {payload_cid}\n"
+    )
+
+
+def _concept_diagnostics(result: object) -> set[str]:
+    diagnostics = getattr(result, "diagnostics")
+    return {diag["kind"] for diag in diagnostics}
 
 
 def test_bind_lift_source_emits_language_neutral_entries() -> None:
@@ -271,6 +326,100 @@ def test_bind_lift_contract_comment_fails_closed_for_bad_payloads() -> None:
 
         assert result.ir[0].get("witnesses", []) == []
         assert any(diag["kind"] == "contract-comment-invalid" for diag in result.diagnostics)
+
+
+def test_concept_citation_relift_recovers_identity() -> None:
+    payload, payload_cid = _concept_citation_payload()
+    source = (
+        "def transport_skip(x: object):\n"
+        + "    "
+        + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ")
+        + "pass\n"
+    )
+
+    result = lift_source(source, "pkg/foo.py")
+
+    assert result.diagnostics == []
+    citations = result.ir[0]["concept_citations"]
+    assert len(citations) == 1
+    citation = citations[0]
+    assert citation["concept_cid"] == payload["concept_cid"]
+    assert citation["operation_kind"] == payload["operation_kind"]
+    assert citation["shape_cid"] == payload["shape_cid"]
+    assert citation["term_position"] == payload["term_position"]
+    assert citation["args_jcs_cid"] == payload["args_jcs_cid"]
+    assert citation["source_kind"] == "native-surface"
+    assert citation["extension_fields"]["payload_cid"] == payload_cid
+    assert result.ir[0]["witnesses"] == []
+
+
+def test_concept_citation_payload_cid_mismatch_refuses() -> None:
+    payload, _payload_cid = _concept_citation_payload()
+    source = _concept_comment_lines(payload, _cid("8")) + "def f(x: object):\n    pass\n"
+
+    result = lift_source(source, "pkg/foo.py")
+
+    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept-citation:payload-cid-mismatch" in _concept_diagnostics(result)
+
+
+def test_concept_citation_args_cid_mismatch_refuses() -> None:
+    payload, payload_cid = _concept_citation_payload({"args_jcs_cid": _cid("8")})
+    source = _concept_comment_lines(payload, payload_cid) + "def f(x: object):\n    pass\n"
+
+    result = lift_source(source, "pkg/foo.py")
+
+    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept-citation:args-cid-mismatch" in _concept_diagnostics(result)
+
+
+def test_concept_citation_unknown_schema_version_refuses() -> None:
+    payload, payload_cid = _concept_citation_payload({"schema_version": "999"})
+    source = _concept_comment_lines(payload, payload_cid) + "def f(x: object):\n    pass\n"
+
+    result = lift_source(source, "pkg/foo.py")
+
+    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept-citation:unknown-schema-version" in _concept_diagnostics(result)
+
+
+def test_concept_citation_orphan_payload_cid_line_refuses() -> None:
+    source = "# provekit-concept-payload-cid: " + _cid("8") + "\ndef f():\n    pass\n"
+
+    result = lift_source(source, "pkg/foo.py")
+
+    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept-citation:orphan-cid-line" in _concept_diagnostics(result)
+
+
+def test_concept_citation_round_trip() -> None:
+    args = [{"kind": "var", "name": "x"}]
+    transported_op = {
+        "args_jcs": args,
+        "concept_cid": CONCEPT_SKIP_CID,
+        "concept_name": "concept:skip",
+        "concept_site_cid": _cid("a"),
+        "loss_record_cid": _cid("c"),
+        "operation_kind": "skip",
+        "policy_cid": _cid("d"),
+        "shape_cid": CONCEPT_SKIP_CID,
+        "sugar_dict_cid": _cid("e"),
+        "term_position": [0],
+    }
+    emitted = emit_stub(
+        function="transport_skip",
+        params=["x"],
+        param_types=["object"],
+        return_type="()",
+        concept_name="missing-python-skip-carrier",
+        transported_op=transported_op,
+    )
+
+    result = lift_source(emitted["source"], "pkg/foo.py")
+
+    assert result.diagnostics == []
+    assert result.ir[0]["concept_citations"][0]["concept_cid"] == transported_op["concept_cid"]
+    assert result.ir[0]["concept_citations"][0]["args_jcs_cid"] == cid_of_json(args)
 
 
 def test_bind_lift_recovers_decorator_contract_witnesses() -> None:

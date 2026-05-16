@@ -80,6 +80,9 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         return_type=str(params.get("return_type", "")),
         concept_name=str(params.get("concept_name", "")),
         contract=params.get("contract") if isinstance(params.get("contract"), dict) else None,
+        transported_op=params.get("transported_op")
+        if isinstance(params.get("transported_op"), dict)
+        else None,
         sugar_cids=_string_list(params.get("sugar_cids")),
         sugar_plugins=params.get("sugar_plugins")
         if isinstance(params.get("sugar_plugins"), list)

@@ -23,6 +23,16 @@ def _cid(ch: str) -> str:
     return "blake3-512:" + ch * 128
 
 
+def _json_cid(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return "blake3-512:" + blake3.blake3(encoded).digest(length=64).hex()
+
+
 def _formula_gte_x_zero() -> dict:
     return {
         "args": [
@@ -77,6 +87,31 @@ def _contract_comment_payloads(source: str) -> list[dict]:
         if stripped.startswith("# provekit-contract: "):
             payloads.append(json.loads(stripped.removeprefix("# provekit-contract: ")))
     return payloads
+
+
+def _concept_citation_payloads(source: str) -> list[dict]:
+    payloads: list[dict] = []
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# provekit-concept: "):
+            payloads.append(json.loads(stripped.removeprefix("# provekit-concept: ")))
+    return payloads
+
+
+def _transported_op_payload() -> dict:
+    return {
+        "args_jcs": [{"kind": "var", "name": "x"}],
+        "callsite_cid": _cid("0"),
+        "concept_cid": _cid("a"),
+        "concept_name": "concept:drop",
+        "concept_site_cid": _cid("b"),
+        "loss_record_cid": _cid("c"),
+        "operation_kind": "drop",
+        "policy_cid": _cid("d"),
+        "shape_cid": _cid("e"),
+        "sugar_dict_cid": _cid("f"),
+        "term_position": [3, 0],
+    }
 
 
 def test_identity_renders_python_function_from_body_template() -> None:
@@ -601,3 +636,49 @@ def test_contract_witnesses_emit_liftable_contract_comment_payloads() -> None:
         assert payload["policy_cid"].startswith("blake3-512:")
         assert payload["sugar_dict_cid"].startswith("blake3-512:")
         assert isinstance(payload["ir_formula_jcs"], dict)
+
+
+def test_concept_citation_comment_emitted_for_transported_operation() -> None:
+    transported_op = _transported_op_payload()
+
+    result = emit_stub(
+        function="transport_drop",
+        params=["x"],
+        param_types=["object"],
+        return_type="()",
+        concept_name="missing-python-drop-surface",
+        transported_op=transported_op,
+    )
+
+    source = result["source"]
+    assert "# provekit-concept:" in source
+    assert "# provekit-concept-payload-cid: blake3-512:" in source
+    assert "    pass\n" in source
+    assert "NotImplementedError" not in source
+    assert source.index("# provekit-concept:") < source.index("    pass")
+
+    payloads = _concept_citation_payloads(source)
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["artifact_kind"] == "provekit-concept-citation-comment-sugar"
+    assert payload["schema_version"] == "1"
+    assert payload["args_jcs"] == transported_op["args_jcs"]
+    assert payload["args_jcs_cid"] == _json_cid(transported_op["args_jcs"])
+    assert payload["callsite_cid"] == transported_op["callsite_cid"]
+    assert payload["concept_cid"] == transported_op["concept_cid"]
+    assert payload["concept_name"] == transported_op["concept_name"]
+    assert payload["concept_site_cid"] == transported_op["concept_site_cid"]
+    assert payload["loss_record_cid"] == transported_op["loss_record_cid"]
+    assert payload["operation_kind"] == transported_op["operation_kind"]
+    assert payload["policy_cid"] == transported_op["policy_cid"]
+    assert payload["shape_cid"] == transported_op["shape_cid"]
+    assert payload["sugar_dict_cid"] == transported_op["sugar_dict_cid"]
+    assert payload["term_position"] == transported_op["term_position"]
+    assert payload["emitted_by"]["kit_cid"].startswith("blake3-512:")
+    assert payload["emitted_by"]["kit_id"] == "provekit-realize-python-core@0.1.0"
+    assert payload["emitted_by"]["kit_kind"] == "realize"
+    assert payload["emitted_by"]["target_language"] == "python"
+    assert payload["emitted_by"]["target_library_tag"] == "python"
+
+    payload_cid = _json_cid(payload)
+    assert f"# provekit-concept-payload-cid: {payload_cid}" in source

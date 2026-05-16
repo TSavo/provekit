@@ -5,6 +5,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -17,6 +18,7 @@ from .canonical import cid_of_json
 Json = Any
 CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
 CONTRACT_COMMENT_KIND = "provekit-contract-comment-sugar"
+CONCEPT_CITATION_COMMENT_KIND = "provekit-concept-citation-comment-sugar"
 CONTRACT_COMMENT_ROLE_MAP = {
     "pre": "pre",
     "post": "post",
@@ -145,10 +147,12 @@ def _entry_for_function(
     witnesses = []
     witnesses.extend(_contract_comment_witnesses(lines, node, rel_path, diagnostics))
     witnesses.extend(_decorator_contract_witnesses(node, param_names, rel_path, diagnostics))
+    concept_citations = _concept_citation_comments(lines, node, rel_path, diagnostics)
 
     return {
         "attr_post": attr_post,
         "attr_pre": attr_pre,
+        "concept_citations": concept_citations,
         "concept_annotation": concept,
         "file": rel_path,
         "fn_line": node.lineno,
@@ -518,6 +522,417 @@ def _contract_comment_witness(
         "role": CONTRACT_COMMENT_ROLE_MAP[role],
         "source_kind": "native-surface",
     }
+
+
+def _concept_citation_comments(
+    lines: list[str],
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    rel_path: str,
+    diagnostics: list[Json],
+) -> list[Json]:
+    """Return concept-citation artifacts separately from contract witnesses."""
+    citations: list[Json] = []
+    citations.extend(
+        _concept_citation_comments_from_surface_lines(
+            _leading_contract_comment_surface(lines, node.lineno),
+            rel_path,
+            diagnostics,
+        )
+    )
+    citations.extend(
+        _concept_citation_comments_from_surface_lines(
+            _function_body_comment_surface(lines, node),
+            rel_path,
+            diagnostics,
+        )
+    )
+    return citations
+
+
+def _function_body_comment_surface(
+    lines: list[str],
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[tuple[int, str]]:
+    end_lineno = getattr(node, "end_lineno", node.lineno)
+    surface: list[tuple[int, str]] = []
+    for idx in range(node.lineno, min(end_lineno, len(lines))):
+        stripped = lines[idx].strip()
+        if stripped.startswith("#"):
+            surface.append((idx + 1, stripped[1:].strip()))
+    return surface
+
+
+def _concept_citation_comments_from_surface_lines(
+    surface_lines: list[tuple[int, str]],
+    rel_path: str,
+    diagnostics: list[Json],
+) -> list[Json]:
+    citations: list[Json] = []
+    idx = 0
+    while idx < len(surface_lines):
+        line_no, content = surface_lines[idx]
+        if content.startswith("provekit-concept-payload-cid:"):
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:orphan-cid-line",
+                "payload CID line has no preceding payload",
+            )
+            idx += 1
+            continue
+        if not content.startswith("provekit-concept: "):
+            idx += 1
+            continue
+        raw_payload = content[len("provekit-concept: ") :].strip()
+        payload_cid: str | None = None
+        if idx + 1 < len(surface_lines):
+            next_line_no, next_content = surface_lines[idx + 1]
+            if (
+                next_line_no == line_no + 1
+                and next_content.startswith("provekit-concept-payload-cid: ")
+            ):
+                payload_cid = next_content[
+                    len("provekit-concept-payload-cid: ") :
+                ].strip()
+                idx += 1
+        citation = _concept_citation_witness(
+            raw_payload,
+            payload_cid,
+            rel_path,
+            line_no,
+            diagnostics,
+        )
+        if citation is not None:
+            citations.append(citation)
+        idx += 1
+    return citations
+
+
+def _concept_citation_witness(
+    raw_payload: str,
+    emitted_payload_cid: str | None,
+    rel_path: str,
+    line_no: int,
+    diagnostics: list[Json],
+) -> Json | None:
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:malformed-json",
+            f"malformed JSON: {exc.msg}",
+        )
+        return None
+    if not isinstance(payload, dict):
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:malformed-json",
+            "payload is not an object",
+        )
+        return None
+
+    if payload.get("artifact_kind") != CONCEPT_CITATION_COMMENT_KIND:
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:unknown-schema-version",
+            "wrong artifact_kind",
+        )
+        return None
+    if payload.get("schema_version") != "1":
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:unknown-schema-version",
+            "unknown schema_version",
+        )
+        return None
+    if not _valid_concept_emitted_by(payload.get("emitted_by")):
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:malformed-cid",
+            "malformed emitted_by",
+        )
+        return None
+
+    operation_kind = payload.get("operation_kind")
+    if not isinstance(operation_kind, str) or not operation_kind:
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:operation-kind-mismatch",
+            "missing operation_kind",
+        )
+        return None
+    term_position = payload.get("term_position")
+    if not _valid_term_position(term_position):
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:malformed-json",
+            "malformed term_position",
+        )
+        return None
+
+    cid_fields = [
+        "args_jcs_cid",
+        "concept_cid",
+        "concept_site_cid",
+        "loss_record_cid",
+        "shape_cid",
+        "sugar_dict_cid",
+    ]
+    for key in cid_fields:
+        value = payload.get(key)
+        if not isinstance(value, str) or CID_RE.fullmatch(value) is None:
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:malformed-cid",
+                f"malformed {key}",
+            )
+            return None
+    for key in ("callsite_cid", "policy_cid"):
+        value = payload.get(key)
+        if value is not None and (
+            not isinstance(value, str) or CID_RE.fullmatch(value) is None
+        ):
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:malformed-cid",
+                f"malformed {key}",
+            )
+            return None
+    if emitted_payload_cid is None:
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:payload-cid-mismatch",
+            "missing payload CID",
+        )
+        return None
+    if CID_RE.fullmatch(emitted_payload_cid) is None:
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:malformed-cid",
+            "malformed payload CID",
+        )
+        return None
+
+    payload_cid = cid_of_json(payload)
+    if emitted_payload_cid != payload_cid:
+        _concept_citation_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            "concept-citation:payload-cid-mismatch",
+            "payload CID mismatch",
+        )
+        return None
+
+    args_jcs = payload.get("args_jcs")
+    if args_jcs is not None:
+        if not isinstance(args_jcs, list):
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:malformed-json",
+                "malformed args_jcs",
+            )
+            return None
+        if cid_of_json(args_jcs) != payload["args_jcs_cid"]:
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:args-cid-mismatch",
+                "args CID mismatch",
+            )
+            return None
+
+    catalog = _concept_shape_catalog()
+    if catalog is not None:
+        catalog_entry = catalog.get(payload["concept_cid"])
+        if catalog_entry is None:
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:unknown-concept",
+                "concept not in local catalog",
+            )
+            return None
+        expected_shape_cid, expected_operation_kind = catalog_entry
+        if expected_shape_cid != payload["shape_cid"]:
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:shape-mismatch",
+                "shape CID mismatch",
+            )
+            return None
+        if expected_operation_kind != operation_kind:
+            _concept_citation_diag(
+                diagnostics,
+                rel_path,
+                line_no,
+                "concept-citation:operation-kind-mismatch",
+                "operation_kind mismatch",
+            )
+            return None
+
+    extension_fields = {
+        "args_jcs_cid": payload["args_jcs_cid"],
+        "concept_site_cid": payload["concept_site_cid"],
+        "loss_record_cid": payload["loss_record_cid"],
+        "payload_cid": payload_cid,
+        "shape_cid": payload["shape_cid"],
+        "sugar_dict_cid": payload["sugar_dict_cid"],
+        "surface": "concept-citation-comment-sugar",
+    }
+    for key in ("callsite_cid", "policy_cid"):
+        if isinstance(payload.get(key), str):
+            extension_fields[key] = payload[key]
+    if args_jcs is not None:
+        extension_fields["args_jcs"] = args_jcs
+    return {
+        "args_jcs_cid": payload["args_jcs_cid"],
+        "artifact_kind": CONCEPT_CITATION_COMMENT_KIND,
+        "col": 0,
+        "confidence_basis_points": 10000,
+        "concept_cid": payload["concept_cid"],
+        "extension_fields": extension_fields,
+        "line": line_no,
+        "operation_kind": operation_kind,
+        "shape_cid": payload["shape_cid"],
+        "source_kind": "native-surface",
+        "term_position": term_position,
+    }
+
+
+def _valid_concept_emitted_by(value: Json) -> bool:
+    if not isinstance(value, dict):
+        return False
+    kit_cid = value.get("kit_cid")
+    kit_id = value.get("kit_id")
+    kit_kind = value.get("kit_kind")
+    target_language = value.get("target_language")
+    target_library_tag = value.get("target_library_tag")
+    return (
+        isinstance(kit_cid, str)
+        and CID_RE.fullmatch(kit_cid) is not None
+        and isinstance(kit_id, str)
+        and bool(kit_id)
+        and isinstance(kit_kind, str)
+        and bool(kit_kind)
+        and isinstance(target_language, str)
+        and bool(target_language)
+        and (target_library_tag is None or isinstance(target_library_tag, str))
+    )
+
+
+def _valid_term_position(value: Json) -> bool:
+    if not isinstance(value, list):
+        return False
+    return all(
+        isinstance(item, int) and not isinstance(item, bool) and item >= 0
+        for item in value
+    )
+
+
+def _concept_citation_diag(
+    diagnostics: list[Json],
+    rel_path: str,
+    line_no: int,
+    category: str,
+    message: str,
+) -> None:
+    diagnostics.append(
+        {
+            "kind": category,
+            "message": message,
+            "path": rel_path,
+            "line": line_no,
+        }
+    )
+
+
+@lru_cache(maxsize=1)
+def _concept_shape_catalog() -> dict[str, tuple[str, str]] | None:
+    root = _repo_root()
+    if root is None:
+        return None
+    index_path = root / "menagerie/concept-shapes/catalog/index.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    entries = index.get("entries")
+    if not isinstance(entries, dict):
+        return None
+    catalog: dict[str, tuple[str, str]] = {}
+    catalog_root = index_path.parent
+    for cid, meta in entries.items():
+        if not isinstance(cid, str) or CID_RE.fullmatch(cid) is None:
+            continue
+        if not isinstance(meta, dict) or meta.get("kind") != "algorithm":
+            continue
+        name = meta.get("name")
+        rel_path = meta.get("path")
+        if not isinstance(name, str) or not name.startswith("concept:"):
+            continue
+        if not isinstance(rel_path, str):
+            continue
+        try:
+            document = json.loads((catalog_root / rel_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        memento = document.get("memento")
+        if not isinstance(memento, dict):
+            continue
+        operation_kind = _catalog_operation_kind(name, memento)
+        shape_cid = document.get("cid")
+        if operation_kind and isinstance(shape_cid, str) and CID_RE.fullmatch(shape_cid):
+            catalog[cid] = (shape_cid, operation_kind)
+    return catalog
+
+
+def _catalog_operation_kind(name: str, memento: dict[str, Json]) -> str | None:
+    post = memento.get("post")
+    if isinstance(post, dict):
+        operator = post.get("operator")
+        if isinstance(operator, str) and operator:
+            return operator
+    if name.startswith("concept:"):
+        return name.removeprefix("concept:")
+    return None
+
+
+def _repo_root() -> Path | None:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "menagerie/concept-shapes/catalog/index.json").exists():
+            return candidate
+    return None
 
 
 def _valid_emitted_by(value: Json) -> bool:
