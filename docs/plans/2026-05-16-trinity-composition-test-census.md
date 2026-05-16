@@ -20,13 +20,13 @@ The expected outcome: this census surfaces all remaining integration gaps in par
 [lift, bind, lower, relift, rebind, lower-back, prove]
 ```
 
-1. **lift** — Rust source bytes → `Term` + `DomainClaim`. LiftKit, registered as `lift-rust`.
-2. **bind** — `Input::Term` → `DomainClaim` whose payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_form_binding] }`. BindKit, registered as `bind-default`.
-3. **lower** — `Input::Claim` (bind's output claim) → Python source + `DomainClaim`. LowerKit invoking the Python realize plugin via subprocess transport.
-4. **relift** — Python source bytes → `Term` + `DomainClaim`, recovering concept-citation comments as concept-tier nodes. The Python source LiftKit.
-5. **rebind** — `Input::Term` (relift's output Term) → `DomainClaim` whose payload is `Term::Op { op_cid: concept:bind-result, args: [...] }`. BindKit again.
-6. **lower-back** — `Input::Claim` (rebind's output claim) → Rust source + `DomainClaim`. LowerKit invoking the Rust realize plugin via subprocess transport.
-7. **prove** — `Input::Claim` (lower-back's output claim) → `DomainClaim` with `Verdict::Proved` + `ChainIntegrityWitness`. ProveKit invokes `walk_premises_to_root` and discharges chain-integrity.
+1. **lift** : Rust source bytes → `Term` + `DomainClaim`. LiftKit, registered as `lift-rust`.
+2. **bind** : `Input::Term` → `DomainClaim` whose payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_form_binding] }`. BindKit, registered as `bind-default`.
+3. **lower** : `Input::Claim` (bind's output claim) → Python source + `DomainClaim`. LowerKit invoking the Python realize plugin via subprocess transport.
+4. **relift** : Python source bytes → `Term` + `DomainClaim`, recovering concept-citation comments as concept-tier nodes. The Python source LiftKit.
+5. **rebind** : `Input::Term` (relift's output Term) → `DomainClaim` whose payload is `Term::Op { op_cid: concept:bind-result, args: [...] }`. BindKit again.
+6. **lower-back** : `Input::Claim` (rebind's output claim) → Rust source + `DomainClaim`. LowerKit invoking the Rust realize plugin via subprocess transport.
+7. **prove** : `Input::Claim` (lower-back's output claim) → `DomainClaim` with `Verdict::Proved` + `ChainIntegrityWitness`. ProveKit invokes `walk_premises_to_root` and discharges chain-integrity.
 
 ## The seams
 
