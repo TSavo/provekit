@@ -49,6 +49,8 @@ jobs:
 
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Restore Rust target dirs
         if: github.event_name == 'pull_request'
@@ -969,10 +971,14 @@ jobs:
         # PYTHONPATH explicitly to the implementations/python/*/src dirs
         # via the spawned subprocess env, so an editable install is the
         # cleanest way to also satisfy the import-time deps.
+        # --no-deps on provekit-lift-python-source: its workspace-sibling
+        # `file:../provekit-lift-py-tests` dep resolves relative to CWD
+        # under pip's URL parser, not the pyproject directory; that sibling
+        # is already installed editable by the prior step.
         run: |
           set -euo pipefail
           pip install -e implementations/python/provekit-lift-py-tests
-          pip install -e implementations/python/provekit-lift-python-source
+          pip install -e implementations/python/provekit-lift-python-source --no-deps
           pip install -e implementations/python/provekit-realize-python-core
 
       - name: Build dependent binaries (walk-rpc + realize-rust)

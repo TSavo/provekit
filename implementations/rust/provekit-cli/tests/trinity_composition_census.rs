@@ -35,10 +35,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use libprovekit::core::{
-    address, concept_bind_result_cid, execute_path, named_term_document_from_bind_payload,
-    BindKit, ConformanceDeclaration, Dialect, HashMapInputCatalog, Input, KitRegistry, LiftKit,
-    LowerKit, NamedTermDocument, Path as CorePath, PathAlgebra, ProveKit, Term, Verb, Verdict,
-    Witness,
+    address, concept_bind_result_cid, execute_path, BindKit, ConformanceDeclaration, Dialect,
+    HashMapInputCatalog, Input, KitRegistry, LiftKit, LowerKit, Path as CorePath, PathAlgebra,
+    ProveKit, Term, Verb, Verdict, Witness,
 };
 use provekit_cli::kit_dispatch::DispatchRealizeTransport;
 use provekit_ir_types::Sort;
@@ -421,11 +420,11 @@ fn seam1_discrimination_malformed_term_refuses_cleanly() {
 /// preserves operator atoms at lift time, the two UNNAMED-CONCEPT operator
 /// fallback entries still keep this antibody pinned.
 ///
-/// Until A10 and A11 both land, lower-back to Python on a non-trivial algebra refuses.
-/// The test is pinned via #[should_panic] so the test suite passes while the
-/// gap remains visible in CI logs.
+/// After A10 (#1076 / PR #1079) preserves operator atoms at lift time and
+/// A11 (#1077 / PR #1080) mints body templates for the five named concepts,
+/// the lower step composes cleanly and the relift recovers the concept
+/// citations. Antibody flipped 2026-05-16 post-A9+A10+A11 merge.
 #[test]
-#[should_panic(expected = "seam 3 positive gap surfaced (awaiting A10 operator naming)")]
 fn seam3_positive_lower_then_relift_python_recovers_concept_citation() {
     require_python_modules(&[
         "provekit_lift_py_tests",
@@ -662,11 +661,12 @@ def add(x, y):
 /// inherited from A2. Filed as A9 candidate; the test returns Err capturing
 /// the exact diff so the gap is inspectable without re-running.
 ///
-/// This test "passes" (returns Ok at the test-harness level) by SHOULD-PANIC
-/// gating: the panic message embeds the captured CID diff so the empirical
-/// evidence remains visible in CI logs.
+/// After A9 (#1075 / PR #1078) strips type annotations at the lift boundary
+/// and A10 (#1076 / PR #1079) preserves operator atoms in the Python lifter,
+/// rust-lift + bind and python-lift + bind produce byte-identical bind CIDs
+/// for the same algebra. The federation property holds at the bind layer.
+/// Antibody flipped 2026-05-16 post-A9+A10+A11 merge.
 #[test]
-#[should_panic(expected = "seam 4 federation gap surfaced (deliverable for A9)")]
 fn seam4_federation_rust_vs_python_lift_bind_byte_identity() {
     require_python_modules(&[
         "provekit_lift_py_tests",
@@ -685,30 +685,13 @@ def add(x, y):
     return x + y
 "#;
 
-    let (bind_cid_rust, rust_named) = run_lift_bind_capture_named(rust, /*python=*/ false);
-    let (bind_cid_python, py_named) = run_lift_bind_capture_named(py, /*python=*/ true);
+    let bind_cid_rust = run_lift_bind_capture_to(rust, /*python=*/ false);
+    let bind_cid_python = run_lift_bind_capture_to(py, /*python=*/ true);
 
-    if bind_cid_rust != bind_cid_python {
-        let rust_field_snapshot = named_term_field_snapshot(&rust_named);
-        let py_field_snapshot = named_term_field_snapshot(&py_named);
-        let report = json!({
-            "seam": 4,
-            "property": "federation byte-identity",
-            "rust_bind_cid": bind_cid_rust.as_str(),
-            "python_bind_cid": bind_cid_python.as_str(),
-            "rust_named_term_fields": rust_field_snapshot,
-            "python_named_term_fields": py_field_snapshot,
-            "differing_fields": diff_named_term_fields(&rust_named, &py_named),
-            "diagnosis": "rust-lift and python-lift produce structurally-different bind output CIDs for the same algebra; the M+N hub claim does not hold at this layer. File as A9 prereq: bind canonicalization needs language-neutral term-shape normalization or BindKit needs to project out language-specific naming before computing the CID.",
-        });
-        panic!(
-            "seam 4 federation gap surfaced (deliverable for A9):\n{}",
-            serde_json::to_string_pretty(&report).unwrap()
-        );
-    }
-    // If federation byte-identity ever starts holding, the should_panic will
-    // FAIL the test, alerting that A9 has been (perhaps accidentally) resolved
-    // and the antibody can be deleted in favor of an unconditional assert_eq.
+    assert_eq!(
+        bind_cid_rust, bind_cid_python,
+        "seam 4 federation: rust-lift and python-lift must produce byte-identical bind CIDs for the same algebra"
+    );
 }
 
 /// Seam 4 discrimination property: structurally-different algebras must
@@ -1091,103 +1074,6 @@ fn build_catalog_from_chain(
         }
     }
     cat
-}
-
-/// Lift the given source, bind, and return the (bind.to CID, NamedTermDocument
-/// recovered from the bind payload). Used by seam 4 federation reporting to
-/// capture the empirical structural diff alongside the CID divergence.
-fn run_lift_bind_capture_named(
-    source: &str,
-    is_python: bool,
-) -> (libprovekit::core::Cid, NamedTermDocument) {
-    let (cid, payload) = run_lift_bind_capture_payload(source, is_python);
-    let named = named_term_document_from_bind_payload(&payload)
-        .expect("named term document recovers from bind payload");
-    (cid, named)
-}
-
-fn run_lift_bind_capture_payload(
-    source: &str,
-    is_python: bool,
-) -> (libprovekit::core::Cid, Term) {
-    let chain = run_lift_bind_capture_chain(source, is_python);
-    let claim = chain
-        .claim_at_step("bind")
-        .expect("bind step claim must exist")
-        .clone();
-    let payload = claim.payload.expect("bind claim payload required");
-    (claim.to, payload)
-}
-
-fn named_term_field_snapshot(doc: &NamedTermDocument) -> serde_json::Value {
-    json!({
-        "source_language": doc.source_language,
-        "terms": doc.terms.iter().map(|t| json!({
-            "concept_name": t.concept_name,
-            "function": t.function,
-            "name": t.name,
-            "params": t.params,
-            "param_types": t.param_types,
-            "return_type": t.return_type,
-            "term_shape_cid": t.term_shape_cid,
-            "term_shape": t.term_shape,
-            "named_term_tree": t.named_term_tree,
-        })).collect::<Vec<_>>(),
-    })
-}
-
-fn diff_named_term_fields(rust: &NamedTermDocument, py: &NamedTermDocument) -> Vec<String> {
-    let mut diff = Vec::new();
-    if rust.source_language != py.source_language {
-        diff.push(format!(
-            "source_language: rust={} python={}",
-            rust.source_language, py.source_language
-        ));
-    }
-    if rust.terms.len() != py.terms.len() {
-        diff.push(format!(
-            "terms.len: rust={} python={}",
-            rust.terms.len(),
-            py.terms.len()
-        ));
-    }
-    for (i, (r, p)) in rust.terms.iter().zip(py.terms.iter()).enumerate() {
-        if r.function != p.function {
-            diff.push(format!(
-                "terms[{i}].function: rust={} python={}",
-                r.function, p.function
-            ));
-        }
-        if r.param_types != p.param_types {
-            diff.push(format!(
-                "terms[{i}].param_types: rust={:?} python={:?}",
-                r.param_types, p.param_types
-            ));
-        }
-        if r.return_type != p.return_type {
-            diff.push(format!(
-                "terms[{i}].return_type: rust={} python={}",
-                r.return_type, p.return_type
-            ));
-        }
-        if r.term_shape_cid != p.term_shape_cid {
-            diff.push(format!(
-                "terms[{i}].term_shape_cid: rust={} python={}",
-                r.term_shape_cid, p.term_shape_cid
-            ));
-        }
-        if r.term_shape != p.term_shape {
-            diff.push(format!("terms[{i}].term_shape differs structurally"));
-        }
-        let r_tree = serde_json::to_value(&r.named_term_tree).unwrap_or(serde_json::Value::Null);
-        let p_tree = serde_json::to_value(&p.named_term_tree).unwrap_or(serde_json::Value::Null);
-        if r_tree != p_tree {
-            diff.push(format!(
-                "terms[{i}].named_term_tree differs (operation_kind and/or args)"
-            ));
-        }
-    }
-    diff
 }
 
 fn run_lift_bind_capture_chain(
