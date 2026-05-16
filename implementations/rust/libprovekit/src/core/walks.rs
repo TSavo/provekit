@@ -26,6 +26,12 @@ use super::traits::Catalog;
 use super::types::{domain_claim_from_canonical_bytes, Cid, DomainClaim, Term};
 
 /// Structural reason a premise walk failed.
+///
+/// Structural reason a premise walk failed. The four variants enumerate the
+/// failure modes of structural chain integrity. **Do not add verdict-shaped
+/// variants** (e.g., `NotProved { claim_cid, verdict }`). Verdict checks on
+/// intermediate claims belong in a verdict-aware verifier kit, not in this
+/// enum. See A8 / #1070 and the 2026-05-16 architect ruling for context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChainBreak {
     /// The walk encountered a CID that is currently on the recursion stack,
@@ -103,6 +109,17 @@ pub struct ChainWalkFailure {
 ///   decode as `DomainClaim`.
 /// - `ChainBreak::OriginUnreachable` iff no leaf in the traversal equals
 ///   `origin_cid`.
+///
+/// Verifies structural chain integrity of `claim`'s premise graph back to
+/// `origin_cid`. The four failure modes are CycleDetected, PremiseNotInCatalog,
+/// OriginUnreachable, and DeserializationFailed.
+///
+/// **Verdict semantics on intermediate claims are out of scope for this walk.**
+/// Intermediate claims may carry any verdict (Pending, Inconclusive, Refuted,
+/// Proved). This walk does not propagate or check verdicts on visited claims.
+/// The substrate's first principle (Supra omnia rectum) applies: chain-walk
+/// proves chain integrity, not semantic correctness of intermediate transforms.
+/// Future verdict-aware verifiers belong in their own kits, not here.
 pub fn walk_premises_to_root(
     claim: &DomainClaim,
     origin_cid: &Cid,
@@ -430,6 +447,29 @@ mod tests {
         // Pre-order trace: mid is pushed first (descending from terminal),
         // then root is pushed when reached.
         assert_eq!(trace, vec![mid_cid, root_cid]);
+    }
+
+    #[test]
+    fn walk_premises_returns_ok_when_intermediate_claims_have_non_proved_verdicts() {
+        let origin = claim_fixture("verdict-policy-origin");
+        let origin_cid = origin.cid();
+
+        let mut intermediate = claim_fixture("verdict-policy-intermediate");
+        intermediate.premises = vec![origin_cid.clone()];
+        intermediate.verdict = Verdict::Unresolved;
+        let intermediate_cid = intermediate.cid();
+
+        let mut terminal = claim_fixture("verdict-policy-terminal");
+        terminal.premises = vec![intermediate_cid.clone()];
+
+        let mut catalog = HashMapCatalog::default();
+        insert_claim(&mut catalog, &origin);
+        insert_claim(&mut catalog, &intermediate);
+
+        let trace = walk_premises_to_root(&terminal, &origin_cid, &catalog, false)
+            .expect("intermediate non-Proved verdict is ignored by structural walk");
+
+        assert_eq!(trace, vec![intermediate_cid, origin_cid]);
     }
 
     #[test]
