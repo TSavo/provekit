@@ -1,0 +1,113 @@
+# Trinity completion checklist: what being real actually requires
+
+The substrate's Trinity claim is: source code in language A, lifted to the concept-tier hub via the substrate's algebra, transported through a registered realize kit to language B, lifted back, and the cycle closes byte-identical at the hub CID. The federation property holds across N>=2 languages. The proof chain is auditable end-to-end. The substrate's first principle (above all, correctness) is empirically verifiable, not just claimed.
+
+This document enumerates what is required for that claim to be real. Each item is concrete and checkable. Order is dependency-aware; some items can land in parallel. No cycle-count estimate is given; the list closes when every item is checked.
+
+## Substrate primitives (verifier-side)
+
+- **A4 lands.** `Term::walk()` iterator + `TermNode { op_cid, term_position: Vec<usize> }` slot-path semantics. Unit tests pass for empty / single / nested / mixed trees. No flat-index `position` field.
+- **A6 lands.** `Catalog::contains(&Cid) -> bool` with default impl + fs / in-memory overrides + invariant test (`contains(cid) == get(cid).is_some()` across all impls). Existing get-then-discard callers migrated.
+- **`walk_premises_to_root` lands** with the seven `ChainBreak` variants + cycle detection + `allow_orphan_from_cids` toggle + eight unit tests (seven failure variants + one happy + one orphan-strict-vs-loose).
+- **`assert_concept_tier` lands** consuming `Term::walk()` + `Catalog::contains()` + a `HubMissingNode { node_op_cid, node_position, term_position }` failure variant. Two unit tests (fail + happy).
+
+## Substrate primitives (executor + chain)
+
+- **A1 lands.** `PathExecutionChain` with `terminal_claim`, `claim_at_step`, `source_at_step`, `term_at_step`. `execute_path` returns the chain. All existing callers migrated.
+- **A2 lands.** `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` on any `ChainBreak`. Integration test demonstrating a real `Verdict::Proved` with a witness on a 3-step path.
+- **A3 lands.** BindKit's payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_term_as_op_tree] }`. `concept:bind-result` op-CID minted in the concept-shapes catalog. Round-trip test: walk the bind output, every node's op_cid resolves via `Catalog::contains()`.
+- **#1049 lands.** Producer-side premise dedup in `execute_path`. Two-layer defense composes with `walk_premises_to_root`'s `HashSet` visited tracking.
+
+## Capstone exhibit
+
+- **#1024 lands.** Single `execute_path()` call constructing a Path with six steps (lift → bind → lower → relift → lower-back → prove). Six binding assertions all pass:
+  1. Source-CID equality at cycle close (`terminal_source.cid() == original_source.cid()`).
+  2. Hub-tier check on forward leg (`assert_concept_tier(&post_bind_term, &catalog).is_ok()`).
+  3. Hub-tier check on relift leg (`assert_concept_tier(&post_rebind_term, &catalog).is_ok()`).
+  4. Hub-tier CID equality across legs (`post_bind_term.cid() == post_rebind_term.cid()`).
+  5. Terminal `Verdict::Proved` with `terminal_claim.witness.is_some()`.
+  6. `walk_premises_to_root(&terminal_claim, &origin_cid, &catalog, false).is_ok()`.
+- Exhibit runs against a real `libprovekit::core` function (not a toy fixture-only example). Smallest function that exercises the algebra non-trivially: at least one arithmetic op, one conditional, one return.
+
+## Per-kit emit-compile-run conformance (#1039)
+
+- **Python fixtures land.** N>=5 fixtures including hello_world, recursive function, arithmetic, control-flow, transported-op-via-concept-citation-comment. CI invokes `python3 -m py_compile` then `python3 <emitted>.py` and asserts behavior equivalence to the original source. Refusal on compile failure emits `CompositionRefusalMemento { failure_kind: target-compile-failure }`. Refusal on behavior divergence emits `failure_kind: target-behavior-divergence`.
+- **Java fixtures land.** Same five fixtures shape, JUnit invokes `javac` then `java` on emitted source.
+- **C fixtures land.** Same five fixtures shape, Makefile invokes `cc -Wall -Wextra -Werror` then `./out` on emitted source.
+- **CI gates merge** on per-kit conformance test failure. A carrier PR that breaks emit-compile-run cannot merge.
+- **Registry meta-test enforces** that any kit registered with `Carrier { fixtures_path, .. }` has a `fixtures_path` resolving to a directory containing at least the minimum fixture set.
+
+## Federation evidence
+
+- **Cross-language byte-identity asserted in CI.** At least one fixture lifted in both Rust and Python (via their respective lifters) producing byte-identical concept-tier CIDs at the hub. This is the colimit argument's empirical instance.
+- **Same fixture cycled through Rust → Python → Java → C → Rust** (or some N>=3 permutation) producing byte-identical CIDs at the hub at every cycle point. The federation property's empirical proof.
+- A README or test-doc captures which cross-language pairs are CI-verified and which are not. Honest about scope.
+
+## Recovery and cleanup (drift repair)
+
+- **#1048 merged.** Deletion-rule violation in `cmd_lower.rs` from #1043 cleaned up. `grep -rnE 'fn (dispatch_lower|missing_template_receipt|suggested_body_template_file)' implementations/rust/` returns zero matches. LowerKit's `lower_plugin.rs` does not internally call any of the deleted helpers.
+- **The #1044 silent CI failure** documented. What was the actual gap (CI didn't exercise the verb field; tests use `..Default::default()`; field's `#[serde(default)]` made it tolerant)? Filed as a CI-coverage issue if not already.
+- **The Dialect newtype-String refactor lands** (drafted but not yet filed; see `draft_issue_dialect_cid_into_catalog.md`). `Dialect::Other(String)` smuggling removed. Every callsite migrated. `ConformanceDeclaration::Carrier` drops the now-redundant `target_language: Dialect` field.
+
+## Architectural rulings codified durably
+
+- **A5 lands.** Exhibit transport policy doc in `libprovekit/docs/` capturing: real subprocesses are legitimate; fixture stubs forbidden; `#[ignore]` markers on structural-property tests forbidden. Cited from #1024 and #1039.
+- **Pre-merge ritual** captured in a repo-level CONTRIBUTING or REVIEWING doc. The ritual: read full issue comment thread, grep-verify deletion rules, check architect tightening timestamp vs merge attempt, refuse merge if ritual incomplete. Currently in agent memory only; needs to be in the repo where human contributors can read it without an agent's memory store.
+- **Build-on-existing-kits clause** captured as a repo-level discipline doc. Currently posted per-issue as a comment; should be a once-and-for-all clause that issues cite by reference.
+- **Deletion rule** captured in the same discipline doc. Currently named per-PR; should be the canonical reference.
+
+## Bitcoin-anchored lineage update
+
+- **v2 attestation directory created** at `provekit-warnings/provenance/v2/` post-Trinity. New `sign-ceremony.py` invocation captures the Trinity-proven substrate state (Trinity exhibit merged at SHA X, on Bitcoin block Y).
+- **OTS stamp** on v2 `attestation.json`.
+- **OP_RETURN broadcast** of v2 attestation CID, txid saved to `v2/anchor-bitcoin-txid.txt`.
+- **v1's pending OP_RETURN** also completed so the lineage is unbroken: v1 anchors the pre-Trinity substrate, v2 anchors the Trinity-proven substrate, both signed by T Savo, both on chain.
+
+## Documentation and citation
+
+- **Paper or section** in the repo's `papers/` directory or top-level README naming Trinity as the substrate's first empirical federation proof. The architectural claim is currently distributed across paper 7, paper 16, the substrate-trinity discussion, and conversation; needs to be consolidated into one citable artifact.
+- **Trinity exhibit's binding assertions** documented as the canonical specification of what Trinity proves. Anyone reading the substrate's claim should be able to find this and check it against the exhibit's source.
+- **The architect-rulings** locked in the 2026-05-15 / 2026-05-16 sessions (deletion rule, build-on-existing-kits, pre-merge ritual, codex-inline-brief, model defaults, architect-only-when-dispatcher-split) all captured durably in the repo, not just in agent memory.
+
+## Closing gate
+
+The list is complete when:
+
+- Every item above resolves to either "merged" or "explicitly out of scope with a filed follow-up."
+- The Trinity exhibit's six binding assertions pass on every PR (CI gate).
+- The cross-language federation evidence runs on every PR.
+- The v2 Bitcoin attestation is signed and on-chain.
+- The architectural rulings are findable by a contributor who has never read an agent's memory.
+
+When all of that is true, the substrate's Trinity claim is empirically real, not just structurally complete.
+
+The list is NOT closed when:
+
+- Any prereq is "in flight" instead of "merged."
+- Any conformance fixture is `#[ignore]`'d or stubbed.
+- The federation evidence runs only locally, not in CI.
+- The architectural rulings live only in agent memory.
+
+The list closes when every item resolves. The list does not close because "we shipped a lot." The substrate's first principle pays for the discipline of waiting for the actual close.
+
+## Operational discipline going forward
+
+When an architect agent is asked "how many cycles," the honest answer is "open this file, count the unchecked items, that is the answer." Estimates based on the visible front are the lying shape; the answer based on the complete list is the honest one.
+
+When new gaps are discovered (a reviewer refuses to fabricate API, an executor dispatch surfaces a dependency we did not see, a CI test reveals a transport assumption), add them to this list. The list is the substrate's first principle applied to its own planning: above all, correctness about what is actually required.
+
+## Status snapshot (2026-05-16, post-#1048 merge)
+
+**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048).
+
+**Drafted, not yet minted as GitHub issues:** A1, A2, A3, A4, A5, A6 (the six #1024 prereqs), Dialect-newtype refactor.
+
+**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A1-A6 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
+
+**Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
+
+**Not yet captured durably in repo:** the architect rulings from the 2026-05-15 / 2026-05-16 sessions (deletion rule, build-on-existing-kits clause, pre-merge ritual, codex-inline-brief, exhibit transport policy, model defaults). Each lives in agent memory but not in a repo location a human contributor can find.
+
+**Not yet on chain:** v2 attestation (post-Trinity snapshot). v1's OP_RETURN broadcast also still pending; OTS upgrade completed.
+
+The list is the work. The work is the substrate. The substrate is the proof.
