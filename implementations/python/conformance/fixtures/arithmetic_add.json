@@ -1,0 +1,24 @@
+{
+  "name": "arithmetic_add",
+  "original_source": "def add(x, y):\n    return x + y\n",
+  "declared_test_inputs": [
+    {
+      "entrypoint": "add",
+      "args": [3, 4]
+    }
+  ],
+  "expected_output": [
+    {
+      "stdout": "",
+      "return_value": 7,
+      "exit_code": 0
+    }
+  ],
+  "realize_request": {
+    "function": "add",
+    "params": ["x", "y"],
+    "param_types": ["int", "int"],
+    "return_type": "int",
+    "concept_name": "concept:add"
+  }
+}

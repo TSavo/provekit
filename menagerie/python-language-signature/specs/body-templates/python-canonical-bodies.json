@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:f211f2509d6a7deacc2d23d33f87d1259d2835ba7292231f377d7f234f3d22f56dbd2f348314f313accc62ec50ffcec40df6266ca9eb78ca2160a5b80468725e",
+    "cid": "blake3-512:5a06ad3425bae615c8b1cf88e0bbb827724f74257ed5f7df1d7d5eaa863666f2cfc5a044d9f4cc4acb6852740c96243061049b4a8ab199cfcc8b1c123169a904",
     "content": {
       "entries": [
         {
@@ -57,6 +57,67 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
+          }
+        },
+        {
+          "concept_name": "hello-world",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "print(\"Hello, world!\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_stdout": {
+                "args": [],
+                "head": "atomic",
+                "name": "hello-world-stdout-is-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0
+          }
+        },
+        {
+          "concept_name": "recursive-factorial",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0} <= 1:\n    return 1\nreturn ${param0} * factorial(${param0} - 1)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_recursion": {
+                "args": [],
+                "head": "atomic",
+                "name": "recursive-factorial-body-names-factorial-fixture"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "abs-value",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} if ${param0} >= 0 else -${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"],
+            "requires_return_type": "int"
           }
         },
         {
