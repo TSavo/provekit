@@ -6,6 +6,7 @@ use provekit_ir_types::Sort;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::bind::{concept_bind_result_cid, named_term_document_from_bind_payload, NamedTerm};
 use super::primitives::address;
 use super::traits::{Kit, KitError};
 use super::types::{
@@ -208,6 +209,11 @@ fn spec_value_from_input(input: &Input) -> Result<Value, String> {
 }
 
 fn claim_spec_value(claim: &DomainClaim) -> Result<Value, String> {
+    if let Some(Term::Op { op_cid, args, .. }) = &claim.payload {
+        if op_cid == &concept_bind_result_cid() {
+            return decompose_bind_result(args, claim);
+        }
+    }
     if let Some(Term::Const { value, .. }) = &claim.payload {
         return Ok(value.clone());
     }
@@ -224,6 +230,48 @@ fn claim_spec_value(claim: &DomainClaim) -> Result<Value, String> {
         "returnType": sort_name(&claim.contract.return_sort),
         "conceptName": claim.contract.concept_hint.clone().unwrap_or_else(|| claim.contract.fn_name.clone()),
         "termShapeCid": claim.to,
+    }))
+}
+
+fn decompose_bind_result(args: &[Term], _claim: &DomainClaim) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err(format!(
+            "bind-result wrapper expected 2 args, got {}",
+            args.len()
+        ));
+    }
+    let wrapper = Term::Op {
+        op_cid: concept_bind_result_cid(),
+        name: "concept:bind-result".to_string(),
+        args: args.to_vec(),
+    };
+    let named = named_term_document_from_bind_payload(&wrapper)
+        .map_err(|error| format!("decompose bind-result wrapper named form: {error}"))?;
+    let term_count = named.terms.len();
+    let [term] = named.terms.as_slice() else {
+        return Err(format!(
+            "bind-result wrapper expected exactly one named term, got {term_count}"
+        ));
+    };
+    realize_spec_from_named_term(term)
+}
+
+pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
+    let named_term_tree = term
+        .named_term_tree
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| format!("serialize namedTermTree for `{}`: {error}", term.function))?;
+    Ok(json!({
+        "kind": "RealizeRequest",
+        "function": term.function,
+        "params": term.params,
+        "paramTypes": term.param_types,
+        "returnType": term.return_type,
+        "conceptName": term.concept_name,
+        "namedTermTree": named_term_tree,
+        "termShapeCid": term.term_shape_cid,
     }))
 }
 

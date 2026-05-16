@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Parser, ValueEnum};
+use libprovekit::core::lower_plugin::realize_spec_from_named_term;
 use libprovekit::core::{
     execute_path, named_term_document_from_bind_payload, ConformanceDeclaration,
     HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra, Term,
@@ -277,18 +278,7 @@ fn lower_named_document(
 ) -> Result<String, LowerNamedError> {
     let mut out = String::new();
     for term in &named.terms {
-        let named_term_tree = term
-            .named_term_tree
-            .as_ref()
-            .map(serde_json::to_value)
-            .transpose()
-            .map_err(|e| {
-                LowerNamedError::Message(format!(
-                    "serialize namedTermTree for `{}`: {e}",
-                    term.function
-                ))
-            })?;
-        let spec = lower_named_spec(term, named_term_tree);
+        let spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
         let source = lower_named_spec_via_path(project_root, target, spec)?;
         out.push_str(&source);
         if !out.ends_with('\n') {
@@ -296,19 +286,6 @@ fn lower_named_document(
         }
     }
     Ok(out)
-}
-
-fn lower_named_spec(term: &crate::cmd_bind::NamedTerm, named_term_tree: Option<Json>) -> Json {
-    json!({
-        "kind": "RealizeRequest",
-        "function": term.function,
-        "params": term.params,
-        "paramTypes": term.param_types,
-        "returnType": term.return_type,
-        "conceptName": term.concept_name,
-        "namedTermTree": named_term_tree,
-        "termShapeCid": term.term_shape_cid,
-    })
 }
 
 fn lower_named_spec_via_path(
