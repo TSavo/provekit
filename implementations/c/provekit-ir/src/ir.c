@@ -330,7 +330,7 @@ static void pk_buffer_grow(pk_buffer *buf, size_t need) {
     size_t new_cap = buf->cap * 2;
     while (new_cap < buf->len + need + 1) new_cap *= 2;
     char *new_data = (char *)realloc(buf->data, new_cap);
-    if (!new_data) return; /* silent failure — real code would abort */
+    if (!new_data) return; /* silent failure - real code would abort */
     buf->data = new_data;
     buf->cap = new_cap;
 }

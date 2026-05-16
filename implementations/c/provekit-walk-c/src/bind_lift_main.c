@@ -3,17 +3,21 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "blake3.h"
 
 #ifdef PK_C_ENABLE_CLANG_AST
 #include <clang-c/Index.h>
 #endif
+
+#define CONCEPT_CITATION_COMMENT_KIND "provekit-concept-citation-comment-sugar"
 
 typedef struct {
     char *data;
@@ -28,8 +32,10 @@ typedef struct {
 
 typedef struct {
     Buf ir;
+    Buf concept_citations;
     Buf diagnostics;
     size_t ir_count;
+    size_t concept_citation_count;
     size_t diagnostic_count;
     char error[512];
 } LiftAccumulator;
@@ -751,11 +757,13 @@ static char *read_file(const char *path) {
 static void acc_init(LiftAccumulator *acc) {
     memset(acc, 0, sizeof(*acc));
     buf_init(&acc->ir);
+    buf_init(&acc->concept_citations);
     buf_init(&acc->diagnostics);
 }
 
 static void acc_free(LiftAccumulator *acc) {
     buf_free(&acc->ir);
+    buf_free(&acc->concept_citations);
     buf_free(&acc->diagnostics);
 }
 
@@ -806,6 +814,584 @@ static char *cid_for_bytes(const char *data, size_t len) {
     }
     cid[strlen(prefix) + sizeof(out) * 2] = '\0';
     return cid;
+}
+
+static int is_hex_char(char c) {
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+static int is_valid_blake3_512_cid(const char *s) {
+    const char prefix[] = "blake3-512:";
+    size_t prefix_len = strlen(prefix);
+
+    if (s == NULL || strncmp(s, prefix, prefix_len) != 0) return 0;
+    if (strlen(s) != prefix_len + 128) return 0;
+    for (size_t i = 0; i < 128; i++) {
+        if (!is_hex_char(s[prefix_len + i])) return 0;
+    }
+    return 1;
+}
+
+static char *json_extract_raw(const char *json, const char *field) {
+    const char *p = json_find_object_value(json, field);
+    const char *start;
+
+    if (p == NULL) return NULL;
+    start = p;
+    if (!json_parse_value(&p)) return NULL;
+    while (start < p && isspace((unsigned char)*start)) start++;
+    while (p > start && isspace((unsigned char)p[-1])) p--;
+    return copy_n(start, (size_t)(p - start));
+}
+
+static int append_field_key(Buf *out, int *first, const char *key) {
+    if (!*first && buf_append_char(out, ',') != 0) return -1;
+    *first = 0;
+    return buf_append_json_string(out, key) == 0 && buf_append_char(out, ':') == 0 ? 0 : -1;
+}
+
+static int append_string_field(Buf *out, int *first, const char *key, const char *value) {
+    return append_field_key(out, first, key) == 0 &&
+        buf_append_json_string(out, value) == 0 ? 0 : -1;
+}
+
+static int append_raw_field(Buf *out, int *first, const char *key, const char *value) {
+    return append_field_key(out, first, key) == 0 &&
+        buf_append(out, value) == 0 ? 0 : -1;
+}
+
+static int append_optional_string_field(Buf *out, int *first, const char *key, const char *value) {
+    return value == NULL ? 0 : append_string_field(out, first, key, value);
+}
+
+typedef struct {
+    char *args_jcs;
+    char *args_jcs_cid;
+    char *artifact_kind;
+    char *callsite_cid;
+    char *concept_cid;
+    char *concept_name;
+    char *concept_site_cid;
+    char *emitted_kit_cid;
+    char *emitted_kit_id;
+    char *emitted_kit_kind;
+    char *emitted_target_language;
+    char *emitted_target_library_tag;
+    char *loss_record_cid;
+    char *operation_kind;
+    char *policy_cid;
+    char *schema_version;
+    char *shape_cid;
+    char *sugar_dict_cid;
+    char *term_position;
+} ConceptPayload;
+
+static void concept_payload_free(ConceptPayload *payload) {
+    if (payload == NULL) return;
+    free(payload->args_jcs);
+    free(payload->args_jcs_cid);
+    free(payload->artifact_kind);
+    free(payload->callsite_cid);
+    free(payload->concept_cid);
+    free(payload->concept_name);
+    free(payload->concept_site_cid);
+    free(payload->emitted_kit_cid);
+    free(payload->emitted_kit_id);
+    free(payload->emitted_kit_kind);
+    free(payload->emitted_target_language);
+    free(payload->emitted_target_library_tag);
+    free(payload->loss_record_cid);
+    free(payload->operation_kind);
+    free(payload->policy_cid);
+    free(payload->schema_version);
+    free(payload->shape_cid);
+    free(payload->sugar_dict_cid);
+    free(payload->term_position);
+    memset(payload, 0, sizeof(*payload));
+}
+
+static int parse_concept_payload(const char *raw, ConceptPayload *payload) {
+    const char *emitted_by;
+
+    memset(payload, 0, sizeof(*payload));
+    payload->args_jcs = json_extract_raw(raw, "args_jcs");
+    payload->args_jcs_cid = json_extract_str(raw, "args_jcs_cid");
+    payload->artifact_kind = json_extract_str(raw, "artifact_kind");
+    payload->callsite_cid = json_extract_str(raw, "callsite_cid");
+    payload->concept_cid = json_extract_str(raw, "concept_cid");
+    payload->concept_name = json_extract_str(raw, "concept_name");
+    payload->concept_site_cid = json_extract_str(raw, "concept_site_cid");
+    payload->loss_record_cid = json_extract_str(raw, "loss_record_cid");
+    payload->operation_kind = json_extract_str(raw, "operation_kind");
+    payload->policy_cid = json_extract_str(raw, "policy_cid");
+    payload->schema_version = json_extract_str(raw, "schema_version");
+    payload->shape_cid = json_extract_str(raw, "shape_cid");
+    payload->sugar_dict_cid = json_extract_str(raw, "sugar_dict_cid");
+    payload->term_position = json_extract_raw(raw, "term_position");
+
+    emitted_by = json_find_object_value(raw, "emitted_by");
+    if (emitted_by != NULL && *emitted_by == '{') {
+        payload->emitted_kit_cid = json_extract_str(emitted_by, "kit_cid");
+        payload->emitted_kit_id = json_extract_str(emitted_by, "kit_id");
+        payload->emitted_kit_kind = json_extract_str(emitted_by, "kit_kind");
+        payload->emitted_target_language = json_extract_str(emitted_by, "target_language");
+        payload->emitted_target_library_tag = json_extract_str(emitted_by, "target_library_tag");
+    }
+    return 0;
+}
+
+static int is_uint_array_json(const char *s) {
+    const char *p = s;
+
+    if (p == NULL) return 0;
+    json_skip_ws(&p);
+    if (*p != '[') return 0;
+    p++;
+    json_skip_ws(&p);
+    if (*p == ']') return 1;
+    for (;;) {
+        if (!isdigit((unsigned char)*p)) return 0;
+        if (*p == '0') {
+            p++;
+        } else {
+            while (isdigit((unsigned char)*p)) p++;
+        }
+        json_skip_ws(&p);
+        if (*p == ']') return 1;
+        if (*p != ',') return 0;
+        p++;
+        json_skip_ws(&p);
+        if (*p == ']') return 0;
+    }
+}
+
+static int concept_payload_has_required_shape(const ConceptPayload *p) {
+    if (p->args_jcs_cid == NULL || p->concept_cid == NULL ||
+        p->concept_site_cid == NULL || p->emitted_kit_cid == NULL ||
+        p->emitted_kit_id == NULL || p->emitted_kit_kind == NULL ||
+        p->emitted_target_language == NULL || p->emitted_target_library_tag == NULL ||
+        p->loss_record_cid == NULL || p->operation_kind == NULL ||
+        p->schema_version == NULL || p->shape_cid == NULL ||
+        p->sugar_dict_cid == NULL || p->term_position == NULL) {
+        return 0;
+    }
+    if (strcmp(p->emitted_kit_kind, "realize") != 0) return 0;
+    if (strcmp(p->emitted_target_language, "c") != 0) return 0;
+    if (p->args_jcs != NULL && p->args_jcs[0] != '[') return 0;
+    return is_uint_array_json(p->term_position);
+}
+
+static int concept_payload_has_valid_cids(const ConceptPayload *p) {
+    return is_valid_blake3_512_cid(p->args_jcs_cid) &&
+        (p->callsite_cid == NULL || is_valid_blake3_512_cid(p->callsite_cid)) &&
+        is_valid_blake3_512_cid(p->concept_cid) &&
+        is_valid_blake3_512_cid(p->concept_site_cid) &&
+        is_valid_blake3_512_cid(p->emitted_kit_cid) &&
+        is_valid_blake3_512_cid(p->loss_record_cid) &&
+        (p->policy_cid == NULL || is_valid_blake3_512_cid(p->policy_cid)) &&
+        is_valid_blake3_512_cid(p->shape_cid) &&
+        is_valid_blake3_512_cid(p->sugar_dict_cid);
+}
+
+static char *canonical_concept_payload_json(const ConceptPayload *p) {
+    Buf out;
+    int first = 1;
+    int emitted_first = 1;
+    char *json;
+
+    buf_init(&out);
+    if (out.data == NULL) return NULL;
+    if (buf_append_char(&out, '{') != 0 ||
+        (p->args_jcs != NULL && append_raw_field(&out, &first, "args_jcs", p->args_jcs) != 0) ||
+        append_string_field(&out, &first, "args_jcs_cid", p->args_jcs_cid) != 0 ||
+        append_string_field(&out, &first, "artifact_kind", CONCEPT_CITATION_COMMENT_KIND) != 0 ||
+        append_optional_string_field(&out, &first, "callsite_cid", p->callsite_cid) != 0 ||
+        append_string_field(&out, &first, "concept_cid", p->concept_cid) != 0 ||
+        append_optional_string_field(&out, &first, "concept_name", p->concept_name) != 0 ||
+        append_string_field(&out, &first, "concept_site_cid", p->concept_site_cid) != 0 ||
+        append_field_key(&out, &first, "emitted_by") != 0 ||
+        buf_append_char(&out, '{') != 0 ||
+        append_string_field(&out, &emitted_first, "kit_cid", p->emitted_kit_cid) != 0 ||
+        append_string_field(&out, &emitted_first, "kit_id", p->emitted_kit_id) != 0 ||
+        append_string_field(&out, &emitted_first, "kit_kind", p->emitted_kit_kind) != 0 ||
+        append_string_field(&out, &emitted_first, "target_language", p->emitted_target_language) != 0 ||
+        append_string_field(&out, &emitted_first, "target_library_tag", p->emitted_target_library_tag) != 0 ||
+        buf_append_char(&out, '}') != 0 ||
+        append_string_field(&out, &first, "loss_record_cid", p->loss_record_cid) != 0 ||
+        append_string_field(&out, &first, "operation_kind", p->operation_kind) != 0 ||
+        append_optional_string_field(&out, &first, "policy_cid", p->policy_cid) != 0 ||
+        append_string_field(&out, &first, "schema_version", p->schema_version) != 0 ||
+        append_string_field(&out, &first, "shape_cid", p->shape_cid) != 0 ||
+        append_string_field(&out, &first, "sugar_dict_cid", p->sugar_dict_cid) != 0 ||
+        append_raw_field(&out, &first, "term_position", p->term_position) != 0 ||
+        buf_append_char(&out, '}') != 0) {
+        buf_free(&out);
+        return NULL;
+    }
+    json = buf_take(&out);
+    buf_free(&out);
+    return json;
+}
+
+static int readable_file(const char *path) {
+    struct stat st;
+
+    return path != NULL && stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static char *find_file_from_base(const char *base, const char *rel) {
+    char *cursor = copy_string(base);
+
+    if (cursor == NULL) return NULL;
+    while (cursor[0] != '\0') {
+        char *candidate = join_path(cursor, rel);
+        char *slash;
+
+        if (candidate != NULL && readable_file(candidate)) {
+            free(cursor);
+            return candidate;
+        }
+        free(candidate);
+        slash = strrchr(cursor, '/');
+        if (slash == NULL) break;
+        if (slash == cursor) {
+            cursor[1] = '\0';
+            candidate = join_path(cursor, rel);
+            if (candidate != NULL && readable_file(candidate)) {
+                free(cursor);
+                return candidate;
+            }
+            free(candidate);
+            break;
+        }
+        *slash = '\0';
+    }
+    free(cursor);
+    return NULL;
+}
+
+static char *find_catalog_index_path(const char *workspace) {
+    const char rel[] = "menagerie/concept-shapes/catalog/index.json";
+    const char *env_root = getenv("PROVEKIT_REPO_ROOT");
+    char cwd[PATH_MAX];
+    char *candidate;
+
+    if (env_root != NULL && env_root[0] != '\0') {
+        candidate = join_path(env_root, rel);
+        if (candidate != NULL && readable_file(candidate)) return candidate;
+        free(candidate);
+    }
+    if (workspace != NULL && workspace[0] != '\0') {
+        candidate = join_path(workspace, rel);
+        if (candidate != NULL && readable_file(candidate)) return candidate;
+        free(candidate);
+    }
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        candidate = find_file_from_base(cwd, rel);
+        if (candidate != NULL) return candidate;
+    }
+    return NULL;
+}
+
+static int catalog_lookup_concept(
+    const char *workspace,
+    const char *concept_cid,
+    int *catalog_available,
+    int *found,
+    char **shape_cid,
+    char **operation_kind
+) {
+    char *index_path = find_catalog_index_path(workspace);
+    char *raw;
+    char *hit;
+    char *name_key;
+    char *object_end;
+    char *name = NULL;
+
+    *catalog_available = 0;
+    *found = 0;
+    *shape_cid = NULL;
+    *operation_kind = NULL;
+    if (index_path == NULL) return 0;
+    raw = read_file(index_path);
+    free(index_path);
+    if (raw == NULL) return 0;
+    *catalog_available = 1;
+    hit = strstr(raw, concept_cid);
+    if (hit == NULL) {
+        free(raw);
+        return 0;
+    }
+    object_end = strchr(hit, '}');
+    name_key = strstr(hit, "\"name\"");
+    if (name_key != NULL && object_end != NULL && name_key < object_end) {
+        char *colon = strchr(name_key, ':');
+        if (colon != NULL) {
+            const char *p = colon + 1;
+            json_skip_ws(&p);
+            if (*p == '"') name = decode_json_string(p + 1, NULL);
+        }
+    }
+    if (name == NULL) {
+        free(raw);
+        return 0;
+    }
+    *shape_cid = copy_string(concept_cid);
+    if (strncmp(name, "concept:", 8) == 0) {
+        *operation_kind = copy_string(name + 8);
+    } else {
+        *operation_kind = copy_string(name);
+    }
+    if (*shape_cid == NULL || *operation_kind == NULL) {
+        free(name);
+        free(raw);
+        free(*shape_cid);
+        free(*operation_kind);
+        *shape_cid = NULL;
+        *operation_kind = NULL;
+        return -1;
+    }
+    *found = 1;
+    free(name);
+    free(raw);
+    return 0;
+}
+
+static int acc_add_concept_diag(
+    LiftAccumulator *acc,
+    const char *kind,
+    const char *path,
+    unsigned line,
+    const char *detail
+) {
+    char message[256];
+
+    (void)snprintf(message, sizeof(message), "line %u: %s", line, detail == NULL ? kind : detail);
+    return acc_add_diagnostic(acc, kind, path, message);
+}
+
+static int acc_add_concept_citation(
+    LiftAccumulator *acc,
+    const char *rel,
+    unsigned line,
+    const ConceptPayload *p,
+    const char *payload_cid
+) {
+    Buf out;
+    int first = 1;
+    int ok;
+
+    buf_init(&out);
+    if (out.data == NULL) return -1;
+    ok = buf_append_char(&out, '{') == 0 &&
+        (p->args_jcs != NULL ? append_raw_field(&out, &first, "args_jcs", p->args_jcs) == 0 : 1) &&
+        append_string_field(&out, &first, "args_jcs_cid", p->args_jcs_cid) == 0 &&
+        append_optional_string_field(&out, &first, "callsite_cid", p->callsite_cid) == 0 &&
+        append_string_field(&out, &first, "concept_cid", p->concept_cid) == 0 &&
+        append_optional_string_field(&out, &first, "concept_name", p->concept_name) == 0 &&
+        append_string_field(&out, &first, "concept_site_cid", p->concept_site_cid) == 0 &&
+        append_string_field(&out, &first, "file", rel) == 0 &&
+        append_string_field(&out, &first, "kind", CONCEPT_CITATION_COMMENT_KIND) == 0 &&
+        append_string_field(&out, &first, "loss_record_cid", p->loss_record_cid) == 0 &&
+        append_field_key(&out, &first, "line") == 0 &&
+        buf_append_uint(&out, line) == 0 &&
+        append_string_field(&out, &first, "operation_kind", p->operation_kind) == 0 &&
+        append_string_field(&out, &first, "payload_cid", payload_cid) == 0 &&
+        append_optional_string_field(&out, &first, "policy_cid", p->policy_cid) == 0 &&
+        append_string_field(&out, &first, "shape_cid", p->shape_cid) == 0 &&
+        append_string_field(&out, &first, "source_kind", "native-surface") == 0 &&
+        append_string_field(&out, &first, "sugar_dict_cid", p->sugar_dict_cid) == 0 &&
+        append_raw_field(&out, &first, "term_position", p->term_position) == 0 &&
+        buf_append_char(&out, '}') == 0;
+    if (!ok ||
+        acc_append_json_item(&acc->concept_citations, &acc->concept_citation_count, out.data) != 0) {
+        buf_free(&out);
+        return -1;
+    }
+    buf_free(&out);
+    return 0;
+}
+
+static int validate_concept_citation(
+    LiftAccumulator *acc,
+    const char *workspace,
+    const char *rel,
+    unsigned line,
+    const char *raw_payload,
+    const char *emitted_payload_cid
+) {
+    ConceptPayload payload;
+    char *canonical_payload = NULL;
+    char *computed_payload_cid = NULL;
+    char *computed_args_cid = NULL;
+    char *catalog_shape_cid = NULL;
+    char *catalog_operation_kind = NULL;
+    int catalog_available = 0;
+    int catalog_found = 0;
+    int rc = 0;
+
+    memset(&payload, 0, sizeof(payload));
+    if (!validate_json_request(raw_payload)) {
+        return acc_add_concept_diag(acc, "concept-citation:malformed-json", rel, line, "malformed JSON");
+    }
+    if (parse_concept_payload(raw_payload, &payload) != 0) {
+        return -1;
+    }
+    if (payload.schema_version == NULL || strcmp(payload.schema_version, "1") != 0) {
+        rc = acc_add_concept_diag(acc, "concept-citation:unknown-schema-version", rel, line, "unknown schema_version");
+        goto done;
+    }
+    if (!concept_payload_has_required_shape(&payload) ||
+        payload.artifact_kind == NULL ||
+        strcmp(payload.artifact_kind, CONCEPT_CITATION_COMMENT_KIND) != 0) {
+        rc = acc_add_concept_diag(acc, "concept-citation:malformed-json", rel, line, "malformed concept-citation payload");
+        goto done;
+    }
+    if (!concept_payload_has_valid_cids(&payload) ||
+        !is_valid_blake3_512_cid(emitted_payload_cid)) {
+        rc = acc_add_concept_diag(acc, "concept-citation:malformed-cid", rel, line, "malformed CID");
+        goto done;
+    }
+
+    canonical_payload = canonical_concept_payload_json(&payload);
+    if (canonical_payload == NULL) {
+        rc = -1;
+        goto done;
+    }
+    computed_payload_cid = cid_for_bytes(canonical_payload, strlen(canonical_payload));
+    if (computed_payload_cid == NULL) {
+        rc = -1;
+        goto done;
+    }
+    if (strcmp(computed_payload_cid, emitted_payload_cid) != 0) {
+        rc = acc_add_concept_diag(acc, "concept-citation:payload-cid-mismatch", rel, line, "payload CID mismatch");
+        goto done;
+    }
+    if (payload.args_jcs != NULL) {
+        computed_args_cid = cid_for_bytes(payload.args_jcs, strlen(payload.args_jcs));
+        if (computed_args_cid == NULL) {
+            rc = -1;
+            goto done;
+        }
+        if (strcmp(computed_args_cid, payload.args_jcs_cid) != 0) {
+            rc = acc_add_concept_diag(acc, "concept-citation:args-cid-mismatch", rel, line, "args CID mismatch");
+            goto done;
+        }
+    }
+    if (catalog_lookup_concept(
+            workspace,
+            payload.concept_cid,
+            &catalog_available,
+            &catalog_found,
+            &catalog_shape_cid,
+            &catalog_operation_kind) != 0) {
+        rc = -1;
+        goto done;
+    }
+    if (catalog_available && !catalog_found) {
+        rc = acc_add_concept_diag(acc, "concept-citation:concept-not-in-catalog", rel, line, "concept CID not in catalog");
+        goto done;
+    }
+    if (catalog_found && strcmp(catalog_shape_cid, payload.shape_cid) != 0) {
+        rc = acc_add_concept_diag(acc, "concept-citation:shape-mismatch", rel, line, "shape CID mismatch");
+        goto done;
+    }
+    if (catalog_found && strcmp(catalog_operation_kind, payload.operation_kind) != 0) {
+        rc = acc_add_concept_diag(acc, "concept-citation:operation-kind-mismatch", rel, line, "operation_kind mismatch");
+        goto done;
+    }
+    rc = acc_add_concept_citation(acc, rel, line, &payload, computed_payload_cid);
+
+done:
+    concept_payload_free(&payload);
+    free(canonical_payload);
+    free(computed_payload_cid);
+    free(computed_args_cid);
+    free(catalog_shape_cid);
+    free(catalog_operation_kind);
+    return rc;
+}
+
+static char *trim_line_segment(const char *start, const char *end) {
+    while (start < end && isspace((unsigned char)*start)) start++;
+    while (end > start && isspace((unsigned char)end[-1])) end--;
+    return copy_n(start, (size_t)(end - start));
+}
+
+static int scan_concept_citations(
+    LiftAccumulator *acc,
+    const char *workspace,
+    const char *rel,
+    const char *source
+) {
+    const char payload_prefix[] = "// provekit-concept: ";
+    const char cid_prefix[] = "// provekit-concept-payload-cid: ";
+    const char *p = source == NULL ? "" : source;
+    unsigned line_no = 1;
+
+    while (*p != '\0') {
+        const char *line_start = p;
+        const char *line_end;
+        const char *next_start;
+        char *line;
+        int consumed_next = 0;
+        int rc;
+
+        while (*p != '\0' && *p != '\n') p++;
+        line_end = p;
+        if (line_end > line_start && line_end[-1] == '\r') line_end--;
+        next_start = *p == '\n' ? p + 1 : p;
+        line = trim_line_segment(line_start, line_end);
+        if (line == NULL) return -1;
+        if (strncmp(line, payload_prefix, strlen(payload_prefix)) == 0) {
+            char *next_line = NULL;
+            char *payload_cid = NULL;
+            const char *next_end = next_start;
+
+            while (*next_end != '\0' && *next_end != '\n') next_end++;
+            if (next_end > next_start && next_end[-1] == '\r') next_end--;
+            next_line = trim_line_segment(next_start, next_end);
+            if (next_line == NULL) {
+                free(line);
+                return -1;
+            }
+            if (strncmp(next_line, cid_prefix, strlen(cid_prefix)) == 0) {
+                payload_cid = copy_string(next_line + strlen(cid_prefix));
+                consumed_next = 1;
+            }
+            if (payload_cid == NULL) {
+                rc = acc_add_concept_diag(acc, "concept-citation:malformed-cid", rel, line_no, "missing payload CID line");
+            } else {
+                rc = validate_concept_citation(
+                    acc,
+                    workspace,
+                    rel,
+                    line_no,
+                    line + strlen(payload_prefix),
+                    payload_cid);
+            }
+            free(payload_cid);
+            free(next_line);
+            free(line);
+            if (rc != 0) return rc;
+            if (consumed_next) {
+                p = *next_end == '\n' ? next_end + 1 : next_end;
+                line_no += 2;
+                continue;
+            }
+        } else if (strncmp(line, cid_prefix, strlen(cid_prefix)) == 0) {
+            rc = acc_add_concept_diag(acc, "concept-citation:orphan-cid-line", rel, line_no, "orphan concept payload CID line");
+            free(line);
+            if (rc != 0) return rc;
+        } else {
+            free(line);
+        }
+        p = next_start;
+        line_no++;
+    }
+    return 0;
 }
 
 #ifdef PK_C_ENABLE_CLANG_AST
@@ -1667,6 +2253,11 @@ static int lift_one_file(
         free(rel);
         return rc;
     }
+    if (scan_concept_citations(acc, workspace, rel, source) != 0) {
+        free(source);
+        free(rel);
+        return -1;
+    }
     unit = parse_unit(path, source, clang_args, &index);
     if (unit == NULL) {
         (void)acc_add_diagnostic(acc, "parse-error", rel, "libclang parse failed");
@@ -1704,10 +2295,23 @@ static int lift_one_file(
     const StringArray *clang_args
 ) {
     char *rel = relative_path(workspace, path);
+    char *source;
     int rc;
 
     (void)clang_args;
     if (rel == NULL) return -1;
+    source = read_file(path);
+    if (source == NULL) {
+        rc = acc_add_diagnostic(acc, "read-error", rel, strerror(errno));
+        free(rel);
+        return rc;
+    }
+    rc = scan_concept_citations(acc, workspace, rel, source);
+    free(source);
+    if (rc != 0) {
+        free(rel);
+        return rc;
+    }
     rc = acc_add_diagnostic(acc, "unavailable", rel, "libclang support is not enabled");
     free(rel);
     return rc;
@@ -1839,7 +2443,7 @@ static void handle_lift(const char *id, const char *line) {
     }
 
     acc_init(&acc);
-    if (acc.ir.data == NULL || acc.diagnostics.data == NULL) {
+    if (acc.ir.data == NULL || acc.concept_citations.data == NULL || acc.diagnostics.data == NULL) {
         acc_free(&acc);
         free(workspace);
         string_array_free(&source_paths);
@@ -1875,6 +2479,8 @@ static void handle_lift(const char *id, const char *line) {
     if (result.data == NULL ||
         buf_append(&result, "{\"diagnostics\":[") != 0 ||
         buf_append(&result, acc.diagnostics.data == NULL ? "" : acc.diagnostics.data) != 0 ||
+        buf_append(&result, "],\"concept_citations\":[") != 0 ||
+        buf_append(&result, acc.concept_citations.data == NULL ? "" : acc.concept_citations.data) != 0 ||
         buf_append(&result, "],\"ir\":[") != 0 ||
         buf_append(&result, acc.ir.data == NULL ? "" : acc.ir.data) != 0 ||
         buf_append(&result, "],\"kind\":\"ir-document\"}") != 0) {
