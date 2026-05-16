@@ -125,6 +125,7 @@ fn link_by_shared_contract(claims: &[DomainClaim]) -> Result<DomainClaim, CoreEr
         premises,
         to: shared_contract,
         witness: None,
+        payload: None,
         verdict,
         attestation: None,
     })

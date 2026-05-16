@@ -101,6 +101,15 @@ fn run_inspect(args: PackageInspectArgs) -> u8 {
             );
             EXIT_USER_ERROR
         }
+        Err(LiftPluginError::Refused(refusal)) => {
+            eprintln!(
+                "{}: {}: {}",
+                "error".red().bold(),
+                refusal.header.failure_kind,
+                refusal.header.failure_detail
+            );
+            EXIT_VERIFY_FAIL
+        }
         Err(LiftPluginError::Failed(error)) => {
             eprintln!("{}: {error}", "error".red().bold());
             EXIT_VERIFY_FAIL

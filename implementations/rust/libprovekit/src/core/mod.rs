@@ -19,13 +19,15 @@
 //! `sign`.
 
 pub mod lift_plugin;
+pub mod path_executor;
 pub mod primitives;
 pub mod stubs;
 pub mod traits;
 pub mod types;
 pub mod verbs;
 
-pub use lift_plugin::{LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
+pub use lift_plugin::{LiftKit, LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
+pub use path_executor::{execute_path, KitRegistry, PathExecutionError};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };

@@ -264,6 +264,12 @@ impl MintKit {
                     out_dir,
                 });
             }
+            Err(LiftPluginError::Refused(refusal)) => {
+                return Err(KitError::Transformation(format!(
+                    "{}: {}",
+                    refusal.header.failure_kind, refusal.header.failure_detail
+                )))
+            }
             Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
         };
 
@@ -564,6 +570,7 @@ fn mint_result_claim(
         premises,
         to,
         witness: None,
+        payload: Some(term),
         verdict: Verdict::Unresolved,
         attestation: None,
     })

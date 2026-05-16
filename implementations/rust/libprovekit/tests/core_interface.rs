@@ -7,9 +7,10 @@ use libprovekit::compose::{
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, link, prove, transform, verify, ArityShape, AritySlot, CKit, Canonical, Cid,
-    Dialect, DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog,
-    Input, InputCatalog, Kit, LanguageSignature, LiftPluginKit, Path, PathAlgebra, PathDocument,
+    address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot,
+    CKit, Canonical, Cid, Dialect, DomainClaim, DomainKind, FunctionContractDomain,
+    HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit, KitRegistry,
+    LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
     PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
@@ -92,6 +93,7 @@ fn claim_for_contract(contract: FunctionContractMemento) -> DomainClaim {
         premises: vec![],
         to,
         witness: None,
+        payload: None,
         verdict: Verdict::Unresolved,
         attestation: None,
     }
@@ -958,4 +960,107 @@ done
         Some("ir-document")
     );
     let _ = std::fs::remove_dir_all(&temp);
+}
+
+#[test]
+fn lift_kit_transforms_source_through_lift_plugin_transport_and_carries_term_payload() {
+    let temp =
+        std::env::temp_dir().join(format!("provekit-lift-kit-source-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&temp);
+    std::fs::create_dir_all(&temp).expect("create temp dir");
+    let script = temp.join("fake-lifter.sh");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*) echo '{"jsonrpc":"2.0","id":1,"result":{"name":"fake-rust-lifter"}}' ;;
+    *'"method":"lift"'*) echo '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"bind-lift-entry","file":"src/lib.rs","fn_name":"id","fn_line":1,"param_names":["x"],"param_types":["i64"],"return_type":"i64","term_shape":{"kind":"var","name":"x"},"term_shape_cid":"blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","witnesses":[]}],"diagnostics":[]}}' ;;
+    *'"method":"shutdown"'*) exit 0 ;;
+  esac
+done
+"#,
+    )
+    .expect("write fake lifter");
+
+    let request = serde_json::json!({
+        "surface": "rust",
+        "workspace_root": temp,
+        "config_path": ".provekit/config.toml",
+        "source_paths": ["."],
+        "options": {"layer": "all", "identifyOnly": false}
+    });
+    let source = Input::Source {
+        dialect: libprovekit::core::Dialect::Rust,
+        bytes: serde_json::to_vec(&request).expect("source request JSON"),
+    };
+    let kit = LiftKit::new(
+        libprovekit::core::Dialect::Rust,
+        "rust",
+        vec!["sh".to_string(), script.display().to_string()],
+        Some(temp.clone()),
+    );
+
+    let claim = kit
+        .transform(&source)
+        .expect("source input lifts through the transport");
+    let expected_term = Term::Const {
+        value: serde_json::json!({
+            "kind": "ir-document",
+            "ir": [{
+                "kind": "bind-lift-entry",
+                "file": "src/lib.rs",
+                "fn_name": "id",
+                "fn_line": 1,
+                "param_names": ["x"],
+                "param_types": ["i64"],
+                "return_type": "i64",
+                "term_shape": {"kind": "var", "name": "x"},
+                "term_shape_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "witnesses": []
+            }],
+            "diagnostics": []
+        }),
+        sort: Sort::Primitive {
+            name: "LiftPluginResponse".to_string(),
+        },
+    };
+
+    assert_eq!(claim.to, address(&expected_term));
+    assert_eq!(claim.artifacts, vec![address(&expected_term)]);
+    assert_eq!(claim.payload.as_ref(), Some(&expected_term));
+    assert_eq!(claim.from, vec![address(&source)]);
+    let _ = std::fs::remove_dir_all(&temp);
+}
+
+#[test]
+fn execute_path_refuses_unregistered_lift_kit_with_composition_refusal_memento() {
+    let source = Input::Source {
+        dialect: libprovekit::core::Dialect::Other("unknown".to_string()),
+        bytes: b"fn id(x: i64) -> i64 { x }".to_vec(),
+    };
+    let mut inputs = HashMapInputCatalog::default();
+    let source_cid = inputs.insert(source);
+    let path = Input::Path(Box::new(Path {
+        algebra: vec![PathAlgebra {
+            name: "lift".to_string(),
+            kit: "lift-unknown".to_string(),
+            inputs: vec![source_cid],
+            depends_on: vec![],
+        }],
+    }));
+    let registry = KitRegistry::default();
+
+    let err = execute_path(&path, &registry, &inputs).expect_err("unknown lift kit refuses");
+    let refusal = err
+        .composition_refusal()
+        .expect("path executor error carries composition refusal");
+    assert_eq!(refusal.header.failure_kind, "memento-required-missing");
+    assert!(refusal
+        .header
+        .missing_memento_requirements
+        .as_ref()
+        .expect("missing requirements")
+        .iter()
+        .any(|requirement| requirement.role.as_deref() == Some("kit-registry")));
 }

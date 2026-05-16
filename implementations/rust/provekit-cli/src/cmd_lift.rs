@@ -66,7 +66,7 @@ pub fn run(args: LiftArgs) -> u8 {
         }
     };
 
-    match lift_plugin::dispatch_lift(
+    match lift_plugin::dispatch_lift_path(
         &project_root,
         &surface,
         LiftPluginOptions {
@@ -124,6 +124,19 @@ pub fn run(args: LiftArgs) -> u8 {
                 "error".red().bold()
             );
             EXIT_USER_ERROR
+        }
+        Err(LiftPluginError::Refused(refusal)) => {
+            eprintln!(
+                "{}: {}",
+                "error".red().bold(),
+                serde_json::to_string(&refusal).unwrap_or_else(|_| {
+                    format!(
+                        "{}: {}",
+                        refusal.header.failure_kind, refusal.header.failure_detail
+                    )
+                })
+            );
+            EXIT_VERIFY_FAIL
         }
         Err(LiftPluginError::Failed(error)) => {
             eprintln!("{}: {error}", "error".red().bold());

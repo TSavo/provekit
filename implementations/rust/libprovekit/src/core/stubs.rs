@@ -199,6 +199,7 @@ fn transform_stub_input(expected: &Dialect, input: &Input) -> Result<DomainClaim
         premises: vec![],
         to,
         witness: None,
+        payload: Some(term),
         verdict: Verdict::Unresolved,
         attestation: None,
     })
