@@ -30,6 +30,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use libprovekit::core::{named_term_document_from_bind_payload, Term};
 use owo_colors::OwoColorize;
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_compiler::IrCompiler;
@@ -645,8 +646,18 @@ fn write_target_output(path: Option<&PathBuf>, bytes: &[u8]) -> Result<(), Strin
 }
 
 fn target_formula(document: &Value) -> Result<Value, String> {
-    if document.get("kind").and_then(Value::as_str) == Some("named-term-document") {
-        let terms = document
+    let named_document =
+        if document.get("kind").and_then(Value::as_str) == Some("named-term-document") {
+            Some(document.clone())
+        } else {
+            serde_json::from_value::<Term>(document.clone())
+                .ok()
+                .and_then(|payload| named_term_document_from_bind_payload(&payload).ok())
+                .map(|named| serde_json::to_value(named).expect("named term serializes"))
+        };
+
+    if let Some(named_document) = named_document {
+        let terms = named_document
             .get("terms")
             .and_then(Value::as_array)
             .ok_or_else(|| "named-term document missing terms array".to_string())?;

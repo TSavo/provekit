@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use libprovekit::core::{address, bind_term_document, BindKit, BindOptions, Cid, Input, Kit, Term};
+use std::path::PathBuf;
+
+use libprovekit::core::{
+    address, bind_term_document, concept_bind_result_cid, named_term_document_from_bind_payload,
+    BindKit, BindOptions, Input, Kit, Term,
+};
+use libprovekit::proofir_bridge::CatalogIndex;
 use provekit_ir_types::Sort;
 use serde_json::{json, Value};
 
@@ -8,6 +14,22 @@ fn primitive_sort(name: &str) -> Sort {
     Sort::Primitive {
         name: name.to_string(),
     }
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+fn concept_catalog() -> CatalogIndex {
+    CatalogIndex::from_catalog_root(repo_root().join("menagerie/concept-shapes/catalog"))
+        .expect("concept-shapes catalog loads")
 }
 
 fn bind_input_value() -> Value {
@@ -42,7 +64,7 @@ fn bind_input_value() -> Value {
 }
 
 #[test]
-fn bind_kit_transform_to_matches_existing_binder_named_term_document_cid() {
+fn bind_kit_transform_emits_bind_result_op_tree() {
     let term_value = bind_input_value();
     let input_term = Term::Const {
         value: term_value.clone(),
@@ -50,30 +72,61 @@ fn bind_kit_transform_to_matches_existing_binder_named_term_document_cid() {
     };
     let expected_named =
         bind_term_document(&term_value, &BindOptions::default()).expect("existing binder succeeds");
-    let expected_jcs = libprovekit::canonical::serializable_jcs(&expected_named)
-        .expect("named term canonicalizes");
-    let expected_cid = Cid::try_from(
-        libprovekit::canonical::serializable_cid(&expected_named).expect("named term cids"),
-    )
-    .expect("named term cid parses");
 
     let claim = BindKit::default()
         .transform(&Input::Term(input_term.clone()))
         .expect("bind kit transforms term input");
 
-    assert_eq!(claim.to, expected_cid);
     assert_eq!(claim.from, vec![address(&input_term)]);
     let payload = claim.payload.as_ref().expect("bind claim carries payload");
-    let Term::Const { value, sort } = payload else {
-        panic!("bind payload should be a named term document const");
+    assert_eq!(claim.to, address(payload));
+    let Term::Op {
+        op_cid, name, args, ..
+    } = payload
+    else {
+        panic!("bind payload should be a bind-result op tree");
     };
-    assert_eq!(sort, &primitive_sort("NamedTermDocument"));
-    assert_eq!(
-        libprovekit::canonical::json_jcs(&value).expect("payload canonicalizes"),
-        expected_jcs
+    assert_eq!(op_cid, &concept_bind_result_cid());
+    assert_eq!(name, "concept:bind-result");
+    assert_eq!(args.len(), 2);
+    assert_eq!(args[0], input_term);
+    assert!(
+        matches!(args[1], Term::Op { .. }),
+        "named form binding should be represented as an op tree"
     );
     assert!(
-        value["terms"][0].get("namedTermTree").is_some(),
-        "payload should retain namedTermTree"
+        payload.walk().count() >= 2,
+        "bind output should expose operation nodes to Term::walk"
+    );
+    let catalog = concept_catalog();
+    let unresolved = payload
+        .walk()
+        .filter(|node| catalog.get(node.op_cid.as_str()).is_none())
+        .map(|node| (node.op_name.to_string(), node.op_cid.to_string()))
+        .collect::<Vec<_>>();
+    assert!(
+        unresolved.is_empty(),
+        "every bind payload op CID should resolve in the concept catalog: {unresolved:?}"
+    );
+    let recovered =
+        named_term_document_from_bind_payload(payload).expect("bind payload recovers named terms");
+    assert_eq!(
+        serde_json::to_value(&recovered).expect("recovered named term serializes"),
+        serde_json::to_value(&expected_named).expect("expected named term serializes")
+    );
+
+    let first_jcs =
+        libprovekit::canonical::serializable_jcs(payload).expect("payload canonicalizes");
+    let second_claim = BindKit::default()
+        .transform(&Input::Term(args[0].clone()))
+        .expect("bind kit transforms term input again");
+    let second_payload = second_claim
+        .payload
+        .as_ref()
+        .expect("second bind claim carries payload");
+    assert_eq!(
+        first_jcs,
+        libprovekit::canonical::serializable_jcs(second_payload)
+            .expect("second payload canonicalizes")
     );
 }

@@ -29,8 +29,9 @@ pub mod types;
 pub mod verbs;
 
 pub use bind::{
-    bind_term_document, named_term_document_cid, BindContractWitness, BindError, BindKit,
-    BindLiftEntry, BindOptions, NamedTerm, NamedTermDocument, NamedTermTree, NamedWitness,
+    bind_result_payload, bind_term_document, concept_bind_result_cid, named_term_document_cid,
+    named_term_document_from_bind_payload, BindContractWitness, BindError, BindKit, BindLiftEntry,
+    BindOptions, NamedTerm, NamedTermDocument, NamedTermTree, NamedWitness,
 };
 pub use lift_plugin::{LiftKit, LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
 pub use lower_plugin::{

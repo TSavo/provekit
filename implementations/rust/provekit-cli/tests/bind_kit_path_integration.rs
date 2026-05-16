@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use libprovekit::core::{
-    address, execute_path, BindKit, ConformanceDeclaration, Dialect, HashMapInputCatalog, Input,
-    Kit, KitRegistry, LiftKit, Path as CorePath, PathAlgebra, Term, Verb,
+    address, execute_path, named_term_document_from_bind_payload, BindKit, ConformanceDeclaration,
+    Dialect, HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit, Path as CorePath, PathAlgebra,
+    Term, Verb,
 };
 
 const BIND_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
@@ -148,15 +149,16 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     assert_eq!(claim.to.as_str(), cli_cid);
     assert_eq!(claim.from, vec![address(&input_term)]);
     let payload = claim.payload.as_ref().expect("bind claim payload");
-    let Term::Const { value, .. } = payload else {
-        panic!("bind payload should be a named term document const");
-    };
+    assert!(matches!(payload, Term::Op { .. }));
     assert_eq!(
-        libprovekit::canonical::json_jcs(&value)
+        libprovekit::canonical::serializable_jcs(payload)
             .expect("payload canonicalizes")
             .as_bytes(),
         cli_bytes.as_slice()
     );
+    let named =
+        named_term_document_from_bind_payload(payload).expect("bind payload recovers named term");
+    assert_eq!(named.terms[0].function, "deposit");
 }
 
 #[test]
