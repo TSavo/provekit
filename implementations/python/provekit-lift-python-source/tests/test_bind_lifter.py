@@ -135,6 +135,33 @@ def _concept_diagnostics(result: object) -> set[str]:
     return {diag["kind"] for diag in diagnostics}
 
 
+def _catalog_concept_cid(name: str) -> str:
+    index_path = ROOT / "menagerie/concept-shapes/catalog/index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    for entry in index["entries"].values():
+        if entry.get("kind") == "algorithm" and entry.get("name") == name:
+            cid = entry["cid"]
+            assert isinstance(cid, str)
+            return cid
+    raise AssertionError(f"missing catalog concept: {name}")
+
+
+def _walk_objects(value: object) -> list[dict]:
+    found: list[dict] = []
+    if isinstance(value, dict):
+        found.append(value)
+        for child in value.values():
+            found.extend(_walk_objects(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_walk_objects(child))
+    return found
+
+
+def _operator_atoms(term_shape: dict) -> list[dict]:
+    return [node for node in _walk_objects(term_shape) if "op_cid" in node]
+
+
 def test_bind_lift_source_emits_language_neutral_entries() -> None:
     source = (
         "# concept: identity\n"
@@ -181,15 +208,32 @@ def test_bind_lift_source_emits_language_neutral_entries() -> None:
         "kind": "body",
         "stmts": [{"kind": "exit"}],
     }
+    eq_shape = {
+        "args": [{"kind": "call"}, {"kind": "opaque"}],
+        "concept_name": "concept:eq",
+        "kind": "rel",
+        "op": "==",
+        "op_cid": _catalog_concept_cid("concept:eq"),
+    }
+    neg_shape = {
+        "args": [{"kind": "opaque"}],
+        "concept_name": "concept:neg",
+        "kind": "neg",
+        "op": "-",
+        "op_cid": _catalog_concept_cid("concept:neg"),
+    }
     assert result.ir[2]["term_shape"] == {
         "kind": "body",
         "stmts": [
             {"kind": "let"},
             {
-                "cond": {"kind": "rel", "op": "=="},
+                "cond": eq_shape,
                 "else": {"kind": "block", "stmts": [{"kind": "exit"}]},
                 "kind": "if",
-                "then": {"kind": "block", "stmts": [{"kind": "exit"}]},
+                "then": {
+                    "kind": "block",
+                    "stmts": [{"kind": "exit", "value": neg_shape}],
+                },
             },
         ],
     }
@@ -198,6 +242,71 @@ def test_bind_lift_source_emits_language_neutral_entries() -> None:
         assert entry["file"] == "pkg/foo.py"
         assert entry["term_shape_cid"] == cid_of_json(entry["term_shape"])
     assert "python:" not in json.dumps(result.ir, sort_keys=True)
+
+
+def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
+    source = (
+        "def add(x, y):\n"
+        "    return x + y\n"
+        "\n"
+        "def sub(x, y):\n"
+        "    return x - y\n"
+        "\n"
+        "def mul(x, y):\n"
+        "    return x * y\n"
+        "\n"
+        "def div(x, y):\n"
+        "    return x / y\n"
+        "\n"
+        "def eq(x, y):\n"
+        "    return x == y\n"
+        "\n"
+        "def ne(x, y):\n"
+        "    return x != y\n"
+        "\n"
+        "def lt(x, y):\n"
+        "    return x < y\n"
+        "\n"
+        "def le(x, y):\n"
+        "    return x <= y\n"
+        "\n"
+        "def gt(x, y):\n"
+        "    return x > y\n"
+        "\n"
+        "def ge(x, y):\n"
+        "    return x >= y\n"
+        "\n"
+        "def logical_not(x):\n"
+        "    return not x\n"
+    )
+
+    result = lift_source(source, "pkg/operators.py")
+
+    assert result.diagnostics == []
+    expected = {
+        "add": ("concept:add", _catalog_concept_cid("concept:add")),
+        "sub": ("concept:sub", _catalog_concept_cid("concept:sub")),
+        "mul": ("concept:mul", _catalog_concept_cid("concept:mul")),
+        "div": ("concept:div", _catalog_concept_cid("concept:div")),
+        "eq": ("concept:eq", _catalog_concept_cid("concept:eq")),
+        "ne": ("concept:ne", _catalog_concept_cid("concept:ne")),
+        "lt": ("concept:lt", _catalog_concept_cid("concept:lt")),
+        "le": ("concept:le", _catalog_concept_cid("concept:le")),
+        "gt": ("concept:gt", _catalog_concept_cid("concept:gt")),
+        "ge": ("concept:ge", _catalog_concept_cid("concept:ge")),
+        "logical_not": ("concept:not", _catalog_concept_cid("concept:not")),
+    }
+    by_name = {entry["fn_name"]: entry for entry in result.ir}
+    for fn_name, (concept_name, op_cid) in expected.items():
+        atoms = _operator_atoms(by_name[fn_name]["term_shape"])
+        assert {"concept_name": concept_name, "op_cid": op_cid}.items() <= atoms[0].items()
+
+
+def test_bind_lift_operator_atoms_make_distinct_term_shape_cids() -> None:
+    add = lift_source("def f(x, y):\n    return x + y\n", "pkg/add.py").ir[0]
+    sub = lift_source("def f(x, y):\n    return x - y\n", "pkg/sub.py").ir[0]
+
+    assert add["term_shape_cid"] != sub["term_shape_cid"]
 
 
 def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:
@@ -217,7 +326,12 @@ def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:
     assert result.ir[0]["param_names"] == ["x"]
     assert result.ir[0]["param_types"] == ["Any"]
     assert result.ir[0]["return_type"] == "Any"
-    assert result.ir[0]["term_shape"]["stmts"][0] == {"kind": "assign"}
+    assign_shape = result.ir[0]["term_shape"]["stmts"][0]
+    assert assign_shape["kind"] == "assign"
+    assert {
+        "concept_name": "concept:add",
+        "op_cid": _catalog_concept_cid("concept:add"),
+    }.items() <= assign_shape["value"].items()
     assert result.ir[1]["return_type"] == "()"
 
 
