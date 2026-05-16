@@ -7,15 +7,15 @@ This document enumerates what is required for that claim to be real. Each item i
 ## Substrate primitives (verifier-side)
 
 - **A4 merged** (PR #1061 / SHA a48c6f45). `Term::walk()` iterator + `TermNode { op_cid, term_position: Vec<usize> }` slot-path semantics on main. 7 unit tests green.
-- **A6 in flight** (#1056, codex 88f19146 re-dispatched with trimmed scope). `Catalog::contains(&Cid) -> bool` with default impl `self.get(cid).is_some()` + HashMapCatalog override (the only Catalog impl in libprovekit::core today). Doc-comment names the fs-backed override as a future optimization for when an fs-backed impl is minted. Invariant test: `contains(cid) == get(cid).is_some()`.
+- **A6 merged** (PR #1063 / SHA 431b2c19). `Catalog::contains(&Cid) -> bool` trait method with default impl `self.get(cid).is_some()` + HashMapCatalog override. Doc-comment names the fs-backed override as a future optimization for when an fs-backed impl is minted.
 - **`walk_premises_to_root` lands** with the seven `ChainBreak` variants + cycle detection + `allow_orphan_from_cids` toggle + eight unit tests (seven failure variants + one happy + one orphan-strict-vs-loose).
 - **`assert_concept_tier` lands** consuming `Term::walk()` + `Catalog::contains()` + a `HubMissingNode { node_op_cid, node_position, term_position }` failure variant. Two unit tests (fail + happy).
 
 ## Substrate primitives (executor + chain)
 
-- **A1 lands.** `PathExecutionChain` with `terminal_claim`, `claim_at_step`, `source_at_step`, `term_at_step`. `execute_path` returns the chain. All existing callers migrated.
-- **A2 lands.** `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` on any `ChainBreak`. Integration test demonstrating a real `Verdict::Proved` with a witness on a 3-step path.
-- **A3 lands.** BindKit's payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_term_as_op_tree] }`. `concept:bind-result` op-CID minted in the concept-shapes catalog. Round-trip test: walk the bind output, every node's op_cid resolves via `Catalog::contains()`.
+- **A1 merged** (PR #1064 / SHA 8627786b). `PathExecutionChain` with `terminal_claim`, `claim_at_step`, `source_at_step`, `term_at_step` accessors. `execute_path` returns the chain. 11 call sites migrated. Three executor unit tests green.
+- **A2 in flight** (#1059, codex 9a45a22e dispatched 2026-05-16 off main at 8627786b). `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` (inlined helper) and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` on any `ChainBreak`.
+- **A3 in review** (PR #1065, codex d66e4f6a complete, Opus review in flight). BindKit's payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_term_as_op_tree] }`. `concept:bind-result` op-CID minted in the concept-shapes catalog. Round-trip test: walk the bind output, every node's op_cid resolves via `Catalog::contains()`.
 - **#1049 lands.** Producer-side premise dedup in `execute_path`. Two-layer defense composes with `walk_premises_to_root`'s `HashSet` visited tracking.
 
 ## Capstone exhibit
@@ -51,7 +51,7 @@ This document enumerates what is required for that claim to be real. Each item i
 
 ## Architectural rulings codified durably
 
-- **A5 lands.** Exhibit transport policy doc in `libprovekit/docs/` capturing: real subprocesses are legitimate; fixture stubs forbidden; `#[ignore]` markers on structural-property tests forbidden. Cited from #1024 and #1039.
+- **A5 merged** (PR #1062 / SHA f629aa43). Exhibit transport policy doc in `docs/plans/2026-05-16-exhibit-transport-policy.md` capturing: real subprocesses are legitimate; fixture stubs forbidden; `#[ignore]` markers on structural-property tests forbidden. Cited from #1024 and #1039.
 - **Pre-merge ritual** captured in a repo-level CONTRIBUTING or REVIEWING doc. The ritual: read full issue comment thread, grep-verify deletion rules, check architect tightening timestamp vs merge attempt, refuse merge if ritual incomplete. Currently in agent memory only; needs to be in the repo where human contributors can read it without an agent's memory store.
 - **Build-on-existing-kits clause** captured as a repo-level discipline doc. Currently posted per-issue as a comment; should be a once-and-for-all clause that issues cite by reference.
 - **Deletion rule** captured in the same discipline doc. Currently named per-PR; should be the canonical reference.
@@ -96,15 +96,13 @@ When an architect agent is asked "how many cycles," the honest answer is "open t
 
 When new gaps are discovered (a reviewer refuses to fabricate API, an executor dispatch surfaces a dependency we did not see, a CI test reveals a transport assumption), add them to this list. The list is the substrate's first principle applied to its own planning: above all, correctness about what is actually required.
 
-## Status snapshot (2026-05-16, post-#1048 merge)
+## Status snapshot (2026-05-16, post-A1 merge)
 
-**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061).
+**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061), A5 exhibit transport policy (#1060 / PR #1062), A6 Catalog::contains (#1056 / PR #1063), A1 PathExecutionChain (#1058 / PR #1064).
 
-**Drafted, not yet minted as GitHub issues:** A1, A2, A3, A5 (four of the six #1024 prereqs), Dialect-newtype refactor.
+**Filed and in flight:** A2 #1059 ProveKit chain-integrity (codex 9a45a22e), A3 #1057 BindKit op-tree (PR #1065 open, Opus deep review running).
 
-**Filed and in flight:** A6 #1056 (codex 88f19146, re-dispatched 2026-05-16 with trimmed scope after the initial dispatch correctly refused to fabricate an fs-backed Catalog impl that doesn't exist on main).
-
-**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A1, A2, A3, A6 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
+**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A2 + A3 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
 
 **Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
 
