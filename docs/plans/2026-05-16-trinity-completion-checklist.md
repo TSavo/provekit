@@ -8,8 +8,8 @@ This document enumerates what is required for that claim to be real. Each item i
 
 - **A4 merged** (PR #1061 / SHA a48c6f45). `Term::walk()` iterator + `TermNode { op_cid, term_position: Vec<usize> }` slot-path semantics on main. 7 unit tests green.
 - **A6 merged** (PR #1063 / SHA 431b2c19). `Catalog::contains(&Cid) -> bool` trait method with default impl `self.get(cid).is_some()` + HashMapCatalog override. Doc-comment names the fs-backed override as a future optimization for when an fs-backed impl is minted.
-- **`walk_premises_to_root` lands** with the seven `ChainBreak` variants + cycle detection + `allow_orphan_from_cids` toggle + eight unit tests (seven failure variants + one happy + one orphan-strict-vs-loose).
-- **`assert_concept_tier` lands** consuming `Term::walk()` + `Catalog::contains()` + a `HubMissingNode { node_op_cid, node_position, term_position }` failure variant. Two unit tests (fail + happy).
+- **`walk_premises_to_root` landed** in `libprovekit::core::walks` (PR #1067 / SHA 3218f42c, Path A). Four `ChainBreak` variants (CycleDetected, PremiseNotInCatalog, OriginUnreachable, DeserializationFailed) + DFS-coloring algorithm (visited + on_path + reached_origin three-set discrimination) + eight unit tests (4 ChainBreak variants + 3 dedup discrimination + 1 happy). Algorithm corrects A2's single-HashSet bug that collapsed within-claim-dup / diamond-DAG / true-cycle to the same error.
+- **`assert_concept_tier` landed** in `libprovekit::core::walks` (PR #1067 / SHA 3218f42c, Path A). Consumes `Term::walk()` + `Catalog::contains()` + `HubMissingNode { node_op_cid, term_position }` failure variant. Two unit tests (fail + happy).
 
 ## Substrate primitives (executor + chain)
 
@@ -20,7 +20,9 @@ This document enumerates what is required for that claim to be real. Each item i
 
 ## Capstone exhibit
 
-- **#1024 lands.** Single `execute_path()` call constructing a Path with six steps (lift → bind → lower → relift → lower-back → prove). Six binding assertions all pass:
+- **Path A merged** (PR #1067 / SHA 3218f42c). The substrate primitives `walk_premises_to_root` (with DFS-coloring fix) + `assert_concept_tier` are on main in `libprovekit::core::walks`. The two helpers are ready for consumption by the exhibit.
+- **Path B in flight as follow-up.** The runnable exhibit + integration test (single `execute_path()` call constructing a Path with seven steps lift → bind → lower → relift → rebind → lower-back → prove, six binding assertions, real lift/bind/lower/relift through registered kits) is split off as a separate follow-up issue. Path B requires architect ruling on real Python/Java toolchain in cargo test (assertion 4 demands real plugin invocation; existing precedent stubs target output). Open question: real-toolchain-in-cargo-test acceptable + slow-test lane shape + minimum fidelity for the federation check.
+- **The six binding assertions, when Path B lands:**
   1. Source-CID equality at cycle close (`terminal_source.cid() == original_source.cid()`).
   2. Hub-tier check on forward leg (`assert_concept_tier(&post_bind_term, &catalog).is_ok()`).
   3. Hub-tier check on relift leg (`assert_concept_tier(&post_rebind_term, &catalog).is_ok()`).
@@ -98,11 +100,13 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 ## Status snapshot (2026-05-16, post-A1 merge)
 
-**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061), A5 exhibit transport policy (#1060 / PR #1062), A6 Catalog::contains (#1056 / PR #1063), A1 PathExecutionChain (#1058 / PR #1064), A3 BindKit op-tree + concept:bind-result mint (#1057 / PR #1065), **A2 ProveKit chain-integrity (#1059 / PR #1066)**.
+**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061), A5 exhibit transport policy (#1060 / PR #1062), A6 Catalog::contains (#1056 / PR #1063), A1 PathExecutionChain (#1058 / PR #1064), A3 BindKit op-tree + concept:bind-result mint (#1057 / PR #1065), A2 ProveKit chain-integrity (#1059 / PR #1066), **#1024 Path A: core::walks module + DFS-coloring fix + assert_concept_tier helper (PR #1067 / SHA 3218f42c)**.
 
-**All six #1024 prereqs are now on main.** Trinity exhibit dispatch unblocked.
+**All six prereqs plus the substrate half of #1024 (Path A) are on main.** Only the runnable exhibit (Path B) remains.
 
-**Filed, in flight:** #1024 Trinity exhibit (Opus agent dispatched, worktree pk-1024-trinity-opus-v2 off 9ecd9730).
+**Two-attempt orientation surfaced:** the dispatched Opus agent twice correctly refused to compose the exhibit without architect rulings. First refusal surfaced the 6-vs-7-step algebra ambiguity (resolved: 7 steps, `[lift, bind, lower, relift, rebind, lower-back, prove]`) and the verbs.rs-vs-walks namespace question (resolved: new `core::walks` module). Second refusal surfaced a real algorithm bug in A2's `walk_premises_to_root` (single-HashSet collapses three outcomes to `CycleDetected`) which Path A corrects, AND a substantive architect question about real Python/Java toolchain in cargo tests (Path B blocker).
+
+**Filed, blocked on architect ruling:** #1024 Path B (the runnable exhibit + integration test). Open question: real Python/Java toolchain in cargo test acceptable? Slow-test lane shape? Minimum fidelity for assertion 4 (federation check)?
 
 **Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
 
