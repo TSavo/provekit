@@ -93,6 +93,12 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         term_shape=params.get("term_shape")
         if isinstance(params.get("term_shape"), dict)
         else None,
+        operand_bindings=params.get("operand_bindings")
+        if isinstance(params.get("operand_bindings"), list)
+        else None,
+        source_function_name=params.get("source_function_name")
+        if isinstance(params.get("source_function_name"), str)
+        else None,
         annotate=_annotation_enabled(params),
     )
 

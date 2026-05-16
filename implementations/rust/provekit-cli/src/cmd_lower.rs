@@ -24,7 +24,7 @@ use provekit_proof_envelope::{
 };
 
 use crate::cmd_bind::NamedTermDocument;
-use crate::kit_dispatch::DispatchRealizeTransport;
+use crate::kit_dispatch::{dispatch_lower_witness, DispatchRealizeTransport};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 const DEFAULT_WITNESS_PRODUCED_AT: &str = "2026-05-08T00:00:00Z";
@@ -383,38 +383,8 @@ fn lower_witness_requirement_for_surface(
     _quiet: bool,
 ) -> Result<LowerProof, LowerFailure> {
     let plan = build_realizer_plan(requirement).map_err(LowerFailure::message)?;
-    let mut inputs = HashMapInputCatalog::default();
-    let input_cid = inputs.insert(Input::Spec(plan.clone()));
-    let kit_name = format!("lower-{surface}");
-    let path = Input::Path(Box::new(CorePath {
-        algebra: vec![PathAlgebra {
-            name: "lower".to_string(),
-            kit: kit_name.clone(),
-            inputs: vec![input_cid],
-            depends_on: vec![],
-            verb: Default::default(),
-        }],
-    }));
-    let mut registry = KitRegistry::default();
-    registry.register(
-        kit_name,
-        LowerKit::new(
-            project_root.to_path_buf(),
-            surface.to_string(),
-            None,
-            DispatchRealizeTransport,
-        ),
-        ConformanceDeclaration::Carrier {
-            fixtures_path: project_root
-                .join(format!("implementations/{surface}/conformance/fixtures")),
-        },
-    );
-    let chain = execute_path(&path, &registry, &inputs)
-        .map_err(|error| LowerFailure::message(error.to_string()))?;
     let lower_result =
-        LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
-            .and_then(|realized| serde_json::to_value(realized).map_err(|error| error.to_string()))
-            .map_err(LowerFailure::message)?;
+        dispatch_lower_witness(project_root, surface, &plan).map_err(LowerFailure::message)?;
     mint_witness_proof(project_root, surface, &plan, &lower_result, out_dir)
         .map_err(|message| LowerFailure::rejected(message, lower_result))
 }

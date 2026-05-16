@@ -131,6 +131,49 @@ def _transported_op_payload() -> dict:
     }
 
 
+def _shape(concept_name: str, args: list[dict] | None = None) -> dict:
+    return {"concept_name": concept_name, "args": args or []}
+
+
+def _safe_divide_then_double_shape() -> dict:
+    return _shape(
+        "concept:conditional",
+        [
+            _shape("concept:eq", [{}, {}]),
+            _shape("concept:neg", [{}]),
+            _shape(
+                "concept:seq",
+                [
+                    _shape("concept:div", [{}, {}]),
+                    _shape(
+                        "concept:conditional",
+                        [
+                            _shape("concept:lt", [{}, {}]),
+                            _shape("concept:neg", [{}]),
+                            _shape("concept:mul", [{}, {}]),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def _safe_divide_then_double_bindings() -> list[dict]:
+    return [
+        {"position": [0, 0], "symbol": "denom"},
+        {"position": [0, 1], "symbol": "0"},
+        {"position": [1, 0], "symbol": "1"},
+        {"position": [2, 0, 0], "symbol": "num"},
+        {"position": [2, 0, 1], "symbol": "denom"},
+        {"position": [2, 1, 0, 0], "symbol": "q"},
+        {"position": [2, 1, 0, 1], "symbol": "0"},
+        {"position": [2, 1, 1, 0], "symbol": "1"},
+        {"position": [2, 1, 2, 0], "symbol": "q"},
+        {"position": [2, 1, 2, 1], "symbol": "2"},
+    ]
+
+
 def test_identity_renders_python_function_from_body_template() -> None:
     result = emit_stub(
         function="wrap_identity",
@@ -483,6 +526,129 @@ def test_a10_operator_body_templates_render_valid_python_and_execute() -> None:
         assert result["source"] == f"def {function}({', '.join(params)}):\n    {body}\n"
         namespace = _compiled_namespace(result["source"])
         assert namespace[function](*args) == expected
+
+
+def test_term_shape_sidecar_renders_safe_divide_then_double_source_symbols() -> None:
+    result = emit_stub(
+        function="",
+        params=["num", "denom"],
+        param_types=["int", "int"],
+        return_type="int",
+        concept_name="result-bind",
+        term_shape=_safe_divide_then_double_shape(),
+        operand_bindings=_safe_divide_then_double_bindings(),
+        source_function_name="safe_divide_then_double",
+    )
+
+    source = result["source"]
+    assert source.startswith("def safe_divide_then_double(num, denom):\n")
+    assert "if (denom) == (0):" in source
+    assert "q = (num) // (denom)" in source
+    assert "if (q) < (0):" in source
+    assert "return (q) * (2)" in source
+    namespace = _compiled_namespace(source)
+    fn = namespace["safe_divide_then_double"]
+    assert fn(8, 2) == 8
+    assert fn(8, 0) == -1
+    assert fn(-5, 2) == -1
+
+
+def test_term_shape_operand_bindings_discriminate_symbol_order() -> None:
+    shape = _shape("concept:div", [{}, {}])
+    left = emit_stub(
+        function="divide_left",
+        params=["num", "denom"],
+        param_types=["int", "int"],
+        return_type="int",
+        concept_name="concept:div",
+        term_shape=shape,
+        operand_bindings=[
+            {"position": [0], "symbol": "num"},
+            {"position": [1], "symbol": "denom"},
+        ],
+    )["source"]
+    right = emit_stub(
+        function="divide_right",
+        params=["num", "denom"],
+        param_types=["int", "int"],
+        return_type="int",
+        concept_name="concept:div",
+        term_shape=shape,
+        operand_bindings=[
+            {"position": [0], "symbol": "denom"},
+            {"position": [1], "symbol": "num"},
+        ],
+    )["source"]
+
+    assert "return (num) // (denom)" in left
+    assert "return (denom) // (num)" in right
+    assert left != right
+
+
+def test_term_shape_operand_bindings_resolve_nested_positions() -> None:
+    result = emit_stub(
+        function="nested",
+        params=["a", "b", "c"],
+        param_types=["int", "int", "int"],
+        return_type="int",
+        concept_name="concept:add",
+        term_shape=_shape(
+            "concept:add",
+            [_shape("concept:mul", [{}, {}]), {}],
+        ),
+        operand_bindings=[
+            {"position": [0, 0], "symbol": "a"},
+            {"position": [0, 1], "symbol": "b"},
+            {"position": [1], "symbol": "c"},
+        ],
+    )
+
+    assert result["source"] == (
+        "def nested(a, b, c):\n"
+        "    return ((a) * (b)) + (c)\n"
+    )
+
+
+def test_term_shape_operand_binding_gate_refuses_missing_and_extra_positions() -> None:
+    shape = _shape("concept:add", [{}, {}])
+
+    try:
+        emit_stub(
+            function="missing",
+            params=["x", "y"],
+            param_types=["int", "int"],
+            return_type="int",
+            concept_name="concept:add",
+            term_shape=shape,
+            operand_bindings=[{"position": [0], "symbol": "x"}],
+        )
+    except realizer.OperandBindingMisalignmentError as exc:
+        assert exc.missing_positions == [[1]]
+        assert exc.extra_positions == []
+        assert "missing_positions=[[1]]" in str(exc)
+    else:
+        raise AssertionError("missing operand binding should refuse")
+
+    try:
+        emit_stub(
+            function="extra",
+            params=["x", "y"],
+            param_types=["int", "int"],
+            return_type="int",
+            concept_name="concept:add",
+            term_shape=shape,
+            operand_bindings=[
+                {"position": [0], "symbol": "x"},
+                {"position": [1], "symbol": "y"},
+                {"position": [2], "symbol": "z"},
+            ],
+        )
+    except realizer.OperandBindingMisalignmentError as exc:
+        assert exc.missing_positions == []
+        assert exc.extra_positions == [[2]]
+        assert "extra_positions=[[2]]" in str(exc)
+    else:
+        raise AssertionError("extra operand binding should refuse")
 
 
 def test_a10_operator_templates_discriminate_distinct_ops() -> None:

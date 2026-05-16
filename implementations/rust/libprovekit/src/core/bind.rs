@@ -59,6 +59,8 @@ impl BindKit {
             ));
         };
         let term_json = term_json_from_term(term)?;
+        let realize_sidecar_hint = realize_sidecar_hint(term_json)?;
+        let hashed_term = strip_realize_sidecar_from_lift_term(term.clone());
         let named = bind_term_document(term_json, &self.options)?;
         let named_cid = named_term_document_cid(&named)?;
         let payload = bind_result_payload(term.clone(), &named)?;
@@ -66,13 +68,14 @@ impl BindKit {
             BindError::Failed(format!("serialize bind result payload: {error}"))
         })?;
         let payload_cid = address(&payload);
-        let contract = bind_response_contract(&payload_value, &payload_cid);
+        let mut contract = bind_response_contract(&payload_value, &payload_cid);
+        contract.concept_hint = realize_sidecar_hint;
 
         Ok(DomainClaim {
             domain: DomainKind::Other("bind".to_string()),
             contract,
             artifacts: vec![named_cid.clone()],
-            from: vec![address(term)],
+            from: vec![address(&hashed_term)],
             premises: vec![],
             to: payload_cid,
             witness: None,
@@ -148,6 +151,10 @@ pub struct BindLiftEntry {
     pub param_types: Vec<String>,
     #[serde(default)]
     pub return_type: String,
+    #[serde(default)]
+    pub operand_bindings: Vec<Json>,
+    #[serde(default)]
+    pub source_function_name: Option<String>,
     #[serde(default)]
     pub term_shape: Json,
     #[serde(default)]
@@ -337,6 +344,7 @@ pub fn bind_result_payload(
 ) -> Result<Term, BindError> {
     let catalog = ConceptOpCatalog::load()?;
     let canonical_named = bind_payload_named_term_document(named);
+    let original_term = strip_realize_sidecar_from_lift_term(original_term);
     let named_form_binding = named_term_document_op_tree(&canonical_named, &catalog)?;
     Ok(Term::Op {
         op_cid: concept_bind_result_cid(),
@@ -381,6 +389,23 @@ fn strip_bind_payload_source_function_from_value(value: &mut Json) {
         }
         _ => {}
     }
+}
+
+fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
+    let Term::Const { mut value, sort } = term else {
+        return term;
+    };
+    if let Some(entries) = value.get_mut("ir").and_then(Json::as_array_mut) {
+        for entry in entries {
+            if let Some(object) = entry.as_object_mut() {
+                object.remove("operand_bindings");
+                object.remove("operandBindings");
+                object.remove("source_function_name");
+                object.remove("sourceFunctionName");
+            }
+        }
+    }
+    Term::Const { value, sort }
 }
 
 pub fn named_term_document_from_bind_payload(
@@ -459,6 +484,31 @@ fn bind_lift_entries(term_json: &Json) -> Result<Vec<BindLiftEntry>, BindError> 
         out.push(entry);
     }
     Ok(out)
+}
+
+fn realize_sidecar_hint(term_json: &Json) -> Result<Option<String>, BindError> {
+    let entries = bind_lift_entries(term_json)?;
+    let mut sidecar_terms = Vec::new();
+    for entry in entries {
+        if entry.operand_bindings.is_empty() && entry.source_function_name.is_none() {
+            continue;
+        }
+        sidecar_terms.push(json!({
+            "function": entry.fn_name,
+            "operand_bindings": entry.operand_bindings,
+            "source_function_name": entry.source_function_name,
+        }));
+    }
+    if sidecar_terms.is_empty() {
+        return Ok(None);
+    }
+    let sidecar = json!({
+        "kind": "provekit-realize-sidecar",
+        "terms": sidecar_terms,
+    });
+    serde_json::to_string(&sidecar)
+        .map(|text| Some(format!("provekit-realize-sidecar:{text}")))
+        .map_err(|error| BindError::Failed(format!("serialize realize sidecar: {error}")))
 }
 
 fn source_language(term_json: &Json, options: &BindOptions) -> String {
@@ -1346,6 +1396,56 @@ mod tests {
         assert_eq!(named.terms[0].concept_name, "concept:demo");
         assert!(named.terms[0].function.is_empty());
         assert_eq!(named.promotion_decision_mementos.len(), 1);
+    }
+
+    #[test]
+    fn bind_claim_cid_ignores_realize_sidecar_symbols() {
+        fn bind_claim(lhs: &str, rhs: &str) -> DomainClaim {
+            let term = json!({
+                "kind": "ir-document",
+                "workspaceRoot": "/tmp/demo",
+                "ir": [{
+                    "kind": "bind-lift-entry",
+                    "file": "src/lib.rs",
+                    "fn_name": "add",
+                    "concept_annotation": "add",
+                    "param_names": ["x", "y"],
+                    "param_types": ["i64", "i64"],
+                    "return_type": "i64",
+                    "term_shape": {
+                        "kind": "op",
+                        "name": "add",
+                        "args": [
+                            {"kind": "var", "name": "left"},
+                            {"kind": "var", "name": "right"}
+                        ]
+                    },
+                    "operand_bindings": [
+                        {"position": [0], "symbol": lhs},
+                        {"position": [1], "symbol": rhs}
+                    ],
+                    "source_function_name": "add"
+                }]
+            });
+            let input = Input::Term(Term::Const {
+                value: term,
+                sort: provekit_ir_types::Sort::Primitive {
+                    name: "json".to_string(),
+                },
+            });
+            BindKit::new(BindOptions {
+                lang: "rust".to_string(),
+            })
+            .bind_term_from_input(&input)
+            .expect("bind succeeds")
+        }
+
+        let xy = bind_claim("x", "y");
+        let yx = bind_claim("y", "x");
+
+        assert_ne!(xy.contract.concept_hint, yx.contract.concept_hint);
+        assert_eq!(xy.to, yx.to, "bind-result payload CID must ignore sidecar");
+        assert_eq!(xy.cid(), yx.cid(), "bind claim CID must ignore sidecar");
     }
 
     #[test]
