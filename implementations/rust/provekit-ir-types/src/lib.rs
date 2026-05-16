@@ -1040,22 +1040,29 @@ pub struct WitnessRef {
 ///
 /// Per the spec §2 trichotomy and §1.2 verdict-consistency table.
 /// Silent contract-dropping is NOT in the substrate's vocabulary.
+///
+/// This type is the serde wire shape only. Verdict-consistency invariants
+/// are enforced by producers and validators, not by this struct.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Discharge {
     /// The discharge method: "wp" | "witness" | "wp+witness".
     pub method: String,
-    /// Required iff verdict == "refuse"; OMITTED otherwise.
+    /// Optional refusal reason. Serialized when `Some`; omitted when `None`.
+    /// The spec requires producers and validators to use this for `refuse`.
     #[serde(rename = "refusal_reason")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refusal_reason: Option<String>,
     /// "exact" | "loudly-bounded-lossy" | "refuse".
     pub verdict: String,
-    /// CID of a MorphismDischargeReceipt. OMITTED iff verdict == "refuse".
+    /// Optional CID of a MorphismDischargeReceipt. Serialized when `Some`;
+    /// omitted when `None`. The spec requires producers and validators to omit
+    /// this for `refuse`.
     #[serde(rename = "discharge_receipt_cid")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discharge_receipt_cid: Option<String>,
-    /// Per the 2026-05-15 §2.4 five-dimension loss-record. An empty map
-    /// is valid (means "no loss in any dimension"; required for `exact`).
+    /// Per the 2026-05-15 §2.4 five-dimension loss-record. This field is
+    /// always present in the wire struct. An empty map means "no loss in any
+    /// dimension"; the spec requires that shape for `exact`.
     #[serde(rename = "loss_record")]
     pub loss_record: LossRecord,
 }
@@ -2946,6 +2953,306 @@ impl From<NamespacedExtensionPolicyMemento> for NamespacedExtensionPolicyMemento
             extension_fields: memento.extension_fields,
         }
     }
+}
+
+// ============================================================
+// Manual extension: PolicyProfileMemento family (issue #929)
+// Source of truth:
+//   protocol/specs/2026-05-14-policy-profile-memento.md §1
+//
+// A policy profile is not another gate predicate. It is the
+// content-addressed bundle that chooses which concrete policy CID applies
+// to each decision lane in a run: witness consensus, sugar selection, and
+// emission gating. Emission decisions are required to be witnessed so the
+// profile cannot hide a runtime wrapper choice behind local defaults.
+// ============================================================
+
+/// Per-profile decision lane. Canonical lanes are closed over the v1
+/// profile surface; namespaced extensions are carried but must validate
+/// as `<namespace>:<kind>`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum PolicyProfileDecisionKind {
+    WitnessConsensus,
+    SugarSelection,
+    EmissionGating,
+    Other(String),
+}
+
+impl PolicyProfileDecisionKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::WitnessConsensus => "witness-consensus",
+            Self::SugarSelection => "sugar-selection",
+            Self::EmissionGating => "emission-gating",
+            Self::Other(raw) => raw,
+        }
+    }
+}
+
+impl From<String> for PolicyProfileDecisionKind {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "witness-consensus" => Self::WitnessConsensus,
+            "sugar-selection" => Self::SugarSelection,
+            "emission-gating" => Self::EmissionGating,
+            _ => Self::Other(s),
+        }
+    }
+}
+
+impl From<PolicyProfileDecisionKind> for String {
+    fn from(kind: PolicyProfileDecisionKind) -> String {
+        match kind {
+            PolicyProfileDecisionKind::WitnessConsensus => "witness-consensus".to_string(),
+            PolicyProfileDecisionKind::SugarSelection => "sugar-selection".to_string(),
+            PolicyProfileDecisionKind::EmissionGating => "emission-gating".to_string(),
+            PolicyProfileDecisionKind::Other(raw) => raw,
+        }
+    }
+}
+
+/// Threshold cited by a profile lane. The grammar is evaluated by the
+/// libprovekit registry because it is a consumer policy concern, not a
+/// serde concern.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyProfileThreshold {
+    pub axis: String,
+    pub predicate: String,
+}
+
+/// One decision lane in a policy profile.
+///
+/// Locked JCS key order: decision_kind, emission_mode, policy_cid,
+/// required, requires_witnessed_decision, thresholds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyProfileDecision {
+    #[serde(rename = "decision_kind")]
+    pub decision_kind: PolicyProfileDecisionKind,
+    #[serde(rename = "emission_mode")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emission_mode: Option<String>,
+    #[serde(rename = "policy_cid")]
+    pub policy_cid: String,
+    pub required: bool,
+    #[serde(rename = "requires_witnessed_decision")]
+    pub requires_witnessed_decision: bool,
+    pub thresholds: Vec<PolicyProfileThreshold>,
+}
+
+/// Content-addressed profile selecting concrete policies for a run.
+///
+/// Locked JCS key order: cid, decisions, kind, name, schemaVersion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyProfileMemento {
+    /// DERIVED: BLAKE3-512 over JCS(profile) with `cid` elided and
+    /// decisions sorted by `decision_kind`.
+    pub cid: String,
+    pub decisions: Vec<PolicyProfileDecision>,
+    /// MUST be "policy-profile".
+    pub kind: String,
+    pub name: String,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+}
+
+impl PolicyProfileMemento {
+    pub fn recompute_cid(&self) -> Result<String, PromotionDecisionCanonicalizationError> {
+        let mut profile = serde_json::to_value(self)?;
+        let serde_json::Value::Object(ref mut object) = profile else {
+            return Err(PromotionDecisionCanonicalizationError::new(
+                "policy profile did not serialize as an object",
+            ));
+        };
+
+        object.remove("cid");
+        if let Some(serde_json::Value::Array(decisions)) = object.get_mut("decisions") {
+            decisions.sort_by(|left, right| {
+                left.get("decision_kind")
+                    .and_then(serde_json::Value::as_str)
+                    .cmp(
+                        &right
+                            .get("decision_kind")
+                            .and_then(serde_json::Value::as_str),
+                    )
+            });
+        }
+
+        let canonical = serde_json_to_canonical_value(&profile)?;
+        let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+
+    pub fn validate(&self) -> Result<(), PolicyProfileValidationError> {
+        if self.kind != "policy-profile" {
+            return Err(PolicyProfileValidationError::InvalidKind {
+                kind: self.kind.clone(),
+            });
+        }
+        if self.schema_version != "1" {
+            return Err(PolicyProfileValidationError::InvalidSchemaVersion {
+                schema_version: self.schema_version.clone(),
+            });
+        }
+        if self.name.is_empty() {
+            return Err(PolicyProfileValidationError::EmptyName);
+        }
+        if self.decisions.is_empty() {
+            return Err(PolicyProfileValidationError::EmptyDecisions);
+        }
+
+        let actual = self
+            .recompute_cid()
+            .map_err(|err| PolicyProfileValidationError::Canonicalization(err.to_string()))?;
+        if actual != self.cid {
+            return Err(PolicyProfileValidationError::CidMismatch {
+                claimed: self.cid.clone(),
+                actual,
+            });
+        }
+
+        let mut seen = std::collections::BTreeSet::new();
+        for decision in &self.decisions {
+            let kind = decision.decision_kind.as_str();
+            if matches!(decision.decision_kind, PolicyProfileDecisionKind::Other(_))
+                && !is_namespaced_policy_kind(kind)
+            {
+                return Err(PolicyProfileValidationError::InvalidDecisionKind {
+                    decision_kind: kind.to_string(),
+                });
+            }
+            if !seen.insert(kind.to_string()) {
+                return Err(PolicyProfileValidationError::DuplicateDecisionKind {
+                    decision_kind: kind.to_string(),
+                });
+            }
+            if decision.thresholds.is_empty() {
+                return Err(PolicyProfileValidationError::EmptyThresholds {
+                    decision_kind: kind.to_string(),
+                });
+            }
+            if !is_blake3_512_cid(&decision.policy_cid) {
+                return Err(PolicyProfileValidationError::InvalidPolicyCid {
+                    decision_kind: kind.to_string(),
+                    policy_cid: decision.policy_cid.clone(),
+                });
+            }
+            if decision.decision_kind == PolicyProfileDecisionKind::EmissionGating
+                && !decision.requires_witnessed_decision
+            {
+                return Err(PolicyProfileValidationError::UnwitnessedEmissionDecision);
+            }
+        }
+
+        for required in [
+            PolicyProfileDecisionKind::WitnessConsensus,
+            PolicyProfileDecisionKind::SugarSelection,
+            PolicyProfileDecisionKind::EmissionGating,
+        ] {
+            if !seen.contains(required.as_str()) {
+                return Err(PolicyProfileValidationError::MissingDecisionKind {
+                    decision_kind: required.as_str().to_string(),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyProfileValidationError {
+    InvalidKind {
+        kind: String,
+    },
+    InvalidSchemaVersion {
+        schema_version: String,
+    },
+    EmptyName,
+    EmptyDecisions,
+    CidMismatch {
+        claimed: String,
+        actual: String,
+    },
+    Canonicalization(String),
+    InvalidDecisionKind {
+        decision_kind: String,
+    },
+    DuplicateDecisionKind {
+        decision_kind: String,
+    },
+    MissingDecisionKind {
+        decision_kind: String,
+    },
+    EmptyThresholds {
+        decision_kind: String,
+    },
+    InvalidPolicyCid {
+        decision_kind: String,
+        policy_cid: String,
+    },
+    UnwitnessedEmissionDecision,
+}
+
+impl std::fmt::Display for PolicyProfileValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidKind { kind } => {
+                write!(f, "PolicyProfileMemento: invalid kind `{kind}`")
+            }
+            Self::InvalidSchemaVersion { schema_version } => write!(
+                f,
+                "PolicyProfileMemento: invalid schemaVersion `{schema_version}`"
+            ),
+            Self::EmptyName => f.write_str("PolicyProfileMemento: name must be non-empty"),
+            Self::EmptyDecisions => {
+                f.write_str("PolicyProfileMemento: decisions must be non-empty")
+            }
+            Self::CidMismatch { claimed, actual } => write!(
+                f,
+                "PolicyProfileMemento: cid mismatch: claimed {claimed}, recomputed {actual}"
+            ),
+            Self::Canonicalization(message) => {
+                write!(f, "PolicyProfileMemento: canonicalization failed: {message}")
+            }
+            Self::InvalidDecisionKind { decision_kind } => write!(
+                f,
+                "PolicyProfileMemento: invalid decision_kind `{decision_kind}`"
+            ),
+            Self::DuplicateDecisionKind { decision_kind } => write!(
+                f,
+                "PolicyProfileMemento: duplicate decision_kind `{decision_kind}`"
+            ),
+            Self::MissingDecisionKind { decision_kind } => write!(
+                f,
+                "PolicyProfileMemento: missing decision_kind `{decision_kind}`"
+            ),
+            Self::EmptyThresholds { decision_kind } => write!(
+                f,
+                "PolicyProfileMemento: decision_kind `{decision_kind}` has no thresholds"
+            ),
+            Self::InvalidPolicyCid {
+                decision_kind,
+                policy_cid,
+            } => write!(
+                f,
+                "PolicyProfileMemento: decision_kind `{decision_kind}` has invalid policy_cid `{policy_cid}`"
+            ),
+            Self::UnwitnessedEmissionDecision => f.write_str(
+                "PolicyProfileMemento: emission-gating decisions must require witnessed emission decisions",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for PolicyProfileValidationError {}
+
+fn is_blake3_512_cid(s: &str) -> bool {
+    let Some(hex) = s.strip_prefix("blake3-512:") else {
+        return false;
+    };
+    hex.len() == 128 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 // ============================================================

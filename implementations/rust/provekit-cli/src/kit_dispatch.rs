@@ -101,6 +101,7 @@ pub struct BindContractWitness {
 /// Result of `dispatch_bind_lift`. Carries the lift entries plus any
 /// diagnostics the kit emitted (`ir-document.diagnostics[]`).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BindLiftResult {
     pub entries: Vec<BindLiftEntry>,
     pub diagnostics: Vec<Value>,
@@ -195,7 +196,7 @@ fn resolve_lift_command(
     }
 
     // 4: built-in convention for known kits. These resolve relative to the
-    // workspace root and are not language knowledge in cmd_bind — they're
+    // workspace root and are not language knowledge in cmd_bind; they are
     // the byte-stable substrate convention "per-language kit lives under
     // implementations/<lang>/". The dispatcher consults the FILESYSTEM, not
     // a hard-coded language list.
@@ -528,6 +529,8 @@ pub struct RealizeRequest {
     pub return_type: String,
     pub concept_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub named_term_tree: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub modes: Vec<String>,
@@ -542,6 +545,7 @@ pub struct RealizeRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct RealizeContractPayload {
     pub concept_site_cid: String,
+    pub object_fcm_cid: String,
     pub local_contract_cid: String,
     pub origin: String,
     pub discharge_verdict: String,
@@ -1037,8 +1041,9 @@ fn extension_from_convention(lang: &str) -> String {
 /// Probe the workspace for any source language a registered lift kit can
 /// handle. Returns the first kit whose manifest resolves successfully.
 /// This is a FILESYSTEM probe, not a hard-coded extension list.
+#[allow(dead_code)]
 pub fn detect_lift_language(workspace_root: &Path) -> Option<String> {
-    // 1. Scan .provekit/lift/*/manifest.toml — the operator's declared kits.
+    // 1. Scan .provekit/lift/*/manifest.toml, the operator's declared kits.
     let lift_dir = workspace_root.join(".provekit").join("lift");
     if let Ok(entries) = std::fs::read_dir(&lift_dir) {
         for entry in entries.flatten() {
@@ -1091,10 +1096,12 @@ mod tests {
             param_types: vec!["String".to_string()],
             return_type: "String".to_string(),
             concept_name: "concept:lookup".to_string(),
+            named_term_tree: None,
             mode: Some("monitor".to_string()),
             modes: vec!["monitor".to_string(), "witness".to_string()],
             contract: Some(RealizeContractPayload {
                 concept_site_cid: "blake3-512:site".to_string(),
+                object_fcm_cid: "blake3-512:object".to_string(),
                 local_contract_cid: "blake3-512:compound".to_string(),
                 origin: "evidence-lift[type-signature]".to_string(),
                 discharge_verdict: "exact".to_string(),
@@ -1134,6 +1141,41 @@ mod tests {
         );
         assert_eq!(params["sugar_plugins"][0]["header"]["kind"], "sugar");
         assert_eq!(params["sugar_cids"][0], "blake3-512:sugar");
+    }
+
+    #[test]
+    fn realize_request_params_include_named_term_tree() {
+        let request = RealizeRequest {
+            function: "compose_tree".to_string(),
+            params: vec!["value".to_string()],
+            param_types: vec!["int".to_string()],
+            return_type: "int".to_string(),
+            concept_name: "UNNAMED-CONCEPT-1".to_string(),
+            named_term_tree: Some(json!({
+                "conceptName": "concept:seq",
+                "operationKind": "seq",
+                "shapeCid": "blake3-512:seq",
+                "args": [{
+                    "conceptName": "concept:return",
+                    "operationKind": "return",
+                    "shapeCid": "blake3-512:return",
+                    "args": []
+                }]
+            })),
+            mode: None,
+            modes: Vec::new(),
+            contract: None,
+            sugar_cids: Vec::new(),
+            sugar_plugins: Vec::new(),
+        };
+
+        let params = realize_request_params(&request);
+
+        assert_eq!(params["named_term_tree"]["conceptName"], "concept:seq");
+        assert_eq!(
+            params["named_term_tree"]["args"][0]["conceptName"],
+            "concept:return"
+        );
     }
 
     #[test]

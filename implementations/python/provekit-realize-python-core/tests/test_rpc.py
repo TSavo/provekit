@@ -38,6 +38,137 @@ def test_plugin_invoke_returns_source_and_stub_flag() -> None:
     }
 
 
+def test_plugin_invoke_returns_structured_missing_template_error() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "unknown_call",
+                "params": ["x"],
+                "param_types": ["int"],
+                "return_type": "int",
+                "concept_name": "return(call:Widget::build(x))",
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "error": {
+            "code": -32100,
+            "message": "missing body-template entry",
+            "data": [
+                {
+                    "operation_kind": "call:Widget::build",
+                    "args_shape": ["int"],
+                    "function": "unknown_call",
+                    "term_position": "body.return.call:Widget::build",
+                }
+            ],
+        },
+    }
+
+
+def test_plugin_invoke_threads_named_term_tree() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "compose_tree",
+                "params": ["value"],
+                "param_types": ["int"],
+                "return_type": "int",
+                "concept_name": "UNNAMED-CONCEPT-1",
+                "named_term_tree": {
+                    "conceptName": "concept:seq",
+                    "operationKind": "seq",
+                    "shapeCid": "blake3-512:seq",
+                    "args": [
+                        {
+                            "conceptName": "identity",
+                            "operationKind": "call",
+                            "shapeCid": "blake3-512:call",
+                            "args": [],
+                        },
+                        {
+                            "conceptName": "concept:return",
+                            "operationKind": "return",
+                            "shapeCid": "blake3-512:return",
+                            "args": [],
+                        },
+                    ],
+                },
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "result": {
+            "source": "def compose_tree(value):\n    return value\n    return value\n",
+            "is_stub": False,
+            "extension": "py",
+        },
+    }
+
+
+def test_emit_module_returns_all_missing_template_errors() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "provekit.plugin.emit_module",
+            "params": {
+                "functions": [
+                    {
+                        "function": "first",
+                        "params": ["x"],
+                        "param_types": ["int"],
+                        "return_type": "int",
+                        "concept_name": "return(call:Widget::build(x))",
+                    },
+                    {
+                        "function": "second",
+                        "params": ["y"],
+                        "param_types": ["str"],
+                        "return_type": "str",
+                        "concept_name": "missing-concept",
+                    },
+                ]
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "error": {
+            "code": -32100,
+            "message": "missing body-template entry",
+            "data": [
+                {
+                    "operation_kind": "call:Widget::build",
+                    "args_shape": ["int"],
+                    "function": "first",
+                    "term_position": "body.return.call:Widget::build",
+                },
+                {
+                    "operation_kind": "missing-concept",
+                    "args_shape": ["str"],
+                    "function": "second",
+                    "term_position": "body",
+                },
+            ],
+        },
+    }
+
+
 def test_plugin_shutdown_returns_null() -> None:
     response = dispatch(
         {

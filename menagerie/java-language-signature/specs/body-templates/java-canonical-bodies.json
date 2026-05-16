@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:f8bd005fdfdd22864e463e8daa20873eb4a093e34260ebaf2c89333295be968204206a18208c476910058032166a24474f93adb697cbb4a7cd98ef96f09e301b",
+    "cid": "blake3-512:265b192f573819b1814000f22efb1172e51ff83e0d127acdc0d31fb8dfce725e0aafe58b4f7b0f45469b969c4a561541e8d50e585fedd8056eefdd3e9cf5b7ff",
     "content": {
       "entries": [
         {
@@ -62,6 +62,103 @@
             }
           },
           "mode": "witness",
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          }
+        },
+        {
+          "composition_point": "after-return",
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "citations": [
+              {
+                "concept_name": "concept:log-emit",
+                "mode": "emitter",
+                "params": [
+                  "info",
+                  "\"observed \" + ${param0} + \" contract \" + ${param1}",
+                  "${param1}"
+                ],
+                "placeholder": "log_emit"
+              }
+            ],
+            "kind": "verbatim",
+            "template": "${log_emit}\nreturn null;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "runtime_dependency": {
+                "args": [],
+                "head": "atomic",
+                "name": "requires-java-util-logging-runtime"
+              }
+            }
+          },
+          "mode": "monitor",
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          }
+        },
+        {
+          "composition_point": "after-return",
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "citations": [
+              {
+                "concept_name": "concept:log-emit",
+                "mode": "emitter",
+                "params": [
+                  "info",
+                  "\"observed \" + ${param0} + \" contract \" + ${param1}",
+                  "${param1}"
+                ],
+                "placeholder": "log_emit"
+              }
+            ],
+            "kind": "verbatim",
+            "template": "${log_emit}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "runtime_dependency": {
+                "args": [],
+                "head": "atomic",
+                "name": "requires-java-util-logging-runtime"
+              }
+            }
+          },
+          "mode": "emitter",
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:log-emit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "java.util.logging.Logger.getLogger(\"provekit\").log(java.util.logging.Level.${param0_jul_level}, ${param1});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "level-semantics": {
+                "args": [],
+                "head": "atomic",
+                "name": "java-util-logging-level-taxonomy"
+              },
+              "structured-vs-formatted": {
+                "args": [],
+                "head": "atomic",
+                "name": "java-util-logging-formats-structured-fields"
+              }
+            }
+          },
+          "mode": "emitter",
           "signature_guard": {
             "max_params": 3,
             "min_params": 3

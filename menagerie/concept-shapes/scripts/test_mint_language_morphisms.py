@@ -239,5 +239,51 @@ class WpRuleGateTests(CanonicalCidPatchMixin, unittest.TestCase):
             self.fail(f"try_structural_subsumption raised unexpectedly: {exc}")
 
 
+class AddOverflowModeShapeTests(unittest.TestCase):
+    def _add_op_def(self):
+        return next(op_def for op_def in m.OPS if op_def["slug"] == "add")
+
+    def test_concept_add_has_arithmetic_overflow_mode_slot(self):
+        spec = m.concept_spec_from_base(self._add_op_def())
+
+        self.assertEqual(spec["fn_name"], "concept:add")
+        self.assertEqual(spec["formals"], ["lhs", "rhs", "mode"])
+        self.assertEqual(
+            [sort["name"] for sort in spec["formal_sorts"]],
+            ["Int", "Int", "ArithmeticOverflowMode"],
+        )
+        self.assertEqual(spec["post"]["arity"], ["Int", "Int", "ArithmeticOverflowMode"])
+        self.assertIn({"name": "mode"}, spec["post"]["arity_shape"]["slots"])
+        self.assertEqual(
+            [term["name"] for term in spec["post"]["slot_terms"]],
+            ["lhs", "rhs", "mode"],
+        )
+
+    def test_concept_add_declares_per_mode_semantics(self):
+        spec = m.concept_spec_from_base(self._add_op_def())
+        modes = {row["mode"]: row for row in spec["arithmetic_overflow_modes"]}
+
+        self.assertEqual(set(modes), {"Checked", "Wrapping", "Saturating"})
+        self.assertEqual([effect["name"] for effect in modes["Checked"]["effects"]], ["Throw"])
+        self.assertEqual(modes["Wrapping"]["effects"], [])
+        self.assertEqual(modes["Saturating"]["effects"], [])
+        self.assertIn("arithmetic-overflow", spec["loss_dimensions"])
+        self.assertIn("mode=Checked", spec["post"]["wp_note"])
+        self.assertIn("mode=Wrapping", spec["post"]["wp_note"])
+        self.assertIn("mode=Saturating", spec["post"]["wp_note"])
+
+    def test_language_add_transformation_carries_bound_overflow_mode(self):
+        op_def = self._add_op_def()
+        language = m.LANG_BY_ID["java"]
+        source_spec = m.read_json(m.specs_dir("java") / "op_add.spec.json")
+
+        after_spec, _operator_map = m.transformed_source_spec(op_def, source_spec, language)
+        binding = m.mode_bindings_for(op_def, language)
+
+        self.assertEqual(after_spec["formals"], ["lhs", "rhs", "mode"])
+        self.assertEqual(after_spec["formal_sorts"][-1]["name"], "ArithmeticOverflowMode")
+        self.assertEqual(binding["mode"]["name"], "Wrapping")
+
+
 if __name__ == "__main__":
     unittest.main()

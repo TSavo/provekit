@@ -1,0 +1,229 @@
+{
+  "admissions": 6,
+  "candidates": [
+    {
+      "candidate": "UNNAMED-CONCEPT-d",
+      "candidate_file": "UNNAMED-CONCEPT-d",
+      "decision_path": "bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-d.proof",
+      "exit_code": 0,
+      "fixture_cid": "blake3-512:00d460003c5c6e7f7eaaad33bc518420e4e615e5d2c670f38577df9921711ab98102e8f25b2a8bcd5e948551e4d5df6abbb9bba4711474a4cc32e0450b3f919a",
+      "mapped_site_count": 52,
+      "reported_cardinality": 67,
+      "representative_contract_cid": "blake3-512:00d460003c5c6e7f7eaaad33bc518420e4e615e5d2c670f38577df9921711ab98102e8f25b2a8bcd5e948551e4d5df6abbb9bba4711474a4cc32e0450b3f919a",
+      "requires_llm_auto_namer": true,
+      "status": "admitted",
+      "stderr_tail": [],
+      "stdout_tail": [
+        "  concept: UNNAMED-CONCEPT-d",
+        "  fixture: blake3-512:00d460003c5c6e7f7eaaad33bc518420e4e615e5d2c670f38577df9921711ab98102e8f25b2a8bcd5e948551e4d5df6abbb9bba4711474a4cc32e0450b3f919a",
+        "  witnesses: 52",
+        "  agreement: byte-equal",
+        "  receipt: bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-d.proof"
+      ],
+      "witness_count": 52
+    },
+    {
+      "candidate": "UNNAMED-CONCEPT-6",
+      "candidate_file": "UNNAMED-CONCEPT-6",
+      "decision_path": "bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-6.proof",
+      "exit_code": 0,
+      "fixture_cid": "blake3-512:0959ad8a37555b655ec2165e84824b23bd9bd647cc422544ed9923fcf9dbf71f12dff50ba0883d476d9c2ea890a8910ce6a02d71484ce4d7939bab8dd493a27d",
+      "mapped_site_count": 30,
+      "reported_cardinality": 35,
+      "representative_contract_cid": "blake3-512:0959ad8a37555b655ec2165e84824b23bd9bd647cc422544ed9923fcf9dbf71f12dff50ba0883d476d9c2ea890a8910ce6a02d71484ce4d7939bab8dd493a27d",
+      "requires_llm_auto_namer": true,
+      "status": "admitted",
+      "stderr_tail": [],
+      "stdout_tail": [
+        "  concept: UNNAMED-CONCEPT-6",
+        "  fixture: blake3-512:0959ad8a37555b655ec2165e84824b23bd9bd647cc422544ed9923fcf9dbf71f12dff50ba0883d476d9c2ea890a8910ce6a02d71484ce4d7939bab8dd493a27d",
+        "  witnesses: 30",
+        "  agreement: byte-equal",
+        "  receipt: bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-6.proof"
+      ],
+      "witness_count": 30
+    },
+    {
+      "candidate": "concept:guard-then-commit",
+      "candidate_file": "concept_guard-then-commit",
+      "decision_path": "bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/concept_guard-then-commit.proof",
+      "exit_code": 0,
+      "fixture_cid": "blake3-512:0a60d7ca71f95e9bded386b46e40535d08040f07ef16d5af96c435fe94897d0d2beaf8a33d166c3aaffc6d5f97e6e833733afd545986f19b00dc37a98c7b31a7",
+      "mapped_site_count": 29,
+      "reported_cardinality": 29,
+      "representative_contract_cid": "blake3-512:0a60d7ca71f95e9bded386b46e40535d08040f07ef16d5af96c435fe94897d0d2beaf8a33d166c3aaffc6d5f97e6e833733afd545986f19b00dc37a98c7b31a7",
+      "requires_llm_auto_namer": false,
+      "status": "admitted",
+      "stderr_tail": [],
+      "stdout_tail": [
+        "  concept: concept:guard-then-commit",
+        "  fixture: blake3-512:0a60d7ca71f95e9bded386b46e40535d08040f07ef16d5af96c435fe94897d0d2beaf8a33d166c3aaffc6d5f97e6e833733afd545986f19b00dc37a98c7b31a7",
+        "  witnesses: 29",
+        "  agreement: byte-equal",
+        "  receipt: bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/concept_guard-then-commit.proof"
+      ],
+      "witness_count": 29
+    },
+    {
+      "candidate": "concept:retry-with-bounded-attempts",
+      "candidate_file": "concept_retry-with-bounded-attempts",
+      "decision_path": "bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/concept_retry-with-bounded-attempts.proof",
+      "exit_code": 0,
+      "fixture_cid": "blake3-512:07aa5c3cb5b3af9cce079415c8d3fa9f16b1cd59a69281a08fb76ffb576ecc61ebb6e5b9d323d1f1adb84f48514f7224ba6fa0f9fffa2f78946822a0bfb89257",
+      "mapped_site_count": 21,
+      "reported_cardinality": 21,
+      "representative_contract_cid": "blake3-512:07aa5c3cb5b3af9cce079415c8d3fa9f16b1cd59a69281a08fb76ffb576ecc61ebb6e5b9d323d1f1adb84f48514f7224ba6fa0f9fffa2f78946822a0bfb89257",
+      "requires_llm_auto_namer": false,
+      "status": "admitted",
+      "stderr_tail": [],
+      "stdout_tail": [
+        "  concept: concept:retry-with-bounded-attempts",
+        "  fixture: blake3-512:07aa5c3cb5b3af9cce079415c8d3fa9f16b1cd59a69281a08fb76ffb576ecc61ebb6e5b9d323d1f1adb84f48514f7224ba6fa0f9fffa2f78946822a0bfb89257",
+        "  witnesses: 21",
+        "  agreement: byte-equal",
+        "  receipt: bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/concept_retry-with-bounded-attempts.proof"
+      ],
+      "witness_count": 21
+    },
+    {
+      "candidate": "UNNAMED-CONCEPT-1",
+      "candidate_file": "UNNAMED-CONCEPT-1",
+      "decision_path": "bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-1.proof",
+      "exit_code": 0,
+      "fixture_cid": "blake3-512:12ced17747b945335382431cab3d3d2a3a15011708a2a60fac68786b224e6459c27ebab88e7e7c1c3fc33b5e37bd09bf6beb9f065c6bbd43baf5768e893730a8",
+      "mapped_site_count": 13,
+      "reported_cardinality": 13,
+      "representative_contract_cid": "blake3-512:12ced17747b945335382431cab3d3d2a3a15011708a2a60fac68786b224e6459c27ebab88e7e7c1c3fc33b5e37bd09bf6beb9f065c6bbd43baf5768e893730a8",
+      "requires_llm_auto_namer": true,
+      "status": "admitted",
+      "stderr_tail": [],
+      "stdout_tail": [
+        "  concept: UNNAMED-CONCEPT-1",
+        "  fixture: blake3-512:12ced17747b945335382431cab3d3d2a3a15011708a2a60fac68786b224e6459c27ebab88e7e7c1c3fc33b5e37bd09bf6beb9f065c6bbd43baf5768e893730a8",
+        "  witnesses: 13",
+        "  agreement: byte-equal",
+        "  receipt: bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-1.proof"
+      ],
+      "witness_count": 13
+    },
+    {
+      "candidate": "UNNAMED-CONCEPT-78",
+      "candidate_file": "UNNAMED-CONCEPT-78",
+      "decision_path": null,
+      "exit_code": 0,
+      "fixture_cid": null,
+      "mapped_site_count": 0,
+      "reported_cardinality": 8,
+      "representative_contract_cid": null,
+      "requires_llm_auto_namer": true,
+      "status": "refused",
+      "stderr_tail": [
+        "no contract-backed sites found"
+      ],
+      "stdout_tail": [],
+      "witness_count": 0
+    },
+    {
+      "candidate": "UNNAMED-CONCEPT-85",
+      "candidate_file": "UNNAMED-CONCEPT-85",
+      "decision_path": "bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-85.proof",
+      "exit_code": 0,
+      "fixture_cid": "blake3-512:614687fe409ba22b5a15314f221c3a1cf202661c7ea05c7269486d5ff65b0a4dcfdf868dd045b08fdff607526087bd52a4916084fff30a6e8cca4d4f77825bcc",
+      "mapped_site_count": 4,
+      "reported_cardinality": 4,
+      "representative_contract_cid": "blake3-512:614687fe409ba22b5a15314f221c3a1cf202661c7ea05c7269486d5ff65b0a4dcfdf868dd045b08fdff607526087bd52a4916084fff30a6e8cca4d4f77825bcc",
+      "requires_llm_auto_namer": true,
+      "status": "admitted",
+      "stderr_tail": [],
+      "stdout_tail": [
+        "  concept: UNNAMED-CONCEPT-85",
+        "  fixture: blake3-512:614687fe409ba22b5a15314f221c3a1cf202661c7ea05c7269486d5ff65b0a4dcfdf868dd045b08fdff607526087bd52a4916084fff30a6e8cca4d4f77825bcc",
+        "  witnesses: 4",
+        "  agreement: byte-equal",
+        "  receipt: bootstrap/libprovekit-bind-inventory/raw/promotion-decisions/UNNAMED-CONCEPT-85.proof"
+      ],
+      "witness_count": 4
+    }
+  ],
+  "candidates_examined": 7,
+  "content_address_verification": [
+    {
+      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-1.blake3-512:c093b406713302e57214aa9ee9c0aaae951c26f0be86e471f0c0800ebf04966094d66e46a2bd5b0ee52831be3c0c6b7e83c0b16733c350ba7aee1ef2ca2be10a.json",
+      "catalog_path_exists": true,
+      "cid": "blake3-512:c093b406713302e57214aa9ee9c0aaae951c26f0be86e471f0c0800ebf04966094d66e46a2bd5b0ee52831be3c0c6b7e83c0b16733c350ba7aee1ef2ca2be10a",
+      "promoted_op": "UNNAMED-CONCEPT-1",
+      "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_1.spec.json",
+      "verified": true
+    },
+    {
+      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-6.blake3-512:2fe5b5099c631a3beed511039dcc930992aa5716a834ff277099194a54efca0da4a39714b140ccad263966e850ca42b77136826e159d1c62d4675c2bf2599962.json",
+      "catalog_path_exists": true,
+      "cid": "blake3-512:2fe5b5099c631a3beed511039dcc930992aa5716a834ff277099194a54efca0da4a39714b140ccad263966e850ca42b77136826e159d1c62d4675c2bf2599962",
+      "promoted_op": "UNNAMED-CONCEPT-6",
+      "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_6.spec.json",
+      "verified": true
+    },
+    {
+      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-85.blake3-512:a46bcade8eadf15d4524d4ab3be0782ee64c1ab0176d6318ae31543a002325fbb9a6c1f5778d1c31ed5febb277a7fa5501ca64f3bfe45d0296abcaf125145114.json",
+      "catalog_path_exists": true,
+      "cid": "blake3-512:a46bcade8eadf15d4524d4ab3be0782ee64c1ab0176d6318ae31543a002325fbb9a6c1f5778d1c31ed5febb277a7fa5501ca64f3bfe45d0296abcaf125145114",
+      "promoted_op": "UNNAMED-CONCEPT-85",
+      "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_85.spec.json",
+      "verified": true
+    },
+    {
+      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/UNNAMED-CONCEPT-d.blake3-512:9a2bb4dc33a8d6480366a91b6d977fd177c4558a7a4f1a506b6679a157d65ee89ec6da15da10e2a9bea23977ae70bb481dcc44d90f72706f670758dc10938106.json",
+      "catalog_path_exists": true,
+      "cid": "blake3-512:9a2bb4dc33a8d6480366a91b6d977fd177c4558a7a4f1a506b6679a157d65ee89ec6da15da10e2a9bea23977ae70bb481dcc44d90f72706f670758dc10938106",
+      "promoted_op": "UNNAMED-CONCEPT-d",
+      "spec": "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_d.spec.json",
+      "verified": true
+    },
+    {
+      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/concept:guard-then-commit.blake3-512:b7d0dbf9bc04b913b588d07722d965050d474357cea1fe6aefcda7012801e7c6ed2e477c2857a84a9ec2bdfe3c5edcc9cb79ce7bc7b157a855002d86f5232fa4.json",
+      "catalog_path_exists": true,
+      "cid": "blake3-512:b7d0dbf9bc04b913b588d07722d965050d474357cea1fe6aefcda7012801e7c6ed2e477c2857a84a9ec2bdfe3c5edcc9cb79ce7bc7b157a855002d86f5232fa4",
+      "promoted_op": "concept:guard-then-commit",
+      "spec": "menagerie/concept-shapes/specs/op_guard_then_commit.spec.json",
+      "verified": true
+    },
+    {
+      "catalog_path": "menagerie/concept-shapes/catalog/algorithms/concept:retry-with-bounded-attempts.blake3-512:263728665e2513206f3d015db90791d559943fa920c7ec520555ef77485d9843bda671b5839dec4ee05d87bf2d09e5c6726a7ebf05be36dd8f36ff4f68e18192.json",
+      "catalog_path_exists": true,
+      "cid": "blake3-512:263728665e2513206f3d015db90791d559943fa920c7ec520555ef77485d9843bda671b5839dec4ee05d87bf2d09e5c6726a7ebf05be36dd8f36ff4f68e18192",
+      "promoted_op": "concept:retry-with-bounded-attempts",
+      "spec": "menagerie/concept-shapes/specs/op_retry_with_bounded_attempts.spec.json",
+      "verified": true
+    }
+  ],
+  "declaredAt": "2026-05-15T05:29:10.097Z",
+  "inputs": {
+    "bind_output": "bootstrap/libprovekit-bind-inventory/raw",
+    "contracts": "bootstrap/libprovekit-bind-inventory/raw/contracts",
+    "evidence_catalog": "bootstrap/libprovekit-bind-inventory/raw/evidence",
+    "policy": "protocol/policies/intra-vendor-empirical-admission.json"
+  },
+  "kind": "libprovekit-intra-vendor-witness-consensus-receipt",
+  "mint_summary": {
+    "admitted_seen": 6,
+    "skipped_existing": 0,
+    "written": 6
+  },
+  "new_op_spec_files": [
+    "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_1.spec.json",
+    "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_6.spec.json",
+    "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_85.spec.json",
+    "menagerie/concept-shapes/specs/op_UNNAMED_CONCEPT_d.spec.json",
+    "menagerie/concept-shapes/specs/op_guard_then_commit.spec.json",
+    "menagerie/concept-shapes/specs/op_retry_with_bounded_attempts.spec.json"
+  ],
+  "new_op_specs_written": 6,
+  "notes": [
+    "The declarative intra-vendor policy is projected to the CLI thresholds shape at runtime without changing the policy file; the projected policy carries the original policy CID.",
+    "The driver stages only witness-consensus PromotionDecisionMementos for minting because bind-time promotion decisions use the proof gate payload shape.",
+    "Temporary contract aliases are removed after minting; persistent consensus decisions remain as .proof files."
+  ],
+  "refusals": 1,
+  "schemaVersion": "1",
+  "threshold": 4
+}

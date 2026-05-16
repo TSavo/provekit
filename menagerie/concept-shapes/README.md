@@ -145,7 +145,7 @@ They are operation-contract shape mementos, not language-prefixed operations. Pe
 
 | Concept op | Shape CID | Minted morphisms |
 | --- | --- | --- |
-| `concept:add` | `blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824` | morphism_c11_add_to_add, morphism_csharp_add_to_add, morphism_go_add_to_add, morphism_zig_add_to_add, morphism_java_add_to_add |
+| `concept:add` | `blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468` | morphism_csharp_add_to_add, morphism_go_add_to_add, morphism_zig_add_to_add, morphism_java_add_to_add |
 | `concept:sub` | `blake3-512:b7c54558573348bb3a9297732547a8e6e9d152403d292df7426b6bb8a248f705b4b030bf2a22ba547a17d6f1bfaf8e75a6843e02e8f23a8226ebc09e2a8622af` | morphism_c11_sub_to_sub, morphism_csharp_sub_to_sub, morphism_go_sub_to_sub, morphism_zig_sub_to_sub, morphism_java_sub_to_sub |
 | `concept:mul` | `blake3-512:46cd627de058c8d4f7d087ea33f4904af65ad4b2e3cfd3aff8f44bf27db96b33c2dae39cd30f53898c233c9465ba8d2701c69e5903d48935113103b4db00fd03` | morphism_c11_mul_to_mul, morphism_csharp_mul_to_mul, morphism_go_mul_to_mul, morphism_zig_mul_to_mul, morphism_java_mul_to_mul |
 | `concept:div` | `blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839` | morphism_c11_div_to_div, morphism_go_div_to_div, morphism_zig_div_to_div, morphism_java_div_to_div |
@@ -214,3 +214,47 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | Concept | Shape CID | Notes |
 | --- | --- | --- |
 | `concept:contract-observation` | `blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063` | mode is a formal slot; observer effects live on the wrapper memento, not the object FCM |
+
+## Log Emit Concept Shape
+
+`concept:log-emit(level, message, structured_fields)` is the hub op for logger-agnostic monitor and emitter body-template composition.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:log-emit` | `blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333` | effect is IO; per-language logger sugars carry honest loss dimensions |
+
+## Op Definition Concept Shape
+
+`concept:op-definition(name, arg_sorts, return_sort, effects, wp_rule)` describes a hub op definition; CCL's meta-layer primitive.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:op-definition` | `blake3-512:bbbafea8e3c6d3b24e183a1a2254f1645d8520c6a48571f2631e4fe6516db8d03e8109f31152d789401ea8ae57f30eacb1797db9c53495c25e5d14344c48e852` | describes a hub op definition; CCL's meta-layer primitive |
+
+## Op Application Concept Shape
+
+`concept:op-application(op_definition_cid, args)` describes an application of a minted CCL op definition.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:op-application` | `blake3-512:b98ae1ac8b8f06800db51e648c3a3567200b73e256fcb4d3f664262c95e928979b93f946362c88c14c91d57e0daaabef4dc97ba8617b39828d802db153b36981` | applies a minted op definition to sorted term arguments |
+
+## Core Sort Hierarchy
+
+`concept:sort(name, kind)` describes the core sort hierarchy primitive and the initial sort instances.
+
+| Concept | Kind | CID |
+| --- | --- | --- |
+| `concept:sort` | `shape` | `blake3-512:e26292703e3d9ae50f8332699c4f673c33443d4f857454de67039e8680a364eba2db2e63a33a2450cb4680759f83ba15b83b9f37468f410b8e31dd7f72abc789` |
+| `Int` | `sort-instance` | `blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58` |
+| `Bool` | `sort-instance` | `blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074` |
+| `String` | `sort-instance` | `blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10` |
+| `Bytes` | `sort-instance` | `blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b` |
+| `Cid` | `sort-instance` | `blake3-512:4a2bba3a8207f364e0ffea40fb4ea4c7ea2ce6edac9492e8b0364001821978a37d9e3f782587b19f086c7358c35bc237815f7a617b61c9194db93aaf938c9c48` |
+| `OpCid` | `sort-instance` | `blake3-512:3238b8edabae57231223e24f21644b3fa7720cdef57b85f548cd4946ff7b279a6a40eb0d7f064027888aad9a78e5ba0b04a432c83a16b56c7a34c6faf5cd0ba9` |
+| `SortCid` | `sort-instance` | `blake3-512:f5c63d82c8fabb1a2e4dd3a5b01cf5f22bddd8252b92602f18bed37062d76334a77f24941a95698c52836b6f11704ce1e7568f95493a5ebaf2b0836e291e97b0` |
+| `EffectName` | `sort-instance` | `blake3-512:2e8e8e72cb8563447f8887ace8013bccf789c460440706c6f72e14e4f292ddb7126c365bf04c65f121a69c1c778999530dd15cf2480110975122e451f7710616` |
+| `Formula` | `sort-instance` | `blake3-512:78296b0cb631f8ab9f66d369ac768c64ef29840c10c0ad378d778222af5af7e2335c5c48526fe2b61e51f74034e523859250d1443aa0d7200af5c91329b038ea` |
+| `Term` | `sort-instance` | `blake3-512:2b8bffc50e1a4fcae7e3954289941eb5811d14a6175420b06f71742e4ae9a9ce1a848a9251aec73f436123008fbdaf3d3c98d1c1fce04c3d89680051a7bdcafb` |
+| `List<T>` | `sort-instance` | `blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2` |
+| `Map<K,V>` | `sort-instance` | `blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1` |

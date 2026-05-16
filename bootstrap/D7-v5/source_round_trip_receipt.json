@@ -1,0 +1,72 @@
+{
+  "version": "1",
+  "arc": "D7-v5",
+  "parent_arc": "#943",
+  "base_commit": "355ed128",
+  "branch": "bootstrap/D7-v5-retire-stub-body-variant-arg",
+  "implementation": {
+    "crate": "provekit-realize-rust-core",
+    "entrypoint": "emit_from_resolved",
+    "extended_file": "implementations/rust/provekit-realize-rust-core/src/lib.rs",
+    "retired_shape": "return(call:new(receiver, [call:<Variant>(Value::<Variant>, [first_param])]))",
+    "accepted_receiver": "new or *::new",
+    "accepted_variants": [
+      "Value::Bool",
+      "Value::Integer",
+      "Value::String"
+    ],
+    "scope_guard": [
+      "literal-list payload contains exactly one constructor surface",
+      "constructor argument exactly equals params[0]",
+      "no multiple variant args",
+      "no nested calls inside the variant arg",
+      "no computed-expression args",
+      "no Value::Array or Value::Object handling"
+    ]
+  },
+  "outcomes": [
+    {
+      "method": "impl Value::boolean",
+      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_boolean.json",
+      "receipt": "bootstrap/D7-v4/boolean_source_round_trip_receipt.json",
+      "term_surface": "return(call:new(Arc::new, [call:Bool(Value::Bool, [b])]))",
+      "verdict": "BYTE_IDENTICAL",
+      "dominant_diff_class": "byte-identical",
+      "regenerated_source_cid": "blake3-512:e4f464f54e93db6d8a14c682a3d2eb927d39c776ba0cc1dd62bc480a6de74918f3a25d94715840e957ed2d2d3b497e58cd02db8c3c9be4278b2e170d90d9982a",
+      "original_slice_post_rustfmt_cid": "blake3-512:e4f464f54e93db6d8a14c682a3d2eb927d39c776ba0cc1dd62bc480a6de74918f3a25d94715840e957ed2d2d3b497e58cd02db8c3c9be4278b2e170d90d9982a"
+    },
+    {
+      "method": "impl Value::integer",
+      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_integer.json",
+      "receipt": "bootstrap/D7-v4/integer_source_round_trip_receipt.json",
+      "term_surface": "return(call:new(Arc::new, [call:Integer(Value::Integer, [n])]))",
+      "verdict": "BYTE_IDENTICAL",
+      "dominant_diff_class": "byte-identical",
+      "regenerated_source_cid": "blake3-512:7cfdae9bf999160132cede4141307afcd664d0609e24263059761edf6033861abc85a2f437ea2637b598aafca7091d40b745ce24c52fcb605a3cbf4862373baf",
+      "original_slice_post_rustfmt_cid": "blake3-512:7cfdae9bf999160132cede4141307afcd664d0609e24263059761edf6033861abc85a2f437ea2637b598aafca7091d40b745ce24c52fcb605a3cbf4862373baf"
+    },
+    {
+      "method": "impl Value::string",
+      "fixture": "implementations/rust/libprovekit/tests/fixtures/proofir/d7_v4_value_string.json",
+      "receipt": "bootstrap/D7-v4/string_source_round_trip_receipt.json",
+      "term_surface": "return(call:new(Arc::new, [call:String(Value::String, [method:into(s, [])])]))",
+      "verdict": "CHARACTERIZED_DIFF",
+      "dominant_diff_class": "stub-body",
+      "regenerated_source_cid": "blake3-512:5a1eab3177aab96ca611d3a3ea7bf4284f3b7ffbdbe2e4cdf7e1c805ab2253fa0a7fae31b811df532deeed93660944c5dd4d769d0017e54146b34f160e933c48",
+      "original_slice_post_rustfmt_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43",
+      "unified_diff": "--- original_rustfmt\n+++ regenerated_rustfmt\n@@ -1,3 +1,3 @@\n pub fn string<S: Into<String>>(s: S) -> Arc<Value> {\n-    Arc::new(Value::String(s.into()))\n+    panic!(\"provekit-bind canonical: literal\")\n }\n",
+      "root_cause": "The fixture argument is method:into(s, []), not a direct first-parameter reference, so it stays outside the D7-v5 single-shape match."
+    }
+  ],
+  "summary": {
+    "stub_body_retired_for": [
+      "impl Value::boolean",
+      "impl Value::integer"
+    ],
+    "remaining_characterized_diff": [
+      "impl Value::string"
+    ],
+    "stop_condition": "String did not reach BYTE_IDENTICAL because the v4 fixture uses method:into(s, []) inside the Value::String constructor argument.",
+    "next_step": "D7-v6 should retire the string method:into(s, []) surface and then add the submodule-level source round-trip test for implementations/rust/provekit-canonicalizer/src/value.rs."
+  }
+}

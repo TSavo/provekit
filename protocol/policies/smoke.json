@@ -1,0 +1,61 @@
+{
+  "cid": "blake3-512:3166b9224022a79ed498ad08617b1461ded2fb40809d4f8127b72f00d3d2bc85d1de1aa2014563880d1e67946416b9939e274eae943e53b0aa57dea8591c1467",
+  "decisions": [
+    {
+      "decision_kind": "emission-gating",
+      "emission_mode": "gate",
+      "policy_cid": "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333",
+      "required": true,
+      "requires_witnessed_decision": true,
+      "thresholds": [
+        {
+          "axis": "witnessed-decision",
+          "predicate": "witnessed_decisions>=1"
+        },
+        {
+          "axis": "wrapper-mode",
+          "predicate": "wrapper_modes>=1"
+        }
+      ]
+    },
+    {
+      "decision_kind": "sugar-selection",
+      "policy_cid": "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+      "required": true,
+      "requires_witnessed_decision": false,
+      "thresholds": [
+        {
+          "axis": "max-loss-score",
+          "predicate": "loss_score<=5"
+        },
+        {
+          "axis": "selected-surfaces",
+          "predicate": "selected_surfaces>=1"
+        }
+      ]
+    },
+    {
+      "decision_kind": "witness-consensus",
+      "policy_cid": "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "required": true,
+      "requires_witnessed_decision": false,
+      "thresholds": [
+        {
+          "axis": "min-witnesses-floor",
+          "predicate": "n>=1"
+        },
+        {
+          "axis": "environment-diversity",
+          "predicate": "unique_fixtures>=1"
+        },
+        {
+          "axis": "sample-depth",
+          "predicate": "total_sample_count>=1"
+        }
+      ]
+    }
+  ],
+  "kind": "policy-profile",
+  "name": "smoke",
+  "schemaVersion": "1"
+}

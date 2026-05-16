@@ -1,0 +1,73 @@
+{
+  "aggregation_strategy": "conjunction",
+  "cid": "blake3-512:0770b4442900ad4d1059d0c5c05de7f040e23d9d2fcf4a699ecd93c7a58c6b57c1e8c4ba5061387f2bf585b777ed4b2e4f7c7192138addb51fdc57f0cb222d37",
+  "composed_post": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "composed_pre": {
+    "kind": "and",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    ]
+  },
+  "evidences": [
+    {
+      "evidence_cid": "blake3-512:19b58f9e60cc9d7a1fbaa62d96e6d317784558b887011a3c68e25ac3f977525492aa88664c8e574212067ddca3ec6edc7e0d9595c948e4e7a80a6fd97a3c2f20",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:87397e8fcbe2afb710dddcd968bb44e08c4a310b8542e4c5c32e29342508f32b27262d7a6aa88a1e10e470c9fda24cb788b7501b62611404cb6a77587621a901",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:8a5f63876fd36ffd1109c9136ebae030376daba71a07569afa571da944c0308bfefe4c4ae36935a45dc2b7a2bd60414b4529a3262a3ab56d514053c676c7a194",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:b465f7a9434ec1b0c5f9aa4cddd9a0d065c72ac0c13a1670d5f48072fc56f23df9e8489a1b77847f0c5c3b65b87bb2cf5af9c93e99ef1727ae8aeee90bebd72f",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:b9429dc42d489615367d98c081a59dc1040f8a4f901625a3ab6277e65e8a5845512d60e0eb4187721256adf2f9998f0cee6a09e7633d70904c34a2627450d971",
+      "weight_basis_points": 10000
+    },
+    {
+      "evidence_cid": "blake3-512:bf6611ca3a75da5fa559fc3480d3d84fa4b6a22f460294a1125bc9e74fa3a7ea1a3e94721add0dd76caa0f6caa9d443433be990806beffe9b82fded65a122851",
+      "weight_basis_points": 10000
+    }
+  ],
+  "function_term_cid": "blake3-512:6311d0b14dccf390b977142bdbf04eee6895bc9fca48b94ca72f4ba8a78377ac012e826ecf71fdc2863d7f77f77b42dab54367fce087f43306184a120163e11d",
+  "kind": "compound-contract",
+  "schemaVersion": "1"
+}

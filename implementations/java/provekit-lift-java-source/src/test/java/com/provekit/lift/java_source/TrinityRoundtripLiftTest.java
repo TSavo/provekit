@@ -1,6 +1,7 @@
 package com.provekit.lift.java_source;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.provekit.ir.Jcs;
@@ -211,12 +212,265 @@ class TrinityRoundtripLiftTest {
             "source-unit contract should always be present; got: " + declNames);
     }
 
+    @Test
+    void bindLifterRecoversObservationPolicyTagsAsNativeSurfaceWitness() {
+        String source = """
+            final class IdentityTransported {
+                // concept: identity
+                public static long identity(long x) {
+                    long __provekit_result = x;
+                    // provekit-observation: concept:contract-observation
+                    // provekit-observation-term: concept:contract-observation(blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111,blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222,emitter)
+                    // provekit-observation-mode: emitter
+                    // provekit-concept-site-cid: blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+                    // provekit-object-fcm-cid: blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+                    // provekit-contract-cid: blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333
+                    // provekit-emitted-concept: concept:log-emit
+                    // provekit-observation-policy-cid: blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
+                    java.util.logging.Logger.getLogger("provekit").log(java.util.logging.Level.INFO, "observed");
+                    return __provekit_result;
+                }
+            }
+            """;
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Fixture.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertTrue(encoded.contains("\"source_kind\":\"native-surface\""), encoded);
+        assertTrue(encoded.contains("\"role\":\"observation\""), encoded);
+        assertTrue(encoded.contains("concept:contract-observation"), encoded);
+        assertTrue(encoded.contains("concept:log-emit"), encoded);
+        assertTrue(encoded.contains("\"mode\":\"emitter\""), encoded);
+        assertTrue(encoded.contains("\"policy_cid\":\"blake3-512:444444"), encoded);
+        assertTrue(encoded.contains("\"object_fcm_cid\":\"blake3-512:222222"), encoded);
+        assertTrue(encoded.contains("\"contract_cid\":\"blake3-512:333333"), encoded);
+    }
+
+    @Test
+    void bindLifterDoesNotBleedObservationTagsIntoAdjacentMethods() {
+        String source = """
+            final class AdjacentTransported {
+                // concept: first
+                public static long first(long x) {
+                    long __provekit_result = x;
+                    // provekit-observation: concept:contract-observation
+                    // provekit-observation-term: concept:contract-observation(blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111,blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222,emitter)
+                    // provekit-observation-mode: emitter
+                    // provekit-concept-site-cid: blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+                    // provekit-object-fcm-cid: blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+                    // provekit-contract-cid: blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333
+                    // provekit-observation-policy-cid: blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
+                    java.util.logging.Logger.getLogger("provekit").log(java.util.logging.Level.INFO, "observed");
+                    return __provekit_result;
+                }
+
+                // concept: second
+                public static long second(long y) {
+                    return y;
+                }
+            }
+            """;
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Adjacent.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(2, lift.entries().size(), encoded);
+        assertEquals(
+            1,
+            countOccurrences(encoded, "\"source_kind\":\"native-surface\""),
+            "observation native-surface witness must belong only to the method whose body contains the tag: " + encoded);
+    }
+
+    @Test
+    void bindLifterRecoversContractCommentTagsAsNativeSurfaceWitnesses() {
+        String source = contractTaggedSource(PRE_FORMULA_CID, POST_FORMULA_CID, "pre", "1");
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Contracts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(2, countOccurrences(encoded, "\"source_kind\":\"native-surface\""), encoded);
+        assertTrue(encoded.contains("\"role\":\"pre\""), encoded);
+        assertTrue(encoded.contains("\"role\":\"post\""), encoded);
+        assertTrue(encoded.contains("\"predicate_text\":\"non_null(name)\""), encoded);
+        assertTrue(encoded.contains("\"predicate_text\":\"non_null(out)\""), encoded);
+        assertTrue(encoded.contains("\"contract_cid\":\"" + CONTRACT_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"concept_site_cid\":\"" + CONCEPT_SITE_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"ir_formula_jcs_cid\":\"" + PRE_FORMULA_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"ir_formula_jcs_cid\":\"" + POST_FORMULA_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"policy_cid\":\"" + POLICY_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"sugar_dict_cid\":\"" + SUGAR_DICT_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"loss_record_cid\":\"" + LOSS_RECORD_CID + "\""), encoded);
+        assertTrue(encoded.contains("\"payload_cid\":\"blake3-512:"), encoded);
+        assertTrue(encoded.contains("\"surface\":\"contract-comment-sugar\""), encoded);
+    }
+
+    @Test
+    void bindLifterFailsClosedOnContractCommentFormulaCidMismatch() {
+        String source = contractTaggedSource(LOSS_RECORD_CID, POST_FORMULA_CID, "pre", "1");
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Contracts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertFalse(encoded.contains("\"predicate_text\":\"non_null(name)\""), encoded);
+        assertFalse(encoded.contains("\"role\":\"pre\""), encoded);
+        assertTrue(encoded.contains("\"role\":\"post\""), encoded);
+    }
+
+    @Test
+    void bindLifterFailsClosedOnContractCommentUnknownRoleOrSchema() {
+        String unknownRole = contractTaggedSource(PRE_FORMULA_CID, POST_FORMULA_CID, "guard", "1");
+        String unknownSchema = contractTaggedSource(PRE_FORMULA_CID, POST_FORMULA_CID, "pre", "2");
+
+        String roleEncoded = Jcs.encode(new JavaBindLifter().liftPathsFromSource("Contracts.java", unknownRole).toJson());
+        String schemaEncoded = Jcs.encode(new JavaBindLifter().liftPathsFromSource("Contracts.java", unknownSchema).toJson());
+
+        assertFalse(roleEncoded.contains("\"role\":\"guard\""), roleEncoded);
+        assertFalse(roleEncoded.contains("\"predicate_text\":\"non_null(name)\""), roleEncoded);
+        assertTrue(roleEncoded.contains("\"role\":\"post\""), roleEncoded);
+        assertFalse(schemaEncoded.contains("\"predicate_text\":\"non_null(name)\""), schemaEncoded);
+        assertTrue(schemaEncoded.contains("\"role\":\"post\""), schemaEncoded);
+    }
+
+    @Test
+    void bindLifterFailsClosedOnMalformedContractCommentPayloadOrPayloadCidMismatch() {
+        String malformedPayload = """
+            final class BadContractTransported {
+                // concept: lookup
+                // provekit-contract: {"artifact_kind":
+                public static String lookup(String name) {
+                    return name;
+                }
+            }
+            """;
+        String validPrePayload = contractPayload("pre", "1", nonNullPredicate("name"), PRE_FORMULA_CID, "non_null(name)");
+        String wrongPayloadCid = """
+            final class BadContractTransported {
+                // concept: lookup
+                // provekit-contract: __PRE_PAYLOAD__
+                // provekit-contract-payload-cid: __WRONG_CID__
+                public static String lookup(String name) {
+                    return name;
+                }
+            }
+            """
+            .replace("__PRE_PAYLOAD__", validPrePayload)
+            .replace("__WRONG_CID__", LOSS_RECORD_CID);
+
+        String malformedEncoded = Jcs.encode(new JavaBindLifter().liftPathsFromSource("BadContract.java", malformedPayload).toJson());
+        String cidMismatchEncoded = Jcs.encode(new JavaBindLifter().liftPathsFromSource("BadContract.java", wrongPayloadCid).toJson());
+
+        assertFalse(malformedEncoded.contains("\"source_kind\":\"native-surface\""), malformedEncoded);
+        assertFalse(cidMismatchEncoded.contains("\"predicate_text\":\"non_null(name)\""), cidMismatchEncoded);
+        assertFalse(cidMismatchEncoded.contains("\"payload_cid\":\"" + LOSS_RECORD_CID + "\""), cidMismatchEncoded);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    private static final String CONTRACT_CID =
+        "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+    private static final String CONCEPT_SITE_CID =
+        "blake3-512:55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555";
+    private static final String POLICY_CID =
+        "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
+    private static final String SUGAR_DICT_CID =
+        "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333";
+    private static final String LOSS_RECORD_CID =
+        "blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444";
+    private static final String KIT_CID =
+        "blake3-512:66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666";
+    private static final String PRE_FORMULA_CID = Jcs.cid(nonNullPredicate("name"));
+    private static final String POST_FORMULA_CID = Jcs.cid(nonNullPredicate("out"));
+
+    private static String contractTaggedSource(
+        String preFormulaCid,
+        String postFormulaCid,
+        String preRole,
+        String preSchemaVersion) {
+        String prePayload = contractPayload(preRole, preSchemaVersion, nonNullPredicate("name"), preFormulaCid, "non_null(name)");
+        String postPayload = contractPayload("post", "1", nonNullPredicate("out"), postFormulaCid, "non_null(out)");
+        return """
+            final class ContractTransported {
+                // concept: lookup
+                // provekit-contract: __PRE_PAYLOAD__
+                // provekit-contract-payload-cid: __PRE_PAYLOAD_CID__
+                // requires: non_null(name)
+                // provekit-contract: __POST_PAYLOAD__
+                // provekit-contract-payload-cid: __POST_PAYLOAD_CID__
+                // ensures: non_null(out)
+                public static String lookup(String name) {
+                    return name;
+                }
+            }
+            """
+            .replace("__PRE_PAYLOAD__", prePayload)
+            .replace("__PRE_PAYLOAD_CID__", payloadCid(prePayload))
+            .replace("__POST_PAYLOAD__", postPayload)
+            .replace("__POST_PAYLOAD_CID__", payloadCid(postPayload));
+    }
+
+    private static String contractPayload(
+        String role,
+        String schemaVersion,
+        Jcs.Json formula,
+        String formulaCid,
+        String folText) {
+        return Jcs.encode(Jcs.object(
+            "artifact_kind", Jcs.string("provekit-contract-comment-sugar"),
+            "concept_site_cid", Jcs.string(CONCEPT_SITE_CID),
+            "contract_cid", Jcs.string(CONTRACT_CID),
+            "emitted_by", Jcs.object(
+                "kit_cid", Jcs.string(KIT_CID),
+                "kit_kind", Jcs.string("realize"),
+                "target_language", Jcs.string("java")
+            ),
+            "fol_text", Jcs.string(folText),
+            "ir_formula_jcs", formula,
+            "ir_formula_jcs_cid", Jcs.string(formulaCid),
+            "local_contract_cid", Jcs.string(CONTRACT_CID),
+            "loss_record_cid", Jcs.string(LOSS_RECORD_CID),
+            "policy_cid", Jcs.string(POLICY_CID),
+            "role", Jcs.string(role),
+            "schema_version", Jcs.string(schemaVersion),
+            "sugar_dict_cid", Jcs.string(SUGAR_DICT_CID)
+        ));
+    }
+
+    private static String payloadCid(String payload) {
+        return Jcs.cid(Jcs.parse(payload));
+    }
+
+    private static Jcs.Json nonNullPredicate(String symbol) {
+        return Jcs.object(
+            "args", Jcs.array(
+                Jcs.object("kind", Jcs.string("var"), "name", Jcs.string(symbol)),
+                Jcs.object(
+                    "kind", Jcs.string("const"),
+                    "sort", Jcs.object("kind", Jcs.string("primitive"), "name", Jcs.string("Ref")),
+                    "value", Jcs.nullValue()
+                )
+            ),
+            "kind", Jcs.string("atomic"),
+            "name", Jcs.string("neq")
+        );
+    }
 
     private Set<String> declarationFnNames() {
         return result.declarations().stream()
             .filter(d -> d instanceof Jcs.Obj obj && "function-contract".equals(obj.stringFieldOrNull("kind")))
             .map(d -> ((Jcs.Obj) d).stringField("fnName"))
             .collect(Collectors.toSet());
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            count += 1;
+            idx += needle.length();
+        }
+        return count;
     }
 }

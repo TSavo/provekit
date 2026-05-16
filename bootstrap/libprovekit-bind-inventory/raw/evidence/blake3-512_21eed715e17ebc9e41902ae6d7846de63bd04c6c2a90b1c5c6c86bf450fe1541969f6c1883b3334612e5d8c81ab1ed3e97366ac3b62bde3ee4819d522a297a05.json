@@ -1,0 +1,35 @@
+{
+  "cid": "blake3-512:21eed715e17ebc9e41902ae6d7846de63bd04c6c2a90b1c5c6c86bf450fe1541969f6c1883b3334612e5d8c81ab1ed3e97366ac3b62bde3ee4819d522a297a05",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "composed_to_contract@core/primitives.rs",
+    "inner_type": "ComposedFunctionContract",
+    "lifetime": "_",
+    "return_type": "Contract",
+    "role": "pre",
+    "signature_position": "param:0",
+    "type_shape": "borrow"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "true",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:a36bfe2251b2ede618575f771b830d219efc908853820c0eff3653791b15c017502e4362092a6eb6d77bb77d860d86d2e6f7a01bd7f3b3c1c2894cabdb3d49c7",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 182
+      },
+      "start": {
+        "col": 3,
+        "line": 182
+      }
+    }
+  }
+}

@@ -1,14 +1,29 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from provekit_lift_py_tests.canonicalizer import encode_jcs
+from provekit_lift_py_tests.decorators import _parse_expr_string
+from provekit_lift_py_tests.ir import formula_to_value
+
 from .canonical import cid_of_json
 
 Json = Any
+CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
+CONTRACT_COMMENT_KIND = "provekit-contract-comment-sugar"
+CONTRACT_COMMENT_ROLE_MAP = {
+    "pre": "pre",
+    "post": "post",
+    "invariant": "inv",
+    "throws": "throws",
+    "observation": "observation",
+}
 
 
 @dataclass
@@ -42,7 +57,9 @@ def lift_source(source: str, source_path: str) -> BindLiftResult:
     lines = source.splitlines()
     rel_path = source_path.replace(os.sep, "/")
     for info in collector.definitions:
-        result.ir.append(_entry_for_function(info.node, rel_path, lines))
+        result.ir.append(
+            _entry_for_function(info.node, rel_path, lines, result.diagnostics)
+        )
     return result
 
 
@@ -115,6 +132,7 @@ def _entry_for_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     rel_path: str,
     lines: list[str],
+    diagnostics: list[Json],
 ) -> Json:
     concept, attr_pre, attr_post = _extract_leading_annotations(lines, node.lineno)
     term_shape = _function_shape(node)
@@ -124,6 +142,9 @@ def _entry_for_function(
         return_type = "Any"
     elif return_type == "None":
         return_type = "()"
+    witnesses = []
+    witnesses.extend(_contract_comment_witnesses(lines, node, rel_path, diagnostics))
+    witnesses.extend(_decorator_contract_witnesses(node, param_names, rel_path, diagnostics))
 
     return {
         "attr_post": attr_post,
@@ -138,6 +159,7 @@ def _entry_for_function(
         "return_type": return_type,
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
+        "witnesses": witnesses,
     }
 
 
@@ -169,7 +191,10 @@ def _annotation_text(annotation: ast.expr | None) -> str | None:
 
 def _function_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Json:
     statements = [stmt for stmt in node.body if not _is_docstring_stmt(stmt)]
-    return {"kind": "body", "stmts": [_shape_stmt(stmt, top_level=True) for stmt in statements]}
+    return {
+        "kind": "body",
+        "stmts": [_shape_stmt(stmt, top_level=True) for stmt in statements],
+    }
 
 
 def _shape_block(statements: list[ast.stmt]) -> Json:
@@ -298,6 +323,315 @@ def _extract_leading_annotations(
             continue
         break
     return concept, attr_pre, attr_post
+
+
+def _contract_comment_witnesses(
+    lines: list[str],
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    rel_path: str,
+    diagnostics: list[Json],
+) -> list[Json]:
+    witnesses: list[Json] = []
+    witnesses.extend(
+        _contract_comment_witnesses_from_surface_lines(
+            _leading_contract_comment_surface(lines, node.lineno),
+            rel_path,
+            diagnostics,
+        )
+    )
+    docstring = ast.get_docstring(node, clean=True)
+    if docstring:
+        doc_lines = [
+            (getattr(node.body[0], "lineno", node.lineno), line.strip())
+            for line in docstring.splitlines()
+        ]
+        witnesses.extend(
+            _contract_comment_witnesses_from_surface_lines(
+                doc_lines,
+                rel_path,
+                diagnostics,
+            )
+        )
+    return witnesses
+
+
+def _leading_contract_comment_surface(
+    lines: list[str],
+    fn_line: int,
+) -> list[tuple[int, str]]:
+    start = fn_line - 2
+    while start >= 0:
+        stripped = lines[start].strip()
+        if stripped == "" or stripped.startswith("#") or stripped.startswith("@"):
+            start -= 1
+            continue
+        break
+    surface: list[tuple[int, str]] = []
+    for idx in range(start + 1, fn_line - 1):
+        stripped = lines[idx].strip()
+        if stripped.startswith("#"):
+            surface.append((idx + 1, stripped[1:].strip()))
+    return surface
+
+
+def _contract_comment_witnesses_from_surface_lines(
+    surface_lines: list[tuple[int, str]],
+    rel_path: str,
+    diagnostics: list[Json],
+) -> list[Json]:
+    witnesses: list[Json] = []
+    idx = 0
+    while idx < len(surface_lines):
+        line_no, content = surface_lines[idx]
+        if not content.startswith("provekit-contract:"):
+            idx += 1
+            continue
+        raw_payload = content[len("provekit-contract:") :].strip()
+        payload_cid: str | None = None
+        if idx + 1 < len(surface_lines):
+            _, next_content = surface_lines[idx + 1]
+            if next_content.startswith("provekit-contract-payload-cid:"):
+                payload_cid = next_content[
+                    len("provekit-contract-payload-cid:") :
+                ].strip()
+                idx += 1
+        witness = _contract_comment_witness(
+            raw_payload,
+            payload_cid,
+            rel_path,
+            line_no,
+            diagnostics,
+        )
+        if witness is not None:
+            witnesses.append(witness)
+        idx += 1
+    return witnesses
+
+
+def _contract_comment_witness(
+    raw_payload: str,
+    emitted_payload_cid: str | None,
+    rel_path: str,
+    line_no: int,
+    diagnostics: list[Json],
+) -> Json | None:
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        _contract_comment_diag(
+            diagnostics,
+            rel_path,
+            line_no,
+            f"malformed JSON: {exc.msg}",
+        )
+        return None
+    if not isinstance(payload, dict):
+        _contract_comment_diag(diagnostics, rel_path, line_no, "payload is not an object")
+        return None
+
+    def require_str(key: str) -> str | None:
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+        _contract_comment_diag(diagnostics, rel_path, line_no, f"missing {key}")
+        return None
+
+    if payload.get("artifact_kind") != CONTRACT_COMMENT_KIND:
+        _contract_comment_diag(diagnostics, rel_path, line_no, "wrong artifact_kind")
+        return None
+    if payload.get("schema_version") != "1":
+        _contract_comment_diag(diagnostics, rel_path, line_no, "unknown schema_version")
+        return None
+
+    fol_text = require_str("fol_text")
+    if fol_text is None:
+        return None
+
+    emitted_by = payload.get("emitted_by")
+    if not _valid_emitted_by(emitted_by):
+        _contract_comment_diag(diagnostics, rel_path, line_no, "malformed emitted_by")
+        return None
+
+    role = require_str("role")
+    if role not in CONTRACT_COMMENT_ROLE_MAP:
+        _contract_comment_diag(diagnostics, rel_path, line_no, "unknown role")
+        return None
+
+    cid_fields = [
+        "concept_site_cid",
+        "contract_cid",
+        "ir_formula_jcs_cid",
+        "loss_record_cid",
+        "policy_cid",
+        "sugar_dict_cid",
+    ]
+    for key in cid_fields:
+        value = require_str(key)
+        if value is None or not CID_RE.fullmatch(value):
+            _contract_comment_diag(diagnostics, rel_path, line_no, f"malformed {key}")
+            return None
+    local_contract_cid = payload.get("local_contract_cid")
+    if local_contract_cid is not None and (
+        not isinstance(local_contract_cid, str) or not CID_RE.fullmatch(local_contract_cid)
+    ):
+        _contract_comment_diag(diagnostics, rel_path, line_no, "malformed local_contract_cid")
+        return None
+
+    predicate = payload.get("ir_formula_jcs")
+    if not isinstance(predicate, dict):
+        _contract_comment_diag(diagnostics, rel_path, line_no, "missing ir_formula_jcs")
+        return None
+    if not _valid_formula_shape(predicate):
+        _contract_comment_diag(diagnostics, rel_path, line_no, "invalid formula shape")
+        return None
+    if cid_of_json(predicate) != payload["ir_formula_jcs_cid"]:
+        _contract_comment_diag(diagnostics, rel_path, line_no, "formula CID mismatch")
+        return None
+
+    payload_cid = cid_of_json(payload)
+    if emitted_payload_cid is not None and not CID_RE.fullmatch(emitted_payload_cid):
+        _contract_comment_diag(diagnostics, rel_path, line_no, "malformed payload CID")
+        return None
+    if emitted_payload_cid is not None and emitted_payload_cid != payload_cid:
+        _contract_comment_diag(diagnostics, rel_path, line_no, "payload CID mismatch")
+        return None
+
+    extension_fields = {
+        "concept_site_cid": payload["concept_site_cid"],
+        "contract_cid": payload["contract_cid"],
+        "ir_formula_jcs_cid": payload["ir_formula_jcs_cid"],
+        "loss_record_cid": payload["loss_record_cid"],
+        "payload_cid": payload_cid,
+        "policy_cid": payload["policy_cid"],
+        "sugar_dict_cid": payload["sugar_dict_cid"],
+        "surface": "contract-comment-sugar",
+    }
+    if isinstance(local_contract_cid, str):
+        extension_fields["local_contract_cid"] = local_contract_cid
+    return {
+        "col": 0,
+        "confidence_basis_points": 10000,
+        "extension_fields": extension_fields,
+        "line": line_no,
+        "predicate": predicate,
+        "predicate_text": fol_text,
+        "role": CONTRACT_COMMENT_ROLE_MAP[role],
+        "source_kind": "native-surface",
+    }
+
+
+def _valid_emitted_by(value: Json) -> bool:
+    if not isinstance(value, dict):
+        return False
+    kit_cid = value.get("kit_cid")
+    kit_kind = value.get("kit_kind")
+    target_language = value.get("target_language")
+    return (
+        isinstance(kit_cid, str)
+        and CID_RE.fullmatch(kit_cid) is not None
+        and isinstance(kit_kind, str)
+        and bool(kit_kind)
+        and isinstance(target_language, str)
+        and bool(target_language)
+    )
+
+
+def _valid_formula_shape(formula: Json) -> bool:
+    if not isinstance(formula, dict):
+        return False
+    kind = formula.get("kind")
+    if kind == "atomic":
+        return isinstance(formula.get("name"), str) and isinstance(
+            formula.get("args"),
+            list,
+        )
+    if kind in {"and", "or", "not", "implies"}:
+        operands = formula.get("operands")
+        return isinstance(operands, list) and all(
+            _valid_formula_shape(operand) for operand in operands
+        )
+    if kind in {"forall", "exists"}:
+        return (
+            isinstance(formula.get("name"), str)
+            and isinstance(formula.get("sort"), dict)
+            and _valid_formula_shape(formula.get("body"))
+        )
+    return False
+
+
+def _contract_comment_diag(
+    diagnostics: list[Json],
+    rel_path: str,
+    line_no: int,
+    message: str,
+) -> None:
+    diagnostics.append(
+        {
+            "kind": "contract-comment-invalid",
+            "message": message,
+            "path": rel_path,
+            "line": line_no,
+        }
+    )
+
+
+def _decorator_contract_witnesses(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    param_names: list[str],
+    rel_path: str,
+    diagnostics: list[Json],
+) -> list[Json]:
+    witnesses: list[Json] = []
+    for decorator in node.decorator_list:
+        if not isinstance(decorator, ast.Call):
+            continue
+        if _decorator_name(decorator.func) not in {"contract", "provekit_contract"}:
+            continue
+        for keyword in decorator.keywords:
+            role = {"pre": "pre", "post": "post", "inv": "inv"}.get(keyword.arg or "")
+            if role is None or not isinstance(keyword.value, ast.Constant):
+                continue
+            if not isinstance(keyword.value.value, str):
+                continue
+            text = keyword.value.value
+            try:
+                names = [*param_names, "out"] if role == "post" else param_names
+                formula = _parse_expr_string(text, names)
+                predicate = json.loads(encode_jcs(formula_to_value(formula)))
+            except Exception as exc:
+                diagnostics.append(
+                    {
+                        "kind": "decorator-contract-invalid",
+                        "message": str(exc),
+                        "path": rel_path,
+                        "line": getattr(decorator, "lineno", node.lineno),
+                    }
+                )
+                continue
+            witnesses.append(
+                {
+                    "col": getattr(decorator, "col_offset", 0),
+                    "confidence_basis_points": 10000,
+                    "extension_fields": {
+                        "decorator": _decorator_name(decorator.func),
+                        "surface": "python-decorator-contract",
+                    },
+                    "line": getattr(decorator, "lineno", node.lineno),
+                    "predicate": predicate,
+                    "predicate_text": text,
+                    "role": role,
+                    "source_kind": "native-surface",
+                }
+            )
+    return witnesses
+
+
+def _decorator_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
 
 
 def _iter_python_files(path: Path) -> Iterable[Path]:

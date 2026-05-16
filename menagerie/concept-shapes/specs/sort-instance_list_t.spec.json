@@ -1,0 +1,24 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "List<T>",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "sort",
+  "post": {
+    "kind": "sort-instance",
+    "name": "List<T>",
+    "sort_kind": "parametric"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}

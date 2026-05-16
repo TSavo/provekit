@@ -20,6 +20,15 @@ fn python_bin() -> String {
     std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string())
 }
 
+fn python_blake3_available() -> bool {
+    std::process::Command::new(python_bin())
+        .arg("-c")
+        .arg("import blake3")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
 fn pythonpath_with_realize_srcs() -> std::ffi::OsString {
     let repo = repo_root();
     let paths = [
@@ -64,6 +73,7 @@ fn http_request_realize_request() -> RealizeRequest {
         param_types: vec!["str".to_string()],
         return_type: "int".to_string(),
         concept_name: "concept:http-request".to_string(),
+        named_term_tree: None,
         mode: None,
         modes: Vec::new(),
         contract: None,
@@ -107,6 +117,7 @@ fn sql_query_realize_request() -> RealizeRequest {
         param_types: vec!["string".to_string(), "unknown[]".to_string()],
         return_type: "unknown[]".to_string(),
         concept_name: "concept:sql-query".to_string(),
+        named_term_tree: None,
         mode: None,
         modes: Vec::new(),
         contract: None,
@@ -117,6 +128,10 @@ fn sql_query_realize_request() -> RealizeRequest {
 
 #[test]
 fn dispatch_realize_routes_python_library_tags_to_distinct_kits() {
+    if !python_blake3_available() {
+        eprintln!("skipping python realize dispatch: python module `blake3` is unavailable");
+        return;
+    }
     let workspace = tempfile::tempdir().expect("tempdir");
     install_manifest(
         workspace.path(),

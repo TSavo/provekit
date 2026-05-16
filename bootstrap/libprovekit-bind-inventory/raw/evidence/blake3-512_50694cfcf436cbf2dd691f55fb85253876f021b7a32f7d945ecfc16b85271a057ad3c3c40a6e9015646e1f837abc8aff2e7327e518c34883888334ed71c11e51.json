@@ -1,0 +1,55 @@
+{
+  "cid": "blake3-512:50694cfcf436cbf2dd691f55fb85253876f021b7a32f7d945ecfc16b85271a057ad3c3c40a6e9015646e1f837abc8aff2e7327e518c34883888334ed71c11e51",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "err_type": "WpError",
+    "function_symbol": "wp_op@wp.rs",
+    "ok_type": "IrFormula",
+    "return_type": "Result<IrFormula, WpError>",
+    "role": "post",
+    "signature_position": "return",
+    "type_shape": "result"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "or",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "is_err",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      }
+    ]
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:67b592941050234f21130209f2f1a2feeb2b3b290cb162786bf24938a810d78d12d2ab9ce78871dd184c4cff1dc5f762909b3f271caba12459f602d5f4d06b9e",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 430
+      },
+      "start": {
+        "col": 3,
+        "line": 430
+      }
+    }
+  }
+}

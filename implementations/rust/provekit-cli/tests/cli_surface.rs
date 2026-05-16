@@ -25,6 +25,15 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn python_blake3_available() -> bool {
+    Command::new("python3")
+        .arg("-c")
+        .arg("import blake3")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
 /// Write `text` to `path` and mark it executable.
 ///
 /// Uses explicit `sync_all` + drop before `set_permissions` to ensure the
@@ -479,6 +488,10 @@ done
 
 #[test]
 fn lift_python_emits_contracts_and_callsite_implications() {
+    if !python_blake3_available() {
+        eprintln!("skipping python lift integration: python3 module `blake3` is unavailable");
+        return;
+    }
     let root = repo_root();
     let project = tempfile::tempdir().expect("create tempdir");
     fs::write(
@@ -588,6 +601,10 @@ surface = "python"
 
 #[test]
 fn lift_python_emits_production_wp_callsite_implications() {
+    if !python_blake3_available() {
+        eprintln!("skipping python lift integration: python3 module `blake3` is unavailable");
+        return;
+    }
     let root = repo_root();
     let project = tempfile::tempdir().expect("create tempdir");
     fs::write(
@@ -692,6 +709,10 @@ surface = "python"
 
 #[test]
 fn lift_python_shows_production_composes_but_unittest_contracts_conflict() {
+    if !python_blake3_available() {
+        eprintln!("skipping python lift integration: python3 module `blake3` is unavailable");
+        return;
+    }
     let root = repo_root();
     let project = tempfile::tempdir().expect("create tempdir");
     fs::write(

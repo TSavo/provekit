@@ -25,6 +25,28 @@ class BodyTemplateEntry:
     requires_return_type: str | None
 
 
+@dataclass(frozen=True)
+class MissingTemplateEntry:
+    operation_kind: str
+    args_shape: tuple[str, ...]
+    function: str
+    term_position: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "operation_kind": self.operation_kind,
+            "args_shape": list(self.args_shape),
+            "function": self.function,
+            "term_position": self.term_position,
+        }
+
+
+class MissingTemplateError(Exception):
+    def __init__(self, entries: tuple[MissingTemplateEntry, ...]):
+        super().__init__("missing body-template entry")
+        self.entries = entries
+
+
 def emit_stub(
     function: str,
     params: list[str],
@@ -33,12 +55,20 @@ def emit_stub(
     concept_name: str,
 ) -> dict[str, Any]:
     body = body_template_for(concept_name, params, param_types, return_type)
-    is_stub = body is None
     if body is None:
-        body = f'raise NotImplementedError("provekit-bind canonical: {concept_name}")'
+        raise MissingTemplateError(
+            (
+                MissingTemplateEntry(
+                    operation_kind=concept_name,
+                    args_shape=tuple(map_source_type(ty) for ty in param_types),
+                    function=function,
+                    term_position="body",
+                ),
+            )
+        )
     return {
         "source": _function_source(function, params, body),
-        "is_stub": is_stub,
+        "is_stub": False,
         "extension": "py",
     }
 

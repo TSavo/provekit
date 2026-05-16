@@ -158,6 +158,47 @@ public class JavaNullBoundaryRealizerTest {
     }
 
     @Test
+    public void contractCommentSugarEmitsReliftablePreAndPostPayloads() {
+        String contractCid = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+            contractCid,
+            "evidence-lift[native-surface]",
+            "loudly-bounded-lossy",
+            java.util.List.of(
+                new ContractWitness("pre", "non_null(name)", "native-surface"),
+                new ContractWitness("post", "non_null(out)", "native-surface")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "lookup",
+            java.util.List.of("name"),
+            java.util.List.of("String"),
+            "String",
+            "concept:lookup",
+            "monitor",
+            java.util.List.of("monitor"),
+            contract,
+            java.util.List.of(validCommentSugar())
+        );
+
+        assertEquals(2, countOccurrences(output.source(), "// provekit-contract: {"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "// provekit-contract-payload-cid: blake3-512:"), output.source());
+        assertTrue(output.source().contains("\"artifact_kind\":\"provekit-contract-comment-sugar\""), output.source());
+        assertTrue(output.source().contains("\"schema_version\":\"1\""), output.source());
+        assertTrue(output.source().contains("\"role\":\"pre\""), output.source());
+        assertTrue(output.source().contains("\"role\":\"post\""), output.source());
+        assertTrue(output.source().contains("\"contract_cid\":\"" + contractCid + "\""), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"ir_formula_jcs_cid\":\"blake3-512:"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"policy_cid\":\"blake3-512:"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"sugar_dict_cid\":\"blake3-512:"), output.source());
+        assertEquals(2, countOccurrences(output.source(), "\"loss_record_cid\":\"blake3-512:"), output.source());
+        assertTrue(output.source().contains("\"fol_text\":\"non_null(name)\""), output.source());
+        assertTrue(output.source().contains("\"fol_text\":\"non_null(out)\""), output.source());
+    }
+
+    @Test
     public void modeScopedJunitWitnessSugarDoesNotApplyToMonitor() {
         ContractPayload contract = new ContractPayload(
             "blake3-512:site",
@@ -182,6 +223,104 @@ public class JavaNullBoundaryRealizerTest {
         assertFalse(output.source().contains("WitnessTest"));
         assertFalse(output.source().contains("assertNotNull(name);"));
         assertFalse(output.usedSugarsJson().contains("java-junit5"));
+    }
+
+    @Test
+    public void bindContractNumericWitnessesEmitMinMaxGateSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[test-assertion]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", numericPredicate("gt", "age", 0), "age > 0", "test-assertion"),
+                new ContractWitness("pre", numericPredicate("le", "age", 130), "age <= 130", "test-assertion")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "admit",
+            java.util.List.of("age"),
+            java.util.List.of("i32"),
+            "()",
+            "concept:admit",
+            "gate",
+            java.util.List.of("gate"),
+            contract,
+            java.util.List.of(modeScopedBeanValidationNumericSugar("gate"))
+        );
+
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Min;"));
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Max;"));
+        assertTrue(output.source().contains("public static void admit(@Min(1) @Max(130) int age)"));
+        assertTrue(output.usedSugarsJson().contains("java-bean-validation"));
+        assertEquals("{}", output.observedLossRecord());
+    }
+
+    @Test
+    public void strictNumericBoundOverflowDoesNotEmitWrappedGateSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[test-assertion]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", numericPredicate("gt", "age", Long.MAX_VALUE), "age > Long.MAX_VALUE", "test-assertion"),
+                new ContractWitness("pre", numericPredicate("lt", "score", Long.MIN_VALUE), "score < Long.MIN_VALUE", "test-assertion")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "admit",
+            java.util.List.of("age", "score"),
+            java.util.List.of("i64", "i64"),
+            "()",
+            "concept:admit",
+            "gate",
+            java.util.List.of("gate"),
+            contract,
+            java.util.List.of(modeScopedBeanValidationNumericSugar("gate"))
+        );
+
+        assertFalse(output.source().contains("@Min("));
+        assertFalse(output.source().contains("@Max("));
+        assertFalse(output.source().contains("import jakarta.validation.constraints.Min;"));
+        assertFalse(output.source().contains("import jakarta.validation.constraints.Max;"));
+        assertFalse(output.usedSugarsJson().contains("java-bean-validation"));
+        assertEquals("{}", output.observedLossRecord());
+    }
+
+    @Test
+    public void inclusiveNumericBoundsAtLongExtremaStillEmitExactGateSugar() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:site",
+            "blake3-512:compound",
+            "evidence-lift[test-assertion]",
+            "exact",
+            java.util.List.of(
+                new ContractWitness("pre", numericPredicate("ge", "age", Long.MAX_VALUE), "age >= Long.MAX_VALUE", "test-assertion"),
+                new ContractWitness("pre", numericPredicate("le", "score", Long.MIN_VALUE), "score <= Long.MIN_VALUE", "test-assertion")
+            )
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "admit",
+            java.util.List.of("age", "score"),
+            java.util.List.of("i64", "i64"),
+            "()",
+            "concept:admit",
+            "gate",
+            java.util.List.of("gate"),
+            contract,
+            java.util.List.of(modeScopedBeanValidationNumericSugar("gate"))
+        );
+
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Min;"));
+        assertTrue(output.source().contains("import jakarta.validation.constraints.Max;"));
+        assertTrue(output.source().contains("@Min(9223372036854775807) long age"));
+        assertTrue(output.source().contains("@Max(-9223372036854775808) long score"));
+        assertTrue(output.usedSugarsJson().contains("java-bean-validation"));
+        assertEquals("{}", output.observedLossRecord());
     }
 
     @Test
@@ -210,8 +349,181 @@ public class JavaNullBoundaryRealizerTest {
         assertTrue(body.isEmpty());
     }
 
+    @Test
+    public void logEmitBodyTemplateRendersJavaUtilLoggingCall() {
+        java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
+            "concept:log-emit",
+            java.util.List.of("info", "\"observed \" + callsiteCid", "contractCid"),
+            "emitter"
+        );
+
+        assertTrue(body.isPresent());
+        assertTrue(body.get().contains("java.util.logging.Logger.getLogger(\"provekit\")"));
+        assertTrue(body.get().contains("java.util.logging.Level.INFO"));
+        assertTrue(body.get().contains("\"observed \" + callsiteCid"));
+        assertFalse(body.get().contains("${"));
+    }
+
+    @Test
+    public void logEmitBodyTemplateMapsCanonicalLevelsToJavaUtilLoggingLevels() {
+        java.util.Optional<String> warnBody = SugarRealizer.bodyTemplateFor(
+            "concept:log-emit",
+            java.util.List.of("warn", "\"warned\"", "contractCid"),
+            "emitter"
+        );
+        java.util.Optional<String> fatalBody = SugarRealizer.bodyTemplateFor(
+            "concept:log-emit",
+            java.util.List.of("fatal", "\"failed\"", "contractCid"),
+            "emitter"
+        );
+
+        assertTrue(warnBody.isPresent());
+        assertTrue(warnBody.get().contains("java.util.logging.Level.WARNING"));
+        assertFalse(warnBody.get().contains("Level.warn"));
+        assertTrue(fatalBody.isPresent());
+        assertTrue(fatalBody.get().contains("java.util.logging.Level.SEVERE"));
+        assertFalse(fatalBody.get().contains("Level.fatal"));
+    }
+
+    @Test
+    public void contractObservationMonitorRecursivelyRendersLogEmitCitation() {
+        java.util.Optional<String> body = SugarRealizer.bodyTemplateFor(
+            "concept:contract-observation",
+            java.util.List.of("callsiteCid", "contractCid", "mode"),
+            "monitor"
+        );
+
+        assertTrue(body.isPresent());
+        assertTrue(body.get().contains("java.util.logging.Logger.getLogger(\"provekit\")"));
+        assertTrue(body.get().contains("java.util.logging.Level.INFO"));
+        assertTrue(body.get().contains("\"observed \" + callsiteCid + \" contract \" + contractCid"));
+        assertTrue(body.get().contains("return null;"));
+        assertFalse(body.get().contains("${log_emit}"));
+        assertFalse(body.get().contains("concept:log-emit"));
+    }
+
+    @Test
+    public void emitStubForContractObservationMonitorUsesRecursiveLogEmitBody() {
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "observe_contract",
+            java.util.List.of("callsiteCid", "contractCid", "mode"),
+            java.util.List.of("String", "String", "String"),
+            "ContractObservationResult",
+            "concept:contract-observation",
+            "monitor",
+            null
+        );
+
+        assertFalse(output.isStub());
+        assertTrue(output.source().contains("java.util.logging.Logger.getLogger(\"provekit\")"));
+        assertTrue(output.source().contains("java.util.logging.Level.INFO"));
+        assertTrue(output.source().contains("return null;"));
+        assertFalse(output.source().contains("${log_emit}"));
+        assertTrue(output.observedLossRecord().contains("requires-java-util-logging-runtime"));
+        assertTrue(output.observedLossRecord().contains("java-util-logging-formats-structured-fields"));
+        assertTrue(output.observedLossRecord().contains("java-util-logging-level-taxonomy"));
+    }
+
+    @Test
+    public void ordinaryIdentityEmitterComposesRecursiveObservationAfterReturnWithoutChangingResult() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+            "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+            "evidence-lift[type-signature]",
+            "exact",
+            java.util.List.of(new ContractWitness("pre", "x >= 0", "type-signature"))
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "identity",
+            java.util.List.of("x"),
+            java.util.List.of("i64"),
+            "i64",
+            "identity",
+            "emitter",
+            java.util.List.of("emitter"),
+            contract,
+            java.util.List.of()
+        );
+
+        assertFalse(output.isStub());
+        assertTrue(output.source().contains("long __provekit_result = x;"), output.source());
+        assertTrue(output.source().contains("// provekit-observation: concept:contract-observation"), output.source());
+        assertTrue(output.source().contains("// provekit-observation-mode: emitter"), output.source());
+        assertTrue(output.source().contains("// provekit-object-fcm-cid: blake3-512:222222"), output.source());
+        assertTrue(output.source().contains("// provekit-observation-policy-cid: blake3-512:"), output.source());
+        assertTrue(output.source().contains("java.util.logging.Logger.getLogger(\"provekit\")"), output.source());
+        assertTrue(output.source().contains("java.util.logging.Level.INFO"), output.source());
+        assertTrue(output.source().contains("return __provekit_result;"), output.source());
+        assertFalse(output.source().contains("return null;"), output.source());
+        assertFalse(output.source().contains("// provekit-wrapper-fcm-cid:"), output.source());
+        assertTrue(
+            output.source().indexOf("long __provekit_result = x;")
+                < output.source().indexOf("// provekit-observation: concept:contract-observation"),
+            output.source()
+        );
+        assertTrue(
+            output.source().indexOf("// provekit-observation: concept:contract-observation")
+                < output.source().indexOf("java.util.logging.Logger.getLogger(\"provekit\")"),
+            output.source()
+        );
+        assertTrue(
+            output.source().indexOf("java.util.logging.Logger.getLogger(\"provekit\")")
+                < output.source().indexOf("return __provekit_result;"),
+            output.source()
+        );
+        assertTrue(output.observedLossRecord().contains("requires-java-util-logging-runtime"));
+        assertTrue(output.observedLossRecord().contains("java-util-logging-formats-structured-fields"));
+        assertTrue(output.observedLossRecord().contains("java-util-logging-level-taxonomy"));
+        assertNotNull(output.observationWrapperEmissionRecord());
+        assertTrue(output.observationWrapperEmissionRecord().contains("\"occurrence_kind\":\"Io\""));
+        assertTrue(output.observationWrapperEmissionRecord().contains("\"wrapper_fcm_cid\":\"blake3-512:"));
+        assertTrue(output.observationWrapperEmissionRecord().contains("\"preservation_claim_cid\":\"blake3-512:"));
+        assertFalse(output.observationWrapperEmissionRecord().contains("placeholder"));
+    }
+
+    @Test
+    public void ordinaryIdentityMonitorDoesNotComposeEmitterObservationWrapper() {
+        ContractPayload contract = new ContractPayload(
+            "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+            "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+            "evidence-lift[type-signature]",
+            "exact",
+            java.util.List.of(new ContractWitness("pre", "x >= 0", "type-signature"))
+        );
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "identity",
+            java.util.List.of("x"),
+            java.util.List.of("i64"),
+            "i64",
+            "identity",
+            "monitor",
+            java.util.List.of("monitor"),
+            contract,
+            java.util.List.of()
+        );
+
+        assertFalse(output.isStub());
+        assertTrue(output.source().contains("return x;"), output.source());
+        assertFalse(output.source().contains("__provekit_result"), output.source());
+        assertFalse(output.source().contains("java.util.logging.Logger.getLogger(\"provekit\")"), output.source());
+        assertNull(output.observationWrapperEmissionRecord());
+    }
+
     private static String modeScopedBeanValidationSugar(String mode) {
         return "{\"header\":{\"cid\":\"java-bean-validation\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"annotation:before-parameter\",\"template\":\"@NotNull\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"bean-validation\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
+    }
+
+    private static String modeScopedBeanValidationNumericSugar(String mode) {
+        return """
+            {"header":{"cid":"java-bean-validation","content":{"entries":[
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Min(${k})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"ge"}},
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Min(${k_plus_one})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"gt"}},
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Max(${k})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"le"}},
+              {"emission_template":{"kind":"verbatim","surface_locator":"annotation:before-parameter","template":"@Max(${k_minus_one})"},"loss_record_contribution":{"form":"literal","value":{}},"mode":"__MODE__","predicate_pattern":{"args":[{"kind":"var","name":"${symbol}"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":"${k}"}],"kind":"atomic","name":"lt"}}
+            ],"sugar_name":"bean-validation","target_language":"java"},"critical":false,"kind":"sugar","protocol_versions":["pep/1.7.0"],"provenance_cid":"blake3-512:0","schemaVersion":"1","version":"1.0.0"}}
+            """.replace("__MODE__", mode);
     }
 
     private static String modeScopedJunitSugar(String mode) {
@@ -222,7 +534,39 @@ public class JavaNullBoundaryRealizerTest {
         return "{\"header\":{\"cid\":\"java-function-comment\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"comment:above\",\"template\":\"// ${contract_role}: ${formula_pretty_print}\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{\"structural_divergence\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"machine_uncheckable_prose\"}}},\"predicate_pattern\":{\"args\":[],\"kind\":\"atomic\",\"name\":\"${any_formula}\"}}],\"sugar_name\":\"function-comment\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }
 
+    private static String validCommentSugar() {
+        return commentSugar().replace(
+            "\"cid\":\"java-function-comment\"",
+            "\"cid\":\"blake3-512:574800417e6f4f57e561dbe9c437adc691b2cd2369d964cbc329348cb715b161f3b38f6f7ccfd41537d033741488c081ec01b6f7cb3f04ba724b7003fa05a7b6\""
+        );
+    }
+
     private static String sugar(String cid, String name, String locator, String template, String loss) {
         return "{\"header\":{\"cid\":\"" + cid + "\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"" + locator + "\",\"template\":\"" + template + "\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":" + loss + "},\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"" + name + "\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
+    }
+
+    private static com.provekit.ir.Jcs.Json numericPredicate(String op, String symbol, long value) {
+        return com.provekit.ir.Jcs.object(
+            "args", com.provekit.ir.Jcs.array(
+                com.provekit.ir.Jcs.object("kind", com.provekit.ir.Jcs.string("var"), "name", com.provekit.ir.Jcs.string(symbol)),
+                com.provekit.ir.Jcs.object(
+                    "kind", com.provekit.ir.Jcs.string("const"),
+                    "sort", com.provekit.ir.Jcs.object("kind", com.provekit.ir.Jcs.string("primitive"), "name", com.provekit.ir.Jcs.string("Int")),
+                    "value", new com.provekit.ir.Jcs.Num(value)
+                )
+            ),
+            "kind", com.provekit.ir.Jcs.string("atomic"),
+            "name", com.provekit.ir.Jcs.string(op)
+        );
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            count += 1;
+            idx += needle.length();
+        }
+        return count;
     }
 }

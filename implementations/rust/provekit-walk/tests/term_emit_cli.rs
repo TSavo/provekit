@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
-fn term_emit_cli_skips_unrepresentable_macro_without_writing_term_json() {
+fn term_emit_cli_writes_statement_macro_as_partial_loss_term_json() {
     let dir = unique_temp_dir();
     fs::create_dir_all(&dir).expect("create temp dir");
     let source_path = dir.join("bad.rs");
@@ -29,18 +29,30 @@ fn term_emit_cli_skips_unrepresentable_macro_without_writing_term_json() {
         .output()
         .expect("run provekit-walk-emit");
 
-    assert!(!output.status.success());
+    assert!(output.status.success());
     assert!(
-        !output_path.exists(),
-        "unsupported term emission must not write output"
+        output_path.exists(),
+        "partial term emission must write output"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&fs::read(&output_path).expect("read term JSON"))
+            .expect("term JSON");
+    assert_eq!(
+        parsed["handling"].as_str(),
+        Some("handles-partially-with-loss-record")
+    );
+    assert!(parsed["loss_record"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["loss"] == "macro-not-expanded"));
+    assert_eq!(
+        parsed["term_surface"].as_str(),
+        Some("macro_call:println(\"not representable\")")
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("term-emit skipped fn=bad:"),
-        "unexpected stderr: {stderr}"
-    );
-    assert!(
-        stderr.contains("unsupported statement Stmt::Macro"),
+        stderr.contains("# rust term for function=bad"),
         "unexpected stderr: {stderr}"
     );
 

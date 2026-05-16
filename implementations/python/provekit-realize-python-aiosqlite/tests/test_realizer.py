@@ -8,7 +8,7 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-aiosqlite/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_aiosqlite.realizer import emit_stub
+from provekit_realize_python_aiosqlite.realizer import MissingTemplateError, emit_stub
 
 
 def test_sql_query_uses_aiosqlite_execute() -> None:
@@ -27,3 +27,19 @@ def test_sql_query_uses_aiosqlite_execute() -> None:
     )
     assert result["is_stub"] is False
     assert result["extension"] == "py"
+
+
+def test_unknown_concept_refuses_missing_body_template() -> None:
+    try:
+        emit_stub("missing", ["x"], ["int"], "int", "missing-concept")
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "missing-concept",
+                "args_shape": ["int"],
+                "function": "missing",
+                "term_position": "body",
+            }
+        ]
+    else:
+        raise AssertionError("missing body-template should refuse")

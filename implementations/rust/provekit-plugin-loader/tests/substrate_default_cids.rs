@@ -104,7 +104,7 @@ fn java_bean_validation_sugar_cid_self_consistent() {
         repo_root().join("menagerie/java-language-signature/specs/sugar/java-bean-validation.json");
     assert_self_consistent(
         path,
-        "blake3-512:279b2ff4bc9dedf5144d83a4dc41f08ec46038a92c04139f865892fea88380fecb302bda9c23e541050b39fe4e7a3870fd90f175a57ea76239fa1ef5517b492c",
+        "blake3-512:d0405739130eeb2c5814c81584bb61f9bf079989e7c4d5e1ecd3c5066660ba53fc0e29ba0ecbdf2fb615da4359c647c04e44654ea7a924d50bb9a06a439fc5ba",
     );
 }
 
@@ -133,7 +133,7 @@ fn java_canonical_bodies_cid_self_consistent() {
         .join("menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:f8bd005fdfdd22864e463e8daa20873eb4a093e34260ebaf2c89333295be968204206a18208c476910058032166a24474f93adb697cbb4a7cd98ef96f09e301b",
+        "blake3-512:265b192f573819b1814000f22efb1172e51ff83e0d127acdc0d31fb8dfce725e0aafe58b4f7b0f45469b969c4a561541e8d50e585fedd8056eefdd3e9cf5b7ff",
     );
 }
 

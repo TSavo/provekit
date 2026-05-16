@@ -1,0 +1,54 @@
+{
+  "cid": "blake3-512:6ca88154c88e77629a0b54be227eeeca57b88018e9db11b28bba797277cba4e3f2151473d53af6466985bff6bae63965c80d086ab10595e73e5dd04f01367379",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "resolve@core/primitives.rs",
+    "inner_type": "Vec<u8>",
+    "return_type": "Option<Vec<u8>>",
+    "role": "post",
+    "signature_position": "return",
+    "type_shape": "option"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "or",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "is_some",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "is_none",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      }
+    ]
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:a36bfe2251b2ede618575f771b830d219efc908853820c0eff3653791b15c017502e4362092a6eb6d77bb77d860d86d2e6f7a01bd7f3b3c1c2894cabdb3d49c7",
+    "span": {
+      "end": {
+        "col": 7,
+        "line": 39
+      },
+      "start": {
+        "col": 7,
+        "line": 39
+      }
+    }
+  }
+}
