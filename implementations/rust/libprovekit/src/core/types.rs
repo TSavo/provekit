@@ -705,6 +705,38 @@ pub enum Witness {
     /// Solver/checker transcript for an unknown result.
     #[serde(rename = "unknown")]
     Unknown { transcript: JsonValue },
+    /// Chain-integrity evidence produced by ProveKit.
+    #[serde(rename = "chain-integrity")]
+    ChainIntegrity(ChainIntegrityWitness),
+    /// Chain-integrity failure evidence produced by ProveKit.
+    #[serde(rename = "chain-integrity-failure")]
+    ChainIntegrityFailure(ChainIntegrityFailureWitness),
+}
+
+/// Evidence that a claim's premise chain reaches the configured root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChainIntegrityWitness {
+    /// Root claim CID reached by the walk.
+    pub walked_chain_root_cid: Cid,
+    /// Premise CIDs visited during the walk.
+    pub walked_steps: Vec<Cid>,
+    /// Witness schema version.
+    pub schema_version: u32,
+}
+
+/// Evidence that a claim's premise chain broke before reaching the root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChainIntegrityFailureWitness {
+    /// Root claim CID the walk tried to reach.
+    pub walked_chain_root_cid: Cid,
+    /// Premise CIDs visited before the break.
+    pub walked_steps_before_break: Vec<Cid>,
+    /// Serialized [`ChainBreak`](super::prove_kit::ChainBreak) variant name.
+    pub break_kind: String,
+    /// Human-readable diagnostic detail for the break.
+    pub break_detail: String,
+    /// Witness schema version.
+    pub schema_version: u32,
 }
 
 /// Resolution state of a claim.
@@ -1314,6 +1346,72 @@ impl PathDomainClaimMaterial {
             attestation: self.attestation.clone(),
             payload: None,
         }
+    }
+}
+
+pub(crate) fn domain_claim_from_canonical_bytes(bytes: &[u8]) -> Result<DomainClaim, String> {
+    let value: JsonValue = serde_json::from_slice(bytes)
+        .map_err(|error| format!("parse DomainClaim canonical JSON: {error}"))?;
+    domain_claim_from_json_value(value)
+}
+
+fn domain_claim_from_json_value(value: JsonValue) -> Result<DomainClaim, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "DomainClaim canonical JSON is not an object".to_string())?;
+    let contract_value = object
+        .get("contract")
+        .cloned()
+        .ok_or_else(|| "DomainClaim canonical JSON missing contract".to_string())?;
+    let contract_cid = crate::canonical::json_cid(&contract_value)
+        .map_err(|error| format!("address DomainClaim contract: {error}"))?;
+    let contract = PathContractMaterial {
+        cid: contract_cid,
+        value: contract_value,
+        formal_regions: vec![],
+        return_region: None,
+        concept_hint: None,
+    }
+    .to_contract();
+
+    Ok(DomainClaim {
+        domain: required_field(object, "domain")?,
+        contract,
+        artifacts: required_field(object, "artifacts")?,
+        from: required_field(object, "from")?,
+        premises: required_field(object, "premises")?,
+        to: required_field(object, "to")?,
+        witness: optional_field(object, "witness")?,
+        payload: optional_field(object, "payload")?,
+        verdict: required_field(object, "verdict")?,
+        attestation: optional_field(object, "attestation")?,
+    })
+}
+
+fn required_field<T>(object: &serde_json::Map<String, JsonValue>, field: &str) -> Result<T, String>
+where
+    T: de::DeserializeOwned,
+{
+    let value = object
+        .get(field)
+        .cloned()
+        .ok_or_else(|| format!("DomainClaim canonical JSON missing {field}"))?;
+    serde_json::from_value(value)
+        .map_err(|error| format!("decode DomainClaim field {field}: {error}"))
+}
+
+fn optional_field<T>(
+    object: &serde_json::Map<String, JsonValue>,
+    field: &str,
+) -> Result<Option<T>, String>
+where
+    T: de::DeserializeOwned,
+{
+    match object.get(field) {
+        Some(JsonValue::Null) | None => Ok(None),
+        Some(value) => serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|error| format!("decode DomainClaim field {field}: {error}")),
     }
 }
 
