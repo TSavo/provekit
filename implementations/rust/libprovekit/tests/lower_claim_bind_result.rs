@@ -229,6 +229,7 @@ fn bind_result_claim_lower_uses_named_term_realize_request() {
         request.named_term_tree,
         expected_spec.get("namedTermTree").cloned()
     );
+    assert_eq!(request.term_shape, expected_spec.get("termShape").cloned());
 }
 
 #[test]
@@ -319,6 +320,7 @@ fn non_bind_result_op_claim_uses_existing_fallback() {
     assert_eq!(requests[0].param_types, vec!["int"]);
     assert_eq!(requests[0].return_type, "int");
     assert_eq!(requests[0].named_term_tree, None);
+    assert_eq!(requests[0].term_shape, None);
 }
 
 #[test]

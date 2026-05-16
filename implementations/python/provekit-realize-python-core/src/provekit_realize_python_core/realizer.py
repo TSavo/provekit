@@ -97,6 +97,7 @@ def emit_stub(
     sugar_cids: list[str] | None = None,
     sugar_plugins: list[Any] | None = None,
     named_term_tree: dict[str, Any] | None = None,
+    term_shape: dict[str, Any] | None = None,
     annotate: bool = False,
 ) -> dict[str, Any]:
     sugar_cids_value = sugar_cids or []
@@ -110,13 +111,22 @@ def emit_stub(
         body = "\n".join([*concept_lines, "pass"])
     else:
         if named_term_tree is None:
-            missing = missing_templates_for(
-                function,
-                params,
-                param_types,
-                return_type,
-                concept_name,
-            )
+            if term_shape is None:
+                missing = missing_templates_for(
+                    function,
+                    params,
+                    param_types,
+                    return_type,
+                    concept_name,
+                )
+            else:
+                missing = missing_templates_for_term_shape(
+                    function,
+                    params,
+                    param_types,
+                    return_type,
+                    term_shape,
+                )
         else:
             missing = missing_templates_for_tree(
                 function,
@@ -129,7 +139,15 @@ def emit_stub(
             raise MissingTemplateError(missing)
 
         if named_term_tree is None:
-            term_body = term_body_for(concept_name, params, param_types, return_type)
+            if term_shape is None:
+                term_body = term_body_for(concept_name, params, param_types, return_type)
+            else:
+                term_body = term_body_for_term_shape(
+                    term_shape,
+                    params,
+                    param_types,
+                    return_type,
+                )
         else:
             term_body = term_body_for_tree(
                 named_term_tree,
@@ -185,6 +203,26 @@ def missing_templates_for_tree(
 ) -> tuple[MissingTemplateEntry, ...]:
     collector = _MissingTemplateCollector(function, params, param_types, return_type)
     return collector.collect_tree(named_term_tree)
+
+
+def missing_templates_for_term_shape(
+    function: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    term_shape: dict[str, Any],
+) -> tuple[MissingTemplateEntry, ...]:
+    if term_body_for_term_shape(term_shape, params, param_types, return_type) is not None:
+        return ()
+    concept_name = _shape_concept_name(term_shape) or "termShape"
+    return (
+        MissingTemplateEntry(
+            operation_kind=concept_name,
+            args_shape=tuple(map_source_type(ty) for ty in param_types),
+            function=function,
+            term_position="body.termShape",
+        ),
+    )
 
 
 def contract_comment_lines(
@@ -822,6 +860,202 @@ def term_body_for_tree(
         return_type,
         annotate=annotate,
     )
+
+
+@dataclass
+class _ShapeLoweringContext:
+    params: list[str]
+    param_types: list[str]
+    return_type: str
+    next_leaf: int = 0
+    next_temp: int = 0
+
+    def fallback_leaf(self) -> TermExpression:
+        if self.params:
+            index = min(self.next_leaf, len(self.params) - 1)
+            self.next_leaf += 1
+            return TermExpression(
+                text=self.params[index],
+                type_name=map_source_type(self.param_types[index])
+                if index < len(self.param_types)
+                else "",
+            )
+        self.next_leaf += 1
+        return TermExpression(text="0", type_name="int")
+
+    def temp_name(self) -> str:
+        name = f"_provekit_v{self.next_temp}"
+        self.next_temp += 1
+        return name
+
+
+def term_body_for_term_shape(
+    term_shape: dict[str, Any],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermBody | None:
+    context = _ShapeLoweringContext(params, param_types, return_type)
+    body = _lower_shape_body(term_shape, context)
+    if body is not None:
+        return body
+    expression = _lower_shape_expression(term_shape, context)
+    if expression is None or expression.text is None:
+        return None
+    return TermBody(f"return {expression.text}")
+
+
+def _lower_shape_body(shape: Any, context: _ShapeLoweringContext) -> TermBody | None:
+    if not isinstance(shape, dict):
+        return None
+    concept_name = _shape_concept_name(shape)
+    args = _shape_args(shape)
+    if concept_name in {"concept:seq", "seq"}:
+        lines: list[str] = []
+        for child in args[:-1]:
+            expression = _lower_shape_expression(child, context)
+            if expression is None or expression.text is None:
+                return None
+            lines.append(f"{context.temp_name()} = {expression.text}")
+        if not args:
+            return TermBody("")
+        tail = _lower_shape_body(args[-1], context)
+        if tail is not None:
+            if tail.body:
+                lines.append(tail.body)
+            return TermBody("\n".join(lines))
+        expression = _lower_shape_expression(args[-1], context)
+        if expression is None or expression.text is None:
+            return None
+        lines.append(f"return {expression.text}")
+        return TermBody("\n".join(lines))
+    if concept_name in {"concept:conditional", "conditional"} and len(args) == 3:
+        condition = _lower_shape_expression(args[0], context)
+        if condition is None or condition.text is None:
+            return None
+        then_body = _lower_shape_branch_body(args[1], context)
+        else_body = _lower_shape_branch_body(args[2], context)
+        if then_body is None or else_body is None:
+            return None
+        return TermBody(
+            "\n".join(
+                [
+                    f"if {condition.text}:",
+                    _indent_shape_block(then_body.body),
+                    "else:",
+                    _indent_shape_block(else_body.body),
+                ]
+            )
+        )
+    return None
+
+
+def _lower_shape_branch_body(
+    shape: Any,
+    context: _ShapeLoweringContext,
+) -> TermBody | None:
+    body = _lower_shape_body(shape, context)
+    if body is not None:
+        return body
+    expression = _lower_shape_expression(shape, context)
+    if expression is None or expression.text is None:
+        return None
+    return TermBody(f"return {expression.text}")
+
+
+def _indent_shape_block(body: str) -> str:
+    lines = body.splitlines() or ["pass"]
+    return "\n".join(f"    {line}" if line else "" for line in lines)
+
+
+def _lower_shape_expression(
+    shape: Any,
+    context: _ShapeLoweringContext,
+) -> TermExpression | None:
+    if not isinstance(shape, dict):
+        return None
+    concept_name = _shape_concept_name(shape)
+    if not concept_name:
+        return _shape_leaf_expression(shape, context)
+    args = _shape_args(shape)
+    if concept_name in {"concept:seq", "seq"}:
+        for child in args[:-1]:
+            _lower_shape_expression(child, context)
+        if not args:
+            return TermExpression(text="None", type_name="None")
+        return _lower_shape_expression(args[-1], context)
+    arg_terms = []
+    for child in args:
+        term = _lower_shape_expression(child, context)
+        if term is None or term.text is None:
+            return None
+        arg_terms.append(term)
+    arg_exprs = [term.text or "" for term in arg_terms]
+    arg_types = [term.type_name for term in arg_terms]
+    template = _body_template_expression_for(concept_name, arg_exprs, arg_types, context.return_type)
+    if template is None:
+        return None
+    return TermExpression(
+        text=template,
+        type_name=_shape_operation_return_type(concept_name, arg_terms, context.return_type),
+    )
+
+
+def _shape_leaf_expression(
+    shape: dict[str, Any],
+    context: _ShapeLoweringContext,
+) -> TermExpression:
+    kind = str(shape.get("kind", ""))
+    if kind == "var":
+        name = shape.get("name")
+        if isinstance(name, str) and name:
+            return TermExpression(
+                text=name,
+                type_name=map_source_type(_type_for_argument(name, context.params, context.param_types)),
+            )
+    if kind == "const" or "value" in shape:
+        return _literal_term(shape.get("value"))
+    return context.fallback_leaf()
+
+
+def _literal_term(value: Any) -> TermExpression:
+    if isinstance(value, bool):
+        return TermExpression(text="True" if value else "False", type_name="bool")
+    if isinstance(value, int):
+        return TermExpression(text=str(value), type_name="int")
+    if isinstance(value, float):
+        return TermExpression(text=repr(value), type_name="float")
+    if isinstance(value, str):
+        return TermExpression(text=json.dumps(value), type_name="str")
+    if value is None:
+        return TermExpression(text="None", type_name="None")
+    return TermExpression(text=json.dumps(value, sort_keys=True), type_name="")
+
+
+def _shape_concept_name(shape: dict[str, Any]) -> str:
+    value = shape.get("concept_name", shape.get("conceptName"))
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _shape_args(shape: dict[str, Any]) -> list[dict[str, Any]]:
+    args = shape.get("args")
+    if not isinstance(args, list):
+        return []
+    return [arg for arg in args if isinstance(arg, dict)]
+
+
+def _shape_operation_return_type(
+    concept_name: str,
+    arg_terms: list[TermExpression],
+    return_type: str,
+) -> str:
+    op_name = concept_name.removeprefix("concept:")
+    if op_name == "conditional" and len(arg_terms) >= 3:
+        branch_types = [arg_terms[1].type_name, arg_terms[2].type_name]
+        if branch_types[0] and branch_types[0] == branch_types[1]:
+            return branch_types[0]
+        return map_source_type(return_type)
+    return _rust_runtime_operation_return_type(op_name, arg_terms)
 
 
 def _lower_tree_body(
@@ -1776,6 +2010,12 @@ def _function_source(
     *,
     leading_lines: list[str] | None = None,
 ) -> str:
+    # Per the canonical-form ruling, function names are not bind-CID-relevant
+    # (audit/provenance only). When the lift kit stripped fn_name from the
+    # bind payload envelope (A19), this field arrives empty. Fall back to a
+    # synthetic placeholder so the emitted source parses; relift recovers
+    # the algebra from term_shape composition, not from the function name.
+    function = function or "_provekit_synth"
     param_list = ", ".join(params)
     body_lines = body.splitlines() or ["pass"]
     indented = "\n".join(f"    {line}" if line else "" for line in body_lines)

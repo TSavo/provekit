@@ -825,6 +825,60 @@ def test_named_term_tree_missing_node_concept_refuses_loudly() -> None:
         raise AssertionError("missing namedTermTree concept should refuse")
 
 
+def test_term_shape_synthesis_ignores_function_level_concept_annotation() -> None:
+    term_shape = {
+        "concept_name": "concept:conditional",
+        "op_cid": _cid("a"),
+        "args": [
+            {
+                "concept_name": "concept:eq",
+                "op_cid": _cid("b"),
+                "args": [
+                    {"kind": "var", "name": "x"},
+                    {"kind": "const", "value": 0},
+                ],
+            },
+            {
+                "concept_name": "concept:neg",
+                "op_cid": _cid("c"),
+                "args": [{"kind": "const", "value": 1}],
+            },
+            {
+                "concept_name": "concept:add",
+                "op_cid": _cid("d"),
+                "args": [
+                    {"kind": "var", "name": "x"},
+                    {"kind": "const", "value": 1},
+                ],
+            },
+        ],
+    }
+
+    result = emit_stub(
+        function="audit_annotated",
+        params=["x"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="concept:foo-bar",
+        term_shape=term_shape,
+    )
+
+    source = result["source"]
+    assert source == (
+        "def audit_annotated(x):\n"
+        "    if (x) == (0):\n"
+        "        return -(1)\n"
+        "    else:\n"
+        "        return (x) + (1)\n"
+    )
+    assert "concept:foo-bar" not in source
+    assert "missing body-template" not in source
+    namespace = _compiled_namespace(source)
+    audit_annotated = namespace["audit_annotated"]
+    assert audit_annotated(0) == -1
+    assert audit_annotated(4) == 5
+
+
 def test_contract_witnesses_emit_liftable_contract_comment_payloads() -> None:
     result = emit_stub(
         function="wrap_identity",
