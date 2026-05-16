@@ -6,8 +6,8 @@ This document enumerates what is required for that claim to be real. Each item i
 
 ## Substrate primitives (verifier-side)
 
-- **A4 lands.** `Term::walk()` iterator + `TermNode { op_cid, term_position: Vec<usize> }` slot-path semantics. Unit tests pass for empty / single / nested / mixed trees. No flat-index `position` field.
-- **A6 lands.** `Catalog::contains(&Cid) -> bool` with default impl + fs / in-memory overrides + invariant test (`contains(cid) == get(cid).is_some()` across all impls). Existing get-then-discard callers migrated.
+- **A4 merged** (PR #1061 / SHA a48c6f45). `Term::walk()` iterator + `TermNode { op_cid, term_position: Vec<usize> }` slot-path semantics on main. 7 unit tests green.
+- **A6 in flight** (#1056, codex 88f19146 re-dispatched with trimmed scope). `Catalog::contains(&Cid) -> bool` with default impl `self.get(cid).is_some()` + HashMapCatalog override (the only Catalog impl in libprovekit::core today). Doc-comment names the fs-backed override as a future optimization for when an fs-backed impl is minted. Invariant test: `contains(cid) == get(cid).is_some()`.
 - **`walk_premises_to_root` lands** with the seven `ChainBreak` variants + cycle detection + `allow_orphan_from_cids` toggle + eight unit tests (seven failure variants + one happy + one orphan-strict-vs-loose).
 - **`assert_concept_tier` lands** consuming `Term::walk()` + `Catalog::contains()` + a `HubMissingNode { node_op_cid, node_position, term_position }` failure variant. Two unit tests (fail + happy).
 
@@ -98,11 +98,13 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 ## Status snapshot (2026-05-16, post-#1048 merge)
 
-**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048).
+**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061).
 
-**Drafted, not yet minted as GitHub issues:** A1, A2, A3, A4, A5, A6 (the six #1024 prereqs), Dialect-newtype refactor.
+**Drafted, not yet minted as GitHub issues:** A1, A2, A3, A5 (four of the six #1024 prereqs), Dialect-newtype refactor.
 
-**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A1-A6 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
+**Filed and in flight:** A6 #1056 (codex 88f19146, re-dispatched 2026-05-16 with trimmed scope after the initial dispatch correctly refused to fabricate an fs-backed Catalog impl that doesn't exist on main).
+
+**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A1, A2, A3, A6 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
 
 **Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
 
