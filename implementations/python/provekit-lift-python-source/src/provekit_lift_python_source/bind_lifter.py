@@ -165,15 +165,12 @@ def _entry_for_function(
     witnesses = []
     witnesses.extend(_contract_comment_witnesses(lines, node, rel_path, diagnostics))
     witnesses.extend(_decorator_contract_witnesses(node, param_names, rel_path, diagnostics))
-    concept_citations = _concept_citation_comments(lines, node, rel_path, diagnostics)
+    _concept_citation_comments(lines, node, rel_path, diagnostics)
 
     return {
         "attr_post": attr_post,
         "attr_pre": attr_pre,
-        "concept_citations": concept_citations,
         "concept_annotation": concept,
-        "file": rel_path,
-        "fn_line": node.lineno,
         "fn_name": node.name,
         "kind": "bind-lift-entry",
         "param_names": param_names,
@@ -200,79 +197,57 @@ def _signature_param_names(args: ast.arguments) -> list[str]:
 
 def _function_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Json:
     statements = [stmt for stmt in node.body if not _is_docstring_stmt(stmt)]
-    return {
-        "kind": "body",
-        "stmts": [_shape_stmt(stmt, top_level=True) for stmt in statements],
-    }
+    return _shape_block(statements)
 
 
 def _shape_block(statements: list[ast.stmt]) -> Json:
-    return {
-        "kind": "block",
-        "stmts": [
-            _shape_stmt(stmt, top_level=False)
-            for stmt in statements
-            if not _is_docstring_stmt(stmt)
-        ],
-    }
+    shape: Json = {}
+    for stmt in statements:
+        if _is_docstring_stmt(stmt):
+            continue
+        candidate = _shape_stmt(stmt, top_level=False)
+        if _shape_has_operator_identity(candidate):
+            shape = candidate
+    return shape
 
 
 def _shape_stmt(node: ast.stmt, *, top_level: bool) -> Json:
     if isinstance(node, ast.If):
-        shaped: dict[str, Json] = {
-            "cond": _shape_expr(node.test),
-            "kind": "if",
-            "then": _shape_block(node.body),
-        }
-        if node.orelse:
-            shaped = {
-                "cond": shaped["cond"],
-                "else": _shape_block(node.orelse),
-                "kind": shaped["kind"],
-                "then": shaped["then"],
-            }
-        return shaped
+        return _operator_shape(
+            "concept:conditional",
+            [
+                _shape_expr(node.test),
+                _shape_block(node.body),
+                _shape_block(node.orelse),
+            ],
+        )
     if isinstance(node, ast.While):
-        return {
-            "body": _shape_block(node.body),
-            "cond": _shape_expr(node.test),
-            "kind": "while",
-        }
+        cond = _shape_expr(node.test)
+        if _shape_has_operator_identity(cond):
+            return cond
+        return _shape_block(node.body)
     if isinstance(node, (ast.For, ast.AsyncFor)):
-        return {"body": _shape_block(node.body), "kind": "for"}
+        return _shape_block(node.body)
     if isinstance(node, ast.Return):
-        shaped: dict[str, Json] = {"kind": "exit"}
-        if node.value is not None:
-            _add_operator_child(shaped, "value", _shape_expr(node.value))
-        return shaped
+        if node.value is None:
+            return {}
+        return _shape_expr(node.value)
     if isinstance(node, (ast.Break, ast.Continue)):
-        return {"kind": "exit"}
+        return {}
     if isinstance(node, ast.Assign):
-        kind = "assign"
-        if top_level and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            kind = "let"
-        shaped: dict[str, Json] = {"kind": kind}
-        _add_operator_child(shaped, "value", _shape_expr(node.value))
-        return shaped
+        return _shape_expr(node.value)
     if isinstance(node, ast.AnnAssign):
-        kind = "assign"
-        if top_level and isinstance(node.target, ast.Name):
-            kind = "let"
-        shaped = {"kind": kind}
         if node.value is not None:
-            _add_operator_child(shaped, "value", _shape_expr(node.value))
-        return shaped
+            return _shape_expr(node.value)
+        return {}
     if isinstance(node, ast.AugAssign):
-        shaped = {"kind": "assign"}
-        op_shape = _bin_operator_shape(
+        return _bin_operator_shape(
             node.op,
             [_shape_expr(node.target), _shape_expr(node.value)],
         )
-        _add_operator_child(shaped, "value", op_shape)
-        return shaped
     if isinstance(node, ast.Expr):
         return _shape_expr(node.value)
-    return {"kind": "opaque"}
+    return {}
 
 
 def _shape_expr(node: ast.expr) -> Json:
@@ -282,28 +257,23 @@ def _shape_expr(node: ast.expr) -> Json:
         op = _bool_op(node.op)
         values = [_shape_expr(value) for value in node.values]
         if op is None:
-            return {"kind": "opaque"}
-        return _operator_shape(op["kind"], op["op"], op["concept_name"], values)
+            return {}
+        return _operator_shape(op, values)
     if isinstance(node, ast.UnaryOp):
         op = _unary_op(node.op)
         if op is None:
-            return {"kind": "opaque"}
-        return _operator_shape(op["kind"], op["op"], op["concept_name"], [_shape_expr(node.operand)])
+            return {}
+        return _operator_shape(op, [_shape_expr(node.operand)])
     if isinstance(node, ast.Compare):
         op = _rel_op(node.ops[0]) if node.ops else None
         args = [_shape_expr(node.left)]
         args.extend(_shape_expr(comparator) for comparator in node.comparators[:1])
         if op is None:
-            return {"kind": "rel", "op": "opaque-op"}
-        return _operator_shape("rel", op["op"], op["concept_name"], args)
+            return {}
+        return _operator_shape(op, args)
     if isinstance(node, ast.Call):
-        return {"kind": "call"}
-    return {"kind": "opaque"}
-
-
-def _add_operator_child(parent: dict[str, Json], key: str, child: Json) -> None:
-    if _shape_has_operator_identity(child):
-        parent[key] = child
+        return {}
+    return {}
 
 
 def _shape_has_operator_identity(value: Json) -> bool:
@@ -319,73 +289,81 @@ def _shape_has_operator_identity(value: Json) -> bool:
 def _bin_operator_shape(op: ast.operator, args: list[Json]) -> Json:
     atom = _bin_op(op)
     if atom is None:
-        return {"kind": "bin", "op": "opaque-op"}
-    return _operator_shape("bin", atom["op"], atom["concept_name"], args)
+        return {}
+    return _operator_shape(atom, args)
 
 
-def _operator_shape(kind: str, op: str, concept_name: str, args: list[Json]) -> Json:
-    shaped: dict[str, Json] = {
-        "concept_name": concept_name,
-        "kind": kind,
-        "op": op,
-    }
+def _operator_shape(concept_name: str, args: list[Json]) -> Json:
     op_cid = _concept_op_cid(concept_name)
-    if op_cid is not None:
-        shaped["op_cid"] = op_cid
-    if args:
-        shaped["args"] = args
-    return shaped
+    if op_cid is None:
+        return {}
+    return {
+        "args": [_operand_slot(arg) for arg in args],
+        "concept_name": concept_name,
+        "op_cid": op_cid,
+    }
 
 
-def _bin_op(op: ast.operator) -> dict[str, str] | None:
-    table: tuple[tuple[type[ast.operator], str, str], ...] = (
-        (ast.Add, "+", "concept:add"),
-        (ast.Sub, "-", "concept:sub"),
-        (ast.Mult, "*", "concept:mul"),
-        (ast.Div, "/", "concept:div"),
-        (ast.Mod, "%", "concept:mod"),
-        (ast.LShift, "<<", "concept:shl"),
-        (ast.RShift, ">>", "concept:shr"),
-        (ast.BitAnd, "&", "concept:bitand"),
-        (ast.BitOr, "|", "concept:bitor"),
-        (ast.BitXor, "^", "concept:bitxor"),
+def _operand_slot(value: Json) -> Json:
+    if (
+        isinstance(value, dict)
+        and isinstance(value.get("concept_name"), str)
+        and isinstance(value.get("op_cid"), str)
+        and isinstance(value.get("args"), list)
+    ):
+        return value
+    return {}
+
+
+def _bin_op(op: ast.operator) -> str | None:
+    table: tuple[tuple[type[ast.operator], str], ...] = (
+        (ast.Add, "concept:add"),
+        (ast.Sub, "concept:sub"),
+        (ast.Mult, "concept:mul"),
+        (ast.Div, "concept:div"),
+        (ast.Mod, "concept:mod"),
+        (ast.LShift, "concept:shl"),
+        (ast.RShift, "concept:shr"),
+        (ast.BitAnd, "concept:bitand"),
+        (ast.BitOr, "concept:bitor"),
+        (ast.BitXor, "concept:bitxor"),
     )
-    for cls, symbol, concept_name in table:
+    for cls, concept_name in table:
         if isinstance(op, cls):
-            return {"concept_name": concept_name, "op": symbol}
+            return concept_name
     return None
 
 
-def _bool_op(op: ast.boolop) -> dict[str, str] | None:
+def _bool_op(op: ast.boolop) -> str | None:
     if isinstance(op, ast.And):
-        return {"concept_name": "concept:and", "kind": "and", "op": "&&"}
+        return "concept:and"
     if isinstance(op, ast.Or):
-        return {"concept_name": "concept:or", "kind": "or", "op": "||"}
+        return "concept:or"
     return None
 
 
-def _unary_op(op: ast.unaryop) -> dict[str, str] | None:
+def _unary_op(op: ast.unaryop) -> str | None:
     if isinstance(op, ast.Not):
-        return {"concept_name": "concept:not", "kind": "not", "op": "not"}
+        return "concept:not"
     if isinstance(op, ast.USub):
-        return {"concept_name": "concept:neg", "kind": "neg", "op": "-"}
+        return "concept:neg"
     if isinstance(op, ast.Invert):
-        return {"concept_name": "concept:bitnot", "kind": "bitnot", "op": "~"}
+        return "concept:bitnot"
     return None
 
 
-def _rel_op(op: ast.cmpop) -> dict[str, str] | None:
-    table: tuple[tuple[type[ast.cmpop], str, str], ...] = (
-        (ast.Eq, "==", "concept:eq"),
-        (ast.NotEq, "!=", "concept:ne"),
-        (ast.Lt, "<", "concept:lt"),
-        (ast.LtE, "<=", "concept:le"),
-        (ast.Gt, ">", "concept:gt"),
-        (ast.GtE, ">=", "concept:ge"),
+def _rel_op(op: ast.cmpop) -> str | None:
+    table: tuple[tuple[type[ast.cmpop], str], ...] = (
+        (ast.Eq, "concept:eq"),
+        (ast.NotEq, "concept:ne"),
+        (ast.Lt, "concept:lt"),
+        (ast.LtE, "concept:le"),
+        (ast.Gt, "concept:gt"),
+        (ast.GtE, "concept:ge"),
     )
-    for cls, symbol, concept_name in table:
+    for cls, concept_name in table:
         if isinstance(op, cls):
-            return {"concept_name": concept_name, "op": symbol}
+            return concept_name
     return None
 
 
@@ -609,10 +587,8 @@ def _contract_comment_witness(
     if isinstance(local_contract_cid, str):
         extension_fields["local_contract_cid"] = local_contract_cid
     return {
-        "col": 0,
         "confidence_basis_points": 10000,
         "extension_fields": extension_fields,
-        "line": line_no,
         "predicate": predicate,
         "predicate_text": fol_text,
         "role": CONTRACT_COMMENT_ROLE_MAP[role],
@@ -1151,13 +1127,11 @@ def _decorator_contract_witnesses(
                 continue
             witnesses.append(
                 {
-                    "col": getattr(decorator, "col_offset", 0),
                     "confidence_basis_points": 10000,
                     "extension_fields": {
                         "decorator": _decorator_name(decorator.func),
                         "surface": "python-decorator-contract",
                     },
-                    "line": getattr(decorator, "lineno", node.lineno),
                     "predicate": predicate,
                     "predicate_text": text,
                     "role": role,
