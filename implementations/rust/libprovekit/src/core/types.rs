@@ -735,6 +735,8 @@ pub struct DomainClaim {
     pub to: Cid,
     /// Optional content-addressed witness.
     pub witness: Option<Witness>,
+    /// Optional faithful term payload materialized by transform kits.
+    pub payload: Option<Term>,
     /// Current discharge verdict.
     pub verdict: Verdict,
     /// Optional signer attestation, excluded from claim identity.
@@ -1180,6 +1182,7 @@ impl PathDomainClaimMaterial {
             witness: self.witness.clone(),
             verdict: self.verdict,
             attestation: self.attestation.clone(),
+            payload: None,
         }
     }
 }
@@ -1698,7 +1701,7 @@ fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
         None => CValue::null(),
     };
 
-    CValue::object([
+    let mut fields = vec![
         ("artifacts", CValue::array(artifact_values)),
         ("contract", contract_to_cvalue(&claim.contract)),
         (
@@ -1713,7 +1716,14 @@ fn domain_claim_to_value(claim: &DomainClaim) -> Arc<CValue> {
             json_to_cvalue(serde_json::to_value(claim.verdict).expect("verdict serializes")),
         ),
         ("witness", witness_value),
-    ])
+    ];
+    if let Some(payload) = &claim.payload {
+        fields.push((
+            "payload",
+            json_to_cvalue(serde_json::to_value(payload).expect("payload term serializes")),
+        ));
+    }
+    CValue::object(fields)
 }
 
 fn input_to_value(input: &Input) -> Arc<CValue> {

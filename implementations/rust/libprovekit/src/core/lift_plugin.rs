@@ -28,6 +28,13 @@ pub struct LiftPluginKit {
     working_dir: Option<PathBuf>,
 }
 
+/// Source-shaped Lift Kit adapter over the existing lift-plugin transport.
+#[derive(Debug, Clone)]
+pub struct LiftKit {
+    dialect: Dialect,
+    transport: LiftPluginKit,
+}
+
 impl LiftPluginKit {
     /// Build a lift-plugin Kit from an already-resolved command.
     pub fn new(
@@ -80,6 +87,7 @@ impl LiftPluginKit {
             premises: vec![],
             to: response_cid,
             witness: None,
+            payload: Some(response_term),
             verdict: Verdict::Unresolved,
             attestation: None,
         })
@@ -182,6 +190,74 @@ impl LiftPluginKit {
         }
 
         Ok((initialize_response, response))
+    }
+}
+
+impl LiftKit {
+    /// Build a source Lift Kit from an already-resolved lift-plugin command.
+    pub fn new(
+        dialect: Dialect,
+        surface: impl Into<String>,
+        command: Vec<String>,
+        working_dir: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            dialect,
+            transport: LiftPluginKit::new(surface, command, working_dir),
+        }
+    }
+
+    fn lift_params_from_source(&self, input: &Input) -> Result<Value, LiftPluginKitError> {
+        let Input::Source { dialect, bytes } = input else {
+            return Err(LiftPluginKitError::Failed(
+                "lift kit expects Input::Source".to_string(),
+            ));
+        };
+        if dialect != &self.dialect {
+            return Err(LiftPluginKitError::Failed(format!(
+                "lift kit expected source dialect {:?}, got {:?}",
+                self.dialect, dialect
+            )));
+        }
+        serde_json::from_slice(bytes).map_err(|error| {
+            LiftPluginKitError::Failed(format!(
+                "lift source bytes must encode lift-plugin request JSON: {error}"
+            ))
+        })
+    }
+}
+
+impl Kit for LiftKit {
+    fn dialect(&self) -> Dialect {
+        self.dialect.clone()
+    }
+
+    fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+        let lift_params = self
+            .lift_params_from_source(input)
+            .map_err(|error| KitError::Transformation(error.to_string()))?;
+        let spec_input = Input::Spec(lift_params);
+        let mut claim = self
+            .transport
+            .parse_session(&spec_input)
+            .map(|session| session.claim)
+            .map_err(|error| KitError::Transformation(format!("lift plugin transport: {error}")))?;
+        claim.from = vec![address(input)];
+        Ok(claim)
+    }
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        Ok(claim)
+    }
+
+    fn parse(&self, input: &Input) -> Result<Term, KitError> {
+        self.transform(input)?
+            .payload
+            .ok_or_else(|| KitError::Serialization("lift claim missing term payload".to_string()))
+    }
+
+    fn serialize(&self, term: &Term) -> Result<Input, KitError> {
+        Ok(Input::Term(term.clone()))
     }
 }
 

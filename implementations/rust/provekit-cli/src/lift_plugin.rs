@@ -10,8 +10,12 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use libprovekit::core::{DomainClaim, Input, LiftPluginKit, LiftPluginKitError};
+use libprovekit::core::{
+    address, execute_path, Dialect, DomainClaim, HashMapInputCatalog, Input, KitRegistry, LiftKit,
+    LiftPluginKit, LiftPluginKitError, Path as CorePath, PathAlgebra, PathExecutionError, Term,
+};
 use owo_colors::OwoColorize;
+use provekit_ir_types::CompositionRefusalMemento;
 use serde_json::{json, Value};
 
 #[derive(Debug, Clone)]
@@ -34,13 +38,14 @@ impl LiftPluginSession {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct LiftPluginOptions {
+pub struct LiftPluginOptions {
     pub identify_only: bool,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum LiftPluginError {
     MissingBinary { binary: String },
+    Refused(Box<CompositionRefusalMemento>),
     Failed(String),
 }
 
@@ -60,6 +65,11 @@ impl std::fmt::Display for LiftPluginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingBinary { binary } => write!(f, "lifter binary `{binary}` not found"),
+            Self::Refused(refusal) => write!(
+                f,
+                "composition refused: {}: {}",
+                refusal.header.failure_kind, refusal.header.failure_detail
+            ),
             Self::Failed(message) => f.write_str(message),
         }
     }
@@ -117,6 +127,124 @@ pub(crate) fn dispatch_lift(
         legacy_response: core_session.legacy_response,
         claim: core_session.claim,
     })
+}
+
+pub(crate) fn dispatch_lift_path(
+    project_root: &Path,
+    surface: &str,
+    options: LiftPluginOptions,
+    quiet: bool,
+) -> Result<LiftPluginSession, LiftPluginError> {
+    let started = Instant::now();
+    let manifest = find_manifest(project_root, surface);
+    if !quiet {
+        match &manifest {
+            Ok(manifest) => println!(
+                "{}: surface=`{}` plugin=`{}` command={:?}",
+                "dispatch".green().bold(),
+                surface,
+                manifest.name,
+                manifest.command
+            ),
+            Err(error) => println!(
+                "{}: surface=`{}` registry miss: {}",
+                "dispatch".yellow().bold(),
+                surface,
+                error
+            ),
+        }
+    }
+
+    let lift_params = build_lift_params(project_root, surface, options);
+    let dialect = dialect_for_surface(surface);
+    let kit_name = lift_kit_name(surface);
+    let source = Input::Source {
+        dialect: dialect.clone(),
+        bytes: serde_json::to_vec(&lift_params)
+            .map_err(|error| LiftPluginError::Failed(format!("encode lift request: {error}")))?,
+    };
+    let source_cid = address(&source);
+    let mut inputs = HashMapInputCatalog::default();
+    inputs.put(source_cid.clone(), source);
+    let path_input = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lift".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![source_cid],
+            depends_on: vec![],
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    if let Ok(manifest) = &manifest {
+        registry.register(
+            kit_name,
+            LiftKit::new(
+                dialect,
+                surface,
+                manifest.command.clone(),
+                resolved_working_dir(project_root, manifest),
+            ),
+        );
+    }
+
+    trace_log(format!("lift path execute surface={surface}"));
+    let claim = execute_path(&path_input, &registry, &inputs).map_err(lift_error_from_path)?;
+    trace_log(format!(
+        "lift path executed surface={surface} elapsed={:?}",
+        started.elapsed()
+    ));
+    let legacy_response = claim
+        .payload
+        .as_ref()
+        .ok_or_else(|| LiftPluginError::Failed("lift claim missing term payload".to_string()))
+        .and_then(response_from_payload_term)?;
+
+    Ok(LiftPluginSession {
+        legacy_response,
+        claim,
+    })
+}
+
+fn response_from_payload_term(term: &Term) -> Result<Value, LiftPluginError> {
+    match term {
+        Term::Const { value, .. } => Ok(value.clone()),
+        _ => Err(LiftPluginError::Failed(
+            "lift claim payload was not a lift response term".to_string(),
+        )),
+    }
+}
+
+fn lift_error_from_path(error: PathExecutionError) -> LiftPluginError {
+    match error {
+        PathExecutionError::Refused(refusal) => LiftPluginError::Refused(refusal),
+        PathExecutionError::Kit(error) => match error {
+            libprovekit::core::KitError::Transformation(message)
+                if message.starts_with("lift plugin transport: lifter binary `") =>
+            {
+                LiftPluginError::Failed(message)
+            }
+            other => LiftPluginError::Failed(other.to_string()),
+        },
+        other => LiftPluginError::Failed(other.to_string()),
+    }
+}
+
+fn dialect_for_surface(surface: &str) -> Dialect {
+    match surface {
+        "rust" => Dialect::Rust,
+        "c" => Dialect::C,
+        "x86-64" | "x86_64" => Dialect::X86_64,
+        "aarch64" => Dialect::AArch64,
+        "wasm" => Dialect::Wasm,
+        "jvm-bytecode" => Dialect::JvmBytecode,
+        "coq" => Dialect::Coq,
+        "smt-lib" => Dialect::SmtLib,
+        other => Dialect::Other(other.to_string()),
+    }
+}
+
+fn lift_kit_name(surface: &str) -> String {
+    format!("lift-{surface}")
 }
 
 fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
@@ -194,11 +322,7 @@ fn resolved_working_dir(project_root: &Path, manifest: &LiftPluginManifest) -> O
     })
 }
 
-pub(crate) fn build_lift_params(
-    project_root: &Path,
-    surface: &str,
-    options: LiftPluginOptions,
-) -> Value {
+pub fn build_lift_params(project_root: &Path, surface: &str, options: LiftPluginOptions) -> Value {
     let workspace_root = project_root
         .canonicalize()
         .unwrap_or_else(|_| project_root.to_path_buf());

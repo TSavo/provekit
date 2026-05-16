@@ -174,6 +174,7 @@ fn compose_function_contract_claims(
         premises,
         to,
         witness: None,
+        payload: None,
         verdict: compose_verdict(inner_claim.verdict, outer_claim.verdict),
         attestation: None,
     })
