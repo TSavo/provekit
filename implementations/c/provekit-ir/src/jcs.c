@@ -113,7 +113,7 @@ static void emit_sort(pk_buffer *buf, pk_sort *s) {
             break;
         }
         case PK_SORT_FUNCTION: {
-            /* Locked key order: kind, args, return — alphabetical via JCS. */
+            /* Locked key order: kind, args, return - alphabetical via JCS. */
             sort_array_ctx args_ctx = { s->data.function.args, s->data.function.n_args };
             pk_field fields[] = {
                 {"args",   emit_sort_array_fn, &args_ctx},

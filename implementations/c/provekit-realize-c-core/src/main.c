@@ -2,13 +2,19 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "blake3.h"
+
 #define BODY_TEMPLATE_REL "menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json"
+#define CONCEPT_CITATION_COMMENT_KIND "provekit-concept-citation-comment-sugar"
+#define DEFAULT_KIT_ID "provekit-realize-c-core@0.1.0"
+#define DEFAULT_TARGET_LIBRARY_TAG "c-core"
 #define MAX_LINE 131072
 
 typedef struct {
@@ -47,6 +53,14 @@ static char *xstrdup(const char *s) {
     char *out = (char *)malloc(n + 1);
     if (out == NULL) return NULL;
     memcpy(out, s, n + 1);
+    return out;
+}
+
+static char *xstrndup(const char *s, size_t n) {
+    char *out = (char *)malloc(n + 1);
+    if (out == NULL) return NULL;
+    memcpy(out, s, n);
+    out[n] = '\0';
     return out;
 }
 
@@ -401,6 +415,17 @@ static StringArray parse_string_array_field(const char *start, const char *end,
     return arr;
 }
 
+static char *raw_json_field(const char *start, const char *end, const char *key) {
+    const char *p = find_field_in_range(start, end, key);
+    const char *q;
+    if (p == NULL) return NULL;
+    q = json_value_end(p, end);
+    if (q == NULL || q <= p) return NULL;
+    while (p < q && isspace((unsigned char)*p)) p++;
+    while (q > p && isspace((unsigned char)q[-1])) q--;
+    return xstrndup(p, (size_t)(q - p));
+}
+
 static void json_escape_to_buf(Buf *out, const char *s) {
     for (const unsigned char *p = (const unsigned char *)s; p != NULL && *p; p++) {
         switch (*p) {
@@ -436,6 +461,12 @@ static void json_escape_to_buf(Buf *out, const char *s) {
                 break;
         }
     }
+}
+
+static int buf_append_json_string(Buf *b, const char *s) {
+    if (buf_append_char(b, '"') != 0) return -1;
+    json_escape_to_buf(b, s == NULL ? "" : s);
+    return buf_append_char(b, '"');
 }
 
 static char *json_quote(const char *s) {
@@ -476,6 +507,45 @@ static void send_error(const char *id, int code, const char *message) {
            quoted != NULL ? quoted : "\"\"");
     fflush(stdout);
     free(quoted);
+}
+
+static char *cid_for_bytes(const char *data, size_t len) {
+    uint8_t out[64];
+    blake3_hasher hasher;
+    const char prefix[] = "blake3-512:";
+    size_t prefix_len = strlen(prefix);
+    char *cid = (char *)malloc(prefix_len + sizeof(out) * 2 + 1);
+
+    if (cid == NULL) return NULL;
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, data == NULL ? "" : data, len);
+    blake3_hasher_finalize(&hasher, out, sizeof(out));
+    memcpy(cid, prefix, prefix_len);
+    for (size_t i = 0; i < sizeof(out); i++) {
+        static const char hex[] = "0123456789abcdef";
+
+        cid[prefix_len + i * 2] = hex[out[i] >> 4];
+        cid[prefix_len + i * 2 + 1] = hex[out[i] & 0x0f];
+    }
+    cid[prefix_len + sizeof(out) * 2] = '\0';
+    return cid;
+}
+
+static int is_hex_char(char c) {
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+static int is_valid_blake3_512_cid(const char *s) {
+    const char prefix[] = "blake3-512:";
+    size_t prefix_len = strlen(prefix);
+    if (s == NULL || strncmp(s, prefix, prefix_len) != 0) return 0;
+    if (strlen(s) != prefix_len + 128) return 0;
+    for (size_t i = 0; i < 128; i++) {
+        if (!is_hex_char(s[prefix_len + i])) return 0;
+    }
+    return 1;
 }
 
 static char *path_join(const char *base, const char *rel) {
@@ -933,6 +1003,186 @@ static int append_typed_param(Buf *out, const char *type, const char *name) {
     return buf_append(out, name);
 }
 
+static int append_field_key(Buf *out, int *first, const char *key) {
+    if (!*first && buf_append_char(out, ',') != 0) return -1;
+    *first = 0;
+    return buf_append_json_string(out, key) == 0 && buf_append_char(out, ':') == 0 ? 0 : -1;
+}
+
+static int append_string_field(Buf *out, int *first, const char *key, const char *value) {
+    return append_field_key(out, first, key) == 0 &&
+        buf_append_json_string(out, value) == 0 ? 0 : -1;
+}
+
+static int append_raw_field(Buf *out, int *first, const char *key, const char *value) {
+    return append_field_key(out, first, key) == 0 &&
+        buf_append(out, value) == 0 ? 0 : -1;
+}
+
+static int append_emitted_by_field(Buf *out, int *first, const char *kit_cid,
+                                   const char *kit_id, const char *target_library_tag) {
+    int emitted_first = 1;
+    if (append_field_key(out, first, "emitted_by") != 0 ||
+        buf_append_char(out, '{') != 0 ||
+        append_string_field(out, &emitted_first, "kit_cid", kit_cid) != 0 ||
+        append_string_field(out, &emitted_first, "kit_id", kit_id) != 0 ||
+        append_string_field(out, &emitted_first, "kit_kind", "realize") != 0 ||
+        append_string_field(out, &emitted_first, "target_language", "c") != 0 ||
+        append_string_field(out, &emitted_first, "target_library_tag", target_library_tag) != 0 ||
+        buf_append_char(out, '}') != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static char *concept_citation_body_for(const char *params_obj, const char *params_obj_end,
+                                       const char *fallback_concept_name,
+                                       char **error_message) {
+    const char *op = find_field_in_range(params_obj, params_obj_end, "transported_operation");
+    const char *op_end;
+    char *args_jcs = NULL;
+    char *args_jcs_cid = NULL;
+    char *callsite_cid = NULL;
+    char *concept_cid = NULL;
+    char *concept_name = NULL;
+    char *concept_site_cid = NULL;
+    char *kit_cid = NULL;
+    char *kit_id = NULL;
+    char *loss_record_cid = NULL;
+    char *operation_kind = NULL;
+    char *policy_cid = NULL;
+    char *shape_cid = NULL;
+    char *sugar_dict_cid = NULL;
+    char *target_library_tag = NULL;
+    char *term_position = NULL;
+    char *payload = NULL;
+    char *payload_cid = NULL;
+    char *body = NULL;
+    Buf payload_buf;
+    Buf body_buf;
+    int first = 1;
+
+    if (op == NULL) return NULL;
+    if (*op != '{') {
+        *error_message = xstrdup("INVALID_PARAMS: transported_operation must be an object");
+        return NULL;
+    }
+    op_end = json_value_end(op, params_obj_end);
+    if (op_end == NULL) {
+        *error_message = xstrdup("INVALID_PARAMS: malformed transported_operation");
+        return NULL;
+    }
+
+    args_jcs = raw_json_field(op, op_end, "args_jcs");
+    args_jcs_cid = args_jcs == NULL
+        ? parse_string_field(op, op_end, "args_jcs_cid")
+        : cid_for_bytes(args_jcs, strlen(args_jcs));
+    callsite_cid = parse_string_field(op, op_end, "callsite_cid");
+    concept_cid = parse_string_field(op, op_end, "concept_cid");
+    concept_name = parse_string_field(op, op_end, "concept_name");
+    if (concept_name == NULL && fallback_concept_name != NULL) {
+        concept_name = xstrdup(fallback_concept_name);
+    }
+    concept_site_cid = parse_string_field(op, op_end, "concept_site_cid");
+    kit_id = parse_string_field(op, op_end, "kit_id");
+    if (kit_id == NULL) kit_id = xstrdup(DEFAULT_KIT_ID);
+    kit_cid = parse_string_field(op, op_end, "kit_cid");
+    if (kit_cid == NULL && kit_id != NULL) kit_cid = cid_for_bytes(kit_id, strlen(kit_id));
+    loss_record_cid = parse_string_field(op, op_end, "loss_record_cid");
+    operation_kind = parse_string_field(op, op_end, "operation_kind");
+    policy_cid = parse_string_field(op, op_end, "policy_cid");
+    shape_cid = parse_string_field(op, op_end, "shape_cid");
+    sugar_dict_cid = parse_string_field(op, op_end, "sugar_dict_cid");
+    target_library_tag = parse_string_field(op, op_end, "target_library_tag");
+    if (target_library_tag == NULL) target_library_tag = xstrdup(DEFAULT_TARGET_LIBRARY_TAG);
+    term_position = raw_json_field(op, op_end, "term_position");
+
+    if (concept_cid == NULL || concept_site_cid == NULL || kit_cid == NULL ||
+        kit_id == NULL || loss_record_cid == NULL || operation_kind == NULL ||
+        shape_cid == NULL || sugar_dict_cid == NULL || target_library_tag == NULL ||
+        term_position == NULL || args_jcs_cid == NULL) {
+        *error_message = xstrdup("INVALID_PARAMS: missing transported_operation field");
+        goto done;
+    }
+    if (term_position[0] != '[') {
+        *error_message = xstrdup("INVALID_PARAMS: transported_operation term_position must be an array");
+        goto done;
+    }
+    if (!is_valid_blake3_512_cid(args_jcs_cid) ||
+        (callsite_cid != NULL && !is_valid_blake3_512_cid(callsite_cid)) ||
+        !is_valid_blake3_512_cid(concept_cid) ||
+        !is_valid_blake3_512_cid(concept_site_cid) ||
+        !is_valid_blake3_512_cid(kit_cid) ||
+        !is_valid_blake3_512_cid(loss_record_cid) ||
+        (policy_cid != NULL && !is_valid_blake3_512_cid(policy_cid)) ||
+        !is_valid_blake3_512_cid(shape_cid) ||
+        !is_valid_blake3_512_cid(sugar_dict_cid)) {
+        *error_message = xstrdup("INVALID_PARAMS: malformed transported_operation CID");
+        goto done;
+    }
+
+    buf_init(&payload_buf);
+    if (buf_append_char(&payload_buf, '{') != 0 ||
+        (args_jcs != NULL && append_raw_field(&payload_buf, &first, "args_jcs", args_jcs) != 0) ||
+        append_string_field(&payload_buf, &first, "args_jcs_cid", args_jcs_cid) != 0 ||
+        append_string_field(&payload_buf, &first, "artifact_kind", CONCEPT_CITATION_COMMENT_KIND) != 0 ||
+        (callsite_cid != NULL && append_string_field(&payload_buf, &first, "callsite_cid", callsite_cid) != 0) ||
+        append_string_field(&payload_buf, &first, "concept_cid", concept_cid) != 0 ||
+        (concept_name != NULL && append_string_field(&payload_buf, &first, "concept_name", concept_name) != 0) ||
+        append_string_field(&payload_buf, &first, "concept_site_cid", concept_site_cid) != 0 ||
+        append_emitted_by_field(&payload_buf, &first, kit_cid, kit_id, target_library_tag) != 0 ||
+        append_string_field(&payload_buf, &first, "loss_record_cid", loss_record_cid) != 0 ||
+        append_string_field(&payload_buf, &first, "operation_kind", operation_kind) != 0 ||
+        (policy_cid != NULL && append_string_field(&payload_buf, &first, "policy_cid", policy_cid) != 0) ||
+        append_string_field(&payload_buf, &first, "schema_version", "1") != 0 ||
+        append_string_field(&payload_buf, &first, "shape_cid", shape_cid) != 0 ||
+        append_string_field(&payload_buf, &first, "sugar_dict_cid", sugar_dict_cid) != 0 ||
+        append_raw_field(&payload_buf, &first, "term_position", term_position) != 0 ||
+        buf_append_char(&payload_buf, '}') != 0) {
+        buf_free(&payload_buf);
+        *error_message = xstrdup("out of memory");
+        goto done;
+    }
+    payload = buf_steal(&payload_buf);
+    payload_cid = cid_for_bytes(payload, strlen(payload));
+    if (payload == NULL || payload_cid == NULL) {
+        *error_message = xstrdup("out of memory");
+        goto done;
+    }
+
+    buf_init(&body_buf);
+    if (buf_append(&body_buf, "// provekit-concept: ") != 0 ||
+        buf_append(&body_buf, payload) != 0 ||
+        buf_append(&body_buf, "\n// provekit-concept-payload-cid: ") != 0 ||
+        buf_append(&body_buf, payload_cid) != 0 ||
+        buf_append(&body_buf, "\n(void)0;") != 0) {
+        buf_free(&body_buf);
+        *error_message = xstrdup("out of memory");
+        goto done;
+    }
+    body = buf_steal(&body_buf);
+
+done:
+    free(args_jcs);
+    free(args_jcs_cid);
+    free(callsite_cid);
+    free(concept_cid);
+    free(concept_name);
+    free(concept_site_cid);
+    free(kit_cid);
+    free(kit_id);
+    free(loss_record_cid);
+    free(operation_kind);
+    free(policy_cid);
+    free(shape_cid);
+    free(sugar_dict_cid);
+    free(target_library_tag);
+    free(term_position);
+    free(payload);
+    free(payload_cid);
+    return body;
+}
+
 static char *function_source(const char *function, const StringArray *params,
                              const StringArray *mapped_param_types,
                              const char *mapped_return_type, const char *body) {
@@ -1078,8 +1328,15 @@ static void handle_invoke(const char *id, const char *line, const char *end,
                    error_message != NULL ? error_message : "out of memory");
         goto done;
     }
-    body = body_template_for(catalog, concept_name, &params, &mapped_param_types,
-                             mapped_return_type);
+    body = concept_citation_body_for(params_obj, params_obj_end, concept_name, &error_message);
+    if (error_message != NULL) {
+        send_error(id, -32602, error_message);
+        goto done;
+    }
+    if (body == NULL) {
+        body = body_template_for(catalog, concept_name, &params, &mapped_param_types,
+                                 mapped_return_type);
+    }
     if (body == NULL) {
         body = stub_body_for(concept_name, mapped_return_type);
         is_stub = 1;

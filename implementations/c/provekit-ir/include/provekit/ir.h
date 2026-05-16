@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * provekit-ir — C kit for ProvekIt protocol v1.1.0.
+ * provekit-ir - C kit for ProvekIt protocol v1.1.0.
  *
  * Mirrors the Rust/Go/Java/Python kits. All IR nodes are tagged unions
  * allocated on the heap; caller frees with pk_*_free functions.

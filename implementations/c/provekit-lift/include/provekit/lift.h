@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0
  *
- * provekit-lift-c — C kit lifter via libclang.
+ * provekit-lift-c - C kit lifter via libclang.
  *
  * Lifts C source to proof.ir bundles. Parses kernel annotations:
  *   - BUG_ON, WARN_ON, assert
