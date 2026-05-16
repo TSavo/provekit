@@ -9,7 +9,7 @@ use libprovekit::compose::{
 };
 use libprovekit::core::{
     address, execute_path, Cid, DomainClaim, DomainKind, HashMapInputCatalog, Input, KitRegistry,
-    LowerKit, Path as CorePath, PathAlgebra, Term, Verdict,
+    LowerKit, Path as CorePath, PathAlgebra, Term, Verb, Verdict,
 };
 use provekit_cli::kit_dispatch::DispatchRealizeTransport;
 use provekit_ir_types::{IrFormula, Sort};
@@ -190,6 +190,7 @@ fn lower_python_path_claim_input_cites_from_premise_to_and_loss_cids() {
             kit: "lower-python".to_string(),
             inputs: vec![prior_input_cid],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }));
     let mut registry = KitRegistry::default();

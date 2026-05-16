@@ -13,6 +13,7 @@ use std::time::Instant;
 use clap::{Parser, ValueEnum};
 use libprovekit::core::{
     execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+    Verb,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -349,6 +350,7 @@ fn lower_named_spec_via_path(
             kit: kit_name.clone(),
             inputs: vec![input_cid],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }));
     let mut registry = KitRegistry::default();

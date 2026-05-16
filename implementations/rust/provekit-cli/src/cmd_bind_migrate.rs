@@ -8,6 +8,7 @@ use std::sync::Arc;
 use chrono::{SecondsFormat, Utc};
 use libprovekit::core::{
     execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+    Verb,
 };
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, PropagationDecision,
@@ -813,6 +814,7 @@ fn realize_probe_via_path(
             kit: kit_name.clone(),
             inputs: vec![input_cid],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }));
     let mut registry = KitRegistry::default();
