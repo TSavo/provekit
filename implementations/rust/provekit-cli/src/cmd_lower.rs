@@ -333,14 +333,14 @@ fn lower_named_spec_via_path(
                 .join(format!("implementations/{target}/conformance/fixtures")),
         },
     );
-    let claim = execute_path(&path, &registry, &inputs).map_err(|error| {
+    let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
         let detail = error
             .composition_refusal()
             .and_then(|refusal| serde_json::to_string(refusal).ok())
             .unwrap_or_else(|| error.to_string());
         LowerNamedError::Message(format!("lower plugin unavailable for `{target}`: {detail}"))
     })?;
-    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
         .map(|realized| realized.source)
         .map_err(LowerNamedError::Message)
 }
@@ -423,11 +423,12 @@ fn lower_witness_requirement_for_surface(
                 .join(format!("implementations/{surface}/conformance/fixtures")),
         },
     );
-    let claim = execute_path(&path, &registry, &inputs)
+    let chain = execute_path(&path, &registry, &inputs)
         .map_err(|error| LowerFailure::message(error.to_string()))?;
-    let lower_result = LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
-        .and_then(|realized| serde_json::to_value(realized).map_err(|error| error.to_string()))
-        .map_err(LowerFailure::message)?;
+    let lower_result =
+        LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
+            .and_then(|realized| serde_json::to_value(realized).map_err(|error| error.to_string()))
+            .map_err(LowerFailure::message)?;
     mint_witness_proof(project_root, surface, &plan, &lower_result, out_dir)
         .map_err(|message| LowerFailure::rejected(message, lower_result))
 }

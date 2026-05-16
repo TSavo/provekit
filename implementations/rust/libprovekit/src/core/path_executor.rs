@@ -23,7 +23,7 @@
 //! callsite to the new signature. Either direction is a mechanical one-line
 //! update per callsite.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use provekit_ir_types::{
     composition_refusal_compose_input_cid, composition_refusal_header_cid,
@@ -36,7 +36,9 @@ use crate::compose::CCP_VERSION;
 
 use super::primitives::address;
 use super::traits::{InputCatalog, Kit, KitError};
-use super::types::{Cid, ConformanceDeclaration, DomainClaim, Input, PathAlgebra, PathError, Verb};
+use super::types::{
+    Cid, ConformanceDeclaration, DomainClaim, Input, PathAlgebra, PathError, Term, Verb,
+};
 
 struct RegisteredKit {
     kit: Box<dyn Kit>,
@@ -81,41 +83,85 @@ impl KitRegistry {
     }
 }
 
+/// Executed path output with terminal and per-step inspection accessors.
+#[derive(Debug, Clone)]
+pub struct PathExecutionChain {
+    terminal_claim: DomainClaim,
+    claims_by_step: HashMap<String, DomainClaim>,
+    sources_by_step: HashMap<String, Cid>,
+    terms_by_step: HashMap<String, Term>,
+}
+
+impl PathExecutionChain {
+    /// Borrow the terminal claim selected by the path algebra.
+    pub fn terminal_claim(&self) -> &DomainClaim {
+        &self.terminal_claim
+    }
+
+    /// Borrow the claim produced by a named step.
+    pub fn claim_at_step(&self, name: &str) -> Option<&DomainClaim> {
+        self.claims_by_step.get(name)
+    }
+
+    /// Borrow the source CID associated with a named step, when any.
+    pub fn source_at_step(&self, name: &str) -> Option<&Cid> {
+        self.sources_by_step.get(name)
+    }
+
+    /// Borrow the term payload produced by a named step, when any.
+    pub fn term_at_step(&self, name: &str) -> Option<&Term> {
+        self.terms_by_step.get(name)
+    }
+}
+
 /// Execute a composed path by materializing step inputs and dispatching registered kits.
 pub fn execute_path(
     input: &Input,
     registry: &KitRegistry,
     inputs: &dyn InputCatalog,
-) -> Result<DomainClaim, PathExecutionError> {
+) -> Result<PathExecutionChain, PathExecutionError> {
     let Input::Path(path) = input else {
         return Err(PathExecutionError::UnsupportedInput(
             "execute_path expects Input::Path".to_string(),
         ));
     };
     let ordered = path.ordered_steps().map_err(PathExecutionError::Path)?;
-    let mut claims_by_step: BTreeMap<String, DomainClaim> = BTreeMap::new();
+    let mut claims_by_step: HashMap<String, DomainClaim> = HashMap::new();
+    let mut sources_by_step: HashMap<String, Cid> = HashMap::new();
+    let mut terms_by_step: HashMap<String, Term> = HashMap::new();
     let mut materialized_inputs: HashMap<Cid, Input> = HashMap::new();
 
     for step in ordered {
-        let kit = registry
+        let registered = registry
+            .kits
             .get(&step.kit)
             .ok_or_else(|| PathExecutionError::Refused(Box::new(missing_kit_refusal(step))))?;
+        let kit = registered.kit.as_ref();
         let step_input = step_input(step, inputs, &materialized_inputs)?;
         let mut claim = match step.verb {
             Verb::Transform => kit
                 .transform(&step_input)
                 .map_err(PathExecutionError::Kit)?,
             Verb::Prove => {
-                let Input::Claim(claim) = step_input else {
+                let Input::Claim(claim) = &step_input else {
                     return Err(PathExecutionError::UnsupportedInput(format!(
                         "path step `{}` Prove verb expects Input::Claim",
                         step.name
                     )));
                 };
-                kit.prove(claim).map_err(|error| prove_error(step, error))?
+                kit.prove(claim.clone())
+                    .map_err(|error| prove_error(step, error))?
             }
         };
         claim.premises.extend(step_premises(step, &claims_by_step)?);
+        record_step_outputs(
+            step,
+            &step_input,
+            &registered.conformance,
+            &claim,
+            &mut sources_by_step,
+            &mut terms_by_step,
+        );
         if let Some(term) = claim.payload.clone() {
             materialized_inputs.insert(claim.to.clone(), Input::Term(term));
         }
@@ -133,9 +179,15 @@ pub fn execute_path(
             terminals.len()
         )));
     };
-    claims_by_step
-        .remove(&terminal.name)
-        .ok_or_else(|| PathExecutionError::UnsupportedInput("terminal step did not execute".into()))
+    let terminal_claim = claims_by_step.get(&terminal.name).cloned().ok_or_else(|| {
+        PathExecutionError::UnsupportedInput("terminal step did not execute".into())
+    })?;
+    Ok(PathExecutionChain {
+        terminal_claim,
+        claims_by_step,
+        sources_by_step,
+        terms_by_step,
+    })
 }
 
 fn step_input(
@@ -163,7 +215,7 @@ fn step_input(
 
 fn step_premises(
     step: &PathAlgebra,
-    claims_by_step: &BTreeMap<String, DomainClaim>,
+    claims_by_step: &HashMap<String, DomainClaim>,
 ) -> Result<Vec<Cid>, PathExecutionError> {
     step.depends_on
         .iter()
@@ -179,6 +231,34 @@ fn step_premises(
                 })
         })
         .collect()
+}
+
+fn record_step_outputs(
+    step: &PathAlgebra,
+    step_input: &Input,
+    conformance: &ConformanceDeclaration,
+    claim: &DomainClaim,
+    sources_by_step: &mut HashMap<String, Cid>,
+    terms_by_step: &mut HashMap<String, Term>,
+) {
+    if step.verb != Verb::Transform {
+        return;
+    }
+
+    if let Input::Source { .. } = step_input {
+        if let Some(source_cid) = step.inputs.first() {
+            sources_by_step.insert(step.name.clone(), source_cid.clone());
+        }
+    }
+    let is_carrier = matches!(conformance, ConformanceDeclaration::Carrier { .. });
+    if is_carrier {
+        sources_by_step.insert(step.name.clone(), claim.to.clone());
+    }
+    if !is_carrier {
+        if let Some(term) = claim.payload.clone() {
+            terms_by_step.insert(step.name.clone(), term);
+        }
+    }
 }
 
 /// Errors from path execution.
@@ -294,5 +374,360 @@ fn composition_refusal_for_missing_requirement(
         },
         header,
         metadata,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use serde_json::json;
+
+    use super::super::traits::HashMapInputCatalog;
+    use super::super::types::{
+        any_sort, formula_true, memento_from_parts, Dialect, DomainKind, Term, Verdict, Witness,
+    };
+
+    #[derive(Clone)]
+    enum FixtureOutput {
+        Term(Term),
+        Source(Cid),
+    }
+
+    #[derive(Clone)]
+    struct FixtureTransformKit {
+        name: &'static str,
+        output: FixtureOutput,
+    }
+
+    impl Kit for FixtureTransformKit {
+        fn dialect(&self) -> Dialect {
+            Dialect::Other(self.name.to_string())
+        }
+
+        fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
+            Ok(fixture_claim(self.name, input, &self.output))
+        }
+
+        fn parse(&self, _input: &Input) -> Result<Term, KitError> {
+            match &self.output {
+                FixtureOutput::Term(term) => Ok(term.clone()),
+                FixtureOutput::Source(_) => Ok(Term::Unit),
+            }
+        }
+
+        fn serialize(&self, term: &Term) -> Result<Input, KitError> {
+            Ok(Input::Term(term.clone()))
+        }
+    }
+
+    struct FixtureProveKit;
+
+    impl Kit for FixtureProveKit {
+        fn dialect(&self) -> Dialect {
+            Dialect::Other("prove-fixture".to_string())
+        }
+
+        fn transform(&self, _input: &Input) -> Result<DomainClaim, KitError> {
+            Err(KitError::NotSupported)
+        }
+
+        fn prove(&self, mut claim: DomainClaim) -> Result<DomainClaim, KitError> {
+            claim.payload = None;
+            claim.verdict = Verdict::Proved;
+            claim.witness = Some(Witness::Proof {
+                tree: json!({"kit": "prove-fixture"}),
+            });
+            Ok(claim)
+        }
+
+        fn parse(&self, _input: &Input) -> Result<Term, KitError> {
+            Ok(Term::Unit)
+        }
+
+        fn serialize(&self, term: &Term) -> Result<Input, KitError> {
+            Ok(Input::Term(term.clone()))
+        }
+    }
+
+    fn fixture_term(name: &str) -> Term {
+        Term::Const {
+            value: json!({ "fixture": name }),
+            sort: any_sort(),
+        }
+    }
+
+    fn fixture_source(name: &str) -> Input {
+        Input::Source {
+            dialect: Dialect::Other(name.to_string()),
+            bytes: name.as_bytes().to_vec(),
+        }
+    }
+
+    fn fixture_claim(name: &str, input: &Input, output: &FixtureOutput) -> DomainClaim {
+        let (to, payload) = match output {
+            FixtureOutput::Term(term) => (address(term), Some(term.clone())),
+            FixtureOutput::Source(cid) => (cid.clone(), None),
+        };
+        DomainClaim {
+            domain: DomainKind::Other(format!("fixture-{name}")),
+            contract: memento_from_parts(
+                name.to_string(),
+                vec!["x".to_string()],
+                vec![any_sort()],
+                any_sort(),
+                formula_true(),
+                formula_true(),
+                Some(to.to_string()),
+            ),
+            artifacts: vec![to.clone()],
+            from: vec![address(input)],
+            premises: vec![],
+            to,
+            witness: None,
+            payload,
+            verdict: Verdict::Unresolved,
+            attestation: None,
+        }
+    }
+
+    fn register_fixture_kits(
+        registry: &mut KitRegistry,
+        lift_term: Term,
+        bind_term: Term,
+        lower_source_cid: Cid,
+    ) {
+        registry.register(
+            "lift-fixture",
+            FixtureTransformKit {
+                name: "lift",
+                output: FixtureOutput::Term(lift_term),
+            },
+            ConformanceDeclaration::NonCarrier {
+                reason: "fixture lift produces a term",
+            },
+        );
+        registry.register(
+            "bind-fixture",
+            FixtureTransformKit {
+                name: "bind",
+                output: FixtureOutput::Term(bind_term),
+            },
+            ConformanceDeclaration::NonCarrier {
+                reason: "fixture bind produces a term",
+            },
+        );
+        registry.register(
+            "lower-fixture",
+            FixtureTransformKit {
+                name: "lower",
+                output: FixtureOutput::Source(lower_source_cid),
+            },
+            ConformanceDeclaration::Carrier {
+                fixtures_path: "fixtures/lower-fixture".into(),
+            },
+        );
+        registry.register(
+            "prove-fixture",
+            FixtureProveKit,
+            ConformanceDeclaration::NonCarrier {
+                reason: "fixture prove discharges claims without source emission",
+            },
+        );
+    }
+
+    fn three_step_path(source_cid: Cid, lift_term: &Term, bind_term: &Term) -> Input {
+        Input::Path(Box::new(super::super::types::Path {
+            algebra: vec![
+                PathAlgebra {
+                    name: "lift".to_string(),
+                    kit: "lift-fixture".to_string(),
+                    inputs: vec![source_cid],
+                    depends_on: vec![],
+                    verb: Verb::Transform,
+                },
+                PathAlgebra {
+                    name: "bind".to_string(),
+                    kit: "bind-fixture".to_string(),
+                    inputs: vec![address(lift_term)],
+                    depends_on: vec!["lift".to_string()],
+                    verb: Verb::Transform,
+                },
+                PathAlgebra {
+                    name: "lower".to_string(),
+                    kit: "lower-fixture".to_string(),
+                    inputs: vec![address(bind_term)],
+                    depends_on: vec!["bind".to_string()],
+                    verb: Verb::Transform,
+                },
+            ],
+        }))
+    }
+
+    fn four_step_path(
+        source_cid: Cid,
+        lift_term: &Term,
+        bind_term: &Term,
+        lower_claim_input_cid: Cid,
+    ) -> Input {
+        Input::Path(Box::new(super::super::types::Path {
+            algebra: vec![
+                PathAlgebra {
+                    name: "lift".to_string(),
+                    kit: "lift-fixture".to_string(),
+                    inputs: vec![source_cid],
+                    depends_on: vec![],
+                    verb: Verb::Transform,
+                },
+                PathAlgebra {
+                    name: "bind".to_string(),
+                    kit: "bind-fixture".to_string(),
+                    inputs: vec![address(lift_term)],
+                    depends_on: vec!["lift".to_string()],
+                    verb: Verb::Transform,
+                },
+                PathAlgebra {
+                    name: "lower".to_string(),
+                    kit: "lower-fixture".to_string(),
+                    inputs: vec![address(bind_term)],
+                    depends_on: vec!["bind".to_string()],
+                    verb: Verb::Transform,
+                },
+                PathAlgebra {
+                    name: "prove".to_string(),
+                    kit: "prove-fixture".to_string(),
+                    inputs: vec![lower_claim_input_cid],
+                    depends_on: vec!["lower".to_string()],
+                    verb: Verb::Prove,
+                },
+            ],
+        }))
+    }
+
+    fn expected_three_step_claims(
+        source: &Input,
+        lift_term: &Term,
+        bind_term: &Term,
+        lower_source_cid: &Cid,
+    ) -> (DomainClaim, DomainClaim, DomainClaim) {
+        let lift = fixture_claim("lift", source, &FixtureOutput::Term(lift_term.clone()));
+        let mut bind = fixture_claim(
+            "bind",
+            &Input::Term(lift_term.clone()),
+            &FixtureOutput::Term(bind_term.clone()),
+        );
+        bind.premises = vec![lift.cid()];
+        let mut lower = fixture_claim(
+            "lower",
+            &Input::Term(bind_term.clone()),
+            &FixtureOutput::Source(lower_source_cid.clone()),
+        );
+        lower.premises = vec![bind.cid()];
+        (lift, bind, lower)
+    }
+
+    #[test]
+    fn execute_path_chain_exposes_claims_for_each_step() {
+        let source = fixture_source("rust");
+        let lift_term = fixture_term("lift");
+        let bind_term = fixture_term("bind");
+        let lower_source = fixture_source("python");
+        let lower_source_cid = address(&lower_source);
+        let mut inputs = HashMapInputCatalog::default();
+        let source_cid = inputs.insert(source.clone());
+        let path = three_step_path(source_cid, &lift_term, &bind_term);
+        let mut registry = KitRegistry::default();
+        register_fixture_kits(
+            &mut registry,
+            lift_term.clone(),
+            bind_term.clone(),
+            lower_source_cid.clone(),
+        );
+        let (expected_lift, expected_bind, expected_lower) =
+            expected_three_step_claims(&source, &lift_term, &bind_term, &lower_source_cid);
+
+        let chain = execute_path(&path, &registry, &inputs).expect("path executes");
+
+        assert_eq!(
+            chain.claim_at_step("lift").map(DomainClaim::cid),
+            Some(expected_lift.cid())
+        );
+        assert_eq!(
+            chain.claim_at_step("bind").map(DomainClaim::cid),
+            Some(expected_bind.cid())
+        );
+        assert_eq!(
+            chain.claim_at_step("lower").map(DomainClaim::cid),
+            Some(expected_lower.cid())
+        );
+        assert!(chain.claim_at_step("missing").is_none());
+    }
+
+    #[test]
+    fn execute_path_chain_terminal_claim_matches_previous_return_claim() {
+        let source = fixture_source("rust");
+        let lift_term = fixture_term("lift");
+        let bind_term = fixture_term("bind");
+        let lower_source = fixture_source("python");
+        let lower_source_cid = address(&lower_source);
+        let mut inputs = HashMapInputCatalog::default();
+        let source_cid = inputs.insert(source.clone());
+        let path = three_step_path(source_cid, &lift_term, &bind_term);
+        let mut registry = KitRegistry::default();
+        register_fixture_kits(
+            &mut registry,
+            lift_term.clone(),
+            bind_term.clone(),
+            lower_source_cid.clone(),
+        );
+        let (_, _, expected_lower) =
+            expected_three_step_claims(&source, &lift_term, &bind_term, &lower_source_cid);
+
+        let chain = execute_path(&path, &registry, &inputs).expect("path executes");
+
+        assert_eq!(chain.terminal_claim().cid(), expected_lower.cid());
+        assert_eq!(
+            chain.terminal_claim().canonical_bytes(),
+            expected_lower.canonical_bytes()
+        );
+    }
+
+    #[test]
+    fn execute_path_chain_exposes_sources_and_terms_by_step() {
+        let source = fixture_source("rust");
+        let lift_term = fixture_term("lift");
+        let bind_term = fixture_term("bind");
+        let lower_source = fixture_source("python");
+        let lower_source_cid = address(&lower_source);
+        let mut inputs = HashMapInputCatalog::default();
+        let source_cid = inputs.insert(source.clone());
+        let (_, _, expected_lower) =
+            expected_three_step_claims(&source, &lift_term, &bind_term, &lower_source_cid);
+        let path = four_step_path(
+            source_cid.clone(),
+            &lift_term,
+            &bind_term,
+            address(&Input::Claim(expected_lower)),
+        );
+        let mut registry = KitRegistry::default();
+        register_fixture_kits(
+            &mut registry,
+            lift_term.clone(),
+            bind_term.clone(),
+            lower_source_cid.clone(),
+        );
+
+        let chain = execute_path(&path, &registry, &inputs).expect("path executes");
+
+        assert_eq!(chain.source_at_step("lift"), Some(&source_cid));
+        assert_eq!(chain.term_at_step("lift"), Some(&lift_term));
+        assert!(chain.source_at_step("bind").is_none());
+        assert_eq!(chain.term_at_step("bind"), Some(&bind_term));
+        assert_eq!(chain.source_at_step("lower"), Some(&lower_source_cid));
+        assert!(chain.term_at_step("lower").is_none());
+        assert!(chain.source_at_step("prove").is_none());
+        assert!(chain.term_at_step("prove").is_none());
+        assert!(chain.source_at_step("missing").is_none());
+        assert!(chain.term_at_step("missing").is_none());
     }
 }

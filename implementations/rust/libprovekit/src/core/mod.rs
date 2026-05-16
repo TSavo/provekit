@@ -37,7 +37,7 @@ pub use lower_plugin::{
     LowerKit, RealizeContractPayload, RealizeContractWitness, RealizeRequest, RealizeTransport,
     RealizedSource,
 };
-pub use path_executor::{execute_path, KitRegistry, PathExecutionError};
+pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecutionError};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };

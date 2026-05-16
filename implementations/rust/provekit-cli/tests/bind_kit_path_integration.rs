@@ -139,7 +139,8 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     let mut registry = KitRegistry::default();
     registry.register("bind-default", BindKit::default(), BIND_NONCARRIER);
 
-    let claim = execute_path(&path, &registry, &inputs).expect("bind path executes");
+    let chain = execute_path(&path, &registry, &inputs).expect("bind path executes");
+    let claim = chain.terminal_claim();
     let cli_bytes = run_bind_cli(&term_value);
     let cli_value: Value = serde_json::from_slice(&cli_bytes).expect("cmd_bind output parses");
     let cli_cid = libprovekit::canonical::json_cid(&cli_value).expect("cmd_bind output cids");
@@ -224,7 +225,8 @@ fn lift_then_bind_path_carries_lift_output_and_claim_premise() {
     );
     registry.register("bind-default", BindKit::default(), BIND_NONCARRIER);
 
-    let bind_claim = execute_path(&path, &registry, &inputs).expect("lift bind path executes");
+    let chain = execute_path(&path, &registry, &inputs).expect("lift bind path executes");
+    let bind_claim = chain.terminal_claim();
 
     assert_eq!(bind_claim.from, vec![lift_claim.to.clone()]);
     assert_eq!(bind_claim.premises, vec![lift_claim.cid()]);
