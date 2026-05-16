@@ -122,6 +122,10 @@ impl From<String> for BindError {
     }
 }
 
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BindLiftEntry {
     #[serde(default)]
@@ -130,7 +134,7 @@ pub struct BindLiftEntry {
     pub file: String,
     #[serde(default)]
     pub fn_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub fn_line: u64,
     #[serde(default)]
     pub attr_pre: Option<String>,
@@ -192,7 +196,7 @@ pub struct NamedTerm {
     pub concept_name: String,
     #[serde(rename = "dischargeVerdict")]
     pub discharge_verdict: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file: String,
     pub function: String,
     pub name: String,
@@ -943,7 +947,6 @@ fn term_position_from_citation(value: &Json) -> Vec<usize> {
 
 fn site_cid(entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<String, BindError> {
     let value = json!({
-        "file": entry.file,
         "function": entry.fn_name,
         "name": name,
         "termShapeCid": term_shape_cid,
@@ -1295,6 +1298,68 @@ mod tests {
         assert_eq!(named.terms[0].concept_name, "concept:demo");
         assert_eq!(named.terms[0].function, "f");
         assert_eq!(named.promotion_decision_mementos.len(), 1);
+    }
+
+    #[test]
+    fn site_cid_ignores_source_file_provenance() {
+        let entry = BindLiftEntry {
+            fn_name: "deposit".to_string(),
+            ..serde_json::from_value(json!({})).expect("default entry deserializes")
+        };
+        let mut entry_with_file = entry.clone();
+        entry_with_file.file = "src/lib.rs".to_string();
+        let term_shape_cid = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+
+        assert_eq!(
+            site_cid(&entry, "concept:deposit", term_shape_cid).expect("site cid"),
+            site_cid(&entry_with_file, "concept:deposit", term_shape_cid).expect("site cid")
+        );
+    }
+
+    #[test]
+    fn named_term_document_omits_empty_file_fields() {
+        let document = NamedTermDocument {
+            kind: "named-term-document".to_string(),
+            promotion_decision_mementos: vec![],
+            schema_version: "1".to_string(),
+            source_language: "rust".to_string(),
+            terms: vec![NamedTerm {
+                concept_name: "concept:deposit".to_string(),
+                discharge_verdict: "loudly-bounded-lossy".to_string(),
+                file: String::new(),
+                function: "deposit".to_string(),
+                name: "concept:deposit".to_string(),
+                named_term_tree: None,
+                param_types: vec!["i64".to_string()],
+                params: vec!["balance".to_string()],
+                return_type: "i64".to_string(),
+                site_memento_cid: "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222".to_string(),
+                term_shape: json!({}),
+                term_shape_cid: "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".to_string(),
+                witnesses: vec![],
+            }],
+            workspace_root: None,
+        };
+
+        let value = serde_json::to_value(&document).expect("named term document serializes");
+
+        assert!(
+            value["terms"][0].get("file").is_none(),
+            "empty file provenance should not serialize into named term JSON: {value}"
+        );
+    }
+
+    #[test]
+    fn bind_lift_entry_omits_default_fn_line_when_serialized() {
+        let entry: BindLiftEntry =
+            serde_json::from_value(json!({"fn_name": "deposit"})).expect("entry deserializes");
+
+        let value = serde_json::to_value(&entry).expect("bind lift entry serializes");
+
+        assert!(
+            value.get("fn_line").is_none(),
+            "default fn_line should not serialize: {value}"
+        );
     }
 
     #[test]
