@@ -199,6 +199,62 @@ public class JavaNullBoundaryRealizerTest {
     }
 
     @Test
+    public void test_concept_citation_comment_emitted_for_transported_operation() {
+        TransportedOperation transportedOp = transportedOperation();
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "transport_skip",
+            java.util.List.of("x"),
+            java.util.List.of("Object"),
+            "()",
+            "missing-java-skip-carrier",
+            "monitor",
+            java.util.List.of("monitor"),
+            null,
+            java.util.List.of(),
+            transportedOp
+        );
+
+        assertTrue(output.source().contains("// provekit-concept: {"), output.source());
+        assertTrue(output.source().contains("// provekit-concept-payload-cid: blake3-512:"), output.source());
+        assertTrue(output.source().contains("        ;\n"), output.source());
+        assertFalse(output.source().contains("UnsupportedOperationException"), output.source());
+        assertTrue(
+            output.source().indexOf("// provekit-concept:")
+                < output.source().indexOf("        ;"),
+            output.source()
+        );
+
+        String payloadText = conceptPayloadLine(output.source());
+        com.provekit.ir.Jcs.Obj payload = (com.provekit.ir.Jcs.Obj) com.provekit.ir.Jcs.parse(payloadText);
+        assertEquals("provekit-concept-citation-comment-sugar", payload.stringField("artifact_kind"));
+        assertEquals("1", payload.stringField("schema_version"));
+        assertEquals(transportedOp.conceptCid(), payload.stringField("concept_cid"));
+        assertEquals(transportedOp.conceptName(), payload.stringField("concept_name"));
+        assertEquals(transportedOp.conceptSiteCid(), payload.stringField("concept_site_cid"));
+        assertEquals(transportedOp.lossRecordCid(), payload.stringField("loss_record_cid"));
+        assertEquals(transportedOp.operationKind(), payload.stringField("operation_kind"));
+        assertEquals(transportedOp.policyCid(), payload.stringField("policy_cid"));
+        assertEquals(transportedOp.shapeCid(), payload.stringField("shape_cid"));
+        assertEquals(transportedOp.sugarDictCid(), payload.stringField("sugar_dict_cid"));
+        assertEquals(transportedOp.callsiteCid(), payload.stringField("callsite_cid"));
+        assertEquals(com.provekit.ir.Jcs.cid(transportedOp.argsJcs()), payload.stringField("args_jcs_cid"));
+
+        com.provekit.ir.Jcs.Arr termPosition = (com.provekit.ir.Jcs.Arr) payload.get("term_position");
+        assertEquals(1, termPosition.values().size());
+        assertEquals(0, ((com.provekit.ir.Jcs.Num) termPosition.get(0)).value());
+        com.provekit.ir.Jcs.Obj emittedBy = (com.provekit.ir.Jcs.Obj) payload.get("emitted_by");
+        assertTrue(emittedBy.stringField("kit_cid").startsWith("blake3-512:"));
+        assertEquals("provekit-realize-java-core@0.1.0", emittedBy.stringField("kit_id"));
+        assertEquals("realize", emittedBy.stringField("kit_kind"));
+        assertEquals("java", emittedBy.stringField("target_language"));
+        assertEquals("java", emittedBy.stringField("target_library_tag"));
+
+        String payloadCid = com.provekit.ir.Jcs.cid(payload);
+        assertTrue(output.source().contains("// provekit-concept-payload-cid: " + payloadCid), output.source());
+    }
+
+    @Test
     public void modeScopedJunitWitnessSugarDoesNotApplyToMonitor() {
         ContractPayload contract = new ContractPayload(
             "blake3-512:site",
@@ -539,6 +595,41 @@ public class JavaNullBoundaryRealizerTest {
             "\"cid\":\"java-function-comment\"",
             "\"cid\":\"blake3-512:574800417e6f4f57e561dbe9c437adc691b2cd2369d964cbc329348cb715b161f3b38f6f7ccfd41537d033741488c081ec01b6f7cb3f04ba724b7003fa05a7b6\""
         );
+    }
+
+    private static TransportedOperation transportedOperation() {
+        return new TransportedOperation(
+            cid("a"),
+            cid("b"),
+            cid("c"),
+            "skip",
+            cid("d"),
+            cid("e"),
+            java.util.List.of(0),
+            com.provekit.ir.Jcs.array(com.provekit.ir.Jcs.object(
+                "kind", com.provekit.ir.Jcs.string("var"),
+                "name", com.provekit.ir.Jcs.string("x")
+            )),
+            null,
+            cid("f"),
+            cid("0"),
+            "concept:skip",
+            "java"
+        );
+    }
+
+    private static String conceptPayloadLine(String source) {
+        for (String line : source.split("\\R")) {
+            String stripped = line.strip();
+            if (stripped.startsWith("// provekit-concept: ")) {
+                return stripped.substring("// provekit-concept: ".length());
+            }
+        }
+        throw new AssertionError("missing concept payload line:\n" + source);
+    }
+
+    private static String cid(String ch) {
+        return "blake3-512:" + ch.repeat(128);
     }
 
     private static String sugar(String cid, String name, String locator, String template, String loss) {

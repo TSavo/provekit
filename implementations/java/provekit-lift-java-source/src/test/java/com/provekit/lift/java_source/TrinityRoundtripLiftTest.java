@@ -367,6 +367,159 @@ class TrinityRoundtripLiftTest {
         assertFalse(cidMismatchEncoded.contains("\"payload_cid\":\"" + LOSS_RECORD_CID + "\""), cidMismatchEncoded);
     }
 
+    @Test
+    void test_concept_citation_relift_recovers_identity() {
+        Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertTrue(conceptDiagnostics(lift).isEmpty(), encoded);
+        Jcs.Obj entry = (Jcs.Obj) lift.entries().get(0);
+        Jcs.Arr citations = (Jcs.Arr) entry.get("concept_citations");
+        assertEquals(1, citations.values().size(), encoded);
+        Jcs.Obj citation = citations.objectAt(0);
+        assertEquals(CONCEPT_SKIP_CID, citation.stringField("concept_cid"));
+        assertEquals("skip", citation.stringField("operation_kind"));
+        assertEquals(CONCEPT_SKIP_CID, citation.stringField("shape_cid"));
+        assertEquals(ARGS_JCS_CID, citation.stringField("args_jcs_cid"));
+        assertEquals("native-surface", citation.stringField("source_kind"));
+        assertEquals(0, ((Jcs.Num) ((Jcs.Arr) citation.get("term_position")).get(0)).value());
+        Jcs.Obj extensionFields = (Jcs.Obj) citation.get("extension_fields");
+        assertEquals(Jcs.cid(payload), extensionFields.stringField("payload_cid"));
+        assertEquals(CONCEPT_SITE_CID, extensionFields.stringField("concept_site_cid"));
+        assertEquals(0, ((Jcs.Arr) entry.get("witnesses")).values().size());
+    }
+
+    @Test
+    void test_concept_citation_payload_cid_mismatch_refuses() {
+        Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, LOSS_RECORD_CID);
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:payload-cid-mismatch"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_args_cid_mismatch_refuses() {
+        Jcs.Obj payload = conceptCitationPayload(LOSS_RECORD_CID, "1", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:args-cid-mismatch"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_unknown_schema_version_refuses() {
+        Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "999", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:unknown-schema-version"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_malformed_json_refuses() {
+        String source = conceptSourceWithComments("// provekit-concept: {\"artifact_kind\":");
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:malformed-json"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_malformed_cid_refuses() {
+        Jcs.Obj payload = conceptCitationPayload("not-a-cid", ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:malformed-cid"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_unknown_concept_refuses() {
+        Jcs.Obj payload = conceptCitationPayload(_cid("7"), ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:unknown-concept"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_shape_mismatch_refuses_surrounding_relift() {
+        Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "1", LOSS_RECORD_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(0, lift.entries().size(), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:shape-mismatch"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_operation_kind_mismatch_refuses_surrounding_relift() {
+        Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "not-skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(0, lift.entries().size(), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:operation-kind-mismatch"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_orphan_payload_cid_line_refuses() {
+        String source = conceptSourceWithComments("// provekit-concept-payload-cid: " + LOSS_RECORD_CID);
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("Concepts.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertEquals(0, conceptCitationCount(lift), encoded);
+        assertTrue(conceptDiagnostics(lift).contains("concept-citation:orphan-cid-line"), encoded);
+    }
+
+    @Test
+    void test_concept_citation_lower_java_relift_round_trip() {
+        Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "skip");
+        String source = conceptTaggedSource(payload, Jcs.cid(payload));
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("RoundTrip.java", source);
+
+        Jcs.Obj citation = ((Jcs.Arr) ((Jcs.Obj) lift.entries().get(0)).get("concept_citations")).objectAt(0);
+        assertEquals(payload.stringField("concept_cid"), citation.stringField("concept_cid"));
+        assertEquals(payload.stringField("operation_kind"), citation.stringField("operation_kind"));
+        assertEquals(payload.stringField("shape_cid"), citation.stringField("shape_cid"));
+        assertEquals(payload.stringField("args_jcs_cid"), citation.stringField("args_jcs_cid"));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private static final String CONTRACT_CID =
@@ -383,6 +536,15 @@ class TrinityRoundtripLiftTest {
         "blake3-512:66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666";
     private static final String PRE_FORMULA_CID = Jcs.cid(nonNullPredicate("name"));
     private static final String POST_FORMULA_CID = Jcs.cid(nonNullPredicate("out"));
+    private static final String CONCEPT_SKIP_CID =
+        "blake3-512:"
+        + "9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e"
+        + "610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb";
+    private static final Jcs.Arr ARGS_JCS = Jcs.array(Jcs.object(
+        "kind", Jcs.string("var"),
+        "name", Jcs.string("x")
+    ));
+    private static final String ARGS_JCS_CID = Jcs.cid(ARGS_JCS);
 
     private static String contractTaggedSource(
         String preFormulaCid,
@@ -455,6 +617,81 @@ class TrinityRoundtripLiftTest {
             "kind", Jcs.string("atomic"),
             "name", Jcs.string("neq")
         );
+    }
+
+    private static Jcs.Obj conceptCitationPayload(
+        String argsJcsCid,
+        String schemaVersion,
+        String shapeCid,
+        String operationKind) {
+        return conceptCitationPayload(CONCEPT_SKIP_CID, argsJcsCid, schemaVersion, shapeCid, operationKind);
+    }
+
+    private static Jcs.Obj conceptCitationPayload(
+        String conceptCid,
+        String argsJcsCid,
+        String schemaVersion,
+        String shapeCid,
+        String operationKind) {
+        return Jcs.object(
+            "args_jcs", ARGS_JCS,
+            "args_jcs_cid", Jcs.string(argsJcsCid),
+            "artifact_kind", Jcs.string("provekit-concept-citation-comment-sugar"),
+            "concept_cid", Jcs.string(conceptCid),
+            "concept_name", Jcs.string("concept:skip"),
+            "concept_site_cid", Jcs.string(CONCEPT_SITE_CID),
+            "emitted_by", Jcs.object(
+                "kit_cid", Jcs.string(KIT_CID),
+                "kit_id", Jcs.string("provekit-realize-java-core@0.1.0"),
+                "kit_kind", Jcs.string("realize"),
+                "target_language", Jcs.string("java"),
+                "target_library_tag", Jcs.string("java")
+            ),
+            "loss_record_cid", Jcs.string(LOSS_RECORD_CID),
+            "operation_kind", Jcs.string(operationKind),
+            "policy_cid", Jcs.string(POLICY_CID),
+            "schema_version", Jcs.string(schemaVersion),
+            "shape_cid", Jcs.string(shapeCid),
+            "sugar_dict_cid", Jcs.string(SUGAR_DICT_CID),
+            "term_position", Jcs.array(Jcs.integer(0))
+        );
+    }
+
+    private static String conceptTaggedSource(Jcs.Obj payload, String payloadCid) {
+        return conceptSourceWithComments(
+            "// provekit-concept: " + Jcs.encode(payload) + "\n"
+            + "// provekit-concept-payload-cid: " + payloadCid);
+    }
+
+    private static String conceptSourceWithComments(String comments) {
+        return """
+            final class ConceptTransported {
+                // concept: skip
+                public static void transport_skip(Object x) {
+__COMMENTS__
+                    ;
+                }
+            }
+            """
+            .replace("__COMMENTS__", comments);
+    }
+
+    private static String _cid(String ch) {
+        return "blake3-512:" + ch.repeat(128);
+    }
+
+    private static int conceptCitationCount(JavaBindLifter.Result lift) {
+        if (lift.entries().isEmpty()) return 0;
+        Jcs.Json citations = ((Jcs.Obj) lift.entries().get(0)).get("concept_citations");
+        return citations instanceof Jcs.Arr arr ? arr.values().size() : 0;
+    }
+
+    private static Set<String> conceptDiagnostics(JavaBindLifter.Result lift) {
+        return lift.diagnostics().stream()
+            .filter(d -> d instanceof Jcs.Obj obj && obj.stringFieldOrNull("kind") != null)
+            .map(d -> ((Jcs.Obj) d).stringField("kind"))
+            .filter(kind -> kind.startsWith("concept-citation:"))
+            .collect(Collectors.toSet());
     }
 
     private Set<String> declarationFnNames() {

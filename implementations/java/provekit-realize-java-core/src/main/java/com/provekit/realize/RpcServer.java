@@ -91,11 +91,12 @@ public final class RpcServer {
         String mode = JsonUtil.decodeJsonStringField(paramsObj, "mode");
         List<String> modes = JsonUtil.decodeJsonStringArray(paramsObj, "modes");
         ContractPayload contract = ContractPayload.fromJson(JsonUtil.extractObjectField(paramsObj, "contract"));
+        TransportedOperation transportedOp = TransportedOperation.fromJson(JsonUtil.extractObjectField(paramsObj, "transported_op"));
         List<String> sugarPlugins = JsonUtil.decodeJsonObjectArray(paramsObj, "sugar_plugins");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
         SugarRealizer.Realization r =
-                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins);
+                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins, transportedOp);
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
