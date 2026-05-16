@@ -220,7 +220,7 @@ fn bind_result_claim_lower_uses_named_term_realize_request() {
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
-    assert_eq!(request.function, "deposit");
+    assert_eq!(request.function, "deposit-then-balance");
     assert_eq!(request.params, vec!["balance", "amount"]);
     assert_eq!(request.param_types, vec!["i64", "i64"]);
     assert_eq!(request.return_type, "i64");
@@ -247,7 +247,7 @@ fn bind_result_claim_lower_reconstructs_erased_signature_defaults() {
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
-    assert_eq!(request.function, "wrap_identity");
+    assert_eq!(request.function, "identity");
     assert_eq!(request.params, vec!["x"]);
     assert_eq!(request.param_types, vec!["int"]);
     assert_eq!(request.return_type, "int");

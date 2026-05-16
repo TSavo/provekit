@@ -79,7 +79,7 @@ fn bind_from_stdin_emits_bind_result_op_tree_with_promotion_decisions() {
         named["terms"][0]["conceptName"],
         "concept:deposit-then-balance"
     );
-    assert_eq!(named["terms"][0]["function"], "deposit");
+    assert!(named["terms"][0].get("function").is_none());
     assert_eq!(
         named["terms"][0]["witnesses"][0]["predicateText"],
         "out == balance + amount"

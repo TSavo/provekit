@@ -158,7 +158,7 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     );
     let named =
         named_term_document_from_bind_payload(payload).expect("bind payload recovers named term");
-    assert_eq!(named.terms[0].function, "deposit");
+    assert!(named.terms[0].function.is_empty());
 }
 
 #[test]

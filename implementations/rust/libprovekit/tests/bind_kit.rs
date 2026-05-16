@@ -70,6 +70,15 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         value: term_value.clone(),
         sort: primitive_sort("LiftPluginResponse"),
     };
+    let mut expected_payload_source_value = term_value.clone();
+    expected_payload_source_value["ir"][0]
+        .as_object_mut()
+        .expect("bind-lift-entry object")
+        .remove("fn_name");
+    let expected_payload_source = Term::Const {
+        value: expected_payload_source_value,
+        sort: primitive_sort("LiftPluginResponse"),
+    };
     let expected_named =
         bind_term_document(&term_value, &BindOptions::default()).expect("existing binder succeeds");
 
@@ -89,7 +98,7 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
     assert_eq!(op_cid, &concept_bind_result_cid());
     assert_eq!(name, "concept:bind-result");
     assert_eq!(args.len(), 2);
-    assert_eq!(args[0], input_term);
+    assert_eq!(args[0], expected_payload_source);
     assert!(
         matches!(args[1], Term::Op { .. }),
         "named form binding should be represented as an op tree"
@@ -118,7 +127,7 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
     let first_jcs =
         libprovekit::canonical::serializable_jcs(payload).expect("payload canonicalizes");
     let second_claim = BindKit::default()
-        .transform(&Input::Term(args[0].clone()))
+        .transform(&Input::Term(expected_payload_source.clone()))
         .expect("bind kit transforms term input again");
     let second_payload = second_claim
         .payload
