@@ -133,7 +133,7 @@ fn java_canonical_bodies_cid_self_consistent() {
         .join("menagerie/java-language-signature/specs/body-templates/java-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:265b192f573819b1814000f22efb1172e51ff83e0d127acdc0d31fb8dfce725e0aafe58b4f7b0f45469b969c4a561541e8d50e585fedd8056eefdd3e9cf5b7ff",
+        "blake3-512:eacd20890a889b732ad49fc78b2562b173f7dacbbdb60cdfb3d7e81f0278220050c660e3d0bbaded011e658df10c1bbc876b21082bb7d8f763a9172943cbbcbb",
     );
 }
 

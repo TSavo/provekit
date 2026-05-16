@@ -1,0 +1,19 @@
+{
+  "name": "hello_world",
+  "behavior": "stdout",
+  "original_source": "original_source.java",
+  "original_main_class": "HelloWorld",
+  "declared_test_inputs": [
+    []
+  ],
+  "expected_output": [
+    "Hello, world!\n"
+  ],
+  "emission": {
+    "function": "hello_world",
+    "params": [],
+    "param_types": [],
+    "return_type": "String",
+    "concept_name": "concept:hello-world"
+  }
+}

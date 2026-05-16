@@ -1,0 +1,23 @@
+{
+  "name": "control_flow_if",
+  "behavior": "stdout",
+  "original_source": "original_source.java",
+  "original_main_class": "ControlFlowIf",
+  "declared_test_inputs": [
+    ["-5"],
+    ["0"],
+    ["5"]
+  ],
+  "expected_output": [
+    "5\n",
+    "0\n",
+    "5\n"
+  ],
+  "emission": {
+    "function": "absValue",
+    "params": ["n"],
+    "param_types": ["i32"],
+    "return_type": "i32",
+    "concept_name": "concept:control-flow-if"
+  }
+}
