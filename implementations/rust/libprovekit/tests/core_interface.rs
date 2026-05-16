@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use libprovekit::canonical::{json_cid, serializable_cid, serializable_jcs};
@@ -9,13 +10,17 @@ use libprovekit::compose::{
 };
 use libprovekit::core::{
     address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot, CKit,
-    Canonical, Cid, Dialect, DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog,
-    HashMapInputCatalog, Input, InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit,
-    LiftPluginKit, Path, PathAlgebra, PathDocument, PathDocumentError, PathError, Refutation,
-    SlotSort, Term, Truth, Verb, Verdict, Witness,
+    Canonical, Cid, ConformanceDeclaration, Dialect, DomainClaim, DomainKind,
+    FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
+    KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
+    PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
-use provekit_ir_types::{IrFormula, IrTerm, Sort};
+use provekit_ir_types::{
+    composition_refusal_compose_input_cid, composition_refusal_header_cid,
+    composition_refusal_signature, CompositionRefusalEnvelope, CompositionRefusalHeader,
+    CompositionRefusalMemento, CompositionRefusalMetadata, IrFormula, IrTerm, Sort,
+};
 use serde_json::json;
 
 fn any_sort() -> Sort {
@@ -1139,4 +1144,116 @@ fn execute_path_refuses_unregistered_lift_kit_with_composition_refusal_memento()
         .expect("missing requirements")
         .iter()
         .any(|requirement| requirement.role.as_deref() == Some("kit-registry")));
+}
+
+#[test]
+fn kit_registry_register_requires_and_exposes_conformance_declaration() {
+    fn register_with_declaration(
+        registry: &mut KitRegistry,
+        name: &str,
+        kit: impl Kit + 'static,
+        conformance: ConformanceDeclaration,
+    ) {
+        registry.register(name, kit, conformance);
+    }
+
+    let conformance = ConformanceDeclaration::NonCarrier {
+        reason: "lifts source bytes to DomainClaim; no target source produced",
+    };
+    let mut registry = KitRegistry::default();
+
+    register_with_declaration(
+        &mut registry,
+        "lift-rust",
+        LiftKit::new(Dialect::Rust, "rust", vec!["true".to_string()], None),
+        conformance.clone(),
+    );
+
+    assert_eq!(registry.conformance("lift-rust"), Some(&conformance));
+    assert_eq!(registry.conformance("unknown"), None);
+}
+
+#[test]
+fn conformance_declaration_round_trips_through_json() {
+    fn decode(encoded: String) -> ConformanceDeclaration {
+        let encoded: &'static str = Box::leak(encoded.into_boxed_str());
+        serde_json::from_str(encoded).expect("conformance declaration decodes")
+    }
+
+    let carrier = ConformanceDeclaration::Carrier {
+        fixtures_path: PathBuf::from("implementations/rust/conformance/fixtures"),
+    };
+    let non_carrier = ConformanceDeclaration::NonCarrier {
+        reason: "lifts source bytes to DomainClaim; no target source produced",
+    };
+
+    let carrier_json = serde_json::to_string(&carrier).expect("carrier serializes");
+    let non_carrier_json = serde_json::to_string(&non_carrier).expect("non-carrier serializes");
+
+    assert_eq!(decode(carrier_json), carrier);
+    assert_eq!(decode(non_carrier_json), non_carrier);
+}
+
+fn refusal_for_failure_kind(failure_kind: &str, failure_detail: &str) -> CompositionRefusalMemento {
+    let atoms_cids = vec![address(&format!("atom:{failure_kind}")).to_string()];
+    let effect_set_cids = Vec::new();
+    let compose_input_cid =
+        composition_refusal_compose_input_cid(&atoms_cids, &effect_set_cids, "1.0.0");
+    let mut header = CompositionRefusalHeader {
+        atoms_cids,
+        blocking_effects: None,
+        ccp_version: "1.0.0".to_string(),
+        cid: String::new(),
+        compose_input_cid,
+        effect_occurrences: Some(vec![]),
+        effect_set_cids,
+        failure_detail: failure_detail.to_string(),
+        failure_kind: failure_kind.to_string(),
+        incompatible_pair: None,
+        kind: "composition-refusal".to_string(),
+        missing_memento_requirements: None,
+        schema_version: "1".to_string(),
+    };
+    header.cid = composition_refusal_header_cid(&header);
+    let metadata = CompositionRefusalMetadata::default();
+    let signature = composition_refusal_signature(&header, &metadata);
+    CompositionRefusalMemento {
+        envelope: CompositionRefusalEnvelope {
+            declared_at: "1970-01-01T00:00:00Z".to_string(),
+            signature,
+            signer: "substrate:test".to_string(),
+        },
+        header,
+        metadata,
+    }
+}
+
+#[test]
+fn target_failure_kinds_round_trip_through_jcs() {
+    let cases = [
+        (
+            "target-compile-failure",
+            "compiler stderr: missing semicolon",
+        ),
+        (
+            "target-behavior-divergence",
+            "expected stdout 1; observed stdout 2",
+        ),
+    ];
+
+    for (failure_kind, failure_detail) in cases {
+        let refusal = refusal_for_failure_kind(failure_kind, failure_detail);
+        let value = serde_json::to_value(&refusal).expect("refusal serializes");
+        let jcs = libprovekit::canonical::json_jcs(&value).expect("refusal JCS");
+        let decoded: CompositionRefusalMemento =
+            serde_json::from_str(&jcs).expect("JCS refusal decodes");
+
+        assert_eq!(decoded, refusal);
+        assert_eq!(decoded.header.failure_kind, failure_kind);
+        assert_eq!(decoded.header.failure_detail, failure_detail);
+        assert_eq!(
+            composition_refusal_header_cid(&decoded.header),
+            decoded.header.cid
+        );
+    }
 }

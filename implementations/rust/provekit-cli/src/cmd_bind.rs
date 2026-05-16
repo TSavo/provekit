@@ -13,8 +13,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use libprovekit::core::{
-    address, execute_path, BindKit, BindOptions, HashMapInputCatalog, Input, KitRegistry,
-    Path as CorePath, PathAlgebra, PathExecutionError, Term, Verb,
+    address, execute_path, BindKit, BindOptions, ConformanceDeclaration, HashMapInputCatalog,
+    Input, KitRegistry, Path as CorePath, PathAlgebra, PathExecutionError, Term, Verb,
 };
 use owo_colors::OwoColorize;
 use provekit_ir_types::{CompositionRefusalMemento, Sort};
@@ -208,6 +208,9 @@ fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError>
         BindKit::new(BindOptions {
             lang: args.lang.clone(),
         }),
+        ConformanceDeclaration::NonCarrier {
+            reason: "transforms Input::Term to NamedTerm DomainClaim; emits no target source",
+        },
     );
     let claim = execute_path(&path_input, &registry, &inputs).map_err(BindCliError::from_path)?;
     let payload = claim

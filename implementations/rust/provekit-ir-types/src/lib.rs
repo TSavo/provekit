@@ -4477,6 +4477,11 @@ pub struct CompositionRefusalHeader {
     pub effect_set_cids: Vec<String>,
     #[serde(rename = "failure_detail")]
     pub failure_detail: String,
+    /// Open string taxonomy from the composition-refusal spec.
+    ///
+    /// For `target-compile-failure`, `failure_detail` carries compiler stderr.
+    /// For `target-behavior-divergence`, `failure_detail` carries the
+    /// expected-vs-observed comparison.
     #[serde(rename = "failure_kind")]
     pub failure_kind: String,
     #[serde(rename = "incompatible_pair")]

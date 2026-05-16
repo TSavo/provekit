@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use clap::Parser;
 use libprovekit::core::{
-    execute_path, Cid, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath,
-    PathAlgebra, Term, Verb,
+    execute_path, Cid, ConformanceDeclaration, HashMapInputCatalog, Input, KitRegistry, LowerKit,
+    Path as CorePath, PathAlgebra, Term, Verb,
 };
 use libprovekit::desugar::{load_desugaring_rules_from_dir, DesugaringSet};
 use libprovekit::transport::{transport_term, OperationTransport, TermTransport};
@@ -1474,6 +1474,8 @@ fn realize_spec_via_path(
         }],
     }));
     let mut registry = KitRegistry::default();
+    let fixtures_path =
+        workspace_root.join(format!("implementations/{language}/conformance/fixtures"));
     registry.register(
         kit_name,
         LowerKit::new(
@@ -1482,6 +1484,7 @@ fn realize_spec_via_path(
             None,
             DispatchRealizeTransport,
         ),
+        ConformanceDeclaration::Carrier { fixtures_path },
     );
     let claim = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
     LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)

@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use libprovekit::core::{
-    address, execute_path, Dialect, DomainClaim, HashMapInputCatalog, Input, Kit, KitError,
-    KitRegistry, LiftKit, LiftPluginKit, Path as CorePath, PathAlgebra, Term, Verb, Verdict,
-    Witness,
+    address, execute_path, ConformanceDeclaration, Dialect, DomainClaim, HashMapInputCatalog,
+    Input, Kit, KitError, KitRegistry, LiftKit, LiftPluginKit, Path as CorePath, PathAlgebra, Term,
+    Verb, Verdict, Witness,
 };
 use provekit_ir_types::Sort;
 use serde_json::json;
@@ -163,6 +163,9 @@ fn lift_rust_path_executor_matches_existing_cmd_lift_transport_term_cid() {
             command,
             Some(temp.path().to_path_buf()),
         ),
+        ConformanceDeclaration::NonCarrier {
+            reason: "lifts source bytes to DomainClaim; no target source produced",
+        },
     );
 
     let claim = execute_path(&path, &registry, &inputs).expect("lift path executes");
@@ -260,8 +263,17 @@ fn lift_rust_then_prove_stub_path_routes_second_step_to_kit_prove() {
             command,
             Some(temp.path().to_path_buf()),
         ),
+        ConformanceDeclaration::NonCarrier {
+            reason: "lifts source bytes to DomainClaim; no target source produced",
+        },
     );
-    registry.register("prove-stub", ProveStubKit);
+    registry.register(
+        "prove-stub",
+        ProveStubKit,
+        ConformanceDeclaration::NonCarrier {
+            reason: "discharges claims; no source emission",
+        },
+    );
 
     let claim = execute_path(&path, &registry, &inputs).expect("lift then prove path executes");
 
@@ -313,8 +325,17 @@ fn default_kit_prove_refuses_prove_verb_step_with_composition_refusal_memento() 
         TransformOnlyKit {
             claim: claim.clone(),
         },
+        ConformanceDeclaration::NonCarrier {
+            reason: "test fixture; does not emit target source",
+        },
     );
-    registry.register("prove-default", TransformOnlyKit { claim });
+    registry.register(
+        "prove-default",
+        TransformOnlyKit { claim },
+        ConformanceDeclaration::NonCarrier {
+            reason: "test fixture; does not emit target source",
+        },
+    );
 
     let error = execute_path(&path, &registry, &inputs)
         .expect_err("default Kit::prove must refuse Prove verb");

@@ -8,8 +8,9 @@ use libprovekit::compose::{
     build_value, cid_of_value, jcs_bytes_of_value, EffectSet, FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, execute_path, Cid, DomainClaim, DomainKind, HashMapInputCatalog, Input, KitRegistry,
-    LowerKit, Path as CorePath, PathAlgebra, Term, Verb, Verdict,
+    address, execute_path, Cid, ConformanceDeclaration, DomainClaim, DomainKind,
+    HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra, Term, Verb,
+    Verdict,
 };
 use provekit_cli::kit_dispatch::DispatchRealizeTransport;
 use provekit_ir_types::{IrFormula, Sort};
@@ -202,6 +203,11 @@ fn lower_python_path_claim_input_cites_from_premise_to_and_loss_cids() {
             None,
             DispatchRealizeTransport,
         ),
+        ConformanceDeclaration::Carrier {
+            fixtures_path: temp
+                .path()
+                .join("implementations/python/conformance/fixtures"),
+        },
     );
 
     let claim = execute_path(&path, &registry, &inputs).expect("lower path executes");

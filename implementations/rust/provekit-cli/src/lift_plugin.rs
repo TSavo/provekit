@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use libprovekit::core::{
-    address, execute_path, Dialect, DomainClaim, HashMapInputCatalog, Input, KitRegistry, LiftKit,
-    LiftPluginKit, LiftPluginKitError, Path as CorePath, PathAlgebra, PathExecutionError, Term,
-    Verb,
+    address, execute_path, ConformanceDeclaration, Dialect, DomainClaim, HashMapInputCatalog,
+    Input, KitRegistry, LiftKit, LiftPluginKit, LiftPluginKitError, Path as CorePath, PathAlgebra,
+    PathExecutionError, Term, Verb,
 };
 use owo_colors::OwoColorize;
 use provekit_ir_types::CompositionRefusalMemento;
@@ -186,6 +186,9 @@ pub(crate) fn dispatch_lift_path(
                 manifest.command.clone(),
                 resolved_working_dir(project_root, manifest),
             ),
+            ConformanceDeclaration::NonCarrier {
+                reason: "lifts source bytes to DomainClaim; no target source produced",
+            },
         );
     }
 
