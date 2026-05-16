@@ -23,14 +23,22 @@ BLAKE3_BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json"
 )
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
-DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(
-    b"provekit-realize-python-core@0.1.0"
-).digest(length=64).hex()
+CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
+KIT_ID = "provekit-realize-python-core@0.1.0"
+DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(KIT_ID.encode("utf-8")).digest(
+    length=64
+).hex()
 DEFAULT_POLICY_CID = "blake3-512:" + blake3.blake3(
     b"provekit-realize-python-core/default-contract-comment-policy"
 ).digest(length=64).hex()
 DEFAULT_SUGAR_DICT_CID = "blake3-512:" + blake3.blake3(
     b"provekit-realize-python-core/contract-comment-sugar-v1"
+).digest(length=64).hex()
+DEFAULT_CONCEPT_POLICY_CID = "blake3-512:" + blake3.blake3(
+    b"provekit-realize-python-core/default-concept-citation-policy"
+).digest(length=64).hex()
+DEFAULT_CONCEPT_SUGAR_DICT_CID = "blake3-512:" + blake3.blake3(
+    b"provekit-realize-python-core/concept-citation-comment-sugar-v1"
 ).digest(length=64).hex()
 
 
@@ -85,64 +93,75 @@ def emit_stub(
     return_type: str,
     concept_name: str,
     contract: dict[str, Any] | None = None,
+    transported_op: dict[str, Any] | None = None,
     sugar_cids: list[str] | None = None,
     sugar_plugins: list[Any] | None = None,
     named_term_tree: dict[str, Any] | None = None,
     annotate: bool = False,
 ) -> dict[str, Any]:
-    if named_term_tree is None:
-        missing = missing_templates_for(
-            function,
-            params,
-            param_types,
-            return_type,
-            concept_name,
-        )
+    sugar_cids_value = sugar_cids or []
+    sugar_plugins_value = sugar_plugins or []
+    concept_lines = concept_citation_comment_lines(
+        transported_op,
+        sugar_cids_value,
+        sugar_plugins_value,
+    )
+    if concept_lines:
+        body = "\n".join([*concept_lines, "pass"])
     else:
-        missing = missing_templates_for_tree(
-            function,
-            params,
-            param_types,
-            return_type,
-            named_term_tree,
-        )
-    if missing:
-        raise MissingTemplateError(missing)
-
-    if named_term_tree is None:
-        term_body = term_body_for(concept_name, params, param_types, return_type)
-    else:
-        term_body = term_body_for_tree(
-            named_term_tree,
-            params,
-            param_types,
-            return_type,
-            annotate=annotate,
-        )
-    if term_body is not None:
-        body = term_body.body
-    else:
-        body = body_template_for(concept_name, params, param_types, return_type)
-        if body is None:
-            raise MissingTemplateError(
-                (
-                    MissingTemplateEntry(
-                        operation_kind=concept_name,
-                        args_shape=tuple(map_source_type(ty) for ty in param_types),
-                        function=function,
-                        term_position="body",
-                    ),
-                )
+        if named_term_tree is None:
+            missing = missing_templates_for(
+                function,
+                params,
+                param_types,
+                return_type,
+                concept_name,
             )
-    contract_lines = contract_comment_lines(contract, sugar_cids or [], sugar_plugins or [])
+        else:
+            missing = missing_templates_for_tree(
+                function,
+                params,
+                param_types,
+                return_type,
+                named_term_tree,
+            )
+        if missing:
+            raise MissingTemplateError(missing)
+
+        if named_term_tree is None:
+            term_body = term_body_for(concept_name, params, param_types, return_type)
+        else:
+            term_body = term_body_for_tree(
+                named_term_tree,
+                params,
+                param_types,
+                return_type,
+                annotate=annotate,
+            )
+        if term_body is not None:
+            body = term_body.body
+        else:
+            body = body_template_for(concept_name, params, param_types, return_type)
+            if body is None:
+                raise MissingTemplateError(
+                    (
+                        MissingTemplateEntry(
+                            operation_kind=concept_name,
+                            args_shape=tuple(map_source_type(ty) for ty in param_types),
+                            function=function,
+                            term_position="body",
+                        ),
+                    )
+                )
+    contract_lines = contract_comment_lines(contract, sugar_cids_value, sugar_plugins_value)
     result = {
         "source": _function_source(function, params, body, leading_lines=contract_lines),
         "is_stub": False,
         "extension": "py",
     }
-    if contract_lines:
+    if contract_lines or concept_lines:
         result["observed_loss_record"] = {}
-        result["used_sugars"] = [sugar_cids[0]] if sugar_cids else []
+        result["used_sugars"] = [sugar_cids_value[0]] if sugar_cids_value else []
     return result
 
 
@@ -198,6 +217,29 @@ def contract_comment_lines(
     return lines
 
 
+def concept_citation_comment_lines(
+    transported_op: dict[str, Any] | None,
+    sugar_cids: list[str],
+    sugar_plugins: list[Any],
+) -> list[str]:
+    if not isinstance(transported_op, dict):
+        return []
+    payload = _concept_citation_payload(transported_op, sugar_cids, sugar_plugins)
+    if payload is None:
+        return []
+    payload_cid = _cid_of_json(payload)
+    payload_json = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return [
+        f"# provekit-concept: {payload_json}",
+        f"# provekit-concept-payload-cid: {payload_cid}",
+    ]
+
+
 def _contract_comment_payload(
     contract: dict[str, Any],
     witness: dict[str, Any],
@@ -250,6 +292,93 @@ def _contract_comment_payload(
     return payload
 
 
+def _concept_citation_payload(
+    transported_op: dict[str, Any],
+    sugar_cids: list[str],
+    sugar_plugins: list[Any],
+) -> dict[str, Any] | None:
+    concept_cid = _transported_cid(transported_op, "concept_cid", "conceptCid")
+    concept_site_cid = _transported_cid(
+        transported_op,
+        "concept_site_cid",
+        "conceptSiteCid",
+    )
+    loss_record_cid = _transported_cid(
+        transported_op,
+        "loss_record_cid",
+        "lossRecordCid",
+    )
+    shape_cid = _transported_cid(transported_op, "shape_cid", "shapeCid")
+    operation_kind = _transported_str(
+        transported_op,
+        "operation_kind",
+        "operationKind",
+    )
+    term_position = _transported_term_position(
+        _transported_value(transported_op, "term_position", "termPosition")
+    )
+    if (
+        concept_cid is None
+        or concept_site_cid is None
+        or loss_record_cid is None
+        or shape_cid is None
+        or operation_kind is None
+        or term_position is None
+    ):
+        return None
+
+    args_jcs = _transported_value(transported_op, "args_jcs", "argsJcs")
+    payload: dict[str, Any] = {
+        "artifact_kind": "provekit-concept-citation-comment-sugar",
+        "concept_cid": concept_cid,
+        "concept_site_cid": concept_site_cid,
+        "emitted_by": {
+            "kit_cid": DEFAULT_KIT_CID,
+            "kit_id": KIT_ID,
+            "kit_kind": "realize",
+            "target_language": "python",
+            "target_library_tag": _transported_str(
+                transported_op,
+                "target_library_tag",
+                "targetLibraryTag",
+            )
+            or "python",
+        },
+        "loss_record_cid": loss_record_cid,
+        "operation_kind": operation_kind,
+        "policy_cid": _concept_policy_cid(transported_op),
+        "schema_version": "1",
+        "shape_cid": shape_cid,
+        "sugar_dict_cid": _concept_sugar_dict_cid(
+            transported_op,
+            sugar_cids,
+            sugar_plugins,
+        ),
+        "term_position": term_position,
+    }
+
+    if args_jcs is not None:
+        if not isinstance(args_jcs, list):
+            return None
+        payload["args_jcs"] = args_jcs
+        payload["args_jcs_cid"] = _cid_of_json(args_jcs)
+    else:
+        args_jcs_cid = _transported_cid(transported_op, "args_jcs_cid", "argsJcsCid")
+        if args_jcs_cid is None:
+            return None
+        payload["args_jcs_cid"] = args_jcs_cid
+
+    callsite_cid = _transported_value(transported_op, "callsite_cid", "callsiteCid")
+    if callsite_cid is not None:
+        if not isinstance(callsite_cid, str) or not CID_RE.fullmatch(callsite_cid):
+            return None
+        payload["callsite_cid"] = callsite_cid
+    concept_name = _transported_str(transported_op, "concept_name", "conceptName")
+    if concept_name is not None:
+        payload["concept_name"] = concept_name
+    return payload
+
+
 def _payload_role(role: str) -> str | None:
     match role:
         case "pre" | "post" | "throws" | "observation":
@@ -278,6 +407,66 @@ def _sugar_dict_cid(sugar_cids: list[str], sugar_plugins: list[Any]) -> str:
         if isinstance(cid, str):
             return cid
     return DEFAULT_SUGAR_DICT_CID
+
+
+def _concept_policy_cid(transported_op: dict[str, Any]) -> str:
+    value = _transported_cid(transported_op, "policy_cid", "policyCid")
+    if value is not None:
+        return value
+    return DEFAULT_CONCEPT_POLICY_CID
+
+
+def _concept_sugar_dict_cid(
+    transported_op: dict[str, Any],
+    sugar_cids: list[str],
+    sugar_plugins: list[Any],
+) -> str:
+    value = _transported_cid(transported_op, "sugar_dict_cid", "sugarDictCid")
+    if value is not None:
+        return value
+    for cid in sugar_cids:
+        if CID_RE.fullmatch(cid):
+            return cid
+    for plugin in sugar_plugins:
+        if not isinstance(plugin, dict):
+            continue
+        header = plugin.get("header")
+        cid = header.get("cid") if isinstance(header, dict) else None
+        if isinstance(cid, str) and CID_RE.fullmatch(cid):
+            return cid
+    return DEFAULT_CONCEPT_SUGAR_DICT_CID
+
+
+def _transported_cid(transported_op: dict[str, Any], *keys: str) -> str | None:
+    value = _transported_value(transported_op, *keys)
+    if isinstance(value, str) and CID_RE.fullmatch(value):
+        return value
+    return None
+
+
+def _transported_str(transported_op: dict[str, Any], *keys: str) -> str | None:
+    value = _transported_value(transported_op, *keys)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _transported_value(transported_op: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in transported_op:
+            return transported_op[key]
+    return None
+
+
+def _transported_term_position(value: Any) -> list[int] | None:
+    if not isinstance(value, list):
+        return None
+    out: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+            return None
+        out.append(item)
+    return out
 
 
 def _cid_of_json(value: Any) -> str:

@@ -11,6 +11,10 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_core.rpc import dispatch
 
 
+def _cid(ch: str) -> str:
+    return "blake3-512:" + ch * 128
+
+
 def test_plugin_invoke_returns_source_and_stub_flag() -> None:
     response = dispatch(
         {
@@ -36,6 +40,42 @@ def test_plugin_invoke_returns_source_and_stub_flag() -> None:
             "extension": "py",
         },
     }
+
+
+def test_plugin_invoke_threads_transported_op() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "transport_drop",
+                "params": ["x"],
+                "param_types": ["object"],
+                "return_type": "()",
+                "concept_name": "missing-python-drop-surface",
+                "transported_op": {
+                    "args_jcs": [{"kind": "var", "name": "x"}],
+                    "concept_cid": _cid("a"),
+                    "concept_name": "concept:drop",
+                    "concept_site_cid": _cid("b"),
+                    "loss_record_cid": _cid("c"),
+                    "operation_kind": "drop",
+                    "policy_cid": _cid("d"),
+                    "shape_cid": _cid("e"),
+                    "sugar_dict_cid": _cid("f"),
+                    "term_position": [3, 0],
+                },
+            },
+        }
+    )
+
+    source = response["result"]["source"]
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 10
+    assert "# provekit-concept:" in source
+    assert "# provekit-concept-payload-cid: blake3-512:" in source
+    assert "    pass\n" in source
 
 
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:
