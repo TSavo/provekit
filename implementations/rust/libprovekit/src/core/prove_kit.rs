@@ -38,6 +38,9 @@ impl ProveKit {
     /// The `expect_cycle` flag is currently a no-op in the walker; it is
     /// retained for source compatibility and scheduled for removal in a
     /// follow-up issue. New callers should prefer [`ProveKit::new`].
+    #[deprecated(
+        note = "expect_cycle is a no-op in walks::walk_premises_to_root; scheduled for removal. Use ProveKit::new."
+    )]
     pub fn with_cycle_expectation(
         origin_cid: Cid,
         catalog: impl Catalog + 'static,
