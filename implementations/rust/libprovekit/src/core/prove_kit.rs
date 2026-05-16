@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashSet;
-use std::fmt;
-
 use super::traits::{Catalog, Kit, KitError};
 use super::types::{
-    domain_claim_from_canonical_bytes, ChainIntegrityFailureWitness, ChainIntegrityWitness, Cid,
-    ConformanceDeclaration, Dialect, DomainClaim, Input, Term, Verdict, Witness,
+    ChainIntegrityFailureWitness, ChainIntegrityWitness, Cid, ConformanceDeclaration, Dialect,
+    DomainClaim, Input, Term, Verdict, Witness,
 };
+use super::walks::walk_premises_to_root_with_failure_steps;
 
 const CHAIN_INTEGRITY_SCHEMA_VERSION: u32 = 1;
 const PROVEKIT_CONFORMANCE_REASON: &str =
@@ -36,6 +34,10 @@ impl ProveKit {
     }
 
     /// Build a ProveKit with an explicit cycle expectation knob for chain-walk tests.
+    ///
+    /// The `expect_cycle` flag is currently a no-op in the walker; it is
+    /// retained for source compatibility and scheduled for removal in a
+    /// follow-up issue. New callers should prefer [`ProveKit::new`].
     pub fn with_cycle_expectation(
         origin_cid: Cid,
         catalog: impl Catalog + 'static,
@@ -108,131 +110,4 @@ impl Kit for ProveKit {
             "ProveKit serialize is not supported".to_string(),
         ))
     }
-}
-
-/// Structural reason a premise walk failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChainBreak {
-    /// The walk encountered a CID it had already visited.
-    CycleDetected { cid: Cid },
-    /// A premise CID was not present in the catalog.
-    PremiseNotInCatalog { cid: Cid },
-    /// No premise path reached the configured origin CID.
-    OriginUnreachable,
-    /// A catalog entry could not be decoded as a DomainClaim.
-    DeserializationFailed { cid: Cid, detail: String },
-}
-
-impl ChainBreak {
-    /// Return the stable variant name serialized into failure witnesses.
-    pub fn kind_name(&self) -> &'static str {
-        match self {
-            Self::CycleDetected { .. } => "CycleDetected",
-            Self::PremiseNotInCatalog { .. } => "PremiseNotInCatalog",
-            Self::OriginUnreachable => "OriginUnreachable",
-            Self::DeserializationFailed { .. } => "DeserializationFailed",
-        }
-    }
-}
-
-impl fmt::Display for ChainBreak {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CycleDetected { cid } => {
-                write!(formatter, "cycle detected at premise {cid}")
-            }
-            Self::PremiseNotInCatalog { cid } => {
-                write!(formatter, "premise {cid} is not present in the catalog")
-            }
-            Self::OriginUnreachable => {
-                formatter.write_str("origin is unreachable from claim premises")
-            }
-            Self::DeserializationFailed { cid, detail } => {
-                write!(formatter, "premise {cid} could not be decoded: {detail}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ChainBreak {}
-
-struct ChainWalkFailure {
-    breakage: ChainBreak,
-    walked_steps_before_break: Vec<Cid>,
-}
-
-/// Walk `claim.premises` recursively until `origin_cid` is reached.
-pub fn walk_premises_to_root(
-    claim: &DomainClaim,
-    origin_cid: &Cid,
-    catalog: &dyn Catalog,
-    expect_cycle: bool,
-) -> Result<Vec<Cid>, ChainBreak> {
-    walk_premises_to_root_with_failure_steps(claim, origin_cid, catalog, expect_cycle)
-        .map_err(|failure| failure.breakage)
-}
-
-fn walk_premises_to_root_with_failure_steps(
-    claim: &DomainClaim,
-    origin_cid: &Cid,
-    catalog: &dyn Catalog,
-    expect_cycle: bool,
-) -> Result<Vec<Cid>, ChainWalkFailure> {
-    let _ = expect_cycle;
-    let mut visited = HashSet::new();
-    let mut walked_steps = Vec::new();
-    match walk_claim(claim, origin_cid, catalog, &mut visited, &mut walked_steps) {
-        Ok(true) => Ok(walked_steps),
-        Ok(false) => Err(ChainWalkFailure {
-            breakage: ChainBreak::OriginUnreachable,
-            walked_steps_before_break: walked_steps,
-        }),
-        Err(breakage) => Err(ChainWalkFailure {
-            breakage,
-            walked_steps_before_break: walked_steps,
-        }),
-    }
-}
-
-fn walk_claim(
-    claim: &DomainClaim,
-    origin_cid: &Cid,
-    catalog: &dyn Catalog,
-    visited: &mut HashSet<Cid>,
-    walked_steps: &mut Vec<Cid>,
-) -> Result<bool, ChainBreak> {
-    if claim.cid() == *origin_cid {
-        return Ok(true);
-    }
-
-    let mut reached_origin = false;
-    for premise_cid in &claim.premises {
-        if !visited.insert(premise_cid.clone()) {
-            return Err(ChainBreak::CycleDetected {
-                cid: premise_cid.clone(),
-            });
-        }
-        if !catalog.contains(premise_cid) {
-            return Err(ChainBreak::PremiseNotInCatalog {
-                cid: premise_cid.clone(),
-            });
-        }
-        walked_steps.push(premise_cid.clone());
-        let bytes = catalog
-            .get(premise_cid)
-            .ok_or_else(|| ChainBreak::PremiseNotInCatalog {
-                cid: premise_cid.clone(),
-            })?;
-        let premise_claim = domain_claim_from_canonical_bytes(&bytes).map_err(|detail| {
-            ChainBreak::DeserializationFailed {
-                cid: premise_cid.clone(),
-                detail,
-            }
-        })?;
-        if walk_claim(&premise_claim, origin_cid, catalog, visited, walked_steps)? {
-            reached_origin = true;
-        }
-    }
-
-    Ok(reached_origin)
 }
