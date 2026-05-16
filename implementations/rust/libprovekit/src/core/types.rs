@@ -142,6 +142,95 @@ pub enum Term {
     Unit,
 }
 
+/// One operation node yielded by [`Term::walk`].
+pub struct TermNode<'a> {
+    /// Borrowed operation CID from the term.
+    pub op_cid: &'a Cid,
+    /// Borrowed operation name from the term.
+    pub op_name: &'a str,
+    /// Slot path from the root term to this operation node.
+    pub term_position: Vec<usize>,
+}
+
+/// Borrowing pre-order iterator over operation nodes in a [`Term`].
+pub struct TermWalkIter<'a> {
+    root: Option<&'a Term>,
+    stack: Vec<TermWalkFrame<'a>>,
+    term_position: Vec<usize>,
+}
+
+struct TermWalkFrame<'a> {
+    args: &'a [Term],
+    next_index: usize,
+}
+
+impl Term {
+    /// Walk operation nodes in pre-order.
+    ///
+    /// The yielded `term_position` is a slot path from the root term: `[]` for
+    /// the root op, `[0]` for the first op child, and `[0, 2]` for the third
+    /// op child under the first child. `Term::Const`, `Term::Var`, and
+    /// `Term::Unit` carry no operation CID, so the iterator skips those leaves
+    /// instead of manufacturing sentinel operation IDs.
+    pub fn walk(&self) -> TermWalkIter<'_> {
+        TermWalkIter {
+            root: Some(self),
+            stack: Vec::new(),
+            term_position: Vec::new(),
+        }
+    }
+}
+
+impl<'a> Iterator for TermWalkIter<'a> {
+    type Item = TermNode<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let term = if let Some(root) = self.root.take() {
+                root
+            } else {
+                self.next_child()?
+            };
+
+            match term {
+                Term::Op { op_cid, name, args } => {
+                    self.stack.push(TermWalkFrame {
+                        args,
+                        next_index: 0,
+                    });
+                    return Some(TermNode {
+                        op_cid,
+                        op_name: name.as_str(),
+                        term_position: self.term_position.clone(),
+                    });
+                }
+                Term::Const { .. } | Term::Var { .. } | Term::Unit => {
+                    if !self.stack.is_empty() {
+                        self.term_position.pop();
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'a> TermWalkIter<'a> {
+    fn next_child(&mut self) -> Option<&'a Term> {
+        loop {
+            let frame = self.stack.last_mut()?;
+            if frame.next_index < frame.args.len() {
+                let index = frame.next_index;
+                frame.next_index += 1;
+                self.term_position.push(index);
+                return Some(&frame.args[index]);
+            }
+
+            self.stack.pop();
+            self.term_position.pop();
+        }
+    }
+}
+
 /// Declared child ordering policy for one operation in a language signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1867,5 +1956,114 @@ fn _let_binding_from_term(name: String, bound_term: Term) -> LetBinding {
     LetBinding {
         name,
         bound_term: IrTerm::from(bound_term),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cid(hex_digit: char) -> Cid {
+        Cid::parse(format!("blake3-512:{}", hex_digit.to_string().repeat(128))).unwrap()
+    }
+
+    fn op(hex_digit: char, name: &str, args: Vec<Term>) -> Term {
+        Term::Op {
+            op_cid: cid(hex_digit),
+            name: name.to_string(),
+            args,
+        }
+    }
+
+    fn const_term() -> Term {
+        Term::Const {
+            value: serde_json::json!(0),
+            sort: any_sort(),
+        }
+    }
+
+    fn var(name: &str) -> Term {
+        Term::Var {
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn walk_visits_root_op_first() {
+        let term = op('1', "root", vec![]);
+        let nodes: Vec<_> = term.walk().collect();
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].op_cid, &cid('1'));
+        assert_eq!(nodes[0].op_name, "root");
+        assert!(nodes[0].term_position.is_empty());
+    }
+
+    #[test]
+    fn walk_skips_const_leaves() {
+        let term = op('1', "root", vec![const_term(), const_term()]);
+        let nodes: Vec<_> = term.walk().collect();
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].op_name, "root");
+    }
+
+    #[test]
+    fn walk_skips_var_leaves() {
+        let term = op('1', "root", vec![var("left"), var("right")]);
+        let nodes: Vec<_> = term.walk().collect();
+
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].op_name, "root");
+    }
+
+    #[test]
+    fn walk_yields_nested_ops_preorder() {
+        let term = op(
+            '1',
+            "root",
+            vec![op('2', "left", vec![]), op('3', "right", vec![])],
+        );
+        let names: Vec<_> = term.walk().map(|node| node.op_name).collect();
+
+        assert_eq!(names, vec!["root", "left", "right"]);
+    }
+
+    #[test]
+    fn walk_yields_correct_slot_paths() {
+        let term = op(
+            '1',
+            "root",
+            vec![op('2', "left", vec![]), op('3', "right", vec![])],
+        );
+        let nodes: Vec<_> = term.walk().collect();
+
+        assert_eq!(nodes[0].op_cid, &cid('1'));
+        assert_eq!(nodes[0].term_position, Vec::<usize>::new());
+        assert_eq!(nodes[1].op_cid, &cid('2'));
+        assert_eq!(nodes[1].term_position, vec![0]);
+        assert_eq!(nodes[2].op_cid, &cid('3'));
+        assert_eq!(nodes[2].term_position, vec![1]);
+    }
+
+    #[test]
+    fn walk_handles_deep_nesting() {
+        let term = op(
+            '1',
+            "root",
+            vec![op('2', "middle", vec![op('3', "deep", vec![])])],
+        );
+        let nodes: Vec<_> = term.walk().collect();
+
+        assert_eq!(nodes[2].op_name, "deep");
+        assert_eq!(nodes[2].term_position, vec![0, 0]);
+    }
+
+    #[test]
+    fn walk_yields_zero_for_const_only_term() {
+        let term = const_term();
+        let nodes: Vec<_> = term.walk().collect();
+
+        assert!(nodes.is_empty());
     }
 }
