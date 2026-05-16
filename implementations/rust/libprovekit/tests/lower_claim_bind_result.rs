@@ -105,6 +105,29 @@ fn bind_input_value() -> Value {
     })
 }
 
+fn erased_bind_input_value() -> Value {
+    json!({
+        "kind": "ir-document",
+        "workspaceRoot": "/tmp/provekit-lower-claim-bind-result-test",
+        "ir": [{
+            "kind": "bind-lift-entry",
+            "file": "src/lib.rs",
+            "fn_name": "wrap_identity",
+            "fn_line": 7,
+            "concept_annotation": "identity",
+            "param_names": ["x"],
+            "term_shape": {
+                "kind": "body",
+                "stmts": [
+                    {"kind": "exit"}
+                ]
+            },
+            "term_shape_cid": valid_cid('d'),
+            "witnesses": []
+        }]
+    })
+}
+
 #[derive(Clone, Default)]
 struct CapturingTransport {
     requests: Arc<Mutex<Vec<RealizeRequest>>>,
@@ -171,6 +194,17 @@ fn bind_claim() -> DomainClaim {
     .expect("bind kit transforms term input")
 }
 
+fn erased_bind_claim() -> DomainClaim {
+    let term_value = erased_bind_input_value();
+    let input_term = Term::Const {
+        value: term_value,
+        sort: primitive_sort("LiftPluginResponse"),
+    };
+    BindKit::default()
+        .transform(&Input::Term(input_term))
+        .expect("bind kit transforms erased term input")
+}
+
 #[test]
 fn bind_result_claim_lower_uses_named_term_realize_request() {
     let claim = bind_claim();
@@ -195,6 +229,28 @@ fn bind_result_claim_lower_uses_named_term_realize_request() {
         request.named_term_tree,
         expected_spec.get("namedTermTree").cloned()
     );
+}
+
+#[test]
+fn bind_result_claim_lower_reconstructs_erased_signature_defaults() {
+    let claim = erased_bind_claim();
+    let payload = claim.payload.as_ref().expect("bind claim payload");
+    let named =
+        named_term_document_from_bind_payload(payload).expect("bind payload recovers named terms");
+    assert_eq!(named.terms[0].param_types, Vec::<String>::new());
+    assert_eq!(named.terms[0].return_type, "()");
+
+    let (result, transport) = lower_with_capture(claim, "rust");
+
+    result.expect("lower claim succeeds");
+    let requests = transport.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.function, "wrap_identity");
+    assert_eq!(request.params, vec!["x"]);
+    assert_eq!(request.param_types, vec!["int"]);
+    assert_eq!(request.return_type, "int");
+    assert_eq!(request.concept_name, "concept:identity");
 }
 
 #[test]

@@ -263,16 +263,41 @@ pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
         .map(serde_json::to_value)
         .transpose()
         .map_err(|error| format!("serialize namedTermTree for `{}`: {error}", term.function))?;
+    let (param_types, return_type) = realize_signature_from_named_term(term);
     Ok(json!({
         "kind": "RealizeRequest",
         "function": term.function,
         "params": term.params,
-        "paramTypes": term.param_types,
-        "returnType": term.return_type,
+        "paramTypes": param_types,
+        "returnType": return_type,
         "conceptName": term.concept_name,
         "namedTermTree": named_term_tree,
         "termShapeCid": term.term_shape_cid,
     }))
+}
+
+fn realize_signature_from_named_term(term: &NamedTerm) -> (Vec<String>, String) {
+    let erased = term.param_types.is_empty() && matches!(term.return_type.trim(), "" | "()");
+    if !erased {
+        return (term.param_types.clone(), term.return_type.clone());
+    }
+
+    let param_types = term
+        .params
+        .iter()
+        .map(|_| "int".to_string())
+        .collect::<Vec<_>>();
+    let return_type = if is_unit_concept(&term.concept_name) {
+        "()".to_string()
+    } else {
+        "int".to_string()
+    };
+    (param_types, return_type)
+}
+
+fn is_unit_concept(concept_name: &str) -> bool {
+    let trimmed = concept_name.trim();
+    trimmed == "unit" || trimmed == "concept:unit"
 }
 
 fn fallback_from(input: &Input) -> Vec<Cid> {

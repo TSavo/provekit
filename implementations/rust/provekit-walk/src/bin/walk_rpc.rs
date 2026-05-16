@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
-use provekit_lift_contracts::{lift_file_with_docstring_evidence, lift_file_with_sig_evidence};
+use provekit_lift_contracts::lift_file_with_docstring_evidence;
 use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
 use provekit_walk::{
     build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
@@ -356,7 +356,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let concept_annotation = extract_concept_annotation(&src, &target.source_name);
             let term_shape = term_shape_for_fn(item_fn);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
-            let (param_names, param_types, return_type) = fn_signature(item_fn);
+            let param_names = fn_param_names(item_fn);
             let function_symbol = format!("{fn_name}@{rel}");
             let fallback_function_symbol = format!("{}@{rel}", target.source_name);
             let witnesses = witnesses_by_symbol
@@ -374,8 +374,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "attr_post": attr_post,
                 "concept_annotation": concept_annotation,
                 "param_names": param_names,
-                "param_types": param_types,
-                "return_type": return_type,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
                 "witnesses": witnesses,
@@ -397,8 +395,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "attr_post": Value::Null,
                     "concept_annotation": concept_annotation_name(&callsite.pattern.concept_name),
                     "param_names": callsite.resolved_args,
-                    "param_types": vec!["unknown"; callsite.arity],
-                    "return_type": "unknown",
                     "term_shape": cvalue_to_json(&term_shape),
                     "term_shape_cid": term_shape_cid,
                     "witnesses": [],
@@ -548,7 +544,6 @@ struct LibraryCallPattern {
 struct BoundLibraryCall {
     pattern: LibraryCallPattern,
     resolved_args: Vec<String>,
-    arity: usize,
     line: usize,
 }
 
@@ -854,7 +849,6 @@ impl BoundCallCollector<'_> {
         self.calls.push(BoundLibraryCall {
             pattern: pattern.clone(),
             resolved_args,
-            arity,
             line,
         });
     }
@@ -908,14 +902,9 @@ fn contract_witnesses_by_function_symbol(
     source_bytes: &[u8],
 ) -> BTreeMap<String, Vec<Value>> {
     let mut by_symbol: BTreeMap<String, Vec<(String, Value)>> = BTreeMap::new();
-    for evidence in lift_file_with_sig_evidence(file, rel, source_bytes)
+    for evidence in lift_file_with_docstring_evidence(file, rel, source_bytes)
         .evidences
         .into_iter()
-        .chain(
-            lift_file_with_docstring_evidence(file, rel, source_bytes)
-                .evidences
-                .into_iter(),
-        )
     {
         let Some(symbol) = evidence_function_symbol(&evidence) else {
             continue;
@@ -1131,37 +1120,23 @@ fn collect_rs_files_shallow(dir: &Path, visited: &mut std::collections::BTreeSet
     }
 }
 
-fn fn_signature(item_fn: &syn::ItemFn) -> (Vec<String>, Vec<String>, String) {
+fn fn_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
     let mut names = Vec::new();
-    let mut types = Vec::new();
     for (i, arg) in item_fn.sig.inputs.iter().enumerate() {
         match arg {
             syn::FnArg::Receiver(_) => {
                 names.push("__self".to_string());
-                types.push("Self".to_string());
             }
             syn::FnArg::Typed(pt) => {
                 let name = match &*pt.pat {
                     syn::Pat::Ident(p) => p.ident.to_string(),
                     _ => format!("__arg{}", i),
                 };
-                let ty_str = type_to_string(&pt.ty);
                 names.push(name);
-                types.push(ty_str);
             }
         }
     }
-    let return_type = match &item_fn.sig.output {
-        syn::ReturnType::Default => "()".to_string(),
-        syn::ReturnType::Type(_, t) => type_to_string(t),
-    };
-    (names, types, return_type)
-}
-
-fn type_to_string(ty: &syn::Type) -> String {
-    use quote::ToTokens;
-    let s = ty.to_token_stream().to_string();
-    normalize_ws(&s)
+    names
 }
 
 fn normalize_ws(s: &str) -> String {
@@ -1417,7 +1392,48 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn bind_lift_marries_docstring_and_type_signature_evidence_as_witnesses() {
+    fn bind_lift_erases_signature_types_from_bind_ir_entries() {
+        let root = temp_workspace("bind_lift_type_erasure");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn add(left: i64, right: i64) -> i64 {
+    left + right
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let entry = entries
+            .iter()
+            .find(|entry| entry["fn_name"] == "add")
+            .expect("add entry");
+        assert_eq!(entry["param_names"], json!(["left", "right"]));
+        assert!(entry.get("param_types").is_none());
+        assert!(entry.get("return_type").is_none());
+        assert!(
+            entry["witnesses"]
+                .as_array()
+                .expect("witnesses array")
+                .iter()
+                .all(|witness| witness["source_kind"] != "type-signature"),
+            "signature type evidence must not cross the bind lift boundary"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_marries_docstring_evidence_as_witnesses() {
         assert_eq!(
             initialize_result()["capabilities"]["ir_version"],
             "bind-ir/1.0.0",
@@ -1474,25 +1490,8 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         assert!(
             witnesses
                 .iter()
-                .any(|w| w["source_kind"] == "type-signature"
-                    && w["extension_fields"]["signature_position"] == "param:0"),
-            "expected parameter type-signature evidence witness: {witnesses:#?}"
-        );
-        let return_type_witness = witnesses
-            .iter()
-            .find(|w| {
-                w["source_kind"] == "type-signature"
-                    && w["extension_fields"]["signature_position"] == "return"
-            })
-            .expect("return type-signature evidence witness");
-        let predicate_text = return_type_witness["predicate_text"]
-            .as_str()
-            .expect("type-signature witnesses must carry predicate_text");
-        assert!(
-            predicate_text.contains("is_some(result)")
-                && predicate_text.contains("is_none(result)")
-                && !predicate_text.contains("\"kind\""),
-            "type-signature predicate_text must be readable predicate text, not raw JSON: {predicate_text}"
+                .all(|w| w["source_kind"] != "type-signature"),
+            "type-signature witnesses must not cross the bind lift boundary: {witnesses:#?}"
         );
         assert!(
             witnesses.iter().all(|w| {
@@ -1624,7 +1623,8 @@ pub fn fetch_status(url: &str) -> i64 {
         assert_eq!(bound["file"], "src/lib.rs");
         assert_eq!(bound["fn_name"], "fetch_status__bound_call_1");
         assert_eq!(bound["param_names"], json!(["url"]));
-        assert_eq!(bound["param_types"], json!(["unknown"]));
+        assert!(bound.get("param_types").is_none());
+        assert!(bound.get("return_type").is_none());
         assert_eq!(bound["term_shape"], cvalue_to_json(&expected_shape));
         assert_eq!(bound["term_shape_cid"], expected_cid);
 

@@ -161,12 +161,7 @@ def _entry_for_function(
 ) -> Json:
     concept, attr_pre, attr_post = _extract_leading_annotations(lines, node.lineno)
     term_shape = _function_shape(node)
-    param_names, param_types = _signature_params(node.args)
-    return_type = _annotation_text(node.returns)
-    if return_type is None:
-        return_type = "Any"
-    elif return_type == "None":
-        return_type = "()"
+    param_names = _signature_param_names(node.args)
     witnesses = []
     witnesses.extend(_contract_comment_witnesses(lines, node, rel_path, diagnostics))
     witnesses.extend(_decorator_contract_witnesses(node, param_names, rel_path, diagnostics))
@@ -182,17 +177,14 @@ def _entry_for_function(
         "fn_name": node.name,
         "kind": "bind-lift-entry",
         "param_names": param_names,
-        "param_types": param_types,
-        "return_type": return_type,
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
         "witnesses": witnesses,
     }
 
 
-def _signature_params(args: ast.arguments) -> tuple[list[str], list[str]]:
+def _signature_param_names(args: ast.arguments) -> list[str]:
     names: list[str] = []
-    types: list[str] = []
     ordered_args: list[ast.arg] = []
     ordered_args.extend(args.posonlyargs)
     ordered_args.extend(args.args)
@@ -203,17 +195,7 @@ def _signature_params(args: ast.arguments) -> tuple[list[str], list[str]]:
         ordered_args.append(args.kwarg)
     for arg in ordered_args:
         names.append(arg.arg)
-        types.append(_annotation_text(arg.annotation) or "Any")
-    return names, types
-
-
-def _annotation_text(annotation: ast.expr | None) -> str | None:
-    if annotation is None:
-        return None
-    try:
-        return ast.unparse(annotation)
-    except Exception:
-        return "Any"
+    return names
 
 
 def _function_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Json:
