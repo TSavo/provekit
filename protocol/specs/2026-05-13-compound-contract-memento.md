@@ -349,7 +349,7 @@ NOTE: this crate (`provekit-ir-types`) carries no JCS encoder; round-trip serde 
    - `predicate` = the `FunctionContractMemento`'s `pre /\ post` packaged per §6.
    - `confidence_basis_points = 10000`.
    - `source_locator` = derived from the `FunctionContractMemento`'s `locus`.
-   - `lifter_cid` = `"blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"` (128 hex `0`s; a reserved sentinel CID, §4.4).
+   - `lifter_cid` = `"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"` (128 hex `0`s; a reserved sentinel CID, §4.4).
    - `extension_fields = { "auto_promoted_from": <function_contract_cid> }`.
 2. Build a `CompoundContractMemento` with `evidences = [refToTheEvidence]` where the evidence-ref has `weight_basis_points = 10000` (normative per §4.2 step 3), `aggregation_strategy = "conjunction"`, `composed_pre`/`composed_post` from the bare contract.
 3. The promoted compound's CID is recomputed per §3.1.
@@ -358,7 +358,7 @@ The auto-promoted compound has a fresh CID different from the bare contract's CI
 
 ### §4.4 The sentinel `auto-promote` lifter CID
 
-A reserved CID `blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000` (128 hex `0`s) identifies the auto-promotion path as the lifter. Downstream consumers can detect auto-promoted compounds by checking this lifter CID. The sentinel CID is NOT a valid BLAKE3-512 hash of any real lifter binary; it is reserved for this purpose by spec. The probability that a real BLAKE3-512 digest equals all-zeros is 2^-512; the sentinel is provably distinct from any real hash output.
+A reserved CID `blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000` (128 hex `0`s) identifies the auto-promotion path as the lifter. Downstream consumers can detect auto-promoted compounds by checking this lifter CID. The sentinel CID is NOT a valid BLAKE3-512 hash of any real lifter binary; it is reserved for this purpose by spec. The probability that a real BLAKE3-512 digest equals all-zeros is 2^-512; the sentinel is provably distinct from any real hash output.
 
 Pass-1 validation (§5.1) accepts this sentinel at `lifter_cid`: "128-hex" is satisfied by 128 hex `0` digits. No special-case exception to the CID format rule is needed.
 
