@@ -72,6 +72,52 @@ def test_plugin_invoke_returns_structured_missing_template_error() -> None:
     }
 
 
+def test_plugin_invoke_threads_named_term_tree() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "compose_tree",
+                "params": ["value"],
+                "param_types": ["int"],
+                "return_type": "int",
+                "concept_name": "UNNAMED-CONCEPT-1",
+                "named_term_tree": {
+                    "conceptName": "concept:seq",
+                    "operationKind": "seq",
+                    "shapeCid": "blake3-512:seq",
+                    "args": [
+                        {
+                            "conceptName": "identity",
+                            "operationKind": "call",
+                            "shapeCid": "blake3-512:call",
+                            "args": [],
+                        },
+                        {
+                            "conceptName": "concept:return",
+                            "operationKind": "return",
+                            "shapeCid": "blake3-512:return",
+                            "args": [],
+                        },
+                    ],
+                },
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "result": {
+            "source": "def compose_tree(value):\n    return value\n    return value\n",
+            "is_stub": False,
+            "extension": "py",
+        },
+    }
+
+
 def test_emit_module_returns_all_missing_template_errors() -> None:
     response = dispatch(
         {

@@ -529,6 +529,8 @@ pub struct RealizeRequest {
     pub return_type: String,
     pub concept_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub named_term_tree: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub modes: Vec<String>,
@@ -1094,6 +1096,7 @@ mod tests {
             param_types: vec!["String".to_string()],
             return_type: "String".to_string(),
             concept_name: "concept:lookup".to_string(),
+            named_term_tree: None,
             mode: Some("monitor".to_string()),
             modes: vec!["monitor".to_string(), "witness".to_string()],
             contract: Some(RealizeContractPayload {
@@ -1138,6 +1141,41 @@ mod tests {
         );
         assert_eq!(params["sugar_plugins"][0]["header"]["kind"], "sugar");
         assert_eq!(params["sugar_cids"][0], "blake3-512:sugar");
+    }
+
+    #[test]
+    fn realize_request_params_include_named_term_tree() {
+        let request = RealizeRequest {
+            function: "compose_tree".to_string(),
+            params: vec!["value".to_string()],
+            param_types: vec!["int".to_string()],
+            return_type: "int".to_string(),
+            concept_name: "UNNAMED-CONCEPT-1".to_string(),
+            named_term_tree: Some(json!({
+                "conceptName": "concept:seq",
+                "operationKind": "seq",
+                "shapeCid": "blake3-512:seq",
+                "args": [{
+                    "conceptName": "concept:return",
+                    "operationKind": "return",
+                    "shapeCid": "blake3-512:return",
+                    "args": []
+                }]
+            })),
+            mode: None,
+            modes: Vec::new(),
+            contract: None,
+            sugar_cids: Vec::new(),
+            sugar_plugins: Vec::new(),
+        };
+
+        let params = realize_request_params(&request);
+
+        assert_eq!(params["named_term_tree"]["conceptName"], "concept:seq");
+        assert_eq!(
+            params["named_term_tree"]["args"][0]["conceptName"],
+            "concept:return"
+        );
     }
 
     #[test]

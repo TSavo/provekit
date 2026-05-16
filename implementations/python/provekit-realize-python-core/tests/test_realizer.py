@@ -11,7 +11,12 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_core.realizer import MissingTemplateError, emit_stub
+import provekit_realize_python_core.realizer as realizer
+from provekit_realize_python_core.realizer import (
+    BodyTemplateEntry,
+    MissingTemplateError,
+    emit_stub,
+)
 
 
 def _cid(ch: str) -> str:
@@ -473,6 +478,98 @@ def test_let_continuation_term_surface_omits_skip_tail() -> None:
         "is_stub": False,
         "extension": "py",
     }
+
+
+def test_named_term_tree_walk_emits_composed_body(monkeypatch) -> None:
+    existing_entries = realizer.entries()
+    monkeypatch.setattr(
+        realizer,
+        "entries",
+        lambda: (
+            *existing_entries,
+            BodyTemplateEntry(
+                concept_name="concept:call",
+                template_kind="verbatim",
+                template="return ${param0}",
+                min_params=1,
+                max_params=1,
+                requires_param_types=None,
+                requires_return_type=None,
+            ),
+        ),
+    )
+    tree = {
+        "conceptName": "concept:seq",
+        "operationKind": "seq",
+        "shapeCid": "blake3-512:seq",
+        "args": [
+            {
+                "conceptName": "concept:call",
+                "operationKind": "call",
+                "shapeCid": "blake3-512:call",
+                "args": [],
+            },
+            {
+                "conceptName": "concept:return",
+                "operationKind": "return",
+                "shapeCid": "blake3-512:return",
+                "args": [],
+            },
+        ],
+    }
+
+    result = emit_stub(
+        function="compose_tree",
+        params=["value"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="UNNAMED-CONCEPT-1",
+        named_term_tree=tree,
+    )
+
+    assert result == {
+        "source": "def compose_tree(value):\n    return value\n    return value\n",
+        "is_stub": False,
+        "extension": "py",
+    }
+    assert "NotImplementedError" not in result["source"]
+
+
+def test_named_term_tree_missing_node_concept_refuses_loudly() -> None:
+    tree = {
+        "conceptName": "concept:seq",
+        "operationKind": "seq",
+        "shapeCid": "blake3-512:seq",
+        "args": [
+            {
+                "conceptName": "missing-node-concept",
+                "operationKind": "call",
+                "shapeCid": "blake3-512:missing",
+                "args": [],
+            }
+        ],
+    }
+
+    try:
+        emit_stub(
+            function="missing_tree",
+            params=["value"],
+            param_types=["int"],
+            return_type="int",
+            concept_name="UNNAMED-CONCEPT-1",
+            named_term_tree=tree,
+        )
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "missing-node-concept",
+                "args_shape": ["int"],
+                "function": "missing_tree",
+                "term_position": "body.namedTermTree.args[0]",
+            }
+        ]
+    else:
+        raise AssertionError("missing namedTermTree concept should refuse")
 
 
 def test_contract_witnesses_emit_liftable_contract_comment_payloads() -> None:
