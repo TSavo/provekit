@@ -259,16 +259,17 @@ fn decompose_bind_result(args: &[Term], _claim: &DomainClaim) -> Result<Value, S
 }
 
 pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
+    let function = realize_function_name(term).to_string();
     let named_term_tree = term
         .named_term_tree
         .as_ref()
         .map(serde_json::to_value)
         .transpose()
-        .map_err(|error| format!("serialize namedTermTree for `{}`: {error}", term.function))?;
+        .map_err(|error| format!("serialize namedTermTree for `{function}`: {error}"))?;
     let (param_types, return_type) = realize_signature_from_named_term(term);
     Ok(json!({
         "kind": "RealizeRequest",
-        "function": term.function,
+        "function": function,
         "params": term.params,
         "paramTypes": param_types,
         "returnType": return_type,
@@ -277,6 +278,14 @@ pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
         "termShape": term.term_shape,
         "termShapeCid": term.term_shape_cid,
     }))
+}
+
+fn realize_function_name(term: &NamedTerm) -> &str {
+    if term.function.trim().is_empty() {
+        term.name.as_str()
+    } else {
+        term.function.as_str()
+    }
 }
 
 fn realize_signature_from_named_term(term: &NamedTerm) -> (Vec<String>, String) {

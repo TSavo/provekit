@@ -132,7 +132,7 @@ pub struct BindLiftEntry {
     pub kind: String,
     #[serde(default)]
     pub file: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub fn_name: String,
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub fn_line: u64,
@@ -198,6 +198,7 @@ pub struct NamedTerm {
     pub discharge_verdict: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub function: String,
     pub name: String,
     #[serde(
@@ -283,7 +284,7 @@ pub fn bind_term_document(
                 "exact".to_string()
             },
             file: entry.file,
-            function: entry.fn_name,
+            function: String::new(),
             name,
             named_term_tree,
             param_types: entry.param_types,
@@ -312,9 +313,18 @@ pub fn bind_term_document(
 
 /// Return the canonical named-term document CID emitted by `cmd_bind`.
 pub fn named_term_document_cid(named: &NamedTermDocument) -> Result<Cid, BindError> {
-    let cid = crate::canonical::serializable_cid(named)
+    let canonical = bind_payload_named_term_document(named);
+    let cid = crate::canonical::serializable_cid(&canonical)
         .map_err(|error| BindError::Failed(format!("cid named term JSON: {error}")))?;
     Cid::try_from(cid).map_err(|error| BindError::Failed(error.to_string()))
+}
+
+fn bind_payload_named_term_document(named: &NamedTermDocument) -> NamedTermDocument {
+    let mut canonical = named.clone();
+    for term in &mut canonical.terms {
+        term.function.clear();
+    }
+    canonical
 }
 
 pub fn concept_bind_result_cid() -> Cid {
@@ -326,12 +336,51 @@ pub fn bind_result_payload(
     named: &NamedTermDocument,
 ) -> Result<Term, BindError> {
     let catalog = ConceptOpCatalog::load()?;
-    let named_form_binding = named_term_document_op_tree(named, &catalog)?;
+    let canonical_named = bind_payload_named_term_document(named);
+    let named_form_binding = named_term_document_op_tree(&canonical_named, &catalog)?;
     Ok(Term::Op {
         op_cid: concept_bind_result_cid(),
         name: CONCEPT_BIND_RESULT.to_string(),
-        args: vec![original_term, named_form_binding],
+        args: vec![bind_payload_source_term(original_term), named_form_binding],
     })
+}
+
+fn bind_payload_source_term(mut term: Term) -> Term {
+    strip_bind_payload_source_function_from_term(&mut term);
+    term
+}
+
+fn strip_bind_payload_source_function_from_term(term: &mut Term) {
+    match term {
+        Term::Const { value, .. } => strip_bind_payload_source_function_from_value(value),
+        Term::Op { args, .. } => {
+            for arg in args {
+                strip_bind_payload_source_function_from_term(arg);
+            }
+        }
+        Term::Var { .. } | Term::Unit => {}
+    }
+}
+
+fn strip_bind_payload_source_function_from_value(value: &mut Json) {
+    match value {
+        Json::Array(values) => {
+            for value in values {
+                strip_bind_payload_source_function_from_value(value);
+            }
+        }
+        Json::Object(object) => {
+            if object.get("kind").and_then(Json::as_str) == Some("bind-lift-entry") {
+                object.remove("fn_name");
+                object.remove("fnName");
+                object.remove("function");
+            }
+            for value in object.values_mut() {
+                strip_bind_payload_source_function_from_value(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub fn named_term_document_from_bind_payload(
@@ -945,9 +994,8 @@ fn term_position_from_citation(value: &Json) -> Vec<usize> {
         .unwrap_or_default()
 }
 
-fn site_cid(entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<String, BindError> {
+fn site_cid(_entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<String, BindError> {
     let value = json!({
-        "function": entry.fn_name,
         "name": name,
         "termShapeCid": term_shape_cid,
     });
@@ -1296,7 +1344,7 @@ mod tests {
         .expect("bind succeeds");
         assert_eq!(named.kind, "named-term-document");
         assert_eq!(named.terms[0].concept_name, "concept:demo");
-        assert_eq!(named.terms[0].function, "f");
+        assert!(named.terms[0].function.is_empty());
         assert_eq!(named.promotion_decision_mementos.len(), 1);
     }
 
@@ -1308,16 +1356,103 @@ mod tests {
         };
         let mut entry_with_file = entry.clone();
         entry_with_file.file = "src/lib.rs".to_string();
+        let mut entry_with_source_function = entry.clone();
+        entry_with_source_function.fn_name = "depositSource".to_string();
         let term_shape_cid = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 
         assert_eq!(
             site_cid(&entry, "concept:deposit", term_shape_cid).expect("site cid"),
             site_cid(&entry_with_file, "concept:deposit", term_shape_cid).expect("site cid")
         );
+        assert_eq!(
+            site_cid(&entry, "concept:deposit", term_shape_cid).expect("site cid"),
+            site_cid(
+                &entry_with_source_function,
+                "concept:deposit",
+                term_shape_cid
+            )
+            .expect("site cid")
+        );
     }
 
     #[test]
-    fn named_term_document_omits_empty_file_fields() {
+    fn bind_payload_cid_ignores_source_function_name() {
+        fn lifted_add(fn_name: &str) -> Term {
+            Term::Const {
+                value: json!({
+                    "kind": "ir-document",
+                    "sourceLanguage": "rust",
+                    "ir": [{
+                        "kind": "bind-lift-entry",
+                        "fn_name": fn_name,
+                        "concept_annotation": "add",
+                        "param_names": ["x", "y"],
+                        "param_types": ["i64", "i64"],
+                        "return_type": "i64",
+                        "term_shape": {"kind": "bin", "op": "+"},
+                        "witnesses": []
+                    }]
+                }),
+                sort: primitive_sort("LiftPluginResponse"),
+            }
+        }
+
+        let kit = BindKit::new(BindOptions {
+            lang: "rust".to_string(),
+        });
+
+        let add_claim = kit
+            .transform(&Input::Term(lifted_add("add")))
+            .expect("bind add succeeds");
+        let adder_claim = kit
+            .transform(&Input::Term(lifted_add("adder")))
+            .expect("bind adder succeeds");
+
+        assert_eq!(
+            add_claim.to, adder_claim.to,
+            "source function name must not enter the bind payload CID"
+        );
+        assert_eq!(
+            add_claim.payload, adder_claim.payload,
+            "source function name must not enter the bind payload bytes"
+        );
+    }
+
+    #[test]
+    fn named_term_document_cid_ignores_source_function_name() {
+        fn document(function: &str) -> NamedTermDocument {
+            NamedTermDocument {
+                kind: "named-term-document".to_string(),
+                promotion_decision_mementos: vec![],
+                schema_version: "1".to_string(),
+                source_language: "rust".to_string(),
+                terms: vec![NamedTerm {
+                    concept_name: "concept:add".to_string(),
+                    discharge_verdict: "loudly-bounded-lossy".to_string(),
+                    file: String::new(),
+                    function: function.to_string(),
+                    name: "add".to_string(),
+                    named_term_tree: None,
+                    param_types: vec!["i64".to_string(), "i64".to_string()],
+                    params: vec!["x".to_string(), "y".to_string()],
+                    return_type: "i64".to_string(),
+                    site_memento_cid: "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222".to_string(),
+                    term_shape: json!({"kind": "bin", "op": "+"}),
+                    term_shape_cid: "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".to_string(),
+                    witnesses: vec![],
+                }],
+                workspace_root: None,
+            }
+        }
+
+        assert_eq!(
+            named_term_document_cid(&document("add")).expect("add document cid"),
+            named_term_document_cid(&document("adder")).expect("adder document cid")
+        );
+    }
+
+    #[test]
+    fn named_term_document_omits_empty_source_provenance_fields() {
         let document = NamedTermDocument {
             kind: "named-term-document".to_string(),
             promotion_decision_mementos: vec![],
@@ -1327,7 +1462,7 @@ mod tests {
                 concept_name: "concept:deposit".to_string(),
                 discharge_verdict: "loudly-bounded-lossy".to_string(),
                 file: String::new(),
-                function: "deposit".to_string(),
+                function: String::new(),
                 name: "concept:deposit".to_string(),
                 named_term_tree: None,
                 param_types: vec!["i64".to_string()],
@@ -1346,6 +1481,10 @@ mod tests {
         assert!(
             value["terms"][0].get("file").is_none(),
             "empty file provenance should not serialize into named term JSON: {value}"
+        );
+        assert!(
+            value["terms"][0].get("function").is_none(),
+            "empty function provenance should not serialize into named term JSON: {value}"
         );
     }
 
