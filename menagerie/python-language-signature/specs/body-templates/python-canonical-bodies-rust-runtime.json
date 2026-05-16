@@ -132,6 +132,81 @@
           }
         },
         {
+          "concept_name": "concept:conditional",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param1}) if (${param0}) else (${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:eq",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param0}) == (${param1})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:decl",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0} = ${param1}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:lt",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param0}) < (${param1})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:mul",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param0}) * (${param1})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
           "concept_name": "concept:borrow",
           "emission_template": {
             "kind": "verbatim",

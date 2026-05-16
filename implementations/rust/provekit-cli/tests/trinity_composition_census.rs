@@ -414,20 +414,18 @@ fn seam1_discrimination_malformed_term_refuses_cleanly() {
 /// Seam 3 positive: lift -> bind -> lower (python target) -> relift via the
 /// Python source LiftKit must compose.
 ///
-/// EMPIRICAL OUTCOME (2026-05-16 first run): the lower step refuses with
+/// EMPIRICAL OUTCOME (2026-05-16 first run): the lower step refused with
 /// `missing body-template entry` for `concept:conditional`, `concept:eq`,
 /// `concept:decl`, `concept:lt`, `concept:mul`, and two UNNAMED-CONCEPT
-/// entries. The realize plugin lacks body-template coverage for the algebra
-/// shape `safe_divide_then_double` lifts to. Filed as A11 candidate: the
-/// Python realize plugin's body-template catalog must cover the concept ops
-/// the bind layer emits OR bind layer must mint a stub template per missing
-/// op rather than emitting an unbound `concept:*` op.
+/// entries. A11 covers the five named Python body templates. Until A10
+/// preserves operator atoms at lift time, the two UNNAMED-CONCEPT operator
+/// fallback entries still keep this antibody pinned.
 ///
-/// Until A11 lands, lower-back to Python on a non-trivial algebra refuses.
+/// Until A10 and A11 both land, lower-back to Python on a non-trivial algebra refuses.
 /// The test is pinned via #[should_panic] so the test suite passes while the
 /// gap remains visible in CI logs.
 #[test]
-#[should_panic(expected = "seam 3 positive gap surfaced (deliverable for A11)")]
+#[should_panic(expected = "seam 3 positive gap surfaced (awaiting A10 operator naming)")]
 fn seam3_positive_lower_then_relift_python_recovers_concept_citation() {
     require_python_modules(&[
         "provekit_lift_py_tests",
@@ -458,10 +456,10 @@ fn seam3_positive_lower_then_relift_python_recovers_concept_citation() {
                 "seam": 3,
                 "property": "positive composition: lift -> bind -> lower(python)",
                 "failure_detail": detail,
-                "diagnosis": "The python realize plugin reports `missing body-template entry` for one or more concept ops the bind layer emits for the safe_divide_then_double algebra. The lower step cannot proceed, so the relift step never runs. File as A11 prereq: extend the python realize plugin's body-template catalog to cover the algebra's concept ops, or have bind emit stub templates per missing op.",
+                "diagnosis": "The python realize plugin now covers the A11 named concept body templates for safe_divide_then_double. Remaining UNNAMED-CONCEPT refusals indicate the A10 operator-atom preservation fix is still needed before the relift step can run.",
             });
             panic!(
-                "seam 3 positive gap surfaced (deliverable for A11):\n{}",
+                "seam 3 positive gap surfaced (awaiting A10 operator naming):\n{}",
                 serde_json::to_string_pretty(&report).unwrap()
             );
         }

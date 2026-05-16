@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import blake3
@@ -96,6 +98,21 @@ def _concept_citation_payloads(source: str) -> list[dict]:
         if stripped.startswith("# provekit-concept: "):
             payloads.append(json.loads(stripped.removeprefix("# provekit-concept: ")))
     return payloads
+
+
+def _compiled_namespace(source: str) -> dict[str, object]:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "rendered.py"
+        path.write_text(source, encoding="utf-8")
+        subprocess.run(
+            [sys.executable, "-m", "py_compile", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    namespace: dict[str, object] = {}
+    exec(source, namespace)
+    return namespace
 
 
 def _transported_op_payload() -> dict:
@@ -323,6 +340,129 @@ def test_rust_runtime_concepts_render_from_body_template_catalog() -> None:
         assert result["source"] == expected
         assert result["is_stub"] is False
         assert result["extension"] == "py"
+
+
+def test_concept_conditional_body_template_renders_valid_python_and_executes() -> None:
+    result = emit_stub(
+        function="pick",
+        params=["cond", "then_value", "else_value"],
+        param_types=["bool", "int", "int"],
+        return_type="int",
+        concept_name="concept:conditional",
+    )
+
+    assert result["source"] == (
+        "def pick(cond, then_value, else_value):\n"
+        "    return (then_value) if (cond) else (else_value)\n"
+    )
+    namespace = _compiled_namespace(result["source"])
+    pick = namespace["pick"]
+    assert pick(True, 11, 22) == 11
+    assert pick(False, 11, 22) == 22
+
+
+def test_concept_eq_body_template_renders_valid_python_and_executes() -> None:
+    result = emit_stub(
+        function="same",
+        params=["left", "right"],
+        param_types=["int", "int"],
+        return_type="bool",
+        concept_name="concept:eq",
+    )
+
+    assert result["source"] == "def same(left, right):\n    return (left) == (right)\n"
+    namespace = _compiled_namespace(result["source"])
+    same = namespace["same"]
+    assert same(3, 3) is True
+    assert same(3, 4) is False
+
+
+def test_concept_decl_body_template_renders_valid_python_and_executes() -> None:
+    body = realizer.body_template_for(
+        "concept:decl",
+        ["result", "value"],
+        ["str", "int"],
+        "None",
+    )
+    assert body == "result = value"
+    source = f"def assign(value):\n    {body}\n    return result\n"
+
+    namespace = _compiled_namespace(source)
+    assign = namespace["assign"]
+    assert assign(42) == 42
+
+
+def test_concept_decl_refuses_expression_position() -> None:
+    try:
+        emit_stub(
+            function="bad_decl_expr",
+            params=["value"],
+            param_types=["int"],
+            return_type="int",
+            concept_name="return(decl(result, value))",
+        )
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "concept:decl",
+                "args_shape": ["expr", "int"],
+                "function": "bad_decl_expr",
+                "term_position": "body.return.decl",
+            }
+        ]
+    else:
+        raise AssertionError("decl in expression position should refuse")
+
+
+def test_concept_lt_body_template_renders_valid_python_and_executes() -> None:
+    result = emit_stub(
+        function="less_than",
+        params=["left", "right"],
+        param_types=["int", "int"],
+        return_type="bool",
+        concept_name="concept:lt",
+    )
+
+    assert result["source"] == "def less_than(left, right):\n    return (left) < (right)\n"
+    namespace = _compiled_namespace(result["source"])
+    less_than = namespace["less_than"]
+    assert less_than(2, 5) is True
+    assert less_than(5, 2) is False
+
+
+def test_concept_mul_body_template_renders_valid_python_and_executes() -> None:
+    result = emit_stub(
+        function="product",
+        params=["left", "right"],
+        param_types=["int", "int"],
+        return_type="int",
+        concept_name="concept:mul",
+    )
+
+    assert result["source"] == "def product(left, right):\n    return (left) * (right)\n"
+    namespace = _compiled_namespace(result["source"])
+    product = namespace["product"]
+    assert product(6, 7) == 42
+
+
+def test_core_concept_term_surface_composes_valid_python() -> None:
+    result = emit_stub(
+        function="classify_or_double",
+        params=["value"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="return(conditional(eq(value, 0), -1, conditional(lt(value, 0), 0, mul(value, 2))))",
+    )
+
+    assert result["source"] == (
+        "def classify_or_double(value):\n"
+        "    return (-1) if ((value) == (0)) else ((0) if ((value) < (0)) else ((value) * (2)))\n"
+    )
+    namespace = _compiled_namespace(result["source"])
+    classify_or_double = namespace["classify_or_double"]
+    assert classify_or_double(0) == -1
+    assert classify_or_double(-3) == 0
+    assert classify_or_double(4) == 8
 
 
 def test_call_term_surface_renders_python_call() -> None:
