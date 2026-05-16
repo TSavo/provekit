@@ -14,8 +14,8 @@ This document enumerates what is required for that claim to be real. Each item i
 ## Substrate primitives (executor + chain)
 
 - **A1 merged** (PR #1064 / SHA 8627786b). `PathExecutionChain` with `terminal_claim`, `claim_at_step`, `source_at_step`, `term_at_step` accessors. `execute_path` returns the chain. 11 call sites migrated. Three executor unit tests green.
-- **A2 in flight** (#1059, codex 9a45a22e dispatched 2026-05-16 off main at 8627786b). `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` (inlined helper) and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` on any `ChainBreak`.
-- **A3 in review** (PR #1065, codex d66e4f6a complete, Opus review in flight). BindKit's payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_term_as_op_tree] }`. `concept:bind-result` op-CID minted in the concept-shapes catalog. Round-trip test: walk the bind output, every node's op_cid resolves via `Catalog::contains()`.
+- **A2 in flight** (#1059, codex 7a4d0eae after spec amendment from previous 9a45a22e dispatch). `ProveKit` registered with `KitRegistry` under name `"prove"` with `ConformanceDeclaration::NonCarrier`. `ProveKit::prove(claim)` runs `walk_premises_to_root` (inlined helper) and returns `Verdict::Proved` + `Witness::ChainIntegrity(ChainIntegrityWitness)` on success; `Verdict::Refuted` + `Witness::ChainIntegrityFailure(ChainIntegrityFailureWitness)` on any `ChainBreak` (architect amendment: refutation is positive evidence, not the absence of a witness).
+- **A3 merged** (PR #1065 / SHA a79214cb). BindKit's payload is `Term::Op { op_cid: concept:bind-result, args: [original_term, named_term_as_op_tree] }`. `concept:bind-result` op-CID minted in the concept-shapes catalog. Round-trip walkability test asserts every node's op_cid resolves via catalog lookup. Wire-format backward-compat preserved via `parse_named_or_bind_payload` helper.
 - **#1049 lands.** Producer-side premise dedup in `execute_path`. Two-layer defense composes with `walk_premises_to_root`'s `HashSet` visited tracking.
 
 ## Capstone exhibit
@@ -98,11 +98,11 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 ## Status snapshot (2026-05-16, post-A1 merge)
 
-**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061), A5 exhibit transport policy (#1060 / PR #1062), A6 Catalog::contains (#1056 / PR #1063), A1 PathExecutionChain (#1058 / PR #1064).
+**Merged and counted:** Python carrier (#1034), Java carrier (#1041), C carrier (#1042), keystone executor + KitRegistry + LiftKit (#1036), PathDocument closure (#1035), LowerKit (#1043), verb-selector + `Kit::prove` default (#1044), BindKit (#1047), `ConformanceDeclaration` substrate (#1046), cmd_lower deletion-rule cleanup (#1048), A4 Term::walk + slot-path TermNode (#1055 / PR #1061), A5 exhibit transport policy (#1060 / PR #1062), A6 Catalog::contains (#1056 / PR #1063), A1 PathExecutionChain (#1058 / PR #1064), A3 BindKit op-tree + concept:bind-result mint (#1057 / PR #1065).
 
-**Filed and in flight:** A2 #1059 ProveKit chain-integrity (codex 9a45a22e), A3 #1057 BindKit op-tree (PR #1065 open, Opus deep review running).
+**Filed and in flight:** A2 #1059 ProveKit chain-integrity (codex 7a4d0eae, re-dispatched after first attempt correctly refused fabricating `DomainClaim::failure_detail`).
 
-**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A2 + A3 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
+**Filed, blocked on prereqs:** #1024 Trinity exhibit (blocked on A2 + #1049), #1039 per-kit conformance fixtures (blocked on per-kit work after substrate prereqs).
 
 **Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
 
