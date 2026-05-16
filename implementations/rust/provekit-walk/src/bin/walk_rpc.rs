@@ -22,6 +22,7 @@
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
@@ -33,7 +34,11 @@ use provekit_walk::{
     lift_function_precondition, CalleeContract,
 };
 use serde_json::{json, Value};
-use syn::spanned::Spanned;
+
+const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
+    include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
+
+static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
 fn main() -> io::Result<()> {
     let stdin = io::stdin();
@@ -351,7 +356,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         for target in collect_bind_lift_targets(&file) {
             let item_fn = &target.item_fn;
             let fn_name = &target.fn_name;
-            let fn_line = target.line as u64;
             let (attr_pre, attr_post) = extract_contract_attrs(&item_fn.attrs);
             let concept_annotation = extract_concept_annotation(&src, &target.source_name);
             let term_shape = term_shape_for_fn(item_fn);
@@ -367,9 +371,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
 
             entries.push(json!({
                 "kind": "bind-lift-entry",
-                "file": rel,
+                "file": "",
                 "fn_name": fn_name,
-                "fn_line": fn_line,
                 "attr_pre": attr_pre,
                 "attr_post": attr_post,
                 "concept_annotation": concept_annotation,
@@ -388,9 +391,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
                 entries.push(json!({
                     "kind": "bind-lift-entry",
-                    "file": rel,
+                    "file": "",
                     "fn_name": format!("{fn_name}__bound_call_{}", index + 1),
-                    "fn_line": callsite.line as u64,
                     "attr_pre": Value::Null,
                     "attr_post": Value::Null,
                     "concept_annotation": concept_annotation_name(&callsite.pattern.concept_name),
@@ -414,7 +416,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
 struct BindLiftTarget {
     fn_name: String,
     source_name: String,
-    line: usize,
     item_fn: syn::ItemFn,
 }
 
@@ -431,7 +432,6 @@ fn collect_bind_lift_targets_in_items(items: &[syn::Item], targets: &mut Vec<Bin
                 let fn_name = item_fn.sig.ident.to_string();
                 targets.push(BindLiftTarget {
                     source_name: fn_name.clone(),
-                    line: span_line(item_fn),
                     fn_name,
                     item_fn: item_fn.clone(),
                 });
@@ -451,7 +451,6 @@ fn collect_bind_lift_targets_in_items(items: &[syn::Item], targets: &mut Vec<Bin
                     targets.push(BindLiftTarget {
                         fn_name: format!("{qualifier}::{source_name}"),
                         source_name,
-                        line: span_line(method),
                         item_fn: item_fn_from_impl_method(method),
                     });
                 }
@@ -497,15 +496,6 @@ fn item_fn_from_impl_method(method: &syn::ImplItemFn) -> syn::ItemFn {
     }
 }
 
-fn span_line(node: &impl Spanned) -> usize {
-    let line = node.span().start().line;
-    if line == 0 {
-        1
-    } else {
-        line
-    }
-}
-
 fn rust_symbol_surface(node: &impl quote::ToTokens) -> String {
     normalize_rust_symbol(&node.to_token_stream().to_string())
 }
@@ -544,7 +534,6 @@ struct LibraryCallPattern {
 struct BoundLibraryCall {
     pattern: LibraryCallPattern,
     resolved_args: Vec<String>,
-    line: usize,
 }
 
 impl LibraryBindingLookup {
@@ -821,7 +810,7 @@ struct BoundCallCollector<'a> {
 impl<'ast> syn::visit::Visit<'ast> for BoundCallCollector<'_> {
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         if let Some(callee) = callee_name_from_expr(&node.func) {
-            self.record_call(&callee, &node.args, node.span().start().line);
+            self.record_call(&callee, &node.args);
         }
         syn::visit::visit_expr_call(self, node);
     }
@@ -829,7 +818,7 @@ impl<'ast> syn::visit::Visit<'ast> for BoundCallCollector<'_> {
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         let receiver = expr_surface(&node.receiver);
         let callee = format!("{receiver}.{}", node.method);
-        self.record_call(&callee, &node.args, node.span().start().line);
+        self.record_call(&callee, &node.args);
         syn::visit::visit_expr_method_call(self, node);
     }
 }
@@ -839,7 +828,6 @@ impl BoundCallCollector<'_> {
         &mut self,
         callee: &str,
         args: &syn::punctuated::Punctuated<syn::Expr, syn::token::Comma>,
-        line: usize,
     ) {
         let arity = args.len();
         let Some(pattern) = self.bindings.match_call(callee, arity) else {
@@ -849,7 +837,6 @@ impl BoundCallCollector<'_> {
         self.calls.push(BoundLibraryCall {
             pattern: pattern.clone(),
             resolved_args,
-            line,
         });
     }
 }
@@ -956,8 +943,6 @@ fn bind_contract_witness_from_evidence(evidence: &EvidenceMemento) -> Option<Val
         "predicate_text": predicate_text,
         "source_kind": source_kind,
         "confidence_basis_points": evidence.confidence_basis_points,
-        "line": evidence.source_locator.span.start.line as u64,
-        "col": evidence.source_locator.span.start.col as u64,
         "extension_fields": extension_fields,
     }))
 }
@@ -1273,110 +1258,189 @@ fn normalize_concept_annotation(raw: &str) -> Option<String> {
     }
 }
 
-fn term_shape_for_fn(item_fn: &syn::ItemFn) -> std::sync::Arc<CValue> {
-    let stmts: Vec<std::sync::Arc<CValue>> =
-        item_fn.block.stmts.iter().map(shape_of_stmt).collect();
+fn term_shape_for_fn(item_fn: &syn::ItemFn) -> Arc<CValue> {
+    shape_of_block(&item_fn.block)
+}
+
+fn shape_of_block(block: &syn::Block) -> Arc<CValue> {
+    collapse_operation_shapes(block.stmts.iter().map(shape_of_stmt))
+}
+
+fn shape_of_stmt(stmt: &syn::Stmt) -> Arc<CValue> {
+    match stmt {
+        syn::Stmt::Expr(e, _) => shape_of_expr(e),
+        syn::Stmt::Local(local) => local
+            .init
+            .as_ref()
+            .map(|init| shape_of_expr(&init.expr))
+            .unwrap_or_else(non_operation_shape),
+        _ => non_operation_shape(),
+    }
+}
+
+fn shape_of_expr(expr: &syn::Expr) -> Arc<CValue> {
+    match expr {
+        syn::Expr::If(e) => {
+            let else_shape = e
+                .else_branch
+                .as_ref()
+                .map(|(_, else_expr)| shape_of_expr(else_expr))
+                .unwrap_or_else(non_operation_shape);
+            gamma_operation(
+                "concept:conditional",
+                vec![
+                    shape_of_expr(&e.cond),
+                    shape_of_block(&e.then_branch),
+                    else_shape,
+                ],
+            )
+        }
+        syn::Expr::While(e) => gamma_operation(
+            "concept:while",
+            vec![shape_of_expr(&e.cond), shape_of_block(&e.body)],
+        ),
+        syn::Expr::ForLoop(e) => gamma_operation("concept:for", vec![shape_of_block(&e.body)]),
+        syn::Expr::Return(e) => e
+            .expr
+            .as_ref()
+            .map(|expr| shape_of_expr(expr))
+            .unwrap_or_else(non_operation_shape),
+        syn::Expr::Break(e) => {
+            let args = e
+                .expr
+                .as_ref()
+                .map(|expr| vec![shape_of_expr(expr)])
+                .unwrap_or_default();
+            gamma_operation("concept:break", args)
+        }
+        syn::Expr::Continue(_) => gamma_operation("concept:continue", Vec::new()),
+        syn::Expr::Assign(e) => gamma_operation(
+            "concept:assign",
+            vec![shape_of_expr(&e.left), shape_of_expr(&e.right)],
+        ),
+        syn::Expr::Binary(e) => {
+            let Some(concept_name) = binary_operator_concept_name(&e.op) else {
+                return non_operation_shape();
+            };
+            gamma_operation(
+                concept_name,
+                vec![shape_of_expr(&e.left), shape_of_expr(&e.right)],
+            )
+        }
+        syn::Expr::Unary(e) => {
+            let Some(concept_name) = unary_operator_concept_name(&e.op) else {
+                return non_operation_shape();
+            };
+            gamma_operation(concept_name, vec![shape_of_expr(&e.expr)])
+        }
+        syn::Expr::Call(e) => gamma_operation(
+            "concept:call",
+            e.args.iter().map(shape_of_expr).collect::<Vec<_>>(),
+        ),
+        syn::Expr::MethodCall(e) => {
+            let mut args = vec![shape_of_expr(&e.receiver)];
+            args.extend(e.args.iter().map(shape_of_expr));
+            gamma_operation("concept:call", args)
+        }
+        syn::Expr::Block(b) => shape_of_block(&b.block),
+        syn::Expr::Paren(e) => shape_of_expr(&e.expr),
+        syn::Expr::Group(e) => shape_of_expr(&e.expr),
+        _ => non_operation_shape(),
+    }
+}
+
+fn collapse_operation_shapes(shapes: impl IntoIterator<Item = Arc<CValue>>) -> Arc<CValue> {
+    let operations = shapes
+        .into_iter()
+        .filter(|shape| !is_non_operation_shape(shape))
+        .collect::<Vec<_>>();
+    match operations.as_slice() {
+        [] => non_operation_shape(),
+        [only] => only.clone(),
+        _ => gamma_operation("concept:seq", operations),
+    }
+}
+
+fn binary_operator_concept_name(op: &syn::BinOp) -> Option<&'static str> {
+    match op {
+        syn::BinOp::Add(_) | syn::BinOp::AddAssign(_) => Some("concept:add"),
+        syn::BinOp::Sub(_) | syn::BinOp::SubAssign(_) => Some("concept:sub"),
+        syn::BinOp::Mul(_) | syn::BinOp::MulAssign(_) => Some("concept:mul"),
+        syn::BinOp::Div(_) | syn::BinOp::DivAssign(_) => Some("concept:div"),
+        syn::BinOp::Rem(_) | syn::BinOp::RemAssign(_) => Some("concept:mod"),
+        syn::BinOp::BitAnd(_) | syn::BinOp::BitAndAssign(_) => Some("concept:bitand"),
+        syn::BinOp::BitOr(_) | syn::BinOp::BitOrAssign(_) => Some("concept:bitor"),
+        syn::BinOp::BitXor(_) | syn::BinOp::BitXorAssign(_) => Some("concept:bitxor"),
+        syn::BinOp::Shl(_) | syn::BinOp::ShlAssign(_) => Some("concept:shl"),
+        syn::BinOp::Shr(_) | syn::BinOp::ShrAssign(_) => Some("concept:shr"),
+        syn::BinOp::Eq(_) => Some("concept:eq"),
+        syn::BinOp::Ne(_) => Some("concept:ne"),
+        syn::BinOp::Lt(_) => Some("concept:lt"),
+        syn::BinOp::Le(_) => Some("concept:le"),
+        syn::BinOp::Gt(_) => Some("concept:gt"),
+        syn::BinOp::Ge(_) => Some("concept:ge"),
+        syn::BinOp::And(_) => Some("concept:and"),
+        syn::BinOp::Or(_) => Some("concept:or"),
+        _ => None,
+    }
+}
+
+fn unary_operator_concept_name(op: &syn::UnOp) -> Option<&'static str> {
+    match op {
+        syn::UnOp::Deref(_) => Some("concept:deref"),
+        syn::UnOp::Not(_) => Some("concept:not"),
+        syn::UnOp::Neg(_) => Some("concept:neg"),
+        _ => None,
+    }
+}
+
+fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
+    let Some(op_cid) = concept_op_cid(concept_name) else {
+        return non_operation_shape();
+    };
     CValue::object([
-        ("kind", CValue::string("body")),
-        ("stmts", CValue::array(stmts)),
+        ("args", CValue::array(args)),
+        ("concept_name", CValue::string(concept_name.to_string())),
+        ("op_cid", CValue::string(op_cid.to_string())),
     ])
 }
 
-fn shape_of_stmt(stmt: &syn::Stmt) -> std::sync::Arc<CValue> {
-    match stmt {
-        syn::Stmt::Expr(e, _) => shape_of_expr(e),
-        syn::Stmt::Local(_) => CValue::object([("kind", CValue::string("let"))]),
-        _ => CValue::object([("kind", CValue::string("opaque"))]),
-    }
+fn concept_op_cid(concept_name: &str) -> Option<&'static str> {
+    CONCEPT_OP_CIDS
+        .get_or_init(load_concept_op_cids)
+        .get(concept_name)
+        .map(String::as_str)
 }
 
-fn shape_of_expr(expr: &syn::Expr) -> std::sync::Arc<CValue> {
-    match expr {
-        syn::Expr::If(e) => {
-            let mut kv: Vec<(&str, std::sync::Arc<CValue>)> = Vec::new();
-            kv.push(("kind", CValue::string("if")));
-            kv.push(("cond", shape_of_expr(&e.cond)));
-            let then_stmts: Vec<std::sync::Arc<CValue>> =
-                e.then_branch.stmts.iter().map(shape_of_stmt).collect();
-            kv.push((
-                "then",
-                CValue::object([
-                    ("kind", CValue::string("block")),
-                    ("stmts", CValue::array(then_stmts)),
-                ]),
-            ));
-            if let Some((_, else_expr)) = &e.else_branch {
-                kv.push(("else", shape_of_expr(else_expr)));
-            }
-            CValue::object(kv)
+fn load_concept_op_cids() -> BTreeMap<String, String> {
+    let index: Value = serde_json::from_str(CONCEPT_SHAPES_CATALOG_INDEX_JSON)
+        .expect("embedded concept-shapes catalog index is valid JSON");
+    let mut cids = BTreeMap::new();
+    let Some(entries) = index.get("entries").and_then(Value::as_object) else {
+        return cids;
+    };
+    for (cid, meta) in entries {
+        if meta.get("kind").and_then(Value::as_str) != Some("algorithm") {
+            continue;
         }
-        syn::Expr::While(e) => {
-            let body_stmts: Vec<std::sync::Arc<CValue>> =
-                e.body.stmts.iter().map(shape_of_stmt).collect();
-            CValue::object([
-                ("kind", CValue::string("while")),
-                ("cond", shape_of_expr(&e.cond)),
-                (
-                    "body",
-                    CValue::object([
-                        ("kind", CValue::string("block")),
-                        ("stmts", CValue::array(body_stmts)),
-                    ]),
-                ),
-            ])
+        let Some(name) = meta.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        if !name.starts_with("concept:") {
+            continue;
         }
-        syn::Expr::ForLoop(e) => {
-            let body_stmts: Vec<std::sync::Arc<CValue>> =
-                e.body.stmts.iter().map(shape_of_stmt).collect();
-            CValue::object([
-                ("kind", CValue::string("for")),
-                (
-                    "body",
-                    CValue::object([
-                        ("kind", CValue::string("block")),
-                        ("stmts", CValue::array(body_stmts)),
-                    ]),
-                ),
-            ])
-        }
-        syn::Expr::Return(_) | syn::Expr::Break(_) | syn::Expr::Continue(_) => {
-            CValue::object([("kind", CValue::string("exit"))])
-        }
-        syn::Expr::Assign(_) => CValue::object([("kind", CValue::string("assign"))]),
-        syn::Expr::Binary(e) => {
-            let op = match &e.op {
-                syn::BinOp::Add(_) | syn::BinOp::AddAssign(_) => "+",
-                syn::BinOp::Sub(_) | syn::BinOp::SubAssign(_) => "-",
-                syn::BinOp::Mul(_) | syn::BinOp::MulAssign(_) => "*",
-                syn::BinOp::Div(_) | syn::BinOp::DivAssign(_) => "/",
-                syn::BinOp::Rem(_) | syn::BinOp::RemAssign(_) => "%",
-                syn::BinOp::Eq(_) => "==",
-                syn::BinOp::Ne(_) => "!=",
-                syn::BinOp::Lt(_) => "<",
-                syn::BinOp::Le(_) => "<=",
-                syn::BinOp::Gt(_) => ">",
-                syn::BinOp::Ge(_) => ">=",
-                _ => "opaque-op",
-            };
-            let is_rel = matches!(op, "==" | "!=" | "<" | "<=" | ">" | ">=");
-            CValue::object([
-                ("kind", CValue::string(if is_rel { "rel" } else { "bin" })),
-                ("op", CValue::string(op.to_string())),
-            ])
-        }
-        syn::Expr::Call(_) | syn::Expr::MethodCall(_) => {
-            CValue::object([("kind", CValue::string("call"))])
-        }
-        syn::Expr::Block(b) => {
-            let stmts: Vec<std::sync::Arc<CValue>> =
-                b.block.stmts.iter().map(shape_of_stmt).collect();
-            CValue::object([
-                ("kind", CValue::string("block")),
-                ("stmts", CValue::array(stmts)),
-            ])
-        }
-        _ => CValue::object([("kind", CValue::string("opaque"))]),
+        let resolved_cid = meta.get("cid").and_then(Value::as_str).unwrap_or(cid);
+        cids.insert(name.to_string(), resolved_cid.to_string());
     }
+    cids
+}
+
+fn is_non_operation_shape(shape: &CValue) -> bool {
+    encode_jcs(shape) == "{}"
+}
+
+fn non_operation_shape() -> Arc<CValue> {
+    CValue::object(Vec::<(&str, Arc<CValue>)>::new())
 }
 
 /// Render a canonicalizer `Value` as `serde_json::Value` for the RPC response.
@@ -1620,7 +1684,7 @@ pub fn fetch_status(url: &str) -> i64 {
         ]);
         let expected_cid = blake3_512_of(encode_jcs(&expected_shape).as_bytes());
 
-        assert_eq!(bound["file"], "src/lib.rs");
+        assert_eq!(bound["file"], "");
         assert_eq!(bound["fn_name"], "fetch_status__bound_call_1");
         assert_eq!(bound["param_names"], json!(["url"]));
         assert!(bound.get("param_types").is_none());
@@ -1640,6 +1704,148 @@ pub fn fetch_status(url: &str) -> i64 {
             .find(|entry| entry["concept_annotation"] == "http-request")
             .expect("second bound callsite entry");
         assert_eq!(bound_again["term_shape_cid"], bound["term_shape_cid"]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn term_shape_simple_add_is_canonical_gamma_literal() {
+        let shape = term_shape_json(
+            r#"
+pub fn add(x: i64, y: i64) -> i64 {
+    x + y
+}
+"#,
+        );
+
+        assert_eq!(
+            shape,
+            json!({
+                "args": [{}, {}],
+                "concept_name": "concept:add",
+                "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
+            })
+        );
+    }
+
+    #[test]
+    fn term_shape_let_rhs_operator_is_canonical_gamma() {
+        let shape = term_shape_json(
+            r#"
+pub fn add_via_let(a: i64, b: i64) -> i64 {
+    let q = a + b;
+    q
+}
+"#,
+        );
+
+        assert_eq!(
+            shape,
+            json!({
+                "args": [{}, {}],
+                "concept_name": "concept:add",
+                "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
+            })
+        );
+        assert_no_forbidden_term_shape_fields(&shape);
+    }
+
+    #[test]
+    fn term_shape_top_level_operator_matches_let_rhs_gamma() {
+        let top_level = term_shape_json(
+            r#"
+pub fn f(a: i64, b: i64) -> i64 {
+    a + b
+}
+"#,
+        );
+        let let_rhs = term_shape_json(
+            r#"
+pub fn f(a: i64, b: i64) -> i64 {
+    let q = a + b;
+    q
+}
+"#,
+        );
+
+        assert_eq!(top_level, let_rhs);
+        assert_no_forbidden_term_shape_fields(&top_level);
+    }
+
+    #[test]
+    fn safe_divide_then_double_emits_gamma_without_unnamed_concepts() {
+        let shape = term_shape_json(
+            r#"
+pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
+    if denom == 0 {
+        -1
+    } else {
+        let q = num / denom;
+        if q < 0 { -1 } else { q * 2 }
+    }
+}
+"#,
+        );
+
+        assert_no_forbidden_term_shape_fields(&shape);
+        let mut concepts = Vec::new();
+        collect_concept_names(&shape, &mut concepts);
+        for expected in [
+            "concept:conditional",
+            "concept:eq",
+            "concept:neg",
+            "concept:div",
+            "concept:lt",
+            "concept:mul",
+        ] {
+            assert!(
+                concepts.iter().any(|actual| actual == expected),
+                "missing {expected} from canonical gamma shape {shape:#?}"
+            );
+        }
+        assert!(
+            !serde_json::to_string(&shape)
+                .expect("shape stringifies")
+                .contains("UNNAMED-CONCEPT"),
+            "gamma shape must not contain unnamed concept wrappers: {shape:#?}"
+        );
+    }
+
+    #[test]
+    fn bind_lift_output_strips_source_locations_from_term_shape_and_lines() {
+        let root = temp_workspace("bind_lift_source_location_strip");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn add(x: i64, y: i64) -> i64 {
+    x + y
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let entry = entries
+            .iter()
+            .find(|entry| entry["fn_name"] == "add")
+            .expect("add entry");
+        assert!(
+            entry.get("fn_line").is_none(),
+            "bind payload must not carry function source lines: {entry:#?}"
+        );
+        assert!(
+            entry.get("file").is_none() || entry["file"] == "",
+            "bind payload must not carry source paths: {entry:#?}"
+        );
+        assert_no_forbidden_term_shape_fields(&entry["term_shape"]);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1689,6 +1895,74 @@ pub fn fetch_status(url: &str) -> i64 {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn term_shape_json(src: &str) -> Value {
+        let file = syn::parse_file(src).expect("fixture parses");
+        let item_fn = file
+            .items
+            .iter()
+            .find_map(|item| {
+                if let syn::Item::Fn(item_fn) = item {
+                    Some(item_fn)
+                } else {
+                    None
+                }
+            })
+            .expect("fixture contains function");
+        cvalue_to_json(&term_shape_for_fn(item_fn))
+    }
+
+    fn assert_no_forbidden_term_shape_fields(value: &Value) {
+        match value {
+            Value::Object(object) => {
+                for forbidden in [
+                    "kind",
+                    "op",
+                    "file",
+                    "line",
+                    "column",
+                    "fn_line",
+                    "concept_annotation",
+                    "attr_pre",
+                    "attr_post",
+                    "concept_citations",
+                ] {
+                    assert!(
+                        !object.contains_key(forbidden),
+                        "term_shape contains forbidden field `{forbidden}` in {value:#?}"
+                    );
+                }
+                for child in object.values() {
+                    assert_no_forbidden_term_shape_fields(child);
+                }
+            }
+            Value::Array(values) => {
+                for child in values {
+                    assert_no_forbidden_term_shape_fields(child);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_concept_names(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(object) => {
+                if let Some(name) = object.get("concept_name").and_then(Value::as_str) {
+                    out.push(name.to_string());
+                }
+                for child in object.values() {
+                    collect_concept_names(child, out);
+                }
+            }
+            Value::Array(values) => {
+                for child in values {
+                    collect_concept_names(child, out);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn temp_workspace(name: &str) -> PathBuf {
