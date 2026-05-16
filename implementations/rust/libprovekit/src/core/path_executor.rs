@@ -11,8 +11,9 @@ use thiserror::Error;
 
 use crate::compose::CCP_VERSION;
 
+use super::primitives::address;
 use super::traits::{InputCatalog, Kit, KitError};
-use super::types::{Cid, DomainClaim, Input, PathAlgebra, PathError, Term};
+use super::types::{Cid, DomainClaim, Input, PathAlgebra, PathError, Verb};
 
 /// Registry of executable kits keyed by the `PathAlgebra.kit` selector.
 #[derive(Default)]
@@ -45,19 +46,34 @@ pub fn execute_path(
     };
     let ordered = path.ordered_steps().map_err(PathExecutionError::Path)?;
     let mut claims_by_step: BTreeMap<String, DomainClaim> = BTreeMap::new();
-    let mut materialized_terms: HashMap<Cid, Term> = HashMap::new();
+    let mut materialized_inputs: HashMap<Cid, Input> = HashMap::new();
 
     for step in ordered {
         let kit = registry
             .get(&step.kit)
             .ok_or_else(|| PathExecutionError::Refused(Box::new(missing_kit_refusal(step))))?;
-        let step_input = step_input(step, inputs, &materialized_terms)?;
-        let claim = kit
-            .transform(&step_input)
-            .map_err(PathExecutionError::Kit)?;
+        let step_input = step_input(step, inputs, &materialized_inputs)?;
+        let claim = match step.verb {
+            Verb::Transform => kit
+                .transform(&step_input)
+                .map_err(PathExecutionError::Kit)?,
+            Verb::Prove => {
+                let Input::Claim(claim) = step_input else {
+                    return Err(PathExecutionError::UnsupportedInput(format!(
+                        "path step `{}` Prove verb expects Input::Claim",
+                        step.name
+                    )));
+                };
+                kit.prove(claim).map_err(|error| prove_error(step, error))?
+            }
+        };
         if let Some(term) = claim.payload.clone() {
-            materialized_terms.insert(claim.to.clone(), term);
+            materialized_inputs.insert(claim.to.clone(), Input::Term(term));
         }
+        materialized_inputs.insert(
+            address(&Input::Claim(claim.clone())),
+            Input::Claim(claim.clone()),
+        );
         claims_by_step.insert(step.name.clone(), claim);
     }
 
@@ -76,7 +92,7 @@ pub fn execute_path(
 fn step_input(
     step: &PathAlgebra,
     inputs: &dyn InputCatalog,
-    materialized_terms: &HashMap<Cid, Term>,
+    materialized_inputs: &HashMap<Cid, Input>,
 ) -> Result<Input, PathExecutionError> {
     let [cid] = step.inputs.as_slice() else {
         return Err(PathExecutionError::UnsupportedInput(format!(
@@ -88,8 +104,8 @@ fn step_input(
     if let Some(input) = inputs.get_input(cid) {
         return Ok(input);
     }
-    if let Some(term) = materialized_terms.get(cid) {
-        return Ok(Input::Term(term.clone()));
+    if let Some(input) = materialized_inputs.get(cid) {
+        return Ok(input.clone());
     }
     Err(PathExecutionError::Refused(Box::new(
         missing_input_refusal(step, cid),
@@ -141,8 +157,29 @@ fn missing_input_refusal(step: &PathAlgebra, cid: &Cid) -> CompositionRefusalMem
         "input-catalog",
         "path-input",
         format!(
-            "path step `{}` input `{cid}` is not materialized and no prior term payload produced it",
+            "path step `{}` input `{cid}` is not materialized and no prior step output produced it",
             step.name
+        ),
+    )
+}
+
+fn prove_error(step: &PathAlgebra, error: KitError) -> PathExecutionError {
+    match error {
+        KitError::NotSupported => {
+            PathExecutionError::Refused(Box::new(prove_not_supported_refusal(step)))
+        }
+        other => PathExecutionError::Kit(other),
+    }
+}
+
+fn prove_not_supported_refusal(step: &PathAlgebra) -> CompositionRefusalMemento {
+    composition_refusal_for_missing_requirement(
+        step,
+        "kit-prove",
+        "kit-capability",
+        format!(
+            "path step `{}` kit `{}` does not support Prove",
+            step.name, step.kit
         ),
     )
 }

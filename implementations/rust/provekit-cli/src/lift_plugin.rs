@@ -13,6 +13,7 @@ use std::time::Instant;
 use libprovekit::core::{
     address, execute_path, Dialect, DomainClaim, HashMapInputCatalog, Input, KitRegistry, LiftKit,
     LiftPluginKit, LiftPluginKitError, Path as CorePath, PathAlgebra, PathExecutionError, Term,
+    Verb,
 };
 use owo_colors::OwoColorize;
 use provekit_ir_types::CompositionRefusalMemento;
@@ -172,6 +173,7 @@ pub(crate) fn dispatch_lift_path(
             kit: kit_name.clone(),
             inputs: vec![source_cid],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }));
     let mut registry = KitRegistry::default();

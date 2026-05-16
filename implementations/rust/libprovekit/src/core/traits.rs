@@ -108,7 +108,9 @@ pub trait Kit {
     fn transform(&self, input: &Input) -> Result<DomainClaim, KitError>;
 
     /// Primitive: attempt to prove or otherwise discharge a domain claim.
-    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError>;
+    fn prove(&self, _claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        Err(KitError::NotSupported)
+    }
 
     /// Deprecated term-level escape hatch.
     #[deprecated(note = "kits transform Input into DomainClaim; consume `transform` instead")]
@@ -169,6 +171,9 @@ pub enum SolverVerdict {
 /// Errors from dialect kits.
 #[derive(Debug, Error)]
 pub enum KitError {
+    /// The requested primitive is not implemented by this kit.
+    #[error("kit primitive not supported")]
+    NotSupported,
     /// The input belongs to another dialect or has no faithful term.
     #[error("kit {dialect:?}: unsupported input: {message}")]
     UnsupportedInput { dialect: Dialect, message: String },

@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use libprovekit::core::{
-    address, execute_path, Dialect, HashMapInputCatalog, Input, KitRegistry, LiftKit,
-    LiftPluginKit, Path as CorePath, PathAlgebra, Term,
+    address, execute_path, Dialect, DomainClaim, HashMapInputCatalog, Input, Kit, KitError,
+    KitRegistry, LiftKit, LiftPluginKit, Path as CorePath, PathAlgebra, Term, Verb, Verdict,
+    Witness,
 };
 use provekit_ir_types::Sort;
 use serde_json::json;
@@ -47,6 +48,74 @@ done
     script
 }
 
+struct ProveStubKit;
+
+impl Kit for ProveStubKit {
+    fn dialect(&self) -> Dialect {
+        Dialect::Other("prove-stub".to_string())
+    }
+
+    fn transform(&self, _input: &Input) -> Result<DomainClaim, KitError> {
+        Err(KitError::Transformation(
+            "prove-stub transform must not be called".to_string(),
+        ))
+    }
+
+    fn prove(&self, claim: DomainClaim) -> Result<DomainClaim, KitError> {
+        let input_claim_cid = claim.cid();
+        let mut proved = claim;
+        let mut premises = proved.premises.clone();
+        premises.push(input_claim_cid.clone());
+        premises.sort();
+        premises.dedup();
+        proved.from = vec![input_claim_cid];
+        proved.premises = premises;
+        proved.verdict = Verdict::Proved;
+        proved.witness = Some(Witness::Proof {
+            tree: json!({"kit": "prove-stub"}),
+        });
+        Ok(proved)
+    }
+
+    fn parse(&self, _input: &Input) -> Result<Term, KitError> {
+        Err(KitError::Serialization(
+            "prove-stub parse is not supported".to_string(),
+        ))
+    }
+
+    fn serialize(&self, _term: &Term) -> Result<Input, KitError> {
+        Err(KitError::Serialization(
+            "prove-stub serialize is not supported".to_string(),
+        ))
+    }
+}
+
+struct TransformOnlyKit {
+    claim: DomainClaim,
+}
+
+impl Kit for TransformOnlyKit {
+    fn dialect(&self) -> Dialect {
+        Dialect::Other("transform-only".to_string())
+    }
+
+    fn transform(&self, _input: &Input) -> Result<DomainClaim, KitError> {
+        Ok(self.claim.clone())
+    }
+
+    fn parse(&self, _input: &Input) -> Result<Term, KitError> {
+        Err(KitError::Serialization(
+            "transform-only parse is not supported".to_string(),
+        ))
+    }
+
+    fn serialize(&self, _term: &Term) -> Result<Input, KitError> {
+        Err(KitError::Serialization(
+            "transform-only serialize is not supported".to_string(),
+        ))
+    }
+}
+
 #[test]
 fn lift_rust_path_executor_matches_existing_cmd_lift_transport_term_cid() {
     let temp = tempfile::tempdir().expect("tempdir");
@@ -82,6 +151,7 @@ fn lift_rust_path_executor_matches_existing_cmd_lift_transport_term_cid() {
             kit: "lift-rust".to_string(),
             inputs: vec![source_cid],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }));
     let mut registry = KitRegistry::default();
@@ -127,6 +197,132 @@ fn lift_rust_path_executor_matches_existing_cmd_lift_transport_term_cid() {
         claim.to,
         address(claim.payload.as_ref().expect("payload term"))
     );
+}
+
+#[test]
+fn lift_rust_then_prove_stub_path_routes_second_step_to_kit_prove() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let script = fake_lifter(temp.path());
+    let workspace_root = temp
+        .path()
+        .canonicalize()
+        .unwrap_or_else(|_| temp.path().to_path_buf());
+    let request = json!({
+        "surface": "rust",
+        "workspace_root": workspace_root,
+        "config_path": ".provekit/config.toml",
+        "source_paths": ["."],
+        "options": {
+            "layer": "all",
+            "identifyOnly": false,
+        }
+    });
+    let source = Input::Source {
+        dialect: Dialect::Rust,
+        bytes: serde_json::to_vec(&request).expect("encode lift request"),
+    };
+    let command = vec!["bash".to_string(), script.display().to_string()];
+    let expected_lift_claim = LiftKit::new(
+        Dialect::Rust,
+        "rust",
+        command.clone(),
+        Some(temp.path().to_path_buf()),
+    )
+    .transform(&source)
+    .expect("expected lift transform succeeds");
+    let mut inputs = HashMapInputCatalog::default();
+    let source_cid = inputs.insert(source);
+    let lift_claim_input_cid = address(&Input::Claim(expected_lift_claim.clone()));
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![
+            PathAlgebra {
+                name: "lift".to_string(),
+                kit: "lift-rust".to_string(),
+                inputs: vec![source_cid],
+                depends_on: vec![],
+                verb: Verb::Transform,
+            },
+            PathAlgebra {
+                name: "prove".to_string(),
+                kit: "prove-stub".to_string(),
+                inputs: vec![lift_claim_input_cid],
+                depends_on: vec!["lift".to_string()],
+                verb: Verb::Prove,
+            },
+        ],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        "lift-rust",
+        LiftKit::new(
+            Dialect::Rust,
+            "rust",
+            command,
+            Some(temp.path().to_path_buf()),
+        ),
+    );
+    registry.register("prove-stub", ProveStubKit);
+
+    let claim = execute_path(&path, &registry, &inputs).expect("lift then prove path executes");
+
+    assert_eq!(claim.verdict, Verdict::Proved);
+    assert_eq!(
+        claim.witness,
+        Some(Witness::Proof {
+            tree: json!({"kit": "prove-stub"})
+        })
+    );
+    assert_eq!(claim.from, vec![expected_lift_claim.cid()]);
+}
+
+#[test]
+fn default_kit_prove_refuses_prove_verb_step_with_composition_refusal_memento() {
+    let source = Input::Spec(json!({"fixture": "transform-only"}));
+    let mut inputs = HashMapInputCatalog::default();
+    let source_cid = inputs.insert(source);
+    let claim = libprovekit::core::RustKit::default()
+        .transform(&Input::Term(Term::Const {
+            value: json!({"fixture": "claim"}),
+            sort: Sort::Primitive {
+                name: "Fixture".to_string(),
+            },
+        }))
+        .expect("fixture transform claim");
+    let claim_input_cid = address(&Input::Claim(claim.clone()));
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![
+            PathAlgebra {
+                name: "transform".to_string(),
+                kit: "transform-only".to_string(),
+                inputs: vec![source_cid],
+                depends_on: vec![],
+                verb: Verb::Transform,
+            },
+            PathAlgebra {
+                name: "prove".to_string(),
+                kit: "prove-default".to_string(),
+                inputs: vec![claim_input_cid],
+                depends_on: vec!["transform".to_string()],
+                verb: Verb::Prove,
+            },
+        ],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        "transform-only",
+        TransformOnlyKit {
+            claim: claim.clone(),
+        },
+    );
+    registry.register("prove-default", TransformOnlyKit { claim });
+
+    let error = execute_path(&path, &registry, &inputs)
+        .expect_err("default Kit::prove must refuse Prove verb");
+    let refusal = error
+        .composition_refusal()
+        .expect("Prove verb NotSupported maps to composition refusal");
+
+    assert_eq!(refusal.header.failure_kind, "memento-required-missing");
 }
 
 #[test]

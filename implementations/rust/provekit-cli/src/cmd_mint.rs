@@ -52,7 +52,7 @@ use serde_json::{json, Value};
 use libprovekit::core::{
     address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
     HashMapInputCatalog, Input, InputCatalog, Kit, KitError, Path as CorePath, PathAlgebra,
-    PathDocument, Term, Verdict,
+    PathDocument, Term, Verb, Verdict,
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
@@ -402,12 +402,14 @@ fn mint_input(project_root: &Path, surface: &str, out_dir: &Path, quiet: bool) -
                     kit: format!("lift-plugin:{surface}"),
                     inputs: vec![lift_input_cid],
                     depends_on: vec![],
+                    verb: Verb::Transform,
                 },
                 PathAlgebra {
                     name: "mint".to_string(),
                     kit: "provekit-mint".to_string(),
                     inputs: vec![mint_input_cid],
                     depends_on: vec!["lift".to_string()],
+                    verb: Verb::Transform,
                 },
             ],
         })),
@@ -1560,6 +1562,7 @@ mod tests {
                         "workspace_root": "."
                     })))],
                     depends_on: vec![],
+                    verb: Verb::Transform,
                 },
                 PathAlgebra {
                     name: "mint".to_string(),
@@ -1568,6 +1571,7 @@ mod tests {
                         "outDir": "out"
                     })))],
                     depends_on: vec!["lift".to_string(), "missing".to_string()],
+                    verb: Verb::Transform,
                 },
             ],
         }));

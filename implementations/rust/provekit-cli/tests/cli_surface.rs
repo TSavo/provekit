@@ -7,7 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use libprovekit::core::{address, Input, Path as CorePath, PathAlgebra, PathDocument};
+use libprovekit::core::{address, Input, Path as CorePath, PathAlgebra, PathDocument, Verb};
 use serde_json::json;
 
 fn provekit_bin() -> PathBuf {
@@ -52,7 +52,7 @@ fn write_executable(path: &Path, text: &str) {
             .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         f.sync_all()
             .unwrap_or_else(|e| panic!("sync {}: {e}", path.display()));
-        // f is dropped here — fd closed before chmod
+        // f is dropped here, fd closed before chmod
     }
     #[cfg(unix)]
     {
@@ -437,12 +437,14 @@ done
                 kit: "lift-plugin:path-lift".to_string(),
                 inputs: vec![lift_input_cid],
                 depends_on: vec![],
+                verb: Verb::Transform,
             },
             PathAlgebra {
                 name: "mint".to_string(),
                 kit: "provekit-mint".to_string(),
                 inputs: vec![mint_input_cid],
                 depends_on: vec!["lift".to_string()],
+                verb: Verb::Transform,
             },
         ],
     };
