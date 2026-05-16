@@ -258,18 +258,36 @@ def _shape_stmt(node: ast.stmt, *, top_level: bool) -> Json:
         }
     if isinstance(node, (ast.For, ast.AsyncFor)):
         return {"body": _shape_block(node.body), "kind": "for"}
-    if isinstance(node, (ast.Return, ast.Break, ast.Continue)):
+    if isinstance(node, ast.Return):
+        shaped: dict[str, Json] = {"kind": "exit"}
+        if node.value is not None:
+            _add_operator_child(shaped, "value", _shape_expr(node.value))
+        return shaped
+    if isinstance(node, (ast.Break, ast.Continue)):
         return {"kind": "exit"}
     if isinstance(node, ast.Assign):
+        kind = "assign"
         if top_level and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            return {"kind": "let"}
-        return {"kind": "assign"}
+            kind = "let"
+        shaped: dict[str, Json] = {"kind": kind}
+        _add_operator_child(shaped, "value", _shape_expr(node.value))
+        return shaped
     if isinstance(node, ast.AnnAssign):
+        kind = "assign"
         if top_level and isinstance(node.target, ast.Name):
-            return {"kind": "let"}
-        return {"kind": "assign"}
+            kind = "let"
+        shaped = {"kind": kind}
+        if node.value is not None:
+            _add_operator_child(shaped, "value", _shape_expr(node.value))
+        return shaped
     if isinstance(node, ast.AugAssign):
-        return {"kind": "assign"}
+        shaped = {"kind": "assign"}
+        op_shape = _bin_operator_shape(
+            node.op,
+            [_shape_expr(node.target), _shape_expr(node.value)],
+        )
+        _add_operator_child(shaped, "value", op_shape)
+        return shaped
     if isinstance(node, ast.Expr):
         return _shape_expr(node.value)
     return {"kind": "opaque"}
@@ -277,43 +295,116 @@ def _shape_stmt(node: ast.stmt, *, top_level: bool) -> Json:
 
 def _shape_expr(node: ast.expr) -> Json:
     if isinstance(node, ast.BinOp):
-        return {"kind": "bin", "op": _bin_op(node.op)}
+        return _bin_operator_shape(node.op, [_shape_expr(node.left), _shape_expr(node.right)])
+    if isinstance(node, ast.BoolOp):
+        op = _bool_op(node.op)
+        values = [_shape_expr(value) for value in node.values]
+        if op is None:
+            return {"kind": "opaque"}
+        return _operator_shape(op["kind"], op["op"], op["concept_name"], values)
+    if isinstance(node, ast.UnaryOp):
+        op = _unary_op(node.op)
+        if op is None:
+            return {"kind": "opaque"}
+        return _operator_shape(op["kind"], op["op"], op["concept_name"], [_shape_expr(node.operand)])
     if isinstance(node, ast.Compare):
-        op = _rel_op(node.ops[0]) if node.ops else "opaque-op"
-        return {"kind": "rel", "op": op}
+        op = _rel_op(node.ops[0]) if node.ops else None
+        args = [_shape_expr(node.left)]
+        args.extend(_shape_expr(comparator) for comparator in node.comparators[:1])
+        if op is None:
+            return {"kind": "rel", "op": "opaque-op"}
+        return _operator_shape("rel", op["op"], op["concept_name"], args)
     if isinstance(node, ast.Call):
         return {"kind": "call"}
     return {"kind": "opaque"}
 
 
-def _bin_op(op: ast.operator) -> str:
-    if isinstance(op, ast.Add):
-        return "+"
-    if isinstance(op, ast.Sub):
-        return "-"
-    if isinstance(op, ast.Mult):
-        return "*"
-    if isinstance(op, ast.Div):
-        return "/"
-    if isinstance(op, ast.Mod):
-        return "%"
-    return "opaque-op"
+def _add_operator_child(parent: dict[str, Json], key: str, child: Json) -> None:
+    if _shape_has_operator_identity(child):
+        parent[key] = child
 
 
-def _rel_op(op: ast.cmpop) -> str:
-    if isinstance(op, ast.Eq):
-        return "=="
-    if isinstance(op, ast.NotEq):
-        return "!="
-    if isinstance(op, ast.Lt):
-        return "<"
-    if isinstance(op, ast.LtE):
-        return "<="
-    if isinstance(op, ast.Gt):
-        return ">"
-    if isinstance(op, ast.GtE):
-        return ">="
-    return "opaque-op"
+def _shape_has_operator_identity(value: Json) -> bool:
+    if isinstance(value, dict):
+        if "concept_name" in value or "op_cid" in value:
+            return True
+        return any(_shape_has_operator_identity(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_shape_has_operator_identity(child) for child in value)
+    return False
+
+
+def _bin_operator_shape(op: ast.operator, args: list[Json]) -> Json:
+    atom = _bin_op(op)
+    if atom is None:
+        return {"kind": "bin", "op": "opaque-op"}
+    return _operator_shape("bin", atom["op"], atom["concept_name"], args)
+
+
+def _operator_shape(kind: str, op: str, concept_name: str, args: list[Json]) -> Json:
+    shaped: dict[str, Json] = {
+        "concept_name": concept_name,
+        "kind": kind,
+        "op": op,
+    }
+    op_cid = _concept_op_cid(concept_name)
+    if op_cid is not None:
+        shaped["op_cid"] = op_cid
+    if args:
+        shaped["args"] = args
+    return shaped
+
+
+def _bin_op(op: ast.operator) -> dict[str, str] | None:
+    table: tuple[tuple[type[ast.operator], str, str], ...] = (
+        (ast.Add, "+", "concept:add"),
+        (ast.Sub, "-", "concept:sub"),
+        (ast.Mult, "*", "concept:mul"),
+        (ast.Div, "/", "concept:div"),
+        (ast.Mod, "%", "concept:mod"),
+        (ast.LShift, "<<", "concept:shl"),
+        (ast.RShift, ">>", "concept:shr"),
+        (ast.BitAnd, "&", "concept:bitand"),
+        (ast.BitOr, "|", "concept:bitor"),
+        (ast.BitXor, "^", "concept:bitxor"),
+    )
+    for cls, symbol, concept_name in table:
+        if isinstance(op, cls):
+            return {"concept_name": concept_name, "op": symbol}
+    return None
+
+
+def _bool_op(op: ast.boolop) -> dict[str, str] | None:
+    if isinstance(op, ast.And):
+        return {"concept_name": "concept:and", "kind": "and", "op": "&&"}
+    if isinstance(op, ast.Or):
+        return {"concept_name": "concept:or", "kind": "or", "op": "||"}
+    return None
+
+
+def _unary_op(op: ast.unaryop) -> dict[str, str] | None:
+    if isinstance(op, ast.Not):
+        return {"concept_name": "concept:not", "kind": "not", "op": "not"}
+    if isinstance(op, ast.USub):
+        return {"concept_name": "concept:neg", "kind": "neg", "op": "-"}
+    if isinstance(op, ast.Invert):
+        return {"concept_name": "concept:bitnot", "kind": "bitnot", "op": "~"}
+    return None
+
+
+def _rel_op(op: ast.cmpop) -> dict[str, str] | None:
+    table: tuple[tuple[type[ast.cmpop], str, str], ...] = (
+        (ast.Eq, "==", "concept:eq"),
+        (ast.NotEq, "!=", "concept:ne"),
+        (ast.Lt, "<", "concept:lt"),
+        (ast.LtE, "<=", "concept:le"),
+        (ast.Gt, ">", "concept:gt"),
+        (ast.GtE, ">=", "concept:ge"),
+    )
+    for cls, symbol, concept_name in table:
+        if isinstance(op, cls):
+            return {"concept_name": concept_name, "op": symbol}
+    return None
 
 
 def _extract_leading_annotations(
@@ -894,6 +985,40 @@ def _concept_citation_diag(
             "line": line_no,
         }
     )
+
+
+def _concept_op_cid(name: str) -> str | None:
+    return _concept_op_cids_by_name().get(name)
+
+
+@lru_cache(maxsize=1)
+def _concept_op_cids_by_name() -> dict[str, str]:
+    root = _repo_root()
+    if root is None:
+        return {}
+    index_path = root / "menagerie/concept-shapes/catalog/index.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    entries = index.get("entries")
+    if not isinstance(entries, dict):
+        return {}
+    cids: dict[str, str] = {}
+    for cid, meta in entries.items():
+        if not isinstance(cid, str) or CID_RE.fullmatch(cid) is None:
+            continue
+        if not isinstance(meta, dict) or meta.get("kind") != "algorithm":
+            continue
+        name = meta.get("name")
+        if isinstance(name, str) and name.startswith("concept:"):
+            meta_cid = meta.get("cid")
+            cids[name] = (
+                meta_cid
+                if isinstance(meta_cid, str) and CID_RE.fullmatch(meta_cid) is not None
+                else cid
+            )
+    return cids
 
 
 @lru_cache(maxsize=1)

@@ -725,10 +725,7 @@ def add(x, y):
 /// bind-IR emission lacks operator-level resolution, OR BindKit drops
 /// operator atoms during named-term construction.
 ///
-/// Gated as #[should_panic] so the test suite passes; the panic message
-/// embeds the colliding CID so the empirical evidence remains inspectable.
 #[test]
-#[should_panic(expected = "seam 4 discrimination gap surfaced (deliverable for A10)")]
 fn seam4_discrimination_structural_diff_is_captured_when_present() {
     require_python_modules(&[
         "provekit_lift_py_tests",
@@ -745,23 +742,10 @@ def f(x, y):
 "#;
     let cid_add = run_lift_bind_capture_to(py_add, true);
     let cid_sub = run_lift_bind_capture_to(py_sub, true);
-    if cid_add == cid_sub {
-        let report = json!({
-            "seam": 4,
-            "property": "discrimination: distinct algebras must produce distinct bind CIDs",
-            "lifter": "lift-python (provekit-lift-python-source)",
-            "f_add_bind_cid": cid_add.as_str(),
-            "f_sub_bind_cid": cid_sub.as_str(),
-            "diagnosis": "Python source lift (and/or BindKit downstream) collides bind output for f(x,y)=x+y and f(x,y)=x-y. Operator atoms are not surfacing into the bind-IR entry. File as A10 prereq: Python bind-lifter must emit per-function term_shape that distinguishes body operator(s); or BindKit must refuse to canonicalize a bind-IR entry whose term_shape lacks operator resolution.",
-        });
-        panic!(
-            "seam 4 discrimination gap surfaced (deliverable for A10):\n{}",
-            serde_json::to_string_pretty(&report).unwrap()
-        );
-    }
-    // If distinct algebras ever start producing distinct CIDs, the should_panic
-    // will FAIL, alerting that A10 has been resolved and the antibody can be
-    // upgraded to assert_ne.
+    assert_ne!(
+        cid_add, cid_sub,
+        "seam 4 discrimination: python bind CIDs must differ for f(x,y)=x+y and f(x,y)=x-y"
+    );
 }
 
 // ============================================================================
@@ -1274,4 +1258,3 @@ fn run_lift_bind_capture_to(source: &str, is_python: bool) -> libprovekit::core:
         .to
         .clone()
 }
-
