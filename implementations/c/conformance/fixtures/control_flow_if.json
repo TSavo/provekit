@@ -1,0 +1,44 @@
+{
+  "name": "control_flow_if",
+  "kind": "function_int",
+  "original_source": "int abs_value(int n) {\n    if (n >= 0) return n;\n    return -n;\n}\n",
+  "declared_test_inputs": [
+    [
+      "-5"
+    ],
+    [
+      "0"
+    ],
+    [
+      "5"
+    ]
+  ],
+  "expected_output": [
+    {
+      "stdout": "5\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "stdout": "0\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "stdout": "5\n",
+      "stderr": "",
+      "exit_code": 0
+    }
+  ],
+  "realize_request": {
+    "function": "abs_value",
+    "params": [
+      "n"
+    ],
+    "param_types": [
+      "int"
+    ],
+    "return_type": "int",
+    "concept_name": "abs-value"
+  }
+}

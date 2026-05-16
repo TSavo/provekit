@@ -45,6 +45,73 @@
           }
         },
         {
+          "concept_name": "hello-world",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "extern int printf(const char *, ...);\nif (printf(\"Hello, world!\\n\") < 0) return 1;\nreturn 0;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0,
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "factorial",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} <= 1 ? 1 : ${param0} * factorial(${param0} - 1);"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "add",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} + ${param1};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_param_types": ["int", "int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "abs-value",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} >= 0 ? ${param0} : -${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
           "concept_name": "free",
           "emission_template": {
             "kind": "verbatim",

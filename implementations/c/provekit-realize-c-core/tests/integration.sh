@@ -113,3 +113,5 @@ def test_concept_citation_comment_emitted_for_transported_operation():
 
 test_concept_citation_comment_emitted_for_transported_operation()
 PY
+
+python3 tests/conformance.py "$bin"

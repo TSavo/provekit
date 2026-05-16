@@ -1,0 +1,28 @@
+{
+  "name": "recursive_factorial",
+  "kind": "function_int",
+  "original_source": "int factorial(int n) {\n    if (n <= 1) return 1;\n    return n * factorial(n - 1);\n}\n",
+  "declared_test_inputs": [
+    [
+      "5"
+    ]
+  ],
+  "expected_output": [
+    {
+      "stdout": "120\n",
+      "stderr": "",
+      "exit_code": 0
+    }
+  ],
+  "realize_request": {
+    "function": "factorial",
+    "params": [
+      "n"
+    ],
+    "param_types": [
+      "int"
+    ],
+    "return_type": "int",
+    "concept_name": "factorial"
+  }
+}

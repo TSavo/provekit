@@ -1037,6 +1037,7 @@ static int append_emitted_by_field(Buf *out, int *first, const char *kit_cid,
 
 static char *concept_citation_body_for(const char *params_obj, const char *params_obj_end,
                                        const char *fallback_concept_name,
+                                       const StringArray *params,
                                        char **error_message) {
     const char *op = find_field_in_range(params_obj, params_obj_end, "transported_operation");
     const char *op_end;
@@ -1151,11 +1152,24 @@ static char *concept_citation_body_for(const char *params_obj, const char *param
     }
 
     buf_init(&body_buf);
-    if (buf_append(&body_buf, "// provekit-concept: ") != 0 ||
+    if (buf_append(&body_buf, "/* provekit-concept: */\n// provekit-concept: ") != 0 ||
         buf_append(&body_buf, payload) != 0 ||
         buf_append(&body_buf, "\n// provekit-concept-payload-cid: ") != 0 ||
-        buf_append(&body_buf, payload_cid) != 0 ||
-        buf_append(&body_buf, "\n(void)0;") != 0) {
+        buf_append(&body_buf, payload_cid) != 0) {
+        buf_free(&body_buf);
+        *error_message = xstrdup("out of memory");
+        goto done;
+    }
+    for (size_t i = 0; i < params->len; i++) {
+        if (buf_append(&body_buf, "\n(void)") != 0 ||
+            buf_append(&body_buf, params->items[i]) != 0 ||
+            buf_append_char(&body_buf, ';') != 0) {
+            buf_free(&body_buf);
+            *error_message = xstrdup("out of memory");
+            goto done;
+        }
+    }
+    if (buf_append(&body_buf, "\n(void)0;") != 0) {
         buf_free(&body_buf);
         *error_message = xstrdup("out of memory");
         goto done;
@@ -1328,7 +1342,8 @@ static void handle_invoke(const char *id, const char *line, const char *end,
                    error_message != NULL ? error_message : "out of memory");
         goto done;
     }
-    body = concept_citation_body_for(params_obj, params_obj_end, concept_name, &error_message);
+    body = concept_citation_body_for(params_obj, params_obj_end, concept_name, &params,
+                                     &error_message);
     if (error_message != NULL) {
         send_error(id, -32602, error_message);
         goto done;
