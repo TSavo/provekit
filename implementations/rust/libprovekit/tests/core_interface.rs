@@ -7,10 +7,10 @@ use libprovekit::compose::{
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, link, prove, transform, verify, ArityShape, AritySlot, CKit, Cid,
-    DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
-    InputCatalog, Kit, LanguageSignature, LiftPluginKit, Path, PathAlgebra, PathDocument,
-    PathError, Refutation, SlotSort, Term, Truth, Verdict, Witness,
+    address, compose, link, prove, transform, verify, ArityShape, AritySlot, CKit, Canonical, Cid,
+    Dialect, DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog,
+    Input, InputCatalog, Kit, LanguageSignature, LiftPluginKit, Path, PathAlgebra, PathDocument,
+    PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{IrFormula, IrTerm, Sort};
@@ -94,6 +94,46 @@ fn claim_for_contract(contract: FunctionContractMemento) -> DomainClaim {
         witness: None,
         verdict: Verdict::Unresolved,
         attestation: None,
+    }
+}
+
+fn claim_fixture(name: &str, verdict: Verdict) -> DomainClaim {
+    let mut claim = claim_for_contract(pure_identity_contract(name, "x"));
+    claim.verdict = verdict;
+    claim.witness = match verdict {
+        Verdict::Proved => Some(Witness::Proof {
+            tree: json!({"claim": name}),
+        }),
+        Verdict::Refuted => Some(Witness::Counterexample {
+            model: json!({"claim": name}),
+        }),
+        Verdict::Unknown => Some(Witness::Unknown {
+            transcript: json!({"claim": name}),
+        }),
+        Verdict::Unresolved => None,
+    };
+    claim
+}
+
+fn term_fixture(name: &str) -> Term {
+    Term::Op {
+        op_cid: address(&format!("op:{name}")),
+        name: name.to_string(),
+        args: vec![Term::Const {
+            value: json!(1),
+            sort: any_sort(),
+        }],
+    }
+}
+
+fn one_step_path(name: &str, inputs: Vec<Cid>) -> Path {
+    Path {
+        algebra: vec![PathAlgebra {
+            name: name.to_string(),
+            kit: format!("kit:{name}"),
+            inputs,
+            depends_on: vec![],
+        }],
     }
 }
 
@@ -453,10 +493,6 @@ fn path_document_round_trips_with_cid_checked_materialized_inputs() {
         cid == &mint_input_cid
             && matches!(input, Input::Spec(value) if value["outDir"] == "target/provekit-path-doc")
     }));
-    assert!(
-        !encoded.contains("\"term\""),
-        "path documents should not embed language terms: {encoded}"
-    );
 }
 
 #[test]
@@ -492,6 +528,153 @@ fn path_document_rejects_materialized_input_cid_mismatch() {
     assert!(
         error.contains("materialized as"),
         "unexpected path document error: {error}"
+    );
+}
+
+#[test]
+fn path_document_materializes_closed_input_universe() {
+    let claim = claim_fixture("path-doc-claim", Verdict::Unresolved);
+    let truth = Truth::try_from(claim_fixture("path-doc-truth", Verdict::Proved))
+        .expect("proved claim builds truth input");
+    let refutation = Refutation::try_from(claim_fixture("path-doc-refutation", Verdict::Refuted))
+        .expect("refuted claim builds refutation input");
+    let term = term_fixture("path-doc-term");
+    let inner_claim = Input::Claim(claim_fixture("path-doc-inner-claim", Verdict::Unresolved));
+    let inner_claim_cid = address(&inner_claim);
+    let inner_path = one_step_path("inner", vec![inner_claim_cid.clone()]);
+    let inputs = vec![
+        Input::Source {
+            dialect: Dialect::Rust,
+            bytes: b"fn main() {}".to_vec(),
+        },
+        Input::Spec(json!({"surface": "rust", "outDir": "target/path-doc"})),
+        Input::Claim(claim),
+        Input::Truth(truth),
+        Input::Refutation(refutation),
+        Input::Term(term),
+        Input::Path(Box::new(inner_path)),
+        inner_claim,
+    ];
+    let path = one_step_path("outer", inputs.iter().map(address).collect());
+
+    let document = PathDocument::from_path_and_inputs(path.clone(), inputs.clone())
+        .expect("path document accepts every closed input variant");
+    let encoded = serde_json::to_string_pretty(&document).expect("path document serializes");
+    let decoded: PathDocument = serde_json::from_str(&encoded).expect("path document parses");
+    let materialized = decoded
+        .materialized_inputs()
+        .expect("path document materializes checked inputs");
+
+    assert_eq!(decoded.path.cid(), path.cid());
+    for expected in &inputs {
+        let expected_cid = address(expected);
+        let (_, actual) = materialized
+            .iter()
+            .find(|(cid, _)| cid == &expected_cid)
+            .expect("expected materialized input cid");
+        assert_eq!(actual.canonical_bytes(), expected.canonical_bytes());
+    }
+    for kind in [
+        "\"kind\": \"source\"",
+        "\"kind\": \"spec\"",
+        "\"kind\": \"claim\"",
+        "\"kind\": \"truth\"",
+        "\"kind\": \"refutation\"",
+        "\"kind\": \"term\"",
+        "\"kind\": \"path\"",
+    ] {
+        assert!(
+            encoded.contains(kind),
+            "missing materialized variant {kind}"
+        );
+    }
+}
+
+#[test]
+fn path_document_rejects_materialized_cid_mismatch_for_claim_term_and_nested_path() {
+    fn assert_mismatch(declared: Input, actual: Input) {
+        let declared_cid = address(&declared);
+        let path = one_step_path("mismatch", vec![declared_cid.clone()]);
+        let mut document = PathDocument::from_path_and_inputs(path, vec![actual])
+            .expect("path document accepts supported materialized input");
+        document.inputs[0].cid = declared_cid;
+
+        let error = document
+            .materialized_inputs()
+            .expect_err("changed materialized input must not satisfy declared cid");
+        assert!(
+            matches!(error, PathDocumentError::InputCidMismatch { .. }),
+            "unexpected path document error: {error}"
+        );
+    }
+
+    assert_mismatch(
+        Input::Claim(claim_fixture("declared-claim", Verdict::Unresolved)),
+        Input::Claim(claim_fixture("actual-claim", Verdict::Unresolved)),
+    );
+    assert_mismatch(
+        Input::Term(term_fixture("declared-term")),
+        Input::Term(term_fixture("actual-term")),
+    );
+    assert_mismatch(
+        Input::Path(Box::new(one_step_path(
+            "declared-inner",
+            vec![address(&Input::Spec(json!({"input": "declared"})))],
+        ))),
+        Input::Path(Box::new(one_step_path(
+            "actual-inner",
+            vec![address(&Input::Spec(json!({"input": "actual"})))],
+        ))),
+    );
+}
+
+#[test]
+fn path_document_requires_nested_path_claim_closure() {
+    let inner_claim = Input::Claim(claim_fixture("missing-inner-claim", Verdict::Unresolved));
+    let inner_path = Input::Path(Box::new(one_step_path(
+        "inner",
+        vec![address(&inner_claim)],
+    )));
+    let outer_path = one_step_path("outer", vec![address(&inner_path)]);
+    let document = PathDocument::from_path_and_inputs(outer_path, vec![inner_path])
+        .expect("path document can carry a nested path input");
+
+    let error = document
+        .materialized_inputs()
+        .expect_err("nested path input claim must be materialized");
+    assert!(
+        matches!(error, PathDocumentError::MissingMaterializedInput { .. }),
+        "unexpected path document error: {error}"
+    );
+}
+
+#[test]
+fn nested_path_cid_changes_when_inner_path_or_cited_claim_changes() {
+    fn outer_for(inner_path: Path, claim: &Input) -> Path {
+        one_step_path(
+            "outer",
+            vec![address(&Input::Path(Box::new(inner_path))), address(claim)],
+        )
+    }
+
+    let claim_a = Input::Claim(claim_fixture("nested-claim-a", Verdict::Unresolved));
+    let claim_b = Input::Claim(claim_fixture("nested-claim-b", Verdict::Unresolved));
+    let inner_a = one_step_path("inner", vec![address(&claim_a)]);
+    let inner_changed = one_step_path("inner-changed", vec![address(&claim_a)]);
+
+    let outer_a = outer_for(inner_a.clone(), &claim_a);
+    let outer_inner_changed = outer_for(inner_changed, &claim_a);
+    let outer_claim_changed = outer_for(one_step_path("inner", vec![address(&claim_b)]), &claim_b);
+
+    assert_ne!(
+        address(&Input::Path(Box::new(outer_a.clone()))),
+        address(&Input::Path(Box::new(outer_inner_changed))),
+        "outer path input cid must include nested path identity"
+    );
+    assert_ne!(
+        address(&Input::Path(Box::new(outer_a))),
+        address(&Input::Path(Box::new(outer_claim_changed))),
+        "outer path input cid must include cited claim identity"
     );
 }
 

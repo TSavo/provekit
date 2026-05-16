@@ -11,7 +11,10 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-use crate::compose::{build_memento_value, jcs_bytes_of_value, FunctionContractMemento, Locus};
+use crate::compose::{
+    build_memento_value, jcs_bytes_of_value, AliasingMemento, AliasingStatus, AtomicKind, Effect,
+    EffectSet, FunctionContractMemento, Locus,
+};
 
 use super::traits::Canonical;
 
@@ -1027,8 +1030,9 @@ impl PathDocument {
         }
 
         let mut out = Vec::with_capacity(self.inputs.len());
+        let mut materialized = BTreeMap::new();
         for binding in &self.inputs {
-            let input = binding.input.to_input();
+            let input = binding.input.to_input()?;
             let actual = super::primitives::address(&input);
             if actual != binding.cid {
                 return Err(PathDocumentError::InputCidMismatch {
@@ -1036,8 +1040,11 @@ impl PathDocument {
                     actual,
                 });
             }
+            materialized.insert(binding.cid.clone(), input.clone());
             out.push((binding.cid.clone(), input));
         }
+        let mut seen = BTreeSet::new();
+        validate_path_input_closure(&self.path, &materialized, &mut seen)?;
         Ok(out)
     }
 }
@@ -1052,33 +1059,386 @@ pub struct PathInputBinding {
     pub input: PathInputMaterial,
 }
 
-/// Disk-safe subset of [`Input`] used by path documents.
-///
-/// The first durable shape only needs command specs. Claim/truth/refutation
-/// inputs should move here once their contract representation has a stable
-/// language-neutral wire form.
+/// Disk-safe materialized [`Input`] used by path documents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum PathInputMaterial {
+    /// Dialect-specific source bytes.
+    Source { dialect: Dialect, bytes: Vec<u8> },
     /// JSON command/spec input.
     Spec { value: JsonValue },
+    /// Raw claim input.
+    Claim { claim: PathDomainClaimMaterial },
+    /// Proved claim input.
+    Truth { claim: PathDomainClaimMaterial },
+    /// Refuted finding input.
+    Refutation { claim: PathDomainClaimMaterial },
+    /// Faithful term input.
+    Term { term: Term },
+    /// Composed path input.
+    Path { path: Path },
 }
 
 impl PathInputMaterial {
     fn try_from_input(input: Input) -> Result<Self, PathDocumentError> {
         match input {
+            Input::Source { dialect, bytes } => Ok(Self::Source { dialect, bytes }),
             Input::Spec(value) => Ok(Self::Spec { value }),
-            other => Err(PathDocumentError::UnsupportedInputMaterial {
-                kind: input_kind(&other).to_string(),
+            Input::Claim(claim) => Ok(Self::Claim {
+                claim: PathDomainClaimMaterial::from_claim(&claim),
             }),
+            Input::Truth(truth) => Ok(Self::Truth {
+                claim: PathDomainClaimMaterial::from_claim(truth.claim()),
+            }),
+            Input::Refutation(refutation) => Ok(Self::Refutation {
+                claim: PathDomainClaimMaterial::from_claim(refutation.claim()),
+            }),
+            Input::Term(term) => Ok(Self::Term { term }),
+            Input::Path(path) => Ok(Self::Path { path: *path }),
         }
     }
 
-    fn to_input(&self) -> Input {
+    fn to_input(&self) -> Result<Input, PathDocumentError> {
         match self {
-            Self::Spec { value } => Input::Spec(value.clone()),
+            Self::Source { dialect, bytes } => Ok(Input::Source {
+                dialect: dialect.clone(),
+                bytes: bytes.clone(),
+            }),
+            Self::Spec { value } => Ok(Input::Spec(value.clone())),
+            Self::Claim { claim } => Ok(Input::Claim(claim.to_claim())),
+            Self::Truth { claim } => {
+                let claim = claim.to_claim();
+                Truth::try_from(claim).map(Input::Truth).map_err(|error| {
+                    PathDocumentError::InvalidInputMaterial {
+                        kind: "truth",
+                        reason: error.to_string(),
+                    }
+                })
+            }
+            Self::Refutation { claim } => {
+                let claim = claim.to_claim();
+                Refutation::try_from(claim)
+                    .map(Input::Refutation)
+                    .map_err(|error| PathDocumentError::InvalidInputMaterial {
+                        kind: "refutation",
+                        reason: error.to_string(),
+                    })
+            }
+            Self::Term { term } => Ok(Input::Term(term.clone())),
+            Self::Path { path } => Ok(Input::Path(Box::new(path.clone()))),
         }
     }
+}
+
+/// Disk-safe materialized domain claim inside a path document.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathDomainClaimMaterial {
+    /// Domain polymorphism axis.
+    pub domain: DomainKind,
+    /// Durable lossy projection.
+    pub contract: PathContractMaterial,
+    /// Kit-owned artifacts used to derive this claim.
+    pub artifacts: Vec<Cid>,
+    /// Input endpoint CIDs.
+    pub from: Vec<Cid>,
+    /// Immediate input claim CIDs used to derive this claim.
+    pub premises: Vec<Cid>,
+    /// Output endpoint CID.
+    pub to: Cid,
+    /// Optional content-addressed witness.
+    pub witness: Option<Witness>,
+    /// Current discharge verdict.
+    pub verdict: Verdict,
+    /// Optional signer attestation, excluded from claim identity.
+    pub attestation: Option<Attestation>,
+}
+
+impl PathDomainClaimMaterial {
+    fn from_claim(claim: &DomainClaim) -> Self {
+        Self {
+            domain: claim.domain.clone(),
+            contract: PathContractMaterial::from_contract(&claim.contract),
+            artifacts: claim.artifacts.clone(),
+            from: claim.from.clone(),
+            premises: claim.premises.clone(),
+            to: claim.to.clone(),
+            witness: claim.witness.clone(),
+            verdict: claim.verdict,
+            attestation: claim.attestation.clone(),
+        }
+    }
+
+    fn to_claim(&self) -> DomainClaim {
+        DomainClaim {
+            domain: self.domain.clone(),
+            contract: self.contract.to_contract(),
+            artifacts: self.artifacts.clone(),
+            from: self.from.clone(),
+            premises: self.premises.clone(),
+            to: self.to.clone(),
+            witness: self.witness.clone(),
+            verdict: self.verdict,
+            attestation: self.attestation.clone(),
+        }
+    }
+}
+
+/// Disk-safe materialized function-contract projection inside a path document.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathContractMaterial {
+    /// Original contract CID metadata.
+    pub cid: String,
+    /// Canonical function-contract JSON value.
+    pub value: JsonValue,
+    /// Non-canonical formal region metadata.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub formal_regions: Vec<Option<String>>,
+    /// Non-canonical return region metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_region: Option<String>,
+    /// Human-supplied concept hint retained outside canonical identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concept_hint: Option<String>,
+}
+
+impl PathContractMaterial {
+    fn from_contract(contract: &Contract) -> Self {
+        let canonical_bytes = <Contract as Canonical>::canonical_bytes(contract);
+        let value = serde_json::from_slice(&canonical_bytes)
+            .expect("function contract canonical bytes parse as JSON");
+        Self {
+            cid: contract.cid.clone(),
+            value,
+            formal_regions: contract.formal_regions.clone(),
+            return_region: contract.return_region.clone(),
+            concept_hint: contract.concept_hint.clone(),
+        }
+    }
+
+    fn to_contract(&self) -> Contract {
+        let object = self.value.as_object();
+        let canonical_bytes = jcs_bytes_for_json(self.value.clone());
+        let formals = string_vec_field(object, "formals");
+        let formal_regions = if self.formal_regions.len() == formals.len() {
+            self.formal_regions.clone()
+        } else {
+            vec![None; formals.len()]
+        };
+        FunctionContractMemento {
+            fn_name: string_field(object, "fnName").unwrap_or_default(),
+            formal_regions,
+            formals,
+            formal_sorts: parse_vec_field(object, "formalSorts"),
+            return_sort: parse_field(object, "returnSort").unwrap_or_else(any_sort),
+            return_region: self.return_region.clone(),
+            pre: parse_field(object, "pre").unwrap_or_else(formula_true),
+            post: parse_field(object, "post").unwrap_or_else(formula_true),
+            body_cid: optional_string_field(object, "bodyCid"),
+            effects: parse_effect_set(object.and_then(|object| object.get("effects"))),
+            locus: parse_locus(object.and_then(|object| object.get("locus"))),
+            canonical_bytes,
+            cid: self.cid.clone(),
+            auto_minted_mementos: parse_aliasing_mementos(
+                object.and_then(|object| object.get("autoMintedMementos")),
+            ),
+            concept_hint: self.concept_hint.clone(),
+        }
+    }
+}
+
+fn string_field(
+    object: Option<&serde_json::Map<String, JsonValue>>,
+    field: &str,
+) -> Option<String> {
+    object?
+        .get(field)?
+        .as_str()
+        .map(std::string::ToString::to_string)
+}
+
+fn optional_string_field(
+    object: Option<&serde_json::Map<String, JsonValue>>,
+    field: &str,
+) -> Option<String> {
+    match object?.get(field)? {
+        JsonValue::String(value) => Some(value.clone()),
+        JsonValue::Null => None,
+        _ => None,
+    }
+}
+
+fn string_vec_field(
+    object: Option<&serde_json::Map<String, JsonValue>>,
+    field: &str,
+) -> Vec<String> {
+    object
+        .and_then(|object| object.get(field))
+        .and_then(JsonValue::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(std::string::ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_field<T>(object: Option<&serde_json::Map<String, JsonValue>>, field: &str) -> Option<T>
+where
+    T: de::DeserializeOwned,
+{
+    object
+        .and_then(|object| object.get(field))
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+}
+
+fn parse_vec_field<T>(object: Option<&serde_json::Map<String, JsonValue>>, field: &str) -> Vec<T>
+where
+    T: de::DeserializeOwned,
+{
+    object
+        .and_then(|object| object.get(field))
+        .and_then(JsonValue::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| serde_json::from_value(item.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_effect_set(value: Option<&JsonValue>) -> EffectSet {
+    let effects = value
+        .and_then(JsonValue::as_array)
+        .map(|items| items.iter().filter_map(parse_effect).collect())
+        .unwrap_or_default();
+    EffectSet { effects }
+}
+
+fn parse_effect(value: &JsonValue) -> Option<Effect> {
+    let object = value.as_object();
+    match string_field(object, "kind")?.as_str() {
+        "reads" => Some(Effect::Reads {
+            target: string_field(object, "target")?,
+        }),
+        "writes" => Some(Effect::Writes {
+            target: string_field(object, "target")?,
+        }),
+        "io" => Some(Effect::Io),
+        "unsafe" => Some(Effect::Unsafe),
+        "panics" => Some(Effect::Panics),
+        "unresolved_call" => Some(Effect::UnresolvedCall {
+            name: string_field(object, "name")?,
+        }),
+        "opaque_loop" => Some(Effect::OpaqueLoop {
+            loop_cid: string_field(object, "loopCid")?,
+        }),
+        "early_return" => Some(Effect::EarlyReturn {
+            try_cid: string_field(object, "tryCid")?,
+        }),
+        "closure_capture" => Some(Effect::ClosureCapture {
+            body_fn_cid: string_field(object, "bodyFnCid")?,
+            n_captures: usize_field(object, "nCaptures")?,
+        }),
+        "pinned_reference" => Some(Effect::PinnedReference {
+            target: string_field(object, "target")?,
+        }),
+        "raw_ptr_provenance" => Some(Effect::RawPointerProvenance {
+            target: string_field(object, "target")?,
+            mutable: bool_field(object, "mutable")?,
+        }),
+        "atomic_access" => Some(Effect::AtomicAccess {
+            target: string_field(object, "target")?,
+            kind: parse_atomic_kind(&string_field(object, "atomicKind")?)?,
+            ordering: optional_string_field(object, "ordering"),
+        }),
+        "possible_aliasing" => Some(Effect::PossibleAliasing {
+            formals: string_vec_field(object, "formals"),
+        }),
+        "drop" => Some(Effect::Drop {
+            name: string_field(object, "name")?,
+        }),
+        _ => None,
+    }
+}
+
+fn parse_atomic_kind(value: &str) -> Option<AtomicKind> {
+    match value {
+        "load" => Some(AtomicKind::Load),
+        "store" => Some(AtomicKind::Store),
+        "rmw" => Some(AtomicKind::Rmw),
+        "cas" => Some(AtomicKind::Cas),
+        _ => None,
+    }
+}
+
+fn parse_locus(value: Option<&JsonValue>) -> Locus {
+    let object = value.and_then(JsonValue::as_object);
+    Locus {
+        file: optional_string_field(object, "file"),
+        line: usize_field(object, "line").unwrap_or(0),
+        col: usize_field(object, "col").unwrap_or(0),
+    }
+}
+
+fn parse_aliasing_mementos(value: Option<&JsonValue>) -> Vec<AliasingMemento> {
+    value
+        .and_then(JsonValue::as_array)
+        .map(|items| items.iter().filter_map(parse_aliasing_memento).collect())
+        .unwrap_or_default()
+}
+
+fn parse_aliasing_memento(value: &JsonValue) -> Option<AliasingMemento> {
+    let object = value.as_object();
+    if string_field(object, "kind")? != "aliasing-memento" {
+        return None;
+    }
+    let status = match string_field(object, "status")?.as_str() {
+        "Disjoint" => AliasingStatus::Disjoint,
+        "MaybeAlias" => AliasingStatus::MaybeAlias,
+        _ => return None,
+    };
+    Some(AliasingMemento {
+        formal_a: string_field(object, "formal_a")?,
+        formal_b: string_field(object, "formal_b")?,
+        status,
+    })
+}
+
+fn usize_field(object: Option<&serde_json::Map<String, JsonValue>>, field: &str) -> Option<usize> {
+    object?
+        .get(field)?
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+}
+
+fn bool_field(object: Option<&serde_json::Map<String, JsonValue>>, field: &str) -> Option<bool> {
+    object?.get(field)?.as_bool()
+}
+
+fn validate_path_input_closure(
+    path: &Path,
+    materialized: &BTreeMap<Cid, Input>,
+    seen: &mut BTreeSet<Cid>,
+) -> Result<(), PathDocumentError> {
+    for step in &path.algebra {
+        for cid in &step.inputs {
+            let Some(input) = materialized.get(cid) else {
+                return Err(PathDocumentError::MissingMaterializedInput { cid: cid.clone() });
+            };
+            if !seen.insert(cid.clone()) {
+                continue;
+            }
+            if let Input::Path(path) = input {
+                validate_path_input_closure(path, materialized, seen)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Serialized path document validation errors.
@@ -1100,24 +1460,26 @@ pub enum PathDocumentError {
         /// Actual CID after canonicalization.
         actual: Cid,
     },
+    /// A path step references an input CID that is not in the materialized catalog.
+    #[error("path input `{cid}` is referenced but not materialized")]
+    MissingMaterializedInput {
+        /// Referenced input CID.
+        cid: Cid,
+    },
+    /// The materialized input payload is not valid for its path input kind.
+    #[error("path materialized `{kind}` input is invalid: {reason}")]
+    InvalidInputMaterial {
+        /// Materialized input kind.
+        kind: &'static str,
+        /// Precise refusal reason.
+        reason: String,
+    },
     /// The input variant is not yet part of the disk-safe path catalog.
-    #[error("path documents currently support materialized spec inputs, not `{kind}`")]
+    #[error("path documents do not support materialized `{kind}` inputs")]
     UnsupportedInputMaterial {
         /// Input variant name.
         kind: String,
     },
-}
-
-fn input_kind(input: &Input) -> &'static str {
-    match input {
-        Input::Source { .. } => "source",
-        Input::Spec(_) => "spec",
-        Input::Claim(_) => "claim",
-        Input::Truth(_) => "truth",
-        Input::Refutation(_) => "refutation",
-        Input::Term(_) => "term",
-        Input::Path(_) => "path",
-    }
 }
 
 /// Closed input universe for transforms.
