@@ -159,7 +159,6 @@ def _entry_for_function(
     lines: list[str],
     diagnostics: list[Json],
 ) -> Json:
-    concept, attr_pre, attr_post = _extract_leading_annotations(lines, node.lineno)
     term_shape = _function_shape(node)
     param_names = _signature_param_names(node.args)
     witnesses = []
@@ -168,10 +167,6 @@ def _entry_for_function(
     _concept_citation_comments(lines, node, rel_path, diagnostics)
 
     return {
-        "attr_post": attr_post,
-        "attr_pre": attr_pre,
-        "concept_annotation": concept,
-        "fn_name": node.name,
         "kind": "bind-lift-entry",
         "param_names": param_names,
         "term_shape": term_shape,
@@ -201,14 +196,14 @@ def _function_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Json:
 
 
 def _shape_block(statements: list[ast.stmt]) -> Json:
-    shape: Json = {}
+    shapes: list[Json] = []
     for stmt in statements:
         if _is_docstring_stmt(stmt):
             continue
         candidate = _shape_stmt(stmt, top_level=False)
         if _shape_has_operator_identity(candidate):
-            shape = candidate
-    return shape
+            shapes.append(candidate)
+    return _collapse_operation_shapes(shapes)
 
 
 def _shape_stmt(node: ast.stmt, *, top_level: bool) -> Json:
@@ -222,23 +217,29 @@ def _shape_stmt(node: ast.stmt, *, top_level: bool) -> Json:
             ],
         )
     if isinstance(node, ast.While):
-        cond = _shape_expr(node.test)
-        if _shape_has_operator_identity(cond):
-            return cond
-        return _shape_block(node.body)
+        return _operator_shape(
+            "concept:while",
+            [_shape_expr(node.test), _shape_block(node.body)],
+        )
     if isinstance(node, (ast.For, ast.AsyncFor)):
-        return _shape_block(node.body)
+        return _operator_shape("concept:for", [_shape_block(node.body)])
     if isinstance(node, ast.Return):
         if node.value is None:
             return {}
         return _shape_expr(node.value)
-    if isinstance(node, (ast.Break, ast.Continue)):
-        return {}
+    if isinstance(node, ast.Break):
+        return _operator_shape("concept:break", [])
+    if isinstance(node, ast.Continue):
+        return _operator_shape("concept:continue", [])
     if isinstance(node, ast.Assign):
-        return _shape_expr(node.value)
+        target = _shape_expr(node.targets[0]) if node.targets else {}
+        return _operator_shape("concept:assign", [target, _shape_expr(node.value)])
     if isinstance(node, ast.AnnAssign):
         if node.value is not None:
-            return _shape_expr(node.value)
+            return _operator_shape(
+                "concept:assign",
+                [_shape_expr(node.target), _shape_expr(node.value)],
+            )
         return {}
     if isinstance(node, ast.AugAssign):
         return _bin_operator_shape(
@@ -272,7 +273,9 @@ def _shape_expr(node: ast.expr) -> Json:
             return {}
         return _operator_shape(op, args)
     if isinstance(node, ast.Call):
-        return {}
+        args = [_shape_expr(arg) for arg in node.args]
+        args.extend(_shape_expr(keyword.value) for keyword in node.keywords)
+        return _operator_shape("concept:call", args)
     return {}
 
 
@@ -284,6 +287,14 @@ def _shape_has_operator_identity(value: Json) -> bool:
     if isinstance(value, list):
         return any(_shape_has_operator_identity(child) for child in value)
     return False
+
+
+def _collapse_operation_shapes(shapes: list[Json]) -> Json:
+    if not shapes:
+        return {}
+    if len(shapes) == 1:
+        return shapes[0]
+    return _operator_shape("concept:seq", shapes)
 
 
 def _bin_operator_shape(op: ast.operator, args: list[Json]) -> Json:
@@ -365,42 +376,6 @@ def _rel_op(op: ast.cmpop) -> str | None:
         if isinstance(op, cls):
             return concept_name
     return None
-
-
-def _extract_leading_annotations(
-    lines: list[str],
-    fn_line: int,
-) -> tuple[str | None, str | None, str | None]:
-    concept: str | None = None
-    attr_pre: str | None = None
-    attr_post: str | None = None
-    idx = fn_line - 2
-    while idx >= 0:
-        line = lines[idx].strip()
-        if line.startswith("# concept:"):
-            if concept is None:
-                candidate = line[len("# concept:") :].strip()
-                if candidate.startswith("UNNAMED-CONCEPT-"):
-                    concept = None
-                    break
-                concept = candidate
-            idx -= 1
-            continue
-        if line.startswith("# @requires:"):
-            if attr_pre is None:
-                attr_pre = line[len("# @requires:") :].strip()
-            idx -= 1
-            continue
-        if line.startswith("# @ensures:"):
-            if attr_post is None:
-                attr_post = line[len("# @ensures:") :].strip()
-            idx -= 1
-            continue
-        if line == "" or line.startswith("#") or line.startswith("@"):
-            idx -= 1
-            continue
-        break
-    return concept, attr_pre, attr_post
 
 
 def _contract_comment_witnesses(

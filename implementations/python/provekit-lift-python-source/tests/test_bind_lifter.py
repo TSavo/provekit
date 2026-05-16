@@ -192,12 +192,13 @@ def test_bind_lift_erases_signature_types_from_bind_ir_entries() -> None:
     result = lift_source(source, "pkg/foo.py")
 
     assert result.diagnostics == []
-    entries = {entry["fn_name"]: entry for entry in result.ir}
-    assert entries["add"]["param_names"] == ["left", "right"]
-    assert "param_types" not in entries["add"]
-    assert "return_type" not in entries["add"]
-    assert "param_types" not in entries["generated"]
-    assert "return_type" not in entries["generated"]
+    assert len(result.ir) == 2
+    add, generated = result.ir
+    assert add["param_names"] == ["left", "right"]
+    assert "param_types" not in add
+    assert "return_type" not in add
+    assert "param_types" not in generated
+    assert "return_type" not in generated
 
 
 def test_bind_lift_source_emits_language_neutral_entries() -> None:
@@ -227,18 +228,11 @@ def test_bind_lift_source_emits_language_neutral_entries() -> None:
     result = lift_source(source, "pkg/foo.py")
 
     assert result.diagnostics == []
-    assert [entry["fn_name"] for entry in result.ir] == [
-        "wrap_identity",
-        "toggle",
-        "maybe_first",
-    ]
-    assert [entry["concept_annotation"] for entry in result.ir] == [
-        "identity",
-        "bool-cell",
-        "option",
-    ]
-    assert result.ir[0]["attr_pre"] == "x >= 0"
-    assert result.ir[0]["attr_post"] == "result >= 0"
+    assert len(result.ir) == 3
+    _assert_absent_keys(
+        result.ir,
+        {"attr_pre", "attr_post", "concept_annotation", "fn_name"},
+    )
     assert result.ir[0]["param_names"] == ["x"]
     assert "param_types" not in result.ir[0]
     assert "return_type" not in result.ir[0]
@@ -247,9 +241,37 @@ def test_bind_lift_source_emits_language_neutral_entries() -> None:
     for entry in result.ir:
         assert entry["kind"] == "bind-lift-entry"
         assert entry["term_shape_cid"] == cid_of_json(entry["term_shape"])
-        _assert_absent_keys(entry, {"file", "fn_line", "line", "column", "col"})
+        _assert_absent_keys(
+            entry,
+            {"file", "fn_line", "line", "column", "col"},
+        )
         _assert_absent_keys(entry["term_shape"], {"op", "kind"})
     assert "python:" not in json.dumps(result.ir, sort_keys=True)
+
+
+def test_bind_lift_contract_surfaces_do_not_emit_envelope_hash_fields() -> None:
+    sources = [
+        (
+            "# @requires: x > 0\n"
+            "def add(x, y):\n"
+            "    return x + y\n"
+        ),
+        (
+            "from provekit_lift_py_tests.decorators import contract\n"
+            "@contract(pre=\"x > 0\")\n"
+            "def add(x, y):\n"
+            "    return x + y\n"
+        ),
+    ]
+    forbidden = {"attr_pre", "attr_post", "concept_annotation", "fn_name"}
+
+    for source in sources:
+        result = lift_source(source, "pkg/add.py")
+
+        assert result.diagnostics == []
+        assert len(result.ir) == 1
+        assert forbidden.isdisjoint(result.ir[0])
+        _assert_absent_keys(result.ir[0], forbidden)
 
 
 def test_bind_lift_emits_gamma_shape_for_add_return() -> None:
@@ -278,6 +300,112 @@ def test_bind_lift_preserves_nested_gamma_composition() -> None:
     assert result.ir[0]["term_shape"] == _gamma_shape(
         "concept:add",
         [{}, _gamma_shape("concept:mul", [{}, {}])],
+    )
+
+
+def test_bind_lift_emits_gamma_shape_for_statement_concepts() -> None:
+    cases = [
+        (
+            "def f():\n"
+            "    while True:\n"
+            "        pass\n",
+            _gamma_shape("concept:while", [{}, {}]),
+        ),
+        (
+            "def f(items):\n"
+            "    for item in items:\n"
+            "        pass\n",
+            _gamma_shape("concept:for", [{}]),
+        ),
+        (
+            "def f():\n"
+            "    while True:\n"
+            "        break\n",
+            _gamma_shape("concept:while", [{}, _gamma_shape("concept:break")]),
+        ),
+        (
+            "def f():\n"
+            "    while True:\n"
+            "        continue\n",
+            _gamma_shape("concept:while", [{}, _gamma_shape("concept:continue")]),
+        ),
+        (
+            "def f(x, y):\n"
+            "    x = y\n",
+            _gamma_shape("concept:assign", [{}, {}]),
+        ),
+        (
+            "def f(g, x):\n"
+            "    g(x)\n",
+            _gamma_shape("concept:call", [{}]),
+        ),
+        (
+            "def f(g, x, y):\n"
+            "    x = y\n"
+            "    g(x)\n",
+            _gamma_shape(
+                "concept:seq",
+                [
+                    _gamma_shape("concept:assign", [{}, {}]),
+                    _gamma_shape("concept:call", [{}]),
+                ],
+            ),
+        ),
+    ]
+
+    for source, expected in cases:
+        result = lift_source(source, "pkg/statements.py")
+
+        assert result.diagnostics == []
+        assert result.ir[0]["term_shape"] == expected
+
+
+def test_bind_lift_discriminates_while_and_for_statement_concepts() -> None:
+    while_entry = lift_source(
+        "def f(items):\n"
+        "    while True:\n"
+        "        pass\n",
+        "pkg/while.py",
+    ).ir[0]
+    for_entry = lift_source(
+        "def f(items):\n"
+        "    for item in items:\n"
+        "        pass\n",
+        "pkg/for.py",
+    ).ir[0]
+
+    assert while_entry["term_shape"] == _gamma_shape("concept:while", [{}, {}])
+    assert for_entry["term_shape"] == _gamma_shape("concept:for", [{}])
+    assert while_entry["term_shape_cid"] != for_entry["term_shape_cid"]
+
+
+def test_bind_lift_preserves_nested_statement_gamma_composition() -> None:
+    result = lift_source(
+        "def f(x):\n"
+        "    if x > 0:\n"
+        "        while x > 0:\n"
+        "            x = x - 1\n"
+        "    return x\n",
+        "pkg/nested_statements.py",
+    )
+
+    assert result.diagnostics == []
+    assert result.ir[0]["term_shape"] == _gamma_shape(
+        "concept:conditional",
+        [
+            _gamma_shape("concept:gt", [{}, {}]),
+            _gamma_shape(
+                "concept:while",
+                [
+                    _gamma_shape("concept:gt", [{}, {}]),
+                    _gamma_shape(
+                        "concept:assign",
+                        [{}, _gamma_shape("concept:sub", [{}, {}])],
+                    ),
+                ],
+            ),
+            {},
+        ],
     )
 
 
@@ -340,9 +468,8 @@ def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
         "ge": ("concept:ge", _catalog_concept_cid("concept:ge")),
         "logical_not": ("concept:not", _catalog_concept_cid("concept:not")),
     }
-    by_name = {entry["fn_name"]: entry for entry in result.ir}
-    for fn_name, (concept_name, op_cid) in expected.items():
-        atoms = _operator_atoms(by_name[fn_name]["term_shape"])
+    for entry, (concept_name, op_cid) in zip(result.ir, expected.values(), strict=True):
+        atoms = _operator_atoms(entry["term_shape"])
         assert atoms[0]["concept_name"] == concept_name
         assert atoms[0]["op_cid"] == op_cid
         assert set(atoms[0]) == {"args", "concept_name", "op_cid"}
@@ -370,7 +497,7 @@ def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:
 
     result = lift_source(source, "foo.py")
 
-    assert [entry["concept_annotation"] for entry in result.ir] == [None, None]
+    _assert_absent_keys(result.ir, {"concept_annotation", "fn_name"})
     assert result.ir[0]["param_names"] == ["x"]
     assert "param_types" not in result.ir[0]
     assert "return_type" not in result.ir[0]
@@ -410,7 +537,8 @@ def test_bind_rpc_lift_returns_ir_document(tmp_path: Path) -> None:
     assert response["id"] == 7
     assert response["result"]["kind"] == "ir-document"
     assert response["result"]["diagnostics"] == []
-    assert response["result"]["ir"][0]["concept_annotation"] == "identity"
+    assert "concept_annotation" not in response["result"]["ir"][0]
+    assert "fn_name" not in response["result"]["ir"][0]
 
 
 def test_bind_lift_recovers_contract_comment_witness() -> None:
@@ -629,11 +757,9 @@ def test_concept_citation_shape_mismatch_refuses_surrounding_relift() -> None:
 
     result = lift_source(bad_fn_source, "pkg/foo.py")
 
-    # bad_fn must not produce an IR entry; good_fn must still produce one
-    fn_names = [entry["fn_name"] for entry in result.ir]
-    assert "good_fn" in fn_names
-    assert "bad_fn" not in fn_names
+    # bad_fn must not produce an IR entry; good_fn must still produce one.
     assert len(result.ir) == 1
+    assert "fn_name" not in result.ir[0]
     assert "concept-citation:shape-mismatch" in _concept_diagnostics(result)
 
 
@@ -656,10 +782,8 @@ def test_concept_citation_operation_kind_mismatch_refuses_surrounding_relift() -
 
     result = lift_source(bad_fn_source, "pkg/foo.py")
 
-    fn_names = [entry["fn_name"] for entry in result.ir]
-    assert "good_fn" in fn_names
-    assert "bad_fn" not in fn_names
     assert len(result.ir) == 1
+    assert "fn_name" not in result.ir[0]
     assert "concept-citation:operation-kind-mismatch" in _concept_diagnostics(result)
 
 
@@ -699,9 +823,8 @@ def test_concept_citation_missing_operation_kind_field_tags_as_malformed_json() 
 
     result = lift_source(bad_fn_source, "pkg/foo.py")
 
-    # drop-and-continue: bad_fn still gets an IR entry, just with no citation
-    fn_names = [entry["fn_name"] for entry in result.ir]
-    assert "good_fn" in fn_names
-    assert "bad_fn" in fn_names
+    # Drop and continue: bad_fn still gets an IR entry, just with no citation.
     assert "concept_citations" not in result.ir[1]
+    assert len(result.ir) == 2
+    assert all("fn_name" not in entry for entry in result.ir)
     assert "concept-citation:malformed-json" in _concept_diagnostics(result)
