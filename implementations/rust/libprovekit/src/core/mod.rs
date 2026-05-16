@@ -28,6 +28,7 @@ pub mod stubs;
 pub mod traits;
 pub mod types;
 pub mod verbs;
+pub mod walks;
 
 pub use bind::{
     bind_result_payload, bind_term_document, concept_bind_result_cid, named_term_document_cid,
@@ -43,7 +44,11 @@ pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecu
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };
-pub use prove_kit::{walk_premises_to_root, ChainBreak, ProveKit};
+pub use prove_kit::ProveKit;
+pub use walks::{
+    assert_concept_tier, walk_premises_to_root, walk_premises_to_root_with_failure_steps,
+    ChainBreak, ChainWalkFailure, HubMissingNode,
+};
 pub use stubs::{CKit, FunctionContractDomain, NoopPortfolio, RustKit};
 pub use traits::{
     Canonical, Catalog, CoreError, Domain, DomainError, HashMapCatalog, HashMapInputCatalog,

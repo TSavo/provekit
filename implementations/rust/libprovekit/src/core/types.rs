@@ -731,7 +731,7 @@ pub struct ChainIntegrityFailureWitness {
     pub walked_chain_root_cid: Cid,
     /// Premise CIDs visited before the break.
     pub walked_steps_before_break: Vec<Cid>,
-    /// Serialized [`ChainBreak`](super::prove_kit::ChainBreak) variant name.
+    /// Serialized [`ChainBreak`](super::walks::ChainBreak) variant name.
     pub break_kind: String,
     /// Human-readable diagnostic detail for the break.
     pub break_detail: String,
