@@ -13,10 +13,10 @@
 //!
 //! Two walks live here today:
 //!
-//! - [`walk_premises_to_root`] — DFS-coloring traversal of a `DomainClaim`'s
+//! - [`walk_premises_to_root`]: DFS-coloring traversal of a `DomainClaim`'s
 //!   premise DAG, looking for an `origin_cid`. Properly discriminates
 //!   within-claim duplicates and diamond-DAG re-merges from true cycles.
-//! - [`assert_concept_tier`] — refuses a `Term` whose operation tree references
+//! - [`assert_concept_tier`]: refuses a `Term` whose operation tree references
 //!   any `op_cid` not present in the catalog (hub tier check).
 
 use std::collections::HashSet;
@@ -672,7 +672,7 @@ mod tests {
         catalog.put(add_cid.clone(), b"add-op".to_vec());
         // missing_cid is intentionally not inserted.
 
-        // (add const (missing const))  — the missing op is at term_position [1].
+        // (add const (missing const)): the missing op is at term_position [1].
         let term = make_op(
             "add",
             add_cid,
