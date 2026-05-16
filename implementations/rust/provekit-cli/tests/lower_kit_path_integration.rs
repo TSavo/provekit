@@ -210,7 +210,8 @@ fn lower_python_path_claim_input_cites_from_premise_to_and_loss_cids() {
         },
     );
 
-    let claim = execute_path(&path, &registry, &inputs).expect("lower path executes");
+    let chain = execute_path(&path, &registry, &inputs).expect("lower path executes");
+    let claim = chain.terminal_claim();
 
     assert_eq!(claim.from, vec![term_cid]);
     assert_eq!(claim.premises, vec![prior_claim_cid]);

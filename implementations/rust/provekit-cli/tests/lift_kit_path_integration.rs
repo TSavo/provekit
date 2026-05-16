@@ -168,7 +168,8 @@ fn lift_rust_path_executor_matches_existing_cmd_lift_transport_term_cid() {
         },
     );
 
-    let claim = execute_path(&path, &registry, &inputs).expect("lift path executes");
+    let chain = execute_path(&path, &registry, &inputs).expect("lift path executes");
+    let claim = chain.terminal_claim();
     assert_eq!(claim.to, existing.claim.to);
     assert_eq!(claim.artifacts, existing.claim.artifacts);
     assert_eq!(
@@ -275,7 +276,8 @@ fn lift_rust_then_prove_stub_path_routes_second_step_to_kit_prove() {
         },
     );
 
-    let claim = execute_path(&path, &registry, &inputs).expect("lift then prove path executes");
+    let chain = execute_path(&path, &registry, &inputs).expect("lift then prove path executes");
+    let claim = chain.terminal_claim();
 
     assert_eq!(claim.verdict, Verdict::Proved);
     assert_eq!(

@@ -193,7 +193,8 @@ pub(crate) fn dispatch_lift_path(
     }
 
     trace_log(format!("lift path execute surface={surface}"));
-    let claim = execute_path(&path_input, &registry, &inputs).map_err(lift_error_from_path)?;
+    let chain = execute_path(&path_input, &registry, &inputs).map_err(lift_error_from_path)?;
+    let claim = chain.terminal_claim().clone();
     trace_log(format!(
         "lift path executed surface={surface} elapsed={:?}",
         started.elapsed()

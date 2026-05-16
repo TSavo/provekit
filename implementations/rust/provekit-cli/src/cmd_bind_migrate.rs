@@ -831,8 +831,8 @@ fn realize_probe_via_path(
                 .join(format!("implementations/{language}/conformance/fixtures")),
         },
     );
-    let claim = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
-    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
+    let chain = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
 }
 
 fn build_receipt(

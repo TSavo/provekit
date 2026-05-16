@@ -212,12 +212,14 @@ fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError>
             reason: "transforms Input::Term to NamedTerm DomainClaim; emits no target source",
         },
     );
-    let claim = execute_path(&path_input, &registry, &inputs).map_err(BindCliError::from_path)?;
+    let chain = execute_path(&path_input, &registry, &inputs).map_err(BindCliError::from_path)?;
+    let claim = chain.terminal_claim();
     let payload = claim
         .payload
+        .as_ref()
         .ok_or_else(|| BindCliError::Failed("bind claim missing term payload".to_string()))?;
     match payload {
-        Term::Const { value, .. } => Ok(value),
+        Term::Const { value, .. } => Ok(value.clone()),
         _ => Err(BindCliError::Failed(
             "bind claim payload was not a named term document".to_string(),
         )),
