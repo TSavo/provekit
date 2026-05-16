@@ -323,7 +323,7 @@ def test_rust_runtime_concepts_render_from_body_template_catalog() -> None:
             ["i64", "u32"],
             "i64",
             "concept:add",
-            "def checked_add(left, right):\n    return left + right\n",
+            "def checked_add(left, right):\n    return (left) + (right)\n",
         ),
         (
             "borrow_value",
@@ -443,6 +443,84 @@ def test_concept_mul_body_template_renders_valid_python_and_executes() -> None:
     namespace = _compiled_namespace(result["source"])
     product = namespace["product"]
     assert product(6, 7) == 42
+
+
+def test_a10_operator_body_templates_render_valid_python_and_execute() -> None:
+    cases = [
+        ("concept:add", ["left", "right"], ["i64", "i64"], "i64", "return (left) + (right)", (7, 3), 10),
+        ("concept:sub", ["left", "right"], ["i64", "i64"], "i64", "return (left) - (right)", (7, 3), 4),
+        ("concept:mul", ["left", "right"], ["i64", "i64"], "i64", "return (left) * (right)", (7, 3), 21),
+        ("concept:div", ["left", "right"], ["i64", "i64"], "i64", "return (left) // (right)", (7, 3), 2),
+        ("concept:eq", ["left", "right"], ["i64", "i64"], "bool", "return (left) == (right)", (7, 7), True),
+        ("concept:ne", ["left", "right"], ["i64", "i64"], "bool", "return (left) != (right)", (7, 3), True),
+        ("concept:lt", ["left", "right"], ["i64", "i64"], "bool", "return (left) < (right)", (3, 7), True),
+        ("concept:le", ["left", "right"], ["i64", "i64"], "bool", "return (left) <= (right)", (7, 7), True),
+        ("concept:gt", ["left", "right"], ["i64", "i64"], "bool", "return (left) > (right)", (7, 3), True),
+        ("concept:ge", ["left", "right"], ["i64", "i64"], "bool", "return (left) >= (right)", (7, 7), True),
+        ("concept:and", ["left", "right"], ["bool", "bool"], "bool", "return (left) and (right)", (True, False), False),
+        ("concept:or", ["left", "right"], ["bool", "bool"], "bool", "return (left) or (right)", (True, False), True),
+        ("concept:not", ["value"], ["bool"], "bool", "return not (value)", (False,), True),
+        ("concept:mod", ["left", "right"], ["i64", "i64"], "i64", "return (left) % (right)", (7, 3), 1),
+        ("concept:shl", ["left", "right"], ["i64", "i64"], "i64", "return (left) << (right)", (3, 2), 12),
+        ("concept:shr", ["left", "right"], ["i64", "i64"], "i64", "return (left) >> (right)", (8, 1), 4),
+        ("concept:bitand", ["left", "right"], ["i64", "i64"], "i64", "return (left) & (right)", (6, 3), 2),
+        ("concept:bitor", ["left", "right"], ["i64", "i64"], "i64", "return (left) | (right)", (4, 1), 5),
+        ("concept:bitxor", ["left", "right"], ["i64", "i64"], "i64", "return (left) ^ (right)", (6, 3), 5),
+        ("concept:neg", ["value"], ["i64"], "i64", "return -(value)", (7,), -7),
+        ("concept:bitnot", ["value"], ["i64"], "i64", "return ~(value)", (7,), -8),
+    ]
+
+    for index, (concept_name, params, param_types, return_type, body, args, expected) in enumerate(cases):
+        function = f"op_{index}"
+        result = emit_stub(
+            function=function,
+            params=params,
+            param_types=param_types,
+            return_type=return_type,
+            concept_name=concept_name,
+        )
+
+        assert result["source"] == f"def {function}({', '.join(params)}):\n    {body}\n"
+        namespace = _compiled_namespace(result["source"])
+        assert namespace[function](*args) == expected
+
+
+def test_a10_operator_templates_discriminate_distinct_ops() -> None:
+    add = emit_stub(
+        function="calc_add",
+        params=["left", "right"],
+        param_types=["i64", "i64"],
+        return_type="i64",
+        concept_name="concept:add",
+    )["source"]
+    sub = emit_stub(
+        function="calc_sub",
+        params=["left", "right"],
+        param_types=["i64", "i64"],
+        return_type="i64",
+        concept_name="concept:sub",
+    )["source"]
+
+    assert add == "def calc_add(left, right):\n    return (left) + (right)\n"
+    assert sub == "def calc_sub(left, right):\n    return (left) - (right)\n"
+    assert add != sub
+
+
+def test_a10_operator_term_surface_composes_nested_templates() -> None:
+    result = emit_stub(
+        function="composed",
+        params=["x", "y", "a", "b"],
+        param_types=["i64", "i64", "i64", "i64"],
+        return_type="i64",
+        concept_name="return(mul(add(x, y), sub(a, b)))",
+    )
+
+    assert result["source"] == (
+        "def composed(x, y, a, b):\n"
+        "    return ((x) + (y)) * ((a) - (b))\n"
+    )
+    namespace = _compiled_namespace(result["source"])
+    assert namespace["composed"](2, 3, 11, 4) == 35
 
 
 def test_core_concept_term_surface_composes_valid_python() -> None:
