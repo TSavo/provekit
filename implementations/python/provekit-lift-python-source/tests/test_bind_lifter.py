@@ -162,6 +162,24 @@ def _operator_atoms(term_shape: dict) -> list[dict]:
     return [node for node in _walk_objects(term_shape) if "op_cid" in node]
 
 
+def _gamma_shape(concept_name: str, args: list[dict] | None = None) -> dict:
+    return {
+        "args": args or [],
+        "concept_name": concept_name,
+        "op_cid": _catalog_concept_cid(concept_name),
+    }
+
+
+def _assert_absent_keys(value: object, forbidden: set[str]) -> None:
+    if isinstance(value, dict):
+        assert forbidden.isdisjoint(value.keys())
+        for child in value.values():
+            _assert_absent_keys(child, forbidden)
+    elif isinstance(value, list):
+        for child in value:
+            _assert_absent_keys(child, forbidden)
+
+
 def test_bind_lift_erases_signature_types_from_bind_ir_entries() -> None:
     source = (
         "def add(left: int, right: int) -> int:\n"
@@ -224,44 +242,50 @@ def test_bind_lift_source_emits_language_neutral_entries() -> None:
     assert result.ir[0]["param_names"] == ["x"]
     assert "param_types" not in result.ir[0]
     assert "return_type" not in result.ir[0]
-    assert result.ir[0]["term_shape"] == {
-        "kind": "body",
-        "stmts": [{"kind": "exit"}],
-    }
-    eq_shape = {
-        "args": [{"kind": "call"}, {"kind": "opaque"}],
-        "concept_name": "concept:eq",
-        "kind": "rel",
-        "op": "==",
-        "op_cid": _catalog_concept_cid("concept:eq"),
-    }
-    neg_shape = {
-        "args": [{"kind": "opaque"}],
-        "concept_name": "concept:neg",
-        "kind": "neg",
-        "op": "-",
-        "op_cid": _catalog_concept_cid("concept:neg"),
-    }
-    assert result.ir[2]["term_shape"] == {
-        "kind": "body",
-        "stmts": [
-            {"kind": "let"},
-            {
-                "cond": eq_shape,
-                "else": {"kind": "block", "stmts": [{"kind": "exit"}]},
-                "kind": "if",
-                "then": {
-                    "kind": "block",
-                    "stmts": [{"kind": "exit", "value": neg_shape}],
-                },
-            },
-        ],
-    }
+    assert result.ir[0]["term_shape"] == {}
+    assert result.ir[1]["term_shape"] == _gamma_shape("concept:not", [{}])
     for entry in result.ir:
         assert entry["kind"] == "bind-lift-entry"
-        assert entry["file"] == "pkg/foo.py"
         assert entry["term_shape_cid"] == cid_of_json(entry["term_shape"])
+        _assert_absent_keys(entry, {"file", "fn_line", "line", "column", "col"})
+        _assert_absent_keys(entry["term_shape"], {"op", "kind"})
     assert "python:" not in json.dumps(result.ir, sort_keys=True)
+
+
+def test_bind_lift_emits_gamma_shape_for_add_return() -> None:
+    result = lift_source("def add(x, y):\n    return x + y\n", "pkg/add.py")
+
+    assert result.diagnostics == []
+    assert result.ir[0]["term_shape"] == _gamma_shape("concept:add", [{}, {}])
+
+
+def test_bind_lift_discriminates_sub_gamma_shape() -> None:
+    add = lift_source("def f(x, y):\n    return x + y\n", "pkg/add.py").ir[0]
+    sub = lift_source("def f(x, y):\n    return x - y\n", "pkg/sub.py").ir[0]
+
+    assert add["term_shape"] == _gamma_shape("concept:add", [{}, {}])
+    assert sub["term_shape"] == _gamma_shape("concept:sub", [{}, {}])
+    assert add["term_shape_cid"] != sub["term_shape_cid"]
+
+
+def test_bind_lift_preserves_nested_gamma_composition() -> None:
+    result = lift_source(
+        "def f(x, y, z):\n    return x + y * z\n",
+        "pkg/nested.py",
+    )
+
+    assert result.diagnostics == []
+    assert result.ir[0]["term_shape"] == _gamma_shape(
+        "concept:add",
+        [{}, _gamma_shape("concept:mul", [{}, {}])],
+    )
+
+
+def test_bind_lift_strips_source_location_keys_from_bind_payload() -> None:
+    result = lift_source("def add(x, y):\n    return x + y\n", "/tmp/work/pkg/add.py")
+
+    assert result.diagnostics == []
+    _assert_absent_keys(result.ir, {"file", "fn_line", "line", "column", "col"})
 
 
 def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
@@ -319,7 +343,11 @@ def test_bind_lift_preserves_operator_concept_cid_atoms() -> None:
     by_name = {entry["fn_name"]: entry for entry in result.ir}
     for fn_name, (concept_name, op_cid) in expected.items():
         atoms = _operator_atoms(by_name[fn_name]["term_shape"])
-        assert {"concept_name": concept_name, "op_cid": op_cid}.items() <= atoms[0].items()
+        assert atoms[0]["concept_name"] == concept_name
+        assert atoms[0]["op_cid"] == op_cid
+        assert set(atoms[0]) == {"args", "concept_name", "op_cid"}
+        assert all(arg == {} for arg in atoms[0]["args"])
+        _assert_absent_keys(atoms[0], {"kind", "op", "file", "fn_line", "line", "column"})
 
 
 def test_bind_lift_operator_atoms_make_distinct_term_shape_cids() -> None:
@@ -346,12 +374,8 @@ def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:
     assert result.ir[0]["param_names"] == ["x"]
     assert "param_types" not in result.ir[0]
     assert "return_type" not in result.ir[0]
-    assign_shape = result.ir[0]["term_shape"]["stmts"][0]
-    assert assign_shape["kind"] == "assign"
-    assert {
-        "concept_name": "concept:add",
-        "op_cid": _catalog_concept_cid("concept:add"),
-    }.items() <= assign_shape["value"].items()
+    assert result.ir[0]["term_shape"] == _gamma_shape("concept:add", [{}, {}])
+    assert "UNNAMED-CONCEPT" not in json.dumps(result.ir, sort_keys=True)
     assert "return_type" not in result.ir[1]
 
 
@@ -462,28 +486,33 @@ def test_bind_lift_contract_comment_fails_closed_for_bad_payloads() -> None:
         assert any(diag["kind"] == "contract-comment-invalid" for diag in result.diagnostics)
 
 
-def test_concept_citation_relift_recovers_identity() -> None:
-    payload, payload_cid = _concept_citation_payload()
-    source = (
-        "def transport_skip(x: object):\n"
-        + "    "
-        + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ")
-        + "pass\n"
+def test_bind_lift_omits_concept_citations_from_wire_payload() -> None:
+    args = [{"kind": "var", "name": "x"}]
+    concept_skip_cid = _catalog_concept_cid("concept:skip")
+    emitted = emit_stub(
+        function="transport_skip",
+        params=["x"],
+        param_types=["object"],
+        return_type="()",
+        concept_name="missing-python-skip-carrier",
+        transported_op={
+            "args_jcs": args,
+            "concept_cid": concept_skip_cid,
+            "concept_name": "concept:skip",
+            "concept_site_cid": _cid("a"),
+            "loss_record_cid": _cid("c"),
+            "operation_kind": "skip",
+            "policy_cid": _cid("d"),
+            "shape_cid": concept_skip_cid,
+            "sugar_dict_cid": _cid("e"),
+            "term_position": [0],
+        },
     )
 
-    result = lift_source(source, "pkg/foo.py")
+    result = lift_source(emitted["source"], "pkg/foo.py")
 
     assert result.diagnostics == []
-    citations = result.ir[0]["concept_citations"]
-    assert len(citations) == 1
-    citation = citations[0]
-    assert citation["concept_cid"] == payload["concept_cid"]
-    assert citation["operation_kind"] == payload["operation_kind"]
-    assert citation["shape_cid"] == payload["shape_cid"]
-    assert citation["term_position"] == payload["term_position"]
-    assert citation["args_jcs_cid"] == payload["args_jcs_cid"]
-    assert citation["source_kind"] == "native-surface"
-    assert citation["extension_fields"]["payload_cid"] == payload_cid
+    assert "concept_citations" not in result.ir[0]
     assert result.ir[0]["witnesses"] == []
 
 
@@ -493,7 +522,7 @@ def test_concept_citation_payload_cid_mismatch_refuses() -> None:
 
     result = lift_source(source, "pkg/foo.py")
 
-    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept_citations" not in result.ir[0]
     assert "concept-citation:payload-cid-mismatch" in _concept_diagnostics(result)
 
 
@@ -503,7 +532,7 @@ def test_concept_citation_args_cid_mismatch_refuses() -> None:
 
     result = lift_source(source, "pkg/foo.py")
 
-    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept_citations" not in result.ir[0]
     assert "concept-citation:args-cid-mismatch" in _concept_diagnostics(result)
 
 
@@ -513,7 +542,7 @@ def test_concept_citation_unknown_schema_version_refuses() -> None:
 
     result = lift_source(source, "pkg/foo.py")
 
-    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept_citations" not in result.ir[0]
     assert "concept-citation:unknown-schema-version" in _concept_diagnostics(result)
 
 
@@ -522,38 +551,8 @@ def test_concept_citation_orphan_payload_cid_line_refuses() -> None:
 
     result = lift_source(source, "pkg/foo.py")
 
-    assert result.ir[0].get("concept_citations", []) == []
+    assert "concept_citations" not in result.ir[0]
     assert "concept-citation:orphan-cid-line" in _concept_diagnostics(result)
-
-
-def test_concept_citation_round_trip() -> None:
-    args = [{"kind": "var", "name": "x"}]
-    transported_op = {
-        "args_jcs": args,
-        "concept_cid": CONCEPT_SKIP_CID,
-        "concept_name": "concept:skip",
-        "concept_site_cid": _cid("a"),
-        "loss_record_cid": _cid("c"),
-        "operation_kind": "skip",
-        "policy_cid": _cid("d"),
-        "shape_cid": CONCEPT_SKIP_CID,
-        "sugar_dict_cid": _cid("e"),
-        "term_position": [0],
-    }
-    emitted = emit_stub(
-        function="transport_skip",
-        params=["x"],
-        param_types=["object"],
-        return_type="()",
-        concept_name="missing-python-skip-carrier",
-        transported_op=transported_op,
-    )
-
-    result = lift_source(emitted["source"], "pkg/foo.py")
-
-    assert result.diagnostics == []
-    assert result.ir[0]["concept_citations"][0]["concept_cid"] == transported_op["concept_cid"]
-    assert result.ir[0]["concept_citations"][0]["args_jcs_cid"] == cid_of_json(args)
 
 
 def test_bind_lift_recovers_decorator_contract_witnesses() -> None:
@@ -704,5 +703,5 @@ def test_concept_citation_missing_operation_kind_field_tags_as_malformed_json() 
     fn_names = [entry["fn_name"] for entry in result.ir]
     assert "good_fn" in fn_names
     assert "bad_fn" in fn_names
-    assert result.ir[1].get("concept_citations", []) == []
+    assert "concept_citations" not in result.ir[1]
     assert "concept-citation:malformed-json" in _concept_diagnostics(result)
