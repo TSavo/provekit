@@ -10,7 +10,7 @@ use libprovekit::compose::{
 };
 use libprovekit::core::{
     address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot, CKit,
-    Canonical, Cid, ConformanceDeclaration, Dialect, DomainClaim, DomainKind,
+    Canonical, Catalog, Cid, ConformanceDeclaration, Dialect, DomainClaim, DomainKind,
     FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
     KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
     PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
@@ -975,6 +975,26 @@ fn resolve_reads_canonical_bytes_from_hash_map_catalog() {
 
     let bytes = libprovekit::core::resolve(&cid, &catalog).expect("claim bytes resolve");
     assert_eq!(bytes, claim.canonical_bytes());
+}
+
+#[test]
+fn hash_map_catalog_contains_reports_membership_without_get_fetch() {
+    let claim = claim_for_contract(pure_identity_contract("catalog_contains", "x"));
+    let mut catalog = HashMapCatalog::default();
+    let present = catalog.insert(&claim);
+    let absent = address(&"missing catalog entry");
+
+    assert!(<HashMapCatalog as Catalog>::contains(&catalog, &present));
+    assert!(!<HashMapCatalog as Catalog>::contains(&catalog, &absent));
+
+    let traits_source = include_str!("../src/core/traits.rs");
+    let impl_body = traits_source
+        .split("impl Catalog for HashMapCatalog {")
+        .nth(1)
+        .and_then(|tail| tail.split("/// Typed resolver").next())
+        .expect("HashMapCatalog Catalog impl is present");
+    assert!(impl_body.contains("self.entries.contains_key(cid)"));
+    assert!(!impl_body.contains("self.get(cid)"));
 }
 
 #[test]

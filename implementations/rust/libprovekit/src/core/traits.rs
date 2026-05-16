@@ -28,6 +28,18 @@ pub trait Canonical {
 pub trait Catalog {
     /// Return the canonical bytes stored at `cid`, or `None` when absent.
     fn get(&self, cid: &Cid) -> Option<Vec<u8>>;
+
+    /// Returns true iff `get(cid)` would return `Some(_)`.
+    ///
+    /// Default impl performs the full `get` and discards the bytes. Impls that
+    /// can answer presence cheaply (in-memory HashMaps via `contains_key`,
+    /// filesystem-backed impls via `stat()` rather than `read()`) should
+    /// override. When a filesystem-backed `Catalog` impl is minted in
+    /// libprovekit::core, override `contains` to use `exists()` so verifier-side
+    /// hot paths don't pay full-read I/O cost.
+    fn contains(&self, cid: &Cid) -> bool {
+        self.get(cid).is_some()
+    }
 }
 
 /// In-memory content-addressed byte catalog used by unit tests and small examples.
@@ -56,6 +68,10 @@ impl HashMapCatalog {
 impl Catalog for HashMapCatalog {
     fn get(&self, cid: &Cid) -> Option<Vec<u8>> {
         self.entries.get(cid).cloned()
+    }
+
+    fn contains(&self, cid: &Cid) -> bool {
+        self.entries.contains_key(cid)
     }
 }
 
