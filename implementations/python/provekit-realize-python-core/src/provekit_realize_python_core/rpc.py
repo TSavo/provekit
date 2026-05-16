@@ -90,6 +90,9 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         named_term_tree=params.get("named_term_tree")
         if isinstance(params.get("named_term_tree"), dict)
         else None,
+        term_shape=params.get("term_shape")
+        if isinstance(params.get("term_shape"), dict)
+        else None,
         annotate=_annotation_enabled(params),
     )
 

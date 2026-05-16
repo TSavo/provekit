@@ -28,6 +28,8 @@ pub struct RealizeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub named_term_tree: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub term_shape: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub modes: Vec<String>,
@@ -272,6 +274,7 @@ pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
         "returnType": return_type,
         "conceptName": term.concept_name,
         "namedTermTree": named_term_tree,
+        "termShape": term.term_shape,
         "termShapeCid": term.term_shape_cid,
     }))
 }
@@ -323,6 +326,7 @@ fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         return_type: required_string_field(spec, &["returnType", "return_type"])?,
         concept_name: required_string_field(spec, &["conceptName", "concept_name"])?,
         named_term_tree: non_null_field(spec, &["namedTermTree", "named_term_tree"]).cloned(),
+        term_shape: non_null_field(spec, &["termShape", "term_shape"]).cloned(),
         mode: string_field_optional(spec, &["mode"]),
         modes: string_array_field(spec, &["modes"]).unwrap_or_default(),
         contract,
