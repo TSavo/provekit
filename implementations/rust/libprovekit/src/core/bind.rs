@@ -126,7 +126,9 @@ impl From<String> for BindError {
 pub struct BindLiftEntry {
     #[serde(default)]
     pub kind: String,
+    #[serde(default)]
     pub file: String,
+    #[serde(default)]
     pub fn_name: String,
     #[serde(default)]
     pub fn_line: u64,
@@ -190,6 +192,7 @@ pub struct NamedTerm {
     pub concept_name: String,
     #[serde(rename = "dischargeVerdict")]
     pub discharge_verdict: String,
+    #[serde(default)]
     pub file: String,
     pub function: String,
     pub name: String,
