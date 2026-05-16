@@ -113,6 +113,20 @@ final class SugarRealizer {
             List<String> modes,
             ContractPayload contract,
             List<String> sugarPluginJson) {
+        return emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPluginJson, null);
+    }
+
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            String returnType,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp) {
 
         String className = snakeToPascal(function) + "Transported";
         String mappedReturn = mapSourceType(returnType);
@@ -141,13 +155,19 @@ final class SugarRealizer {
                 + contractPrefix(contract)
                 + commentPrefix(contract, sugarEmissions);
 
-        Optional<RenderedBody> bodyTemplate = renderBodyTemplateFor(conceptName, params, mode);
-        boolean isStub = bodyTemplate.isEmpty();
-        String bodyContent = bodyTemplate.map(RenderedBody::body)
-                .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
+        String conceptCitationBlock = conceptCitationTagBlock(transportedOp, sugarPluginJson);
+        boolean hasConceptCitationCarrier = !conceptCitationBlock.isBlank();
+        Optional<RenderedBody> bodyTemplate = hasConceptCitationCarrier
+                ? Optional.empty()
+                : renderBodyTemplateFor(conceptName, params, mode);
+        boolean isStub = bodyTemplate.isEmpty() && !hasConceptCitationCarrier;
+        String bodyContent = hasConceptCitationCarrier
+                ? conceptCitationBlock + "\n;"
+                : bodyTemplate.map(RenderedBody::body)
+                    .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
         Jcs.Json bodyLossRecord = bodyTemplate.map(RenderedBody::lossRecord).orElse(Jcs.object());
         String observationWrapperEmissionRecord = null;
-        if (!isStub) {
+        if (!isStub && !hasConceptCitationCarrier) {
             Optional<ObservationComposition> observation = composeEmitterAfterReturn(
                     requestedModes,
                     bodyContent,
@@ -541,6 +561,115 @@ final class SugarRealizer {
         out.append("    // provekit-contract: ").append(Jcs.encode(payload)).append("\n");
         out.append("    // provekit-contract-payload-cid: ").append(Jcs.cid(payload)).append("\n");
         return out.toString();
+    }
+
+    private static String conceptCitationTagBlock(
+            TransportedOperation transportedOp,
+            List<String> sugarPluginJson) {
+        Jcs.Obj payload = conceptCitationPayload(transportedOp, sugarPluginJson);
+        if (payload == null) {
+            return "";
+        }
+        return "// provekit-concept: " + Jcs.encode(payload) + "\n"
+                + "// provekit-concept-payload-cid: " + Jcs.cid(payload);
+    }
+
+    private static Jcs.Obj conceptCitationPayload(
+            TransportedOperation transportedOp,
+            List<String> sugarPluginJson) {
+        if (transportedOp == null
+                || !validCid(transportedOp.conceptCid())
+                || !validCid(transportedOp.conceptSiteCid())
+                || !validCid(transportedOp.lossRecordCid())
+                || !validCid(transportedOp.shapeCid())
+                || transportedOp.operationKind().isBlank()) {
+            return null;
+        }
+
+        List<Jcs.Field> fields = new ArrayList<>();
+        if (transportedOp.argsJcs() != null) {
+            if (!(transportedOp.argsJcs() instanceof Jcs.Arr)) {
+                return null;
+            }
+            fields.add(new Jcs.Field("args_jcs", transportedOp.argsJcs()));
+            fields.add(new Jcs.Field("args_jcs_cid", Jcs.string(Jcs.cid(transportedOp.argsJcs()))));
+        } else if (validCid(transportedOp.argsJcsCid())) {
+            fields.add(new Jcs.Field("args_jcs_cid", Jcs.string(transportedOp.argsJcsCid())));
+        } else {
+            return null;
+        }
+
+        fields.add(new Jcs.Field("artifact_kind", Jcs.string("provekit-concept-citation-comment-sugar")));
+        if (validCid(transportedOp.callsiteCid())) {
+            fields.add(new Jcs.Field("callsite_cid", Jcs.string(transportedOp.callsiteCid())));
+        } else if (transportedOp.callsiteCid() != null && !transportedOp.callsiteCid().isBlank()) {
+            return null;
+        }
+        fields.add(new Jcs.Field("concept_cid", Jcs.string(transportedOp.conceptCid())));
+        if (!transportedOp.conceptName().isBlank()) {
+            fields.add(new Jcs.Field("concept_name", Jcs.string(transportedOp.conceptName())));
+        }
+        fields.add(new Jcs.Field("concept_site_cid", Jcs.string(transportedOp.conceptSiteCid())));
+        fields.add(new Jcs.Field("emitted_by", Jcs.object(
+                "kit_cid", Jcs.string(conceptCitationEmitterKitCid()),
+                "kit_id", Jcs.string(conceptCitationKitId()),
+                "kit_kind", Jcs.string("realize"),
+                "target_language", Jcs.string("java"),
+                "target_library_tag", Jcs.string(transportedOp.targetLibraryTag().isBlank()
+                        ? "java"
+                        : transportedOp.targetLibraryTag())
+        )));
+        fields.add(new Jcs.Field("loss_record_cid", Jcs.string(transportedOp.lossRecordCid())));
+        fields.add(new Jcs.Field("operation_kind", Jcs.string(transportedOp.operationKind())));
+        fields.add(new Jcs.Field("policy_cid", Jcs.string(conceptCitationPolicyCid(transportedOp))));
+        fields.add(new Jcs.Field("schema_version", Jcs.string("1")));
+        fields.add(new Jcs.Field("shape_cid", Jcs.string(transportedOp.shapeCid())));
+        fields.add(new Jcs.Field("sugar_dict_cid", Jcs.string(conceptCitationSugarDictCid(transportedOp, sugarPluginJson))));
+        fields.add(new Jcs.Field("term_position", Jcs.array(
+                transportedOp.termPosition().stream().map(Jcs::integer).toList()
+        )));
+        return new Jcs.Obj(fields);
+    }
+
+    private static String conceptCitationPolicyCid(TransportedOperation transportedOp) {
+        if (validCid(transportedOp.policyCid())) {
+            return transportedOp.policyCid();
+        }
+        return Blake3.blake3_512("provekit-realize-java-core/default-concept-citation-policy"
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String conceptCitationSugarDictCid(
+            TransportedOperation transportedOp,
+            List<String> sugarPluginJson) {
+        if (validCid(transportedOp.sugarDictCid())) {
+            return transportedOp.sugarDictCid();
+        }
+        if (sugarPluginJson != null) {
+            for (String rawPlugin : sugarPluginJson) {
+                try {
+                    Jcs.Json parsed = Jcs.parse(rawPlugin);
+                    if (!(parsed instanceof Jcs.Obj root)) continue;
+                    Jcs.Json headerJson = root.get("header");
+                    if (!(headerJson instanceof Jcs.Obj header)) continue;
+                    String cid = header.stringFieldOrNull("cid");
+                    if (validCid(cid)) {
+                        return cid;
+                    }
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        return Blake3.blake3_512("provekit-realize-java-core/concept-citation-comment-sugar-v1"
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String conceptCitationKitId() {
+        return "provekit-realize-java-core@0.1.0";
+    }
+
+    private static String conceptCitationEmitterKitCid() {
+        return Blake3.blake3_512(conceptCitationKitId().getBytes(StandardCharsets.UTF_8));
     }
 
     private static Jcs.Obj contractCommentPayload(ContractPayload contract, SugarEmission emission) {
@@ -961,6 +1090,95 @@ final class SugarRealizer {
         if (!"literal".equals(contributionObj.stringFieldOrNull("form"))) return Jcs.object();
         Jcs.Json value = contributionObj.get("value");
         return value instanceof Jcs.Obj ? value : Jcs.object();
+    }
+}
+
+record TransportedOperation(
+        String conceptCid,
+        String conceptSiteCid,
+        String lossRecordCid,
+        String operationKind,
+        String policyCid,
+        String shapeCid,
+        List<Integer> termPosition,
+        Jcs.Json argsJcs,
+        String argsJcsCid,
+        String sugarDictCid,
+        String callsiteCid,
+        String conceptName,
+        String targetLibraryTag) {
+    TransportedOperation {
+        conceptCid = conceptCid == null ? "" : conceptCid;
+        conceptSiteCid = conceptSiteCid == null ? "" : conceptSiteCid;
+        lossRecordCid = lossRecordCid == null ? "" : lossRecordCid;
+        operationKind = operationKind == null ? "" : operationKind;
+        policyCid = policyCid == null ? "" : policyCid;
+        shapeCid = shapeCid == null ? "" : shapeCid;
+        termPosition = termPosition == null ? List.of() : List.copyOf(termPosition);
+        argsJcsCid = argsJcsCid == null ? "" : argsJcsCid;
+        sugarDictCid = sugarDictCid == null ? "" : sugarDictCid;
+        callsiteCid = callsiteCid == null ? "" : callsiteCid;
+        conceptName = conceptName == null ? "" : conceptName;
+        targetLibraryTag = targetLibraryTag == null ? "" : targetLibraryTag;
+    }
+
+    static TransportedOperation fromJson(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json.trim())) {
+            return null;
+        }
+        Jcs.Json parsed;
+        try {
+            parsed = Jcs.parse(json);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (!(parsed instanceof Jcs.Obj obj)) {
+            return null;
+        }
+        return new TransportedOperation(
+                stringValue(obj, "concept_cid", "conceptCid"),
+                stringValue(obj, "concept_site_cid", "conceptSiteCid"),
+                stringValue(obj, "loss_record_cid", "lossRecordCid"),
+                stringValue(obj, "operation_kind", "operationKind"),
+                stringValue(obj, "policy_cid", "policyCid"),
+                stringValue(obj, "shape_cid", "shapeCid"),
+                termPosition(value(obj, "term_position", "termPosition")),
+                value(obj, "args_jcs", "argsJcs"),
+                stringValue(obj, "args_jcs_cid", "argsJcsCid"),
+                stringValue(obj, "sugar_dict_cid", "sugarDictCid"),
+                stringValue(obj, "callsite_cid", "callsiteCid"),
+                stringValue(obj, "concept_name", "conceptName"),
+                stringValue(obj, "target_library_tag", "targetLibraryTag")
+        );
+    }
+
+    private static Jcs.Json value(Jcs.Obj obj, String... keys) {
+        for (String key : keys) {
+            Jcs.Json value = obj.get(key);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String stringValue(Jcs.Obj obj, String... keys) {
+        Jcs.Json value = value(obj, keys);
+        return value instanceof Jcs.Str s ? s.value() : "";
+    }
+
+    private static List<Integer> termPosition(Jcs.Json value) {
+        if (!(value instanceof Jcs.Arr arr)) {
+            return List.of();
+        }
+        List<Integer> out = new ArrayList<>();
+        for (Jcs.Json item : arr.values()) {
+            if (!(item instanceof Jcs.Num number) || number.value() < 0 || number.value() > Integer.MAX_VALUE) {
+                return List.of();
+            }
+            out.add((int) number.value());
+        }
+        return out;
     }
 }
 

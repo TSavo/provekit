@@ -42,9 +42,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
@@ -58,6 +60,7 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
 
 public final class JavaBindLifter {
+    private static final String CONCEPT_CITATION_COMMENT_KIND = "provekit-concept-citation-comment-sugar";
 
     /** Walk a workspace and emit one bind-lift-entry per method. */
     public Result liftPaths(String workspaceRoot, List<String> sourcePaths) {
@@ -133,7 +136,7 @@ public final class JavaBindLifter {
         }
         Trees trees = Trees.instance(task);
         for (CompilationUnitTree unit : units) {
-            new MethodScanner(trees, rel, source, entries).scan(unit, null);
+            new MethodScanner(trees, rel, source, entries, diagnostics).scan(unit, null);
         }
     }
 
@@ -143,12 +146,19 @@ public final class JavaBindLifter {
         private final String rel;
         private final String source;
         private final List<Jcs.Json> entries;
+        private final List<Jcs.Json> diagnostics;
 
-        MethodScanner(Trees trees, String rel, String source, List<Jcs.Json> entries) {
+        MethodScanner(
+                Trees trees,
+                String rel,
+                String source,
+                List<Jcs.Json> entries,
+                List<Jcs.Json> diagnostics) {
             this.trees = trees;
             this.rel = rel;
             this.source = source;
             this.entries = entries;
+            this.diagnostics = diagnostics;
         }
 
         @Override
@@ -209,11 +219,22 @@ public final class JavaBindLifter {
             List<Jcs.Json> surfaceWitnesses = new ArrayList<>();
             surfaceWitnesses.addAll(observationTagWitnesses(source, bodyStartLine, bodyEndLine));
             surfaceWitnesses.addAll(contractTagWitnesses(source, fnLine, bodyStartLine, bodyEndLine));
+            ConceptCitationScan conceptCitationScan = conceptCitationTags(
+                source,
+                rel,
+                fnLine,
+                bodyStartLine,
+                bodyEndLine,
+                diagnostics);
+            if (conceptCitationScan.refuseRelift()) {
+                return null;
+            }
 
             Jcs.Obj entry = Jcs.object(
                 "attr_post", Jcs.nullValue(),
                 "attr_pre", Jcs.nullValue(),
                 "concept_annotation", conceptAnnotation == null ? Jcs.nullValue() : Jcs.string(conceptAnnotation),
+                "concept_citations", Jcs.array(conceptCitationScan.citations()),
                 "file", Jcs.string(rel),
                 "fn_line", Jcs.integer(fnLine),
                 "fn_name", Jcs.string(fnName),
@@ -458,6 +479,401 @@ public final class JavaBindLifter {
         ));
     }
 
+    private static ConceptCitationScan conceptCitationTags(
+            String source,
+            String relPath,
+            int fnLine,
+            int startLine,
+            int endLine,
+            List<Jcs.Json> diagnostics) {
+        List<TagLine> tags = new ArrayList<>();
+        tags.addAll(scanPreMethodTags(source, fnLine));
+        tags.addAll(scanObservationTags(source, startLine, endLine));
+        List<Jcs.Json> citations = new ArrayList<>();
+        boolean refuseRelift = false;
+        int idx = 0;
+        while (idx < tags.size()) {
+            TagLine tag = tags.get(idx);
+            if ("provekit-concept-payload-cid".equals(tag.key())) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    tag.line(),
+                    "concept-citation:orphan-cid-line",
+                    "payload CID line has no preceding payload");
+                idx++;
+                continue;
+            }
+            if (!"provekit-concept".equals(tag.key())) {
+                idx++;
+                continue;
+            }
+            String payloadCid = null;
+            if (idx + 1 < tags.size()) {
+                TagLine next = tags.get(idx + 1);
+                if (next.line() == tag.line() + 1 && "provekit-concept-payload-cid".equals(next.key())) {
+                    payloadCid = next.value();
+                    idx++;
+                }
+            }
+            ConceptCitationValidation validation = conceptCitation(
+                tag.value(),
+                payloadCid,
+                relPath,
+                tag.line(),
+                diagnostics);
+            if (validation.refuseRelift()) {
+                refuseRelift = true;
+            }
+            if (validation.citation() != null) {
+                citations.add(validation.citation());
+            }
+            idx++;
+        }
+        return new ConceptCitationScan(citations, refuseRelift);
+    }
+
+    private static ConceptCitationValidation conceptCitation(
+            String payloadText,
+            String emittedPayloadCid,
+            String relPath,
+            int line,
+            List<Jcs.Json> diagnostics) {
+        Jcs.Json payloadJson;
+        try {
+            payloadJson = Jcs.parse(payloadText);
+        } catch (IllegalArgumentException e) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:malformed-json",
+                "malformed JSON: " + e.getMessage());
+            return ConceptCitationValidation.drop();
+        }
+        if (!(payloadJson instanceof Jcs.Obj payload)) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:malformed-json",
+                "payload is not an object");
+            return ConceptCitationValidation.drop();
+        }
+
+        if (!CONCEPT_CITATION_COMMENT_KIND.equals(payload.stringFieldOrNull("artifact_kind"))) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:unknown-schema-version",
+                "wrong artifact_kind");
+            return ConceptCitationValidation.drop();
+        }
+        if (!"1".equals(payload.stringFieldOrNull("schema_version"))) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:unknown-schema-version",
+                "unknown schema_version");
+            return ConceptCitationValidation.drop();
+        }
+        if (!validConceptEmittedBy(payload.get("emitted_by"))) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:malformed-cid",
+                "malformed emitted_by");
+            return ConceptCitationValidation.drop();
+        }
+
+        String operationKind = payload.stringFieldOrNull("operation_kind");
+        if (operationKind == null || operationKind.isBlank()) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:malformed-json",
+                "missing operation_kind");
+            return ConceptCitationValidation.drop();
+        }
+        Jcs.Json termPosition = payload.get("term_position");
+        if (!validTermPosition(termPosition)) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:malformed-json",
+                "malformed term_position");
+            return ConceptCitationValidation.drop();
+        }
+
+        String[] cidFields = {
+            "args_jcs_cid",
+            "concept_cid",
+            "concept_site_cid",
+            "loss_record_cid",
+            "shape_cid",
+            "sugar_dict_cid"
+        };
+        for (String key : cidFields) {
+            if (!validCid(payload.stringFieldOrNull(key))) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:malformed-cid",
+                    "malformed " + key);
+                return ConceptCitationValidation.drop();
+            }
+        }
+        for (String key : List.of("callsite_cid", "policy_cid")) {
+            Jcs.Json value = payload.get(key);
+            if (value != null && (!(value instanceof Jcs.Str s) || !validCid(s.value()))) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:malformed-cid",
+                    "malformed " + key);
+                return ConceptCitationValidation.drop();
+            }
+        }
+        if (emittedPayloadCid == null) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:payload-cid-mismatch",
+                "missing payload CID");
+            return ConceptCitationValidation.drop();
+        }
+        if (!validCid(emittedPayloadCid)) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:malformed-cid",
+                "malformed payload CID");
+            return ConceptCitationValidation.drop();
+        }
+        String payloadCid = Jcs.cid(payload);
+        if (!payloadCid.equals(emittedPayloadCid)) {
+            conceptCitationDiag(
+                diagnostics,
+                relPath,
+                line,
+                "concept-citation:payload-cid-mismatch",
+                "payload CID mismatch");
+            return ConceptCitationValidation.drop();
+        }
+
+        Jcs.Json argsJcs = payload.get("args_jcs");
+        if (argsJcs != null) {
+            if (!(argsJcs instanceof Jcs.Arr)) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:malformed-json",
+                    "malformed args_jcs");
+                return ConceptCitationValidation.drop();
+            }
+            if (!Jcs.cid(argsJcs).equals(payload.stringField("args_jcs_cid"))) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:args-cid-mismatch",
+                    "args CID mismatch");
+                return ConceptCitationValidation.drop();
+            }
+        }
+
+        Map<String, CatalogEntry> catalog = conceptShapeCatalog();
+        if (catalog != null) {
+            CatalogEntry catalogEntry = catalog.get(payload.stringField("concept_cid"));
+            if (catalogEntry == null) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:unknown-concept",
+                    "concept not in local catalog");
+                return ConceptCitationValidation.drop();
+            }
+            if (!catalogEntry.shapeCid().equals(payload.stringField("shape_cid"))) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:shape-mismatch",
+                    "shape CID mismatch");
+                return ConceptCitationValidation.refuse();
+            }
+            if (!catalogEntry.operationKind().equals(operationKind)) {
+                conceptCitationDiag(
+                    diagnostics,
+                    relPath,
+                    line,
+                    "concept-citation:operation-kind-mismatch",
+                    "operation_kind mismatch");
+                return ConceptCitationValidation.refuse();
+            }
+        }
+
+        List<Jcs.Field> extensionFieldList = new ArrayList<>();
+        extensionFieldList.add(new Jcs.Field("args_jcs_cid", Jcs.string(payload.stringField("args_jcs_cid"))));
+        extensionFieldList.add(new Jcs.Field("concept_site_cid", Jcs.string(payload.stringField("concept_site_cid"))));
+        extensionFieldList.add(new Jcs.Field("loss_record_cid", Jcs.string(payload.stringField("loss_record_cid"))));
+        extensionFieldList.add(new Jcs.Field("payload_cid", Jcs.string(payloadCid)));
+        extensionFieldList.add(new Jcs.Field("shape_cid", Jcs.string(payload.stringField("shape_cid"))));
+        extensionFieldList.add(new Jcs.Field("sugar_dict_cid", Jcs.string(payload.stringField("sugar_dict_cid"))));
+        extensionFieldList.add(new Jcs.Field("surface", Jcs.string("concept-citation-comment-sugar")));
+        if (payload.get("callsite_cid") instanceof Jcs.Str callsiteCid) {
+            extensionFieldList.add(new Jcs.Field("callsite_cid", Jcs.string(callsiteCid.value())));
+        }
+        if (payload.get("policy_cid") instanceof Jcs.Str policyCid) {
+            extensionFieldList.add(new Jcs.Field("policy_cid", Jcs.string(policyCid.value())));
+        }
+        if (argsJcs != null) {
+            extensionFieldList.add(new Jcs.Field("args_jcs", argsJcs));
+        }
+
+        return new ConceptCitationValidation(
+            Jcs.object(
+                "args_jcs_cid", Jcs.string(payload.stringField("args_jcs_cid")),
+                "artifact_kind", Jcs.string(CONCEPT_CITATION_COMMENT_KIND),
+                "col", Jcs.integer(0),
+                "confidence_basis_points", Jcs.integer(10000),
+                "concept_cid", Jcs.string(payload.stringField("concept_cid")),
+                "extension_fields", new Jcs.Obj(extensionFieldList),
+                "line", Jcs.integer(line),
+                "operation_kind", Jcs.string(operationKind),
+                "shape_cid", Jcs.string(payload.stringField("shape_cid")),
+                "source_kind", Jcs.string("native-surface"),
+                "term_position", termPosition
+            ),
+            false);
+    }
+
+    private static boolean validConceptEmittedBy(Jcs.Json value) {
+        if (!(value instanceof Jcs.Obj emittedByObj)) return false;
+        String kitId = emittedByObj.stringFieldOrNull("kit_id");
+        String targetLibraryTag = emittedByObj.stringFieldOrNull("target_library_tag");
+        return validCid(emittedByObj.stringFieldOrNull("kit_cid"))
+            && nonBlank(kitId)
+            && nonBlank(emittedByObj.stringFieldOrNull("kit_kind"))
+            && nonBlank(emittedByObj.stringFieldOrNull("target_language"))
+            && (targetLibraryTag == null || !targetLibraryTag.isBlank());
+    }
+
+    private static boolean validTermPosition(Jcs.Json value) {
+        if (!(value instanceof Jcs.Arr arr)) return false;
+        for (Jcs.Json item : arr.values()) {
+            if (!(item instanceof Jcs.Num number) || number.value() < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void conceptCitationDiag(
+            List<Jcs.Json> diagnostics,
+            String relPath,
+            int line,
+            String kind,
+            String message) {
+        diagnostics.add(Jcs.object(
+            "kind", Jcs.string(kind),
+            "line", Jcs.integer(line),
+            "message", Jcs.string(message),
+            "path", Jcs.string(relPath)
+        ));
+    }
+
+    private static Map<String, CatalogEntry> conceptShapeCatalog() {
+        Path root = repoRoot();
+        if (root == null) return null;
+        Path indexPath = root.resolve("menagerie/concept-shapes/catalog/index.json");
+        Jcs.Json indexJson;
+        try {
+            indexJson = Jcs.parse(Files.readString(indexPath, StandardCharsets.UTF_8));
+        } catch (IOException | IllegalArgumentException e) {
+            return null;
+        }
+        if (!(indexJson instanceof Jcs.Obj indexObj)) return null;
+        Jcs.Json entriesJson = indexObj.get("entries");
+        if (!(entriesJson instanceof Jcs.Obj entriesObj)) return null;
+        Map<String, CatalogEntry> catalog = new HashMap<>();
+        Path catalogRoot = indexPath.getParent();
+        for (Jcs.Field field : entriesObj.fields()) {
+            String cid = field.key();
+            if (!validCid(cid) || !(field.value() instanceof Jcs.Obj meta)) continue;
+            if (!"algorithm".equals(meta.stringFieldOrNull("kind"))) continue;
+            String name = meta.stringFieldOrNull("name");
+            String relative = meta.stringFieldOrNull("path");
+            if (name == null || !name.startsWith("concept:") || relative == null || relative.isBlank()) continue;
+            try {
+                Jcs.Json documentJson = Jcs.parse(Files.readString(catalogRoot.resolve(relative), StandardCharsets.UTF_8));
+                if (!(documentJson instanceof Jcs.Obj document)) continue;
+                String shapeCid = document.stringFieldOrNull("cid");
+                Jcs.Json mementoJson = document.get("memento");
+                if (!validCid(shapeCid) || !(mementoJson instanceof Jcs.Obj memento)) continue;
+                String operationKind = catalogOperationKind(name, memento);
+                if (operationKind != null && !operationKind.isBlank()) {
+                    catalog.put(cid, new CatalogEntry(shapeCid, operationKind));
+                }
+            } catch (IOException | IllegalArgumentException ignored) {
+            }
+        }
+        return catalog;
+    }
+
+    private static String catalogOperationKind(String name, Jcs.Obj memento) {
+        Jcs.Json post = memento.get("post");
+        if (post instanceof Jcs.Obj postObj) {
+            String operator = postObj.stringFieldOrNull("operator");
+            if (operator != null && !operator.isBlank()) {
+                return operator;
+            }
+        }
+        return name.startsWith("concept:") ? name.substring("concept:".length()) : null;
+    }
+
+    private static Path repoRoot() {
+        List<Path> candidates = new ArrayList<>();
+        Path cwd = Path.of("").toAbsolutePath().normalize();
+        candidates.add(cwd);
+        candidates.addAll(parentPaths(cwd));
+        try {
+            Path codeLocation = Path.of(JavaBindLifter.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                .toAbsolutePath()
+                .normalize();
+            candidates.add(codeLocation);
+            candidates.addAll(parentPaths(codeLocation));
+        } catch (Exception ignored) {
+        }
+        for (Path candidate : candidates) {
+            if (Files.exists(candidate.resolve("menagerie/concept-shapes/catalog/index.json"))) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static List<Path> parentPaths(Path path) {
+        List<Path> parents = new ArrayList<>();
+        Path cursor = path.getParent();
+        while (cursor != null) {
+            parents.add(cursor);
+            cursor = cursor.getParent();
+        }
+        return parents;
+    }
+
     private static List<List<TagLine>> contractTagBlocks(List<TagLine> tags) {
         List<List<TagLine>> blocks = new ArrayList<>();
         List<TagLine> current = null;
@@ -610,6 +1026,20 @@ public final class JavaBindLifter {
             );
         }
     }
+
+    private record ConceptCitationScan(List<Jcs.Json> citations, boolean refuseRelift) {}
+
+    private record ConceptCitationValidation(Jcs.Json citation, boolean refuseRelift) {
+        static ConceptCitationValidation drop() {
+            return new ConceptCitationValidation(null, false);
+        }
+
+        static ConceptCitationValidation refuse() {
+            return new ConceptCitationValidation(null, true);
+        }
+    }
+
+    private record CatalogEntry(String shapeCid, String operationKind) {}
 
     private record TagLine(int line, String key, String value) {}
 
