@@ -120,7 +120,39 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 **Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
 
-**Not yet captured durably in repo:** the architect rulings from the 2026-05-15 / 2026-05-16 sessions (deletion rule, build-on-existing-kits clause, pre-merge ritual, codex-inline-brief, exhibit transport policy, model defaults). Each lives in agent memory but not in a repo location a human contributor can find.
+## Status snapshot (2026-05-16, post-antibody-flip)
+
+**Census antibody flip merged** (PR #1082, 2026-05-16T22:29:06Z). The structural antibodies are now CI-load-bearing positive assertions; 9/9 census slow lane tests pass with `assert_eq!`/`assert_ne!` instead of `#[should_panic]` wrappers.
+
+**Empirically validated at the algebra layer:**
+- Seam 4 federation byte-identity (`add(x: i64, y: i64) -> i64 { x + y }` lifts from both Rust and Python to byte-identical bind CIDs). Paper 16's colimit argument applied to ProvekIt has its first empirical receipt.
+- Seam 3 positive lower-relift round-trip (structural assertion: relift produces >=1 IR entry; lower step's body synthesis emits parseable Python).
+- All other seam positive + discrimination tests pass.
+
+**Substrate work landed in service of the antibody flip's empirical green:**
+- γ canonical-form ruling (`cb5387532`): term_shape = `{concept_name, op_cid, args:[<sort markers>]}`; surface syntax stripped; deferred polymorphic-extension noted.
+- Platform-semantics-via-LossRecord ruling (`e15cd3fd2`): per-platform semantic behavior declared at kit registration; cross-platform behavioral divergence captured via existing LossRecord mechanism; A18 reframed from URGENT BLOCKING to feature-gap.
+- A14 γ (Rust lift, PR #1089), A15 γ (Python lift, PR #1087), A16 (Python realize body templates audit, PR #1088).
+- Cascade fixes: deserializer optional fields (`610abaf5f`), file-key omission (`a70a13d55`), A21 source-location residuals (PR #1090).
+- A19+A22 Rust envelope strip + bitnot disambiguation (PR #1091).
+- A19+A20 Python envelope strip + statement-concept coverage (PR #1092).
+- Seam 3 routing fix: Option A synthesis-from-term_shape with function-name placeholder fallback (PR #1094).
+
+**Honest qualification on the seam 4 federation milestone:** the byte-identity holds for the no-contract pure-expression algebra. Federation across functions with contracts (attr_pre/post extracted differently per language), loops/sequences/function-calls (Python emits γ statement concepts post-A20 matching Rust's coverage), and bitwise-not on integers (A22 disambiguation) ALL fall under the same federation claim and pass once the per-axis fixes land (most have already landed).
+
+**Behavioral-correctness follow-ups filed (not blocking algebra-layer federation claim):**
+- A23 #1093: libprovekit-side bind-payload hashes function-name field (federation residual at one layer deeper than A19 stripped).
+- A24 #1095: operand-binding-from-context derivation in body synthesis. γ's bare-`{}` operand slots leave operand identity to be derived from context; current synthesis uses positional fallback. Emitted Python parses but operand bindings are semantically wrong for fixtures with let-bindings or literals.
+- A25 #1096: function-name non-hashed sidecar channel. Current architecture uses `_provekit_synth` placeholder; production federation needs the real channel flowing from lift to realize without entering the bind CID hash.
+
+A24 and A25 are both architectural-judgment-required to spec but mechanical-once-architected to implement; share a sidecar-channel architecture pattern. Likely worth implementing together in one PR.
+
+**Architect rulings codified durably:**
+- γ canonical-form ruling: `docs/plans/2026-05-16-canonical-term-shape-form.md` on main.
+- Platform-semantics ruling: `docs/plans/2026-05-16-platform-semantics-via-loss-records.md` on main.
+- γ post-merge audit: `docs/plans/2026-05-16-gamma-postmerge-audit.md` on main.
+
+**Not yet captured durably in repo:** the older architect rulings from the 2026-05-15 / earlier-2026-05-16 sessions (deletion rule, build-on-existing-kits clause, pre-merge ritual, codex-inline-brief, exhibit transport policy, model defaults). Each lives in agent memory but not in a repo location a human contributor can find.
 
 **Not yet on chain:** v2 attestation (post-Trinity snapshot). v1's OP_RETURN broadcast also still pending; OTS upgrade completed.
 
