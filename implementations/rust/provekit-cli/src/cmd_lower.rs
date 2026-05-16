@@ -4,16 +4,13 @@
 // per-language lower plugin and emits target-language source.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Instant;
 
 use clap::{Parser, ValueEnum};
 use libprovekit::core::{
     execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
-    Verb,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -28,7 +25,6 @@ use crate::cmd_bind::NamedTermDocument;
 use crate::kit_dispatch::DispatchRealizeTransport;
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
-const LOWER_PROTOCOL_VERSION: &str = "provekit-orp/1";
 const DEFAULT_WITNESS_PRODUCED_AT: &str = "2026-05-08T00:00:00Z";
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -103,25 +99,9 @@ impl LowerFailure {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct MissingTemplateEntry {
-    operation: String,
-    args_shape: Vec<String>,
-    function: String,
-    term_position: String,
-}
-
 #[derive(Debug, Clone)]
 enum LowerNamedError {
     Message(String),
-    MissingTemplates(Vec<MissingTemplateEntry>),
-}
-
-#[derive(Debug, Default)]
-struct PluginManifest {
-    name: String,
-    command: Vec<String>,
-    working_dir: Option<PathBuf>,
 }
 
 pub fn run(args: LowerArgs) -> u8 {
@@ -268,10 +248,6 @@ fn lower_named_terms(
         .unwrap_or_else(|| PathBuf::from("."));
     let source = match lower_named_document(&project_root, target, &named) {
         Ok(source) => source,
-        Err(LowerNamedError::MissingTemplates(entries)) => {
-            eprintln!("{}", missing_template_receipt(target, &entries));
-            return EXIT_VERIFY_FAIL;
-        }
         Err(LowerNamedError::Message(error)) => {
             eprintln!("{}: {error}", "error".red().bold());
             return EXIT_USER_ERROR;
@@ -290,7 +266,6 @@ fn lower_named_document(
     named: &NamedTermDocument,
 ) -> Result<String, LowerNamedError> {
     let mut out = String::new();
-    let mut missing_templates = Vec::new();
     for term in &named.terms {
         let named_term_tree = term
             .named_term_tree
@@ -304,21 +279,11 @@ fn lower_named_document(
                 ))
             })?;
         let spec = lower_named_spec(term, named_term_tree);
-        let source = match lower_named_spec_via_path(project_root, target, spec) {
-            Ok(source) => source,
-            Err(LowerNamedError::MissingTemplates(entries)) => {
-                missing_templates.extend(entries);
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
+        let source = lower_named_spec_via_path(project_root, target, spec)?;
         out.push_str(&source);
         if !out.ends_with('\n') {
             out.push('\n');
         }
-    }
-    if !missing_templates.is_empty() {
-        return Err(LowerNamedError::MissingTemplates(missing_templates));
     }
     Ok(out)
 }
@@ -350,7 +315,7 @@ fn lower_named_spec_via_path(
             kit: kit_name.clone(),
             inputs: vec![input_cid],
             depends_on: vec![],
-            verb: Verb::Transform,
+            verb: Default::default(),
         }],
     }));
     let mut registry = KitRegistry::default();
@@ -364,154 +329,15 @@ fn lower_named_spec_via_path(
         ),
     );
     let claim = execute_path(&path, &registry, &inputs).map_err(|error| {
-        let detail = error.to_string();
-        if let Some(entries) = missing_templates_from_detail(&detail) {
-            LowerNamedError::MissingTemplates(entries)
-        } else {
-            LowerNamedError::Message(format!("lower plugin unavailable for `{target}`: {detail}"))
-        }
+        let detail = error
+            .composition_refusal()
+            .and_then(|refusal| serde_json::to_string(refusal).ok())
+            .unwrap_or_else(|| error.to_string());
+        LowerNamedError::Message(format!("lower plugin unavailable for `{target}`: {detail}"))
     })?;
     LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
         .map(|realized| realized.source)
         .map_err(LowerNamedError::Message)
-}
-
-fn missing_templates_from_detail(detail: &str) -> Option<Vec<MissingTemplateEntry>> {
-    let json_start = detail.find('{')?;
-    let error: Json = serde_json::from_str(&detail[json_start..]).ok()?;
-    missing_templates_from_error_json(&error)
-}
-
-fn missing_templates_from_error_json(error: &Json) -> Option<Vec<MissingTemplateEntry>> {
-    let code_matches = error.get("code").and_then(Json::as_i64) == Some(-32100);
-    let message_matches = error
-        .get("message")
-        .and_then(Json::as_str)
-        .is_some_and(|message| message == "missing body-template entry");
-    if !code_matches && !message_matches {
-        return None;
-    }
-    let data = error.get("data")?;
-    let items: Vec<&Json> = match data {
-        Json::Array(items) => items.iter().collect(),
-        Json::Object(_) => vec![data],
-        _ => return None,
-    };
-    let entries = items
-        .into_iter()
-        .filter_map(missing_template_entry_from_json)
-        .collect::<Vec<_>>();
-    if entries.is_empty() {
-        None
-    } else {
-        Some(entries)
-    }
-}
-
-fn missing_template_entry_from_json(value: &Json) -> Option<MissingTemplateEntry> {
-    let operation = value
-        .get("operation_kind")
-        .or_else(|| value.get("operation"))
-        .and_then(Json::as_str)?
-        .to_string();
-    let args_shape = value
-        .get("args_shape")
-        .and_then(Json::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Json::as_str)
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let function = value
-        .get("function")
-        .or_else(|| value.get("function_context"))
-        .and_then(Json::as_str)
-        .unwrap_or("<unknown>")
-        .to_string();
-    let term_position = value
-        .get("term_position")
-        .and_then(Json::as_str)
-        .unwrap_or("<unknown>")
-        .to_string();
-    Some(MissingTemplateEntry {
-        operation,
-        args_shape,
-        function,
-        term_position,
-    })
-}
-
-fn missing_template_receipt(target: &str, entries: &[MissingTemplateEntry]) -> String {
-    let mut out = String::new();
-    out.push_str(&format!(
-        "ERROR: provekit lower --target={target} refused.\n"
-    ));
-    out.push_str("The substrate could not realize the input via body-templates.\n\n");
-    out.push_str(&format!(
-        "{} body-template {} needed:\n",
-        entries.len(),
-        if entries.len() == 1 {
-            "entry"
-        } else {
-            "entries"
-        }
-    ));
-    for (index, entry) in entries.iter().enumerate() {
-        let args_shape = format_args_shape(&entry.args_shape);
-        out.push_str(&format!(
-            "\n  {}. operation: {}\n     args_shape: {}\n     function: {}\n     term_position: {}\n     suggest adding to: {}\n",
-            index + 1,
-            entry.operation,
-            args_shape,
-            entry.function,
-            entry.term_position,
-            suggested_body_template_file(&entry.operation),
-        ));
-    }
-    out.push_str("\nAuthor these entries in the appropriate body-template JSON, then re-run.");
-    out
-}
-
-fn format_args_shape(args_shape: &[String]) -> String {
-    if args_shape.is_empty() {
-        return "[]".to_string();
-    }
-    let rendered = args_shape
-        .iter()
-        .map(|value| serde_json::to_string(value).unwrap_or_else(|_| "\"<invalid>\"".to_string()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("[{rendered}]")
-}
-
-fn suggested_body_template_file(operation: &str) -> &'static str {
-    if operation == "rust-call:hex::encode"
-        || operation.starts_with("rust-call:blake3::")
-        || operation.starts_with("rust-method:hasher-")
-    {
-        return "python-canonical-bodies-blake3.json";
-    }
-    if operation.starts_with("rust-call:")
-        || operation.starts_with("rust-method:")
-        || matches!(
-            operation,
-            "concept:add"
-                | "concept:array-repeat"
-                | "concept:borrow"
-                | "concept:method-len"
-                | "concept:new"
-                | "concept:return"
-                | "concept:str-len"
-                | "concept:string-push-str"
-                | "concept:string-with-capacity"
-        )
-    {
-        return "python-canonical-bodies-rust-runtime.json";
-    }
-    "python-canonical-bodies.json"
 }
 
 fn is_solver_target(target: &str) -> bool {
@@ -563,167 +389,38 @@ fn lower_witness_requirement_for_surface(
     surface: &str,
     requirement: &Json,
     out_dir: &Path,
-    quiet: bool,
+    _quiet: bool,
 ) -> Result<LowerProof, LowerFailure> {
     let plan = build_realizer_plan(requirement).map_err(LowerFailure::message)?;
-    let lower_result = dispatch_lower(project_root, surface, "witness", &plan, quiet)
+    let mut inputs = HashMapInputCatalog::default();
+    let input_cid = inputs.insert(Input::Spec(plan.clone()));
+    let kit_name = format!("lower-{surface}");
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lower".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![input_cid],
+            depends_on: vec![],
+            verb: Default::default(),
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        kit_name,
+        LowerKit::new(
+            project_root.to_path_buf(),
+            surface.to_string(),
+            None,
+            DispatchRealizeTransport,
+        ),
+    );
+    let claim = execute_path(&path, &registry, &inputs)
+        .map_err(|error| LowerFailure::message(error.to_string()))?;
+    let lower_result = LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
+        .and_then(|realized| serde_json::to_value(realized).map_err(|error| error.to_string()))
         .map_err(LowerFailure::message)?;
     mint_witness_proof(project_root, surface, &plan, &lower_result, out_dir)
         .map_err(|message| LowerFailure::rejected(message, lower_result))
-}
-
-fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
-    let text =
-        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let mut m = PluginManifest::default();
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(p) => &line[..p],
-            None => line,
-        }
-        .trim();
-        if line.is_empty() || line.starts_with('[') {
-            continue;
-        }
-        let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
-        match key {
-            "name" => m.name = val.trim_matches('"').to_string(),
-            "working_dir" => m.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
-            "command" => {
-                let inner = val.trim_matches(|c| c == '[' || c == ']');
-                m.command = inner
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-            }
-            _ => {}
-        }
-    }
-    if m.command.is_empty() {
-        return Err(format!("manifest {} has no `command`", path.display()));
-    }
-    Ok(m)
-}
-
-fn find_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, String> {
-    let project_local = project_root
-        .join(".provekit")
-        .join("lower")
-        .join(surface)
-        .join("manifest.toml");
-    if project_local.exists() {
-        return parse_manifest(&project_local);
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let user_global = PathBuf::from(home)
-            .join(".config")
-            .join("provekit")
-            .join("lower")
-            .join(surface)
-            .join("manifest.toml");
-        if user_global.exists() {
-            return parse_manifest(&user_global);
-        }
-    }
-    Err(format!(
-        "no lower plugin manifest for surface `{surface}` (looked in .provekit/lower/{surface}/manifest.toml and ~/.config/provekit/lower/{surface}/manifest.toml)"
-    ))
-}
-
-fn dispatch_lower(
-    project_root: &Path,
-    surface: &str,
-    mode: &str,
-    plan: &Json,
-    quiet: bool,
-) -> Result<Json, String> {
-    let started = Instant::now();
-    let manifest = find_manifest(project_root, surface)?;
-    if !quiet {
-        println!(
-            "{}: surface=`{}` plugin=`{}` command={:?}",
-            "lower".green().bold(),
-            surface,
-            manifest.name,
-            manifest.command
-        );
-    }
-
-    let mut cmd = Command::new(&manifest.command[0]);
-    if manifest.command.len() > 1 {
-        cmd.args(&manifest.command[1..]);
-    }
-    if !manifest.command.iter().any(|arg| arg == "--rpc") {
-        cmd.arg("--rpc");
-    }
-    if let Some(wd) = &manifest.working_dir {
-        let resolved = if wd.is_absolute() {
-            wd.clone()
-        } else {
-            project_root.join(wd)
-        };
-        cmd.current_dir(resolved);
-    }
-    cmd.stdin(Stdio::piped());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::inherit());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn lower plugin {:?}: {e}", manifest.command))?;
-    let mut stdin = child.stdin.take().ok_or("lower plugin stdin unavailable")?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("lower plugin stdout unavailable")?;
-    let mut reader = BufReader::new(stdout);
-
-    let workspace_root = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-    let init_req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-cli", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": LOWER_PROTOCOL_VERSION,
-            "workspace_root": workspace_root,
-        }
-    });
-    writeln!(stdin, "{init_req}").map_err(|e| format!("write lower initialize: {e}"))?;
-    let _ = read_response(&mut reader, 1)?;
-
-    let realize_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "realize",
-        "params": {
-            "mode": mode,
-            "surface": surface,
-            "workspace_root": workspace_root,
-            "plan": plan,
-        }
-    });
-    writeln!(stdin, "{realize_req}").map_err(|e| format!("write lower realize: {e}"))?;
-    let result = read_response(&mut reader, 2)?;
-
-    let shutdown_req = json!({"jsonrpc":"2.0","id":3,"method":"shutdown"});
-    let _ = writeln!(stdin, "{shutdown_req}");
-    drop(stdin);
-    let status = child
-        .wait()
-        .map_err(|e| format!("wait lower plugin: {e}"))?;
-    if !status.success() {
-        return Err(format!(
-            "lower plugin exited {status} after {:?}",
-            started.elapsed()
-        ));
-    }
-    Ok(result)
 }
 
 fn build_realizer_plan(requirement: &Json) -> Result<Json, String> {
@@ -880,32 +577,6 @@ fn mint_witness_proof(
     })
 }
 
-fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Json, String> {
-    let mut line = String::new();
-    let n = reader
-        .read_line(&mut line)
-        .map_err(|e| format!("read lower response: {e}"))?;
-    if n == 0 {
-        return Err("lower plugin closed stdout before responding".into());
-    }
-    let v: Json = serde_json::from_str(line.trim())
-        .map_err(|e| format!("parse lower JSON-RPC response: {e}\n  raw: {line}"))?;
-    if v.get("id").and_then(Json::as_i64) != Some(id) {
-        return Err(format!(
-            "lower response id mismatch: expected {id}, got {v:?}"
-        ));
-    }
-    if let Some(error) = v.get("error") {
-        if let Some(message) = error.get("message").and_then(Json::as_str) {
-            return Err(message.to_string());
-        }
-        return Err(format!("lower plugin returned error: {error}"));
-    }
-    v.get("result")
-        .cloned()
-        .ok_or_else(|| "lower response missing result".to_string())
-}
-
 fn optional_str<'a>(value: &'a Json, field: &str) -> Option<&'a str> {
     value.get(field).and_then(Json::as_str)
 }
@@ -1021,49 +692,5 @@ mod tests {
         assert_eq!(plan["mode"], "attest");
         assert_eq!(plan["obligation"]["name"], "checked_add_u8.postcondition");
         assert_eq!(plan["policyCid"], "builtin:bridgeworks.checked-add-u8");
-    }
-
-    #[test]
-    fn parses_missing_template_error_detail() {
-        let detail = r#"realize kit error: {"code":-32100,"message":"missing body-template entry","data":[{"operation_kind":"call:Widget::build","args_shape":["int"],"function":"unknown_call","term_position":"body.return.call:Widget::build"},{"operation_kind":"missing-concept","args_shape":["str"],"function":"second","term_position":"body"}]}"#;
-        let parsed = missing_templates_from_detail(detail).expect("structured detail parses");
-
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].operation, "call:Widget::build");
-        assert_eq!(parsed[0].args_shape, vec!["int"]);
-        assert_eq!(parsed[0].function, "unknown_call");
-        assert_eq!(parsed[0].term_position, "body.return.call:Widget::build");
-        assert_eq!(parsed[1].operation, "missing-concept");
-    }
-
-    #[test]
-    fn formats_missing_template_receipt_with_all_entries() {
-        let entries = vec![
-            MissingTemplateEntry {
-                operation: "match_arm".to_string(),
-                args_shape: vec!["pattern".to_string(), "result".to_string()],
-                function: "encode_value".to_string(),
-                term_position: "let.rhs.match.arm[0]".to_string(),
-            },
-            MissingTemplateEntry {
-                operation: "rust-call:hex::encode".to_string(),
-                args_shape: vec!["bytes".to_string()],
-                function: "blake3_512_of".to_string(),
-                term_position: "body.let.rhs".to_string(),
-            },
-        ];
-
-        let receipt = missing_template_receipt("python", &entries);
-
-        assert!(receipt.contains("ERROR: provekit lower --target=python refused."));
-        assert!(receipt.contains("2 body-template entries needed:"));
-        assert!(receipt.contains("operation: match_arm"));
-        assert!(receipt.contains("args_shape: [\"pattern\", \"result\"]"));
-        assert!(receipt.contains("function: encode_value"));
-        assert!(receipt.contains("term_position: let.rhs.match.arm[0]"));
-        assert!(receipt.contains("suggest adding to: python-canonical-bodies.json"));
-        assert!(receipt.contains("operation: rust-call:hex::encode"));
-        assert!(receipt.contains("suggest adding to: python-canonical-bodies-blake3.json"));
-        assert!(receipt.contains("Author these entries in the appropriate body-template JSON"));
     }
 }
