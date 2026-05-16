@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use libprovekit::core::{named_term_document_from_bind_payload, Term};
+
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
 }
@@ -46,7 +48,7 @@ fn assert_success(label: &str, output: &std::process::Output) {
 }
 
 #[test]
-fn bind_from_stdin_emits_named_term_json_with_promotion_decisions() {
+fn bind_from_stdin_emits_bind_result_op_tree_with_promotion_decisions() {
     let mut child = Command::new(provekit_bin())
         .arg("bind")
         .stdin(Stdio::piped())
@@ -63,9 +65,15 @@ fn bind_from_stdin_emits_named_term_json_with_promotion_decisions() {
     let output = child.wait_with_output().expect("wait bind");
     assert_success("bind stdin", &output);
 
-    let named: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("named term JSON parses");
-    assert_eq!(named["kind"], "named-term-document");
+    let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
+    let Term::Op { name, args, .. } = &payload else {
+        panic!("bind output should be a Term::Op payload");
+    };
+    assert_eq!(name, "concept:bind-result");
+    assert_eq!(args.len(), 2);
+    let named =
+        named_term_document_from_bind_payload(&payload).expect("bind payload recovers named term");
+    let named = serde_json::to_value(named).expect("named term serializes");
     assert_eq!(named["sourceLanguage"], "rust");
     assert_eq!(
         named["terms"][0]["conceptName"],

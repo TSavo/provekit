@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use clap::{Parser, ValueEnum};
 use libprovekit::core::{
-    execute_path, ConformanceDeclaration, HashMapInputCatalog, Input, KitRegistry, LowerKit,
-    Path as CorePath, PathAlgebra,
+    execute_path, named_term_document_from_bind_payload, ConformanceDeclaration,
+    HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra, Term,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -236,10 +236,10 @@ fn lower_named_terms(
             return EXIT_USER_ERROR;
         }
     };
-    let named: NamedTermDocument = match serde_json::from_slice(&raw) {
+    let named = match parse_named_or_bind_payload(&raw) {
         Ok(named) => named,
         Err(error) => {
-            eprintln!("{}: parse named-term JSON: {error}", "error".red().bold());
+            eprintln!("{}: {error}", "error".red().bold());
             return EXIT_USER_ERROR;
         }
     };
@@ -259,6 +259,15 @@ fn lower_named_terms(
         return EXIT_USER_ERROR;
     }
     EXIT_OK
+}
+
+fn parse_named_or_bind_payload(raw: &[u8]) -> Result<NamedTermDocument, String> {
+    if let Ok(named) = serde_json::from_slice::<NamedTermDocument>(raw) {
+        return Ok(named);
+    }
+    let payload = serde_json::from_slice::<Term>(raw)
+        .map_err(|error| format!("parse named-term JSON or bind-result payload: {error}"))?;
+    named_term_document_from_bind_payload(&payload).map_err(|error| error.to_string())
 }
 
 fn lower_named_document(

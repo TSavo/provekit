@@ -187,6 +187,10 @@ impl CatalogIndex {
         self.op(name).map(|op| op.cid.as_str())
     }
 
+    pub fn get(&self, cid: &str) -> Option<&CatalogOp> {
+        self.op_by_definition_cid(cid)
+    }
+
     pub fn from_catalog_root(root: impl AsRef<Path>) -> Result<Self, CatalogLoadError> {
         let root = resolve_existing_path(root.as_ref());
         let index_path = root.join("index.json");

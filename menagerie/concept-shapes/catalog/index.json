@@ -169,6 +169,12 @@
       "name": "morphism:zig:assign:to:concept:assign",
       "path": "algorithms/morphism:zig:assign:to:concept:assign.blake3-512:22d15d06b25829fed3c1bdc038873623eec7dc808db29418f0bf3e9072d2271a295ebc5faa7ce850919bf247186f96192ae038f14b4ae40638ee7cb81362d9f2.json"
     },
+    "blake3-512:22dcd7895fd7abee9d9f34893b5ab9513b4801c0244a64e7a8c5180bba313f3b116d045b0aa3377f39bd892e020a1bd99d4bc60547b11fd7131fbe2f7e33dd75": {
+      "cid": "blake3-512:22dcd7895fd7abee9d9f34893b5ab9513b4801c0244a64e7a8c5180bba313f3b116d045b0aa3377f39bd892e020a1bd99d4bc60547b11fd7131fbe2f7e33dd75",
+      "kind": "algorithm",
+      "name": "concept:bind-result",
+      "path": "algorithms/concept:bind-result.blake3-512:22dcd7895fd7abee9d9f34893b5ab9513b4801c0244a64e7a8c5180bba313f3b116d045b0aa3377f39bd892e020a1bd99d4bc60547b11fd7131fbe2f7e33dd75.json"
+    },
     "blake3-512:23a6831a92c751c6137d205dae6e47fdf52c7bc1ebddf4a922ba7a2e558e5e91b22584900d70e2a58b97b628ef4e19736ba9ad4f6de8ddcf1e464c0d299cb939": {
       "cid": "blake3-512:23a6831a92c751c6137d205dae6e47fdf52c7bc1ebddf4a922ba7a2e558e5e91b22584900d70e2a58b97b628ef4e19736ba9ad4f6de8ddcf1e464c0d299cb939",
       "kind": "algorithm",

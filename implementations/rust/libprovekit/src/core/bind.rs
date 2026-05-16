@@ -12,11 +12,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use thiserror::Error;
 
+use crate::proofir_bridge::CatalogIndex;
+
 use super::primitives::address;
 use super::traits::{Kit, KitError};
 use super::types::{
     memento_from_parts, Cid, Contract, Dialect, DomainClaim, DomainKind, Input, Term, Verdict,
 };
+
+const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
+const CONCEPT_BIND_RESULT_CID: &str = "blake3-512:22dcd7895fd7abee9d9f34893b5ab9513b4801c0244a64e7a8c5180bba313f3b116d045b0aa3377f39bd892e020a1bd99d4bc60547b11fd7131fbe2f7e33dd75";
+const CONCEPT_OP_APPLICATION: &str = "concept:op-application";
+const CONCEPT_SEQ: &str = "concept:seq";
 
 /// Options for the substrate bind pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,14 +60,13 @@ impl BindKit {
         };
         let term_json = term_json_from_term(term)?;
         let named = bind_term_document(term_json, &self.options)?;
-        let named_value = serde_json::to_value(&named)
-            .map_err(|error| BindError::Failed(format!("serialize named term JSON: {error}")))?;
         let named_cid = named_term_document_cid(&named)?;
-        let payload = Term::Const {
-            value: named_value.clone(),
-            sort: primitive_sort("NamedTermDocument"),
-        };
-        let contract = bind_response_contract(&named_value, &named_cid);
+        let payload = bind_result_payload(term.clone(), &named)?;
+        let payload_value = serde_json::to_value(&payload).map_err(|error| {
+            BindError::Failed(format!("serialize bind result payload: {error}"))
+        })?;
+        let payload_cid = address(&payload);
+        let contract = bind_response_contract(&payload_value, &payload_cid);
 
         Ok(DomainClaim {
             domain: DomainKind::Other("bind".to_string()),
@@ -68,7 +74,7 @@ impl BindKit {
             artifacts: vec![named_cid.clone()],
             from: vec![address(term)],
             premises: vec![],
-            to: named_cid,
+            to: payload_cid,
             witness: None,
             payload: Some(payload),
             verdict: Verdict::Unresolved,
@@ -304,6 +310,41 @@ pub fn named_term_document_cid(named: &NamedTermDocument) -> Result<Cid, BindErr
     Cid::try_from(cid).map_err(|error| BindError::Failed(error.to_string()))
 }
 
+pub fn concept_bind_result_cid() -> Cid {
+    Cid::try_from(CONCEPT_BIND_RESULT_CID).expect("concept:bind-result CID is pinned")
+}
+
+pub fn bind_result_payload(
+    original_term: Term,
+    named: &NamedTermDocument,
+) -> Result<Term, BindError> {
+    let catalog = ConceptOpCatalog::load()?;
+    let named_form_binding = named_term_document_op_tree(named, &catalog)?;
+    Ok(Term::Op {
+        op_cid: concept_bind_result_cid(),
+        name: CONCEPT_BIND_RESULT.to_string(),
+        args: vec![original_term, named_form_binding],
+    })
+}
+
+pub fn named_term_document_from_bind_payload(
+    payload: &Term,
+) -> Result<NamedTermDocument, BindError> {
+    match payload {
+        Term::Const { value, .. } => serde_json::from_value(value.clone())
+            .map_err(|error| BindError::Failed(format!("parse named term JSON: {error}"))),
+        Term::Op { name, args, .. } if name == CONCEPT_BIND_RESULT => {
+            let named_form_binding = args.get(1).ok_or_else(|| {
+                BindError::Failed("bind-result payload missing named form binding".to_string())
+            })?;
+            named_term_document_from_op_tree(named_form_binding)
+        }
+        _ => Err(BindError::Failed(
+            "bind payload is neither named-term JSON nor bind-result op tree".to_string(),
+        )),
+    }
+}
+
 fn term_json_from_term(term: &Term) -> Result<&Json, BindError> {
     match term {
         Term::Const { value, .. } => Ok(value),
@@ -313,7 +354,7 @@ fn term_json_from_term(term: &Term) -> Result<&Json, BindError> {
     }
 }
 
-fn bind_response_contract(named: &Json, named_cid: &Cid) -> Contract {
+fn bind_response_contract(payload: &Json, payload_cid: &Cid) -> Contract {
     let pre = IrFormula::Atomic {
         name: "true".to_string(),
         args: vec![],
@@ -325,20 +366,20 @@ fn bind_response_contract(named: &Json, named_cid: &Cid) -> Contract {
                 name: "result".to_string(),
             },
             IrTerm::Const {
-                value: named.clone(),
-                sort: primitive_sort("NamedTermDocument"),
+                value: payload.clone(),
+                sort: primitive_sort("Term"),
             },
         ],
     };
 
     memento_from_parts(
-        "bind::default::named-term-document".to_string(),
+        "bind::default::bind-result-op-tree".to_string(),
         vec!["term".to_string()],
         vec![primitive_sort("LiftPluginResponse")],
-        primitive_sort("NamedTermDocument"),
+        primitive_sort("Term"),
         pre,
         post,
-        Some(named_cid.as_str().to_string()),
+        Some(payload_cid.as_str().to_string()),
     )
 }
 
@@ -608,6 +649,293 @@ fn named_witness(role: &str, predicate_text: &str, source_kind: &str) -> NamedWi
         role: role.to_string(),
         source_kind: source_kind.to_string(),
     }
+}
+
+struct ConceptOpCatalog {
+    index: CatalogIndex,
+}
+
+impl ConceptOpCatalog {
+    fn load() -> Result<Self, BindError> {
+        let root = find_concept_shapes_root().ok_or_else(|| {
+            BindError::Failed("concept-shapes catalog root not found".to_string())
+        })?;
+        let index = CatalogIndex::from_catalog_root(root.join("catalog"))
+            .map_err(|error| BindError::Failed(format!("load concept-shapes catalog: {error}")))?;
+        Ok(Self { index })
+    }
+
+    fn required_cid(&self, name: &str) -> Result<Cid, BindError> {
+        self.cid(name).ok_or_else(|| {
+            BindError::Failed(format!(
+                "concept op `{name}` missing from concept-shapes catalog"
+            ))
+        })
+    }
+
+    fn cid(&self, name: &str) -> Option<Cid> {
+        self.index
+            .op_definition_cid(name)
+            .and_then(|cid| Cid::try_from(cid).ok())
+    }
+
+    fn resolved_name_and_cid(&self, name: &str) -> Result<(String, Cid), BindError> {
+        if let Some(cid) = self.cid(name) {
+            return Ok((name.to_string(), cid));
+        }
+        if !name.starts_with("concept:") {
+            let concept_name = format!("concept:{name}");
+            if let Some(cid) = self.cid(&concept_name) {
+                return Ok((concept_name, cid));
+            }
+        }
+        Ok((
+            CONCEPT_OP_APPLICATION.to_string(),
+            self.required_cid(CONCEPT_OP_APPLICATION)?,
+        ))
+    }
+}
+
+fn named_term_document_op_tree(
+    named: &NamedTermDocument,
+    catalog: &ConceptOpCatalog,
+) -> Result<Term, BindError> {
+    let mut terms = named
+        .terms
+        .iter()
+        .enumerate()
+        .map(|(idx, term)| named_term_op_tree(named, term, catalog, vec![idx]))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    match terms.len() {
+        0 => Ok(Term::Op {
+            op_cid: catalog.required_cid(CONCEPT_OP_APPLICATION)?,
+            name: CONCEPT_OP_APPLICATION.to_string(),
+            args: vec![document_metadata_term(named)?],
+        }),
+        1 => Ok(terms.remove(0)),
+        _ => {
+            let mut args = vec![document_metadata_term(named)?];
+            args.extend(terms);
+            Ok(Term::Op {
+                op_cid: catalog.required_cid(CONCEPT_SEQ)?,
+                name: CONCEPT_SEQ.to_string(),
+                args,
+            })
+        }
+    }
+}
+
+fn named_term_op_tree(
+    document: &NamedTermDocument,
+    term: &NamedTerm,
+    catalog: &ConceptOpCatalog,
+    term_position: Vec<usize>,
+) -> Result<Term, BindError> {
+    if let Some(tree) = &term.named_term_tree {
+        return named_tree_op_tree(document, term, tree, catalog, term_position);
+    }
+    let (resolved_name, op_cid) = catalog.resolved_name_and_cid(CONCEPT_OP_APPLICATION)?;
+    let args_cid = term_args_cid(&[])?;
+    let metadata = named_term_citation_term(
+        document,
+        term,
+        None,
+        &resolved_name,
+        &op_cid,
+        &term_position,
+        &args_cid,
+    )?;
+    Ok(Term::Op {
+        op_cid,
+        name: resolved_name,
+        args: vec![metadata],
+    })
+}
+
+fn named_tree_op_tree(
+    document: &NamedTermDocument,
+    term: &NamedTerm,
+    tree: &NamedTermTree,
+    catalog: &ConceptOpCatalog,
+    term_position: Vec<usize>,
+) -> Result<Term, BindError> {
+    let (resolved_name, op_cid) = catalog.resolved_name_and_cid(&tree.concept_name)?;
+    let children = tree
+        .args
+        .iter()
+        .enumerate()
+        .map(|(idx, child)| {
+            let mut child_position = term_position.clone();
+            child_position.push(idx);
+            named_tree_op_tree(document, term, child, catalog, child_position)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let args_cid = term_args_cid(&children)?;
+    let metadata = named_term_citation_term(
+        document,
+        term,
+        Some(tree),
+        &resolved_name,
+        &op_cid,
+        &term_position,
+        &args_cid,
+    )?;
+    let mut args = Vec::with_capacity(children.len() + 1);
+    args.push(metadata);
+    args.extend(children);
+    Ok(Term::Op {
+        op_cid,
+        name: resolved_name,
+        args,
+    })
+}
+
+fn term_args_cid(args: &[Term]) -> Result<String, BindError> {
+    let value = serde_json::to_value(args)
+        .map_err(|error| BindError::Failed(format!("serialize term args: {error}")))?;
+    crate::canonical::json_cid(&value).map_err(|error| BindError::Failed(error.to_string()))
+}
+
+fn document_metadata_term(named: &NamedTermDocument) -> Result<Term, BindError> {
+    Ok(Term::Const {
+        value: document_metadata_value(named)?,
+        sort: primitive_sort("NamedTermDocumentMetadata"),
+    })
+}
+
+fn named_term_citation_term(
+    document: &NamedTermDocument,
+    term: &NamedTerm,
+    tree: Option<&NamedTermTree>,
+    resolved_name: &str,
+    op_cid: &Cid,
+    term_position: &[usize],
+    args_cid: &str,
+) -> Result<Term, BindError> {
+    let citation_kind = if term_position.len() == 1 {
+        "named-term-citation"
+    } else {
+        "concept-citation"
+    };
+    let mut value = json!({
+        "kind": citation_kind,
+        "argsCid": args_cid,
+        "conceptCid": op_cid.as_str(),
+        "resolvedConceptName": resolved_name,
+        "termPosition": term_position,
+    });
+    if citation_kind == "named-term-citation" {
+        value["term"] = serde_json::to_value(term).map_err(|error| {
+            BindError::Failed(format!("serialize named term citation: {error}"))
+        })?;
+        value["document"] = document_metadata_value(document)?;
+    }
+    if let Some(tree) = tree {
+        value["conceptName"] = Json::String(tree.concept_name.clone());
+        value["operationKind"] = Json::String(tree.operation_kind.clone());
+        value["shapeCid"] = Json::String(tree.shape_cid.clone());
+    } else {
+        value["conceptName"] = Json::String(term.concept_name.clone());
+        value["operationKind"] = Json::String("op-application".to_string());
+        value["shapeCid"] = Json::String(term.term_shape_cid.clone());
+    }
+    Ok(Term::Const {
+        value,
+        sort: primitive_sort("ConceptCitation"),
+    })
+}
+
+fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError> {
+    Ok(json!({
+        "kind": named.kind.clone(),
+        "promotionDecisionMementos": serde_json::to_value(&named.promotion_decision_mementos)
+            .map_err(|error| BindError::Failed(format!("serialize promotion decisions: {error}")))?,
+        "schemaVersion": named.schema_version.clone(),
+        "sourceLanguage": named.source_language.clone(),
+        "workspaceRoot": named.workspace_root.clone(),
+    }))
+}
+
+fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, BindError> {
+    let mut citations = Vec::new();
+    collect_named_term_citations(term, &mut citations);
+    citations.sort_by(|left, right| left.0.cmp(&right.0));
+    let first = citations.first().ok_or_else(|| {
+        BindError::Failed("bind-result op tree has no named-term citation".to_string())
+    })?;
+    let document = first.1.get("document").ok_or_else(|| {
+        BindError::Failed("named-term citation missing document metadata".to_string())
+    })?;
+    let promotion_decision_mementos = document
+        .get("promotionDecisionMementos")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| BindError::Failed(format!("parse promotion decisions: {error}")))?
+        .unwrap_or_default();
+    let terms = citations
+        .into_iter()
+        .map(|(_, citation)| {
+            let value = citation
+                .get("term")
+                .cloned()
+                .ok_or_else(|| BindError::Failed("named-term citation missing term".to_string()))?;
+            serde_json::from_value::<NamedTerm>(value)
+                .map_err(|error| BindError::Failed(format!("parse named term citation: {error}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(NamedTermDocument {
+        kind: document
+            .get("kind")
+            .and_then(Json::as_str)
+            .unwrap_or("named-term-document")
+            .to_string(),
+        promotion_decision_mementos,
+        schema_version: document
+            .get("schemaVersion")
+            .and_then(Json::as_str)
+            .unwrap_or("1")
+            .to_string(),
+        source_language: document
+            .get("sourceLanguage")
+            .and_then(Json::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        terms,
+        workspace_root: document
+            .get("workspaceRoot")
+            .and_then(Json::as_str)
+            .map(str::to_string),
+    })
+}
+
+fn collect_named_term_citations<'a>(term: &'a Term, out: &mut Vec<(Vec<usize>, &'a Json)>) {
+    let Term::Op { args, .. } = term else {
+        return;
+    };
+    if let Some(Term::Const { value, .. }) = args.first() {
+        if value.get("kind").and_then(Json::as_str) == Some("named-term-citation") {
+            out.push((term_position_from_citation(value), value));
+        }
+    }
+    for arg in args {
+        collect_named_term_citations(arg, out);
+    }
+}
+
+fn term_position_from_citation(value: &Json) -> Vec<usize> {
+    value
+        .get("termPosition")
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Json::as_u64)
+                .map(|value| value as usize)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn site_cid(entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<String, BindError> {

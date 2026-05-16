@@ -3,10 +3,9 @@
 // `provekit bind`: substrate-only algebra pass.
 //
 // Input is ProofIR term JSON, normally the `ir-document` emitted by
-// `provekit lift`. Output is JCS-canonical named-term JSON containing the
-// clustered names plus PromotionDecisionMementos. This command is now a thin
-// adapter over the core BindKit and Path executor; migration mode remains on
-// the legacy rewrite path.
+// `provekit lift`. Output is the JCS-canonical bind-result Term::Op payload.
+// This command is now a thin adapter over the core BindKit and Path executor;
+// migration mode remains on the legacy rewrite path.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -151,18 +150,18 @@ pub fn run(args: BindArgs) -> u8 {
             return EXIT_USER_ERROR;
         }
     };
-    let named = match run_bind_path(term_json, &args) {
-        Ok(named) => named,
+    let payload = match run_bind_path(term_json, &args) {
+        Ok(payload) => payload,
         Err(error) => {
             eprintln!("{}: {error}", "error".red().bold());
             return EXIT_USER_ERROR;
         }
     };
-    let jcs = match libprovekit::canonical::json_jcs(&named) {
+    let jcs = match libprovekit::canonical::json_jcs(&payload) {
         Ok(jcs) => jcs,
         Err(error) => {
             eprintln!(
-                "{}: canonicalize named term JSON: {error}",
+                "{}: canonicalize bind result payload: {error}",
                 "error".red().bold()
             );
             return EXIT_USER_ERROR;
@@ -178,7 +177,7 @@ pub fn run(args: BindArgs) -> u8 {
             .as_ref()
             .is_some_and(|path| path.as_os_str() != "-")
     {
-        eprintln!("bind: wrote named-term JSON");
+        eprintln!("bind: wrote bind-result Term payload");
     }
     EXIT_OK
 }
@@ -219,10 +218,8 @@ fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError>
         .as_ref()
         .ok_or_else(|| BindCliError::Failed("bind claim missing term payload".to_string()))?;
     match payload {
-        Term::Const { value, .. } => Ok(value.clone()),
-        _ => Err(BindCliError::Failed(
-            "bind claim payload was not a named term document".to_string(),
-        )),
+        payload => serde_json::to_value(&payload)
+            .map_err(|error| BindCliError::Failed(format!("serialize bind payload: {error}"))),
     }
 }
 
