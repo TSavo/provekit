@@ -14,7 +14,7 @@
 //! Canonical `NonCarrier` reasons:
 //! - LiftKit: `"lifts source bytes to DomainClaim; no target source produced"`
 //! - BindKit: `"transforms Input::Term to NamedTerm DomainClaim; emits no target source"`
-//! - ProveKit (future): `"discharges claims; no source emission"`
+//! - ProveKit: `"discharges claims via chain-integrity verification; no source emission"`
 //!
 //! Sequencing is bidirectional. If this substrate PR lands before per-kit PRs,
 //! each kit PR adds a one-line `ConformanceDeclaration::Carrier { ... }` or
@@ -35,7 +35,8 @@ use thiserror::Error;
 use crate::compose::CCP_VERSION;
 
 use super::primitives::address;
-use super::traits::{InputCatalog, Kit, KitError};
+use super::prove_kit::ProveKit;
+use super::traits::{Catalog, InputCatalog, Kit, KitError};
 use super::types::{
     Cid, ConformanceDeclaration, DomainClaim, Input, PathAlgebra, PathError, Term, Verb,
 };
@@ -80,6 +81,15 @@ impl KitRegistry {
         self.kits
             .get(name)
             .map(|registered| &registered.conformance)
+    }
+
+    /// Register the built-in ProveKit under the public `prove` selector.
+    pub fn register_prove(&mut self, origin_cid: Cid, catalog: impl Catalog + 'static) {
+        self.register(
+            "prove",
+            ProveKit::new(origin_cid, catalog),
+            ProveKit::CONFORMANCE,
+        );
     }
 }
 

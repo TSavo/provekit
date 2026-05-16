@@ -23,6 +23,7 @@ pub mod lift_plugin;
 pub mod lower_plugin;
 pub mod path_executor;
 pub mod primitives;
+pub mod prove_kit;
 pub mod stubs;
 pub mod traits;
 pub mod types;
@@ -42,16 +43,18 @@ pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecu
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };
+pub use prove_kit::{walk_premises_to_root, ChainBreak, ProveKit};
 pub use stubs::{CKit, FunctionContractDomain, NoopPortfolio, RustKit};
 pub use traits::{
     Canonical, Catalog, CoreError, Domain, DomainError, HashMapCatalog, HashMapInputCatalog,
     InputCatalog, Kit, KitError, Portfolio,
 };
 pub use types::{
-    ArityShape, AritySlot, Attestation, Boundary, Cid, CidError, ConformanceDeclaration, Contract,
-    Dialect, DomainClaim, DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path,
-    PathAlgebra, PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial,
-    Refutation, SignatureCatalogError, SlotEvaluation, SlotSort, Term, Truth, Verb, Verdict,
+    ArityShape, AritySlot, Attestation, Boundary, ChainIntegrityFailureWitness,
+    ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect, DomainClaim,
+    DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path, PathAlgebra,
+    PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial, Refutation,
+    SignatureCatalogError, SlotEvaluation, SlotSort, Term, Truth, Verb, Verdict,
     VerdictCoercionError, Witness,
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
