@@ -53,7 +53,7 @@ pub fn execute_path(
             .get(&step.kit)
             .ok_or_else(|| PathExecutionError::Refused(Box::new(missing_kit_refusal(step))))?;
         let step_input = step_input(step, inputs, &materialized_inputs)?;
-        let claim = match step.verb {
+        let mut claim = match step.verb {
             Verb::Transform => kit
                 .transform(&step_input)
                 .map_err(PathExecutionError::Kit)?,
@@ -67,6 +67,7 @@ pub fn execute_path(
                 kit.prove(claim).map_err(|error| prove_error(step, error))?
             }
         };
+        claim.premises.extend(step_premises(step, &claims_by_step)?);
         if let Some(term) = claim.payload.clone() {
             materialized_inputs.insert(claim.to.clone(), Input::Term(term));
         }
@@ -110,6 +111,26 @@ fn step_input(
     Err(PathExecutionError::Refused(Box::new(
         missing_input_refusal(step, cid),
     )))
+}
+
+fn step_premises(
+    step: &PathAlgebra,
+    claims_by_step: &BTreeMap<String, DomainClaim>,
+) -> Result<Vec<Cid>, PathExecutionError> {
+    step.depends_on
+        .iter()
+        .map(|dependency| {
+            claims_by_step
+                .get(dependency)
+                .map(DomainClaim::cid)
+                .ok_or_else(|| {
+                    PathExecutionError::UnsupportedInput(format!(
+                        "path step `{}` dependency `{dependency}` did not execute",
+                        step.name
+                    ))
+                })
+        })
+        .collect()
 }
 
 /// Errors from path execution.

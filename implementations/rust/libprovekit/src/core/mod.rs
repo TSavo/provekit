@@ -18,6 +18,7 @@
 //! composition obligations. `commit` is `compose(parent, change)` followed by
 //! `sign`.
 
+pub mod bind;
 pub mod lift_plugin;
 pub mod lower_plugin;
 pub mod path_executor;
@@ -27,6 +28,10 @@ pub mod traits;
 pub mod types;
 pub mod verbs;
 
+pub use bind::{
+    bind_term_document, named_term_document_cid, BindContractWitness, BindError, BindKit,
+    BindLiftEntry, BindOptions, NamedTerm, NamedTermDocument, NamedTermTree, NamedWitness,
+};
 pub use lift_plugin::{LiftKit, LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
 pub use lower_plugin::{
     LowerKit, RealizeContractPayload, RealizeContractWitness, RealizeRequest, RealizeTransport,
