@@ -90,28 +90,31 @@ The expected outcome: this census surfaces all remaining integration gaps in par
 - Status: UNTESTED. Probably depends on the verdict-propagation architectural question below.
 - Discrimination test: deliberately break one premise CID in an intermediate claim (e.g., reference a non-existent CID). ProveKit refuses with `Verdict::Refuted` + the correct `ChainBreak::PremiseNotInCatalog`.
 
-### Seam 7 (the verdict-propagation question)
+### Seam 7 (the verdict-propagation question, resolved)
 
-This is the architectural question this census exists to surface, not the gap of A7-shape.
+**Resolved option β. The shipped behavior is already correct. A8 is documentation-only.**
 
-`walk_premises_to_root` per Path A (#1067) has a `NotProved { claim_cid, verdict }` variant: "a claim along the chain has verdict != Proved." Per A2 (#1066), only ProveKit emits `Verdict::Proved`; the other kits (lift, bind, lower, relift, rebind, lower-back) return claim unchanged from their default `prove()` impls, which means their claims have whatever default verdict the substrate emits at transform time (likely `Verdict::Pending` or `Verdict::Inconclusive`).
+The original draft of this section described a `NotProved { claim_cid, verdict }` variant as if it had shipped in `walk_premises_to_root`. That was incorrect. Path A (#1067) shipped four `ChainBreak` variants: `CycleDetected`, `PremiseNotInCatalog`, `OriginUnreachable`, `DeserializationFailed`. There is no `NotProved` variant. ProveKit's `prove()` at `prove_kit.rs:74-89` calls `walk_premises_to_root_with_failure_steps` and stamps `Verdict::Proved` on `Ok`, `Verdict::Refuted` on `Err`. No verdict check on intermediate claims happens anywhere in shipped code.
 
-**The question:** does `walk_premises_to_root` require Proved at EVERY claim in the chain, or only at the TERMINAL claim?
+The current behavior IS already option β: chain-walk proves structural chain integrity (signatures, premise CID resolution, no cycles, no orphan-from CIDs, origin reachability), not semantic correctness of intermediate kits. Intermediate claims have whatever verdict their producers set; chain-walk does not inspect their verdicts.
 
-- If the strict interpretation shipped: `walk_premises_to_root` fires `NotProved` on the lift claim (verdict != Proved). Chain-walk always fails on a 7-step path. ProveKit can never emit Verdict::Proved because the chain-walk inside its prove() invocation always returns Err.
-- If the lenient interpretation shipped (only terminal must be Proved): chain-walk traverses intermediate claims regardless of their verdict; only the terminal claim (the prove step's input) must be Proved before ProveKit returns its own Proved verdict. But that's circular: ProveKit's prove() runs walk_premises_to_root on its OWN input, which is the claim BEFORE it has set Verdict::Proved.
+The architect ruling locks this:
 
-Three architectures that resolve this:
+- **(α) is the substrate's lying-shape applied to verdicts.** LiftKit stamping `Proved` on "I successfully transformed source bytes" claims something LiftKit did not prove. Refused on first principles.
+- **(β) is the shipped behavior and the architecturally correct frame.** Chain-walk's job is to verify structural integrity, not to assert that every prior kit was somehow "proven." Intermediate kits transform; they do not prove. The prove step's claim IS Proved because it ran the chain-walk and it succeeded.
+- **(γ) adds a `Verdict::Transformed` substrate API surface for a problem β already resolves with documentation.** Premature commitment.
 
-- **(α) Strict + intermediate kits emit Proved.** Every kit's `transform()` produces a `DomainClaim` with `verdict: Verdict::Proved` for its own transform output. The kit treats "I successfully ran" as a proof of its own contract. Chain-walk requires Proved at every step. Simple but conflates "transform succeeded" with "semantic correctness." Probably wrong under Supra omnia rectum because the substrate's first principle says we don't claim more than we can prove, and "transform succeeded" is not a proof of correctness.
-- **(β) Lenient verdict policy.** Chain-walk's `NotProved` variant fires only on the terminal claim (the one being proved), not on intermediate claims. Intermediate claims have whatever verdict; chain-walk only checks structural integrity (signatures, premise CID resolution, no cycles, no orphan from CIDs). Honest about what the chain-walk proves: the chain is well-formed, signed, and complete; whether intermediate steps are semantically correct is a different question that a richer prove kit could answer later.
-- **(γ) New intermediate verdict.** Introduce `Verdict::Transformed` (or similar) for intermediate transform outputs. Chain-walk accepts `Transformed` at intermediate positions and requires `Proved` only at the terminal. Three-state verdict gives the substrate richer vocabulary for proof state.
+The risk that remains is drift: a future contributor could add a `NotProved` variant or a verdict check on intermediate claims under the well-intentioned-but-wrong belief that "chain integrity" should include "every step's verdict." That drift would move shipped behavior from β toward α. A8 exists to lock the language and prevent that drift.
 
-**My architect recommendation:** option (β). The chain-walk's job at the prove step is to verify that THIS prove invocation's premise chain is structurally complete and signature-verifiable, not that every prior kit's transform was somehow "proven." The substrate's first principle is upheld by being precise about what chain-walk proves: it proves structural chain integrity, not semantic correctness of intermediate kits. The intermediate kits don't claim Proved because they didn't prove anything; they transformed. The prove step's claim IS Proved because it ran the chain-walk and it succeeded.
+**A8 scope (documentation-only):**
 
-The change required if (β) is the call: relax `walk_premises_to_root`'s `NotProved` variant. Either remove it entirely (no verdict check on visited claims), or scope it to "the root claim being verified must be Proved" (which is a tautology that resolves to: ProveKit's prove() returns Proved iff its OWN claim's chain walks). Or rename `NotProved` to `NotProvable` or `ChainWalkRefused` and apply only to the terminal.
+1. Doc-comment on `walks.rs::walk_premises_to_root` explicitly stating the lenient policy. Locked language: "structural chain integrity" and "verdict semantics on intermediate claims are out of scope."
+2. Module-level note preventing future contributors from adding a `NotProved` / verdict-check variant to `ChainBreak`. The doc-comment is the antibody.
+3. One regression test: `walk_premises_to_root` over a chain where intermediate claims have `Verdict::Pending` / `Verdict::Inconclusive`. Assertion: returns `Ok`. Catches future α-shape drift.
 
-**Filed as the verdict-propagation question.** This is a separate prereq from A7. Should be filed and dispatched alongside A7 since both block #1068.
+Scope: ~15-30 LOC + 1 test. Smaller than A7. Does NOT block #1068; can ship in parallel with A7 or after Path B if optimizing for throughput.
+
+**Filed as A8 (issue number TBD).** Downgraded from "blocking prereq" to "documentation lock that should land before the composition test census so future census readers do not re-litigate the question."
 
 ## Composition test plan
 
@@ -133,8 +136,8 @@ The architectural payoff: the composition tests are findable and runnable indepe
 The honest queue, in dispatch order:
 
 1. **A7 (#1069) lands.** Closes seam 2 / seam 5.
-2. **Verdict-propagation question gets an architect ruling** and a filed prereq (call it A8). Closes the architectural ambiguity in seam 7.
-3. **Composition test census PR dispatches.** Files the composition tests for seams 1, 3, 4, 6, 7 against real toolchains in the slow-test lane. SURFACES any remaining gaps in parallel.
+2. **A8 lands** (documentation-only lock per the seam 7 resolution). Ships in parallel with A7 or after Path B; does NOT block #1068.
+3. **Composition test census PR dispatches.** Files the composition tests for seams 1, 3, 4, 6 against real toolchains in the slow-test lane. SURFACES any remaining gaps in parallel.
 4. **Any gaps surfaced by the census** become small prereqs (A9, A10, etc. if needed). Each is a producer-consumer-seam-shaped fix, but now they're visible upfront rather than serially.
 5. **#1068 Path B re-dispatches** against a clean composing main. The exhibit becomes a thin smoke test on top of empirically-proven seams.
 6. **#1024 ships** when the exhibit's six binding assertions pass green on every PR.
@@ -153,6 +156,8 @@ The discriminator-tests-are-spec discipline from A2's bug becomes part of the pr
 - Regression tests: the existing output shape's consumers still work after the producer change.
 
 This is the spec discipline that was missing from A3. Locking it in now closes the failure mode that has produced #1043, #1044, A7, and (probably) at least one more A-shaped gap in the remaining unknown seams.
+
+**Draft-must-grep-verify discipline.** Adjacent failure mode caught while writing this census: the original draft of seam 7 named a `NotProved` ChainBreak variant as if it had shipped, when only four variants actually shipped on main. Every architect text that names shipped behavior must verify the shipped behavior at write time, not at commit time. Same shape as the deletion-rule grep, the em-dash grep, the test-partition-is-spec discipline. Add to the architectural rulings memory work alongside the other disciplines.
 
 ## Status snapshot (2026-05-16, this census)
 
