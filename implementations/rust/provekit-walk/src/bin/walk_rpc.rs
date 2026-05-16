@@ -1285,7 +1285,11 @@ fn term_shape_for_fn(item_fn: &syn::ItemFn) -> std::sync::Arc<CValue> {
 fn shape_of_stmt(stmt: &syn::Stmt) -> std::sync::Arc<CValue> {
     match stmt {
         syn::Stmt::Expr(e, _) => shape_of_expr(e),
-        syn::Stmt::Local(_) => CValue::object([("kind", CValue::string("let"))]),
+        syn::Stmt::Local(local) => local
+            .init
+            .as_ref()
+            .map(|init| shape_of_expr(&init.expr))
+            .unwrap_or_else(|| CValue::object([("kind", CValue::string("let"))])),
         _ => CValue::object([("kind", CValue::string("opaque"))]),
     }
 }
@@ -1343,6 +1347,12 @@ fn shape_of_expr(expr: &syn::Expr) -> std::sync::Arc<CValue> {
             CValue::object([("kind", CValue::string("exit"))])
         }
         syn::Expr::Assign(_) => CValue::object([("kind", CValue::string("assign"))]),
+        syn::Expr::Lit(_) | syn::Expr::Path(_) => non_operation_shape(),
+        syn::Expr::Unary(e)
+            if matches!(&e.op, syn::UnOp::Neg(_)) && matches!(&*e.expr, syn::Expr::Lit(_)) =>
+        {
+            non_operation_shape()
+        }
         syn::Expr::Binary(e) => {
             let op = match &e.op {
                 syn::BinOp::Add(_) | syn::BinOp::AddAssign(_) => "+",
@@ -1379,6 +1389,10 @@ fn shape_of_expr(expr: &syn::Expr) -> std::sync::Arc<CValue> {
     }
 }
 
+fn non_operation_shape() -> std::sync::Arc<CValue> {
+    CValue::object(Vec::<(&str, std::sync::Arc<CValue>)>::new())
+}
+
 /// Render a canonicalizer `Value` as `serde_json::Value` for the RPC response.
 fn cvalue_to_json(v: &CValue) -> Value {
     let s = encode_jcs(v);
@@ -1388,6 +1402,7 @@ fn cvalue_to_json(v: &CValue) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libprovekit::core::{bind_term_document, BindOptions, NamedTermTree};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1430,6 +1445,79 @@ pub fn add(left: i64, right: i64) -> i64 {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_names_operator_atom_at_let_rhs() {
+        let tree = named_tree_for_source(
+            "let_rhs_operator",
+            r#"
+pub fn let_rhs_operator(left: i64, right: i64) -> i64 {
+    let sum = left + right;
+    sum
+}
+"#,
+        );
+
+        assert_named_operator(&tree, "add", "concept:add");
+        assert_no_unnamed_operators(&tree);
+    }
+
+    #[test]
+    fn bind_lift_keeps_top_level_operator_atom_named() {
+        let tree = named_tree_for_source(
+            "top_level_operator",
+            r#"
+pub fn top_level_operator(left: i64, right: i64) -> i64 {
+    left + right
+}
+"#,
+        );
+
+        assert_named_operator(&tree, "add", "concept:add");
+    }
+
+    #[test]
+    fn bind_lift_names_operator_atom_in_nested_conditional_else() {
+        let tree = named_tree_for_source(
+            "nested_else_operator",
+            r#"
+pub fn nested_else_operator(left: i64, right: i64) -> i64 {
+    if left == 0 {
+        -1
+    } else {
+        if right < 0 {
+            -1
+        } else {
+            left * right
+        }
+    }
+}
+"#,
+        );
+
+        assert_named_operator(&tree, "mul", "concept:mul");
+    }
+
+    #[test]
+    fn bind_lift_names_safe_divide_nested_operator_atoms() {
+        let tree = named_tree_for_source(
+            "safe_divide_then_double",
+            r#"
+pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
+    if denom == 0 {
+        -1
+    } else {
+        let q = num / denom;
+        if q < 0 { -1 } else { q * 2 }
+    }
+}
+"#,
+        );
+
+        assert_named_operator(&tree, "div", "concept:div");
+        assert_named_operator(&tree, "mul", "concept:mul");
+        assert_no_unnamed_operators(&tree);
     }
 
     #[test]
@@ -1699,5 +1787,61 @@ pub fn fetch_status(url: &str) -> i64 {
         let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
         fs::create_dir_all(&root).expect("create temp workspace");
         root
+    }
+
+    fn named_tree_for_source(fn_name: &str, source: &str) -> NamedTermTree {
+        let root = temp_workspace(fn_name);
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), source).expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+        let named = bind_term_document(
+            &out,
+            &BindOptions {
+                lang: "rust".to_string(),
+            },
+        )
+        .expect("bind term document");
+        let tree = named
+            .terms
+            .iter()
+            .find(|term| term.function == fn_name)
+            .and_then(|term| term.named_term_tree.clone())
+            .expect("named term tree");
+
+        let _ = fs::remove_dir_all(root);
+        tree
+    }
+
+    fn assert_named_operator(tree: &NamedTermTree, operation_kind: &str, concept_name: &str) {
+        assert!(
+            named_tree_contains(tree, operation_kind, concept_name),
+            "expected named operator {operation_kind}/{concept_name} in {tree:#?}"
+        );
+    }
+
+    fn named_tree_contains(tree: &NamedTermTree, operation_kind: &str, concept_name: &str) -> bool {
+        (tree.operation_kind == operation_kind && tree.concept_name == concept_name)
+            || tree
+                .args
+                .iter()
+                .any(|child| named_tree_contains(child, operation_kind, concept_name))
+    }
+
+    fn assert_no_unnamed_operators(tree: &NamedTermTree) {
+        assert!(
+            !named_tree_has_unnamed(tree),
+            "expected no unnamed operators in {tree:#?}"
+        );
+    }
+
+    fn named_tree_has_unnamed(tree: &NamedTermTree) -> bool {
+        tree.concept_name.starts_with("UNNAMED-CONCEPT-")
+            || tree.args.iter().any(named_tree_has_unnamed)
     }
 }
