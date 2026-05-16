@@ -28,6 +28,19 @@ CONTRACT_COMMENT_ROLE_MAP = {
 }
 
 
+class _ConceptCitationRefusal(Exception):
+    """Raised on substrate-identity contradiction (spec section 6 rows 7-8).
+    The surrounding relift refuses entirely; no IR entry is emitted
+    for the function whose source contained the contradiction."""
+
+    def __init__(self, diag_kind: str, rel_path: str, line_no: int, message: str):
+        super().__init__(message)
+        self.diag_kind = diag_kind
+        self.rel_path = rel_path
+        self.line_no = line_no
+        self.message = message
+
+
 @dataclass
 class BindLiftResult:
     ir: list[Json] = field(default_factory=list)
@@ -59,9 +72,19 @@ def lift_source(source: str, source_path: str) -> BindLiftResult:
     lines = source.splitlines()
     rel_path = source_path.replace(os.sep, "/")
     for info in collector.definitions:
-        result.ir.append(
-            _entry_for_function(info.node, rel_path, lines, result.diagnostics)
-        )
+        try:
+            result.ir.append(
+                _entry_for_function(info.node, rel_path, lines, result.diagnostics)
+            )
+        except _ConceptCitationRefusal as exc:
+            result.diagnostics.append(
+                {
+                    "kind": exc.diag_kind,
+                    "message": exc.message,
+                    "path": exc.rel_path,
+                    "line": exc.line_no,
+                }
+            )
     return result
 
 
@@ -671,7 +694,7 @@ def _concept_citation_witness(
             diagnostics,
             rel_path,
             line_no,
-            "concept-citation:operation-kind-mismatch",
+            "concept-citation:malformed-json",
             "missing operation_kind",
         )
         return None
@@ -783,23 +806,19 @@ def _concept_citation_witness(
             return None
         expected_shape_cid, expected_operation_kind = catalog_entry
         if expected_shape_cid != payload["shape_cid"]:
-            _concept_citation_diag(
-                diagnostics,
+            raise _ConceptCitationRefusal(
+                "concept-citation:shape-mismatch",
                 rel_path,
                 line_no,
-                "concept-citation:shape-mismatch",
                 "shape CID mismatch",
             )
-            return None
         if expected_operation_kind != operation_kind:
-            _concept_citation_diag(
-                diagnostics,
+            raise _ConceptCitationRefusal(
+                "concept-citation:operation-kind-mismatch",
                 rel_path,
                 line_no,
-                "concept-citation:operation-kind-mismatch",
                 "operation_kind mismatch",
             )
-            return None
 
     extension_fields = {
         "args_jcs_cid": payload["args_jcs_cid"],

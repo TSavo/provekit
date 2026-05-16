@@ -475,3 +475,100 @@ def test_python_realize_then_lift_keeps_contract_and_concept_site_cids() -> None
     assert witness["extension_fields"]["contract_cid"] == _cid("2")
     assert witness["extension_fields"]["local_contract_cid"] == _cid("2")
     assert witness["predicate"] == _formula_gte_x_zero()
+
+
+def test_concept_citation_shape_mismatch_refuses_surrounding_relift() -> None:
+    from provekit_lift_python_source.bind_lifter import _concept_shape_catalog
+
+    assert _concept_shape_catalog() is not None, (
+        "catalog must be present for this test to exercise row-7 path"
+    )
+
+    # shape_cid differs from what the catalog records for CONCEPT_SKIP_CID
+    payload, payload_cid = _concept_citation_payload({"shape_cid": _cid("8")})
+    bad_fn_source = (
+        "def good_fn(x: int) -> int:\n"
+        "    return x\n"
+        "\n"
+        "def bad_fn(x: object):\n"
+        "    " + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ") + "    pass\n"
+    )
+
+    result = lift_source(bad_fn_source, "pkg/foo.py")
+
+    # bad_fn must not produce an IR entry; good_fn must still produce one
+    fn_names = [entry["fn_name"] for entry in result.ir]
+    assert "good_fn" in fn_names
+    assert "bad_fn" not in fn_names
+    assert len(result.ir) == 1
+    assert "concept-citation:shape-mismatch" in _concept_diagnostics(result)
+
+
+def test_concept_citation_operation_kind_mismatch_refuses_surrounding_relift() -> None:
+    from provekit_lift_python_source.bind_lifter import _concept_shape_catalog
+
+    assert _concept_shape_catalog() is not None, (
+        "catalog must be present for this test to exercise row-8 path"
+    )
+
+    # operation_kind differs from what the catalog records for CONCEPT_SKIP_CID ("skip")
+    payload, payload_cid = _concept_citation_payload({"operation_kind": "not-skip"})
+    bad_fn_source = (
+        "def good_fn(x: int) -> int:\n"
+        "    return x\n"
+        "\n"
+        "def bad_fn(x: object):\n"
+        "    " + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ") + "    pass\n"
+    )
+
+    result = lift_source(bad_fn_source, "pkg/foo.py")
+
+    fn_names = [entry["fn_name"] for entry in result.ir]
+    assert "good_fn" in fn_names
+    assert "bad_fn" not in fn_names
+    assert len(result.ir) == 1
+    assert "concept-citation:operation-kind-mismatch" in _concept_diagnostics(result)
+
+
+def test_concept_citation_missing_operation_kind_field_tags_as_malformed_json() -> None:
+    # Build payload without operation_kind to trigger the row-1 (malformed-json) path
+    args = [{"kind": "var", "name": "x"}]
+    payload: dict = {
+        "args_jcs": args,
+        "args_jcs_cid": cid_of_json(args),
+        "artifact_kind": "provekit-concept-citation-comment-sugar",
+        "concept_cid": CONCEPT_SKIP_CID,
+        "concept_name": "concept:skip",
+        "concept_site_cid": _cid("a"),
+        "emitted_by": {
+            "kit_cid": _cid("b"),
+            "kit_id": "provekit-realize-python-core@0.1.0",
+            "kit_kind": "realize",
+            "target_language": "python",
+            "target_library_tag": "python",
+        },
+        "loss_record_cid": _cid("c"),
+        "policy_cid": _cid("d"),
+        "schema_version": "1",
+        "shape_cid": CONCEPT_SKIP_CID,
+        "sugar_dict_cid": _cid("e"),
+        "term_position": [0],
+        # operation_kind intentionally omitted
+    }
+    payload_cid = cid_of_json(payload)
+    bad_fn_source = (
+        "def good_fn(x: int) -> int:\n"
+        "    return x\n"
+        "\n"
+        "def bad_fn(x: object):\n"
+        "    " + _concept_comment_lines(payload, payload_cid).replace("\n", "\n    ") + "    pass\n"
+    )
+
+    result = lift_source(bad_fn_source, "pkg/foo.py")
+
+    # drop-and-continue: bad_fn still gets an IR entry, just with no citation
+    fn_names = [entry["fn_name"] for entry in result.ir]
+    assert "good_fn" in fn_names
+    assert "bad_fn" in fn_names
+    assert result.ir[1].get("concept_citations", []) == []
+    assert "concept-citation:malformed-json" in _concept_diagnostics(result)
