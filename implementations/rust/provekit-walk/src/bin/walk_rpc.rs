@@ -356,8 +356,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         for target in collect_bind_lift_targets(&file) {
             let item_fn = &target.item_fn;
             let fn_name = &target.fn_name;
-            let (attr_pre, attr_post) = extract_contract_attrs(&item_fn.attrs);
-            let concept_annotation = extract_concept_annotation(&src, &target.source_name);
             let term_shape = term_shape_for_fn(item_fn);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
             let param_names = fn_param_names(item_fn);
@@ -371,29 +369,18 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
 
             entries.push(json!({
                 "kind": "bind-lift-entry",
-                "fn_name": fn_name,
-                "attr_pre": attr_pre,
-                "attr_post": attr_post,
-                "concept_annotation": concept_annotation,
                 "param_names": param_names,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
                 "witnesses": witnesses,
             }));
 
-            for (index, callsite) in collect_bound_library_calls(item_fn, &library_bindings)
-                .into_iter()
-                .enumerate()
-            {
+            for callsite in collect_bound_library_calls(item_fn, &library_bindings) {
                 let term_shape =
                     concept_citation_shape(&callsite.pattern.concept_cid, &callsite.resolved_args);
                 let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
                 entries.push(json!({
                     "kind": "bind-lift-entry",
-                    "fn_name": format!("{fn_name}__bound_call_{}", index + 1),
-                    "attr_pre": Value::Null,
-                    "attr_post": Value::Null,
-                    "concept_annotation": concept_annotation_name(&callsite.pattern.concept_name),
                     "param_names": callsite.resolved_args,
                     "term_shape": cvalue_to_json(&term_shape),
                     "term_shape_cid": term_shape_cid,
@@ -521,7 +508,6 @@ struct LibraryBindingLookup {
 
 #[derive(Debug, Clone)]
 struct LibraryCallPattern {
-    concept_name: String,
     concept_cid: String,
     callee: String,
     min_params: Option<usize>,
@@ -601,7 +587,6 @@ impl LibraryBindingLookup {
                 for callee in infer_call_patterns_from_template(&entry.emission_template) {
                     matched += 1;
                     patterns.push(LibraryCallPattern {
-                        concept_name: concept_name.to_string(),
                         concept_cid: concept_cid.clone(),
                         callee,
                         min_params: entry.min_params,
@@ -874,13 +859,6 @@ fn concept_citation_shape(concept_cid: &str, resolved_args: &[String]) -> std::s
     ])
 }
 
-fn concept_annotation_name(concept_name: &str) -> String {
-    concept_name
-        .strip_prefix("concept:")
-        .unwrap_or(concept_name)
-        .to_string()
-}
-
 fn contract_witnesses_by_function_symbol(
     file: &syn::File,
     rel: &str,
@@ -1139,182 +1117,140 @@ fn normalize_ws(s: &str) -> String {
     out.trim().to_string()
 }
 
-fn extract_contract_attrs(attrs: &[syn::Attribute]) -> (Option<String>, Option<String>) {
-    let mut pre: Option<String> = None;
-    let mut post: Option<String> = None;
-    for attr in attrs {
-        if let Some(name) = attr.path().get_ident().map(|i| i.to_string()) {
-            if let syn::Meta::List(l) = &attr.meta {
-                let text = normalize_ws(&l.tokens.to_string());
-                match name.as_str() {
-                    "requires" if pre.is_none() => pre = Some(text),
-                    "ensures" if post.is_none() => post = Some(text),
-                    _ => {}
-                }
-            }
-        }
-        if attr.path().is_ident("cfg_attr") {
-            if let syn::Meta::List(l) = &attr.meta {
-                let tokens_str = l.tokens.to_string();
-                let rest = tokens_str
-                    .strip_prefix("any ()")
-                    .or_else(|| tokens_str.strip_prefix("any()"));
-                if let Some(rest) = rest {
-                    let rest = rest.trim().trim_start_matches(',').trim();
-                    parse_kind_body(rest, &mut pre, &mut post);
-                }
-            }
-        }
-    }
-    (pre, post)
-}
-
-fn parse_kind_body(s: &str, pre: &mut Option<String>, post: &mut Option<String>) {
-    for kind in ["requires", "ensures"] {
-        if let Some(rest) = s.strip_prefix(kind) {
-            let rest = rest.trim_start();
-            if rest.starts_with('(') && rest.ends_with(')') {
-                let body = normalize_ws(&rest[1..rest.len() - 1]);
-                match kind {
-                    "requires" if pre.is_none() => *pre = Some(body),
-                    "ensures" if post.is_none() => *post = Some(body),
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-fn extract_concept_annotation(src: &str, fn_name: &str) -> Option<String> {
-    let needle = format!("fn {fn_name}(");
-    let lines: Vec<&str> = src.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        if line.contains(&needle) {
-            let mut j = i;
-            let mut comment_annotation: Option<String> = None;
-            while j > 0 {
-                let prev = lines[j - 1].trim_start();
-                if let Some(tag) = extract_emitted_concept_tag(prev) {
-                    return Some(tag);
-                }
-                if let Some(rest) = prev.strip_prefix("// concept:") {
-                    if comment_annotation.is_none() {
-                        comment_annotation = normalize_concept_annotation(rest);
-                    }
-                }
-                if prev.starts_with("#[")
-                    || prev.starts_with("// substrate-origin:")
-                    || prev.starts_with("// memento-cid:")
-                    || prev.starts_with("// witness-inherited-from:")
-                    || prev.starts_with("// concept:")
-                {
-                    j -= 1;
-                    continue;
-                }
-                break;
-            }
-            return comment_annotation;
-        }
-    }
-    None
-}
-
-fn extract_emitted_concept_tag(line: &str) -> Option<String> {
-    for marker in ["provekit_monitor", "provekit_emitter", "provekit_witness"] {
-        let Some(marker_pos) = line.find(marker) else {
-            continue;
-        };
-        let rest = &line[marker_pos + marker.len()..];
-        let Some(concept_pos) = rest.find("concept") else {
-            continue;
-        };
-        let after_key = rest[concept_pos + "concept".len()..].trim_start();
-        let Some(after_eq) = after_key.strip_prefix('=') else {
-            continue;
-        };
-        let after_eq = after_eq.trim_start();
-        let Some(quoted) = after_eq.strip_prefix('"') else {
-            continue;
-        };
-        let Some(end) = quoted.find('"') else {
-            continue;
-        };
-        if let Some(name) = normalize_concept_annotation(&quoted[..end]) {
-            return Some(name);
-        }
-    }
-    None
-}
-
-fn normalize_concept_annotation(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    let name = trimmed.strip_prefix("concept:").unwrap_or(trimmed).trim();
-    if name.is_empty() || name.starts_with("UNNAMED-CONCEPT-") {
-        None
-    } else {
-        Some(name.to_string())
-    }
-}
-
 fn term_shape_for_fn(item_fn: &syn::ItemFn) -> Arc<CValue> {
-    shape_of_block(&item_fn.block)
+    let ctx = ShapeContext::for_fn(item_fn);
+    shape_of_block(&item_fn.block, &ctx)
 }
 
-fn shape_of_block(block: &syn::Block) -> Arc<CValue> {
-    collapse_operation_shapes(block.stmts.iter().map(shape_of_stmt))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShapeSort {
+    Bool,
+    Int,
+    Unit,
 }
 
-fn shape_of_stmt(stmt: &syn::Stmt) -> Arc<CValue> {
+#[derive(Debug, Clone, Default)]
+struct ShapeContext {
+    vars: BTreeMap<String, ShapeSort>,
+}
+
+impl ShapeContext {
+    fn for_fn(item_fn: &syn::ItemFn) -> Self {
+        let mut ctx = Self::default();
+        for arg in &item_fn.sig.inputs {
+            let syn::FnArg::Typed(pat_type) = arg else {
+                continue;
+            };
+            let syn::Pat::Ident(ident) = &*pat_type.pat else {
+                continue;
+            };
+            ctx.set_local(ident.ident.to_string(), sort_from_type(&pat_type.ty));
+        }
+        ctx
+    }
+
+    fn set_local(&mut self, name: String, sort: Option<ShapeSort>) {
+        if let Some(sort) = sort {
+            self.vars.insert(name, sort);
+        } else {
+            self.vars.remove(&name);
+        }
+    }
+}
+
+fn shape_of_block(block: &syn::Block, ctx: &ShapeContext) -> Arc<CValue> {
+    let mut block_ctx = ctx.clone();
+    let mut shapes = Vec::with_capacity(block.stmts.len());
+    for stmt in &block.stmts {
+        shapes.push(shape_of_stmt(stmt, &block_ctx));
+        update_context_from_stmt(stmt, &mut block_ctx);
+    }
+    collapse_operation_shapes(shapes)
+}
+
+fn update_context_from_stmt(stmt: &syn::Stmt, ctx: &mut ShapeContext) {
+    let syn::Stmt::Local(local) = stmt else {
+        return;
+    };
+    if let Some((name, sort)) = local_binding_sort(local, ctx) {
+        ctx.set_local(name, sort);
+    }
+}
+
+fn local_binding_sort(
+    local: &syn::Local,
+    ctx: &ShapeContext,
+) -> Option<(String, Option<ShapeSort>)> {
+    let inferred = local
+        .init
+        .as_ref()
+        .and_then(|init| expr_sort(&init.expr, ctx));
+    match &local.pat {
+        syn::Pat::Ident(ident) => Some((ident.ident.to_string(), inferred)),
+        syn::Pat::Type(pat_type) => {
+            let syn::Pat::Ident(ident) = &*pat_type.pat else {
+                return None;
+            };
+            Some((
+                ident.ident.to_string(),
+                sort_from_type(&pat_type.ty).or(inferred),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
     match stmt {
-        syn::Stmt::Expr(e, _) => shape_of_expr(e),
+        syn::Stmt::Expr(e, _) => shape_of_expr(e, ctx),
         syn::Stmt::Local(local) => local
             .init
             .as_ref()
-            .map(|init| shape_of_expr(&init.expr))
+            .map(|init| shape_of_expr(&init.expr, ctx))
             .unwrap_or_else(non_operation_shape),
         _ => non_operation_shape(),
     }
 }
 
-fn shape_of_expr(expr: &syn::Expr) -> Arc<CValue> {
+fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
     match expr {
         syn::Expr::If(e) => {
             let else_shape = e
                 .else_branch
                 .as_ref()
-                .map(|(_, else_expr)| shape_of_expr(else_expr))
+                .map(|(_, else_expr)| shape_of_expr(else_expr, ctx))
                 .unwrap_or_else(non_operation_shape);
             gamma_operation(
                 "concept:conditional",
                 vec![
-                    shape_of_expr(&e.cond),
-                    shape_of_block(&e.then_branch),
+                    shape_of_expr(&e.cond, ctx),
+                    shape_of_block(&e.then_branch, ctx),
                     else_shape,
                 ],
             )
         }
         syn::Expr::While(e) => gamma_operation(
             "concept:while",
-            vec![shape_of_expr(&e.cond), shape_of_block(&e.body)],
+            vec![shape_of_expr(&e.cond, ctx), shape_of_block(&e.body, ctx)],
         ),
-        syn::Expr::ForLoop(e) => gamma_operation("concept:for", vec![shape_of_block(&e.body)]),
+        syn::Expr::ForLoop(e) => gamma_operation("concept:for", vec![shape_of_block(&e.body, ctx)]),
         syn::Expr::Return(e) => e
             .expr
             .as_ref()
-            .map(|expr| shape_of_expr(expr))
+            .map(|expr| shape_of_expr(expr, ctx))
             .unwrap_or_else(non_operation_shape),
         syn::Expr::Break(e) => {
             let args = e
                 .expr
                 .as_ref()
-                .map(|expr| vec![shape_of_expr(expr)])
+                .map(|expr| vec![shape_of_expr(expr, ctx)])
                 .unwrap_or_default();
             gamma_operation("concept:break", args)
         }
         syn::Expr::Continue(_) => gamma_operation("concept:continue", Vec::new()),
         syn::Expr::Assign(e) => gamma_operation(
             "concept:assign",
-            vec![shape_of_expr(&e.left), shape_of_expr(&e.right)],
+            vec![shape_of_expr(&e.left, ctx), shape_of_expr(&e.right, ctx)],
         ),
         syn::Expr::Binary(e) => {
             let Some(concept_name) = binary_operator_concept_name(&e.op) else {
@@ -1322,28 +1258,132 @@ fn shape_of_expr(expr: &syn::Expr) -> Arc<CValue> {
             };
             gamma_operation(
                 concept_name,
-                vec![shape_of_expr(&e.left), shape_of_expr(&e.right)],
+                vec![shape_of_expr(&e.left, ctx), shape_of_expr(&e.right, ctx)],
             )
         }
         syn::Expr::Unary(e) => {
-            let Some(concept_name) = unary_operator_concept_name(&e.op) else {
+            let Some(concept_name) = unary_operator_concept_name(&e.op, expr_sort(&e.expr, ctx))
+            else {
                 return non_operation_shape();
             };
-            gamma_operation(concept_name, vec![shape_of_expr(&e.expr)])
+            gamma_operation(concept_name, vec![shape_of_expr(&e.expr, ctx)])
         }
         syn::Expr::Call(e) => gamma_operation(
             "concept:call",
-            e.args.iter().map(shape_of_expr).collect::<Vec<_>>(),
+            e.args
+                .iter()
+                .map(|arg| shape_of_expr(arg, ctx))
+                .collect::<Vec<_>>(),
         ),
         syn::Expr::MethodCall(e) => {
-            let mut args = vec![shape_of_expr(&e.receiver)];
-            args.extend(e.args.iter().map(shape_of_expr));
+            let mut args = vec![shape_of_expr(&e.receiver, ctx)];
+            args.extend(e.args.iter().map(|arg| shape_of_expr(arg, ctx)));
             gamma_operation("concept:call", args)
         }
-        syn::Expr::Block(b) => shape_of_block(&b.block),
-        syn::Expr::Paren(e) => shape_of_expr(&e.expr),
-        syn::Expr::Group(e) => shape_of_expr(&e.expr),
+        syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
+        syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
+        syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
         _ => non_operation_shape(),
+    }
+}
+
+fn expr_sort(expr: &syn::Expr, ctx: &ShapeContext) -> Option<ShapeSort> {
+    match expr {
+        syn::Expr::Lit(lit) => match &lit.lit {
+            syn::Lit::Bool(_) => Some(ShapeSort::Bool),
+            syn::Lit::Int(_) => Some(ShapeSort::Int),
+            _ => None,
+        },
+        syn::Expr::Path(path) => path
+            .path
+            .get_ident()
+            .and_then(|ident| ctx.vars.get(&ident.to_string()).copied()),
+        syn::Expr::Paren(paren) => expr_sort(&paren.expr, ctx),
+        syn::Expr::Group(group) => expr_sort(&group.expr, ctx),
+        syn::Expr::Block(block) => {
+            block_tail_expr(&block.block).and_then(|expr| expr_sort(expr, ctx))
+        }
+        syn::Expr::Unary(unary) => match &unary.op {
+            syn::UnOp::Neg(_) => {
+                (expr_sort(&unary.expr, ctx) == Some(ShapeSort::Int)).then_some(ShapeSort::Int)
+            }
+            syn::UnOp::Not(_) => match expr_sort(&unary.expr, ctx) {
+                Some(ShapeSort::Bool) => Some(ShapeSort::Bool),
+                Some(ShapeSort::Int) => Some(ShapeSort::Int),
+                _ => None,
+            },
+            _ => None,
+        },
+        syn::Expr::Binary(binary) => binary_result_sort(binary, ctx),
+        _ => None,
+    }
+}
+
+fn block_tail_expr(block: &syn::Block) -> Option<&syn::Expr> {
+    match block.stmts.last()? {
+        syn::Stmt::Expr(expr, None) => Some(expr),
+        _ => None,
+    }
+}
+
+fn binary_result_sort(binary: &syn::ExprBinary, ctx: &ShapeContext) -> Option<ShapeSort> {
+    match &binary.op {
+        syn::BinOp::Add(_)
+        | syn::BinOp::Sub(_)
+        | syn::BinOp::Mul(_)
+        | syn::BinOp::Div(_)
+        | syn::BinOp::Rem(_)
+        | syn::BinOp::BitAnd(_)
+        | syn::BinOp::BitOr(_)
+        | syn::BinOp::BitXor(_)
+        | syn::BinOp::Shl(_)
+        | syn::BinOp::Shr(_) => {
+            operands_have_sort(&binary.left, &binary.right, ctx, ShapeSort::Int)
+                .then_some(ShapeSort::Int)
+        }
+        syn::BinOp::Eq(_)
+        | syn::BinOp::Ne(_)
+        | syn::BinOp::Lt(_)
+        | syn::BinOp::Le(_)
+        | syn::BinOp::Gt(_)
+        | syn::BinOp::Ge(_) => operands_have_sort(&binary.left, &binary.right, ctx, ShapeSort::Int)
+            .then_some(ShapeSort::Bool),
+        syn::BinOp::And(_) | syn::BinOp::Or(_) => {
+            operands_have_sort(&binary.left, &binary.right, ctx, ShapeSort::Bool)
+                .then_some(ShapeSort::Bool)
+        }
+        _ => None,
+    }
+}
+
+fn operands_have_sort(
+    left: &syn::Expr,
+    right: &syn::Expr,
+    ctx: &ShapeContext,
+    sort: ShapeSort,
+) -> bool {
+    expr_sort(left, ctx) == Some(sort) && expr_sort(right, ctx) == Some(sort)
+}
+
+fn sort_from_type(ty: &syn::Type) -> Option<ShapeSort> {
+    match ty {
+        syn::Type::Path(path) if path.qself.is_none() => {
+            let ident = path.path.segments.last()?.ident.to_string();
+            sort_from_type_name(&ident)
+        }
+        syn::Type::Paren(paren) => sort_from_type(&paren.elem),
+        syn::Type::Group(group) => sort_from_type(&group.elem),
+        syn::Type::Tuple(tuple) if tuple.elems.is_empty() => Some(ShapeSort::Unit),
+        _ => None,
+    }
+}
+
+fn sort_from_type_name(name: &str) -> Option<ShapeSort> {
+    match name {
+        "bool" => Some(ShapeSort::Bool),
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64" | "u128"
+        | "usize" => Some(ShapeSort::Int),
+        _ => None,
     }
 }
 
@@ -1383,10 +1423,16 @@ fn binary_operator_concept_name(op: &syn::BinOp) -> Option<&'static str> {
     }
 }
 
-fn unary_operator_concept_name(op: &syn::UnOp) -> Option<&'static str> {
+fn unary_operator_concept_name(
+    op: &syn::UnOp,
+    operand_sort: Option<ShapeSort>,
+) -> Option<&'static str> {
     match op {
         syn::UnOp::Deref(_) => Some("concept:deref"),
-        syn::UnOp::Not(_) => Some("concept:not"),
+        syn::UnOp::Not(_) => match operand_sort {
+            Some(ShapeSort::Int) => Some("concept:bitnot"),
+            _ => Some("concept:not"),
+        },
         syn::UnOp::Neg(_) => Some("concept:neg"),
         _ => None,
     }
@@ -1450,6 +1496,8 @@ fn cvalue_to_json(v: &CValue) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libprovekit::core::{bind_result_payload, bind_term_document, BindOptions, Term};
+    use provekit_ir_types::Sort;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1475,10 +1523,8 @@ pub fn add(left: i64, right: i64) -> i64 {
         .expect("bind lift should succeed");
 
         let entries = out["ir"].as_array().expect("ir array");
-        let entry = entries
-            .iter()
-            .find(|entry| entry["fn_name"] == "add")
-            .expect("add entry");
+        let entry = entries.first().expect("add entry");
+        assert_no_forbidden_bind_lift_entry_fields(entry);
         assert_eq!(entry["param_names"], json!(["left", "right"]));
         assert!(entry.get("param_types").is_none());
         assert!(entry.get("return_type").is_none());
@@ -1525,10 +1571,8 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         .expect("bind lift should succeed");
 
         let entries = out["ir"].as_array().expect("ir array");
-        let entry = entries
-            .iter()
-            .find(|entry| entry["fn_name"] == "wrap_positive")
-            .expect("wrap_positive entry");
+        let entry = entries.first().expect("wrap_positive entry");
+        assert_no_forbidden_bind_lift_entry_fields(entry);
         let witnesses = entry["witnesses"].as_array().expect("witnesses array");
 
         assert!(
@@ -1566,40 +1610,6 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         );
 
         let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn concept_annotation_reads_human_edited_emitted_monitor_tag() {
-        let src = r#"
-// concept: deposit-then-balance
-// substrate-origin: annotation-lift
-// memento-cid: blake3-512:abc
-#[cfg_attr(any(), requires(amount > 0))]
-#[cfg_attr(any(), provekit_monitor(concept = "ledger-deposit"))]
-pub fn deposit(balance: i64, amount: i64) -> i64 {
-    balance + amount
-}
-"#;
-
-        assert_eq!(
-            extract_concept_annotation(src, "deposit").as_deref(),
-            Some("ledger-deposit")
-        );
-    }
-
-    #[test]
-    fn concept_annotation_strips_prefix_from_emitted_observation_tag() {
-        let src = r#"
-#[cfg_attr(any(), provekit_emitter(concept = "concept:ledger-deposit"))]
-pub fn deposit(balance: i64, amount: i64) -> i64 {
-    balance + amount
-}
-"#;
-
-        assert_eq!(
-            extract_concept_annotation(src, "deposit").as_deref(),
-            Some("ledger-deposit")
-        );
     }
 
     #[test]
@@ -1670,7 +1680,7 @@ pub fn fetch_status(url: &str) -> i64 {
         let entries = out["ir"].as_array().expect("ir array");
         let bound = entries
             .iter()
-            .find(|entry| entry["concept_annotation"] == "http-request")
+            .find(|entry| entry["term_shape"]["kind"] == "concept-citation")
             .expect("bound callsite entry");
         let expected_shape = CValue::object([
             ("args", CValue::array(vec![CValue::string("url")])),
@@ -1682,8 +1692,11 @@ pub fn fetch_status(url: &str) -> i64 {
         ]);
         let expected_cid = blake3_512_of(encode_jcs(&expected_shape).as_bytes());
 
-        assert!(bound.get("file").is_none(), "file key should be absent in γ canonical");
-        assert_eq!(bound["fn_name"], "fetch_status__bound_call_1");
+        assert!(
+            bound.get("file").is_none(),
+            "file key should be absent in γ canonical"
+        );
+        assert_no_forbidden_bind_lift_entry_fields(bound);
         assert_eq!(bound["param_names"], json!(["url"]));
         assert!(bound.get("param_types").is_none());
         assert!(bound.get("return_type").is_none());
@@ -1699,7 +1712,7 @@ pub fn fetch_status(url: &str) -> i64 {
             .as_array()
             .expect("second ir array")
             .iter()
-            .find(|entry| entry["concept_annotation"] == "http-request")
+            .find(|entry| entry["term_shape"]["kind"] == "concept-citation")
             .expect("second bound callsite entry");
         assert_eq!(bound_again["term_shape_cid"], bound["term_shape_cid"]);
 
@@ -1831,10 +1844,8 @@ pub fn add(x: i64, y: i64) -> i64 {
         .expect("bind lift should succeed");
 
         let entries = out["ir"].as_array().expect("ir array");
-        let entry = entries
-            .iter()
-            .find(|entry| entry["fn_name"] == "add")
-            .expect("add entry");
+        let entry = entries.first().expect("add entry");
+        assert_no_forbidden_bind_lift_entry_fields(entry);
         assert!(
             entry.get("fn_line").is_none(),
             "bind payload must not carry function source lines: {entry:#?}"
@@ -1849,6 +1860,85 @@ pub fn add(x: i64, y: i64) -> i64 {
     }
 
     #[test]
+    fn bind_lift_contract_attrs_do_not_enter_hashed_bind_payload() {
+        let root = temp_workspace("bind_lift_contract_attrs_payload");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+#[cfg_attr(any(), requires(x > 0))]
+pub fn positive_id(x: i64) -> i64 {
+    x
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        assert_eq!(entries.len(), 1);
+        assert_no_forbidden_bind_lift_entry_fields(&entries[0]);
+
+        let original_term = Term::Const {
+            value: out,
+            sort: primitive_sort("LiftPluginResponse"),
+        };
+        let named = bind_term_document(
+            match &original_term {
+                Term::Const { value, .. } => value,
+                _ => unreachable!("test constructs const term"),
+            },
+            &BindOptions::default(),
+        )
+        .expect("bind term document builds");
+        let payload = bind_result_payload(original_term, &named).expect("bind payload builds");
+        let payload_bytes =
+            libprovekit::canonical::serializable_jcs(&payload).expect("payload canonicalizes");
+
+        for forbidden in ["attr_pre", "attr_post", "concept_annotation", "fn_name"] {
+            assert!(
+                !payload_bytes.contains(forbidden),
+                "bind payload hashed bytes contain forbidden field `{forbidden}`: {payload_bytes}"
+            );
+        }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unary_not_disambiguates_bool_logical_and_integer_bitwise() {
+        let logical_shape = term_shape_json(
+            r#"
+pub fn logical_not() -> bool {
+    !true
+}
+"#,
+        );
+        let bitwise_shape = term_shape_json(
+            r#"
+pub fn bitwise_not() -> i64 {
+    !0i64
+}
+"#,
+        );
+
+        assert_eq!(logical_shape["concept_name"], "concept:not");
+        assert_eq!(bitwise_shape["concept_name"], "concept:bitnot");
+        assert_ne!(
+            logical_shape["op_cid"], bitwise_shape["op_cid"],
+            "logical not and bitwise not must resolve to distinct concept atoms"
+        );
+        assert_no_forbidden_term_shape_fields(&logical_shape);
+        assert_no_forbidden_term_shape_fields(&bitwise_shape);
+    }
+
+    #[test]
     fn bind_lift_includes_public_impl_methods_from_canonicalizer_value() {
         let root = temp_workspace("bind_lift_impl_methods");
         let src_dir = root.join("src");
@@ -1858,6 +1948,12 @@ pub fn add(x: i64, y: i64) -> i64 {
             include_str!("../../../provekit-canonicalizer/src/value.rs"),
         )
         .expect("write value.rs fixture");
+        let file = syn::parse_file(include_str!("../../../provekit-canonicalizer/src/value.rs"))
+            .expect("value fixture parses");
+        let target_names = collect_bind_lift_targets(&file)
+            .into_iter()
+            .map(|target| target.fn_name)
+            .collect::<Vec<_>>();
 
         let out = bind_lift(&json!({
             "workspace_root": root.to_string_lossy(),
@@ -1866,11 +1962,9 @@ pub fn add(x: i64, y: i64) -> i64 {
         .expect("bind lift should succeed");
 
         let entries = out["ir"].as_array().expect("ir array");
-        let fn_names = entries
-            .iter()
-            .filter_map(|entry| entry["fn_name"].as_str())
-            .collect::<Vec<_>>();
-        eprintln!("bind lift value.rs entries: {fn_names:?}");
+        for entry in entries {
+            assert_no_forbidden_bind_lift_entry_fields(entry);
+        }
 
         for expected in [
             "Value::kind",
@@ -1882,8 +1976,8 @@ pub fn add(x: i64, y: i64) -> i64 {
             "Value::object",
         ] {
             assert!(
-                fn_names.iter().any(|name| *name == expected),
-                "missing impl method entry {expected}; got {fn_names:?}"
+                target_names.iter().any(|name| name == expected),
+                "missing impl method target {expected}; got {target_names:?}"
             );
         }
         assert!(
@@ -1960,6 +2054,22 @@ pub fn add(x: i64, y: i64) -> i64 {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn assert_no_forbidden_bind_lift_entry_fields(value: &Value) {
+        let object = value.as_object().expect("bind entry object");
+        for forbidden in ["attr_pre", "attr_post", "concept_annotation", "fn_name"] {
+            assert!(
+                !object.contains_key(forbidden),
+                "bind lift entry contains forbidden field `{forbidden}` in {value:#?}"
+            );
+        }
+    }
+
+    fn primitive_sort(name: &str) -> Sort {
+        Sort::Primitive {
+            name: name.to_string(),
         }
     }
 
