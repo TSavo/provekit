@@ -2,16 +2,17 @@
 
 use std::sync::Arc;
 
+use libprovekit::canonical::{json_cid, serializable_cid, serializable_jcs};
 use libprovekit::compose::{
     build_value, cid_of_value, compose_function_contracts, jcs_bytes_of_value, EffectSet,
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot,
-    CKit, Canonical, Cid, Dialect, DomainClaim, DomainKind, FunctionContractDomain,
-    HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit, KitRegistry,
-    LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
-    PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verdict, Witness,
+    address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot, CKit,
+    Canonical, Cid, Dialect, DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog,
+    HashMapInputCatalog, Input, InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit,
+    LiftPluginKit, Path, PathAlgebra, PathDocument, PathDocumentError, PathError, Refutation,
+    SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{IrFormula, IrTerm, Sort};
@@ -135,6 +136,7 @@ fn one_step_path(name: &str, inputs: Vec<Cid>) -> Path {
             kit: format!("kit:{name}"),
             inputs,
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }
 }
@@ -414,6 +416,7 @@ fn path_is_cidable_language_neutral_algebra() {
             "workspace_root": "/repo"
         })))],
         depends_on: vec![],
+        verb: Verb::Transform,
     };
     let mint_step = PathAlgebra {
         name: "mint".to_string(),
@@ -422,6 +425,7 @@ fn path_is_cidable_language_neutral_algebra() {
             "outDir": "/repo/out"
         })))],
         depends_on: vec!["lift".to_string()],
+        verb: Verb::Transform,
     };
 
     let path = Path {
@@ -439,6 +443,67 @@ fn path_is_cidable_language_neutral_algebra() {
     assert_eq!(
         path.step("mint").expect("mint step").depends_on,
         vec!["lift".to_string()]
+    );
+}
+
+#[test]
+fn path_algebra_default_verb_is_cid_stable_when_omitted() {
+    let source_cid = address(&Input::Spec(json!({"surface": "rust"})));
+    let step = PathAlgebra {
+        name: "lift".to_string(),
+        kit: "lift-rust".to_string(),
+        inputs: vec![source_cid.clone()],
+        depends_on: vec![],
+        verb: Verb::default(),
+    };
+    let without_verb = json!({
+        "dependsOn": [],
+        "inputs": [source_cid.as_str()],
+        "kit": "lift-rust",
+        "name": "lift"
+    });
+
+    let encoded = serializable_jcs(&step).expect("default verb step serializes");
+    assert!(
+        !encoded.contains("\"verb\""),
+        "default Transform verb must stay absent from canonical JSON: {encoded}"
+    );
+    assert_eq!(
+        serializable_cid(&step).expect("default verb step CID"),
+        json_cid(&without_verb).expect("legacy no-verb step CID")
+    );
+
+    let decoded: PathAlgebra =
+        serde_json::from_value(without_verb).expect("legacy no-verb step parses");
+    assert_eq!(decoded.verb, Verb::Transform);
+}
+
+#[test]
+fn path_algebra_prove_verb_round_trips_and_changes_cid() {
+    let claim_cid = address(&Input::Spec(json!({"claim": "input"})));
+    let transform_step = PathAlgebra {
+        name: "prove".to_string(),
+        kit: "prove-stub".to_string(),
+        inputs: vec![claim_cid],
+        depends_on: vec![],
+        verb: Verb::Transform,
+    };
+    let prove_step = PathAlgebra {
+        verb: Verb::Prove,
+        ..transform_step.clone()
+    };
+
+    let encoded = serializable_jcs(&prove_step).expect("Prove verb step serializes");
+    assert!(
+        encoded.contains("\"verb\":\"Prove\""),
+        "Prove verb must be present in canonical JSON: {encoded}"
+    );
+    let decoded: PathAlgebra = serde_json::from_str(&encoded).expect("Prove verb step round-trips");
+
+    assert_eq!(decoded.verb, Verb::Prove);
+    assert_ne!(
+        serializable_cid(&prove_step).expect("Prove verb step CID"),
+        serializable_cid(&transform_step).expect("Transform verb step CID")
     );
 }
 
@@ -464,12 +529,14 @@ fn path_document_round_trips_with_cid_checked_materialized_inputs() {
                 kit: "lift-plugin:rust-self-contracts".to_string(),
                 inputs: vec![lift_input_cid.clone()],
                 depends_on: vec![],
+                verb: Verb::Transform,
             },
             PathAlgebra {
                 name: "mint".to_string(),
                 kit: "provekit-mint".to_string(),
                 inputs: vec![mint_input_cid.clone()],
                 depends_on: vec!["lift".to_string()],
+                verb: Verb::Transform,
             },
         ],
     };
@@ -510,6 +577,7 @@ fn path_document_rejects_materialized_input_cid_mismatch() {
                 kit: "lift-plugin:declared".to_string(),
                 inputs: vec![declared_cid],
                 depends_on: vec![],
+                verb: Verb::Transform,
             }],
         },
         inputs: vec![libprovekit::core::PathInputBinding {
@@ -689,12 +757,14 @@ fn path_derives_order_from_dependencies() {
             serde_json::json!({"surface": "rust"}),
         ))],
         depends_on: vec![],
+        verb: Verb::Transform,
     };
     let mint_step = PathAlgebra {
         name: "mint".to_string(),
         kit: "provekit-mint".to_string(),
         inputs: vec![address(&Input::Spec(serde_json::json!({"outDir": "out"})))],
         depends_on: vec!["lift".to_string()],
+        verb: Verb::Transform,
     };
     let path = Path {
         algebra: vec![mint_step, lift_step],
@@ -730,6 +800,7 @@ fn input_catalog_materializes_path_step_inputs_by_cid() {
             kit: "lift-plugin:jvm-bytecode".to_string(),
             inputs: vec![input_cid.clone()],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     };
 
@@ -751,6 +822,7 @@ fn path_rejects_invalid_dependency_graphs() {
         kit: format!("kit:{name}"),
         inputs: vec![address(&format!("input:{name}"))],
         depends_on: depends_on.into_iter().map(str::to_string).collect(),
+        verb: Verb::Transform,
     };
 
     let duplicate = Path {
@@ -790,6 +862,7 @@ fn path_orders_cross_domain_link_after_shared_contract_proofs() {
             "contractCid": shared_contract.as_str()
         })))],
         depends_on: vec![],
+        verb: Verb::Transform,
     };
     let c_proof = PathAlgebra {
         name: "c-proof".to_string(),
@@ -799,6 +872,7 @@ fn path_orders_cross_domain_link_after_shared_contract_proofs() {
             "contractCid": shared_contract.as_str()
         })))],
         depends_on: vec![],
+        verb: Verb::Transform,
     };
     let link = PathAlgebra {
         name: "link".to_string(),
@@ -807,6 +881,7 @@ fn path_orders_cross_domain_link_after_shared_contract_proofs() {
             "sharedContractCid": shared_contract.as_str()
         })))],
         depends_on: vec!["ts-proof".to_string(), "c-proof".to_string()],
+        verb: Verb::Transform,
     };
     let path = Path {
         algebra: vec![link, ts_proof, c_proof],
@@ -1047,6 +1122,7 @@ fn execute_path_refuses_unregistered_lift_kit_with_composition_refusal_memento()
             kit: "lift-unknown".to_string(),
             inputs: vec![source_cid],
             depends_on: vec![],
+            verb: Verb::Transform,
         }],
     }));
     let registry = KitRegistry::default();

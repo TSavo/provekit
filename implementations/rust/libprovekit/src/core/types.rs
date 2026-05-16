@@ -960,6 +960,28 @@ impl Path {
     }
 }
 
+/// Primitive selector for one path-algebra step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Verb {
+    /// Transform input material into a domain claim.
+    Transform,
+    /// Prove or otherwise discharge an existing domain claim.
+    Prove,
+}
+
+impl Verb {
+    /// Return whether this is the wire-default path verb.
+    pub fn is_default(&self) -> bool {
+        matches!(self, Self::Transform)
+    }
+}
+
+impl Default for Verb {
+    fn default() -> Self {
+        Self::Transform
+    }
+}
+
 /// One algebra step inside a [`Path`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -968,6 +990,9 @@ pub struct PathAlgebra {
     pub name: String,
     /// Kit transform to apply.
     pub kit: String,
+    /// Kit primitive to dispatch for this step.
+    #[serde(default, skip_serializing_if = "Verb::is_default")]
+    pub verb: Verb,
     /// Input artifact CIDs to that transform.
     pub inputs: Vec<Cid>,
     /// Names of prerequisite algebra steps.
@@ -1787,7 +1812,7 @@ fn path_algebra_to_value(step: &PathAlgebra) -> Arc<CValue> {
     let mut inputs = step.inputs.clone();
     inputs.sort();
     inputs.dedup();
-    CValue::object([
+    let mut fields = vec![
         (
             "inputs",
             CValue::array(
@@ -1803,7 +1828,14 @@ fn path_algebra_to_value(step: &PathAlgebra) -> Arc<CValue> {
             "dependsOn",
             CValue::array(depends_on.into_iter().map(CValue::string).collect()),
         ),
-    ])
+    ];
+    if !step.verb.is_default() {
+        fields.push((
+            "verb",
+            json_to_cvalue(serde_json::to_value(step.verb).expect("verb serializes")),
+        ));
+    }
+    CValue::object(fields)
 }
 
 fn operation_name_cid(name: &str) -> Cid {
