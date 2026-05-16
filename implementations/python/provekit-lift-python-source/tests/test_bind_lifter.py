@@ -162,6 +162,26 @@ def _operator_atoms(term_shape: dict) -> list[dict]:
     return [node for node in _walk_objects(term_shape) if "op_cid" in node]
 
 
+def test_bind_lift_erases_signature_types_from_bind_ir_entries() -> None:
+    source = (
+        "def add(left: int, right: int) -> int:\n"
+        "    return left + right\n"
+        "\n"
+        "def generated(value):\n"
+        "    return value\n"
+    )
+
+    result = lift_source(source, "pkg/foo.py")
+
+    assert result.diagnostics == []
+    entries = {entry["fn_name"]: entry for entry in result.ir}
+    assert entries["add"]["param_names"] == ["left", "right"]
+    assert "param_types" not in entries["add"]
+    assert "return_type" not in entries["add"]
+    assert "param_types" not in entries["generated"]
+    assert "return_type" not in entries["generated"]
+
+
 def test_bind_lift_source_emits_language_neutral_entries() -> None:
     source = (
         "# concept: identity\n"
@@ -202,8 +222,8 @@ def test_bind_lift_source_emits_language_neutral_entries() -> None:
     assert result.ir[0]["attr_pre"] == "x >= 0"
     assert result.ir[0]["attr_post"] == "result >= 0"
     assert result.ir[0]["param_names"] == ["x"]
-    assert result.ir[0]["param_types"] == ["int"]
-    assert result.ir[0]["return_type"] == "int"
+    assert "param_types" not in result.ir[0]
+    assert "return_type" not in result.ir[0]
     assert result.ir[0]["term_shape"] == {
         "kind": "body",
         "stmts": [{"kind": "exit"}],
@@ -324,15 +344,15 @@ def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:
 
     assert [entry["concept_annotation"] for entry in result.ir] == [None, None]
     assert result.ir[0]["param_names"] == ["x"]
-    assert result.ir[0]["param_types"] == ["Any"]
-    assert result.ir[0]["return_type"] == "Any"
+    assert "param_types" not in result.ir[0]
+    assert "return_type" not in result.ir[0]
     assign_shape = result.ir[0]["term_shape"]["stmts"][0]
     assert assign_shape["kind"] == "assign"
     assert {
         "concept_name": "concept:add",
         "op_cid": _catalog_concept_cid("concept:add"),
     }.items() <= assign_shape["value"].items()
-    assert result.ir[1]["return_type"] == "()"
+    assert "return_type" not in result.ir[1]
 
 
 def test_bind_rpc_initialize_declares_bind_ir_surface() -> None:
