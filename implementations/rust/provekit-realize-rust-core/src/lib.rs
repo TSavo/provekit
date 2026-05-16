@@ -8,6 +8,8 @@ use serde_json::Value;
 
 const BODY_TEMPLATE_REL: &str =
     "menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json";
+const RETURN_OP_CID: &str = "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6";
+const CALL_NEW_OP_CID: &str = "blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Realization {
@@ -54,16 +56,227 @@ pub fn emit_stub_with_mode(
     concept_name: &str,
     mode: Option<&str>,
 ) -> Realization {
-    let body = body_template_for(concept_name, params, param_types, return_type, mode);
+    let body = operator_body_template_for(concept_name, params, param_types, return_type, mode)
+        .or_else(|| body_template_for(concept_name, params, param_types, return_type, mode));
     let is_stub = body.is_none();
     let body = body.unwrap_or_else(|| stub_body_for(concept_name));
-    let source = function_source(function, params, param_types, return_type, &body);
+    emit_function(function, params, param_types, return_type, &body, is_stub)
+}
+
+/// Emits Rust for the D7 resolved Value::null body shape:
+/// `return(call:new(literal("new" | "*::new"), literal(["Null"])))`.
+///
+/// The trailing `return` node is lowered as a Rust tail expression. The nested
+/// `call:new` shape lowers to `<callee>(Value::Null)`. D7-v2 fixtures used a
+/// bare `new`; D7-v3 fixtures carry the receiver-prefixed `Arc::new` spelling.
+/// Unsupported resolved concepts or literal shapes fall back to the existing
+/// `panic!("provekit-bind canonical: <concept>")` stub body.
+pub fn emit_from_resolved(
+    resolved_term_json: &str,
+    function_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+) -> Realization {
+    let resolved = match serde_json::from_str::<Value>(resolved_term_json) {
+        Ok(resolved) => resolved,
+        Err(_) => {
+            return emit_stub(
+                function_name,
+                params,
+                param_types,
+                return_type,
+                "malformed-resolved-term",
+            );
+        }
+    };
+
+    match lower_resolved_body(&resolved, params) {
+        Ok(body) => emit_function(
+            function_name,
+            params,
+            param_types,
+            return_type,
+            &body,
+            false,
+        ),
+        Err(concept_name) => emit_stub(
+            function_name,
+            params,
+            param_types,
+            return_type,
+            &concept_name,
+        ),
+    }
+}
+
+fn emit_function(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    body: &str,
+    is_stub: bool,
+) -> Realization {
+    let source = function_source(function, params, param_types, return_type, body);
     let emitted_artifact_cid = blake3_512_of(source.as_bytes());
     Realization {
         source,
         is_stub,
         extension: "rs".to_string(),
         emitted_artifact_cid,
+    }
+}
+
+fn lower_resolved_body(term: &Value, params: &[String]) -> Result<String, String> {
+    let concept_name = resolved_concept_name(term);
+    if concept_name != "return" {
+        return Err(concept_name);
+    }
+
+    let args = resolved_args(term).ok_or(concept_name)?;
+    if args.len() != 1 {
+        return Err("return".to_string());
+    }
+    lower_resolved_expr(&args[0], params)
+}
+
+fn lower_resolved_expr(term: &Value, params: &[String]) -> Result<String, String> {
+    match resolved_concept_name(term).as_str() {
+        "call:new" => lower_call_new(term, params),
+        "literal" => lower_literal(term),
+        concept_name => Err(concept_name.to_string()),
+    }
+}
+
+fn lower_call_new(term: &Value, params: &[String]) -> Result<String, String> {
+    let args = resolved_args(term).ok_or_else(|| "call:new".to_string())?;
+    if args.len() != 2 {
+        return Err("call:new".to_string());
+    }
+
+    let name = lower_literal(&args[0])?;
+    let lowered_args = lower_call_new_args_literal(&args[1], params)?;
+    if name != "new" && !name.ends_with("::new") {
+        return Err("call:new".to_string());
+    }
+
+    Ok(format!("{name}({lowered_args})"))
+}
+
+fn lower_call_new_args_literal(term: &Value, params: &[String]) -> Result<String, String> {
+    let node = resolved_node(term).ok_or_else(|| "literal".to_string())?;
+    if node.get("kind").and_then(Value::as_str) != Some("literal") {
+        return Err(resolved_concept_name(term));
+    }
+
+    match node.get("value") {
+        Some(Value::Array(items)) if is_value_null_literal(items) => Ok("Value::Null".to_string()),
+        Some(Value::Array(items)) => lower_single_value_variant_application(items, params)
+            .ok_or_else(|| "literal".to_string()),
+        _ => Err("literal".to_string()),
+    }
+}
+
+fn lower_single_value_variant_application(items: &[Value], params: &[String]) -> Option<String> {
+    if items.len() != 1 {
+        return None;
+    }
+
+    let surface = items[0].as_str()?;
+    let call = surface.strip_prefix("call:")?;
+    let (ctor_name, rest) = call.split_once('(')?;
+    let inner = rest.strip_suffix(')')?;
+    let (variant_path, arg_list) = inner.split_once(", [")?;
+    let arg = arg_list.strip_suffix(']')?;
+    let first_param = params.first()?;
+
+    let variant_name = variant_path.rsplit("::").next()?;
+    if ctor_name != variant_name {
+        return None;
+    }
+
+    let lowered_arg = lower_value_variant_arg(arg, first_param)?;
+    match variant_path {
+        "Value::Bool" | "Value::Integer" | "Value::String" => {
+            Some(format!("{variant_path}({lowered_arg})"))
+        }
+        _ => None,
+    }
+}
+
+fn lower_value_variant_arg(arg: &str, first_param: &str) -> Option<String> {
+    if arg == first_param {
+        return Some(arg.to_string());
+    }
+
+    let method_call = arg.strip_prefix("method:")?;
+    let (method_name, rest) = method_call.split_once('(')?;
+    if method_name.is_empty() {
+        return None;
+    }
+    let inner = rest.strip_suffix(')')?;
+    let (receiver, method_args) = inner.split_once(", [")?;
+    if receiver != first_param {
+        return None;
+    }
+    if !method_args.strip_suffix(']')?.is_empty() {
+        return None;
+    }
+
+    Some(format!("{first_param}.{method_name}()"))
+}
+
+fn lower_literal(term: &Value) -> Result<String, String> {
+    let node = resolved_node(term).ok_or_else(|| "literal".to_string())?;
+    if node.get("kind").and_then(Value::as_str) != Some("literal") {
+        return Err(resolved_concept_name(term));
+    }
+
+    match node.get("value") {
+        Some(Value::String(value)) if value == "new" || value.ends_with("::new") => {
+            Ok(value.to_string())
+        }
+        Some(Value::Array(items)) if is_value_null_literal(items) => Ok("Value::Null".to_string()),
+        _ => Err("literal".to_string()),
+    }
+}
+
+fn is_value_null_literal(items: &[Value]) -> bool {
+    items.len() == 1 && items[0].as_str() == Some("Null")
+}
+
+fn resolved_args(term: &Value) -> Option<&[Value]> {
+    resolved_node(term)?
+        .get("args")?
+        .as_array()
+        .map(Vec::as_slice)
+}
+
+fn resolved_node(term: &Value) -> Option<&serde_json::Map<String, Value>> {
+    term.get("node")?.as_object()
+}
+
+fn resolved_concept_name(term: &Value) -> String {
+    let Some(node) = resolved_node(term) else {
+        return "malformed-resolved-term".to_string();
+    };
+    match node.get("kind").and_then(Value::as_str) {
+        Some("literal") => "literal".to_string(),
+        Some("concept:op-application") => node
+            .get("op_definition_cid")
+            .and_then(Value::as_str)
+            .map(op_concept_name)
+            .unwrap_or_else(|| "malformed-resolved-term".to_string()),
+        _ => "malformed-resolved-term".to_string(),
+    }
+}
+
+fn op_concept_name(op_definition_cid: &str) -> String {
+    match op_definition_cid {
+        RETURN_OP_CID => "return".to_string(),
+        CALL_NEW_OP_CID => "call:new".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -168,10 +381,28 @@ fn body_template_for(
     return_type: &str,
     mode: Option<&str>,
 ) -> Option<String> {
+    body_template_for_entries(
+        entries(),
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        mode,
+    )
+}
+
+fn body_template_for_entries(
+    entries: &[BodyTemplateEntry],
+    concept_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    mode: Option<&str>,
+) -> Option<String> {
     let mapped_param_types: Vec<String> =
         param_types.iter().map(|ty| map_source_type(ty)).collect();
     let mapped_return_type = map_source_type(return_type);
-    for entry in entries() {
+    for entry in entries {
         if !concept_matches(&entry.concept_name, concept_name) {
             continue;
         }
@@ -207,6 +438,89 @@ fn body_template_for(
         }
     }
     None
+}
+
+fn operator_body_template_for(
+    concept_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    mode: Option<&str>,
+) -> Option<String> {
+    let root = operator_root()?;
+    let (language, library_tag) = operator_binding_surface(&root, concept_name)?;
+    if language != "rust" {
+        return None;
+    }
+    let template = load_library_body_template(&language, &library_tag)?;
+    body_template_for_entries(
+        &template,
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        mode,
+    )
+}
+
+fn operator_root() -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("PROVEKIT_OPERATOR_ROOT") {
+        let root = PathBuf::from(root);
+        if root
+            .join(".provekit")
+            .join("library-bindings.json")
+            .is_file()
+        {
+            return Some(root);
+        }
+    }
+    std::env::current_dir().ok().and_then(|cwd| {
+        cwd.ancestors()
+            .find(|base| {
+                base.join(".provekit")
+                    .join("library-bindings.json")
+                    .is_file()
+            })
+            .map(Path::to_path_buf)
+    })
+}
+
+fn operator_binding_surface(root: &Path, concept_name: &str) -> Option<(String, String)> {
+    let path = root.join(".provekit").join("library-bindings.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let doc: Value = serde_json::from_str(&raw).ok()?;
+    let config_language = doc.get("language")?.as_str()?;
+    let bindings = doc.get("bindings")?.as_object()?;
+    let surface = bindings
+        .iter()
+        .find(|(candidate, _)| concept_matches(candidate, concept_name))?
+        .1
+        .as_str()?;
+    let (language, tag) = split_library_surface(surface)?;
+    if language != config_language {
+        return None;
+    }
+    Some((language, tag))
+}
+
+fn split_library_surface(surface: &str) -> Option<(String, String)> {
+    let (language, tag) = surface.split_once('-')?;
+    if language.is_empty() || tag.is_empty() {
+        return None;
+    }
+    Some((language.to_string(), tag.to_string()))
+}
+
+fn load_library_body_template(language: &str, library_tag: &str) -> Option<Vec<BodyTemplateEntry>> {
+    let rel = PathBuf::from("menagerie")
+        .join(format!("{language}-language-signature"))
+        .join("specs")
+        .join("body-templates")
+        .join(format!("{language}-canonical-bodies-{library_tag}.json"));
+    find_repo_file(&rel)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .map(|root| parse_entries(&root))
 }
 
 fn render_template(
@@ -441,9 +755,45 @@ fn find_repo_file(relative: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()
+    }
+
+    fn resolved_return_call_new_with_literal_args(args: Vec<Value>) -> Value {
+        serde_json::json!({
+            "node": {
+                "args": [
+                    {
+                        "node": {
+                            "args": [
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": "Arc::new",
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "FnContract"},
+                                },
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": args,
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "ListOfExpr"},
+                                },
+                            ],
+                            "kind": "concept:op-application",
+                            "op_definition_cid": CALL_NEW_OP_CID,
+                        },
+                        "sort": {"args": [], "kind": "ctor", "name": "Expr"},
+                    },
+                ],
+                "kind": "concept:op-application",
+                "op_definition_cid": RETURN_OP_CID,
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        })
     }
 
     #[test]
@@ -524,6 +874,286 @@ mod tests {
     }
 
     #[test]
+    fn emits_value_null_from_resolved_return_call_new_literal_shape() {
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [
+                    {
+                        "node": {
+                            "args": [
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": "new",
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "FnContract"},
+                                },
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": ["Null"],
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "ListOfExpr"},
+                                },
+                            ],
+                            "kind": "concept:op-application",
+                            "op_definition_cid": CALL_NEW_OP_CID,
+                        },
+                        "sort": {"args": [], "kind": "ctor", "name": "Expr"},
+                    },
+                ],
+                "kind": "concept:op-application",
+                "op_definition_cid": RETURN_OP_CID,
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "null",
+            &[],
+            &[],
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn null() -> Arc < Value > {\n    new(Value::Null)\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_null_from_resolved_call_new_with_receiver_prefix() {
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [
+                    {
+                        "node": {
+                            "args": [
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": "Arc::new",
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "FnContract"},
+                                },
+                                {
+                                    "node": {
+                                        "kind": "literal",
+                                        "value": ["Null"],
+                                    },
+                                    "sort": {"args": [], "kind": "ctor", "name": "ListOfExpr"},
+                                },
+                            ],
+                            "kind": "concept:op-application",
+                            "op_definition_cid": CALL_NEW_OP_CID,
+                        },
+                        "sort": {"args": [], "kind": "ctor", "name": "Expr"},
+                    },
+                ],
+                "kind": "concept:op-application",
+                "op_definition_cid": RETURN_OP_CID,
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "null",
+            &[],
+            &[],
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn null() -> Arc < Value > {\n    Arc::new(Value::Null)\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_bool_from_resolved_call_new_variant_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:Bool(Value::Bool, [b])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "boolean",
+            &strings(&["b"]),
+            &strings(&["bool"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn boolean(b: bool) -> Arc < Value > {\n    Arc::new(Value::Bool(b))\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_integer_from_resolved_call_new_variant_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:Integer(Value::Integer, [n])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "integer",
+            &strings(&["n"]),
+            &strings(&["i64"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn integer(n: i64) -> Arc < Value > {\n    Arc::new(Value::Integer(n))\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_string_from_resolved_call_new_variant_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:String(Value::String, [s])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "string",
+            &strings(&["s"]),
+            &strings(&["String"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn string(s: String) -> Arc < Value > {\n    Arc::new(Value::String(s))\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_value_string_from_resolved_call_new_variant_method_arg_shape() {
+        let resolved = resolved_return_call_new_with_literal_args(vec![Value::String(
+            "call:String(Value::String, [method:into(s, [])])".to_string(),
+        )]);
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "string<S: Into<String>>",
+            &strings(&["s"]),
+            &strings(&["S"]),
+            "Arc < Value >",
+        );
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    Arc::new(Value::String(s.into()))\n}\n"
+        );
+    }
+
+    #[test]
+    fn unsupported_resolved_shape_falls_back_to_stub() {
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [],
+                "kind": "concept:op-application",
+                "op_definition_cid": "unsupported-concept",
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "unknown_cell",
+            &strings(&["x"]),
+            &strings(&["i64"]),
+            "i64",
+        );
+
+        assert!(rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn unknown_cell(x: i64) -> i64 {\n    panic!(\"provekit-bind canonical: unsupported-concept\")\n}\n"
+        );
+    }
+
+    #[test]
+    fn emit_from_resolved_uses_operator_library_binding_before_stub_fallback() {
+        let _guard = env_lock().lock().expect("env lock");
+        let root = temp_operator_root("realize_library_binding");
+        std::fs::create_dir_all(root.join(".provekit")).expect("create .provekit");
+        std::fs::write(
+            root.join(".provekit").join("library-bindings.json"),
+            r#"{
+  "language": "rust",
+  "bindings": {
+    "concept:custom-echo": "rust-demo"
+  }
+}
+"#,
+        )
+        .expect("write library bindings");
+        let template_dir = root
+            .join("menagerie")
+            .join("rust-language-signature")
+            .join("specs")
+            .join("body-templates");
+        std::fs::create_dir_all(&template_dir).expect("create body template dir");
+        std::fs::write(
+            template_dir.join("rust-canonical-bodies-demo.json"),
+            r#"{
+  "header": {
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:custom-echo",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.clone()"
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1,
+            "requires_return_type": "String"
+          }
+        }
+      ]
+    }
+  }
+}
+"#,
+        )
+        .expect("write body template");
+        std::env::set_var("PROVEKIT_OPERATOR_ROOT", &root);
+        std::env::set_var("PROVEKIT_REPO_ROOT", &root);
+
+        let resolved = serde_json::json!({
+            "node": {
+                "args": [],
+                "kind": "concept:op-application",
+                "op_definition_cid": "concept:custom-echo",
+            },
+            "sort": {"args": [], "kind": "ctor", "name": "Stmt"},
+        });
+        let rendered = emit_from_resolved(
+            &serde_json::to_string(&resolved).expect("resolved json"),
+            "echo",
+            &strings(&["value"]),
+            &strings(&["String"]),
+            "String",
+        );
+
+        std::env::remove_var("PROVEKIT_OPERATOR_ROOT");
+        std::env::remove_var("PROVEKIT_REPO_ROOT");
+        let _ = std::fs::remove_dir_all(root);
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn echo(value: String) -> String {\n    value.clone()\n}\n"
+        );
+    }
+
+    #[test]
     fn dispatch_invoke_returns_rpc_result_shape() {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -547,5 +1177,20 @@ mod tests {
             response["result"]["source"],
             "pub fn toggle(flag: bool) -> bool {\n    !flag\n}\n"
         );
+    }
+
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    fn temp_operator_root(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
+        std::fs::create_dir_all(&root).expect("create temp operator root");
+        root
     }
 }

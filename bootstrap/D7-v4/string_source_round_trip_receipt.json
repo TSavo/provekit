@@ -1,0 +1,38 @@
+{
+  "version": "1",
+  "target": {
+    "crate": "provekit-canonicalizer",
+    "function": "impl Value::string",
+    "source_path": "implementations/rust/provekit-canonicalizer/src/value.rs"
+  },
+  "pipeline": {
+    "step_1_fixture_cid": "blake3-512:8b3c7680416cb010f77eb30f5ef2c9284c3feadb16e3f5be7c48c44596557e46a94e5c7502cc0c106d1d39ec4ffcddd34431363c3f9e5e3e708e6cd09091b9c2",
+    "step_2_resolve": "summary=return(call:new(literal(\"Arc::new\"), literal([\"call:String(Value::String, [method:into(s, [])])\"]))) -> sort {\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}; jcs={\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:String(Value::String, [method:into(s, [])])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+    "step_3_4_realize_command": "provekit_realize_rust_core::emit_from_resolved(<resolved-term-jcs>, \"string<S: Into<String>>\", [\"s\"], [\"S\"], \"Arc < Value >\")",
+    "step_3_4_realize_input": {
+      "resolved_term_json": "{\"node\":{\"args\":[{\"node\":{\"args\":[{\"node\":{\"kind\":\"literal\",\"value\":\"Arc::new\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"FnContract\"}},{\"node\":{\"kind\":\"literal\",\"value\":[\"call:String(Value::String, [method:into(s, [])])\"]},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"ListOfExpr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:e6576534d74eee6b309fa55457620d4903472dcd331f0cb9c2be2a95994655ad64ef1fa56f778534f6ba5c04c055069bb109de3dae4dc45bde7dd689671b24b8\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Expr\"}}],\"kind\":\"concept:op-application\",\"op_definition_cid\":\"blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6\"},\"sort\":{\"args\":[],\"kind\":\"ctor\",\"name\":\"Stmt\"}}",
+      "function": "string<S: Into<String>>",
+      "params": [
+        "s"
+      ],
+      "param_types": [
+        "S"
+      ],
+      "return_type": "Arc < Value >"
+    },
+    "step_3_4_regenerated_source": "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    Arc::new(Value::String(s.into()))\n}\n",
+    "step_5_original_slice_cid": "blake3-512:2326ad724a2dfd96c463b1a1ae71d025e953d35a850ecbdd6954a409e2f4c0b100174ca0a6a62121b15b3a2f374b891110750617dc2b9466e11533df286122a7",
+    "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_string_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_string_original.rs>",
+    "step_7_byte_identical_post_rustfmt": true,
+    "step_8_unified_diff": "",
+    "step_9_diff_classification": [],
+    "step_10_dominant_diff_class": "byte-identical",
+    "step_11_expected_diff_shape": "BYTE_IDENTICAL or CHARACTERIZED_DIFF; D7-v4 is diagnostic-only widening",
+    "step_12_empirical_root_cause": "The existing D7 resolved body lowering emitted the checked-in Value constructor body byte-for-byte after rustfmt.",
+    "regenerated_source_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43",
+    "original_slice_post_rustfmt_cid": "blake3-512:11ae0368cb858bbcd2806358c139bc80027e302997e2dc51067ad35779289f605026442c059e9b413722cbf3754f7d7b76354e2cc5a296f8b12c1fd9df2b1f43"
+  },
+  "verdict": "BYTE_IDENTICAL",
+  "dominant_diff_class": "byte-identical",
+  "next_action": "D7-v4 is diagnostic-only. v5 should retire any CHARACTERIZED_DIFF classes surfaced here without minting new ProofIR ops or substrate concepts."
+}

@@ -1,17 +1,22 @@
 {
-  "after_substitution_cid": "blake3-512:da337fe693055da1dc78d4fd21996789ff9aebeee528899ca6b784c063d1268a508c8673ce45bd23a64492ca324682ea8b9b12825cf598085a5b34dcc5db4b48",
+  "after_substitution_cid": "blake3-512:d58bb061b5df775adba6fd517511da3c2f9a68a42b9b9cc004c2850de7354f92b416a8fc9d114f45736f3380ff1554f77bfe848d901214225638e55b54aafce8",
   "discharged": true,
-  "effect_subset_relaxed": true,
   "kind": "MorphismDischargeReceipt",
   "literal_map": {},
-  "method": "structural-pre-weakening-and-wp-abstraction-and-effect-subset",
-  "morphism_cid": "blake3-512:ef32294fdd91fb468e36c2465a99f8255e92cb930fbd87c5cc6b6e9c552deb5672dcc1df54e70ee637e08a3df4d8974d13994177607911c7843145cd10003fd2",
+  "method": "structural-wp-abstraction",
+  "mode_bindings": {
+    "mode": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Wrapping"
+    }
+  },
+  "morphism_cid": "blake3-512:b9920818ca8f152e97d1377e45ecee5b09f34a2be7fd15cd445e31c32b67eeb6a48f01b8775bb9136c03d276940873e4ba2f0242f4f314ba5523e9e8d94b7949",
   "operator_map": {},
-  "pre_relaxed": true,
   "renaming_map": {},
   "representation_map": {},
   "schema_version": "1",
-  "shape_cid": "blake3-512:ed22caed1698cf0a97cc37663fce21dca2ed2234417eb4cd58d5bfa923755734e77941dcbe6a4fe68a55537b9c3eda72c29ea5e5a9a15abaff4d7b1b7dad4824",
+  "shape_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468",
   "signature": null,
   "source_contract_cid": "blake3-512:d8d004e195771fa2a2d67d20cad57106e17cf142584a9a75438a271dbb830ea93f9a98834896fa550e004ead86b9785e4b6a94d801b6dcc65390293a9a9a4a97",
   "wp_abstracted": true

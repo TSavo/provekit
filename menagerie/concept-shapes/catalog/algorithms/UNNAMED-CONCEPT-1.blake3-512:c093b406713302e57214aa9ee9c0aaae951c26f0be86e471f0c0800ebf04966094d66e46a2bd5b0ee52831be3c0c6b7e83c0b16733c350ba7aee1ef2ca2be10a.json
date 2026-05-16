@@ -1,0 +1,55 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "UNNAMED-CONCEPT-1",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "kind": "or",
+      "operands": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "result"
+            }
+          ],
+          "kind": "atomic",
+          "name": "is_ok"
+        },
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "result"
+            }
+          ],
+          "kind": "atomic",
+          "name": "is_err"
+        }
+      ]
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unknown"
+    },
+    "locus": "13 witnesses selected; consensus vector records the observed axes"
+  },
+  "cid": "blake3-512:c093b406713302e57214aa9ee9c0aaae951c26f0be86e471f0c0800ebf04966094d66e46a2bd5b0ee52831be3c0c6b7e83c0b16733c350ba7aee1ef2ca2be10a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "y+KWUyNcYs1zZJHmBUO6TtY8Ozmsqy+WrPNRYBEddlbKzQ1u6af7+cmtTFvW144rhOuZr1T1Wffb+0J06liICQ=="
+  }
+}

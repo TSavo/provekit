@@ -783,6 +783,7 @@ fn probe_realize_binding(
             "unknown[]".to_string()
         },
         concept_name: concept_name.to_string(),
+        named_term_tree: None,
         mode: None,
         modes: Vec::new(),
         contract: None,

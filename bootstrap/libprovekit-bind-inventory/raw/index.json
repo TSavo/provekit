@@ -1,0 +1,62 @@
+{
+  "total_bindings": 230,
+  "total_concepts": 45,
+  "unnamed_concepts": 43,
+  "verdicts": {
+    "exact": 4,
+    "loudly_bounded_lossy": 196,
+    "refuse": 30
+  },
+  "top_concepts": [
+    {
+      "name": "UNNAMED-CONCEPT-d",
+      "site_count": 67,
+      "catalog_id": null
+    },
+    {
+      "name": "UNNAMED-CONCEPT-6",
+      "site_count": 35,
+      "catalog_id": null
+    },
+    {
+      "name": "concept:guard-then-commit",
+      "site_count": 29,
+      "catalog_id": "shape:guard-then-commit"
+    },
+    {
+      "name": "concept:retry-with-bounded-attempts",
+      "site_count": 21,
+      "catalog_id": "shape:retry-with-bounded-attempts"
+    },
+    {
+      "name": "UNNAMED-CONCEPT-1",
+      "site_count": 13,
+      "catalog_id": null
+    },
+    {
+      "name": "UNNAMED-CONCEPT-78",
+      "site_count": 8,
+      "catalog_id": null
+    },
+    {
+      "name": "UNNAMED-CONCEPT-85",
+      "site_count": 4,
+      "catalog_id": null
+    },
+    {
+      "name": "UNNAMED-CONCEPT-22",
+      "site_count": 3,
+      "catalog_id": null
+    },
+    {
+      "name": "UNNAMED-CONCEPT-42",
+      "site_count": 3,
+      "catalog_id": null
+    },
+    {
+      "name": "UNNAMED-CONCEPT-10",
+      "site_count": 2,
+      "catalog_id": null
+    }
+  ]
+}

@@ -24,7 +24,7 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 
 | Concept op | Minted morphisms |
 | --- | --- |
-| `concept:add` | morphism_c11_add_to_add, morphism_csharp_add_to_add, morphism_go_add_to_add, morphism_zig_add_to_add, morphism_java_add_to_add |
+| `concept:add` | morphism_csharp_add_to_add, morphism_go_add_to_add, morphism_zig_add_to_add, morphism_java_add_to_add |
 | `concept:sub` | morphism_c11_sub_to_sub, morphism_csharp_sub_to_sub, morphism_go_sub_to_sub, morphism_zig_sub_to_sub, morphism_java_sub_to_sub |
 | `concept:mul` | morphism_c11_mul_to_mul, morphism_csharp_mul_to_mul, morphism_go_mul_to_mul, morphism_zig_mul_to_mul, morphism_java_mul_to_mul |
 | `concept:div` | morphism_c11_div_to_div, morphism_go_div_to_div, morphism_zig_div_to_div, morphism_java_div_to_div |
@@ -74,6 +74,7 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 
 | Language | Concept op | Gap kind | Gap memento | Resolution options |
 | --- | --- | --- | --- | --- |
+| `c11` | `concept:add` | `sort-mismatch` | `gap_c11_add_to_concept_add.json` | add-representation-map, accept-permanent |
 | `c11` | `concept:conditional` | `sort-mismatch` | `gap_c11_conditional_to_concept_conditional.json` | add-representation-map, accept-permanent |
 | `c11` | `concept:new` | `missing-source-op` | `gap_c11_new_to_concept_new.json` | accept-permanent |
 | `c11` | `concept:throw` | `missing-source-op` | `gap_c11_throw_to_concept_throw.json` | accept-permanent |

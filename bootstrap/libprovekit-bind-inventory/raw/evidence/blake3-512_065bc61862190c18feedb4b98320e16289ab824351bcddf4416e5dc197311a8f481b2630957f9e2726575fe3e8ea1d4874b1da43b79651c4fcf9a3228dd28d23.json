@@ -1,0 +1,55 @@
+{
+  "cid": "blake3-512:065bc61862190c18feedb4b98320e16289ab824351bcddf4416e5dc197311a8f481b2630957f9e2726575fe3e8ea1d4874b1da43b79651c4fcf9a3228dd28d23",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "err_type": "Refusal",
+    "function_symbol": "parse_sort@desugar.rs",
+    "ok_type": "Sort",
+    "return_type": "std::result::Result<Sort, Refusal>",
+    "role": "post",
+    "signature_position": "return",
+    "type_shape": "result"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "or",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "is_err",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      }
+    ]
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:1f2a723b9d8390801d0e96281990d9e2bcb0adbb90f5e07c00a229f5674387345bd5d1188dd0d9096862779480d8f5a1142a0e5ec1ab829951bd1cf86cb33a6c",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 768
+      },
+      "start": {
+        "col": 3,
+        "line": 768
+      }
+    }
+  }
+}

@@ -45,7 +45,11 @@ fn term_emit_cli_writes_statement_macro_as_partial_loss_term_json() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| loss["loss"] == "statement-macro"));
+        .any(|loss| loss["loss"] == "macro-not-expanded"));
+    assert_eq!(
+        parsed["term_surface"].as_str(),
+        Some("macro_call:println(\"not representable\")")
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("# rust term for function=bad"),

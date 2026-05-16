@@ -16,7 +16,12 @@
 // JCS+BLAKE3-addressed bundle that downstream substrate tools (lift,
 // linker, mint) can consume.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 
 use provekit_canonicalizer::Value;
 use quote::ToTokens;
@@ -154,17 +159,17 @@ const LOSS_IMPL_ASSOCIATED_TYPE_NOT_LOWERED: &str = "impl-associated-type-not-lo
 /// are parsed on a function signature but not represented in the term.
 const LOSS_ABI_ATTRIBUTE_NOT_CARRIED: &str = "abi-attribute-not-carried";
 
-/// Accepted-loss dimension for statement-position macro invocations that are
-/// retained only as an opaque no-op in the emitted term.
-const LOSS_STATEMENT_MACRO: &str = "statement-macro";
+/// Accepted-loss dimension for `let mut` bindings whose mutability marker is
+/// not represented in the let pattern term.
+const LOSS_LET_BINDING_MUTABILITY: &str = "let-binding-mutability";
 
 /// Accepted-loss dimension for boolean `let` expressions whose pattern test is
 /// kept but whose binding semantics are not fully represented during bootstrap.
 const LOSS_D4_EXPR_LET: &str = "Expr::Let";
 
-/// Accepted-loss dimension for expression-position macros that are retained as
-/// opaque macro-call terms because this lifter does not expand macro bodies.
-const LOSS_D4_EXPR_MACRO: &str = "Expr::Macro";
+/// Accepted-loss dimension for Rust macro invocations that are recorded without
+/// expanding their token streams.
+const LOSS_MACRO_NOT_EXPANDED: &str = "macro-not-expanded";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AlgebraTerm {
@@ -338,12 +343,16 @@ struct LossRecord {
 struct LoweringContext {
     return_shape: ReturnShape,
     vars: HashMap<String, ExprSort>,
+    mutable_vars: HashSet<String>,
+    ssa_aliases: HashMap<String, String>,
+    ssa_versions: HashMap<String, usize>,
     losses: Rc<RefCell<Vec<LossRecord>>>,
 }
 
 impl LoweringContext {
     fn from_item_fn_with_losses(item_fn: &syn::ItemFn, contextual_losses: Vec<LossRecord>) -> Self {
         let mut vars = HashMap::new();
+        let mut mutable_vars = HashSet::new();
         for arg in &item_fn.sig.inputs {
             let syn::FnArg::Typed(pat_type) = arg else {
                 continue;
@@ -351,8 +360,12 @@ impl LoweringContext {
             let syn::Pat::Ident(ident) = &*pat_type.pat else {
                 continue;
             };
+            let name = ident.ident.to_string();
             if let Some(sort) = sort_from_type(&pat_type.ty) {
-                vars.insert(ident.ident.to_string(), sort);
+                vars.insert(name.clone(), sort);
+            }
+            if ident.mutability.is_some() {
+                mutable_vars.insert(name);
             }
         }
         let losses = Rc::new(RefCell::new(Vec::new()));
@@ -384,20 +397,89 @@ impl LoweringContext {
         Self {
             return_shape,
             vars,
+            mutable_vars,
+            ssa_aliases: HashMap::new(),
+            ssa_versions: HashMap::new(),
             losses,
         }
     }
 
     fn with_var(&self, name: impl Into<String>, sort: Option<ExprSort>) -> Self {
+        self.with_local_var(name, sort, false)
+    }
+
+    fn with_local_var(
+        &self,
+        name: impl Into<String>,
+        sort: Option<ExprSort>,
+        is_mutable: bool,
+    ) -> Self {
+        let name = name.into();
         let mut vars = self.vars.clone();
         if let Some(sort) = sort {
-            vars.insert(name.into(), sort);
+            vars.insert(name.clone(), sort);
         }
+        let mut mutable_vars = self.mutable_vars.clone();
+        if is_mutable {
+            mutable_vars.insert(name.clone());
+        } else {
+            mutable_vars.remove(&name);
+        }
+        let mut ssa_aliases = self.ssa_aliases.clone();
+        ssa_aliases.remove(&name);
+        let mut ssa_versions = self.ssa_versions.clone();
+        ssa_versions.remove(&name);
         Self {
             return_shape: self.return_shape.clone(),
             vars,
+            mutable_vars,
+            ssa_aliases,
+            ssa_versions,
             losses: Rc::clone(&self.losses),
         }
+    }
+
+    fn current_name(&self, source_name: &str) -> String {
+        self.ssa_aliases
+            .get(source_name)
+            .cloned()
+            .unwrap_or_else(|| source_name.to_string())
+    }
+
+    fn is_mutable_source(&self, source_name: &str) -> bool {
+        self.mutable_vars.contains(source_name)
+    }
+
+    fn with_ssa_rebinding(&self, source_name: &str) -> (String, Self) {
+        let current_name = self.current_name(source_name);
+        let next_version = self.ssa_versions.get(source_name).copied().unwrap_or(0) + 1;
+        let rebound_name = format!("{source_name}_v{next_version}");
+        let mut vars = self.vars.clone();
+        if let Some(sort) = self
+            .vars
+            .get(&current_name)
+            .copied()
+            .or_else(|| self.vars.get(source_name).copied())
+        {
+            vars.insert(rebound_name.clone(), sort);
+        }
+        let mut mutable_vars = self.mutable_vars.clone();
+        if mutable_vars.contains(source_name) {
+            mutable_vars.insert(rebound_name.clone());
+        }
+        let mut ssa_aliases = self.ssa_aliases.clone();
+        ssa_aliases.insert(source_name.to_string(), rebound_name.clone());
+        let mut ssa_versions = self.ssa_versions.clone();
+        ssa_versions.insert(source_name.to_string(), next_version);
+        let ctx = Self {
+            return_shape: self.return_shape.clone(),
+            vars,
+            mutable_vars,
+            ssa_aliases,
+            ssa_versions,
+            losses: Rc::clone(&self.losses),
+        };
+        (rebound_name, ctx)
     }
 
     fn add_loss(&self, loss: &'static str, detail: impl Into<String>) {
@@ -597,6 +679,9 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
         if let Stmt::Local(local) = first {
             return lower_local_binding_to_stmt(local, rest, ctx);
         }
+        if let Stmt::Expr(Expr::MethodCall(method), Some(_)) = first {
+            return lower_method_call_statement_to_stmt(method, rest, ctx);
+        }
     }
 
     let mut lowered = Vec::new();
@@ -604,17 +689,18 @@ fn lower_stmts_to_stmt(stmts: &[Stmt], ctx: &LoweringContext) -> Result<AlgebraT
         let is_tail = idx + 1 == stmts.len();
         match stmt {
             Stmt::Expr(expr, None) if is_tail => lowered.push(lower_tail_expr_to_stmt(expr, ctx)?),
+            Stmt::Expr(Expr::MethodCall(method), Some(_)) => {
+                let tail = lower_method_call_statement_to_stmt(method, &stmts[idx + 1..], ctx)?;
+                return Ok(seq_all_then(lowered, tail));
+            }
             Stmt::Expr(expr, _) => lowered.push(lower_expr_to_stmt(expr, ctx)?),
             Stmt::Local(local) => {
-                return lower_local_binding_to_stmt(local, &stmts[idx + 1..], ctx)
+                let tail = lower_local_binding_to_stmt(local, &stmts[idx + 1..], ctx)?;
+                return Ok(seq_all_then(lowered, tail));
             }
             Stmt::Item(_) => {}
             Stmt::Macro(mac) => {
-                ctx.add_loss(
-                    LOSS_STATEMENT_MACRO,
-                    mac.mac.path.to_token_stream().to_string(),
-                );
-                lowered.push(AlgebraTerm::skip());
+                lowered.push(lower_macro_to_value_term(&mac.mac, ctx)?);
             }
         }
     }
@@ -626,24 +712,23 @@ fn lower_local_binding_to_stmt(
     rest: &[Stmt],
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
-    let Some(name) = simple_binding_name(&local.pat) else {
-        return Err("unsupported let-binding pattern".to_string());
-    };
+    let pattern = lower_local_let_pattern(&local.pat, ctx)?;
     let Some(init) = &local.init else {
         return Err("unsupported let-binding without initializer".to_string());
     };
     let value = lower_expr_to_value_term(&init.expr, ctx)?;
     let declared_sort = local_pat_type(&local.pat).and_then(sort_from_type);
     let inferred_sort = declared_sort.or_else(|| expr_sort(&init.expr, ctx));
-    let nested_ctx = ctx.with_var(name.clone(), inferred_sort);
-    let body = lower_stmts_to_stmt(rest, &nested_ctx)?;
+    let body = match pattern.binding_name() {
+        Some(name) => {
+            let nested_ctx = ctx.with_local_var(name, inferred_sort, pattern.is_mutable());
+            lower_stmts_to_stmt(rest, &nested_ctx)?
+        }
+        None => lower_stmts_to_stmt(rest, ctx)?,
+    };
     Ok(AlgebraTerm::op(
         "let",
-        vec![
-            AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(name)]),
-            value,
-            body,
-        ],
+        vec![pattern.into_term(), value, body],
     ))
 }
 
@@ -653,6 +738,14 @@ fn seq_all(terms: Vec<AlgebraTerm>) -> AlgebraTerm {
         return AlgebraTerm::skip();
     };
     iter.fold(first, |acc, term| AlgebraTerm::op("seq", vec![acc, term]))
+}
+
+fn seq_all_then(mut terms: Vec<AlgebraTerm>, tail: AlgebraTerm) -> AlgebraTerm {
+    if terms.is_empty() {
+        return tail;
+    }
+    terms.push(tail);
+    seq_all(terms)
 }
 
 fn lower_tail_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm, String> {
@@ -726,16 +819,144 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
         Expr::Block(block) => lower_stmts_to_stmt(&block.block.stmts, ctx),
         Expr::ForLoop(for_loop) => lower_for_loop_to_stmt(for_loop, ctx),
         Expr::Match(match_expr) => lower_match_to_stmt(match_expr, ctx),
+        Expr::MethodCall(method) => {
+            if method.turbofish.is_some() {
+                return Err(
+                    "unsupported statement-position method call with explicit turbofish"
+                        .to_string(),
+                );
+            }
+            lower_method_call_expr_to_value_term(method, ctx)
+        }
+        Expr::Call(call) => lower_call_expr_to_value_term(call, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(&mac.mac, ctx),
         Expr::Try(try_expr) => Ok(AlgebraTerm::op(
             "try",
             vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
         )),
-        Expr::Tuple(tuple) if tuple.elems.is_empty() => Ok(AlgebraTerm::skip()),
+        Expr::Index(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Field(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Tuple(tuple) => {
+            if tuple.elems.is_empty() {
+                Ok(AlgebraTerm::skip())
+            } else {
+                lower_discarded_value_expr_to_stmt(expr, ctx)
+            }
+        }
+        Expr::Array(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Reference(_) => lower_discarded_value_expr_to_stmt(expr, ctx),
+        Expr::Path(_) => Ok(AlgebraTerm::skip()),
+        Expr::Lit(_) => Ok(AlgebraTerm::skip()),
         _ => Err(format!(
             "unsupported expression statement {}",
             expr_kind(expr)
         )),
     }
+}
+
+fn lower_method_call_statement_to_stmt(
+    method: &syn::ExprMethodCall,
+    rest: &[Stmt],
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    if method.turbofish.is_some() {
+        return Err(
+            "unsupported statement-position method call with explicit turbofish".to_string(),
+        );
+    }
+
+    let mut sources = Vec::new();
+    if let Some(receiver_source) = method_receiver_source_name(&method.receiver) {
+        if ctx.is_mutable_source(&receiver_source) {
+            push_unique(&mut sources, receiver_source);
+        }
+    }
+    for arg in &method.args {
+        if let Some(source) = mut_borrow_source_name(arg) {
+            push_unique(&mut sources, source);
+        }
+    }
+
+    if sources.is_empty() {
+        let value = lower_method_call_expr_to_value_term(method, ctx)?;
+        if rest.is_empty() {
+            return Ok(value);
+        }
+        let tail = lower_stmts_to_stmt(rest, ctx)?;
+        return Ok(seq_all_then(vec![value], tail));
+    }
+
+    let value = lower_method_call_expr_to_statement_value_term(method, ctx)?;
+    let mut rebound_ctx = ctx.clone();
+    let mut bindings = Vec::new();
+    for source in sources {
+        let (rebound_name, next_ctx) = rebound_ctx.with_ssa_rebinding(&source);
+        rebound_ctx = next_ctx;
+        bindings.push(rebound_name);
+    }
+
+    let mut binding_terms = Vec::new();
+    let mut previous_binding: Option<String> = None;
+    for binding in bindings {
+        let rhs = match &previous_binding {
+            Some(previous) => AlgebraTerm::Var(previous.clone()),
+            None => value.clone(),
+        };
+        previous_binding = Some(binding.clone());
+        binding_terms.push((binding, rhs));
+    }
+
+    let mut body = lower_stmts_to_stmt(rest, &rebound_ctx)?;
+    for (binding, rhs) in binding_terms.into_iter().rev() {
+        body = AlgebraTerm::op(
+            "let",
+            vec![
+                AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(binding.clone())]),
+                rhs,
+                body,
+            ],
+        );
+    }
+    Ok(body)
+}
+
+fn push_unique(items: &mut Vec<String>, item: String) {
+    if !items.iter().any(|existing| existing == &item) {
+        items.push(item);
+    }
+}
+
+fn method_receiver_source_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => path_name(path),
+        Expr::MethodCall(method) => method_receiver_source_name(&method.receiver),
+        Expr::Paren(paren) => method_receiver_source_name(&paren.expr),
+        Expr::Group(group) => method_receiver_source_name(&group.expr),
+        _ => None,
+    }
+}
+
+fn mut_borrow_source_name(expr: &Expr) -> Option<String> {
+    let Expr::Reference(reference) = expr else {
+        return None;
+    };
+    reference.mutability.as_ref()?;
+    match &*reference.expr {
+        Expr::Path(path) => path_name(path),
+        Expr::Paren(paren) => mut_borrow_source_name(&paren.expr),
+        Expr::Group(group) => mut_borrow_source_name(&group.expr),
+        _ => None,
+    }
+}
+
+fn lower_discarded_value_expr_to_stmt(
+    expr: &Expr,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    Ok(AlgebraTerm::op(
+        "drop",
+        vec![lower_expr_to_value_term(expr, ctx)?],
+    ))
 }
 
 fn lower_assign_expr_to_stmt(
@@ -848,7 +1069,7 @@ fn lower_expr_to_bool_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebra
             lower_expr_to_value_term(expr, ctx)
         }
         Expr::Let(let_expr) => lower_let_expr_to_bool_term(let_expr, ctx),
-        Expr::Macro(mac) => lower_macro_to_value_term(mac, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(&mac.mac, ctx),
         Expr::Match(match_expr) => lower_match_to_bool_term(match_expr, ctx),
         Expr::Paren(paren) => lower_expr_to_bool_term(&paren.expr, ctx),
         Expr::Block(block) => {
@@ -1005,6 +1226,80 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
         }
         Expr::Call(call) => lower_call_expr_to_value_term(call, ctx),
         Expr::MethodCall(method) => lower_method_call_expr_to_value_term(method, ctx),
+        Expr::Closure(closure) => {
+            if closure.asyncness.is_some() {
+                return Err("unsupported async closure in value position".to_string());
+            }
+            if closure.capture.is_some() {
+                return Err("unsupported move closure in value position".to_string());
+            }
+            let mut params = Vec::new();
+            let mut closure_ctx = ctx.clone();
+            for input in &closure.inputs {
+                let mut bindings = match input {
+                    syn::Pat::Ident(ident) => vec![(ident.ident.to_string(), None)],
+                    syn::Pat::Type(pat_type) => match &*pat_type.pat {
+                        syn::Pat::Ident(ident) => {
+                            vec![(ident.ident.to_string(), sort_from_type(&pat_type.ty))]
+                        }
+                        _ => {
+                            return Err(
+                                "unsupported closure parameter destructuring pattern".to_string()
+                            );
+                        }
+                    },
+                    syn::Pat::Tuple(tuple) if closure.inputs.len() == 1 => {
+                        let mut tuple_bindings = Vec::new();
+                        for elem in &tuple.elems {
+                            match elem {
+                                syn::Pat::Ident(ident) => {
+                                    tuple_bindings.push((ident.ident.to_string(), None))
+                                }
+                                syn::Pat::Type(pat_type) => {
+                                    let syn::Pat::Ident(ident) = &*pat_type.pat else {
+                                        return Err(
+                                            "unsupported closure parameter destructuring pattern"
+                                                .to_string(),
+                                        );
+                                    };
+                                    tuple_bindings.push((
+                                        ident.ident.to_string(),
+                                        sort_from_type(&pat_type.ty),
+                                    ));
+                                }
+                                _ => {
+                                    return Err(
+                                        "unsupported closure parameter destructuring pattern"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                        }
+                        tuple_bindings
+                    }
+                    _ => {
+                        return Err(
+                            "unsupported closure parameter destructuring pattern".to_string()
+                        );
+                    }
+                };
+                for (name, sort) in bindings.drain(..) {
+                    closure_ctx = closure_ctx.with_var(name.clone(), sort);
+                    params.push(AlgebraTerm::Symbol(name));
+                }
+            }
+            ctx.add_loss(
+                "closure-captures-environment",
+                closure.to_token_stream().to_string(),
+            );
+            Ok(AlgebraTerm::op(
+                "closure",
+                vec![
+                    AlgebraTerm::List(params),
+                    lower_expr_to_value_term(&closure.body, &closure_ctx)?,
+                ],
+            ))
+        }
         Expr::Array(array) => {
             let items = array
                 .elems
@@ -1056,8 +1351,7 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
                 vec![lower_expr_to_value_term(&try_expr.expr, ctx)?],
             ))
         }
-        Expr::Macro(mac) if mac.mac.path.is_ident("vec") => lower_vec_macro_to_value_term(mac, ctx),
-        Expr::Macro(mac) => lower_macro_to_value_term(mac, ctx),
+        Expr::Macro(mac) => lower_macro_to_value_term(&mac.mac, ctx),
         Expr::Match(match_expr) => lower_match_to_value_term(match_expr, ctx),
         Expr::Reference(reference) => {
             let op = if reference.mutability.is_some() {
@@ -1173,14 +1467,15 @@ fn lower_call_expr_to_value_term(
     call: &syn::ExprCall,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
-    let callee = match &*call.func {
-        Expr::Path(path) => path_name_for_expr(path, ctx).unwrap_or_else(|| "unknown".to_string()),
+    let (op_name, callee) = match &*call.func {
+        Expr::Path(path) => path_call_name_for_expr(path)
+            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string())),
         other => {
             ctx.add_loss(
                 "ffi-call-unresolved-callee",
                 format!("non-path callee {}", expr_kind(other)),
             );
-            "unknown".to_string()
+            ("unknown".to_string(), "unknown".to_string())
         }
     };
     ctx.add_loss("ffi-call-unresolved-effect", callee.clone());
@@ -1190,7 +1485,7 @@ fn lower_call_expr_to_value_term(
         .map(|arg| lower_expr_to_value_term(arg, ctx))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(AlgebraTerm::op(
-        format!("call:{callee}"),
+        format!("call:{op_name}"),
         vec![AlgebraTerm::Symbol(callee), AlgebraTerm::List(args)],
     ))
 }
@@ -1199,18 +1494,49 @@ fn lower_method_call_expr_to_value_term(
     method: &syn::ExprMethodCall,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
+    lower_method_call_expr_to_value_term_with_options(method, ctx, true, false)
+}
+
+fn lower_method_call_expr_to_statement_value_term(
+    method: &syn::ExprMethodCall,
+    ctx: &LoweringContext,
+) -> Result<AlgebraTerm, String> {
+    lower_method_call_expr_to_value_term_with_options(method, ctx, false, true)
+}
+
+fn lower_method_call_expr_to_value_term_with_options(
+    method: &syn::ExprMethodCall,
+    ctx: &LoweringContext,
+    record_outer_effect: bool,
+    statement_mut_args: bool,
+) -> Result<AlgebraTerm, String> {
     let method_name = method.method.to_string();
-    ctx.add_loss("ffi-call-unresolved-effect", method_name.clone());
+    if record_outer_effect {
+        ctx.add_loss("ffi-call-unresolved-effect", method_name.clone());
+    }
     let receiver = lower_expr_to_value_term(&method.receiver, ctx)?;
     let args = method
         .args
         .iter()
-        .map(|arg| lower_expr_to_value_term(arg, ctx))
+        .map(|arg| lower_method_arg_expr_to_value_term(arg, ctx, statement_mut_args))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(AlgebraTerm::op(
         format!("method:{method_name}"),
         vec![receiver, AlgebraTerm::List(args)],
     ))
+}
+
+fn lower_method_arg_expr_to_value_term(
+    arg: &Expr,
+    ctx: &LoweringContext,
+    statement_mut_args: bool,
+) -> Result<AlgebraTerm, String> {
+    if statement_mut_args {
+        if let Some(source) = mut_borrow_source_name(arg) {
+            return Ok(AlgebraTerm::Var(ctx.current_name(&source)));
+        }
+    }
+    lower_expr_to_value_term(arg, ctx)
 }
 
 fn lower_struct_expr_to_value_term(
@@ -1236,39 +1562,43 @@ fn lower_struct_expr_to_value_term(
 }
 
 fn lower_macro_to_value_term(
-    mac: &syn::ExprMacro,
+    mac: &syn::Macro,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
     let name = mac
-        .mac
         .path
         .segments
         .last()
         .map(|segment| segment.ident.to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    ctx.add_loss(LOSS_D4_EXPR_MACRO, format!("{name}!"));
+    ctx.add_loss(LOSS_MACRO_NOT_EXPANDED, format!("{name}!"));
+    if mac.path.is_ident("vec") {
+        if let Some(term) = lower_vec_macro_to_value_term(mac, ctx)? {
+            return Ok(term);
+        }
+    }
     Ok(AlgebraTerm::op(
-        format!("call:macro:{name}"),
-        vec![AlgebraTerm::Symbol(name), AlgebraTerm::List(Vec::new())],
+        format!("macro_call:{name}"),
+        vec![AlgebraTerm::Symbol(mac.tokens.to_string())],
     ))
 }
 
 fn lower_vec_macro_to_value_term(
-    mac: &syn::ExprMacro,
+    mac: &syn::Macro,
     ctx: &LoweringContext,
-) -> Result<AlgebraTerm, String> {
-    ctx.add_loss("vec-macro-desugared-to-array", "vec!");
+) -> Result<Option<AlgebraTerm>, String> {
     let parser = syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated;
-    let items = match parser.parse2(mac.mac.tokens.clone()) {
+    let items = match parser.parse2(mac.tokens.clone()) {
         Ok(items) => items
             .iter()
             .map(|expr| lower_expr_to_value_term(expr, ctx))
             .collect::<Result<Vec<_>, _>>()?,
-        Err(err) => {
-            return Err(format!("unsupported vec! macro body: {err}"));
-        }
+        Err(_) => return Ok(None),
     };
-    Ok(AlgebraTerm::op("array", vec![AlgebraTerm::List(items)]))
+    Ok(Some(AlgebraTerm::op(
+        "array",
+        vec![AlgebraTerm::List(items)],
+    )))
 }
 
 fn expr_sort(expr: &Expr, ctx: &LoweringContext) -> Option<ExprSort> {
@@ -1446,11 +1776,52 @@ fn type_surface(ty: &Type) -> String {
     ty.to_token_stream().to_string()
 }
 
-fn simple_binding_name(pat: &syn::Pat) -> Option<String> {
+enum LocalLetPattern {
+    Bind { name: String, is_mutable: bool },
+    Wild,
+}
+
+impl LocalLetPattern {
+    fn binding_name(&self) -> Option<String> {
+        match self {
+            LocalLetPattern::Bind { name, .. } => Some(name.clone()),
+            LocalLetPattern::Wild => None,
+        }
+    }
+
+    fn is_mutable(&self) -> bool {
+        match self {
+            LocalLetPattern::Bind { is_mutable, .. } => *is_mutable,
+            LocalLetPattern::Wild => false,
+        }
+    }
+
+    fn into_term(self) -> AlgebraTerm {
+        match self {
+            LocalLetPattern::Bind { name, .. } => {
+                AlgebraTerm::op("pattern_bind", vec![AlgebraTerm::Symbol(name)])
+            }
+            LocalLetPattern::Wild => AlgebraTerm::op("pattern_wild", vec![]),
+        }
+    }
+}
+
+fn lower_local_let_pattern(
+    pat: &syn::Pat,
+    ctx: &LoweringContext,
+) -> Result<LocalLetPattern, String> {
     match pat {
-        syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
-        syn::Pat::Type(pat_type) => simple_binding_name(&pat_type.pat),
-        _ => None,
+        syn::Pat::Ident(ident) => {
+            let name = ident.ident.to_string();
+            let is_mutable = ident.mutability.is_some();
+            if ident.mutability.is_some() {
+                ctx.add_loss(LOSS_LET_BINDING_MUTABILITY, name.clone());
+            }
+            Ok(LocalLetPattern::Bind { name, is_mutable })
+        }
+        syn::Pat::Type(pat_type) => lower_local_let_pattern(&pat_type.pat, ctx),
+        syn::Pat::Wild(_) => Ok(LocalLetPattern::Wild),
+        _ => Err("unsupported let-binding pattern".to_string()),
     }
 }
 
@@ -1471,6 +1842,24 @@ fn path_name(path: &syn::ExprPath) -> Option<String> {
         .map(|segment| segment.ident.to_string())
 }
 
+fn path_call_name_for_expr(path: &syn::ExprPath) -> Option<(String, String)> {
+    if path.qself.is_some() {
+        return None;
+    }
+    let op_name = path.path.segments.last()?.ident.to_string();
+    let mut callee = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::");
+    if path.path.leading_colon.is_some() {
+        callee = format!("::{callee}");
+    }
+    Some((op_name, callee))
+}
+
 fn path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<String> {
     if path.qself.is_some() {
         return None;
@@ -1481,7 +1870,7 @@ fn path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<Str
             path.path.to_token_stream().to_string(),
         );
     }
-    path_name(path)
+    path_name(path).map(|name| ctx.current_name(&name))
 }
 
 fn expr_kind(expr: &Expr) -> &'static str {
@@ -1666,6 +2055,28 @@ mod tests {
             parsed["term_surface"].as_str(),
             Some("let(pattern_bind(y), add(x, 1), return(y))")
         );
+    }
+
+    #[test]
+    fn rust_term_json_lowers_statement_position_method_call() {
+        let src = r#"
+            struct Sink;
+            impl Sink {
+                fn write(&mut self, value: i32) {}
+            }
+            fn caller(mut sink: Sink, value: i32) {
+                sink.write(value);
+            }
+        "#;
+        let item_fn = parse_named(src, "caller");
+        let bytes = rust_function_term_json(&item_fn, "caller.rs").unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+
+        assert_eq!(
+            parsed["term_surface"].as_str(),
+            Some("let(pattern_bind(sink_v1), method:write(sink, [value]), skip)")
+        );
+        assert_eq!(parsed["term"]["name"].as_str(), Some("let"));
     }
 
     #[test]

@@ -1,0 +1,55 @@
+{
+  "cid": "blake3-512:234ccbb374afd0225838e50b01c60dabfd3fd3a7bb1aa748d9a5c89041fe2124b008546d7390a997e47f4e70827c62266cdf4e43b36d2e8995091eb992ba9ecf",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "err_type": "FfiError",
+    "function_symbol": "inner_compose@ffi.rs",
+    "ok_type": "(String, String)",
+    "return_type": "Result<(String, String), FfiError>",
+    "role": "post",
+    "signature_position": "return",
+    "type_shape": "result"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "or",
+    "operands": [
+      {
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      },
+      {
+        "kind": "atomic",
+        "name": "is_err",
+        "args": [
+          {
+            "kind": "var",
+            "name": "result"
+          }
+        ]
+      }
+    ]
+  },
+  "schemaVersion": "1",
+  "source_kind": "type-signature",
+  "source_locator": {
+    "source_cid": "blake3-512:1fed23f687b01aa6ff51cb662dba5d31ce5ed2a5214c5bfcbead047cd64570541ff52138efd5e6a1f9f2d120a4e1c096244d07bc9ee0389e997f448c0150e59a",
+    "span": {
+      "end": {
+        "col": 3,
+        "line": 301
+      },
+      "start": {
+        "col": 3,
+        "line": 301
+      }
+    }
+  }
+}

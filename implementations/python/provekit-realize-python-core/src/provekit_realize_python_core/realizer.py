@@ -13,6 +13,15 @@ import blake3
 BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies.json"
 )
+LIBPROVEKIT_BODY_TEMPLATE_REL = Path(
+    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-libprovekit.json"
+)
+RUST_RUNTIME_BODY_TEMPLATE_REL = Path(
+    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-rust-runtime.json"
+)
+BLAKE3_BODY_TEMPLATE_REL = Path(
+    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json"
+)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(
     b"provekit-realize-python-core@0.1.0"
@@ -36,6 +45,39 @@ class BodyTemplateEntry:
     requires_return_type: str | None
 
 
+@dataclass(frozen=True)
+class TermBody:
+    body: str
+
+
+@dataclass(frozen=True)
+class TermExpression:
+    text: str | None = None
+    type_name: str = ""
+
+
+@dataclass(frozen=True)
+class MissingTemplateEntry:
+    operation_kind: str
+    args_shape: tuple[str, ...]
+    function: str
+    term_position: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "operation_kind": self.operation_kind,
+            "args_shape": list(self.args_shape),
+            "function": self.function,
+            "term_position": self.term_position,
+        }
+
+
+class MissingTemplateError(Exception):
+    def __init__(self, entries: tuple[MissingTemplateEntry, ...]):
+        super().__init__("missing body-template entry")
+        self.entries = entries
+
+
 def emit_stub(
     function: str,
     params: list[str],
@@ -45,21 +87,85 @@ def emit_stub(
     contract: dict[str, Any] | None = None,
     sugar_cids: list[str] | None = None,
     sugar_plugins: list[Any] | None = None,
+    named_term_tree: dict[str, Any] | None = None,
+    annotate: bool = False,
 ) -> dict[str, Any]:
-    body = body_template_for(concept_name, params, param_types, return_type)
-    is_stub = body is None
-    if body is None:
-        body = f'raise NotImplementedError("provekit-bind canonical: {concept_name}")'
+    if named_term_tree is None:
+        missing = missing_templates_for(
+            function,
+            params,
+            param_types,
+            return_type,
+            concept_name,
+        )
+    else:
+        missing = missing_templates_for_tree(
+            function,
+            params,
+            param_types,
+            return_type,
+            named_term_tree,
+        )
+    if missing:
+        raise MissingTemplateError(missing)
+
+    if named_term_tree is None:
+        term_body = term_body_for(concept_name, params, param_types, return_type)
+    else:
+        term_body = term_body_for_tree(
+            named_term_tree,
+            params,
+            param_types,
+            return_type,
+            annotate=annotate,
+        )
+    if term_body is not None:
+        body = term_body.body
+    else:
+        body = body_template_for(concept_name, params, param_types, return_type)
+        if body is None:
+            raise MissingTemplateError(
+                (
+                    MissingTemplateEntry(
+                        operation_kind=concept_name,
+                        args_shape=tuple(map_source_type(ty) for ty in param_types),
+                        function=function,
+                        term_position="body",
+                    ),
+                )
+            )
     contract_lines = contract_comment_lines(contract, sugar_cids or [], sugar_plugins or [])
     result = {
         "source": _function_source(function, params, body, leading_lines=contract_lines),
-        "is_stub": is_stub,
+        "is_stub": False,
         "extension": "py",
     }
     if contract_lines:
         result["observed_loss_record"] = {}
         result["used_sugars"] = [sugar_cids[0]] if sugar_cids else []
     return result
+
+
+def missing_templates_for(
+    function: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    concept_name: str,
+) -> tuple[MissingTemplateEntry, ...]:
+    collector = _MissingTemplateCollector(function, params, param_types, return_type)
+    return collector.collect(concept_name)
+
+
+def missing_templates_for_tree(
+    function: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    named_term_tree: dict[str, Any],
+) -> tuple[MissingTemplateEntry, ...]:
+    collector = _MissingTemplateCollector(function, params, param_types, return_type)
+    return collector.collect_tree(named_term_tree)
 
 
 def contract_comment_lines(
@@ -220,10 +326,407 @@ def body_template_for(
     param_types: list[str],
     return_type: str,
 ) -> str | None:
+    return _body_template_for_entries(
+        entries(),
+        (concept_name, concept_name.removeprefix("concept:")),
+        params,
+        param_types,
+        return_type,
+    )
+
+
+class _MissingTemplateCollector:
+    def __init__(
+        self,
+        function: str,
+        params: list[str],
+        param_types: list[str],
+        return_type: str,
+    ) -> None:
+        self.function = function
+        self.params = params
+        self.param_types = param_types
+        self.return_type = return_type
+        self.entries: list[MissingTemplateEntry] = []
+
+    def collect(self, surface: str) -> tuple[MissingTemplateEntry, ...]:
+        stripped = surface.strip()
+        if self._is_term_surface(stripped):
+            self._collect_body(stripped, "body")
+        elif body_template_for(stripped, self.params, self.param_types, self.return_type) is None:
+            self._add(
+                operation_kind=stripped,
+                args_shape=tuple(map_source_type(ty) for ty in self.param_types),
+                term_position="body",
+            )
+        return tuple(self.entries)
+
+    def collect_tree(self, tree: dict[str, Any]) -> tuple[MissingTemplateEntry, ...]:
+        self._collect_tree(tree, "body.namedTermTree")
+        return tuple(self.entries)
+
+    def _collect_tree(self, tree: Any, position: str) -> None:
+        if not isinstance(tree, dict):
+            self._add("namedTermTree", (), position)
+            return
+        concept_name = _tree_concept_name(tree)
+        if not concept_name:
+            self._add("namedTermTree", (), position)
+            return
+        operation_kind = _tree_operation_kind(tree)
+        args = _tree_args(tree)
+        if not _is_tree_composer(concept_name, operation_kind):
+            template_params, template_types = self._tree_template_signature(args)
+            if (
+                body_template_for(
+                    concept_name,
+                    template_params,
+                    template_types,
+                    self.return_type,
+                )
+                is None
+            ):
+                self._add(
+                    concept_name,
+                    tuple(map_source_type(ty) for ty in template_types),
+                    position,
+                )
+        for index, child in enumerate(args):
+            self._collect_tree(child, f"{position}.args[{index}]")
+
+    def _tree_template_signature(
+        self,
+        args: list[dict[str, Any]],
+    ) -> tuple[list[str], list[str]]:
+        if not args:
+            return self.params, self.param_types
+        names = [f"arg{index}" for index, _child in enumerate(args)]
+        types = [
+            _tree_concept_name(child) or _tree_operation_kind(child) or "expr"
+            for child in args
+        ]
+        return names, types
+
+    def _is_term_surface(self, surface: str) -> bool:
+        if surface == "skip":
+            return True
+        if surface.startswith(("method:", "call:", "let(")):
+            return True
+        head_args = _head_and_args(surface)
+        if head_args is None:
+            return False
+        head, _inner = head_args
+        return bool(head)
+
+    def _collect_body(self, surface: str, position: str) -> None:
+        stripped = surface.strip()
+        if stripped == "skip":
+            return
+        return_arg = _single_call_arg(stripped, "return")
+        if return_arg is not None:
+            self._collect_expression(return_arg, f"{position}.return")
+            return
+        if stripped.startswith("let("):
+            self._collect_let(stripped, position)
+            return
+        self._collect_expression(stripped, position)
+
+    def _collect_let(self, surface: str, position: str) -> None:
+        inner = _single_call_arg(surface, "let")
+        if inner is None:
+            self._add("let", self._args_shape([surface]), position)
+            return
+        args = _split_top_level(inner)
+        if len(args) not in {2, 3}:
+            self._add("let", self._args_shape(args), position)
+            return
+        self._collect_expression(args[1], f"{position}.let.rhs")
+        if len(args) == 3:
+            self._collect_body(args[2], f"{position}.let.cont")
+
+    def _collect_expression(self, surface: str, position: str) -> None:
+        stripped = surface.strip()
+        return_arg = _single_call_arg(stripped, "return")
+        if return_arg is not None:
+            self._collect_expression(return_arg, f"{position}.return")
+            return
+        if stripped.startswith("method:"):
+            self._collect_method(stripped, position)
+            return
+        if stripped.startswith("call:"):
+            self._collect_call(stripped, position)
+            return
+        if stripped.startswith("let("):
+            self._collect_let(stripped, position)
+            return
+        head_args = _head_and_args(stripped)
+        if head_args is None:
+            return
+        op_name, inner = head_args
+        raw_args = _split_top_level(inner)
+        candidates = _rust_runtime_operation_concepts(op_name)
+        op_position = f"{position}.{op_name}"
+        if not candidates:
+            self._add(op_name, self._args_shape(raw_args), op_position)
+            for index, arg in enumerate(raw_args):
+                self._collect_expression(arg, f"{op_position}.args[{index}]")
+            return
+        for index, arg in enumerate(raw_args):
+            self._collect_expression(arg, f"{op_position}.args[{index}]")
+        if not self._operation_template_matches(candidates, raw_args):
+            self._add(candidates[0], self._args_shape(raw_args), op_position)
+
+    def _collect_call(self, surface: str, position: str) -> None:
+        parsed = _parse_call_surface(surface)
+        if parsed is None:
+            self._add("call", self._args_shape([surface]), position)
+            return
+        path, args = parsed
+        op_position = f"{position}.call:{path}"
+        for index, arg in enumerate(args):
+            self._collect_expression(arg, f"{op_position}.args[{index}]")
+        candidates = _rust_runtime_call_concepts(path)
+        if candidates:
+            if not self._operation_template_matches(candidates, args):
+                self._add(candidates[0], self._args_shape(args), op_position)
+            return
+        if "::" in path:
+            self._add(f"call:{path}", self._args_shape(args), op_position)
+
+    def _collect_method(self, surface: str, position: str) -> None:
+        parsed = _parse_method_surface(surface)
+        if parsed is None:
+            self._add("method", self._args_shape([surface]), position)
+            return
+        method_name, receiver, args = parsed
+        op_position = f"{position}.method:{method_name}"
+        self._collect_expression(receiver, f"{op_position}.receiver")
+        for index, arg in enumerate(args):
+            self._collect_expression(arg, f"{op_position}.args[{index}]")
+        if _libprovekit_method_template(
+            method_name,
+            receiver,
+            args,
+            self.params,
+            self.param_types,
+            self.return_type,
+        ) is not None:
+            return
+        rust_candidates = _rust_runtime_method_concepts(method_name, receiver)
+        if _rust_runtime_method_template(
+            method_name,
+            receiver,
+            args,
+            self.params,
+            self.param_types,
+            self.return_type,
+        ) is not None:
+            return
+        if rust_candidates and _requires_rust_method_template(method_name):
+            self._add(
+                rust_candidates[0],
+                self._args_shape([receiver, *args]),
+                op_position,
+            )
+
+    def _operation_template_matches(
+        self,
+        candidates: tuple[str, ...],
+        raw_args: list[str],
+    ) -> bool:
+        arg_terms = _lower_argument_terms(
+            raw_args,
+            self.params,
+            self.param_types,
+            self.return_type,
+        )
+        if arg_terms is None:
+            return True
+        arg_exprs = [term.text or "" for term in arg_terms]
+        arg_types = [
+            _expression_type(term, arg, self.params, self.param_types)
+            for term, arg in zip(arg_terms, raw_args, strict=True)
+        ]
+        return (
+            _body_template_expression_for_candidates(
+                candidates,
+                arg_exprs,
+                arg_types,
+                self.return_type,
+            )
+            is not None
+        )
+
+    def _args_shape(self, args: list[str]) -> tuple[str, ...]:
+        return tuple(
+            _arg_shape(arg, self.params, self.param_types)
+            for arg in args
+            if arg.strip()
+        )
+
+    def _add(
+        self,
+        operation_kind: str,
+        args_shape: tuple[str, ...],
+        term_position: str,
+    ) -> None:
+        self.entries.append(
+            MissingTemplateEntry(
+                operation_kind=operation_kind,
+                args_shape=args_shape,
+                function=self.function,
+                term_position=term_position,
+            )
+        )
+
+
+def term_body_for(
+    term_surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermBody | None:
+    surface = term_surface.strip()
+    if not surface:
+        return None
+
+    return_arg = _single_call_arg(surface, "return")
+    if return_arg is not None:
+        expr = _lower_term_expression(return_arg, params, param_types, return_type)
+        if expr is None:
+            return None
+        return TermBody(f"return {expr.text}")
+
+    if surface.startswith("method:"):
+        method_body = _lower_method_template_body(surface, params, param_types, return_type)
+        if method_body is not None:
+            return TermBody(method_body)
+        expr = _lower_term_expression(surface, params, param_types, return_type)
+        if expr is None:
+            return None
+        return TermBody(f"return {expr.text}")
+
+    if surface.startswith("call:"):
+        expr = _lower_term_expression(surface, params, param_types, return_type)
+        if expr is None:
+            return None
+        return TermBody(f"return {expr.text}")
+
+    if surface.startswith("let("):
+        return _lower_let_body(surface, params, param_types, return_type)
+
+    return None
+
+
+def term_body_for_tree(
+    named_term_tree: dict[str, Any],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    *,
+    annotate: bool = False,
+) -> TermBody | None:
+    return _lower_tree_body(
+        named_term_tree,
+        params,
+        param_types,
+        return_type,
+        annotate=annotate,
+    )
+
+
+def _lower_tree_body(
+    tree: Any,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    *,
+    annotate: bool,
+) -> TermBody | None:
+    if not isinstance(tree, dict):
+        return None
+    concept_name = _tree_concept_name(tree)
+    if not concept_name:
+        return None
+    operation_kind = _tree_operation_kind(tree)
+    args = _tree_args(tree)
+    if _is_tree_composer(concept_name, operation_kind):
+        bodies: list[str] = []
+        for child in args:
+            child_body = _lower_tree_body(
+                child,
+                params,
+                param_types,
+                return_type,
+                annotate=annotate,
+            )
+            if child_body is None:
+                return None
+            if child_body.body:
+                bodies.append(child_body.body)
+        body = "\n".join(bodies)
+        return TermBody(_annotated_body(body, concept_name, annotate))
+
+    child_bodies: list[str] = []
+    for child in args:
+        child_body = _lower_tree_body(
+            child,
+            params,
+            param_types,
+            return_type,
+            annotate=annotate,
+        )
+        if child_body is None:
+            return None
+        if child_body.body:
+            child_bodies.append(child_body.body)
+    body = body_template_for(concept_name, params, param_types, return_type)
+    if body is None:
+        return None
+    if child_bodies:
+        body = "\n".join([*child_bodies, body])
+    return TermBody(_annotated_body(body, concept_name, annotate))
+
+
+def _tree_concept_name(tree: dict[str, Any]) -> str:
+    value = tree.get("conceptName", tree.get("concept_name"))
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _tree_operation_kind(tree: dict[str, Any]) -> str:
+    value = tree.get("operationKind", tree.get("operation_kind"))
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _tree_args(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    args = tree.get("args")
+    if not isinstance(args, list):
+        return []
+    return [arg for arg in args if isinstance(arg, dict)]
+
+
+def _is_tree_composer(concept_name: str, operation_kind: str) -> bool:
+    return operation_kind == "seq" or concept_name in {"concept:seq", "python:seq"}
+
+
+def _annotated_body(body: str, concept_name: str, annotate: bool) -> str:
+    if not annotate:
+        return body
+    if not body:
+        return f"# concept: {concept_name}"
+    return f"# concept: {concept_name}\n{body}"
+
+
+def _body_template_for_entries(
+    body_entries: tuple[BodyTemplateEntry, ...],
+    candidate_names: tuple[str, ...],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
     mapped_param_types = [map_source_type(ty) for ty in param_types]
     mapped_return_type = map_source_type(return_type)
-    candidate_names = (concept_name, concept_name.removeprefix("concept:"))
-    for entry in entries():
+    for entry in body_entries:
         if entry.concept_name not in candidate_names:
             continue
         if entry.min_params is not None and len(params) < entry.min_params:
@@ -245,11 +748,676 @@ def body_template_for(
     return None
 
 
+def _lower_term_expression(
+    term_surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermExpression | None:
+    surface = term_surface.strip()
+    return_arg = _single_call_arg(surface, "return")
+    if return_arg is not None:
+        return _lower_term_expression(return_arg, params, param_types, return_type)
+    if surface.startswith("method:"):
+        return _lower_method_expression(surface, params, param_types, return_type)
+    if surface.startswith("call:"):
+        return _lower_call_expression(surface, params, param_types, return_type)
+    if surface.startswith("let("):
+        return None
+    operation = _lower_operation_expression(surface, params, param_types, return_type)
+    if operation is not None:
+        return operation
+    return TermExpression(text=surface, type_name=_surface_type(surface, params, param_types))
+
+
+def _lower_method_template_body(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    method = _parse_method_surface(surface)
+    if method is None:
+        return None
+    method_name, receiver, args = method
+    return _libprovekit_method_template(method_name, receiver, args, params, param_types, return_type)
+
+
+def _lower_method_expression(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermExpression | None:
+    method = _parse_method_surface(surface)
+    if method is None:
+        return None
+    method_name, receiver, args = method
+    template = _libprovekit_method_template(
+        method_name,
+        receiver,
+        args,
+        params,
+        param_types,
+        return_type,
+    )
+    if template is not None:
+        expression = _single_return_expression(template)
+        if expression is not None:
+            return TermExpression(text=expression, type_name=map_source_type(return_type))
+    template = _rust_runtime_method_template(
+        method_name,
+        receiver,
+        args,
+        params,
+        param_types,
+        return_type,
+    )
+    if template is not None:
+        expression = _single_return_expression(template)
+        if expression is not None:
+            return TermExpression(
+                text=expression,
+                type_name=_rust_runtime_method_return_type(method_name),
+            )
+    receiver_expr = _lower_argument_expression(receiver, params, param_types, return_type)
+    arg_exprs = _lower_argument_list(args, params, param_types, return_type)
+    if arg_exprs is None:
+        return None
+    return TermExpression(text=f"{receiver_expr.text}.{method_name}({', '.join(arg_exprs)})")
+
+
+def _lower_call_expression(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermExpression | None:
+    parsed = _parse_call_surface(surface)
+    if parsed is None:
+        return None
+    path, args = parsed
+    arg_terms = _lower_argument_terms(args, params, param_types, return_type)
+    if arg_terms is None:
+        return None
+    arg_exprs = [term.text or "" for term in arg_terms]
+    arg_types = [
+        _expression_type(term, arg, params, param_types)
+        for term, arg in zip(arg_terms, args, strict=True)
+    ]
+    runtime_concepts = _rust_runtime_call_concepts(path)
+    if runtime_concepts:
+        template = _body_template_expression_for_candidates(
+            runtime_concepts,
+            arg_exprs,
+            arg_types,
+            return_type,
+        )
+        if template is not None:
+            return TermExpression(
+                text=template,
+                type_name=_rust_runtime_call_return_type(path),
+            )
+    if "::" in path:
+        return None
+    return TermExpression(text=f"{path}({', '.join(arg_exprs)})")
+
+
+def _lower_let_body(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermBody | None:
+    inner = _single_call_arg(surface, "let")
+    if inner is None:
+        return None
+    args = _split_top_level(inner)
+    if len(args) not in {2, 3}:
+        return None
+    pattern = _lower_pattern(args[0])
+    rhs = _lower_term_expression(args[1], params, param_types, return_type)
+    if rhs is None:
+        return None
+    head = f"{pattern} = {rhs.text}"
+    if len(args) == 2:
+        return TermBody(head)
+    continuation = _lower_term_body(args[2], params, param_types, return_type)
+    if continuation is None:
+        return None
+    if not continuation.body:
+        return TermBody(head)
+    return TermBody(f"{head}\n{continuation.body}")
+
+
+def _lower_term_body(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermBody | None:
+    stripped = surface.strip()
+    if stripped == "skip":
+        return TermBody("")
+    return_arg = _single_call_arg(stripped, "return")
+    if return_arg is not None:
+        expr = _lower_term_expression(return_arg, params, param_types, return_type)
+        if expr is None:
+            return None
+        return TermBody(f"return {expr.text}")
+    if stripped.startswith("let("):
+        return _lower_let_body(stripped, params, param_types, return_type)
+    expr = _lower_term_expression(stripped, params, param_types, return_type)
+    if expr is None:
+        return None
+    return TermBody(expr.text or "")
+
+
+def _lower_pattern(pattern: str) -> str:
+    raw = pattern.strip()
+    bind_arg = _single_call_arg(raw, "pattern_bind")
+    if bind_arg is not None:
+        raw = bind_arg.strip()
+    ascription = _split_type_ascription(raw)
+    if ascription is None:
+        return raw
+    name, type_name = ascription
+    return f"{name}: {map_source_type(type_name)}"
+
+
+def _lower_argument_list(
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> list[str] | None:
+    terms = _lower_argument_terms(args, params, param_types, return_type)
+    if terms is None:
+        return None
+    return [term.text or "" for term in terms]
+
+
+def _lower_argument_terms(
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> list[TermExpression] | None:
+    terms: list[TermExpression] = []
+    for arg in args:
+        expr = _lower_argument_expression(arg, params, param_types, return_type)
+        if expr.text is None:
+            return None
+        terms.append(expr)
+    return terms
+
+
+def _lower_argument_expression(
+    arg: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermExpression:
+    expr = _lower_term_expression(arg, params, param_types, return_type)
+    if expr is not None:
+        return expr
+    return TermExpression(text=arg.strip())
+
+
+def _libprovekit_method_template(
+    method_name: str,
+    receiver: str,
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    if not _simple_receiver_name(receiver):
+        return None
+    receiver_key = _concept_key(receiver)
+    method_key = _concept_key(method_name)
+    candidates = (
+        f"concept:{receiver_key}-{method_key}",
+        f"{receiver_key}-{method_key}",
+    )
+    arg_types = [_type_for_argument(arg, params, param_types) for arg in args]
+    return _body_template_for_entries(
+        libprovekit_entries(),
+        candidates,
+        [arg.strip() for arg in args],
+        arg_types,
+        return_type,
+    )
+
+
+def _rust_runtime_method_template(
+    method_name: str,
+    receiver: str,
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    candidates = _rust_runtime_method_concepts(method_name, receiver)
+    if not candidates:
+        return None
+    receiver_expr = _lower_argument_expression(receiver, params, param_types, return_type)
+    if receiver_expr.text is None:
+        return None
+    arg_terms = _lower_argument_terms(args, params, param_types, return_type)
+    if arg_terms is None:
+        return None
+    template_params = [receiver_expr.text, *(term.text or "" for term in arg_terms)]
+    template_types = _rust_runtime_method_param_types(
+        method_name,
+        receiver_expr,
+        arg_terms,
+        receiver,
+        args,
+        params,
+        param_types,
+    )
+    return _body_template_for_entries(
+        entries(),
+        candidates,
+        template_params,
+        template_types,
+        return_type,
+    )
+
+
+def _body_template_expression_for(
+    concept_name: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    return _body_template_expression_for_candidates(
+        (concept_name, concept_name.removeprefix("concept:")),
+        params,
+        param_types,
+        return_type,
+    )
+
+
+def _body_template_expression_for_candidates(
+    candidate_names: tuple[str, ...],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> str | None:
+    body = _body_template_for_entries(
+        entries(),
+        candidate_names,
+        params,
+        param_types,
+        return_type,
+    )
+    if body is None:
+        return None
+    return _single_return_expression(body)
+
+
+def _rust_runtime_call_concepts(path: str) -> tuple[str, ...]:
+    match path:
+        case "blake3::Hasher::new":
+            return ("rust-call:blake3::Hasher::new",)
+        case "hex::encode":
+            return ("rust-call:hex::encode",)
+        case "String::with_capacity":
+            return ("concept:string-with-capacity",)
+    if path.endswith("::new"):
+        return ("concept:new",)
+    return ()
+
+
+def _rust_runtime_call_return_type(path: str) -> str:
+    match path:
+        case "hex::encode" | "String::with_capacity":
+            return "str"
+    if path == "blake3::Hasher::new":
+        return "blake3.Hasher"
+    return ""
+
+
+def _lower_operation_expression(
+    surface: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> TermExpression | None:
+    head_args = _head_and_args(surface)
+    if head_args is None:
+        return None
+    op_name, inner = head_args
+    candidates = _rust_runtime_operation_concepts(op_name)
+    if not candidates:
+        return None
+    raw_args = _split_top_level(inner)
+    arg_terms = _lower_argument_terms(raw_args, params, param_types, return_type)
+    if arg_terms is None:
+        return None
+    arg_exprs = [term.text or "" for term in arg_terms]
+    arg_types = [
+        _expression_type(term, arg, params, param_types)
+        for term, arg in zip(arg_terms, raw_args, strict=True)
+    ]
+    template = _body_template_expression_for_candidates(
+        candidates,
+        arg_exprs,
+        arg_types,
+        return_type,
+    )
+    if template is None:
+        return None
+    return TermExpression(
+        text=template,
+        type_name=_rust_runtime_operation_return_type(op_name, arg_terms),
+    )
+
+
+def _rust_runtime_operation_concepts(op_name: str) -> tuple[str, ...]:
+    match op_name.strip():
+        case "array_repeat":
+            return ("concept:array-repeat",)
+        case "add":
+            return ("concept:add",)
+        case "borrow":
+            return ("concept:borrow",)
+    return ()
+
+
+def _rust_runtime_operation_return_type(
+    op_name: str, arg_terms: list[TermExpression]
+) -> str:
+    match op_name.strip():
+        case "add":
+            types = [term.type_name for term in arg_terms]
+            if types and all(type_name == "int" for type_name in types):
+                return "int"
+            if types and all(type_name == "str" for type_name in types):
+                return "str"
+        case "borrow":
+            return arg_terms[0].type_name if arg_terms else ""
+    return ""
+
+
+def _rust_runtime_method_concepts(
+    method_name: str, receiver: str
+) -> tuple[str, ...]:
+    method_key = _concept_key(method_name)
+    candidates: list[str] = []
+    match method_name:
+        case "len":
+            candidates.append("concept:method-len")
+        case "push_str":
+            candidates.append("concept:string-push-str")
+    receiver_key = _receiver_chain_key(receiver)
+    if receiver_key:
+        candidates.append(f"rust-method:{receiver_key}-{method_key}")
+    return tuple(candidates)
+
+
+def _rust_runtime_method_param_types(
+    method_name: str,
+    receiver_expr: TermExpression,
+    arg_terms: list[TermExpression],
+    receiver: str,
+    args: list[str],
+    params: list[str],
+    param_types: list[str],
+) -> list[str]:
+    if method_name == "push_str":
+        return ["str", "str"]
+    return [
+        _expression_type(receiver_expr, receiver, params, param_types),
+        *(
+            _expression_type(term, arg, params, param_types)
+            for term, arg in zip(arg_terms, args, strict=True)
+        ),
+    ]
+
+
+def _rust_runtime_method_return_type(method_name: str) -> str:
+    match method_name:
+        case "len":
+            return "int"
+        case "push_str":
+            return "str"
+        case "update" | "finalize_xof":
+            return "blake3.Hasher"
+        case "fill":
+            return "bytes"
+    return ""
+
+
+def _requires_rust_method_template(method_name: str) -> bool:
+    return method_name in {"len", "push_str", "update", "finalize_xof", "fill"}
+
+
+def _parse_method_surface(surface: str) -> tuple[str, str, list[str]] | None:
+    head_args = _head_and_args(surface.removeprefix("method:"))
+    if head_args is None:
+        return None
+    method_name, inner = head_args
+    args = _split_top_level(inner)
+    if len(args) != 2:
+        return None
+    method_args = _parse_bracket_list(args[1])
+    if method_args is None:
+        return None
+    return method_name.strip(), args[0].strip(), method_args
+
+
+def _parse_call_surface(surface: str) -> tuple[str, list[str]] | None:
+    head_args = _head_and_args(surface.removeprefix("call:"))
+    if head_args is None:
+        return None
+    path, inner = head_args
+    args = _split_top_level(inner)
+    if len(args) == 1 and args[0] == "":
+        return path.strip(), []
+    if len(args) == 2:
+        legacy_args = _parse_bracket_list(args[1])
+        if legacy_args is not None:
+            return args[0].strip(), legacy_args
+    return path.strip(), args
+
+
+def _single_call_arg(surface: str, head: str) -> str | None:
+    head_args = _head_and_args(surface)
+    if head_args is None:
+        return None
+    got_head, inner = head_args
+    if got_head != head:
+        return None
+    return inner
+
+
+def _head_and_args(surface: str) -> tuple[str, str] | None:
+    stripped = surface.strip()
+    if not stripped.endswith(")"):
+        return None
+    index = stripped.find("(")
+    if index <= 0:
+        return None
+    return stripped[:index], stripped[index + 1 : -1]
+
+
+def _parse_bracket_list(surface: str) -> list[str] | None:
+    stripped = surface.strip()
+    if not stripped.startswith("[") or not stripped.endswith("]"):
+        return None
+    inner = stripped[1:-1].strip()
+    if not inner:
+        return []
+    return _split_top_level(inner)
+
+
+def _split_top_level(text: str) -> list[str]:
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index, ch in enumerate(text):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            continue
+        if ch in {"'", '"'}:
+            quote = ch
+            continue
+        if ch in "([{":
+            depth += 1
+            continue
+        if ch in ")]}":
+            depth -= 1
+            continue
+        if ch == "," and depth == 0:
+            parts.append(text[start:index].strip())
+            start = index + 1
+    parts.append(text[start:].strip())
+    return parts
+
+
+def _split_type_ascription(pattern: str) -> tuple[str, str] | None:
+    depth = 0
+    for index, ch in enumerate(pattern):
+        if ch in "([{":
+            depth += 1
+            continue
+        if ch in ")]}":
+            depth -= 1
+            continue
+        if ch != ":" or depth != 0:
+            continue
+        previous_ch = pattern[index - 1] if index > 0 else ""
+        next_ch = pattern[index + 1] if index + 1 < len(pattern) else ""
+        if previous_ch == ":" or next_ch == ":":
+            continue
+        name = pattern[:index].strip()
+        type_name = pattern[index + 1 :].strip()
+        if name and type_name:
+            return name, type_name
+    return None
+
+
+def _single_return_expression(body: str) -> str | None:
+    stripped = body.strip()
+    if "\n" in stripped:
+        return None
+    if not stripped.startswith("return "):
+        return None
+    return stripped.removeprefix("return ").strip()
+
+
+def _simple_receiver_name(receiver: str) -> bool:
+    return re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", receiver.strip()) is not None
+
+
+def _concept_key(value: str) -> str:
+    return value.strip().replace("_", "-").lower()
+
+
+def _receiver_chain_key(receiver: str) -> str | None:
+    stripped = receiver.strip()
+    if _simple_receiver_name(stripped):
+        return _concept_key(_strip_ssa_suffix(stripped))
+    parsed = _parse_method_surface(stripped) if stripped.startswith("method:") else None
+    if parsed is None:
+        return None
+    method_name, inner_receiver, _args = parsed
+    inner_key = _receiver_chain_key(inner_receiver)
+    if inner_key is None:
+        return None
+    return f"{inner_key}-{_concept_key(method_name)}"
+
+
+def _strip_ssa_suffix(value: str) -> str:
+    return re.sub(r"_v\d+$", "", value.strip())
+
+
+def _expression_type(
+    expr: TermExpression,
+    raw_arg: str,
+    params: list[str],
+    param_types: list[str],
+) -> str:
+    if expr.type_name:
+        return expr.type_name
+    return _surface_type(raw_arg, params, param_types)
+
+
+def _surface_type(surface: str, params: list[str], param_types: list[str]) -> str:
+    from_param = _type_for_argument(surface, params, param_types)
+    if from_param:
+        return map_source_type(from_param)
+    stripped = surface.strip()
+    if re.fullmatch(r"-?\d+", stripped):
+        return "int"
+    if stripped in {"true", "false", "True", "False"}:
+        return "bool"
+    if (
+        len(stripped) >= 2
+        and stripped[0] == stripped[-1]
+        and stripped[0] in {"'", '"'}
+    ):
+        return "str"
+    if stripped == "BLAKE3_512_PREFIX":
+        return "str"
+    return ""
+
+
+def _type_for_argument(arg: str, params: list[str], param_types: list[str]) -> str:
+    stripped = arg.strip()
+    for index, param in enumerate(params):
+        if stripped == param and index < len(param_types):
+            return param_types[index]
+    return ""
+
+
+def _arg_shape(arg: str, params: list[str], param_types: list[str]) -> str:
+    stripped = arg.strip()
+    parsed_call = _parse_call_surface(stripped) if stripped.startswith("call:") else None
+    if parsed_call is not None:
+        path, _args = parsed_call
+        return f"call:{path}"
+    parsed_method = _parse_method_surface(stripped) if stripped.startswith("method:") else None
+    if parsed_method is not None:
+        method_name, _receiver, _args = parsed_method
+        return f"method:{method_name}"
+    head_args = _head_and_args(stripped)
+    if head_args is not None:
+        head, _inner = head_args
+        return head
+    type_name = _surface_type(stripped, params, param_types)
+    return type_name or "expr"
+
+
 def map_source_type(src: str) -> str:
     match src:
         case "()":
             return "None"
-        case "i64" | "u64" | "i32" | "u32" | "i16" | "u16" | "i8" | "u8" | "int":
+        case (
+            "i128"
+            | "u128"
+            | "i64"
+            | "u64"
+            | "i32"
+            | "u32"
+            | "i16"
+            | "u16"
+            | "i8"
+            | "u8"
+            | "isize"
+            | "usize"
+            | "int"
+        ):
             return "int"
         case "f64" | "f32" | "float":
             return "float"
@@ -281,7 +1449,25 @@ def render_template(
 
 @lru_cache(maxsize=1)
 def entries() -> tuple[BodyTemplateEntry, ...]:
-    path = _find_repo_file(BODY_TEMPLATE_REL)
+    return _entries_from_files(
+        (BODY_TEMPLATE_REL, RUST_RUNTIME_BODY_TEMPLATE_REL, BLAKE3_BODY_TEMPLATE_REL)
+    )
+
+
+@lru_cache(maxsize=1)
+def libprovekit_entries() -> tuple[BodyTemplateEntry, ...]:
+    return _entries_from_file(LIBPROVEKIT_BODY_TEMPLATE_REL)
+
+
+def _entries_from_files(relatives: tuple[Path, ...]) -> tuple[BodyTemplateEntry, ...]:
+    out: list[BodyTemplateEntry] = []
+    for relative in relatives:
+        out.extend(_entries_from_file(relative))
+    return tuple(out)
+
+
+def _entries_from_file(relative: Path) -> tuple[BodyTemplateEntry, ...]:
+    path = _find_repo_file(relative)
     if path is None:
         return ()
     raw = path.read_text(encoding="utf-8")

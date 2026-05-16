@@ -1,0 +1,31 @@
+{
+  "cid": "blake3-512:a9c764bb32514c09a73dc9642886cca09277e551dd265a4ede77aa7c21608c6c3d678314c80783a5fae6f5b680e318b627677f478a2a01e698452b9950a88db6",
+  "confidence_basis_points": 10000,
+  "extension_fields": {
+    "function_symbol": "normalize_sort_value@proofir_bridge.rs",
+    "role": "post",
+    "synthesis_rule_id": "wp_rule.guard-then-commit.v0"
+  },
+  "kind": "evidence",
+  "lifter_cid": "blake3-512:ff974f9abfbf0e8e468f8817944c838c827c49321ecf070ba7b31d8f4d76f2091d27a029b78556ec200123bf295100547b1c360b2f32ff093eab239962a21f0b",
+  "predicate": {
+    "kind": "atomic",
+    "name": "(out >= 0) || (out == before_state)",
+    "args": []
+  },
+  "schemaVersion": "1",
+  "source_kind": "structural-synthesis",
+  "source_locator": {
+    "source_cid": "blake3-512:e73ab9ad9067960143334a2dfe55b3ba267a3d262acbff9f78657f78bf289313b9fffe808d763418c174930cfdae055e66c72f7d19e5481a3dc27d6d21b74003",
+    "span": {
+      "end": {
+        "col": 0,
+        "line": 320
+      },
+      "start": {
+        "col": 0,
+        "line": 320
+      }
+    }
+  }
+}

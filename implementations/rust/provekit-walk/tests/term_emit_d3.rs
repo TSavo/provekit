@@ -39,11 +39,11 @@ fn accepts_trait_path_truncation_as_named_loss() {
     let parsed = term_json(
         r#"
             mod math {
-                pub fn id(x: i32) -> i32 { x }
+                pub const VALUE: i32 = 1;
             }
 
-            fn caller(x: i32) -> i32 {
-                math::id(x)
+            fn caller() -> i32 {
+                math::VALUE
             }
         "#,
         "caller",
@@ -99,5 +99,5 @@ fn accepts_statement_macro_as_named_loss() {
         "#,
         "checked",
     );
-    assert_partial_loss(&parsed, "statement-macro");
+    assert_partial_loss(&parsed, "macro-not-expanded");
 }

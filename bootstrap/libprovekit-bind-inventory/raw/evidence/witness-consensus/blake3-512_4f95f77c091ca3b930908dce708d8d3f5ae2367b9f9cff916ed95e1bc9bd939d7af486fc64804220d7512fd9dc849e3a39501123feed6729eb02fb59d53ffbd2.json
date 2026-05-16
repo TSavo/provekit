@@ -1,0 +1,31 @@
+{
+  "cid": "blake3-512:4f95f77c091ca3b930908dce708d8d3f5ae2367b9f9cff916ed95e1bc9bd939d7af486fc64804220d7512fd9dc849e3a39501123feed6729eb02fb59d53ffbd2",
+  "fixture_state_cid": "blake3-512:07aa5c3cb5b3af9cce079415c8d3fa9f16b1cd59a69281a08fb76ffb576ecc61ebb6e5b9d323d1f1adb84f48514f7224ba6fa0f9fffa2f78946822a0bfb89257",
+  "kind": "witness",
+  "measurements": {
+    "cluster": {
+      "mapped_site_count": 21,
+      "ordinal": 11,
+      "reported_cardinality": 21,
+      "source": "bootstrap/libprovekit-bind-inventory/raw"
+    },
+    "observer": {
+      "language": "rust",
+      "library_tag": "libprovekit",
+      "loss_dims_exercised": []
+    },
+    "row_schema": {
+      "agreement": "intra-vendor-bind-cluster",
+      "candidate": "concept:retry-with-bounded-attempts",
+      "representative_fixture_cid": "blake3-512:07aa5c3cb5b3af9cce079415c8d3fa9f16b1cd59a69281a08fb76ffb576ecc61ebb6e5b9d323d1f1adb84f48514f7224ba6fa0f9fffa2f78946822a0bfb89257"
+    }
+  },
+  "observed_at": "2026-05-14T00:00:00.000Z",
+  "outcome": "pass",
+  "sample_count": 1,
+  "schemaVersion": "1",
+  "signature": null,
+  "signed_by": null,
+  "subject": "blake3-512:7b30ce2d45aa5a566abbecf951a7c2575efe3bc1801d60332f753259890b5481a8b5380e05ee6aa60896cc31bb6a47501da65c41e38945214acc29ccbd662230",
+  "witness_for": "concept:retry-with-bounded-attempts"
+}

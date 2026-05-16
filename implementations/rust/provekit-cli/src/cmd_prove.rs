@@ -26,12 +26,13 @@
 //     directory regardless of source_paths).
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use owo_colors::OwoColorize;
 use provekit_canonicalizer::blake3_512_of;
+use provekit_ir_compiler::IrCompiler;
 use serde_json::{json, Value};
 
 use provekit_self_contracts::lift_plugin_protocol::{
@@ -45,7 +46,7 @@ use provekit_verifier::{ObligationVerdict, Runner, RunnerConfig};
 
 use crate::project_config::read_project_config;
 use crate::report_fmt;
-use crate::ProveArgs;
+use crate::{ProveArgs, ProveTarget};
 
 // Surface + binary resolution lives in `cmd_mint`. The conformance gate must
 // dispatch to the SAME (project, surface, lifter binary) tuple that `mint`
@@ -481,6 +482,10 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
 // ---------------------------------------------------------------------------
 
 pub fn run(args: ProveArgs) -> u8 {
+    if let Some(target) = args.target {
+        return run_target(&args.project, &args.output, target);
+    }
+
     if args.require_empirically_witnessed.is_some() {
         return run_empirically_witnessed_gate(&args);
     }
@@ -572,6 +577,111 @@ pub fn run(args: ProveArgs) -> u8 {
     }
 
     report_fmt::report_exit_code(&report)
+}
+
+fn run_target(input: &Option<PathBuf>, output: &Option<PathBuf>, target: ProveTarget) -> u8 {
+    let raw = match read_target_input(input.as_ref()) {
+        Ok(raw) => raw,
+        Err(error) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            return crate::EXIT_USER_ERROR;
+        }
+    };
+    let document: Value = match serde_json::from_slice(&raw) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("{}: parse target input JSON: {error}", "error".red().bold());
+            return crate::EXIT_USER_ERROR;
+        }
+    };
+    let formula = match target_formula(&document) {
+        Ok(formula) => formula,
+        Err(error) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            return crate::EXIT_USER_ERROR;
+        }
+    };
+    let text = match solver_text(&formula, target) {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!("{}: prove target: {error}", "error".red().bold());
+            return crate::EXIT_USER_ERROR;
+        }
+    };
+    if let Err(error) = write_target_output(output.as_ref(), text.as_bytes()) {
+        eprintln!("{}: {error}", "error".red().bold());
+        return crate::EXIT_USER_ERROR;
+    }
+    crate::EXIT_OK
+}
+
+fn read_target_input(path: Option<&PathBuf>) -> Result<Vec<u8>, String> {
+    match path {
+        Some(path) if path.as_os_str() != "-" => {
+            std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))
+        }
+        _ => {
+            let mut bytes = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut bytes)
+                .map_err(|e| format!("read stdin: {e}"))?;
+            Ok(bytes)
+        }
+    }
+}
+
+fn write_target_output(path: Option<&PathBuf>, bytes: &[u8]) -> Result<(), String> {
+    match path {
+        Some(path) if path.as_os_str() != "-" => {
+            std::fs::write(path, bytes).map_err(|e| format!("write {}: {e}", path.display()))
+        }
+        _ => {
+            let mut stdout = std::io::stdout().lock();
+            stdout
+                .write_all(bytes)
+                .map_err(|e| format!("write stdout: {e}"))
+        }
+    }
+}
+
+fn target_formula(document: &Value) -> Result<Value, String> {
+    if document.get("kind").and_then(Value::as_str) == Some("named-term-document") {
+        let terms = document
+            .get("terms")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "named-term document missing terms array".to_string())?;
+        for term in terms {
+            if let Some(witnesses) = term.get("witnesses").and_then(Value::as_array) {
+                if let Some(predicate) = witnesses
+                    .iter()
+                    .find_map(|witness| witness.get("predicate").cloned())
+                {
+                    return Ok(predicate);
+                }
+            }
+        }
+        return Err("named-term document has no witness predicate to prove".to_string());
+    }
+    Ok(document.clone())
+}
+
+fn solver_text(formula: &Value, target: ProveTarget) -> Result<String, String> {
+    match target {
+        ProveTarget::SmtLib | ProveTarget::Tptp | ProveTarget::Vampire => {
+            provekit_ir_compiler_smt_lib::emit_asserted(formula)
+        }
+        ProveTarget::Coq => {
+            let compiler = provekit_ir_compiler_coq::CoqCompiler::new();
+            compiler
+                .compile(formula, provekit_ir_compiler_coq::DIALECT)
+                .map(|compiled| {
+                    let mut text = compiled.preamble;
+                    text.push_str(&compiled.body);
+                    text
+                })
+                .map_err(|error| error.to_string())
+        }
+    }
 }
 
 fn run_empirically_witnessed_gate(args: &ProveArgs) -> u8 {

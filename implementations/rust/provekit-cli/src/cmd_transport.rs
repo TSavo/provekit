@@ -916,6 +916,7 @@ fn parse_int_params(source: &str, function: &str) -> Option<Vec<String>> {
     }
 }
 /// Convert a syn Type to a compact string representation.
+#[allow(dead_code)]
 fn type_to_str(ty: &syn::Type) -> String {
     match ty {
         syn::Type::Path(tp) => {
@@ -944,6 +945,7 @@ fn type_to_str(ty: &syn::Type) -> String {
 /// annotation emission. Both fields hold IR-symbolic Formula trees as
 /// produced by `provekit-lift-contracts::lift_file`.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 struct ContractAnnotations {
     /// `pre`-condition formula from `#[requires(...)]` (or language equivalent).
     pre: Option<Rc<Formula>>,
@@ -955,7 +957,7 @@ struct ContractAnnotations {
 ///
 /// The name is derived from the **target term's** JSON serialization so every
 /// structurally-distinct function gets a unique, reproducible name regardless
-/// of the language. This is a content-addressed FNV-1a 64-bit hash — the same
+/// of the language. This is a content-addressed FNV-1a 64-bit hash, the same
 /// hash used everywhere in the ProvekIt toolchain for stable naming before a
 /// full CID is assigned.
 ///
@@ -983,6 +985,7 @@ fn derive_concept_comment(target_term: &Term) -> String {
 /// Only the surface forms produced by `provekit-lift-contracts` are
 /// handled: `Var`, `Const(Int)`, `Const(Bool)`. Anything else falls
 /// back to `<COMPLEX>` with a parenthetical note.
+#[allow(dead_code)]
 fn emit_term_syntax(term: &SymTerm) -> String {
     match term {
         SymTerm::Var { name } => name.clone(),
@@ -1009,6 +1012,7 @@ fn emit_term_syntax(term: &SymTerm) -> String {
 /// parameter (the parameters define the quantified variables). For annotation
 /// emission we want only the predicate body since the function signature
 /// already declares the parameter names.
+#[allow(dead_code)]
 fn peel_quantifiers(formula: &Formula) -> &Formula {
     match formula {
         Formula::Quantifier { body, .. } => peel_quantifiers(body),
@@ -1016,6 +1020,7 @@ fn peel_quantifiers(formula: &Formula) -> &Formula {
     }
 }
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct RealizedSource {
     pub extension: &'static str,
     pub source: String,
@@ -1028,7 +1033,7 @@ pub struct RealizedSource {
     ///
     /// For target languages whose realizer does not yet support body
     /// templates (everything except Java in v1.0.0), this is unconditionally
-    /// true — the body is always a stub.
+    /// true; the body is always a stub.
     pub is_stub: bool,
     pub emitted_artifact_cid: Option<String>,
     pub observed_loss_record: serde_json::Value,
@@ -1043,19 +1048,23 @@ pub struct RealizedSource {
 /// Stable provenance CID for the realize-v0 phase. Mirrors the pattern used by
 /// `lifter_cid` and `clusterer_cid` in cmd_bind; content-addresses the realize
 /// pipeline identity without tying it to the lift.
+#[allow(dead_code)]
 const REALIZE_PROVENANCE_CID_SEED: &[u8] = b"provekit-cli/realize-v0/provenance";
 
+#[allow(dead_code)]
 pub fn cid_for_serializable<T: Serialize>(value: &T) -> Result<String, String> {
     let json =
         serde_json::to_value(value).map_err(|err| format!("serialize value for cid: {err}"))?;
     cid_for_json_value(&json)
 }
 
+#[allow(dead_code)]
 pub fn cid_for_json_value(value: &serde_json::Value) -> Result<String, String> {
     let canonical = canonical_value_from_json(value)?;
     Ok(blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes()))
 }
 
+#[allow(dead_code)]
 fn canonical_value_from_json(value: &serde_json::Value) -> Result<Arc<CanonicalValue>, String> {
     match value {
         serde_json::Value::Null => Ok(CanonicalValue::null()),
@@ -1091,6 +1100,7 @@ fn canonical_value_from_json(value: &serde_json::Value) -> Result<Arc<CanonicalV
 /// realization is structurally valid, passes validate(), and gives
 /// validate_against() a real cite target.  Future catalog integration is an
 /// enhancement on top.
+#[allow(dead_code)]
 pub fn mint_realization_artifacts(
     request: &crate::kit_dispatch::RealizeRequest,
     realized: &RealizedSource,
@@ -1313,12 +1323,13 @@ pub fn mint_realization_artifacts(
 /// file) for the named function, then calls `realize_function` with a stub
 /// body appropriate for each target language.  Source types (param types and
 /// return type as target-language strings) are threaded through so that the
-/// emitted signature matches the origin — e.g. an `i64` source param emits
+/// emitted signature matches the origin, e.g. an `i64` source param emits
 /// `i64` in Rust/Zig, `long` in Java/C#, `int64` in Go, `number` in
 /// TypeScript, and untyped in Python/Ruby.
 ///
 /// Returns a `RealizedSource` on success. The `source` field carries the
 /// full target-language snippet including the ORP annotation prefix.
+#[allow(dead_code)]
 pub fn realize_for_bind(
     language: &str,
     function: &str,
@@ -1340,6 +1351,7 @@ pub fn realize_for_bind(
     )
 }
 
+#[allow(dead_code)]
 pub fn realize_for_bind_with_contract(
     language: &str,
     function: &str,
@@ -1413,6 +1425,7 @@ fn realize_function(
         param_types: param_types.to_vec(),
         return_type: return_type.to_string(),
         concept_name: concept_name.to_string(),
+        named_term_tree: None,
         mode: mode.map(str::to_string),
         modes: mode.into_iter().map(str::to_string).collect(),
         contract,
@@ -1452,6 +1465,7 @@ mod mint_realization_artifacts_tests {
             param_types: vec!["int".to_string(), "int".to_string()],
             return_type: "int".to_string(),
             concept_name: "add".to_string(),
+            named_term_tree: None,
             mode: mode.map(str::to_string),
             modes: mode.into_iter().map(str::to_string).collect(),
             contract: None,

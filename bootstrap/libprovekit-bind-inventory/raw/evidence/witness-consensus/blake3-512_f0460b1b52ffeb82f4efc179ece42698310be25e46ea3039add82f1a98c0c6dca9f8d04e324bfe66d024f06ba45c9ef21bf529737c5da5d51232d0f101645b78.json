@@ -1,0 +1,31 @@
+{
+  "cid": "blake3-512:f0460b1b52ffeb82f4efc179ece42698310be25e46ea3039add82f1a98c0c6dca9f8d04e324bfe66d024f06ba45c9ef21bf529737c5da5d51232d0f101645b78",
+  "fixture_state_cid": "blake3-512:614687fe409ba22b5a15314f221c3a1cf202661c7ea05c7269486d5ff65b0a4dcfdf868dd045b08fdff607526087bd52a4916084fff30a6e8cca4d4f77825bcc",
+  "kind": "witness",
+  "measurements": {
+    "cluster": {
+      "mapped_site_count": 4,
+      "ordinal": 4,
+      "reported_cardinality": 4,
+      "source": "bootstrap/libprovekit-bind-inventory/raw"
+    },
+    "observer": {
+      "language": "rust",
+      "library_tag": "libprovekit",
+      "loss_dims_exercised": []
+    },
+    "row_schema": {
+      "agreement": "intra-vendor-bind-cluster",
+      "candidate": "UNNAMED-CONCEPT-85",
+      "representative_fixture_cid": "blake3-512:614687fe409ba22b5a15314f221c3a1cf202661c7ea05c7269486d5ff65b0a4dcfdf868dd045b08fdff607526087bd52a4916084fff30a6e8cca4d4f77825bcc"
+    }
+  },
+  "observed_at": "2026-05-14T00:00:00.000Z",
+  "outcome": "pass",
+  "sample_count": 1,
+  "schemaVersion": "1",
+  "signature": null,
+  "signed_by": null,
+  "subject": "blake3-512:cccbefc7756781edb0394ecd84bee48d12b34af909612c9b77adf6543ba6e1bbdfbb9c0f2b5dea3b762dc079bd3aaf3bd99550d9c6198487fe7e8404563646d8",
+  "witness_for": "UNNAMED-CONCEPT-85"
+}

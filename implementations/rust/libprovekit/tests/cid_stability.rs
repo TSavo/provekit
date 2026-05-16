@@ -156,7 +156,7 @@ fn broken_fixture_refuses_with_typed_bridge_failure() {
     assert_eq!(
         error,
         BridgeError::ArityMismatch {
-            expected: 2,
+            expected: 3,
             actual: 1
         }
     );

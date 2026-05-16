@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "UNNAMED-CONCEPT-6",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "kind": "ctor",
+      "name": "Unknown"
+    },
+    "locus": "30 witnesses selected; consensus vector records the observed axes"
+  },
+  "cid": "blake3-512:2fe5b5099c631a3beed511039dcc930992aa5716a834ff277099194a54efca0da4a39714b140ccad263966e850ca42b77136826e159d1c62d4675c2bf2599962",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "T2A4WkSKUfR4fio0wYEV+2KWQuGMEeVaswt5j8gtQIRWhfFvSS5F2ewTy+5QFAy9p4My02HF01gFWoPt1aluAw=="
+  }
+}

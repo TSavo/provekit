@@ -1,0 +1,24 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "UNNAMED-CONCEPT-6",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "algorithm",
+  "locus": "30 witnesses selected; consensus vector records the observed axes",
+  "post": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "kind": "ctor",
+    "name": "Unknown"
+  }
+}
