@@ -83,11 +83,16 @@ fn bind_input_value() -> Value {
             "kind": "bind-lift-entry",
             "file": "src/lib.rs",
             "fn_name": "deposit",
+            "source_function_name": "deposit",
             "fn_line": 14,
             "concept_annotation": "deposit-then-balance",
             "param_names": ["balance", "amount"],
             "param_types": ["i64", "i64"],
             "return_type": "i64",
+            "operand_bindings": [
+                {"position": [0, 0], "symbol": "balance"},
+                {"position": [0, 1], "symbol": "amount"}
+            ],
             "term_shape": {
                 "kind": "body",
                 "stmts": [
@@ -230,6 +235,15 @@ fn bind_result_claim_lower_uses_named_term_realize_request() {
         expected_spec.get("namedTermTree").cloned()
     );
     assert_eq!(request.term_shape, expected_spec.get("termShape").cloned());
+    let request_json = serde_json::to_value(request).expect("request serializes");
+    assert_eq!(
+        request_json["operand_bindings"],
+        json!([
+            {"position": [0, 0], "symbol": "balance"},
+            {"position": [0, 1], "symbol": "amount"},
+        ])
+    );
+    assert_eq!(request_json["source_function_name"], json!("deposit"));
 }
 
 #[test]

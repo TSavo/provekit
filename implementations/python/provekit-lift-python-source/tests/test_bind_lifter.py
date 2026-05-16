@@ -201,6 +201,31 @@ def test_bind_lift_erases_signature_types_from_bind_ir_entries() -> None:
     assert "return_type" not in generated
 
 
+def test_bind_lift_emits_operand_binding_sidecar_with_integer_positions() -> None:
+    source = (
+        "def nested(a, b, c):\n"
+        "    return (a + b) * c\n"
+    )
+
+    result = lift_source(source, "pkg/math.py")
+
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["source_function_name"] == "nested"
+    assert entry["operand_bindings"] == [
+        {"position": [0, 0], "symbol": "a"},
+        {"position": [0, 1], "symbol": "b"},
+        {"position": [1], "symbol": "c"},
+    ]
+    assert all(
+        isinstance(binding["position"], list)
+        and all(isinstance(part, int) for part in binding["position"])
+        for binding in entry["operand_bindings"]
+    )
+    assert "fn_name" not in entry
+
+
 def test_bind_lift_source_emits_language_neutral_entries() -> None:
     source = (
         "# concept: identity\n"

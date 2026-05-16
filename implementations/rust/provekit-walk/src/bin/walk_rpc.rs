@@ -358,6 +358,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let fn_name = &target.fn_name;
             let term_shape = term_shape_for_fn(item_fn);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+            let operand_bindings = operand_bindings_for_fn(item_fn);
             let param_names = fn_param_names(item_fn);
             let function_symbol = format!("{fn_name}@{rel}");
             let fallback_function_symbol = format!("{}@{rel}", target.source_name);
@@ -372,6 +373,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "param_names": param_names,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
+                "operand_bindings": operand_bindings,
+                "source_function_name": target.source_name,
                 "witnesses": witnesses,
             }));
 
@@ -1122,6 +1125,199 @@ fn term_shape_for_fn(item_fn: &syn::ItemFn) -> Arc<CValue> {
     shape_of_block(&item_fn.block, &ctx)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperandBinding {
+    position: Vec<usize>,
+    symbol: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct BindingResult {
+    has_operator: bool,
+    bindings: Vec<OperandBinding>,
+}
+
+fn operand_bindings_for_fn(item_fn: &syn::ItemFn) -> Vec<Value> {
+    let ctx = ShapeContext::for_fn(item_fn);
+    let mut bindings = bindings_of_block(&item_fn.block, &ctx).bindings;
+    bindings.sort_by(|left, right| left.position.cmp(&right.position));
+    bindings
+        .into_iter()
+        .map(|binding| {
+            json!({
+                "position": binding.position,
+                "symbol": binding.symbol,
+            })
+        })
+        .collect()
+}
+
+fn bindings_of_block(block: &syn::Block, ctx: &ShapeContext) -> BindingResult {
+    let mut block_ctx = ctx.clone();
+    let mut groups = Vec::new();
+    for stmt in &block.stmts {
+        let result = bindings_of_stmt(stmt, &block_ctx);
+        if result.has_operator {
+            groups.push(result.bindings);
+        }
+        update_context_from_stmt(stmt, &mut block_ctx);
+    }
+    collapse_binding_groups(groups)
+}
+
+fn collapse_binding_groups(groups: Vec<Vec<OperandBinding>>) -> BindingResult {
+    match groups.len() {
+        0 => BindingResult::default(),
+        1 => BindingResult {
+            has_operator: true,
+            bindings: groups.into_iter().next().unwrap_or_default(),
+        },
+        _ => {
+            let bindings = groups
+                .into_iter()
+                .enumerate()
+                .flat_map(|(index, group)| prefix_bindings(group, index))
+                .collect();
+            BindingResult {
+                has_operator: true,
+                bindings,
+            }
+        }
+    }
+}
+
+fn bindings_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> BindingResult {
+    match stmt {
+        syn::Stmt::Expr(e, _) => bindings_of_expr(e, ctx),
+        syn::Stmt::Local(local) => local
+            .init
+            .as_ref()
+            .map(|init| bindings_of_expr(&init.expr, ctx))
+            .unwrap_or_default(),
+        _ => BindingResult::default(),
+    }
+}
+
+fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
+    match expr {
+        syn::Expr::If(e) => {
+            let else_bindings = e
+                .else_branch
+                .as_ref()
+                .map(|(_, else_expr)| bindings_of_expr(else_expr, ctx))
+                .unwrap_or_default();
+            operation_binding_result(vec![
+                bindings_of_expr(&e.cond, ctx),
+                bindings_of_block(&e.then_branch, ctx),
+                else_bindings,
+            ])
+        }
+        syn::Expr::While(e) => operation_binding_result(vec![
+            bindings_of_expr(&e.cond, ctx),
+            bindings_of_block(&e.body, ctx),
+        ]),
+        syn::Expr::ForLoop(e) => operation_binding_result(vec![bindings_of_block(&e.body, ctx)]),
+        syn::Expr::Return(e) => e
+            .expr
+            .as_ref()
+            .map(|expr| bindings_of_expr(expr, ctx))
+            .unwrap_or_default(),
+        syn::Expr::Break(e) => {
+            let args = e
+                .expr
+                .as_ref()
+                .map(|expr| vec![bindings_of_expr(expr, ctx)])
+                .unwrap_or_default();
+            operation_binding_result(args)
+        }
+        syn::Expr::Continue(_) => BindingResult {
+            has_operator: true,
+            bindings: Vec::new(),
+        },
+        syn::Expr::Assign(e) => operation_binding_result(vec![
+            bindings_of_expr(&e.left, ctx),
+            bindings_of_expr(&e.right, ctx),
+        ]),
+        syn::Expr::Binary(e) => {
+            if binary_operator_concept_name(&e.op).is_none() {
+                return BindingResult::default();
+            }
+            operation_binding_result(vec![
+                bindings_of_expr(&e.left, ctx),
+                bindings_of_expr(&e.right, ctx),
+            ])
+        }
+        syn::Expr::Unary(e) => {
+            if unary_operator_concept_name(&e.op, expr_sort(&e.expr, ctx)).is_none() {
+                return BindingResult::default();
+            }
+            operation_binding_result(vec![bindings_of_expr(&e.expr, ctx)])
+        }
+        syn::Expr::Call(e) => operation_binding_result(
+            e.args
+                .iter()
+                .map(|arg| bindings_of_expr(arg, ctx))
+                .collect::<Vec<_>>(),
+        ),
+        syn::Expr::MethodCall(e) => {
+            let mut args = vec![bindings_of_expr(&e.receiver, ctx)];
+            args.extend(e.args.iter().map(|arg| bindings_of_expr(arg, ctx)));
+            operation_binding_result(args)
+        }
+        syn::Expr::Block(b) => bindings_of_block(&b.block, ctx),
+        syn::Expr::Paren(e) => bindings_of_expr(&e.expr, ctx),
+        syn::Expr::Group(e) => bindings_of_expr(&e.expr, ctx),
+        _ => operand_symbol(expr)
+            .map(|symbol| BindingResult {
+                has_operator: false,
+                bindings: vec![OperandBinding {
+                    position: Vec::new(),
+                    symbol,
+                }],
+            })
+            .unwrap_or_default(),
+    }
+}
+
+fn operation_binding_result(args: Vec<BindingResult>) -> BindingResult {
+    let bindings = args
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, arg)| prefix_bindings(arg.bindings, index))
+        .collect();
+    BindingResult {
+        has_operator: true,
+        bindings,
+    }
+}
+
+fn prefix_bindings(bindings: Vec<OperandBinding>, prefix: usize) -> Vec<OperandBinding> {
+    bindings
+        .into_iter()
+        .map(|mut binding| {
+            binding.position.insert(0, prefix);
+            binding
+        })
+        .collect()
+}
+
+fn operand_symbol(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Path(path) => path.path.get_ident().map(|ident| ident.to_string()),
+        syn::Expr::Lit(lit) => literal_symbol(&lit.lit),
+        _ => None,
+    }
+}
+
+fn literal_symbol(lit: &syn::Lit) -> Option<String> {
+    match lit {
+        syn::Lit::Bool(value) => Some(value.value().to_string()),
+        syn::Lit::Int(value) => Some(value.base10_digits().to_string()),
+        syn::Lit::Str(value) => Some(format!("{:?}", value.value())),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShapeSort {
     Bool,
@@ -1740,6 +1936,42 @@ pub fn add(x: i64, y: i64) -> i64 {
     }
 
     #[test]
+    fn bind_lift_emits_operand_binding_sidecar_with_integer_positions() {
+        let root = temp_workspace("bind_lift_operand_binding_sidecar");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn add(x: i64, y: i64) -> i64 {
+    x + y
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let entry = entries.first().expect("add entry");
+        assert_no_forbidden_bind_lift_entry_fields(entry);
+        assert_eq!(entry["source_function_name"], json!("add"));
+        assert_eq!(
+            entry["operand_bindings"],
+            json!([
+                {"position": [0], "symbol": "x"},
+                {"position": [1], "symbol": "y"},
+            ])
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn term_shape_let_rhs_operator_is_canonical_gamma() {
         let shape = term_shape_json(
             r#"
@@ -1901,7 +2133,14 @@ pub fn positive_id(x: i64) -> i64 {
         let payload_bytes =
             libprovekit::canonical::serializable_jcs(&payload).expect("payload canonicalizes");
 
-        for forbidden in ["attr_pre", "attr_post", "concept_annotation", "fn_name"] {
+        for forbidden in [
+            "attr_pre",
+            "attr_post",
+            "concept_annotation",
+            "fn_name",
+            "operand_bindings",
+            "source_function_name",
+        ] {
             assert!(
                 !payload_bytes.contains(forbidden),
                 "bind payload hashed bytes contain forbidden field `{forbidden}`: {payload_bytes}"

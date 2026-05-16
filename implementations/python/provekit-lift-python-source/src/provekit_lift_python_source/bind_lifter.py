@@ -52,6 +52,12 @@ class _FunctionInfo:
     node: ast.FunctionDef | ast.AsyncFunctionDef
 
 
+@dataclass(frozen=True)
+class _ShapeResult:
+    shape: Json
+    operand_bindings: list[Json]
+
+
 def lift_source(source: str, source_path: str) -> BindLiftResult:
     result = BindLiftResult()
     try:
@@ -159,7 +165,8 @@ def _entry_for_function(
     lines: list[str],
     diagnostics: list[Json],
 ) -> Json:
-    term_shape = _function_shape(node)
+    shape_result = _function_shape_with_bindings(node)
+    term_shape = shape_result.shape
     param_names = _signature_param_names(node.args)
     witnesses = []
     witnesses.extend(_contract_comment_witnesses(lines, node, rel_path, diagnostics))
@@ -171,6 +178,8 @@ def _entry_for_function(
         "param_names": param_names,
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
+        "operand_bindings": shape_result.operand_bindings,
+        "source_function_name": node.name,
         "witnesses": witnesses,
     }
 
@@ -191,92 +200,118 @@ def _signature_param_names(args: ast.arguments) -> list[str]:
 
 
 def _function_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Json:
+    return _function_shape_with_bindings(node).shape
+
+
+def _function_shape_with_bindings(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> _ShapeResult:
     statements = [stmt for stmt in node.body if not _is_docstring_stmt(stmt)]
-    return _shape_block(statements)
+    return _shape_block_with_bindings(statements)
 
 
 def _shape_block(statements: list[ast.stmt]) -> Json:
+    return _shape_block_with_bindings(statements).shape
+
+
+def _shape_block_with_bindings(statements: list[ast.stmt]) -> _ShapeResult:
     shapes: list[Json] = []
+    binding_groups: list[list[Json]] = []
     for stmt in statements:
         if _is_docstring_stmt(stmt):
             continue
-        candidate = _shape_stmt(stmt, top_level=False)
-        if _shape_has_operator_identity(candidate):
-            shapes.append(candidate)
-    return _collapse_operation_shapes(shapes)
+        candidate = _shape_stmt_with_bindings(stmt, top_level=False)
+        shape = candidate.shape
+        if _shape_has_operator_identity(shape):
+            shapes.append(shape)
+            binding_groups.append(candidate.operand_bindings)
+    return _collapse_operation_shape_results(shapes, binding_groups)
 
 
 def _shape_stmt(node: ast.stmt, *, top_level: bool) -> Json:
+    return _shape_stmt_with_bindings(node, top_level=top_level).shape
+
+
+def _shape_stmt_with_bindings(node: ast.stmt, *, top_level: bool) -> _ShapeResult:
     if isinstance(node, ast.If):
-        return _operator_shape(
+        test = _shape_expr_with_bindings(node.test)
+        body = _shape_block_with_bindings(node.body)
+        orelse = _shape_block_with_bindings(node.orelse)
+        return _operator_shape_result(
             "concept:conditional",
-            [
-                _shape_expr(node.test),
-                _shape_block(node.body),
-                _shape_block(node.orelse),
-            ],
+            [test, body, orelse],
         )
     if isinstance(node, ast.While):
-        return _operator_shape(
+        return _operator_shape_result(
             "concept:while",
-            [_shape_expr(node.test), _shape_block(node.body)],
+            [_shape_expr_with_bindings(node.test), _shape_block_with_bindings(node.body)],
         )
     if isinstance(node, (ast.For, ast.AsyncFor)):
-        return _operator_shape("concept:for", [_shape_block(node.body)])
+        return _operator_shape_result("concept:for", [_shape_block_with_bindings(node.body)])
     if isinstance(node, ast.Return):
         if node.value is None:
-            return {}
-        return _shape_expr(node.value)
+            return _empty_shape_result()
+        return _shape_expr_with_bindings(node.value)
     if isinstance(node, ast.Break):
-        return _operator_shape("concept:break", [])
+        return _operator_shape_result("concept:break", [])
     if isinstance(node, ast.Continue):
-        return _operator_shape("concept:continue", [])
+        return _operator_shape_result("concept:continue", [])
     if isinstance(node, ast.Assign):
-        target = _shape_expr(node.targets[0]) if node.targets else {}
-        return _operator_shape("concept:assign", [target, _shape_expr(node.value)])
+        target = _shape_expr_with_bindings(node.targets[0]) if node.targets else _empty_shape_result()
+        return _operator_shape_result("concept:assign", [target, _shape_expr_with_bindings(node.value)])
     if isinstance(node, ast.AnnAssign):
         if node.value is not None:
-            return _operator_shape(
+            return _operator_shape_result(
                 "concept:assign",
-                [_shape_expr(node.target), _shape_expr(node.value)],
+                [_shape_expr_with_bindings(node.target), _shape_expr_with_bindings(node.value)],
             )
-        return {}
+        return _empty_shape_result()
     if isinstance(node, ast.AugAssign):
-        return _bin_operator_shape(
+        return _bin_operator_shape_result(
             node.op,
-            [_shape_expr(node.target), _shape_expr(node.value)],
+            [_shape_expr_with_bindings(node.target), _shape_expr_with_bindings(node.value)],
         )
     if isinstance(node, ast.Expr):
-        return _shape_expr(node.value)
-    return {}
+        return _shape_expr_with_bindings(node.value)
+    return _empty_shape_result()
 
 
 def _shape_expr(node: ast.expr) -> Json:
+    return _shape_expr_with_bindings(node).shape
+
+
+def _shape_expr_with_bindings(node: ast.expr) -> _ShapeResult:
     if isinstance(node, ast.BinOp):
-        return _bin_operator_shape(node.op, [_shape_expr(node.left), _shape_expr(node.right)])
+        return _bin_operator_shape_result(
+            node.op,
+            [_shape_expr_with_bindings(node.left), _shape_expr_with_bindings(node.right)],
+        )
     if isinstance(node, ast.BoolOp):
         op = _bool_op(node.op)
-        values = [_shape_expr(value) for value in node.values]
+        values = [_shape_expr_with_bindings(value) for value in node.values]
         if op is None:
-            return {}
-        return _operator_shape(op, values)
+            return _empty_shape_result()
+        return _operator_shape_result(op, values)
     if isinstance(node, ast.UnaryOp):
         op = _unary_op(node.op)
         if op is None:
-            return {}
-        return _operator_shape(op, [_shape_expr(node.operand)])
+            return _empty_shape_result()
+        return _operator_shape_result(op, [_shape_expr_with_bindings(node.operand)])
     if isinstance(node, ast.Compare):
         op = _rel_op(node.ops[0]) if node.ops else None
-        args = [_shape_expr(node.left)]
-        args.extend(_shape_expr(comparator) for comparator in node.comparators[:1])
+        args = [_shape_expr_with_bindings(node.left)]
+        args.extend(_shape_expr_with_bindings(comparator) for comparator in node.comparators[:1])
         if op is None:
-            return {}
-        return _operator_shape(op, args)
+            return _empty_shape_result()
+        return _operator_shape_result(op, args)
     if isinstance(node, ast.Call):
-        args = [_shape_expr(arg) for arg in node.args]
-        args.extend(_shape_expr(keyword.value) for keyword in node.keywords)
-        return _operator_shape("concept:call", args)
-    return {}
+        args = [_shape_expr_with_bindings(arg) for arg in node.args]
+        args.extend(_shape_expr_with_bindings(keyword.value) for keyword in node.keywords)
+        return _operator_shape_result("concept:call", args)
+    symbol = _operand_symbol(node)
+    if symbol is not None:
+        return _ShapeResult({}, [{"position": [], "symbol": symbol}])
+    return _empty_shape_result()
 
 
 def _shape_has_operator_identity(value: Json) -> bool:
@@ -297,11 +332,35 @@ def _collapse_operation_shapes(shapes: list[Json]) -> Json:
     return _operator_shape("concept:seq", shapes)
 
 
+def _collapse_operation_shape_results(
+    shapes: list[Json],
+    binding_groups: list[list[Json]],
+) -> _ShapeResult:
+    if not shapes:
+        return _empty_shape_result()
+    if len(shapes) == 1:
+        return _ShapeResult(shapes[0], _sort_operand_bindings(binding_groups[0]))
+    bindings: list[Json] = []
+    for index, group in enumerate(binding_groups):
+        bindings.extend(_prefix_bindings(group, index))
+    return _ShapeResult(
+        _operator_shape("concept:seq", shapes),
+        _sort_operand_bindings(bindings),
+    )
+
+
 def _bin_operator_shape(op: ast.operator, args: list[Json]) -> Json:
     atom = _bin_op(op)
     if atom is None:
         return {}
     return _operator_shape(atom, args)
+
+
+def _bin_operator_shape_result(op: ast.operator, args: list[_ShapeResult]) -> _ShapeResult:
+    atom = _bin_op(op)
+    if atom is None:
+        return _empty_shape_result()
+    return _operator_shape_result(atom, args)
 
 
 def _operator_shape(concept_name: str, args: list[Json]) -> Json:
@@ -313,6 +372,49 @@ def _operator_shape(concept_name: str, args: list[Json]) -> Json:
         "concept_name": concept_name,
         "op_cid": op_cid,
     }
+
+
+def _operator_shape_result(concept_name: str, args: list[_ShapeResult]) -> _ShapeResult:
+    shape = _operator_shape(concept_name, [arg.shape for arg in args])
+    if not shape:
+        return _empty_shape_result()
+    bindings: list[Json] = []
+    for index, arg in enumerate(args):
+        bindings.extend(_prefix_bindings(arg.operand_bindings, index))
+    return _ShapeResult(shape, _sort_operand_bindings(bindings))
+
+
+def _empty_shape_result() -> _ShapeResult:
+    return _ShapeResult({}, [])
+
+
+def _prefix_bindings(bindings: list[Json], prefix: int) -> list[Json]:
+    return [
+        {"position": [prefix, *binding["position"]], "symbol": binding["symbol"]}
+        for binding in bindings
+    ]
+
+
+def _sort_operand_bindings(bindings: list[Json]) -> list[Json]:
+    return sorted(bindings, key=lambda binding: binding["position"])
+
+
+def _operand_symbol(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool):
+            return "True" if value else "False"
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            return repr(value)
+        if isinstance(value, str):
+            return json.dumps(value, ensure_ascii=False)
+        if value is None:
+            return "None"
+    return None
 
 
 def _operand_slot(value: Json) -> Json:

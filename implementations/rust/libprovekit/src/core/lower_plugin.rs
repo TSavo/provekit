@@ -29,6 +29,10 @@ pub struct RealizeRequest {
     pub named_term_tree: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub term_shape: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operand_bindings: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_function_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -235,7 +239,7 @@ fn claim_spec_value(claim: &DomainClaim) -> Result<Value, String> {
     }))
 }
 
-fn decompose_bind_result(args: &[Term], _claim: &DomainClaim) -> Result<Value, String> {
+fn decompose_bind_result(args: &[Term], claim: &DomainClaim) -> Result<Value, String> {
     if args.len() != 2 {
         return Err(format!(
             "bind-result wrapper expected 2 args, got {}",
@@ -255,7 +259,9 @@ fn decompose_bind_result(args: &[Term], _claim: &DomainClaim) -> Result<Value, S
             "bind-result wrapper expected exactly one named term, got {term_count}"
         ));
     };
-    realize_spec_from_named_term(term)
+    let mut spec = realize_spec_from_named_term(term)?;
+    merge_realize_sidecar(&mut spec, claim, term)?;
+    Ok(spec)
 }
 
 pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
@@ -286,6 +292,50 @@ fn realize_function_name(term: &NamedTerm) -> &str {
     } else {
         term.function.as_str()
     }
+}
+
+fn merge_realize_sidecar(
+    spec: &mut Value,
+    claim: &DomainClaim,
+    term: &NamedTerm,
+) -> Result<(), String> {
+    let Some(sidecar) = realize_sidecar_from_claim(claim)? else {
+        return Ok(());
+    };
+    let Some(entry) = sidecar_entry_for_term(&sidecar, term) else {
+        return Ok(());
+    };
+    if let Some(bindings) = entry.get("operand_bindings").and_then(Value::as_array) {
+        spec["operandBindings"] = Value::Array(bindings.clone());
+    }
+    if let Some(function_name) = entry.get("source_function_name").and_then(Value::as_str) {
+        if !function_name.is_empty() {
+            spec["sourceFunctionName"] = Value::String(function_name.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn realize_sidecar_from_claim(claim: &DomainClaim) -> Result<Option<Value>, String> {
+    let Some(hint) = claim.contract.concept_hint.as_deref() else {
+        return Ok(None);
+    };
+    let Some(json_text) = hint.strip_prefix("provekit-realize-sidecar:") else {
+        return Ok(None);
+    };
+    serde_json::from_str(json_text)
+        .map(Some)
+        .map_err(|error| format!("parse realize sidecar metadata: {error}"))
+}
+
+fn sidecar_entry_for_term<'a>(sidecar: &'a Value, term: &NamedTerm) -> Option<&'a Value> {
+    let terms = sidecar.get("terms").and_then(Value::as_array)?;
+    if terms.len() == 1 {
+        return terms.first();
+    }
+    terms
+        .iter()
+        .find(|entry| entry.get("function").and_then(Value::as_str) == Some(term.function.as_str()))
 }
 
 fn realize_signature_from_named_term(term: &NamedTerm) -> (Vec<String>, String) {
@@ -336,6 +386,11 @@ fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         concept_name: required_string_field(spec, &["conceptName", "concept_name"])?,
         named_term_tree: non_null_field(spec, &["namedTermTree", "named_term_tree"]).cloned(),
         term_shape: non_null_field(spec, &["termShape", "term_shape"]).cloned(),
+        operand_bindings: value_array_field(spec, &["operandBindings", "operand_bindings"]),
+        source_function_name: string_field_optional(
+            spec,
+            &["sourceFunctionName", "source_function_name"],
+        ),
         mode: string_field_optional(spec, &["mode"]),
         modes: string_array_field(spec, &["modes"]).unwrap_or_default(),
         contract,

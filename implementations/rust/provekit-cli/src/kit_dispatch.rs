@@ -973,6 +973,123 @@ fn java_home_from_maven() -> Option<String> {
     None
 }
 
+// ============================================================================
+// Lower witness dispatch (ORP witness lowerer, legacy method `realize`)
+// ============================================================================
+
+pub fn dispatch_lower_witness(
+    workspace_root: &Path,
+    surface: &str,
+    plan: &Value,
+) -> Result<Value, String> {
+    let resolved = resolve_lower_command(workspace_root, surface)?;
+    rpc_lower_witness(workspace_root, surface, &resolved, plan)
+}
+
+fn resolve_lower_command(workspace_root: &Path, surface: &str) -> Result<ResolvedCommand, String> {
+    let manifest = workspace_root
+        .join(".provekit")
+        .join("lower")
+        .join(surface)
+        .join("manifest.toml");
+    if !manifest.exists() {
+        return Err(format!(
+            "no lower plugin for surface `{surface}`; expected {}",
+            manifest.display()
+        ));
+    }
+    let parsed = parse_manifest(&manifest)?;
+    let working_dir = parsed
+        .working_dir
+        .map(|wd| {
+            if wd.is_absolute() {
+                wd
+            } else {
+                workspace_root.join(wd)
+            }
+        })
+        .or_else(|| Some(workspace_root.to_path_buf()));
+    Ok(ResolvedCommand {
+        argv: parsed.command,
+        working_dir,
+    })
+}
+
+fn rpc_lower_witness(
+    workspace_root: &Path,
+    surface: &str,
+    cmd_spec: &ResolvedCommand,
+    plan: &Value,
+) -> Result<Value, String> {
+    if cmd_spec.argv.is_empty() {
+        return Err("empty command".to_string());
+    }
+    let mut command = Command::new(&cmd_spec.argv[0]);
+    if cmd_spec.argv.len() > 1 {
+        command.args(&cmd_spec.argv[1..]);
+    }
+    if !cmd_spec.argv.iter().any(|a| a == "--rpc") {
+        command.arg("--rpc");
+    }
+    if let Some(wd) = &cmd_spec.working_dir {
+        command.current_dir(wd);
+    }
+    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn lower kit: {e}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("lower kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("lower kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let init_req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "client": {"name": "provekit-cli/lower", "version": env!("CARGO_PKG_VERSION")},
+            "protocol_version": "provekit-orp/1",
+            "workspace_root": workspace_root.display().to_string(),
+            "config_path": ".provekit/config.toml"
+        }
+    });
+    writeln!(stdin, "{init_req}").map_err(|e| format!("write lower initialize: {e}"))?;
+    let _ = read_response(&mut reader, 1)?;
+
+    let lower_req = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "realize",
+        "params": {
+            "surface": surface,
+            "workspace_root": workspace_root.display().to_string(),
+            "plan": plan
+        }
+    });
+    writeln!(stdin, "{lower_req}").map_err(|e| format!("write lower realize: {e}"))?;
+    let response = read_response(&mut reader, 2)?;
+
+    let shutdown_req = json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "shutdown"
+    });
+    let _ = writeln!(stdin, "{shutdown_req}");
+    drop(stdin);
+    let _ = child.wait();
+    Ok(response)
+}
+
 fn realize_request_params(request: &RealizeRequest) -> Value {
     serde_json::to_value(request).expect("serialize realize request params")
 }
