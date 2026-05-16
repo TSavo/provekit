@@ -371,7 +371,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
 
             entries.push(json!({
                 "kind": "bind-lift-entry",
-                "file": "",
                 "fn_name": fn_name,
                 "attr_pre": attr_pre,
                 "attr_post": attr_post,
@@ -391,7 +390,6 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
                 entries.push(json!({
                     "kind": "bind-lift-entry",
-                    "file": "",
                     "fn_name": format!("{fn_name}__bound_call_{}", index + 1),
                     "attr_pre": Value::Null,
                     "attr_post": Value::Null,
@@ -1684,7 +1682,7 @@ pub fn fetch_status(url: &str) -> i64 {
         ]);
         let expected_cid = blake3_512_of(encode_jcs(&expected_shape).as_bytes());
 
-        assert_eq!(bound["file"], "");
+        assert!(bound.get("file").is_none(), "file key should be absent in γ canonical");
         assert_eq!(bound["fn_name"], "fetch_status__bound_call_1");
         assert_eq!(bound["param_names"], json!(["url"]));
         assert!(bound.get("param_types").is_none());
