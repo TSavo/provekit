@@ -1,5 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
+//! Path executor registry and dispatch.
+//!
+//! Every kit registered with [`KitRegistry`] declares its conformance posture
+//! explicitly through [`ConformanceDeclaration`]. Carrier kits are kits whose
+//! `transform` produces target source; they declare `Carrier { target_language,
+//! fixtures_path }` so their emit-compile-run fixtures are addressable from
+//! the registry. Non-carrier kits are kits whose `transform` produces a
+//! [`DomainClaim`](super::types::DomainClaim) without emitting target source;
+//! they declare `NonCarrier { reason }`. The `reason` string is audit evidence
+//! and is content-addressed through the surrounding run provenance chain.
+//!
+//! Canonical `NonCarrier` reasons:
+//! - LiftKit: `"lifts source bytes to DomainClaim; no target source produced"`
+//! - BindKit: `"transforms Input::Term to NamedTerm DomainClaim; emits no target source"`
+//! - ProveKit (future): `"discharges claims; no source emission"`
+//!
+//! Sequencing is bidirectional. If this substrate PR lands before per-kit PRs,
+//! each kit PR adds a one-line `ConformanceDeclaration::Carrier { ... }` or
+//! `ConformanceDeclaration::NonCarrier { ... }` declaration on rebase. If a kit
+//! PR lands before this substrate PR, this PR sweeps that kit's `register()`
+//! callsite to the new signature. Either direction is a mechanical one-line
+//! update per callsite.
+
 use std::collections::{BTreeMap, HashMap};
 
 use provekit_ir_types::{
@@ -13,23 +36,48 @@ use crate::compose::CCP_VERSION;
 
 use super::primitives::address;
 use super::traits::{InputCatalog, Kit, KitError};
-use super::types::{Cid, DomainClaim, Input, PathAlgebra, PathError, Verb};
+use super::types::{Cid, ConformanceDeclaration, DomainClaim, Input, PathAlgebra, PathError, Verb};
+
+struct RegisteredKit {
+    kit: Box<dyn Kit>,
+    conformance: ConformanceDeclaration,
+}
 
 /// Registry of executable kits keyed by the `PathAlgebra.kit` selector.
 #[derive(Default)]
 pub struct KitRegistry {
-    kits: HashMap<String, Box<dyn Kit>>,
+    kits: HashMap<String, RegisteredKit>,
 }
 
 impl KitRegistry {
     /// Register a kit under the exact path selector.
-    pub fn register(&mut self, name: impl Into<String>, kit: impl Kit + 'static) {
-        self.kits.insert(name.into(), Box::new(kit));
+    pub fn register(
+        &mut self,
+        name: impl Into<String>,
+        kit: impl Kit + 'static,
+        conformance: ConformanceDeclaration,
+    ) {
+        self.kits.insert(
+            name.into(),
+            RegisteredKit {
+                kit: Box::new(kit),
+                conformance,
+            },
+        );
     }
 
     /// Borrow a registered kit by selector.
     pub fn get(&self, name: &str) -> Option<&dyn Kit> {
-        self.kits.get(name).map(Box::as_ref)
+        self.kits
+            .get(name)
+            .map(|registered| registered.kit.as_ref())
+    }
+
+    /// Borrow a registered kit's conformance declaration by selector.
+    pub fn conformance(&self, name: &str) -> Option<&ConformanceDeclaration> {
+        self.kits
+            .get(name)
+            .map(|registered| &registered.conformance)
     }
 }
 

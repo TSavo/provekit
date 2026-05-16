@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
@@ -673,6 +674,21 @@ pub enum Dialect {
     SmtLib,
     /// Forward-compatible catch-all.
     Other(String),
+}
+
+/// Registration-time declaration of a kit's conformance posture.
+///
+/// `target_language` is intentionally absent. The registered kit's `dialect()`
+/// is the canonical source of truth for what language the kit emits; lifting
+/// dialect into a separate field here would denormalize the kit-registration
+/// data and require dialect-as-substrate-object architecture that the kit's
+/// own content-addressing already provides.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum ConformanceDeclaration {
+    /// Kit emits target source and pins the fixture directory that proves it.
+    Carrier { fixtures_path: PathBuf },
+    /// Kit does not emit target source; `reason` records the audit premise.
+    NonCarrier { reason: &'static str },
 }
 
 /// Boundary knob for `Domain::project`.

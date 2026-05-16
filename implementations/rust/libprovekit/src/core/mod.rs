@@ -47,10 +47,10 @@ pub use traits::{
     InputCatalog, Kit, KitError, Portfolio,
 };
 pub use types::{
-    ArityShape, AritySlot, Attestation, Boundary, Cid, CidError, Contract, Dialect, DomainClaim,
-    DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path, PathAlgebra,
-    PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial, Refutation,
-    SignatureCatalogError, SlotEvaluation, SlotSort, Term, Truth, Verb, Verdict,
+    ArityShape, AritySlot, Attestation, Boundary, Cid, CidError, ConformanceDeclaration, Contract,
+    Dialect, DomainClaim, DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path,
+    PathAlgebra, PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial,
+    Refutation, SignatureCatalogError, SlotEvaluation, SlotSort, Term, Truth, Verb, Verdict,
     VerdictCoercionError, Witness,
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};

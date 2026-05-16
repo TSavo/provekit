@@ -6,8 +6,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use libprovekit::core::{
-    address, execute_path, BindKit, Dialect, HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit,
-    Path as CorePath, PathAlgebra, Term, Verb,
+    address, execute_path, BindKit, ConformanceDeclaration, Dialect, HashMapInputCatalog, Input,
+    Kit, KitRegistry, LiftKit, Path as CorePath, PathAlgebra, Term, Verb,
+};
+
+const BIND_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
+    reason: "transforms Input::Term to NamedTerm DomainClaim; emits no target source",
+};
+const LIFT_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
+    reason: "lifts source bytes to DomainClaim; no target source produced",
 };
 use provekit_ir_types::Sort;
 use serde_json::{json, Value};
@@ -130,7 +137,7 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
         }],
     }));
     let mut registry = KitRegistry::default();
-    registry.register("bind-default", BindKit::default());
+    registry.register("bind-default", BindKit::default(), BIND_NONCARRIER);
 
     let claim = execute_path(&path, &registry, &inputs).expect("bind path executes");
     let cli_bytes = run_bind_cli(&term_value);
@@ -213,8 +220,9 @@ fn lift_then_bind_path_carries_lift_output_and_claim_premise() {
             command,
             Some(temp.path().to_path_buf()),
         ),
+        LIFT_NONCARRIER,
     );
-    registry.register("bind-default", BindKit::default());
+    registry.register("bind-default", BindKit::default(), BIND_NONCARRIER);
 
     let bind_claim = execute_path(&path, &registry, &inputs).expect("lift bind path executes");
 

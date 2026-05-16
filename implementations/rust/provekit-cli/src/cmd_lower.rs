@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use clap::{Parser, ValueEnum};
 use libprovekit::core::{
-    execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+    execute_path, ConformanceDeclaration, HashMapInputCatalog, Input, KitRegistry, LowerKit,
+    Path as CorePath, PathAlgebra,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -327,6 +328,10 @@ fn lower_named_spec_via_path(
             None,
             DispatchRealizeTransport,
         ),
+        ConformanceDeclaration::Carrier {
+            fixtures_path: project_root
+                .join(format!("implementations/{target}/conformance/fixtures")),
+        },
     );
     let claim = execute_path(&path, &registry, &inputs).map_err(|error| {
         let detail = error
@@ -413,6 +418,10 @@ fn lower_witness_requirement_for_surface(
             None,
             DispatchRealizeTransport,
         ),
+        ConformanceDeclaration::Carrier {
+            fixtures_path: project_root
+                .join(format!("implementations/{surface}/conformance/fixtures")),
+        },
     );
     let claim = execute_path(&path, &registry, &inputs)
         .map_err(|error| LowerFailure::message(error.to_string()))?;
