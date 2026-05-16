@@ -106,7 +106,7 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 **Two-attempt orientation surfaced:** the dispatched Opus agent twice correctly refused to compose the exhibit without architect rulings. First refusal surfaced the 6-vs-7-step algebra ambiguity (resolved: 7 steps, `[lift, bind, lower, relift, rebind, lower-back, prove]`) and the verbs.rs-vs-walks namespace question (resolved: new `core::walks` module). Second refusal surfaced a real algorithm bug in A2's `walk_premises_to_root` (single-HashSet collapses three outcomes to `CycleDetected`) which Path A corrects, AND a substantive architect question about real Python/Java toolchain in cargo tests (Path B blocker).
 
-**Filed, blocked on architect ruling:** #1024 Path B (the runnable exhibit + integration test). Open question: real Python/Java toolchain in cargo test acceptable? Slow-test lane shape? Minimum fidelity for assertion 4 (federation check)?
+**Filed, blocked on architect ruling:** #1068 (Path B of #1024). Open question: real Python/Java toolchain in cargo test acceptable? Slow-test lane shape? Minimum fidelity for assertion 4 (federation check)? Recommended Path B framing: Option 2 (slow-test lane in CI) preserves both substrate-correctness rigor and developer ergonomics. Awaiting architect ruling.
 
 **Open follow-ups not blocking Trinity:** #1049 premise-dedup (Opus's non-blocking concern from #1047 review).
 
