@@ -19,6 +19,7 @@
 //! `sign`.
 
 pub mod lift_plugin;
+pub mod lower_plugin;
 pub mod path_executor;
 pub mod primitives;
 pub mod stubs;
@@ -27,6 +28,10 @@ pub mod types;
 pub mod verbs;
 
 pub use lift_plugin::{LiftKit, LiftPluginKit, LiftPluginKitError, LiftPluginKitSession};
+pub use lower_plugin::{
+    LowerKit, RealizeContractPayload, RealizeContractWitness, RealizeRequest, RealizeTransport,
+    RealizedSource,
+};
 pub use path_executor::{execute_path, KitRegistry, PathExecutionError};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,

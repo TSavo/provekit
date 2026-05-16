@@ -11,6 +11,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::{Parser, ValueEnum};
+use libprovekit::core::{
+    execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+};
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
 
@@ -21,6 +24,7 @@ use provekit_proof_envelope::{
 };
 
 use crate::cmd_bind::NamedTermDocument;
+use crate::kit_dispatch::DispatchRealizeTransport;
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 const LOWER_PROTOCOL_VERSION: &str = "provekit-orp/1";
@@ -298,33 +302,16 @@ fn lower_named_document(
                     term.function
                 ))
             })?;
-        let request = crate::kit_dispatch::RealizeRequest {
-            function: term.function.clone(),
-            params: term.params.clone(),
-            param_types: term.param_types.clone(),
-            return_type: term.return_type.clone(),
-            concept_name: term.concept_name.clone(),
-            named_term_tree,
-            mode: None,
-            modes: Vec::new(),
-            contract: None,
-            sugar_cids: Vec::new(),
-            sugar_plugins: Vec::new(),
+        let spec = lower_named_spec(term, named_term_tree);
+        let source = match lower_named_spec_via_path(project_root, target, spec) {
+            Ok(source) => source,
+            Err(LowerNamedError::MissingTemplates(entries)) => {
+                missing_templates.extend(entries);
+                continue;
+            }
+            Err(error) => return Err(error),
         };
-        let realized =
-            match crate::kit_dispatch::dispatch_realize(project_root, target, None, &request) {
-                Ok(realized) => realized,
-                Err(error) => {
-                    if let Some(entries) = missing_templates_from_detail(&error.detail) {
-                        missing_templates.extend(entries);
-                        continue;
-                    }
-                    return Err(LowerNamedError::Message(format!(
-                        "lower plugin unavailable for `{target}`: {error}"
-                    )));
-                }
-            };
-        out.push_str(&realized.source);
+        out.push_str(&source);
         if !out.ends_with('\n') {
             out.push('\n');
         }
@@ -333,6 +320,58 @@ fn lower_named_document(
         return Err(LowerNamedError::MissingTemplates(missing_templates));
     }
     Ok(out)
+}
+
+fn lower_named_spec(term: &crate::cmd_bind::NamedTerm, named_term_tree: Option<Json>) -> Json {
+    json!({
+        "kind": "RealizeRequest",
+        "function": term.function,
+        "params": term.params,
+        "paramTypes": term.param_types,
+        "returnType": term.return_type,
+        "conceptName": term.concept_name,
+        "namedTermTree": named_term_tree,
+        "termShapeCid": term.term_shape_cid,
+    })
+}
+
+fn lower_named_spec_via_path(
+    project_root: &Path,
+    target: &str,
+    spec: Json,
+) -> Result<String, LowerNamedError> {
+    let mut inputs = HashMapInputCatalog::default();
+    let input_cid = inputs.insert(Input::Spec(spec));
+    let kit_name = format!("lower-{target}");
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lower".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![input_cid],
+            depends_on: vec![],
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        kit_name,
+        LowerKit::new(
+            project_root.to_path_buf(),
+            target.to_string(),
+            None,
+            DispatchRealizeTransport,
+        ),
+    );
+    let claim = execute_path(&path, &registry, &inputs).map_err(|error| {
+        let detail = error.to_string();
+        if let Some(entries) = missing_templates_from_detail(&detail) {
+            LowerNamedError::MissingTemplates(entries)
+        } else {
+            LowerNamedError::Message(format!("lower plugin unavailable for `{target}`: {detail}"))
+        }
+    })?;
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
+        .map(|realized| realized.source)
+        .map_err(LowerNamedError::Message)
 }
 
 fn missing_templates_from_detail(detail: &str) -> Option<Vec<MissingTemplateEntry>> {

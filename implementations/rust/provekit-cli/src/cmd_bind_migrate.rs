@@ -6,6 +6,9 @@ use std::process::Command;
 use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
+use libprovekit::core::{
+    execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+};
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, PropagationDecision,
     PropagationInput,
@@ -21,6 +24,7 @@ use provekit_ir_types::{
 use serde_json::{json, Value as JsonValue};
 
 use crate::cmd_bind::BindArgs;
+use crate::kit_dispatch::DispatchRealizeTransport;
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
 const ASYNC_EFFECT: &str = "async";
@@ -773,31 +777,56 @@ fn probe_realize_binding(
     tag: &str,
     concept_name: &str,
 ) -> Result<(), String> {
-    let request = crate::kit_dispatch::RealizeRequest {
-        function: "__provekit_migrate_probe".to_string(),
-        params: vec!["sql".to_string(), "args".to_string()],
-        param_types: vec!["string".to_string(), "unknown[]".to_string()],
-        return_type: if concept_name == "concept:sql-execute" {
-            "{ rows_affected: number; last_insert_id: unknown }".to_string()
+    let spec = json!({
+        "kind": "RealizeRequest",
+        "function": "__provekit_migrate_probe",
+        "params": ["sql", "args"],
+        "paramTypes": ["string", "unknown[]"],
+        "returnType": if concept_name == "concept:sql-execute" {
+            "{ rows_affected: number; last_insert_id: unknown }"
         } else {
-            "unknown[]".to_string()
+            "unknown[]"
         },
-        concept_name: concept_name.to_string(),
-        named_term_tree: None,
-        mode: None,
-        modes: Vec::new(),
-        contract: None,
-        sugar_cids: Vec::new(),
-        sugar_plugins: Vec::new(),
-    };
-    let realized = crate::kit_dispatch::dispatch_realize(repo_root, language, Some(tag), &request)
-        .map_err(|e| format!("{e}"))?;
+        "conceptName": concept_name,
+    });
+    let realized = realize_probe_via_path(repo_root, language, tag, spec)?;
     if realized.is_stub {
         return Err(format!(
             "realize binding for {language}/{tag}/{concept_name} fell through to a stub"
         ));
     }
     Ok(())
+}
+
+fn realize_probe_via_path(
+    repo_root: &Path,
+    language: &str,
+    tag: &str,
+    spec: JsonValue,
+) -> Result<libprovekit::core::RealizedSource, String> {
+    let mut inputs = HashMapInputCatalog::default();
+    let input_cid = inputs.insert(Input::Spec(spec));
+    let kit_name = format!("lower-{language}");
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lower".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![input_cid],
+            depends_on: vec![],
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        kit_name,
+        LowerKit::new(
+            repo_root.to_path_buf(),
+            language.to_string(),
+            Some(tag.to_string()),
+            DispatchRealizeTransport,
+        ),
+    );
+    let claim = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
 }
 
 fn build_receipt(

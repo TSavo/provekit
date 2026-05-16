@@ -8,7 +8,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use clap::Parser;
-use libprovekit::core::{Cid, Term};
+use libprovekit::core::{
+    execute_path, Cid, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath,
+    PathAlgebra, Term,
+};
 use libprovekit::desugar::{load_desugaring_rules_from_dir, DesugaringSet};
 use libprovekit::transport::{transport_term, OperationTransport, TermTransport};
 use owo_colors::OwoColorize;
@@ -21,6 +24,7 @@ use provekit_ir_types::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::kit_dispatch::DispatchRealizeTransport;
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 #[derive(Parser, Debug, Clone)]
@@ -1409,7 +1413,7 @@ fn realize_function(
     let _ = body; // body emission is the kit's responsibility
     let workspace_root =
         repo_root().unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-    let sugar_cids = sugar_plugins
+    let sugar_cids: Vec<String> = sugar_plugins
         .iter()
         .filter_map(|plugin| {
             plugin
@@ -1419,23 +1423,22 @@ fn realize_function(
                 .map(str::to_string)
         })
         .collect();
-    let request = crate::kit_dispatch::RealizeRequest {
-        function: function.to_string(),
-        params: params.to_vec(),
-        param_types: param_types.to_vec(),
-        return_type: return_type.to_string(),
-        concept_name: concept_name.to_string(),
-        named_term_tree: None,
-        mode: mode.map(str::to_string),
-        modes: mode.into_iter().map(str::to_string).collect(),
-        contract,
-        sugar_cids,
-        sugar_plugins,
-    };
-    let realized = crate::kit_dispatch::dispatch_realize(&workspace_root, language, None, &request)
-        .map_err(|e| {
-            TransportCliError::Refusal(format!("realize-time:kit-plugin-unavailable {e}"))
-        })?;
+    let spec = json!({
+        "kind": "RealizeRequest",
+        "function": function,
+        "params": params,
+        "paramTypes": param_types,
+        "returnType": return_type,
+        "conceptName": concept_name,
+        "mode": mode,
+        "modes": mode.into_iter().collect::<Vec<_>>(),
+        "contract": contract,
+        "sugarCids": sugar_cids,
+        "sugarPlugins": sugar_plugins,
+    });
+    let realized = realize_spec_via_path(&workspace_root, language, spec).map_err(|error| {
+        TransportCliError::Refusal(format!("realize-time:kit-plugin-unavailable {error}"))
+    })?;
     return Ok(RealizedSource {
         // The kit reports `extension`; fall back to a leak-free static
         // string MATCHING the kit's response. The Box::leak below converts
@@ -1453,25 +1456,54 @@ fn realize_function(
     });
 }
 
+fn realize_spec_via_path(
+    workspace_root: &Path,
+    language: &str,
+    spec: Value,
+) -> Result<libprovekit::core::RealizedSource, String> {
+    let mut inputs = HashMapInputCatalog::default();
+    let input_cid = inputs.insert(Input::Spec(spec));
+    let kit_name = format!("lower-{language}");
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lower".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![input_cid],
+            depends_on: vec![],
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        kit_name,
+        LowerKit::new(
+            workspace_root.to_path_buf(),
+            language.to_string(),
+            None,
+            DispatchRealizeTransport,
+        ),
+    );
+    let claim = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(&claim)
+}
+
 #[cfg(test)]
 mod mint_realization_artifacts_tests {
     use super::*;
     use crate::kit_dispatch::RealizeRequest;
 
     fn make_request(mode: Option<&str>) -> RealizeRequest {
-        RealizeRequest {
-            function: "foo".to_string(),
-            params: vec!["x".to_string(), "y".to_string()],
-            param_types: vec!["int".to_string(), "int".to_string()],
-            return_type: "int".to_string(),
-            concept_name: "add".to_string(),
-            named_term_tree: None,
-            mode: mode.map(str::to_string),
-            modes: mode.into_iter().map(str::to_string).collect(),
-            contract: None,
-            sugar_cids: vec![],
-            sugar_plugins: vec![],
-        }
+        serde_json::from_value(serde_json::json!({
+            "function": "foo",
+            "params": ["x", "y"],
+            "param_types": ["int", "int"],
+            "return_type": "int",
+            "concept_name": "add",
+            "mode": mode,
+            "modes": mode.into_iter().collect::<Vec<_>>(),
+            "sugar_cids": [],
+            "sugar_plugins": []
+        }))
+        .expect("request decodes")
     }
 
     fn make_realized(wrapper_record: Option<serde_json::Value>) -> RealizedSource {

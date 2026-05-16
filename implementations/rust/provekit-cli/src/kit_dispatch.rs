@@ -36,6 +36,27 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[allow(unused_imports)]
+pub use libprovekit::core::RealizeContractWitness;
+use libprovekit::core::RealizeTransport;
+pub use libprovekit::core::{RealizeContractPayload, RealizeRequest, RealizedSource};
+
+#[derive(Debug, Clone, Copy)]
+pub struct DispatchRealizeTransport;
+
+impl RealizeTransport for DispatchRealizeTransport {
+    fn dispatch_realize(
+        &self,
+        workspace_root: &Path,
+        target_lang: &str,
+        library_tag: Option<&str>,
+        request: &RealizeRequest,
+    ) -> Result<RealizedSource, String> {
+        dispatch_realize(workspace_root, target_lang, library_tag, request)
+            .map_err(|error| error.to_string())
+    }
+}
+
 // ============================================================================
 // Bind lift dispatch (PEP 1.7.0 kind = "lift", legacy-retained method `lift`)
 // ============================================================================
@@ -516,63 +537,6 @@ fn decode_bind_lift_response(response: Value) -> Result<BindLiftResult, String> 
 // ============================================================================
 // Realize dispatch (PEP 1.7.0 kind = "realize", method `provekit.plugin.invoke`)
 // ============================================================================
-
-/// Request shape for the realize surface. Mirrors what
-/// `body-template-memento.md` §3 specifies: the realize plugin receives a
-/// canonical clause + concept binding + signature info and returns a
-/// language-specific source string plus an `is_stub` flag.
-#[derive(Debug, Clone, Serialize)]
-pub struct RealizeRequest {
-    pub function: String,
-    pub params: Vec<String>,
-    pub param_types: Vec<String>,
-    pub return_type: String,
-    pub concept_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub named_term_tree: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub modes: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contract: Option<RealizeContractPayload>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub sugar_cids: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub sugar_plugins: Vec<Value>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RealizeContractPayload {
-    pub concept_site_cid: String,
-    pub object_fcm_cid: String,
-    pub local_contract_cid: String,
-    pub origin: String,
-    pub discharge_verdict: String,
-    pub witnesses: Vec<RealizeContractWitness>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RealizeContractWitness {
-    pub role: String,
-    pub predicate: Value,
-    pub predicate_text: String,
-    pub source_kind: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct RealizedSource {
-    pub extension: String,
-    pub source: String,
-    pub is_stub: bool,
-    pub emitted_artifact_cid: Option<String>,
-    pub observed_loss_record: Value,
-    pub used_sugars: Vec<Value>,
-    /// Raw `observation_wrapper_emission_record` from the kit response, present
-    /// when an observation mode emitted a wrapper FCM. Expected fields:
-    /// wrapper_fcm_cid, observer_effects, preservation_claim_cid.
-    pub observation_wrapper_emission_record: Option<Value>,
-}
 
 const DEFAULT_LIBRARY_TAG: &str = "default";
 
@@ -1090,38 +1054,38 @@ mod tests {
 
     #[test]
     fn realize_request_params_include_contract_mode_and_loss_payload() {
-        let request = RealizeRequest {
-            function: "lookup".to_string(),
-            params: vec!["name".to_string()],
-            param_types: vec!["String".to_string()],
-            return_type: "String".to_string(),
-            concept_name: "concept:lookup".to_string(),
-            named_term_tree: None,
-            mode: Some("monitor".to_string()),
-            modes: vec!["monitor".to_string(), "witness".to_string()],
-            contract: Some(RealizeContractPayload {
-                concept_site_cid: "blake3-512:site".to_string(),
-                object_fcm_cid: "blake3-512:object".to_string(),
-                local_contract_cid: "blake3-512:compound".to_string(),
-                origin: "evidence-lift[type-signature]".to_string(),
-                discharge_verdict: "exact".to_string(),
-                witnesses: vec![RealizeContractWitness {
-                    role: "pre".to_string(),
-                    predicate: json!({
+        let request: RealizeRequest = serde_json::from_value(json!({
+            "function": "lookup",
+            "params": ["name"],
+            "param_types": ["String"],
+            "return_type": "String",
+            "concept_name": "concept:lookup",
+            "mode": "monitor",
+            "modes": ["monitor", "witness"],
+            "contract": {
+                "concept_site_cid": "blake3-512:site",
+                "object_fcm_cid": "blake3-512:object",
+                "local_contract_cid": "blake3-512:compound",
+                "origin": "evidence-lift[type-signature]",
+                "discharge_verdict": "exact",
+                "witnesses": [{
+                    "role": "pre",
+                    "predicate": {
                         "args": [
                             {"kind": "var", "name": "name"},
                             {"kind": "const", "sort": {"kind": "primitive", "name": "Ref"}, "value": null}
                         ],
                         "kind": "atomic",
                         "name": "neq"
-                    }),
-                    predicate_text: "non_null(name)".to_string(),
-                    source_kind: "type-signature".to_string(),
-                }],
-            }),
-            sugar_cids: vec!["blake3-512:sugar".to_string()],
-            sugar_plugins: vec![json!({"header": {"kind": "sugar"}})],
-        };
+                    },
+                    "predicate_text": "non_null(name)",
+                    "source_kind": "type-signature"
+                }]
+            },
+            "sugar_cids": ["blake3-512:sugar"],
+            "sugar_plugins": [{"header": {"kind": "sugar"}}]
+        }))
+        .expect("request decodes");
 
         let params = realize_request_params(&request);
 
@@ -1145,13 +1109,13 @@ mod tests {
 
     #[test]
     fn realize_request_params_include_named_term_tree() {
-        let request = RealizeRequest {
-            function: "compose_tree".to_string(),
-            params: vec!["value".to_string()],
-            param_types: vec!["int".to_string()],
-            return_type: "int".to_string(),
-            concept_name: "UNNAMED-CONCEPT-1".to_string(),
-            named_term_tree: Some(json!({
+        let request: RealizeRequest = serde_json::from_value(json!({
+            "function": "compose_tree",
+            "params": ["value"],
+            "param_types": ["int"],
+            "return_type": "int",
+            "concept_name": "UNNAMED-CONCEPT-1",
+            "named_term_tree": {
                 "conceptName": "concept:seq",
                 "operationKind": "seq",
                 "shapeCid": "blake3-512:seq",
@@ -1161,13 +1125,12 @@ mod tests {
                     "shapeCid": "blake3-512:return",
                     "args": []
                 }]
-            })),
-            mode: None,
-            modes: Vec::new(),
-            contract: None,
-            sugar_cids: Vec::new(),
-            sugar_plugins: Vec::new(),
-        };
+            },
+            "modes": [],
+            "sugar_cids": [],
+            "sugar_plugins": []
+        }))
+        .expect("request decodes");
 
         let params = realize_request_params(&request);
 
