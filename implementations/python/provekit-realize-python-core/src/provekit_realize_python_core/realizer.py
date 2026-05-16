@@ -1311,16 +1311,50 @@ def _rust_runtime_operation_concepts(op_name: str) -> tuple[str, ...]:
             return ("concept:array-repeat",)
         case "add":
             return ("concept:add",)
+        case "sub":
+            return ("concept:sub",)
         case "conditional":
             return ("concept:conditional",)
         case "decl":
             return ("concept:decl",)
         case "eq":
             return ("concept:eq",)
+        case "ne":
+            return ("concept:ne",)
         case "lt":
             return ("concept:lt",)
+        case "le":
+            return ("concept:le",)
+        case "gt":
+            return ("concept:gt",)
+        case "ge":
+            return ("concept:ge",)
         case "mul":
             return ("concept:mul",)
+        case "div":
+            return ("concept:div",)
+        case "and":
+            return ("concept:and",)
+        case "or":
+            return ("concept:or",)
+        case "not":
+            return ("concept:not",)
+        case "mod":
+            return ("concept:mod",)
+        case "shl":
+            return ("concept:shl",)
+        case "shr":
+            return ("concept:shr",)
+        case "bitand":
+            return ("concept:bitand",)
+        case "bitor":
+            return ("concept:bitor",)
+        case "bitxor":
+            return ("concept:bitxor",)
+        case "neg":
+            return ("concept:neg",)
+        case "bitnot":
+            return ("concept:bitnot",)
         case "borrow":
             return ("concept:borrow",)
     return ()
@@ -1330,12 +1364,39 @@ def _rust_runtime_operation_return_type(
     op_name: str, arg_terms: list[TermExpression]
 ) -> str:
     match op_name.strip():
-        case "add":
+        case (
+            "add"
+            | "sub"
+            | "mul"
+            | "div"
+            | "mod"
+            | "shl"
+            | "shr"
+            | "bitand"
+            | "bitor"
+            | "bitxor"
+        ):
             types = [term.type_name for term in arg_terms]
             if types and all(type_name == "int" for type_name in types):
                 return "int"
             if types and all(type_name == "str" for type_name in types):
                 return "str"
+        case "neg" | "bitnot":
+            types = [term.type_name for term in arg_terms]
+            if types and all(type_name == "int" for type_name in types):
+                return "int"
+        case "eq" | "ne" | "lt" | "le" | "gt" | "ge":
+            types = [term.type_name for term in arg_terms]
+            if types and all(type_name == "int" for type_name in types):
+                return "bool"
+        case "and" | "or":
+            types = [term.type_name for term in arg_terms]
+            if types and all(type_name == "bool" for type_name in types):
+                return "bool"
+        case "not":
+            types = [term.type_name for term in arg_terms]
+            if types and all(type_name == "bool" for type_name in types):
+                return "bool"
         case "borrow":
             return arg_terms[0].type_name if arg_terms else ""
     return ""
