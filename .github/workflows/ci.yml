@@ -886,3 +886,18 @@ jobs:
           token="$(cat "$token_file")"
           git push "https://x-access-token:${token}@github.com/${GH_REPOSITORY}.git" "HEAD:${PR_HEAD_REF}"
           echo "Pushed refreshed CICP accepted witnesses; the new PR head will run CI."
+
+  spec-cid-lint:
+    name: Spec CID literal lint
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint blake3-512 CID literals under protocol/specs
+        run: |
+          set -euo pipefail
+          chmod +x tools/spec-cid-lint.sh
+          tools/spec-cid-lint.sh protocol/specs
