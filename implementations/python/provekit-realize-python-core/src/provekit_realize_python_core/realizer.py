@@ -1311,6 +1311,16 @@ def _rust_runtime_operation_concepts(op_name: str) -> tuple[str, ...]:
             return ("concept:array-repeat",)
         case "add":
             return ("concept:add",)
+        case "conditional":
+            return ("concept:conditional",)
+        case "decl":
+            return ("concept:decl",)
+        case "eq":
+            return ("concept:eq",)
+        case "lt":
+            return ("concept:lt",)
+        case "mul":
+            return ("concept:mul",)
         case "borrow":
             return ("concept:borrow",)
     return ()
