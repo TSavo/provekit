@@ -87,18 +87,38 @@ def emit_stub(
     contract: dict[str, Any] | None = None,
     sugar_cids: list[str] | None = None,
     sugar_plugins: list[Any] | None = None,
+    named_term_tree: dict[str, Any] | None = None,
+    annotate: bool = False,
 ) -> dict[str, Any]:
-    missing = missing_templates_for(
-        function,
-        params,
-        param_types,
-        return_type,
-        concept_name,
-    )
+    if named_term_tree is None:
+        missing = missing_templates_for(
+            function,
+            params,
+            param_types,
+            return_type,
+            concept_name,
+        )
+    else:
+        missing = missing_templates_for_tree(
+            function,
+            params,
+            param_types,
+            return_type,
+            named_term_tree,
+        )
     if missing:
         raise MissingTemplateError(missing)
 
-    term_body = term_body_for(concept_name, params, param_types, return_type)
+    if named_term_tree is None:
+        term_body = term_body_for(concept_name, params, param_types, return_type)
+    else:
+        term_body = term_body_for_tree(
+            named_term_tree,
+            params,
+            param_types,
+            return_type,
+            annotate=annotate,
+        )
     if term_body is not None:
         body = term_body.body
     else:
@@ -135,6 +155,17 @@ def missing_templates_for(
 ) -> tuple[MissingTemplateEntry, ...]:
     collector = _MissingTemplateCollector(function, params, param_types, return_type)
     return collector.collect(concept_name)
+
+
+def missing_templates_for_tree(
+    function: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    named_term_tree: dict[str, Any],
+) -> tuple[MissingTemplateEntry, ...]:
+    collector = _MissingTemplateCollector(function, params, param_types, return_type)
+    return collector.collect_tree(named_term_tree)
 
 
 def contract_comment_lines(
@@ -329,6 +360,52 @@ class _MissingTemplateCollector:
                 term_position="body",
             )
         return tuple(self.entries)
+
+    def collect_tree(self, tree: dict[str, Any]) -> tuple[MissingTemplateEntry, ...]:
+        self._collect_tree(tree, "body.namedTermTree")
+        return tuple(self.entries)
+
+    def _collect_tree(self, tree: Any, position: str) -> None:
+        if not isinstance(tree, dict):
+            self._add("namedTermTree", (), position)
+            return
+        concept_name = _tree_concept_name(tree)
+        if not concept_name:
+            self._add("namedTermTree", (), position)
+            return
+        operation_kind = _tree_operation_kind(tree)
+        args = _tree_args(tree)
+        if not _is_tree_composer(concept_name, operation_kind):
+            template_params, template_types = self._tree_template_signature(args)
+            if (
+                body_template_for(
+                    concept_name,
+                    template_params,
+                    template_types,
+                    self.return_type,
+                )
+                is None
+            ):
+                self._add(
+                    concept_name,
+                    tuple(map_source_type(ty) for ty in template_types),
+                    position,
+                )
+        for index, child in enumerate(args):
+            self._collect_tree(child, f"{position}.args[{index}]")
+
+    def _tree_template_signature(
+        self,
+        args: list[dict[str, Any]],
+    ) -> tuple[list[str], list[str]]:
+        if not args:
+            return self.params, self.param_types
+        names = [f"arg{index}" for index, _child in enumerate(args)]
+        types = [
+            _tree_concept_name(child) or _tree_operation_kind(child) or "expr"
+            for child in args
+        ]
+        return names, types
 
     def _is_term_surface(self, surface: str) -> bool:
         if surface == "skip":
@@ -539,6 +616,105 @@ def term_body_for(
         return _lower_let_body(surface, params, param_types, return_type)
 
     return None
+
+
+def term_body_for_tree(
+    named_term_tree: dict[str, Any],
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    *,
+    annotate: bool = False,
+) -> TermBody | None:
+    return _lower_tree_body(
+        named_term_tree,
+        params,
+        param_types,
+        return_type,
+        annotate=annotate,
+    )
+
+
+def _lower_tree_body(
+    tree: Any,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+    *,
+    annotate: bool,
+) -> TermBody | None:
+    if not isinstance(tree, dict):
+        return None
+    concept_name = _tree_concept_name(tree)
+    if not concept_name:
+        return None
+    operation_kind = _tree_operation_kind(tree)
+    args = _tree_args(tree)
+    if _is_tree_composer(concept_name, operation_kind):
+        bodies: list[str] = []
+        for child in args:
+            child_body = _lower_tree_body(
+                child,
+                params,
+                param_types,
+                return_type,
+                annotate=annotate,
+            )
+            if child_body is None:
+                return None
+            if child_body.body:
+                bodies.append(child_body.body)
+        body = "\n".join(bodies)
+        return TermBody(_annotated_body(body, concept_name, annotate))
+
+    child_bodies: list[str] = []
+    for child in args:
+        child_body = _lower_tree_body(
+            child,
+            params,
+            param_types,
+            return_type,
+            annotate=annotate,
+        )
+        if child_body is None:
+            return None
+        if child_body.body:
+            child_bodies.append(child_body.body)
+    body = body_template_for(concept_name, params, param_types, return_type)
+    if body is None:
+        return None
+    if child_bodies:
+        body = "\n".join([*child_bodies, body])
+    return TermBody(_annotated_body(body, concept_name, annotate))
+
+
+def _tree_concept_name(tree: dict[str, Any]) -> str:
+    value = tree.get("conceptName", tree.get("concept_name"))
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _tree_operation_kind(tree: dict[str, Any]) -> str:
+    value = tree.get("operationKind", tree.get("operation_kind"))
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _tree_args(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    args = tree.get("args")
+    if not isinstance(args, list):
+        return []
+    return [arg for arg in args if isinstance(arg, dict)]
+
+
+def _is_tree_composer(concept_name: str, operation_kind: str) -> bool:
+    return operation_kind == "seq" or concept_name in {"concept:seq", "python:seq"}
+
+
+def _annotated_body(body: str, concept_name: str, annotate: bool) -> str:
+    if not annotate:
+        return body
+    if not body:
+        return f"# concept: {concept_name}"
+    return f"# concept: {concept_name}\n{body}"
 
 
 def _body_template_for_entries(

@@ -287,12 +287,24 @@ fn lower_named_document(
     let mut out = String::new();
     let mut missing_templates = Vec::new();
     for term in &named.terms {
+        let named_term_tree = term
+            .named_term_tree
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| {
+                LowerNamedError::Message(format!(
+                    "serialize namedTermTree for `{}`: {e}",
+                    term.function
+                ))
+            })?;
         let request = crate::kit_dispatch::RealizeRequest {
             function: term.function.clone(),
             params: term.params.clone(),
             param_types: term.param_types.clone(),
             return_type: term.return_type.clone(),
             concept_name: term.concept_name.clone(),
+            named_term_tree,
             mode: None,
             modes: Vec::new(),
             contract: None,

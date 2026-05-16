@@ -84,6 +84,10 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         sugar_plugins=params.get("sugar_plugins")
         if isinstance(params.get("sugar_plugins"), list)
         else [],
+        named_term_tree=params.get("named_term_tree")
+        if isinstance(params.get("named_term_tree"), dict)
+        else None,
+        annotate=_annotation_enabled(params),
     )
 
 
@@ -91,6 +95,16 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _annotation_enabled(params: dict[str, Any]) -> bool:
+    rewrite = params.get("rewrite", params.get("provekit_rewrite"))
+    if rewrite == "annotate":
+        return True
+    flags = params.get("flags")
+    if isinstance(flags, list) and "# provekit-rewrite: annotate" in flags:
+        return True
+    return params.get("annotate") is True
 
 
 def _send(obj: dict[str, Any]) -> None:
