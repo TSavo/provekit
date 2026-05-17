@@ -28,7 +28,7 @@ These are primitive operation concept nodes, not idiom shapes. They are the mini
 
 `exams/` is reserved for `ExamManifestMemento` instances. A manifest is the stable, content-addressed question set for a concept hub version; it does not carry coverage state. The v1 shape is specified at `protocol/specs/2026-05-16-exam-manifest-memento.md`, with the concept shape at `specs/exam-manifest_shape.spec.json`.
 
-The v1 manifest file will be minted by the follow-up generator work at `exams/v1.<cid>.json`. Coverage state remains separate in the deferred `ExamCoverageMemento` family.
+The v1 manifest is minted by `scripts/mint_exam_manifest.py`, which deterministically projects primitive shape specs, abstraction catalog entries, sort instances, known HTTP and SQL library tags, and effect signatures into `exams/v1.<cid>.json`; the minted CID is registered in `catalog/index.json` with `kind: "exam"`. Coverage state remains separate in the deferred `ExamCoverageMemento` family.
 
 ## Concept Details
 
