@@ -179,6 +179,29 @@ fn exam_manifest_accepts_future_question_kind_at_shape_level() {
         .expect("future kind validates at shape level");
 }
 
+#[test]
+fn exam_manifest_accepts_v1_1_schema_version() {
+    let mut manifest = example_manifest();
+    manifest.metadata.schema_version = "provekit-exam-manifest/v1.1".to_string();
+    manifest.header.content.question_kinds = vec![
+        "boundary-realization".to_string(),
+        "boundary-tag".to_string(),
+        "composition".to_string(),
+        "concept-realization".to_string(),
+        "effect-classification".to_string(),
+        "morphism".to_string(),
+        "sort-classification".to_string(),
+    ];
+    manifest.header.content.questions = vec![question(
+        ExamQuestionKind::Other("concept-realization".to_string()),
+        "concept:add",
+        json!({"language": "rust"}),
+        "RealizationMemento",
+    )];
+
+    manifest.validate().expect("v1.1 manifest validates");
+}
+
 fn example_manifest() -> ExamManifestMemento {
     ExamManifestMemento {
         envelope: ExamManifestEnvelope {

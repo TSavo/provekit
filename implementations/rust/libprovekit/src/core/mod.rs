@@ -63,6 +63,6 @@ pub use types::{
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
 pub use walks::{
-    assert_concept_tier, walk_premises_to_root, walk_premises_to_root_with_failure_steps,
-    ChainBreak, ChainWalkFailure, HubMissingNode,
+    assert_concept_tier, assert_concept_tier_with_exam_manifest, walk_premises_to_root,
+    walk_premises_to_root_with_failure_steps, ChainBreak, ChainWalkFailure, HubMissingNode,
 };

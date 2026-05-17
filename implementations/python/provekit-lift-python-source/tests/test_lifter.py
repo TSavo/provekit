@@ -16,7 +16,11 @@ from provekit_lift_py_tests.canonicalizer import jcs_hash, vobj, vstr
 
 from provekit_lift_python_source.canonical import canonical_json_bytes, cid_of_json
 from provekit_lift_python_source.compiler import compile_body_term, compile_ir_document
-from provekit_lift_python_source.lifter import lift_source
+from provekit_lift_python_source.lifter import (
+    EXAM_MANIFEST_CID,
+    _exam_question_cid_for,
+    lift_source,
+)
 from provekit_lift_python_source.rpc import initialize_result
 
 
@@ -90,6 +94,37 @@ def test_refuses_unhandled_syntax_without_unknown_ops() -> None:
     assert "ListComp" in refusal["reason"]
     assert "python:unknown" not in _canon(result.refusals)
     assert "python:skip" not in _canon(result.refusals)
+
+
+def test_unhandled_syntax_refusal_cites_v1_1_exam_question() -> None:
+    source = "def bad(xs):\n    return [x for x in xs]\n"
+
+    result = lift_source(source, "badmodule.py")
+
+    refusal = result.refusals[0]
+    expected = _exam_question_cid_for("sort-classification", "concept:List<T>", "python")
+    assert refusal["kind"] == "unhandled-syntax"
+    assert refusal["exam_manifest_cid"] == EXAM_MANIFEST_CID
+    assert refusal["exam_question_cid"] == expected
+
+
+def test_list_comprehension_refusal_does_not_fire_different_variant() -> None:
+    source = "def bad(xs):\n    return [x for x in xs]\n"
+
+    result = lift_source(source, "badmodule.py")
+
+    assert [refusal["kind"] for refusal in result.refusals] == ["unhandled-syntax"]
+    assert "syntax-error" not in _canon(result.refusals)
+
+
+def test_unhandled_syntax_refusal_cites_list_question_not_related_sort() -> None:
+    source = "def bad(xs):\n    return [x for x in xs]\n"
+
+    result = lift_source(source, "badmodule.py")
+
+    refusal_cid = result.refusals[0]["exam_question_cid"]
+    related = _exam_question_cid_for("sort-classification", "concept:Map<K,V>", "python")
+    assert refusal_cid != related
 
 
 def test_effects_are_sorted_and_loop_cid_is_blake3_512() -> None:

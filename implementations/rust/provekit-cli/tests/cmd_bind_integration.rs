@@ -38,6 +38,38 @@ fn term_document() -> &'static [u8] {
 }"#
 }
 
+fn witnessless_add_term_document() -> &'static [u8] {
+    br#"{
+  "kind": "ir-document",
+  "sourceLanguage": "rust",
+  "workspaceRoot": "/tmp/provekit-bind-test",
+  "ir": [{
+    "kind": "bind-lift-entry",
+    "file": "src/lib.rs",
+    "fn_name": "add",
+    "fn_line": 4,
+    "concept_annotation": "add",
+    "param_names": ["x", "y"],
+    "param_types": ["i64", "i64"],
+    "return_type": "i64",
+    "term_shape": {"kind": "bin", "op": "+"},
+    "term_shape_cid": "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+    "witnesses": []
+  }]
+}"#
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
 fn assert_success(label: &str, output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -140,4 +172,47 @@ fn bind_does_not_require_or_invoke_language_lower_plugins() {
         .output()
         .expect("spawn bind");
     assert_success("bind ignores lower plugin", &output);
+}
+
+#[test]
+fn bind_cli_cites_v1_1_exam_question_for_wp_rule_refusal() {
+    let root = repo_root();
+    let manifest = root
+        .join("menagerie/concept-shapes/exams")
+        .join("v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json");
+    let mut child = Command::new(provekit_bin())
+        .arg("bind")
+        .arg("--project")
+        .arg(&root)
+        .arg("--exam-manifest")
+        .arg(&manifest)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn bind");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(witnessless_add_term_document())
+        .expect("write term");
+    let output = child.wait_with_output().expect("wait bind");
+    assert_success("bind stdin with exam manifest", &output);
+
+    let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
+    let named =
+        named_term_document_from_bind_payload(&payload).expect("bind payload recovers named term");
+    let named = serde_json::to_value(named).expect("named term serializes");
+    let gap = named["gapRecords"][0].as_object().expect("gap object");
+
+    assert_eq!(gap["target_concept_op"], "concept:add");
+    assert_eq!(
+        gap["exam_manifest_cid"],
+        "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc"
+    );
+    assert!(gap["exam_question_cid"]
+        .as_str()
+        .expect("exam question cid")
+        .starts_with("blake3-512:"));
 }
