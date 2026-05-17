@@ -3,25 +3,22 @@
 // `provekit bind`: substrate-only algebra pass.
 //
 // Input is ProofIR term JSON, normally the `ir-document` emitted by
-// `provekit lift`. Output is the JCS-canonical bind-result Term::Op payload.
-// This command is now a thin adapter over the core BindKit and Path executor;
-// migration mode remains on the legacy rewrite path.
+// `provekit lift`. Output is the JCS-canonical named-term document for
+// authoring and lower-plugin dispatch. The core BindKit still materializes the
+// canonical bind-result Term::Op payload for path execution.
+// Migration mode remains on the legacy rewrite path.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use clap::Parser;
-use libprovekit::core::{
-    address, execute_path, BindKit, BindOptions, ConformanceDeclaration, HashMapInputCatalog,
-    Input, KitRegistry, Path as CorePath, PathAlgebra, PathExecutionError, Term, Verb,
-};
+use libprovekit::core::{bind_term_document, BindOptions};
 use owo_colors::OwoColorize;
-use provekit_ir_types::{CompositionRefusalMemento, Sort};
 use serde_json::Value as Json;
 
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
-pub use libprovekit::core::{NamedTerm, NamedTermDocument};
+pub use libprovekit::core::NamedTermDocument;
 
 #[derive(Parser, Debug, Clone)]
 pub struct BindArgs {
@@ -161,7 +158,7 @@ pub fn run(args: BindArgs) -> u8 {
         Ok(jcs) => jcs,
         Err(error) => {
             eprintln!(
-                "{}: canonicalize bind result payload: {error}",
+                "{}: canonicalize named-term document: {error}",
                 "error".red().bold()
             );
             return EXIT_USER_ERROR;
@@ -177,78 +174,31 @@ pub fn run(args: BindArgs) -> u8 {
             .as_ref()
             .is_some_and(|path| path.as_os_str() != "-")
     {
-        eprintln!("bind: wrote bind-result Term payload");
+        eprintln!("bind: wrote named-term document");
     }
     EXIT_OK
 }
 
 fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError> {
-    let term = Term::Const {
-        value: term_json,
-        sort: Sort::Primitive {
-            name: "LiftPluginResponse".to_string(),
-        },
-    };
-    let term_cid = address(&term);
-    let mut inputs = HashMapInputCatalog::default();
-    inputs.put(term_cid.clone(), Input::Term(term));
-    let path_input = Input::Path(Box::new(CorePath {
-        algebra: vec![PathAlgebra {
-            name: "bind".to_string(),
-            kit: "bind-default".to_string(),
-            inputs: vec![term_cid],
-            depends_on: vec![],
-            verb: Verb::Transform,
-        }],
-    }));
-    let mut registry = KitRegistry::default();
-    registry.register(
-        "bind-default",
-        BindKit::new(BindOptions {
+    let named = bind_term_document(
+        &term_json,
+        &BindOptions {
             lang: args.lang.clone(),
-        }),
-        ConformanceDeclaration::NonCarrier {
-            reason: "transforms Input::Term to NamedTerm DomainClaim; emits no target source",
         },
-    );
-    let chain = execute_path(&path_input, &registry, &inputs).map_err(BindCliError::from_path)?;
-    let claim = chain.terminal_claim();
-    let payload = claim
-        .payload
-        .as_ref()
-        .ok_or_else(|| BindCliError::Failed("bind claim missing term payload".to_string()))?;
-    match payload {
-        payload => serde_json::to_value(&payload)
-            .map_err(|error| BindCliError::Failed(format!("serialize bind payload: {error}"))),
-    }
+    )
+    .map_err(|error| BindCliError::Failed(error.to_string()))?;
+    serde_json::to_value(&named)
+        .map_err(|error| BindCliError::Failed(format!("serialize named terms: {error}")))
 }
 
 #[derive(Debug)]
 enum BindCliError {
-    Refused(Box<CompositionRefusalMemento>),
     Failed(String),
-}
-
-impl BindCliError {
-    fn from_path(error: PathExecutionError) -> Self {
-        match error {
-            PathExecutionError::Refused(refusal) => Self::Refused(refusal),
-            other => Self::Failed(other.to_string()),
-        }
-    }
 }
 
 impl std::fmt::Display for BindCliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Refused(refusal) => {
-                f.write_str(&serde_json::to_string(refusal).unwrap_or_else(|_| {
-                    format!(
-                        "{}: {}",
-                        refusal.header.failure_kind, refusal.header.failure_detail
-                    )
-                }))
-            }
             Self::Failed(message) => f.write_str(message),
         }
     }

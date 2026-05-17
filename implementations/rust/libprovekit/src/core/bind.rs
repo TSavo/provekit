@@ -291,7 +291,7 @@ pub fn bind_term_document(
                 "exact".to_string()
             },
             file: entry.file,
-            function: String::new(),
+            function: entry.fn_name,
             name,
             named_term_tree,
             param_types: entry.param_types,
@@ -1394,7 +1394,7 @@ mod tests {
         .expect("bind succeeds");
         assert_eq!(named.kind, "named-term-document");
         assert_eq!(named.terms[0].concept_name, "concept:demo");
-        assert!(named.terms[0].function.is_empty());
+        assert_eq!(named.terms[0].function, "f");
         assert_eq!(named.promotion_decision_mementos.len(), 1);
     }
 

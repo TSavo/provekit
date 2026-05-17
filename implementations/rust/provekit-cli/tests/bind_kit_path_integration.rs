@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use libprovekit::core::{
-    address, execute_path, named_term_document_from_bind_payload, BindKit, ConformanceDeclaration,
-    Dialect, HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit, Path as CorePath, PathAlgebra,
-    Term, Verb,
+    address, execute_path, named_term_document_cid, named_term_document_from_bind_payload, BindKit,
+    ConformanceDeclaration, Dialect, HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit,
+    NamedTermDocument, Path as CorePath, PathAlgebra, Term, Verb,
 };
 
 const BIND_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
@@ -143,19 +143,15 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     let chain = execute_path(&path, &registry, &inputs).expect("bind path executes");
     let claim = chain.terminal_claim();
     let cli_bytes = run_bind_cli(&term_value);
-    let cli_value: Value = serde_json::from_slice(&cli_bytes).expect("cmd_bind output parses");
-    let cli_cid = libprovekit::canonical::json_cid(&cli_value).expect("cmd_bind output cids");
+    let cli_named: NamedTermDocument =
+        serde_json::from_slice(&cli_bytes).expect("cmd_bind named terms parse");
+    let cli_cid = named_term_document_cid(&cli_named).expect("cmd_bind named terms cid");
 
-    assert_eq!(claim.to.as_str(), cli_cid);
+    assert_eq!(claim.artifacts, vec![cli_cid]);
     assert_eq!(claim.from, vec![address(&input_term)]);
+    assert_eq!(cli_named.terms[0].function, "deposit");
     let payload = claim.payload.as_ref().expect("bind claim payload");
     assert!(matches!(payload, Term::Op { .. }));
-    assert_eq!(
-        libprovekit::canonical::serializable_jcs(payload)
-            .expect("payload canonicalizes")
-            .as_bytes(),
-        cli_bytes.as_slice()
-    );
     let named =
         named_term_document_from_bind_payload(payload).expect("bind payload recovers named term");
     assert!(named.terms[0].function.is_empty());
