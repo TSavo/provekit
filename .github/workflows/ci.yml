@@ -1003,3 +1003,13 @@ jobs:
             --test trinity_composition_census \
             --features provekit-cli/slow-tests \
             -- --nocapture
+
+      - name: cargo test python emit compile run conformance (slow lane)
+        run: |
+          set -euo pipefail
+          cargo test \
+            --manifest-path implementations/rust/Cargo.toml \
+            -p provekit-cli \
+            --test python_emit_compile_run_conformance \
+            --features provekit-cli/slow-tests \
+            -- --nocapture

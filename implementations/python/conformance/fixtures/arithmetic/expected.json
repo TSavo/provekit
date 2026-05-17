@@ -1,0 +1,14 @@
+{
+  "fixture_type": "arithmetic",
+  "function": "blend",
+  "cases": [
+    {
+      "args": [2, 3, 4],
+      "expected": 18
+    },
+    {
+      "args": [-5, 8, 3],
+      "expected": 14
+    }
+  ]
+}

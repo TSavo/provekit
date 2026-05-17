@@ -1039,6 +1039,8 @@ def _lower_shape_body(
         return None
     concept_name = _shape_concept_name(shape)
     args = _shape_args(shape)
+    if concept_name in {"concept:skip", "skip"} and not args:
+        return TermBody("")
     if concept_name in {"concept:seq", "seq"}:
         lines: list[str] = []
         for index, child in enumerate(args[:-1]):
@@ -1128,6 +1130,16 @@ def _lower_shape_expression(
         arg_terms.append(term)
     arg_exprs = [term.text or "" for term in arg_terms]
     arg_types = [term.type_name for term in arg_terms]
+    if concept_name in {"concept:call", "call"} and arg_exprs:
+        callee = arg_exprs[0]
+        if not _is_identifier_symbol(callee):
+            return None
+        return TermExpression(
+            text=f"{callee}({', '.join(arg_exprs[1:])})",
+            type_name=map_source_type(context.return_type),
+        )
+    if concept_name in {"concept:skip", "skip"} and not arg_exprs:
+        return TermExpression(text="None", type_name="None")
     template = _body_template_expression_for(concept_name, arg_exprs, arg_types, context.return_type)
     if template is None:
         return None
@@ -1195,6 +1207,10 @@ def _shape_operation_return_type(
         if branch_types[0] and branch_types[0] == branch_types[1]:
             return branch_types[0]
         return map_source_type(return_type)
+    if op_name == "call":
+        return map_source_type(return_type)
+    if op_name == "skip":
+        return "None"
     return _rust_runtime_operation_return_type(op_name, arg_terms)
 
 

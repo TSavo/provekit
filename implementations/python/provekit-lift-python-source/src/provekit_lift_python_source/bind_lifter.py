@@ -217,6 +217,7 @@ def _shape_block(statements: list[ast.stmt]) -> Json:
 def _shape_block_with_bindings(statements: list[ast.stmt]) -> _ShapeResult:
     shapes: list[Json] = []
     binding_groups: list[list[Json]] = []
+    leaf_only: _ShapeResult | None = None
     for stmt in statements:
         if _is_docstring_stmt(stmt):
             continue
@@ -225,6 +226,10 @@ def _shape_block_with_bindings(statements: list[ast.stmt]) -> _ShapeResult:
         if _shape_has_operator_identity(shape):
             shapes.append(shape)
             binding_groups.append(candidate.operand_bindings)
+        elif leaf_only is None and candidate.operand_bindings:
+            leaf_only = candidate
+    if not shapes and leaf_only is not None:
+        return _ShapeResult({}, _sort_operand_bindings(leaf_only.operand_bindings))
     return _collapse_operation_shape_results(shapes, binding_groups)
 
 
@@ -252,6 +257,8 @@ def _shape_stmt_with_bindings(node: ast.stmt, *, top_level: bool) -> _ShapeResul
         if node.value is None:
             return _empty_shape_result()
         return _shape_expr_with_bindings(node.value)
+    if isinstance(node, ast.Pass):
+        return _operator_shape_result("concept:skip", [])
     if isinstance(node, ast.Break):
         return _operator_shape_result("concept:break", [])
     if isinstance(node, ast.Continue):
@@ -297,6 +304,15 @@ def _shape_expr_with_bindings(node: ast.expr) -> _ShapeResult:
         if op is None:
             return _empty_shape_result()
         return _operator_shape_result(op, [_shape_expr_with_bindings(node.operand)])
+    if isinstance(node, ast.IfExp):
+        return _operator_shape_result(
+            "concept:conditional",
+            [
+                _shape_expr_with_bindings(node.test),
+                _shape_expr_with_bindings(node.body),
+                _shape_expr_with_bindings(node.orelse),
+            ],
+        )
     if isinstance(node, ast.Compare):
         op = _rel_op(node.ops[0]) if node.ops else None
         args = [_shape_expr_with_bindings(node.left)]
@@ -305,7 +321,8 @@ def _shape_expr_with_bindings(node: ast.expr) -> _ShapeResult:
             return _empty_shape_result()
         return _operator_shape_result(op, args)
     if isinstance(node, ast.Call):
-        args = [_shape_expr_with_bindings(arg) for arg in node.args]
+        args = [_shape_expr_with_bindings(node.func)]
+        args.extend(_shape_expr_with_bindings(arg) for arg in node.args)
         args.extend(_shape_expr_with_bindings(keyword.value) for keyword in node.keywords)
         return _operator_shape_result("concept:call", args)
     symbol = _operand_symbol(node)
