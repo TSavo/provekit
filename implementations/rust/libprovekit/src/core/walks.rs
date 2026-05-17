@@ -722,8 +722,7 @@ mod tests {
             ],
         );
 
-        let err = assert_concept_tier(&term, &catalog)
-            .expect_err("missing op CID must be refused");
+        let err = assert_concept_tier(&term, &catalog).expect_err("missing op CID must be refused");
         assert_eq!(err.node_op_cid, missing_cid);
         assert_eq!(err.term_position, vec![1]);
     }

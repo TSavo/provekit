@@ -1005,6 +1005,11 @@ fn ir_formula_to_text(formula: &IrFormula) -> String {
                 .join(", ");
             format!("{}({args})", r#fn)
         }
+        IrFormula::DivergenceBetween { source, target } => format!(
+            "divergence_between({}, {})",
+            ir_formula_to_text(source),
+            ir_formula_to_text(target)
+        ),
     }
 }
 

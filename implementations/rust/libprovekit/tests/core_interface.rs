@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
@@ -14,13 +14,15 @@ use libprovekit::core::{
     Canonical, Catalog, Cid, ConformanceDeclaration, Dialect, DomainClaim, DomainKind,
     FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
     KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
-    PathDocumentError, PathError, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
+    PathDocumentError, PathError, PlatformSemanticsDeclaration, Refutation, SlotSort, Term, Truth,
+    Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{
     composition_refusal_compose_input_cid, composition_refusal_header_cid,
     composition_refusal_signature, CompositionRefusalEnvelope, CompositionRefusalHeader,
-    CompositionRefusalMemento, CompositionRefusalMetadata, IrFormula, IrTerm, Sort,
+    CompositionRefusalMemento, CompositionRefusalMetadata, DimensionValueMemento, IrFormula,
+    IrTerm, PlatformSemanticTag, Sort,
 };
 use serde_json::json;
 
@@ -1203,6 +1205,7 @@ fn conformance_declaration_round_trips_through_json() {
 
     let carrier = ConformanceDeclaration::Carrier {
         fixtures_path: PathBuf::from("implementations/rust/conformance/fixtures"),
+        platform_semantics: None,
     };
     let non_carrier = ConformanceDeclaration::NonCarrier {
         reason: "lifts source bytes to DomainClaim; no target source produced",
@@ -1213,6 +1216,69 @@ fn conformance_declaration_round_trips_through_json() {
 
     assert_eq!(decode(carrier_json), carrier);
     assert_eq!(decode(non_carrier_json), non_carrier);
+}
+
+#[test]
+fn carrier_registration_preserves_platform_semantics_declaration() {
+    let wrapping = DimensionValueMemento::new(
+        "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        "ArithmeticOverflowMode".to_string(),
+        "Wrapping".to_string(),
+        bool_true(),
+    );
+    let truncate = DimensionValueMemento::new(
+        "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        "IntegerDivisionRoundingMode".to_string(),
+        "Truncate".to_string(),
+        bool_true(),
+    );
+    let arbitrary_precision = DimensionValueMemento::new(
+        "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        "ArithmeticOverflowMode".to_string(),
+        "ArbitraryPrecision".to_string(),
+        bool_true(),
+    );
+    let first_tag = platform_tag(
+        "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        vec![
+            ("ArithmeticOverflowMode", wrapping.cid.clone()),
+            ("IntegerDivisionRoundingMode", truncate.cid.clone()),
+        ],
+    );
+    let second_tag = platform_tag(
+        "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        vec![("ArithmeticOverflowMode", arbitrary_precision.cid.clone())],
+    );
+    let declaration = PlatformSemanticsDeclaration {
+        tags: vec![first_tag.clone(), second_tag.clone()],
+    };
+    let mut registry = KitRegistry::default();
+
+    registry.register(
+        "semantic-kit",
+        LiftKit::new(Dialect::Rust, "rust", vec!["true".to_string()], None),
+        ConformanceDeclaration::Carrier {
+            fixtures_path: PathBuf::from("fixtures/semantic-kit"),
+            platform_semantics: Some(declaration.clone()),
+        },
+    );
+
+    let Some(ConformanceDeclaration::Carrier {
+        platform_semantics: Some(retrieved),
+        ..
+    }) = registry.conformance("semantic-kit")
+    else {
+        panic!("semantic-kit carrier declaration must preserve platform semantics");
+    };
+
+    assert_eq!(retrieved, &declaration);
+    let encoded = retrieved.tags[0].to_jcs_string();
+    let decoded: PlatformSemanticTag = serde_json::from_str(&encoded).expect("tag decodes");
+    assert_eq!(
+        decoded.dimensions.keys().collect::<Vec<_>>(),
+        first_tag.dimensions.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(decoded.to_jcs_string(), encoded);
 }
 
 #[test]
@@ -1236,21 +1302,27 @@ fn carrier_fixture_set_requirement_covers_c_emit_compile_run_fixtures() {
         CKit::default(),
         ConformanceDeclaration::Carrier {
             fixtures_path: fixtures_path.clone(),
+            platform_semantics: None,
         },
     );
 
-    assert_carrier_fixture_set(&registry, "lower-c", &[
-        "hello_world",
-        "recursive_factorial",
-        "arithmetic_add",
-        "arithmetic_multi_op",
-        "control_flow_if",
-        "transported_op_concept_comment",
-    ]);
+    assert_carrier_fixture_set(
+        &registry,
+        "lower-c",
+        &[
+            "hello_world",
+            "recursive_factorial",
+            "arithmetic_add",
+            "arithmetic_multi_op",
+            "control_flow_if",
+            "transported_op_concept_comment",
+        ],
+    );
 }
 
 fn assert_carrier_fixture_set(registry: &KitRegistry, kit: &str, required: &[&str]) {
-    let Some(ConformanceDeclaration::Carrier { fixtures_path }) = registry.conformance(kit) else {
+    let Some(ConformanceDeclaration::Carrier { fixtures_path, .. }) = registry.conformance(kit)
+    else {
         panic!("{kit} must be registered as a carrier kit");
     };
     let present = fixture_names(fixtures_path);
@@ -1265,6 +1337,18 @@ fn assert_carrier_fixture_set(registry: &KitRegistry, kit: &str, required: &[&st
         fixtures_path.display(),
         missing
     );
+}
+
+fn platform_tag(op_cid: &str, pairs: Vec<(&str, String)>) -> PlatformSemanticTag {
+    let mut dimensions = BTreeMap::new();
+    for (dimension, cid) in pairs {
+        dimensions.insert(dimension.to_string(), cid);
+    }
+    PlatformSemanticTag::new(
+        "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        op_cid.to_string(),
+        dimensions,
+    )
 }
 
 fn fixture_names(path: &FsPath) -> BTreeSet<String> {

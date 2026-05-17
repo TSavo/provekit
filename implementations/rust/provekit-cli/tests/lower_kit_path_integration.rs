@@ -207,6 +207,7 @@ fn lower_python_path_claim_input_cites_from_premise_to_and_loss_cids() {
             fixtures_path: temp
                 .path()
                 .join("implementations/python/conformance/fixtures"),
+            platform_semantics: None,
         },
     );
 

@@ -1484,7 +1484,10 @@ fn realize_spec_via_path(
             None,
             DispatchRealizeTransport,
         ),
-        ConformanceDeclaration::Carrier { fixtures_path },
+        ConformanceDeclaration::Carrier {
+            fixtures_path,
+            platform_semantics: None,
+        },
     );
     let chain = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
     LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())

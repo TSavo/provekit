@@ -302,6 +302,9 @@ fn term_has_region_sort_in_formula(f: &IrFormula) -> bool {
         IrFormula::Forall { body, .. }
         | IrFormula::Exists { body, .. }
         | IrFormula::Choice { body, .. } => term_has_region_sort_in_formula(body),
+        IrFormula::DivergenceBetween { source, target } => {
+            term_has_region_sort_in_formula(source) || term_has_region_sort_in_formula(target)
+        }
         // Substitute and Apply are meta-level; no region sort to detect.
         IrFormula::Substitute { .. } | IrFormula::Apply { .. } => false,
     }

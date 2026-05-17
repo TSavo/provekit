@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_ir_types::{IrFormula, IrTerm, LetBinding, Sort};
+use provekit_ir_types::{IrFormula, IrTerm, LetBinding, PlatformSemanticTag, Sort};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
@@ -805,9 +805,18 @@ pub enum Dialect {
 /// data and require dialect-as-substrate-object architecture that the kit's
 /// own content-addressing already provides.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PlatformSemanticsDeclaration {
+    pub tags: Vec<PlatformSemanticTag>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ConformanceDeclaration {
     /// Kit emits target source and pins the fixture directory that proves it.
-    Carrier { fixtures_path: PathBuf },
+    Carrier {
+        fixtures_path: PathBuf,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        platform_semantics: Option<PlatformSemanticsDeclaration>,
+    },
     /// Kit does not emit target source; `reason` records the audit premise.
     NonCarrier { reason: &'static str },
 }
