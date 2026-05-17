@@ -183,6 +183,12 @@ pub fn emit_formula(formula: &Formula) -> String {
                  must be reduced via libprovekit::wp first"
             )
         }
+        Formula::DivergenceBetween { .. } => {
+            unreachable!(
+                "platform divergence formula reached the SMT-LIB formula emitter; \
+                 stage 4 must lower it before backend compilation"
+            )
+        }
     }
 }
 
@@ -356,6 +362,12 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
                  must be reduced via libprovekit::wp first"
             )
         }
+        Formula::DivergenceBetween { .. } => {
+            unreachable!(
+                "platform divergence formula reached the SMT-LIB opacity emitter; \
+                 stage 4 must lower it before backend compilation"
+            )
+        }
     }
 }
 
@@ -457,6 +469,10 @@ pub fn collect_free_vars_formula(
                 "wp-rule schema node reached the SMT-LIB free-var collector; \
                  must be reduced via libprovekit::wp first"
             )
+        }
+        Formula::DivergenceBetween { source, target } => {
+            collect_free_vars_formula(source, out, bound);
+            collect_free_vars_formula(target, out, bound);
         }
     }
 }
@@ -561,6 +577,10 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
                 "wp-rule schema node reached the SMT-LIB ctor-decl collector; \
                  must be reduced via libprovekit::wp first"
             )
+        }
+        Formula::DivergenceBetween { source, target } => {
+            collect_ctor_decls_formula(source, out);
+            collect_ctor_decls_formula(target, out);
         }
     }
 }
@@ -729,5 +749,8 @@ fn has_outlives_predicate(formula: &Formula) -> bool {
         // TODO(wp-as-formula PR1+): teach provekit-ir-codegen to emit this arm.
         Formula::Substitute { target, .. } => has_outlives_predicate(target),
         Formula::Apply { args, .. } => args.iter().any(has_outlives_predicate),
+        Formula::DivergenceBetween { source, target } => {
+            has_outlives_predicate(source) || has_outlives_predicate(target)
+        }
     }
 }

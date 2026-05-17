@@ -1716,6 +1716,12 @@ fn predicate_term(formula: &IrFormula) -> IrTerm {
                  must be reduced via libprovekit::wp first"
             )
         }
+        IrFormula::DivergenceBetween { .. } => {
+            unreachable!(
+                "platform divergence formula reached the aarch64 predicate-term builder; \
+                 stage 4 must lower it before lifter predicate conversion"
+            )
+        }
     }
 }
 

@@ -380,12 +380,15 @@ pub enum IrTerm {
 }
 
 // NOTE: The `IrFormula` enum below has been MANUALLY extended beyond the
-// codegen output to add the `Substitute` and `Apply` variants per the
-// wp-as-formula spec (protocol/specs/2026-05-13-wp-as-formula.md §2.3).
-// These two are the "wp-rule schema" nodes: they appear inside a
+// codegen output to add the `Substitute`, `Apply`, and `DivergenceBetween`
+// variants per the wp-as-formula spec
+// (protocol/specs/2026-05-13-wp-as-formula.md §2.3) and the platform
+// semantic tag ruling
+// (docs/plans/2026-05-16-platform-semantic-tag-schema-ruling.md §2).
+// `Substitute` and `Apply` are the "wp-rule schema" nodes: they appear inside a
 // `wp_rule` term and are reduced away by `libprovekit::wp` before any
 // formula reaches a solver backend. The codegen (`provekit-ir-codegen`)
-// currently emits only the 8-way union without these arms; if you
+// currently emits only the generated union without these arms; if you
 // regenerate this file via `cargo run -p provekit-ir-codegen`, you WILL
 // clobber the manual extensions. Re-apply them from this comment block
 // through the closing `}` of the `IrFormula` enum, keeping the CDDL
@@ -454,6 +457,14 @@ pub enum IrFormula {
         #[serde(rename = "fn")]
         r#fn: String,
     },
+    /// `divergence-between` - characterizes a platform semantic difference
+    /// by carrying the source and target formulas being compared. JCS key
+    /// order: `kind`, `source`, `target`.
+    #[serde(rename = "divergence-between")]
+    DivergenceBetween {
+        source: Box<IrFormula>,
+        target: Box<IrFormula>,
+    },
 }
 
 pub type ConnectiveKind = String;
@@ -506,6 +517,135 @@ use std::collections::BTreeMap;
 /// mementos are NOT affected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct LossRecord(pub BTreeMap<String, IrFormula>);
+
+// ============================================================
+// Manual extension block -- platform semantic tag mementos
+// Source of truth:
+//   docs/plans/2026-05-16-platform-semantic-tag-schema-ruling.md
+//   docs/plans/2026-05-16-platform-semantics-via-loss-records.md
+// ============================================================
+
+/// A kit-minted value for one open platform semantic dimension.
+///
+/// Locked JCS key order:
+///   cid, compare_to, dimension_name, kind, kit_cid, schemaVersion, value_name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DimensionValueMemento {
+    /// DERIVED: BLAKE3-512 over JCS(memento) with `cid` elided.
+    pub cid: Cid,
+    pub compare_to: IrFormula,
+    #[serde(rename = "dimension_name")]
+    pub dimension_name: String,
+    pub kind: String,
+    #[serde(rename = "kit_cid")]
+    pub kit_cid: Cid,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "value_name")]
+    pub value_name: String,
+}
+
+impl DimensionValueMemento {
+    pub const KIND: &'static str = "platform-dimension-value";
+    pub const SCHEMA_VERSION: &'static str = "1.0.0";
+
+    pub fn new(
+        kit_cid: Cid,
+        dimension_name: String,
+        value_name: String,
+        compare_to: IrFormula,
+    ) -> Self {
+        let mut value = Self {
+            cid: String::new(),
+            compare_to,
+            dimension_name,
+            kind: Self::KIND.to_string(),
+            kit_cid,
+            schema_version: Self::SCHEMA_VERSION.to_string(),
+            value_name,
+        };
+        value.cid = value.recompute_cid();
+        value
+    }
+
+    pub fn to_jcs_string(&self) -> String {
+        platform_semantic_jcs_string(self)
+    }
+
+    pub fn recompute_cid(&self) -> Cid {
+        platform_semantic_cid_without_keys(self, &["cid"])
+    }
+}
+
+/// A flat per-kit, per-op platform semantic tag.
+///
+/// The `dimensions` map is intentionally open-keyed. Keys are kit-minted
+/// dimension names and values are CIDs of `DimensionValueMemento` objects.
+///
+/// Locked JCS key order: cid, dimensions, kind, kit_cid, op_cid, schemaVersion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlatformSemanticTag {
+    /// DERIVED: BLAKE3-512 over JCS(memento) with `cid` elided.
+    pub cid: Cid,
+    pub dimensions: BTreeMap<String, Cid>,
+    pub kind: String,
+    #[serde(rename = "kit_cid")]
+    pub kit_cid: Cid,
+    #[serde(rename = "op_cid")]
+    pub op_cid: Cid,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+}
+
+impl PlatformSemanticTag {
+    pub const KIND: &'static str = "platform-semantic-tag";
+    pub const SCHEMA_VERSION: &'static str = "1.0.0";
+
+    pub fn new(kit_cid: Cid, op_cid: Cid, dimensions: BTreeMap<String, Cid>) -> Self {
+        let mut tag = Self {
+            cid: String::new(),
+            dimensions,
+            kind: Self::KIND.to_string(),
+            kit_cid,
+            op_cid,
+            schema_version: Self::SCHEMA_VERSION.to_string(),
+        };
+        tag.cid = tag.recompute_cid();
+        tag
+    }
+
+    pub fn to_jcs_string(&self) -> String {
+        platform_semantic_jcs_string(self)
+    }
+
+    pub fn recompute_cid(&self) -> Cid {
+        platform_semantic_cid_without_keys(self, &["cid"])
+    }
+}
+
+fn platform_semantic_jcs_string<T: Serialize>(value: &T) -> String {
+    let json = serde_json::to_value(value).expect("platform semantic memento serializes to JSON");
+    let canonical = canonical_value_from_json(json);
+    provekit_canonicalizer::encode_jcs(&canonical)
+}
+
+fn platform_semantic_cid_without_keys<T: Serialize>(value: &T, keys: &[&str]) -> Cid {
+    let mut json =
+        serde_json::to_value(value).expect("platform semantic memento serializes to JSON");
+    let serde_json::Value::Object(ref mut map) = json else {
+        panic!("platform semantic memento did not serialize as object");
+    };
+    for key in keys {
+        map.remove(*key);
+    }
+    let canonical = canonical_value_from_json(json);
+    let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+    provekit_canonicalizer::blake3_512_of(jcs.as_bytes())
+}
+
+// ============================================================
+// End manual extension block -- platform semantic tag mementos
+// ============================================================
 
 /// A single named slot in a `ConceptAbstractionMemento`.
 ///

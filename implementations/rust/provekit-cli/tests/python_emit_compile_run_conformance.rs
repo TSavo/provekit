@@ -184,12 +184,13 @@ fn register_python_lower(registry: &mut KitRegistry, workspace_root: &Path) {
                 .join("python")
                 .join("conformance")
                 .join("fixtures"),
+            platform_semantics: None,
         },
     );
 }
 
 fn assert_python_carrier_fixture_set(registry: &KitRegistry) {
-    let Some(ConformanceDeclaration::Carrier { fixtures_path }) =
+    let Some(ConformanceDeclaration::Carrier { fixtures_path, .. }) =
         registry.conformance("lower-python")
     else {
         panic!("lower-python must register as a Carrier kit");

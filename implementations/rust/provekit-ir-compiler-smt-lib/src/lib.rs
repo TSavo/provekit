@@ -126,6 +126,11 @@ fn validate_formula(formula: &provekit_ir_types::IrFormula) -> Result<(), String
              it must be reduced via libprovekit::wp before solving"
                 .to_string(),
         ),
+        provekit_ir_types::IrFormula::DivergenceBetween { .. } => Err(
+            "platform divergence formula reached the SMT-LIB validator; \
+             stage 4 must lower it before solving"
+                .to_string(),
+        ),
     }
 }
 

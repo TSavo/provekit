@@ -1076,5 +1076,8 @@ fn contains_schema_node(f: &IrFormula) -> bool {
         IrFormula::Forall { body, .. }
         | IrFormula::Exists { body, .. }
         | IrFormula::Choice { body, .. } => contains_schema_node(body),
+        IrFormula::DivergenceBetween { source, target } => {
+            contains_schema_node(source) || contains_schema_node(target)
+        }
     }
 }

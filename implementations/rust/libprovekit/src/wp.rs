@@ -676,6 +676,22 @@ fn reduce_formula<R: OpContractResolver + ?Sized>(
             };
             wp(slot_term, &arg, resolver)
         }
+        IrFormula::DivergenceBetween { source, target } => Ok(IrFormula::DivergenceBetween {
+            source: Box::new(reduce_formula(
+                *source,
+                q,
+                stmt_transformers,
+                op_name,
+                resolver,
+            )?),
+            target: Box::new(reduce_formula(
+                *target,
+                q,
+                stmt_transformers,
+                op_name,
+                resolver,
+            )?),
+        }),
     }
 }
 
@@ -818,6 +834,10 @@ pub fn substitute_in_formula(
                 .map(|f| substitute_in_formula(f, var_name, replacement))
                 .collect(),
             r#fn,
+        },
+        IrFormula::DivergenceBetween { source, target } => IrFormula::DivergenceBetween {
+            source: Box::new(substitute_in_formula(*source, var_name, replacement)),
+            target: Box::new(substitute_in_formula(*target, var_name, replacement)),
         },
     }
 }
@@ -1096,6 +1116,10 @@ fn free_vars_formula_into(f: &IrFormula, acc: &mut HashSet<String>) {
             for a in args {
                 free_vars_formula_into(a, acc);
             }
+        }
+        IrFormula::DivergenceBetween { source, target } => {
+            free_vars_formula_into(source, acc);
+            free_vars_formula_into(target, acc);
         }
     }
 }

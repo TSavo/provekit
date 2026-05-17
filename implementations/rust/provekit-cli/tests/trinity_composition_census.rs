@@ -57,7 +57,10 @@ fn repo_root() -> PathBuf {
 }
 
 fn rust_target_dir() -> PathBuf {
-    repo_root().join("implementations").join("rust").join("target")
+    repo_root()
+        .join("implementations")
+        .join("rust")
+        .join("target")
 }
 
 fn locate_binary(name: &str) -> PathBuf {
@@ -250,12 +253,15 @@ fn python_lift_source_input(workspace_root: &Path) -> Input {
 }
 
 fn register_rust_lift(registry: &mut KitRegistry, workspace_root: &Path) {
-    let command = vec![
-        provekit_walk_rpc().display().to_string(),
-    ];
+    let command = vec![provekit_walk_rpc().display().to_string()];
     registry.register(
         "lift-rust",
-        LiftKit::new(Dialect::Rust, "rust", command, Some(workspace_root.to_path_buf())),
+        LiftKit::new(
+            Dialect::Rust,
+            "rust",
+            command,
+            Some(workspace_root.to_path_buf()),
+        ),
         ConformanceDeclaration::NonCarrier {
             reason: "lifts rust source bytes to DomainClaim via provekit-walk-rpc",
         },
@@ -302,6 +308,7 @@ fn register_lower(registry: &mut KitRegistry, target_lang: &str, workspace_root:
                 .join(target_lang)
                 .join("conformance")
                 .join("fixtures"),
+            platform_semantics: None,
         },
     );
 }
@@ -377,7 +384,9 @@ fn seam1_discrimination_malformed_term_refuses_cleanly() {
     // shape unrelated to ir-document must refuse with a typed BindError, never panic.
     let malformed = Term::Const {
         value: json!({"kind": "not-an-ir-document", "noise": [1, 2, 3]}),
-        sort: Sort::Primitive { name: "Garbage".to_string() },
+        sort: Sort::Primitive {
+            name: "Garbage".to_string(),
+        },
     };
     let mut inputs = HashMapInputCatalog::default();
     let term_cid = address(&malformed);
@@ -810,9 +819,7 @@ fn seam6_positive_lower_to_rust_then_prove_chain_integrity_succeeds() {
     );
     match &terminal.witness {
         Some(Witness::ChainIntegrity(_)) => {}
-        other => panic!(
-            "seam 6 positive: terminal witness must be ChainIntegrity, got {other:?}"
-        ),
+        other => panic!("seam 6 positive: terminal witness must be ChainIntegrity, got {other:?}"),
     }
 }
 
@@ -849,11 +856,8 @@ fn seam6_discrimination_broken_premise_cid_refutes_with_chain_integrity_failure(
         .cid();
 
     // Tamper: replace lower's premises with a non-existent CID.
-    let bogus = libprovekit::core::Cid::parse(format!(
-        "blake3-512:{}",
-        "f".repeat(128)
-    ))
-    .expect("bogus CID parses");
+    let bogus = libprovekit::core::Cid::parse(format!("blake3-512:{}", "f".repeat(128)))
+        .expect("bogus CID parses");
     let mut tampered = lower_claim_real.clone();
     tampered.premises = vec![bogus.clone()];
 
@@ -898,9 +902,9 @@ fn seam6_discrimination_broken_premise_cid_refutes_with_chain_integrity_failure(
                 failure.break_kind, failure.break_detail
             );
         }
-        other => panic!(
-            "seam 6 discrimination: witness must be ChainIntegrityFailure, got {other:?}"
-        ),
+        other => {
+            panic!("seam 6 discrimination: witness must be ChainIntegrityFailure, got {other:?}")
+        }
     }
 }
 
@@ -1112,7 +1116,11 @@ fn run_lift_bind_capture_chain(
     }
     register_bind(&mut registry);
 
-    let lift_kit_name = if is_python { "lift-python" } else { "lift-rust" };
+    let lift_kit_name = if is_python {
+        "lift-python"
+    } else {
+        "lift-rust"
+    };
     let path = Input::Path(Box::new(CorePath {
         algebra: vec![
             PathAlgebra {

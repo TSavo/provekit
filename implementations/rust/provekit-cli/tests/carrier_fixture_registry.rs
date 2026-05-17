@@ -22,18 +22,16 @@ fn lower_java_carrier_registration_points_at_required_fixture_set() {
 
     registry.register(
         "lower-java",
-        LowerKit::new(
-            repo_root,
-            "java",
-            None,
-            DispatchRealizeTransport,
-        ),
+        LowerKit::new(repo_root, "java", None, DispatchRealizeTransport),
         ConformanceDeclaration::Carrier {
             fixtures_path: fixtures_path.clone(),
+            platform_semantics: None,
         },
     );
 
-    let Some(ConformanceDeclaration::Carrier { fixtures_path }) = registry.conformance("lower-java") else {
+    let Some(ConformanceDeclaration::Carrier { fixtures_path, .. }) =
+        registry.conformance("lower-java")
+    else {
         panic!("lower-java must register as a carrier");
     };
     assert_required_fixtures(fixtures_path);

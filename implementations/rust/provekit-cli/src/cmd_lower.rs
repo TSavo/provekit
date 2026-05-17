@@ -317,6 +317,7 @@ fn lower_named_spec_via_path(
         ConformanceDeclaration::Carrier {
             fixtures_path: project_root
                 .join(format!("implementations/{target}/conformance/fixtures")),
+            platform_semantics: None,
         },
     );
     let chain = execute_path(&path, &registry, &inputs).map_err(|error| {

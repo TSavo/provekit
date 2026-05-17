@@ -277,6 +277,13 @@ fn collect_formula(
                     .to_string(),
             ));
         }
+        Formula::DivergenceBetween { .. } => {
+            return Err(CompileError::Internal(
+                "platform divergence formula reached the Lean collector; \
+                 stage 4 must lower it before compilation"
+                    .to_string(),
+            ));
+        }
     }
     Ok(())
 }
@@ -411,6 +418,11 @@ fn emit_formula(formula: &Formula, ctx: &mut EmitContext) -> Result<String, Comp
         Formula::Substitute { .. } | Formula::Apply { .. } => Err(CompileError::Internal(
             "wp-rule schema node (substitute/apply) reached the Lean formula emitter; \
              it must be reduced via libprovekit::wp before compilation"
+                .to_string(),
+        )),
+        Formula::DivergenceBetween { .. } => Err(CompileError::Internal(
+            "platform divergence formula reached the Lean formula emitter; \
+             stage 4 must lower it before compilation"
                 .to_string(),
         )),
     }

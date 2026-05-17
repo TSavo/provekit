@@ -829,6 +829,7 @@ fn realize_probe_via_path(
         ConformanceDeclaration::Carrier {
             fixtures_path: repo_root
                 .join(format!("implementations/{language}/conformance/fixtures")),
+            platform_semantics: None,
         },
     );
     let chain = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;

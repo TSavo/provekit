@@ -290,5 +290,11 @@ pub fn formula_from_ir(f: ir::Formula) -> Formula {
                  must be reduced via libprovekit::wp first"
             )
         }
+        ir::Formula::DivergenceBetween { .. } => {
+            unreachable!(
+                "platform divergence formula reached ir-symbolic formula conversion; \
+                 stage 4 must lower it before symbolic conversion"
+            )
+        }
     }
 }

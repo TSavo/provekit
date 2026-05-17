@@ -18,6 +18,10 @@ pub fn formula_contains_predicate(formula: &IrFormula, pred_name: &str) -> bool 
             formula_contains_predicate(body, pred_name)
         }
         IrFormula::Choice { body, .. } => formula_contains_predicate(body, pred_name),
+        IrFormula::DivergenceBetween { source, target } => {
+            formula_contains_predicate(source, pred_name)
+                || formula_contains_predicate(target, pred_name)
+        }
         // Substitute and Apply are higher-order / meta-level nodes that the
         // dropper does not interpret structurally; conservatively return false.
         IrFormula::Substitute { .. } | IrFormula::Apply { .. } => false,
@@ -48,6 +52,9 @@ pub fn predicate_var_arg(formula: &IrFormula, pred_name: &str) -> Option<String>
             predicate_var_arg(body, pred_name)
         }
         IrFormula::Choice { body, .. } => predicate_var_arg(body, pred_name),
+        IrFormula::DivergenceBetween { source, target } => {
+            predicate_var_arg(source, pred_name).or_else(|| predicate_var_arg(target, pred_name))
+        }
         // Substitute and Apply are higher-order / meta-level nodes; no var to extract.
         IrFormula::Substitute { .. } | IrFormula::Apply { .. } => None,
     }

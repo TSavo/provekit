@@ -149,6 +149,12 @@ pub fn emit_formula(formula: &Formula) -> String {
                  must be reduced via libprovekit::wp first"
             )
         }
+        Formula::DivergenceBetween { .. } => {
+            unreachable!(
+                "platform divergence formula reached the Coq formula emitter; \
+                 stage 4 must lower it before backend compilation"
+            )
+        }
     }
 }
 fn emit_sort(sort: &Sort) -> String {
@@ -365,6 +371,10 @@ pub fn collect_free_vars_formula(
                 "wp-rule schema node reached the Coq free-var collector; \
                  must be reduced via libprovekit::wp first"
             )
+        }
+        Formula::DivergenceBetween { source, target } => {
+            collect_free_vars_formula(source, out, bound);
+            collect_free_vars_formula(target, out, bound);
         }
     }
 }

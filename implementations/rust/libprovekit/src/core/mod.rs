@@ -45,10 +45,6 @@ pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };
 pub use prove_kit::ProveKit;
-pub use walks::{
-    assert_concept_tier, walk_premises_to_root, walk_premises_to_root_with_failure_steps,
-    ChainBreak, ChainWalkFailure, HubMissingNode,
-};
 pub use stubs::{CKit, FunctionContractDomain, NoopPortfolio, RustKit};
 pub use traits::{
     Canonical, Catalog, CoreError, Domain, DomainError, HashMapCatalog, HashMapInputCatalog,
@@ -58,8 +54,12 @@ pub use types::{
     ArityShape, AritySlot, Attestation, Boundary, ChainIntegrityFailureWitness,
     ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect, DomainClaim,
     DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path, PathAlgebra,
-    PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial, Refutation,
-    SignatureCatalogError, SlotEvaluation, SlotSort, Term, Truth, Verb, Verdict,
-    VerdictCoercionError, Witness,
+    PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial,
+    PlatformSemanticsDeclaration, Refutation, SignatureCatalogError, SlotEvaluation, SlotSort,
+    Term, Truth, Verb, Verdict, VerdictCoercionError, Witness,
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
+pub use walks::{
+    assert_concept_tier, walk_premises_to_root, walk_premises_to_root_with_failure_steps,
+    ChainBreak, ChainWalkFailure, HubMissingNode,
+};

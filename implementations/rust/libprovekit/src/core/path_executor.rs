@@ -535,6 +535,7 @@ mod tests {
             },
             ConformanceDeclaration::Carrier {
                 fixtures_path: "fixtures/lower-fixture".into(),
+                platform_semantics: None,
             },
         );
         registry.register(
