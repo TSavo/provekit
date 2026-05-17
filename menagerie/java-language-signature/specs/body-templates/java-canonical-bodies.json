@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:265b192f573819b1814000f22efb1172e51ff83e0d127acdc0d31fb8dfce725e0aafe58b4f7b0f45469b969c4a561541e8d50e585fedd8056eefdd3e9cf5b7ff",
+    "cid": "blake3-512:0a74f40c13bf4843b7afea6ee91e1b33ac026145a03c7da0be0b22e7667da8f4361f1dca95daedb0219f825139069096123f72f8df46ca1517a4b108e389f328",
     "content": {
       "entries": [
         {
@@ -177,6 +177,70 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:hello-world",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return \"hello\";"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0,
+            "requires_return_type": "String"
+          }
+        },
+        {
+          "concept_name": "concept:recursive-factorial",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} == 0 ? 1 : ${param0} * factorial(${param0} - 1);"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "concept:arithmetic-add",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} + ${param1};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "concept:control-flow-if",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} >= 0 ? ${param0} : -${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "int"
           }
         },
         {

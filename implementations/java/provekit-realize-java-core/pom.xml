@@ -29,6 +29,12 @@
         </dependency>
         <dependency>
             <groupId>com.provekit</groupId>
+            <artifactId>provekit-lift-java-source</artifactId>
+            <version>0.1.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.provekit</groupId>
             <artifactId>provekit-lift-java-provekit-native</artifactId>
             <version>0.1.0</version>
         </dependency>

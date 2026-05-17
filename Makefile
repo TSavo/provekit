@@ -683,6 +683,7 @@ test-php:
 .PHONY: test-java
 test-java: build-java
 	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml
+	mvn test -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am
 
 .PHONY: test-swift
 test-swift: build-swift
