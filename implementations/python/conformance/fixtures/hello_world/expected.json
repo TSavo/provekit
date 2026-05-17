@@ -1,0 +1,10 @@
+{
+  "fixture_type": "hello_world",
+  "function": "hello",
+  "cases": [
+    {
+      "args": [],
+      "expected": "hello"
+    }
+  ]
+}

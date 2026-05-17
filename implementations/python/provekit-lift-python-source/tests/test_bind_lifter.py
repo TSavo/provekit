@@ -334,13 +334,13 @@ def test_bind_lift_emits_gamma_shape_for_statement_concepts() -> None:
             "def f():\n"
             "    while True:\n"
             "        pass\n",
-            _gamma_shape("concept:while", [{}, {}]),
+            _gamma_shape("concept:while", [{}, _gamma_shape("concept:skip")]),
         ),
         (
             "def f(items):\n"
             "    for item in items:\n"
             "        pass\n",
-            _gamma_shape("concept:for", [{}]),
+            _gamma_shape("concept:for", [_gamma_shape("concept:skip")]),
         ),
         (
             "def f():\n"
@@ -362,7 +362,7 @@ def test_bind_lift_emits_gamma_shape_for_statement_concepts() -> None:
         (
             "def f(g, x):\n"
             "    g(x)\n",
-            _gamma_shape("concept:call", [{}]),
+            _gamma_shape("concept:call", [{}, {}]),
         ),
         (
             "def f(g, x, y):\n"
@@ -372,7 +372,7 @@ def test_bind_lift_emits_gamma_shape_for_statement_concepts() -> None:
                 "concept:seq",
                 [
                     _gamma_shape("concept:assign", [{}, {}]),
-                    _gamma_shape("concept:call", [{}]),
+                    _gamma_shape("concept:call", [{}, {}]),
                 ],
             ),
         ),
@@ -399,8 +399,14 @@ def test_bind_lift_discriminates_while_and_for_statement_concepts() -> None:
         "pkg/for.py",
     ).ir[0]
 
-    assert while_entry["term_shape"] == _gamma_shape("concept:while", [{}, {}])
-    assert for_entry["term_shape"] == _gamma_shape("concept:for", [{}])
+    assert while_entry["term_shape"] == _gamma_shape(
+        "concept:while",
+        [{}, _gamma_shape("concept:skip")],
+    )
+    assert for_entry["term_shape"] == _gamma_shape(
+        "concept:for",
+        [_gamma_shape("concept:skip")],
+    )
     assert while_entry["term_shape_cid"] != for_entry["term_shape_cid"]
 
 
