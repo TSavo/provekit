@@ -147,9 +147,32 @@ When new gaps are discovered (a reviewer refuses to fabricate API, an executor d
 
 A24 and A25 are both architectural-judgment-required to spec but mechanical-once-architected to implement; share a sidecar-channel architecture pattern. Likely worth implementing together in one PR.
 
+## Status snapshot (2026-05-16, post-A24+A25 behavioral-correctness landing)
+
+**Behavioral-correctness layer operational** (PR #1097 A23 merged 22:39:33Z, PR #1098 A24+A25 combined merged 23:58:09Z).
+
+**A23 #1093 merged (PR #1097):** libprovekit's bind-payload hash no longer carries `function`/`fn_name` envelope fields. Federation byte-identity now holds across languages with diverging function naming conventions (camelCase vs snake_case). Companion in-place fallback in `realize_function_name` falls back to `term.name` when `term.function` is empty (bridge until A25's sidecar arrived).
+
+**A24+A25 #1095+#1096 combined merged (PR #1098):** the operand-binding sidecar channel + function-name sidecar channel both flow through libprovekit's lower request via non-hashed metadata fields per the locked schema at `docs/plans/2026-05-16-operand-binding-sidecar-schema.md` (β with integer-array paths).
+
+- Both lift kits (Rust walk_rpc.rs + Python bind_lifter.py) emit `operand_bindings` as a flat list of `{position: [int...], symbol: str}` tuples walked from term_shape root, plus optional `source_function_name`.
+- Python realize plugin pre-processes `operand_bindings` into a path-to-symbol map and synthesizes function bodies from term_shape using the map, with a completeness gate (Supra omnia rectum) that asserts every term_shape leaf has a binding entry and refuses synthesis on misalignment.
+- Federation byte-identity at the algebra layer (bind CID) is preserved regardless of operand-naming or function-naming differences. The colimit claim is now robust, not coincidental.
+
+**Empirical signals on the combined merge:**
+- Trinity census slow lane: 9/9 GREEN with CORRECT operand bindings (no longer positional fallback).
+- Python realize + lift tests: 39/39 each.
+- Bridgeworks targeted smoke: passes (incidental closure of task #70 pre-existing red via `.provekit/lower/<surface>` RPC manifest dispatch fix landed alongside A24+A25).
+
+**The substrate's behavioral-correctness layer is fully operational:**
+- Structural federation at algebra layer (γ canonical form + bind CID byte-identity): CI-gated.
+- Body synthesis from term_shape via the non-hashed sidecar channel with operand-binding-from-context + function-name flow: CI-gated.
+- Completeness-gate refusal pattern preserves the trichotomy (exact / loudly-bounded-lossy / refuse) at the realize boundary.
+
 **Architect rulings codified durably:**
 - γ canonical-form ruling: `docs/plans/2026-05-16-canonical-term-shape-form.md` on main.
-- Platform-semantics ruling: `docs/plans/2026-05-16-platform-semantics-via-loss-records.md` on main.
+- Platform-semantics-via-LossRecord ruling: `docs/plans/2026-05-16-platform-semantics-via-loss-records.md` on main.
+- Operand-binding sidecar schema ruling: `docs/plans/2026-05-16-operand-binding-sidecar-schema.md` on main.
 - γ post-merge audit: `docs/plans/2026-05-16-gamma-postmerge-audit.md` on main.
 
 **Not yet captured durably in repo:** the older architect rulings from the 2026-05-15 / earlier-2026-05-16 sessions (deletion rule, build-on-existing-kits clause, pre-merge ritual, codex-inline-brief, exhibit transport policy, model defaults). Each lives in agent memory but not in a repo location a human contributor can find.
