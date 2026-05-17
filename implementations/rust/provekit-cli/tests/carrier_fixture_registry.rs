@@ -34,7 +34,13 @@ fn lower_java_carrier_registration_points_at_required_fixture_set() {
     else {
         panic!("lower-java must register as a carrier");
     };
-    assert_eq!(platform_semantics, &None);
+    let semantics = platform_semantics
+        .as_ref()
+        .expect("java carrier registration populates platform-semantic declaration per Stage 3.1");
+    assert!(
+        !semantics.tags.is_empty(),
+        "java platform-semantic declaration must include per-op tags"
+    );
     assert_required_fixtures(fixtures_path);
 }
 
