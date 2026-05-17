@@ -146,9 +146,9 @@ def blake3_512(data: bytes) -> str:
     return f"blake3-512:{digest}"
 
 
-def version_key(path: Path) -> tuple[int, str]:
-    match = re.match(r"v(\d+)\.blake3-512:", path.name)
-    version = int(match.group(1)) if match else -1
+def version_key(path: Path) -> tuple[tuple[int, ...], str]:
+    match = re.match(r"v(\d+(?:\.\d+)*)\.blake3-512:", path.name)
+    version = tuple(int(part) for part in match.group(1).split(".")) if match else (-1,)
     return (version, path.name)
 
 
@@ -339,16 +339,21 @@ def classify_question(question: dict[str, Any], catalog: Catalog) -> QuestionRes
         language = normalize_language(parameters.get("from_language", ""))
         answers = catalog.morphisms.get((language, concept), [])
         gaps = catalog.gaps.get((language, concept), [])
-    elif kind == "sort":
+    elif kind in {"sort", "sort-classification"}:
         language = normalize_language(parameters.get("language", ""))
         answers = catalog.sort_morphisms.get((language, concept), [])
-    elif kind == "effect":
+    elif kind in {"effect", "effect-classification"}:
         language = normalize_language(parameters.get("language", ""))
         answers = catalog.effect_signatures.get((language, concept), [])
     elif kind == "realization":
         language = normalize_language(parameters.get("target_language", ""))
         library = normalize_target_name(parameters.get("target_library", ""))
         answers = catalog.realizations.get((concept, language, library), [])
+    elif kind == "concept-realization":
+        language = normalize_language(parameters.get("language", ""))
+        gaps = catalog.gaps.get((language, concept), [])
+    elif kind == "boundary-realization":
+        pass
     elif kind == "boundary-tag":
         library = parameters.get("library", "")
         api = parameters.get("api", "")
@@ -390,14 +395,21 @@ def question_label(question: dict[str, Any]) -> str:
     kind = question["kind"]
     if kind == "morphism":
         return f"{parameters.get('from_language', '')} -> {concept}"
-    if kind == "sort":
+    if kind in {"sort", "sort-classification"}:
         return f"{parameters.get('language', '')} -> {concept}"
-    if kind == "effect":
+    if kind in {"effect", "effect-classification"}:
         return f"{parameters.get('language', '')} -> {concept}"
     if kind == "realization":
         return (
             f"{concept} -> {parameters.get('target_language', '')}/"
             f"{parameters.get('target_library', '')}"
+        )
+    if kind == "concept-realization":
+        return f"{parameters.get('language', '')} -> {concept}"
+    if kind == "boundary-realization":
+        return (
+            f"{parameters.get('target_language', '')}/"
+            f"{parameters.get('target_library', '')} -> {concept}"
         )
     if kind == "boundary-tag":
         return (

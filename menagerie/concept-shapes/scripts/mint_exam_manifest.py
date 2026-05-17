@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Mint the v1 ExamManifestMemento from concept-shapes catalog state."""
+"""Mint the v1.1 ExamManifestMemento from concept-shapes catalog state."""
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -18,15 +19,17 @@ SPEC_DIR = BASE / "specs"
 CATALOG_DIR = BASE / "catalog"
 ABSTRACTION_DIR = CATALOG_DIR / "abstractions"
 ALGORITHM_DIR = CATALOG_DIR / "algorithms"
+BOUNDARY_CONTRACT_DIR = BASE / "boundary-contracts"
 EXAM_DIR = BASE / "exams"
 INDEX_PATH = CATALOG_DIR / "index.json"
+CLASSIFICATION_TOOL = ROOT / "tools" / "classify-realization-tags.py"
 
-SCHEMA_VERSION = "provekit-exam-manifest/v1"
+SCHEMA_VERSION = "provekit-exam-manifest/v1.1"
 CONCEPT_HUB_VERSION = "v1.7.0"
 
-# Fixed v1 mint timestamp. It is intentionally stable so replayed manifest
+# Fixed v1.1 mint timestamp. It is intentionally stable so replayed manifest
 # files are byte-identical even before the placeholder signature is replaced.
-DECLARED_AT = "2026-05-16T00:00:00Z"
+DECLARED_AT = "2026-05-17T00:00:00Z"
 PLACEHOLDER_SIGNATURE = "UNSIGNED_DEV_ONLY"
 PLACEHOLDER_SIGNER = "UNSIGNED_DEV_ONLY"
 
@@ -44,30 +47,89 @@ LANGUAGES = [
 ]
 
 QUESTION_KINDS = [
+    "boundary-realization",
     "boundary-tag",
     "composition",
-    "effect",
+    "concept-realization",
+    "effect-classification",
     "morphism",
-    "realization",
-    "sort",
+    "sort-classification",
 ]
 
-KNOWN_LIBRARIES_BY_CONCEPT = {
+BOUNDARY_LIBRARY_ENTRIES_BY_CONCEPT = {
     "concept:http-request": [
-        {"library": "libcurl", "api": "curl_easy_perform"},
-        {"library": "java-httpclient", "api": "java.net.http.HttpClient.send"},
-        {"library": "python-urllib", "api": "urllib.request.urlopen"},
-        {"library": "javascript-fetch", "api": "fetch"},
-        {"library": "python-requests", "api": "requests.get"},
-        {"library": "rust-reqwest", "api": "reqwest.get"},
+        {
+            "api": "curl_easy_perform",
+            "boundary_contract": "boundary:http-1.1",
+            "library": "libcurl",
+        },
+        {
+            "api": "java.net.http.HttpClient.send",
+            "boundary_contract": "boundary:http-2",
+            "library": "java-httpclient",
+        },
+        {
+            "api": "urllib.request.urlopen",
+            "boundary_contract": "boundary:http-1.1",
+            "library": "python-urllib",
+        },
+        {
+            "api": "fetch",
+            "boundary_contract": "boundary:http-2",
+            "library": "javascript-fetch",
+        },
+        {
+            "api": "requests.get",
+            "boundary_contract": "boundary:http-1.1",
+            "library": "python-requests",
+        },
+        {
+            "api": "reqwest.get",
+            "boundary_contract": "boundary:http-2",
+            "library": "rust-reqwest",
+        },
     ],
     "concept:sql-query": [
-        {"library": "python-sqlite3", "api": "sqlite3.Cursor.execute"},
-        {"library": "python-psycopg2", "api": "psycopg2.cursor.execute"},
-        {"library": "python-aiosqlite", "api": "aiosqlite.Connection.execute"},
-        {"library": "rust-sqlx", "api": "sqlx.query"},
-        {"library": "java-jdbc", "api": "java.sql.PreparedStatement.executeQuery"},
+        {
+            "api": "sqlite3.Cursor.execute",
+            "boundary_contract": "boundary:sql-sqlite-dialect",
+            "library": "python-sqlite3",
+        },
+        {
+            "api": "psycopg2.cursor.execute",
+            "boundary_contract": "boundary:sql-postgres-dialect",
+            "library": "python-psycopg2",
+        },
+        {
+            "api": "aiosqlite.Connection.execute",
+            "boundary_contract": "boundary:sql-sqlite-dialect",
+            "library": "python-aiosqlite",
+        },
+        {
+            "api": "sqlx.query",
+            "boundary_contract": "boundary:sql-postgres-dialect",
+            "library": "rust-sqlx",
+        },
+        {
+            "api": "java.sql.PreparedStatement.executeQuery",
+            "boundary_contract": "boundary:sql-92",
+            "library": "java-jdbc",
+        },
     ],
+}
+
+NATIVE_LANGUAGE_BY_LIBRARY = {
+    "java-httpclient": "java",
+    "java-jdbc": "java",
+    "javascript-fetch": "typescript",
+    "libcurl": "c11",
+    "python-aiosqlite": "python",
+    "python-psycopg2": "python",
+    "python-requests": "python",
+    "python-sqlite3": "python",
+    "python-urllib": "python",
+    "rust-reqwest": "rust",
+    "rust-sqlx": "rust",
 }
 
 
@@ -184,13 +246,73 @@ def load_known_library_concepts() -> list[str]:
     }
     concepts = sorted(
         concept
-        for concept in KNOWN_LIBRARIES_BY_CONCEPT
+        for concept in BOUNDARY_LIBRARY_ENTRIES_BY_CONCEPT
         if concept in shape_concepts or concept in load_abstraction_concepts()
     )
-    missing = sorted(set(KNOWN_LIBRARIES_BY_CONCEPT) - set(concepts))
+    missing = sorted(set(BOUNDARY_LIBRARY_ENTRIES_BY_CONCEPT) - set(concepts))
     if missing:
         raise SystemExit("known library concepts missing from inputs: " + ", ".join(missing))
     return concepts
+
+
+def load_classification_rows() -> list[Any]:
+    tools_dir = ROOT / "tools"
+    sys.path.insert(0, str(tools_dir))
+    spec = importlib.util.spec_from_file_location(
+        "provekit_realization_tag_classification",
+        CLASSIFICATION_TOOL,
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load classification tool at {CLASSIFICATION_TOOL}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    rows, _primitive_concepts, _abstraction_concepts = module.classify_rows()
+    unexpected_languages = sorted({row.language for row in rows} - set(LANGUAGES))
+    if unexpected_languages:
+        raise SystemExit(
+            "classification rows use unknown languages: " + ", ".join(unexpected_languages)
+        )
+    return sorted(rows, key=lambda row: (row.concept, row.language, row.tag_kind))
+
+
+def load_boundary_contract_cids() -> dict[str, str]:
+    cids: dict[str, str] = {}
+    for path in sorted(BOUNDARY_CONTRACT_DIR.glob("boundary:*.json")):
+        payload = load_json(path)
+        content = payload.get("header", {}).get("content", {})
+        name = content.get("name")
+        cid = payload.get("header", {}).get("cid")
+        if isinstance(name, str) and isinstance(cid, str):
+            cids[name] = cid
+
+    expected = sorted(
+        {
+            entry["boundary_contract"]
+            for entries in BOUNDARY_LIBRARY_ENTRIES_BY_CONCEPT.values()
+            for entry in entries
+        }
+    )
+    missing = sorted(set(expected) - set(cids))
+    if missing:
+        raise SystemExit("boundary contracts missing from inputs: " + ", ".join(missing))
+    return cids
+
+
+def boundary_library_entries() -> list[tuple[str, dict[str, str]]]:
+    entries = []
+    for concept in load_known_library_concepts():
+        for entry in BOUNDARY_LIBRARY_ENTRIES_BY_CONCEPT[concept]:
+            entries.append((concept, entry))
+    return sorted(
+        entries,
+        key=lambda item: (
+            item[0],
+            item[1]["library"],
+            item[1]["api"],
+            item[1]["boundary_contract"],
+        ),
+    )
 
 
 def load_sort_concepts() -> list[str]:
@@ -263,38 +385,48 @@ def morphism_questions() -> list[dict[str, Any]]:
     ]
 
 
-def realization_questions() -> list[dict[str, Any]]:
+def concept_realization_questions() -> list[dict[str, Any]]:
+    return [
+        make_question(
+            "concept-realization",
+            row.concept,
+            {"language": row.language},
+            "RealizationMemento",
+        )
+        for row in load_classification_rows()
+    ]
+
+
+def boundary_realization_questions() -> list[dict[str, Any]]:
+    boundary_cids = load_boundary_contract_cids()
     questions = []
-    abstraction_concepts = set(load_abstraction_concepts())
-    for concept in load_known_library_concepts():
-        if concept not in abstraction_concepts and concept not in KNOWN_LIBRARIES_BY_CONCEPT:
-            continue
-        for language in LANGUAGES:
-            for library_entry in KNOWN_LIBRARIES_BY_CONCEPT[concept]:
-                questions.append(
-                    make_question(
-                        "realization",
-                        concept,
-                        {
-                            "target_language": language,
-                            "target_library": library_entry["library"],
-                        },
-                        "RealizationMemento",
-                    )
-                )
+    for concept, library_entry in boundary_library_entries():
+        library = library_entry["library"]
+        language = NATIVE_LANGUAGE_BY_LIBRARY.get(library)
+        if language is None:
+            raise SystemExit(f"native language missing for boundary library: {library}")
+        questions.append(
+            make_question(
+                "boundary-realization",
+                concept,
+                {
+                    "boundary_contract_cid": boundary_cids[library_entry["boundary_contract"]],
+                    "target_language": language,
+                    "target_library": library,
+                },
+                "BoundaryRealizationMemento",
+            )
+        )
     return questions
 
 
 def sort_questions() -> list[dict[str, Any]]:
     questions = []
-    covered = load_covered_sort_pairs()
     for concept in load_sort_concepts():
         for language in LANGUAGES:
-            if (language, concept) in covered:
-                continue
             questions.append(
                 make_question(
-                    "sort",
+                    "sort-classification",
                     concept,
                     {"language": language},
                     "SortMorphismMemento",
@@ -306,7 +438,7 @@ def sort_questions() -> list[dict[str, Any]]:
 def effect_questions() -> list[dict[str, Any]]:
     return [
         make_question(
-            "effect",
+            "effect-classification",
             concept,
             {"language": language},
             "EffectSignatureMemento",
@@ -317,21 +449,21 @@ def effect_questions() -> list[dict[str, Any]]:
 
 
 def boundary_tag_questions() -> list[dict[str, Any]]:
+    boundary_cids = load_boundary_contract_cids()
     questions = []
-    for concept in load_known_library_concepts():
-        for library_entry in KNOWN_LIBRARIES_BY_CONCEPT[concept]:
-            questions.append(
-                make_question(
-                    "boundary-tag",
-                    concept,
-                    {
-                        "api": library_entry["api"],
-                        "library": library_entry["library"],
-                        "target_concept": concept,
-                    },
-                    "BoundaryTagMemento",
-                )
+    for concept, library_entry in boundary_library_entries():
+        questions.append(
+            make_question(
+                "boundary-tag",
+                concept,
+                {
+                    "api": library_entry["api"],
+                    "library": library_entry["library"],
+                    "target_boundary_contract": boundary_cids[library_entry["boundary_contract"]],
+                },
+                "BoundaryTagMemento",
             )
+        )
     return questions
 
 
@@ -346,10 +478,11 @@ def question_sort_key(question: dict[str, Any]) -> tuple[str, str, str, str]:
 
 def build_questions() -> list[dict[str, Any]]:
     questions = []
+    questions.extend(boundary_realization_questions())
     questions.extend(boundary_tag_questions())
+    questions.extend(concept_realization_questions())
     questions.extend(effect_questions())
     questions.extend(morphism_questions())
-    questions.extend(realization_questions())
     questions.extend(sort_questions())
     return sorted(questions, key=question_sort_key)
 
@@ -388,10 +521,10 @@ def build_manifest() -> dict[str, Any]:
 def write_manifest(output_dir: Path, manifest: dict[str, Any]) -> Path:
     cid = manifest["header"]["cid"]
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"v1.{cid}.json"
+    output_path = output_dir / f"v1.1.{cid}.json"
     output_bytes = encode_jcs(manifest).encode("utf-8")
     output_path.write_bytes(output_bytes)
-    for old_path in output_dir.glob("v1.blake3-512:*.json"):
+    for old_path in output_dir.glob("v1.1.blake3-512:*.json"):
         if old_path != output_path:
             old_path.unlink()
     return output_path
@@ -404,7 +537,7 @@ def update_catalog_index(cid: str, manifest_path: Path) -> None:
     entries[cid] = {
         "cid": cid,
         "kind": "exam",
-        "name": "exam-manifest-v1",
+        "name": "exam-manifest-v1.1",
         "path": rel_path,
     }
     index["entries"] = {key: entries[key] for key in sorted(entries)}
@@ -417,7 +550,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=EXAM_DIR,
-        help="directory for the v1.<cid>.json output",
+        help="directory for the v1.1.<cid>.json output",
     )
     parser.add_argument(
         "--skip-index",
