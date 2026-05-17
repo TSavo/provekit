@@ -709,6 +709,11 @@ fn mint_spec_path(
     let cid = match kind {
         Kind::Algorithm => mint_algorithm(AlgorithmSpec::from_path(path)?, signer, catalog)?.cid,
         Kind::Binding => mint_binding(BindingSpec::from_path(path)?, signer, catalog)?.cid,
+        Kind::Exam => {
+            return Err(MintError::Validation(
+                "exam manifest minting is deferred to the exam generator".to_string(),
+            ));
+        }
         Kind::Sort => mint_sort(SortSpec::from_path(path)?, signer, catalog)?.cid,
         Kind::Equation => mint_equation(EquationSpec::from_path(path)?, signer, catalog)?.cid,
         Kind::EffectSignature => {
@@ -728,6 +733,7 @@ fn kind_from_spec(raw: &Value) -> Option<Kind> {
     match raw.get("kind").and_then(Value::as_str)? {
         "algorithm" | "AlgorithmMemento" => Some(Kind::Algorithm),
         "binding" | "BindingMemento" | "BindingClaimMemento" => Some(Kind::Binding),
+        "exam" | "ExamManifestMemento" => Some(Kind::Exam),
         "sort" | "SortMemento" => Some(Kind::Sort),
         "equation" | "EquationMemento" => Some(Kind::Equation),
         "effect_signature" | "EffectSignatureMemento" => Some(Kind::EffectSignature),

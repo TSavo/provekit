@@ -1,0 +1,65 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:exam-manifest",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "ListOfString"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "ListOfExamQuestion"
+    }
+  ],
+  "formals": [
+    "concept_hub_version",
+    "question_kinds",
+    "questions"
+  ],
+  "kind": "algorithm",
+  "loss_dimensions": [],
+  "post": {
+    "arity": [
+      "String",
+      "ListOfString",
+      "ListOfExamQuestion"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "concept_hub_version"
+        },
+        {
+          "name": "question_kinds"
+        },
+        {
+          "name": "questions"
+        }
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "exam-manifest",
+    "result": "ExamManifestMemento",
+    "wp_note": "Enumerates the question set the substrate considers part of canonical coverage at concept_hub_version. The manifest itself is stable and content-addressed; per-question coverage (answered/refused/open) is captured in a separate ExamCoverageMemento family deferred to future work. Loaded by consumers (cluster, bind, lift plugins, federation handshake) to cite specific questions in their outputs (gap records, refusal mementos, plugin registry mementos)."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "ExamManifestMemento"
+  }
+}

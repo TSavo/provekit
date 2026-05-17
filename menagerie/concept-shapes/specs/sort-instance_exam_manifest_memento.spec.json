@@ -1,0 +1,38 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "ExamManifestMemento",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "sort",
+  "post": {
+    "fields": [
+      {
+        "name": "envelope",
+        "sort": "ExamManifestEnvelope"
+      },
+      {
+        "name": "header",
+        "sort": "ExamManifestHeader"
+      },
+      {
+        "name": "metadata",
+        "sort": "ExamManifestMetadata"
+      }
+    ],
+    "kind": "sort-instance",
+    "name": "ExamManifestMemento",
+    "sort_kind": "record"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}
