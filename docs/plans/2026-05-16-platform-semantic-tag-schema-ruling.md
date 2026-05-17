@@ -64,7 +64,7 @@ The candidate `{kit_cid, op_cid, tag_name, dimensions: [DimensionMemento]}` (lis
 
 ### Why not the opaque-CID shape
 
-The candidate `{kit_cid, op_cid, tag_cid: Cid}` (substrate sees only equality) was also considered. Rejected because it collapses the trichotomy's middle leg. Without dimensions exposed at the substrate boundary, every non-equal tag pair becomes uncharacterizable: the LossRecord is forced to be `{"opaque_platform_divergence": ...}` always. This violates the locked Platform-Semantics-via-LossRecord ruling's claim that "behavioral divergence is captured automatically via the substrate's existing LossRecord / LossRecordMemento family" — that claim requires substrate-visible structure to compose against.
+The candidate `{kit_cid, op_cid, tag_cid: Cid}` (substrate sees only equality) was also considered. Rejected because it collapses the trichotomy's middle leg. Without dimensions exposed at the substrate boundary, every non-equal tag pair becomes uncharacterizable: the LossRecord is forced to be `{"opaque_platform_divergence": ...}` always. This violates the locked Platform-Semantics-via-LossRecord ruling's claim that "behavioral divergence is captured automatically via the substrate's existing LossRecord / LossRecordMemento family"; that claim requires substrate-visible structure to compose against.
 
 ## 2. LossRecord composition machinery
 
