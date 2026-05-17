@@ -11,8 +11,8 @@ use std::sync::Arc;
 use clap::{Parser, ValueEnum};
 use libprovekit::core::lower_plugin::realize_spec_from_named_term;
 use libprovekit::core::{
-    execute_path, named_term_document_from_bind_payload, ConformanceDeclaration,
-    HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra, Term,
+    execute_path, named_term_document_from_bind_payload, HashMapInputCatalog, Input, KitRegistry,
+    LowerKit, Path as CorePath, PathAlgebra, Term,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -306,7 +306,7 @@ fn lower_named_spec_via_path(
         }],
     }));
     let mut registry = KitRegistry::default();
-    registry.register(
+    registry.register_with_platform_semantics(
         kit_name,
         LowerKit::new(
             project_root.to_path_buf(),
@@ -314,11 +314,8 @@ fn lower_named_spec_via_path(
             None,
             DispatchRealizeTransport,
         ),
-        ConformanceDeclaration::Carrier {
-            fixtures_path: project_root
-                .join(format!("implementations/{target}/conformance/fixtures")),
-            platform_semantics: None,
-        },
+        target,
+        project_root.join(format!("implementations/{target}/conformance/fixtures")),
     );
     let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
         let detail = error

@@ -10,12 +10,12 @@ use libprovekit::compose::{
     FunctionContractMemento, Locus,
 };
 use libprovekit::core::{
-    address, compose, execute_path, link, prove, transform, verify, ArityShape, AritySlot, CKit,
-    Canonical, Catalog, Cid, ConformanceDeclaration, Dialect, DomainClaim, DomainKind,
-    FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input, InputCatalog, Kit,
-    KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra, PathDocument,
-    PathDocumentError, PathError, PlatformSemanticsDeclaration, Refutation, SlotSort, Term, Truth,
-    Verb, Verdict, Witness,
+    address, compose, execute_path, link, platform_semantics_for_lower_target, prove, transform,
+    verify, ArityShape, AritySlot, CKit, Canonical, Catalog, Cid, ConformanceDeclaration, Dialect,
+    DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
+    InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra,
+    PathDocument, PathDocumentError, PathError, PlatformSemanticsDeclaration, Refutation, SlotSort,
+    Term, Truth, Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::Value;
 use provekit_ir_types::{
@@ -1279,6 +1279,13 @@ fn carrier_registration_preserves_platform_semantics_declaration() {
         first_tag.dimensions.keys().collect::<Vec<_>>()
     );
     assert_eq!(decoded.to_jcs_string(), encoded);
+}
+
+#[test]
+fn dispatcher_returns_none_for_all_current_targets() {
+    for target in ["rust", "python", "java", "c", "unknown"] {
+        assert_eq!(platform_semantics_for_lower_target(target), None);
+    }
 }
 
 #[test]

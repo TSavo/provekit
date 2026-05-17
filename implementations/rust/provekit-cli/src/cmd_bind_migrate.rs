@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
 use libprovekit::core::{
-    execute_path, ConformanceDeclaration, HashMapInputCatalog, Input, KitRegistry, LowerKit,
-    Path as CorePath, PathAlgebra, Verb,
+    execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+    Verb,
 };
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, PropagationDecision,
@@ -818,7 +818,7 @@ fn realize_probe_via_path(
         }],
     }));
     let mut registry = KitRegistry::default();
-    registry.register(
+    registry.register_with_platform_semantics(
         kit_name,
         LowerKit::new(
             repo_root.to_path_buf(),
@@ -826,11 +826,8 @@ fn realize_probe_via_path(
             Some(tag.to_string()),
             DispatchRealizeTransport,
         ),
-        ConformanceDeclaration::Carrier {
-            fixtures_path: repo_root
-                .join(format!("implementations/{language}/conformance/fixtures")),
-            platform_semantics: None,
-        },
+        language,
+        repo_root.join(format!("implementations/{language}/conformance/fixtures")),
     );
     let chain = execute_path(&path, &registry, &inputs).map_err(|error| error.to_string())?;
     LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
