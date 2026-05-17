@@ -217,7 +217,7 @@ fn c_canonical_bodies_cid_self_consistent() {
         .join("menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:f0948c8f4f00359bfdafb3c1bc19227ffc70f95807dcc53450f4c84be2d44bc77770aaa54f3058014febbad276a759ebcf8cc2acabf5e6e6bddada8167c684a2",
+        "blake3-512:74f655e44075901e6941049332618f96807b18bedf0381ad7edfb593a0ada8084d07ed2f848817574874e6ec52fa26ec493656e36ec4c66229d668b5bd9db181",
     );
 }
 
