@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generate the manifest-driven concept-library completeness probe."""
+"""Generate the manifest-driven operation-layer completeness probe."""
 
 from __future__ import annotations
 
-from concept_library_completeness_probe_lib import run_general_probe
+from concept_library_completeness_probe_lib import run_operation_probe
 
 
 def main() -> int:
-    path = run_general_probe()
+    path = run_operation_probe()
     print(f"Written: {path}")
     return 0
 
