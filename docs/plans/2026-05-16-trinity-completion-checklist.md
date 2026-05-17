@@ -173,7 +173,30 @@ A24 and A25 are both architectural-judgment-required to spec but mechanical-once
 - γ canonical-form ruling: `docs/plans/2026-05-16-canonical-term-shape-form.md` on main.
 - Platform-semantics-via-LossRecord ruling: `docs/plans/2026-05-16-platform-semantics-via-loss-records.md` on main.
 - Operand-binding sidecar schema ruling: `docs/plans/2026-05-16-operand-binding-sidecar-schema.md` on main.
+- PlatformSemanticTag schema ruling: `docs/plans/2026-05-16-platform-semantic-tag-schema-ruling.md` on main.
 - γ post-merge audit: `docs/plans/2026-05-16-gamma-postmerge-audit.md` on main.
+
+## Status snapshot (2026-05-17, post-#1039 + post-PlatformSemanticTag ruling)
+
+**Per-kit emit-compile-run conformance (#1039) shipped across three languages:**
+- Python (PR #1099): 5 fixtures (hello_world, recursive factorial, arithmetic, control flow, transported concept citation comment) + CI slow lane invoking LiftKit → BindKit → LowerKit → py_compile → python3 + behavior assertion; refusal paths for target-compile-failure and target-behavior-divergence both verified.
+- Java (PR #1100): 5 fixtures + JavaConformanceFixtureTest invoking javac/java + refusal coverage; Rust registry meta-test for lower-java carrier fixture registration; Java canonical body templates with refreshed CID pin.
+- C (PR #1101): 6 fixtures + emit-compile-run harness invoking cc -Wall -Wextra -Werror + binary behavior comparison; refusal probes for both failure_kinds; C body templates with refreshed plugin CID; test-c wired into test-all.
+
+Carrier PRs that break the realize layer can no longer merge silently across any of the three languages.
+
+**PlatformSemanticTag schema ruling locked** (`78fcb45f0` + em-dash fix `ec2f329c5`). Independent Opus authored after Sir caught Kit's substrate-enumerates framing as the same mistake the γ canonical-form ruling rejected at the term-shape layer. Schema: `PlatformSemanticTag { dimensions: BTreeMap<String, Cid> }` with kit-minted DimensionValueMemento carrying compare_to IrFormula. Substrate enumerates nothing; kits mint dimension names AND value mementos. Composition: pairwise intersection on key sets; CID-equality is equivalence; non-identical produces LossRecord entry with DivergenceBetween IrFormula. Refusal: asymmetric dimension keys → RefusalMemento with reason "uncharacterizable_platform_divergence". Zero new memento families; composes with existing LossRecord + RefusalMemento.
+
+**Implementation work surface for the PlatformSemanticTag ruling (Stream A Stages 2-5) unblocked:**
+- Stage 2: mint PlatformSemanticTag + DimensionValueMemento types in provekit-ir-types + extend kit registration with PlatformSemanticsDeclaration carrier field. Substrate-only; no kit changes yet.
+- Stage 3 (per-kit, parallel-safe): each kit on main declares its per-op platform semantics by minting its own dimension names + value mementos at registration time.
+- Stage 4: semantic-comparison step in execute_path; LossRecord emission on dimension intersection divergence; RefusalMemento emission on key asymmetry.
+- Stage 5: CI gate asserting cross-platform composition emits the right artifact per the trichotomy.
+
+Stages 2 → 3 → 4 → 5 are dependency-ordered; Stage 3's per-kit dispatches are parallel-safe once Stage 2 substrate types land.
+
+**Architect rulings still in agent memory only (need durable repo capture):**
+Deletion rule, build-on-existing-kits clause, pre-merge ritual, codex-inline-brief, exhibit transport policy, model defaults, framing-audit discipline. All available in agent memory; human contributors can't find them without an agent's memory store.
 
 **Not yet captured durably in repo:** the older architect rulings from the 2026-05-15 / earlier-2026-05-16 sessions (deletion rule, build-on-existing-kits clause, pre-merge ritual, codex-inline-brief, exhibit transport policy, model defaults). Each lives in agent memory but not in a repo location a human contributor can find.
 
