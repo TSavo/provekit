@@ -162,6 +162,7 @@ fn is_ground(formula: &IrFormula) -> bool {
         | IrFormula::Choice { body, .. } => is_ground(body),
         IrFormula::Substitute { target, term, .. } => is_ground(target) && is_ground_term(term),
         IrFormula::Apply { args, .. } => args.iter().all(is_ground),
+        IrFormula::DivergenceBetween { source, target } => is_ground(source) && is_ground(target),
     }
 }
 
