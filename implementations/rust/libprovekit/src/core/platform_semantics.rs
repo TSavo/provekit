@@ -21,6 +21,12 @@ pub mod python_realize_core;
 pub fn platform_semantics_for_lower_target(target: &str) -> Option<PlatformSemanticsDeclaration> {
     match target {
         "python" => Some(python_kit_declaration()),
+        "rust" => {
+            let declaration = provekit_realize_rust_core::platform_semantics::declaration();
+            Some(PlatformSemanticsDeclaration {
+                tags: declaration.tags,
+            })
+        }
         _ => None,
     }
 }

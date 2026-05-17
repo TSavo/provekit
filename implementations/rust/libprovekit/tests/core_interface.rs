@@ -1342,8 +1342,36 @@ fn python_platform_semantics_wrappers_share_locked_dimension_values() {
 }
 
 #[test]
-fn dispatcher_still_returns_none_for_non_python_targets() {
-    for target in ["rust", "java", "c", "unknown"] {
+fn dispatcher_returns_rust_platform_semantics_declaration() {
+    let declaration =
+        platform_semantics_for_lower_target("rust").expect("rust semantics are declared");
+
+    assert_eq!(declaration.tags.len(), 21);
+    assert!(declaration
+        .tags
+        .iter()
+        .any(|tag| { tag.dimensions.contains_key("ArithmeticOverflow") }));
+    assert!(declaration
+        .tags
+        .iter()
+        .any(|tag| { tag.dimensions.contains_key("IntegerDivisionRounding") }));
+    assert!(declaration
+        .tags
+        .iter()
+        .any(|tag| tag.dimensions.contains_key("ShiftMode")));
+    assert!(declaration
+        .tags
+        .iter()
+        .any(|tag| tag.dimensions.contains_key("NullSemantics")));
+    assert!(declaration
+        .tags
+        .iter()
+        .any(|tag| tag.dimensions.contains_key("BitwiseSemantics")));
+}
+
+#[test]
+fn dispatcher_still_returns_none_for_unclaimed_targets() {
+    for target in ["java", "c", "unknown"] {
         assert_eq!(platform_semantics_for_lower_target(target), None);
     }
 }

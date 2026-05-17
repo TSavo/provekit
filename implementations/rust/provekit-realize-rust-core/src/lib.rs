@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 use provekit_canonicalizer::blake3_512_of;
 use serde_json::Value;
 
+pub mod platform_semantics;
+
 const BODY_TEMPLATE_REL: &str =
     "menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json";
 const RETURN_OP_CID: &str = "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6";
