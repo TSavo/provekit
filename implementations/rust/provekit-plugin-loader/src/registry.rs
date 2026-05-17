@@ -2,15 +2,15 @@
 //
 // §9 Registry semantics.
 //
-// PluginRegistry — in-memory store indexed by (kind, cid).
+// PluginRegistry - in-memory store indexed by (kind, cid).
 //
-// §9.1 — PluginRegistryMemento sealed after all --plugin flags processed.
-// §9.2 — Duplicate-CID collision rule: second registration of (kind, cid)
+// §9.1 - PluginRegistryMemento sealed after all --plugin flags processed.
+// §9.2 - Duplicate-CID collision rule: second registration of (kind, cid)
 //         is silently deduplicated UNLESS the content differs (which can't
 //         happen with content-addressing: same CID implies same content,
 //         §6.2), so duplicate is a no-op.
-// §9.3 — Registry CID computed over JCS(header_without_cid).
-// §9.4 — Every output's provenance MUST cite the registry CID.
+// §9.3 - Registry CID computed over JCS(header_without_cid).
+// §9.4 - Every output's provenance MUST cite the registry CID.
 //
 // Built-in plugins (when not suppressed) are appended AT THE END of the
 // `load_order` array per §7.  This crate ships no built-ins; the
@@ -33,12 +33,19 @@ use crate::types::{
 
 /// The header of a `PluginRegistryMemento` (§9.1).
 ///
-/// JCS key order: built_in_count, cid, failures, kind, load_order,
+/// JCS key order: built_in_count, cid, exam_manifest_cid,
+///                exam_manifest_set, failures, kind, load_order,
 ///                loaded, runtime_protocol_versions, schemaVersion, sealed_at
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginRegistryMementoHeader {
     pub built_in_count: usize,
     pub cid: String,
+    /// ExamManifestMemento CID the run was sealed against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exam_manifest_cid: Option<String>,
+    /// Optional set of exam manifests admitted by this run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exam_manifest_set: Option<Vec<String>>,
     /// CIDs of PluginLoadFailureMementos minted during this run.
     pub failures: Vec<String>,
     pub kind: String,
@@ -114,7 +121,7 @@ impl PluginRegistry {
     pub fn register(&mut self, p: PluginMemento, source: &str) -> Result<bool, LoadError> {
         let key: RegistryKey = (p.kind().to_string(), p.cid().to_string());
         if self.plugins.contains_key(&key) {
-            // Deduplicated — same content, no error.
+            // Deduplicated - same content, no error.
             return Ok(false);
         }
         self.load_order
@@ -169,6 +176,16 @@ impl PluginRegistry {
     /// `signer_stub` is a placeholder envelope; full signing is out-of-scope
     /// for PEP 1.7.0 skeleton (§12).
     pub fn emit_registry_memento(&self, sealed_at: &str) -> PluginRegistryMemento {
+        self.emit_registry_memento_with_exam_manifest(sealed_at, None, None)
+    }
+
+    /// Seal the registry and include exam manifest compatibility fields.
+    pub fn emit_registry_memento_with_exam_manifest(
+        &self,
+        sealed_at: &str,
+        exam_manifest_cid: Option<String>,
+        exam_manifest_set: Option<Vec<String>>,
+    ) -> PluginRegistryMemento {
         use crate::loader::RUNTIME_PROTOCOL_VERSIONS;
 
         let failure_cids: Vec<String> =
@@ -176,7 +193,7 @@ impl PluginRegistry {
 
         // Build load_order as {kind, cid, source} objects per §9.1.
         // Preserves CLI insertion order (B4 correctness depends on caller
-        // passing plugins in input order — see build_registry in cmd_plugin.rs).
+        // passing plugins in input order - see build_registry in cmd_plugin.rs).
         let load_order: Vec<LoadOrderEntry> = self
             .load_order
             .iter()
@@ -203,10 +220,22 @@ impl PluginRegistry {
             .map(|s| s.to_string())
             .collect();
 
+        let exam_manifest_set = exam_manifest_set.and_then(|mut cids| {
+            cids.sort();
+            cids.dedup();
+            if cids.is_empty() {
+                None
+            } else {
+                Some(cids)
+            }
+        });
+
         // Build header without CID first (CID is computed over it).
         let mut header = PluginRegistryMementoHeader {
             built_in_count: self.builtin_count,
             cid: String::new(), // will be filled in below
+            exam_manifest_cid,
+            exam_manifest_set,
             failures: failure_cids,
             kind: "plugin-registry".to_string(),
             load_order,
@@ -383,7 +412,6 @@ mod tests {
     #[test]
     fn loaded_is_sorted_by_cid() {
         // B2: loaded must be sorted by cid ascending, regardless of insertion order.
-        use crate::types::LoadedEntry;
         let mut reg = PluginRegistry::new();
         reg.register(dummy_memento("sugar", "blake3-512:zzz"), "./z.json")
             .unwrap();

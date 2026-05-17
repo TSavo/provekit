@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default)]
 pub struct ProjectConfig {
+    pub exam_manifest_cid: Option<String>,
+
     pub surface_default: Option<String>,
     pub surface_must: Option<String>,
     pub surface_lift: Option<String>,
@@ -130,6 +132,7 @@ fn parse_config(text: &str) -> ProjectConfig {
         let key = line[..eq].trim();
         let val = line[eq + 1..].trim().trim_matches('"').to_string();
         match (section.as_deref(), key) {
+            (None, "exam_manifest_cid") => cfg.exam_manifest_cid = Some(val),
             (Some("authoring"), "surface") => cfg.surface_default = Some(val),
             (Some("authoring.must"), "surface") => cfg.surface_must = Some(val),
             (Some("authoring.lift"), "surface") => cfg.surface_lift = Some(val),
