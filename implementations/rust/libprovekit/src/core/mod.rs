@@ -22,6 +22,7 @@ pub mod bind;
 pub mod lift_plugin;
 pub mod lower_plugin;
 pub mod path_executor;
+pub mod platform_semantics;
 pub mod primitives;
 pub mod prove_kit;
 pub mod stubs;
@@ -41,6 +42,7 @@ pub use lower_plugin::{
     RealizedSource,
 };
 pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecutionError};
+pub use platform_semantics::platform_semantics_for_lower_target;
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };

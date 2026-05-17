@@ -24,6 +24,7 @@
 //! update per callsite.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use provekit_ir_types::{
     composition_refusal_compose_input_cid, composition_refusal_header_cid,
@@ -34,6 +35,7 @@ use thiserror::Error;
 
 use crate::compose::CCP_VERSION;
 
+use super::platform_semantics::platform_semantics_for_lower_target;
 use super::primitives::address;
 use super::prove_kit::ProveKit;
 use super::traits::{Catalog, InputCatalog, Kit, KitError};
@@ -65,6 +67,29 @@ impl KitRegistry {
             RegisteredKit {
                 kit: Box::new(kit),
                 conformance,
+            },
+        );
+    }
+
+    /// Register a kit by name with a carrier declaration whose platform
+    /// semantics are populated by the canonical lower-target dispatcher.
+    ///
+    /// This is equivalent to calling [`Self::register`] with a
+    /// [`ConformanceDeclaration::Carrier`] whose `platform_semantics` field is
+    /// `platform_semantics_for_lower_target(target)`.
+    pub fn register_with_platform_semantics(
+        &mut self,
+        name: impl Into<String>,
+        kit: impl Kit + 'static,
+        target: &str,
+        fixtures_path: PathBuf,
+    ) {
+        self.register(
+            name,
+            kit,
+            ConformanceDeclaration::Carrier {
+                fixtures_path,
+                platform_semantics: platform_semantics_for_lower_target(target),
             },
         );
     }
