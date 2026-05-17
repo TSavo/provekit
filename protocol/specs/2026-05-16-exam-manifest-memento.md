@@ -1,6 +1,6 @@
 # ExamManifestMemento Normative Spec
 
-**Status:** v1.0.0 normative draft. Catalog entry to be appended in follow-up CI mint.
+**Status:** v1.1.0 normative draft. v1 manifests remain parseable for backward compatibility. Catalog entry to be appended in follow-up CI mint.
 **Date:** 2026-05-16
 **Author:** T Savo
 **Related:**
@@ -35,7 +35,7 @@ question boundary the trichotomy is:
 | refused | A gap or refusal memento exists for the question. |
 | open | No answer or refusal is recorded yet. |
 
-For v1.0.0 the manifest carries only the question set and each question's
+For v1.1.0 the manifest carries only the question set and each question's
 `expected_answer_shape`. Per-question `answered_at` and `refused_at` tracking is
 deferred to a separate `ExamCoverageMemento` family. This keeps manifest CIDs
 stable while coverage evolves.
@@ -58,22 +58,42 @@ exam-manifest-memento = {
     content: exam-manifest-content
   },
   metadata: {
-    schemaVersion: "provekit-exam-manifest/v1"
+    schemaVersion: exam-manifest-schema-version
   }
 }
 
+exam-manifest-schema-version =
+    "provekit-exam-manifest/v1.1" /
+    "provekit-exam-manifest/v1"
+
 exam-manifest-content = {
   concept_hub_version: tstr,
-  question_kinds:      [+ tstr],
+  question_kinds:      [+ question-kind],
   questions:           [+ exam-question]
 }
 
 exam-question = {
   concept:               tstr,
   expected_answer_shape: tstr,
-  kind:                  tstr,
+  kind:                  question-kind,
   parameters:            { * tstr => any }
 }
+
+question-kind = v1-1-question-kind / v1-question-kind
+
+v1-1-question-kind =
+    "concept-realization" /
+    "boundary-realization" /
+    "boundary-tag" /
+    "sort-classification" /
+    "effect-classification" /
+    "morphism" /
+    "composition"
+
+v1-question-kind =
+    "realization" /
+    "sort" /
+    "effect"
 ```
 
 Objects use alphabetical JCS key order per
@@ -82,14 +102,19 @@ consumers MUST canonicalize before hashing or signature verification.
 
 ## §2 The Question-Kind Enum
 
-The v1.0.0 canonical labels are:
+The v1.1 canonical labels are:
 
-- `morphism`
-- `realization`
-- `sort`
-- `effect`
+- `concept-realization`
+- `boundary-realization`
 - `boundary-tag`
+- `sort-classification`
+- `effect-classification`
+- `morphism`
 - `composition`
+
+The v1 labels `realization`, `sort`, and `effect` remain parseable only when
+`metadata.schemaVersion` is `provekit-exam-manifest/v1`. v1.1 producers MUST
+emit the canonical labels above and MUST NOT emit the v1 labels.
 
 The enum is open per PEP 1.7.0 §2.1. Shape-level validators accept unknown
 kinds. The consumer that receives an unknown kind decides whether to refuse it,
@@ -98,14 +123,103 @@ manifest shape.
 
 ## §3 Per-Question Parameters Schema Per Kind
 
-| Kind | Parameters | Question |
-| --- | --- | --- |
-| `morphism` | `{from_language: tstr}` | How does `from_language` express the concept? |
-| `realization` | `{target_language: tstr, target_library: tstr}` | How does `target_language` render the concept via `target_library`? |
-| `sort` | `{language: tstr, language_type: tstr}` | How does the language's `language_type` map to the concept's sort? |
-| `effect` | `{language: tstr, effect_signature: tstr}` | How does the language realize the concept's effect signature? |
-| `boundary-tag` | `{library: tstr, api: tstr, target_concept: tstr}` | Does the library's `api` bind to `target_concept`? |
-| `composition` | `{language: tstr, composition_name: tstr}` | How does the language realize the composition pattern? |
+The envelope keeps `parameters` as an open map for forward compatibility, but
+v1.1 producers MUST use the per-kind schemas below. `expected_answer_shape`
+names the memento family that answers the question.
+
+### §3.1 `concept-realization`
+
+Question: for this `(concept, language)` pair, is there a realization tag, which
+tag kind is it, and what data is needed to emit it?
+
+```cddl
+concept-realization-parameters = {
+  language: tstr
+}
+
+realization-tag-kind =
+    "first-class" /
+    "composition" /
+    "boundary" /
+    "sugar-carrier"
+```
+
+Expected answer shape: `RealizationMemento`. The answer carries the tag-kind
+enum above and tag-kind-specific data. This replaces the v1 cross-product
+`realization` question.
+
+### §3.2 `boundary-realization`
+
+Question: for this `(boundary contract, target language, target library)` tuple,
+how does the native library realize the boundary contract?
+
+```cddl
+boundary-realization-parameters = {
+  target_language:       tstr,
+  target_library:        tstr,
+  boundary_contract_cid: cid
+}
+```
+
+Expected answer shape: `BoundaryRealizationMemento`. A v1.1 producer MUST only
+emit this question when `target_library` is native to `target_language`; it MUST
+not create cross-product questions for libraries from other languages.
+
+### §3.3 `boundary-tag`
+
+Question: does the library API bind to the target boundary contract?
+
+```cddl
+boundary-tag-parameters = {
+  library:                  tstr,
+  api:                      tstr,
+  target_boundary_contract: cid
+}
+```
+
+Expected answer shape: `BoundaryTagMemento`.
+
+### §3.4 `sort-classification`
+
+Question: how does the language classify the concept sort?
+
+```cddl
+sort-classification-parameters = {
+  language: tstr
+}
+```
+
+Expected answer shape: `SortMorphismMemento`.
+
+### §3.5 `effect-classification`
+
+Question: how does the language classify the concept effect category?
+
+```cddl
+effect-classification-parameters = {
+  language: tstr
+}
+```
+
+Expected answer shape: `EffectSignatureMemento`.
+
+### §3.6 `morphism`
+
+Question: how does `from_language` express the concept?
+
+```cddl
+morphism-parameters = {
+  from_language: tstr
+}
+```
+
+Expected answer shape: `MorphismMemento`.
+
+### §3.7 `composition`
+
+`composition` is reserved in the v1.1 enum for compatibility with the substrate
+question taxonomy, but composition questions are deferred to v2.0. v1.1
+producers MUST emit zero questions whose `kind` is `composition`.
 
 For unknown kinds, `parameters` remains an open map. The consumer that decides
 whether to refuse the kind also decides the parameters schema it understands.
@@ -133,7 +247,7 @@ the standard envelope pattern:
 ```text
 cid_input = JCS({
   "content":  <exam-manifest-content with sorted arrays>,
-  "metadata": {"schemaVersion": "provekit-exam-manifest/v1"}
+  "metadata": {"schemaVersion": "provekit-exam-manifest/v1.1"}
 })
 cid = "blake3-512:" ++ hex(BLAKE3-512(cid_input))
 ```
@@ -174,12 +288,12 @@ working_dir = "<optional path relative to workspace root>"
 
 [capabilities]
 kind = "exam-manifest"
-exam_manifest_schema_version = "provekit-exam-manifest/v1"
+exam_manifest_schema_version = "provekit-exam-manifest/v1.1"
 ```
 
 A runtime MAY compile in a default built-in `exam-manifest` plugin per PEP
 1.7.0 §0.1 "a built-in default is still a memento at a fixed declared CID."
-Substrate v1.0.0 ships a built-in that loads manifest JSON from a local file
+Substrate v1.1.0 ships a built-in that loads manifest JSON from a local file
 path or from a catalog CID lookup; third-party plugins MAY emit manifests via
 JSON-RPC.
 
@@ -190,27 +304,64 @@ of this spec.
 
 ## §8 Versioning
 
-`schemaVersion` is `provekit-exam-manifest/v1`. Future versions such as `/v2`
-are new schemas with their own CIDs. Backward compatibility commitments follow
-`2026-04-30-protocol-versioning.md`.
+`schemaVersion` is `provekit-exam-manifest/v1.1` for current manifests. The
+previous `provekit-exam-manifest/v1` format remains parseable for backward
+compatibility, but v1.1 producers MUST emit the refined v1.1 question kinds.
+Future versions such as `/v2` are new schemas with their own CIDs. Backward
+compatibility commitments follow `2026-04-30-protocol-versioning.md`.
 
 ## §9 Trichotomy At The Question Boundary
 
 | Outcome | Condition |
 | --- | --- |
-| `exact` (answered) | A morphism, realization, sort, effect, boundary-tag, or composition memento exists in the catalog with byte-identical signature to the question's `parameters` and `expected_answer_shape`. The catalog index or audit tool decides this. |
+| `exact` (answered) | A morphism, concept-realization, boundary-realization, boundary-tag, sort-classification, effect-classification, or future composition memento exists in the catalog with byte-identical signature to the question's `parameters` and `expected_answer_shape`. The catalog index or audit tool decides this. |
 | `loudly-bounded-lossy` (answered with characterized divergence) | The answer memento exists but carries a non-empty `loss_record_contribution` per `2026-05-14-transport-gap-and-partial-morphism-protocol.md`. |
-| `refuse` | The answer memento does not exist, and a `TransportGapMemento` exists in `concept-shapes/gaps/` citing this question in future issue #1106, or no gap record exists yet. For v1.0.0, open is the default; cited refusal is the loud refusal. |
+| `refuse` | The answer memento does not exist, and a `TransportGapMemento` exists in `concept-shapes/gaps/` citing this question in future issue #1106, or no gap record exists yet. For v1.1.0, open is the default; cited refusal is the loud refusal. |
 
 The manifest itself does not decide which state applies. It only gives every
 consumer the same question identity to cite.
 
-## §10 Out Of Scope For v1.0.0
+## §10 Out Of Scope For v1.1.0
 
 - `ExamCoverageMemento` and per-question `answered_at` or `refused_at` tracking. This is decoupled per architect ruling; the manifest carries only the question set without coverage state.
 - Cross-manifest translation mementos. Federation handshake refuses on CID mismatch; explicit translation is future work.
 - Auto-generation of manifest entries from concept hub shape specs. The generator tool is issue #1105; this spec describes only the shape the generator must produce.
 - Per-question discharge tracking. Each answer's refinement obligation discharge is tracked via existing `catalog/receipts/`; the manifest only references receipt CIDs once answers are minted, via the future `ExamCoverageMemento` family.
+- Composition question emission. The `composition` label is reserved, but v1.1 producers emit no composition questions. The parameter contract is deferred to v2.0.
+
+## §11 Schema v1.1 Amendment
+
+This amendment follows `docs/plans/2026-05-17-realization-tag-kinds-and-marketplace-ruling.md`.
+
+R11 narrows the exam manifest to structural substrate coverage. The manifest
+asks one `concept-realization` question per `(concept, language)` pair. Vendor
+specific sugar dictionaries, witness policy, and IDE rendering stay outside the
+manifest and remain plugin or consumer concerns.
+
+R12 moves the realization tag kind into the answer. `RealizationMemento` is the
+tagged answer shape for `concept-realization`, with tag kinds `first-class`,
+`composition`, `boundary`, and `sugar-carrier`. The manifest no longer fans out
+`realization` questions across every `(target_language, target_library)` pair.
+
+The `schemaVersion` for current manifests is `provekit-exam-manifest/v1.1`.
+Consumers that already parse `provekit-exam-manifest/v1` MUST continue to parse
+that version for backward compatibility, but v1 producers and v1.1 producers
+produce different manifest CIDs because metadata participates in the CID input.
+
+The narrowed v1.1 question categories are:
+
+- `concept-realization`: per `(concept, language)`; parameters `{language: tstr}`; answer shape `RealizationMemento`.
+- `boundary-realization`: per `(boundary contract, target language, target library)`; parameters `{target_language: tstr, target_library: tstr, boundary_contract_cid: cid}`; answer shape `BoundaryRealizationMemento`.
+- `boundary-tag`: per `(library, api, target boundary contract)`; parameters `{library: tstr, api: tstr, target_boundary_contract: cid}`; answer shape `BoundaryTagMemento`.
+- `sort-classification`: per `(sort, language)`; parameters `{language: tstr}`; answer shape `SortMorphismMemento`.
+- `effect-classification`: per `(effect category, language)`; parameters `{language: tstr}`; answer shape `EffectSignatureMemento`.
+- `morphism`: per `(concept, language)`; parameters `{from_language: tstr}`; answer shape `MorphismMemento`.
+- `composition`: reserved for v2.0; v1.1 emits no composition questions.
+
+`boundary-realization` replaces the boundary-flavored subset of v1
+cross-product `realization` questions. A v1.1 producer MUST only emit a
+`boundary-realization` question when the target library is native to the target
+language and the question cites the boundary contract by CID.
 
 ## Closing Citations
 
