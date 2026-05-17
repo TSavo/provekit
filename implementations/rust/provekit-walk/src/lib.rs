@@ -30,6 +30,7 @@ pub mod llbc_try;
 pub mod locus;
 pub mod loops_and_exceptions;
 pub mod marriage;
+pub mod platform_semantics;
 pub mod shadow;
 pub mod signature;
 pub mod sort_translate;

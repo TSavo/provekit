@@ -2111,6 +2111,7 @@ name = "provekit-realize-rust-core"
 version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
+ "provekit-ir-types",
  "serde",
  "serde_json",
 ]
