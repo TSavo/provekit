@@ -325,6 +325,12 @@
       "name": "morphism:zig:decl:to:concept:decl",
       "path": "algorithms/morphism:zig:decl:to:concept:decl.blake3-512:3285d7ec2e6a6c6ee13181d0c3fa4e2a8bb5785f4cb0ffa4efa29cadafbbb62e4edaa02a3fb677f647fcf96af5c4ab1a54e692eef7dec1a961a2e7e4b25b1049.json"
     },
+    "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc": {
+      "cid": "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc",
+      "kind": "exam",
+      "name": "exam-manifest-v1.1",
+      "path": "exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+    },
     "blake3-512:343b1f9faa98218467d810e0a2bb1b1eebeaf921c71a1bc52141f885220afff482c631c52e2157a6067640f4830f928add53ef7aa0386c6a27ee3c8bab6dc353": {
       "cid": "blake3-512:343b1f9faa98218467d810e0a2bb1b1eebeaf921c71a1bc52141f885220afff482c631c52e2157a6067640f4830f928add53ef7aa0386c6a27ee3c8bab6dc353",
       "kind": "algorithm",
