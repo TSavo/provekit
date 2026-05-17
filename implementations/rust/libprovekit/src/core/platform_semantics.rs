@@ -7,6 +7,13 @@ pub mod java;
 pub mod python_lift_source;
 pub mod python_realize_core;
 
+mod c_realize_core {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../c/provekit-realize-c-core/platform_semantics.rs"
+    ));
+}
+
 /// Returns the PlatformSemanticsDeclaration for the given lower-target language,
 /// or None when no kit has declared semantics for that target.
 ///
@@ -29,6 +36,7 @@ pub fn platform_semantics_for_lower_target(target: &str) -> Option<PlatformSeman
             })
         }
         "java" => Some(java::declaration()),
+        "c" => Some(c_realize_core::declaration()),
         _ => None,
     }
 }
