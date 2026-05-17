@@ -1,0 +1,18 @@
+{
+  "name": "recursive_factorial",
+  "original_source": "original_source.java",
+  "original_main_class": "RecursiveFactorial",
+  "declared_test_inputs": [
+    ["5"]
+  ],
+  "expected_output": [
+    "120\n"
+  ],
+  "emission": {
+    "function": "factorial",
+    "params": ["n"],
+    "param_types": ["i32"],
+    "return_type": "i32",
+    "concept_name": "concept:recursive-factorial"
+  }
+}
