@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod realization_tags;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Declaration {
