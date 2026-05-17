@@ -142,13 +142,18 @@ pub fn compute_registry_cid(header: &PluginRegistryMementoHeader) -> String {
         .map(|s| Value::string(s.clone()))
         .collect();
 
-    // JCS key order: built_in_count, failures, kind, load_order, loaded,
-    //                runtime_protocol_versions, schemaVersion, sealed_at
-    let input_v = Value::object([
-        (
-            "built_in_count",
-            Value::integer(header.built_in_count as i64),
-        ),
+    let mut fields = vec![(
+        "built_in_count",
+        Value::integer(header.built_in_count as i64),
+    )];
+    if let Some(cid) = &header.exam_manifest_cid {
+        fields.push(("exam_manifest_cid", Value::string(cid.clone())));
+    }
+    if let Some(cids) = &header.exam_manifest_set {
+        let cids_v: Vec<Arc<Value>> = cids.iter().map(|cid| Value::string(cid.clone())).collect();
+        fields.push(("exam_manifest_set", Value::array(cids_v)));
+    }
+    fields.extend([
         ("failures", Value::array(failures_v)),
         ("kind", Value::string("plugin-registry".to_string())),
         ("load_order", Value::array(load_order_v)),
@@ -157,6 +162,7 @@ pub fn compute_registry_cid(header: &PluginRegistryMementoHeader) -> String {
         ("schemaVersion", Value::string("1".to_string())),
         ("sealed_at", Value::string(header.sealed_at.clone())),
     ]);
+    let input_v = Value::object(fields);
 
     blake3_512_of(encode_jcs(&input_v).as_bytes())
 }
@@ -169,7 +175,7 @@ mod tests {
     #[test]
     fn cid_elides_cid_field() {
         // Two headers identical except one has cid="something" and the other has
-        // cid="something-else" — they MUST produce the same CID because `cid`
+        // cid="something-else" - they MUST produce the same CID because `cid`
         // is not part of the input.
         let h1 = PluginHeader {
             cid: "blake3-512:aaaaaa".to_string(),

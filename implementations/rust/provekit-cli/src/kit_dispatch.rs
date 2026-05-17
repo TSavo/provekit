@@ -48,7 +48,10 @@ pub use libprovekit::core::RealizeContractWitness;
 use libprovekit::core::RealizeTransport;
 pub use libprovekit::core::{RealizeContractPayload, RealizeRequest, RealizedSource};
 use libprovekit::ExamManifestKit;
-use provekit_ir_types::ExamManifestMemento;
+use provekit_ir_types::{Cid, ExamManifestMemento};
+use provekit_plugin_loader::{PluginRegistry, PluginRegistryMemento};
+
+use crate::project_config::read_project_config;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DispatchRealizeTransport;
@@ -1014,6 +1017,121 @@ fn java_home_from_maven() -> Option<String> {
 const EXAM_MANIFEST_KIND: &str = "exam-manifest";
 const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1";
 const PEP_1_7_0: &str = "pep/1.7.0";
+pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:0e012db4ce35b235b8482344795ccbe8bccad51522825b5c495a862648736936497b11a940cf0ba9170ee6202849e9a8dc9eca5cb3021261ffa2f4ac4df6edc1";
+#[allow(dead_code)]
+pub const EXAM_MANIFEST_MISMATCH_REASON: &str = "exam-manifest-mismatch";
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KitDispatchError {
+    ExamManifestMismatch {
+        local_manifest_cid: Cid,
+        remote_manifest_cid: Cid,
+    },
+}
+
+#[allow(dead_code)]
+impl KitDispatchError {
+    pub fn refused_reason(&self) -> &'static str {
+        match self {
+            Self::ExamManifestMismatch { .. } => EXAM_MANIFEST_MISMATCH_REASON,
+        }
+    }
+
+    pub fn refusal_payload(&self) -> Value {
+        match self {
+            Self::ExamManifestMismatch {
+                local_manifest_cid,
+                remote_manifest_cid,
+            } => json!({
+                "refused_reason": EXAM_MANIFEST_MISMATCH_REASON,
+                "local_manifest_cid": local_manifest_cid,
+                "remote_manifest_cid": remote_manifest_cid,
+            }),
+        }
+    }
+}
+
+impl std::fmt::Display for KitDispatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExamManifestMismatch {
+                local_manifest_cid,
+                remote_manifest_cid,
+            } => write!(
+                f,
+                "{}: local_manifest_cid={}, remote_manifest_cid={}",
+                EXAM_MANIFEST_MISMATCH_REASON, local_manifest_cid, remote_manifest_cid
+            ),
+        }
+    }
+}
+
+impl std::error::Error for KitDispatchError {}
+
+pub fn configured_exam_manifest_cid(project_root: &Path) -> Cid {
+    read_project_config(project_root)
+        .exam_manifest_cid
+        .filter(|cid| !cid.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_EXAM_MANIFEST_CID.to_string())
+}
+
+#[allow(dead_code)]
+pub fn seal_plugin_registry_for_project(
+    registry: &PluginRegistry,
+    project_root: &Path,
+    sealed_at: &str,
+) -> PluginRegistryMemento {
+    registry.emit_registry_memento_with_exam_manifest(
+        sealed_at,
+        Some(configured_exam_manifest_cid(project_root)),
+        None,
+    )
+}
+
+#[allow(dead_code)]
+pub fn federate_plugin_registries(
+    local: &PluginRegistryMemento,
+    remote: &PluginRegistryMemento,
+) -> Result<(), KitDispatchError> {
+    let local_cids = registry_exam_manifest_cids(local);
+    let remote_cids = registry_exam_manifest_cids(remote);
+    if local_cids.iter().any(|cid| remote_cids.contains(cid)) {
+        return Ok(());
+    }
+
+    Err(KitDispatchError::ExamManifestMismatch {
+        local_manifest_cid: registry_primary_exam_manifest_cid(local),
+        remote_manifest_cid: registry_primary_exam_manifest_cid(remote),
+    })
+}
+
+#[allow(dead_code)]
+fn registry_exam_manifest_cids(registry: &PluginRegistryMemento) -> Vec<Cid> {
+    let mut cids = registry
+        .header
+        .exam_manifest_set
+        .clone()
+        .unwrap_or_default();
+    if let Some(cid) = &registry.header.exam_manifest_cid {
+        cids.push(cid.clone());
+    }
+    if cids.is_empty() {
+        cids.push(DEFAULT_EXAM_MANIFEST_CID.to_string());
+    }
+    cids.sort();
+    cids.dedup();
+    cids
+}
+
+#[allow(dead_code)]
+fn registry_primary_exam_manifest_cid(registry: &PluginRegistryMemento) -> Cid {
+    registry
+        .header
+        .exam_manifest_cid
+        .clone()
+        .unwrap_or_else(|| DEFAULT_EXAM_MANIFEST_CID.to_string())
+}
 
 pub fn dispatch_exam_manifest(
     workspace_root: &Path,
