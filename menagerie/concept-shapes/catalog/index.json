@@ -529,6 +529,12 @@
       "name": "concept:header-map",
       "path": "algorithms/concept:header-map.blake3-512:53cb0113c4211d9c326868d5901d0c7e699f4ae23078bea4de54086c1cd59e92ca2accbd5986db0643b7689ea57011e3ed33514614f3626d774fd5cbf011cab7.json"
     },
+    "blake3-512:5547389afa5ed083b214c84291b0961066aa38092700589af56008fdb6243b28dccc8b20d9c792b672bbf5bcbda6697188abe03d4bd5f4bece581af4ef3a6a1e": {
+      "cid": "blake3-512:5547389afa5ed083b214c84291b0961066aa38092700589af56008fdb6243b28dccc8b20d9c792b672bbf5bcbda6697188abe03d4bd5f4bece581af4ef3a6a1e",
+      "kind": "boundary-contract",
+      "name": "boundary:sql-postgres-dialect",
+      "path": "boundary-contracts/boundary:sql-postgres-dialect.blake3-512:5547389afa5ed083b214c84291b0961066aa38092700589af56008fdb6243b28dccc8b20d9c792b672bbf5bcbda6697188abe03d4bd5f4bece581af4ef3a6a1e.json"
+    },
     "blake3-512:55b135c3b1cab17826da928da0bbb36e6c6787f86cd37df9b844f38cca197f1fc0033051797c02a96b592129d19d073039280a0822c88235d36887d5d3747c3d": {
       "cid": "blake3-512:55b135c3b1cab17826da928da0bbb36e6c6787f86cd37df9b844f38cca197f1fc0033051797c02a96b592129d19d073039280a0822c88235d36887d5d3747c3d",
       "kind": "algorithm",
@@ -672,6 +678,12 @@
       "kind": "algorithm",
       "name": "morphism:java:mod:to:concept:mod",
       "path": "algorithms/morphism:java:mod:to:concept:mod.blake3-512:71afcdf68b5858c63ff59bb35f4f4c57650bf1ab1bb87f124e5a50f354f50677b139cfce60dba0a86a81974e6215d999a8316fda968b39a718faa18e372fcfb0.json"
+    },
+    "blake3-512:71c8906cd86b11b6a415ae10977cf3405ec2c9b40ebe54c7ec1588b2d4b5315be44645bf8915e2ea48cbf30bb477a5504fd35528cae381f219369454e8b508b3": {
+      "cid": "blake3-512:71c8906cd86b11b6a415ae10977cf3405ec2c9b40ebe54c7ec1588b2d4b5315be44645bf8915e2ea48cbf30bb477a5504fd35528cae381f219369454e8b508b3",
+      "kind": "boundary-contract",
+      "name": "boundary:http-2",
+      "path": "boundary-contracts/boundary:http-2.blake3-512:71c8906cd86b11b6a415ae10977cf3405ec2c9b40ebe54c7ec1588b2d4b5315be44645bf8915e2ea48cbf30bb477a5504fd35528cae381f219369454e8b508b3.json"
     },
     "blake3-512:724b3cc974ead7cb2421e9aa308ce2686fe7330ba65cb964f3c23d91eacf194d2d07a14e627112830261704d85398fd3f285f1e9891207f22e0348f2e44da7a1": {
       "cid": "blake3-512:724b3cc974ead7cb2421e9aa308ce2686fe7330ba65cb964f3c23d91eacf194d2d07a14e627112830261704d85398fd3f285f1e9891207f22e0348f2e44da7a1",
@@ -1021,6 +1033,12 @@
       "name": "morphism:zig:skip:to:concept:skip",
       "path": "algorithms/morphism:zig:skip:to:concept:skip.blake3-512:ab9de214aecd2c893d3f9fb3a21ca0486d5e2c7a9a184d6c2b021ec5977aeb2972f2afa0bbab0e12fc56d91f188443cb1423c04cc2e9936aca56ee3cc9dd7ca7.json"
     },
+    "blake3-512:ac56f299fbd4334f4c2570ada3054fb04348b54a9ea9ea1e5f7c44d4d7bef80951def88b70f88fa3fc7d2aaf2b64a10862c49248e43c2f732a4f451fbef810be": {
+      "cid": "blake3-512:ac56f299fbd4334f4c2570ada3054fb04348b54a9ea9ea1e5f7c44d4d7bef80951def88b70f88fa3fc7d2aaf2b64a10862c49248e43c2f732a4f451fbef810be",
+      "kind": "boundary-contract",
+      "name": "boundary:sql-92",
+      "path": "boundary-contracts/boundary:sql-92.blake3-512:ac56f299fbd4334f4c2570ada3054fb04348b54a9ea9ea1e5f7c44d4d7bef80951def88b70f88fa3fc7d2aaf2b64a10862c49248e43c2f732a4f451fbef810be.json"
+    },
     "blake3-512:ad958847b50cf07ddbb92d85ae488a5f983d5619e108476b42e519174cfcce883ecd637544a372b946bb45a1c22893c710bc9b08ea0569ad0e035b3babb6a409": {
       "cid": "blake3-512:ad958847b50cf07ddbb92d85ae488a5f983d5619e108476b42e519174cfcce883ecd637544a372b946bb45a1c22893c710bc9b08ea0569ad0e035b3babb6a409",
       "kind": "algorithm",
@@ -1345,6 +1363,12 @@
       "name": "morphism:go:mul:to:concept:mul",
       "path": "algorithms/morphism:go:mul:to:concept:mul.blake3-512:d93c6bc18e96a75e2f7107373ff27fdab1be6d34da2901cc98663298f37467609cff5302ad80cf95955ec84d9f51ccca414ea0b8d62c7f4f6bbdc2d1c21c669f.json"
     },
+    "blake3-512:da9fcaa9f648b2fbefa8f1575b57b11be186a6f7e7e03a28439325289510b3bcf3c286dc50b57bf8f27c8893828a1b35b50ec5c7950aed7e4bc3df869d5f25f1": {
+      "cid": "blake3-512:da9fcaa9f648b2fbefa8f1575b57b11be186a6f7e7e03a28439325289510b3bcf3c286dc50b57bf8f27c8893828a1b35b50ec5c7950aed7e4bc3df869d5f25f1",
+      "kind": "boundary-contract",
+      "name": "boundary:http-1.1",
+      "path": "boundary-contracts/boundary:http-1.1.blake3-512:da9fcaa9f648b2fbefa8f1575b57b11be186a6f7e7e03a28439325289510b3bcf3c286dc50b57bf8f27c8893828a1b35b50ec5c7950aed7e4bc3df869d5f25f1.json"
+    },
     "blake3-512:dbbf7584e0605449dbeaf2b2db56240949b9169d595aac799a901142a63eab2da9fde2e2274903b46c67ef6d8bcf64c4d1e3c8fb9617161a2a9f5bfe1b010cbf": {
       "cid": "blake3-512:dbbf7584e0605449dbeaf2b2db56240949b9169d595aac799a901142a63eab2da9fde2e2274903b46c67ef6d8bcf64c4d1e3c8fb9617161a2a9f5bfe1b010cbf",
       "kind": "algorithm",
@@ -1428,6 +1452,12 @@
       "kind": "algorithm",
       "name": "morphism:c11:continue:to:concept:continue",
       "path": "algorithms/morphism:c11:continue:to:concept:continue.blake3-512:e85e0d9daa8c4cdc3c3f1c9cde1bf30fb81fb4473d0b1f1b4b9fc332674bba2f1bbed64fd7faaa12b405e0575c70aeb9cd0bdab37b2dc75e57642de85cfc4f36.json"
+    },
+    "blake3-512:e89ae8e09e3c97a5464e556d5c7732ad706dfcdf0265153caaeea11b9f535f57f1cb38b873f31a0cbdf6f6ee10bcfc0e2a4ffe67221bbeca08b42b32803c8b46": {
+      "cid": "blake3-512:e89ae8e09e3c97a5464e556d5c7732ad706dfcdf0265153caaeea11b9f535f57f1cb38b873f31a0cbdf6f6ee10bcfc0e2a4ffe67221bbeca08b42b32803c8b46",
+      "kind": "boundary-contract",
+      "name": "boundary:sql-sqlite-dialect",
+      "path": "boundary-contracts/boundary:sql-sqlite-dialect.blake3-512:e89ae8e09e3c97a5464e556d5c7732ad706dfcdf0265153caaeea11b9f535f57f1cb38b873f31a0cbdf6f6ee10bcfc0e2a4ffe67221bbeca08b42b32803c8b46.json"
     },
     "blake3-512:e9dbae2d71faa58b3d1a03870a43948ea4e83f3518398e6ab000f07e7692b338b868230a66dea086e81d8a839e58e03f68c81aef11fa02391ce42a8d94fa4fba": {
       "cid": "blake3-512:e9dbae2d71faa58b3d1a03870a43948ea4e83f3518398e6ab000f07e7692b338b868230a66dea086e81d8a839e58e03f68c81aef11fa02391ce42a8d94fa4fba",
