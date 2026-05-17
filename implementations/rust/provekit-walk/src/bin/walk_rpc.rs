@@ -2183,11 +2183,15 @@ pub fn positive_id(x: i64) -> i64 {
         let payload_bytes =
             libprovekit::canonical::serializable_jcs(&payload).expect("payload canonicalizes");
 
+        // `fn_name` is allowed inside gap-record subtrees because TransportGapMemento's
+        // schema (see protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md)
+        // names the gap by its own fn_name identifier (e.g., "gap:unknown:bind:...:wp-rule").
+        // That is legitimate citation, not a contract-attr leak. Walk the JSON tree and
+        // forbid `fn_name` everywhere EXCEPT under a `gapRecords` ancestor.
         for forbidden in [
             "attr_pre",
             "attr_post",
             "concept_annotation",
-            "fn_name",
             "operand_bindings",
             "source_function_name",
         ] {
@@ -2196,6 +2200,9 @@ pub fn positive_id(x: i64) -> i64 {
                 "bind payload hashed bytes contain forbidden field `{forbidden}`: {payload_bytes}"
             );
         }
+        let payload_json: Value =
+            serde_json::from_str(&payload_bytes).expect("payload bytes parse back to JSON");
+        assert_no_fn_name_outside_gap_records(&payload_json, &[]);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -2353,6 +2360,31 @@ pub fn bitwise_not() -> i64 {
                 !object.contains_key(forbidden),
                 "bind lift entry contains forbidden field `{forbidden}` in {value:#?}"
             );
+        }
+    }
+
+    fn assert_no_fn_name_outside_gap_records(value: &Value, path: &[&str]) {
+        let under_gap_records = path.iter().any(|segment| *segment == "gapRecords");
+        match value {
+            Value::Object(map) => {
+                if !under_gap_records {
+                    assert!(
+                        !map.contains_key("fn_name"),
+                        "bind payload contains forbidden `fn_name` outside gap-record context at path {path:?}: {value:#?}"
+                    );
+                }
+                for (key, child) in map {
+                    let mut next_path: Vec<&str> = path.to_vec();
+                    next_path.push(key.as_str());
+                    assert_no_fn_name_outside_gap_records(child, &next_path);
+                }
+            }
+            Value::Array(items) => {
+                for child in items {
+                    assert_no_fn_name_outside_gap_records(child, path);
+                }
+            }
+            _ => {}
         }
     }
 
