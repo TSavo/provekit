@@ -736,6 +736,377 @@ pub struct RealizationDesugaringMemento {
     pub refines: Option<String>,
 }
 
+/// A first-class language-native concept realization.
+///
+/// Locked JCS key order: kind, surface_locator, syntactic_pattern.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FirstClassRealization {
+    #[serde(rename = "syntactic_pattern")]
+    pub syntactic_pattern: String,
+    #[serde(rename = "surface_locator")]
+    pub surface_locator: String,
+}
+
+/// A realization expressed as a content-addressed concept composition tree.
+///
+/// Locked JCS key order: composition_tree_cid, kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionRealization {
+    #[serde(rename = "composition_tree_cid")]
+    pub composition_tree_cid: String,
+}
+
+/// A library or API boundary realization.
+///
+/// Locked JCS key order: api, boundary_contract_cid, kind, library.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundaryRealization {
+    pub library: String,
+    pub api: String,
+    #[serde(rename = "boundary_contract_cid")]
+    pub boundary_contract_cid: String,
+}
+
+/// A realization carried implicitly by concept-citation comment sugar.
+///
+/// Locked JCS key order: kind.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SugarCarrierRealization {}
+
+/// Per-(concept, language) realization metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RealizationMemento {
+    FirstClass(FirstClassRealization),
+    Composition(CompositionRealization),
+    Boundary(BoundaryRealization),
+    SugarCarrier(SugarCarrierRealization),
+}
+
+impl Serialize for RealizationMemento {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+
+        match self {
+            RealizationMemento::FirstClass(realization) => {
+                let mut map = serializer.serialize_map(Some(3))?;
+                map.serialize_entry("kind", "first-class")?;
+                map.serialize_entry("surface_locator", &realization.surface_locator)?;
+                map.serialize_entry("syntactic_pattern", &realization.syntactic_pattern)?;
+                map.end()
+            }
+            RealizationMemento::Composition(realization) => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("composition_tree_cid", &realization.composition_tree_cid)?;
+                map.serialize_entry("kind", "composition")?;
+                map.end()
+            }
+            RealizationMemento::Boundary(realization) => {
+                let mut map = serializer.serialize_map(Some(4))?;
+                map.serialize_entry("api", &realization.api)?;
+                map.serialize_entry("boundary_contract_cid", &realization.boundary_contract_cid)?;
+                map.serialize_entry("kind", "boundary")?;
+                map.serialize_entry("library", &realization.library)?;
+                map.end()
+            }
+            RealizationMemento::SugarCarrier(_) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("kind", "sugar-carrier")?;
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RealizationMemento {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        realization_memento_from_json(value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RealizationCanonicalizationError {
+    message: String,
+}
+
+impl RealizationCanonicalizationError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for RealizationCanonicalizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RealizationCanonicalizationError {}
+
+impl From<serde_json::Error> for RealizationCanonicalizationError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::new(err.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RealizationValidationError {
+    EmptySyntacticPattern,
+    InvalidCompositionTreeCid { composition_tree_cid: String },
+    EmptyBoundaryLibrary,
+    EmptyBoundaryApi,
+    EmptyBoundaryContractCid,
+    InvalidBoundaryContractCid { boundary_contract_cid: String },
+}
+
+impl std::fmt::Display for RealizationValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptySyntacticPattern => {
+                f.write_str("RealizationMemento: syntactic_pattern must be non-empty")
+            }
+            Self::InvalidCompositionTreeCid {
+                composition_tree_cid,
+            } => write!(
+                f,
+                "RealizationMemento: composition_tree_cid `{composition_tree_cid}` is not a valid blake3-512 CID"
+            ),
+            Self::EmptyBoundaryLibrary => {
+                f.write_str("RealizationMemento: library must be non-empty")
+            }
+            Self::EmptyBoundaryApi => {
+                f.write_str("RealizationMemento: api must be non-empty")
+            }
+            Self::EmptyBoundaryContractCid => {
+                f.write_str("RealizationMemento: boundary_contract_cid must be non-empty")
+            }
+            Self::InvalidBoundaryContractCid {
+                boundary_contract_cid,
+            } => write!(
+                f,
+                "RealizationMemento: boundary_contract_cid `{boundary_contract_cid}` is not a valid blake3-512 CID"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RealizationValidationError {}
+
+impl RealizationMemento {
+    pub fn to_jcs_string(&self) -> Result<String, RealizationCanonicalizationError> {
+        let json = serde_json::to_value(self)?;
+        let canonical = canonical_value_from_json(json);
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    pub fn recompute_cid(&self) -> Result<String, RealizationCanonicalizationError> {
+        let jcs = self.to_jcs_string()?;
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+
+    pub fn validate(&self) -> Result<(), RealizationValidationError> {
+        match self {
+            Self::FirstClass(realization) => {
+                if realization.syntactic_pattern.is_empty() {
+                    Err(RealizationValidationError::EmptySyntacticPattern)
+                } else {
+                    Ok(())
+                }
+            }
+            Self::Composition(realization) => {
+                if is_blake3_512_cid(&realization.composition_tree_cid) {
+                    Ok(())
+                } else {
+                    Err(RealizationValidationError::InvalidCompositionTreeCid {
+                        composition_tree_cid: realization.composition_tree_cid.clone(),
+                    })
+                }
+            }
+            Self::Boundary(realization) => {
+                if realization.library.is_empty() {
+                    return Err(RealizationValidationError::EmptyBoundaryLibrary);
+                }
+                if realization.api.is_empty() {
+                    return Err(RealizationValidationError::EmptyBoundaryApi);
+                }
+                if realization.boundary_contract_cid.is_empty() {
+                    return Err(RealizationValidationError::EmptyBoundaryContractCid);
+                }
+                if !is_blake3_512_cid(&realization.boundary_contract_cid) {
+                    return Err(RealizationValidationError::InvalidBoundaryContractCid {
+                        boundary_contract_cid: realization.boundary_contract_cid.clone(),
+                    });
+                }
+                Ok(())
+            }
+            Self::SugarCarrier(_) => Ok(()),
+        }
+    }
+}
+
+fn realization_memento_from_json(value: serde_json::Value) -> Result<RealizationMemento, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "RealizationMemento must deserialize from a JSON object".to_string())?;
+
+    if let Some(legacy_memento) = object.get("memento").and_then(serde_json::Value::as_object) {
+        return legacy_realization_from_object(legacy_memento, string_field(object, "cid"));
+    }
+
+    match object.get("kind").and_then(serde_json::Value::as_str) {
+        Some("first-class") => Ok(RealizationMemento::FirstClass(FirstClassRealization {
+            syntactic_pattern: required_string_field(object, "syntactic_pattern")?,
+            surface_locator: required_string_field(object, "surface_locator")?,
+        })),
+        Some("composition") => Ok(RealizationMemento::Composition(CompositionRealization {
+            composition_tree_cid: required_string_field(object, "composition_tree_cid")?,
+        })),
+        Some("boundary") => Ok(RealizationMemento::Boundary(BoundaryRealization {
+            library: required_string_field(object, "library")?,
+            api: required_string_field(object, "api")?,
+            boundary_contract_cid: required_string_field(object, "boundary_contract_cid")?,
+        })),
+        Some("sugar-carrier") => Ok(RealizationMemento::SugarCarrier(SugarCarrierRealization {})),
+        Some(_) | None => legacy_realization_from_object(object, string_field(object, "cid")),
+    }
+}
+
+fn legacy_realization_from_object(
+    object: &serde_json::Map<String, serde_json::Value>,
+    envelope_cid: Option<String>,
+) -> Result<RealizationMemento, String> {
+    if object.is_empty() {
+        return Ok(RealizationMemento::SugarCarrier(SugarCarrierRealization {}));
+    }
+
+    if let Some(composition_tree_cid) = first_string_field(
+        object,
+        &[
+            "composition_tree_cid",
+            "compositionTreeCid",
+            "composition_tree",
+        ],
+    ) {
+        return Ok(RealizationMemento::Composition(CompositionRealization {
+            composition_tree_cid,
+        }));
+    }
+
+    let library = first_string_field(
+        object,
+        &["library", "target_library", "target_lang", "source_lang"],
+    );
+    let api = first_string_field(object, &["api", "target_surface", "target_form", "fn_name"])
+        .or_else(|| nested_string_field(object, "morphism", "fn_name"))
+        .or_else(|| first_string_field(object, &["operator"]));
+    let boundary_contract_cid = first_valid_cid_field(
+        object,
+        &[
+            "boundary_contract_cid",
+            "boundaryContractCid",
+            "boundary_contract",
+            "contract_cid",
+            "cid",
+            "discharge_receipt",
+        ],
+    )
+    .or_else(|| envelope_cid.filter(|cid| is_blake3_512_cid(cid)));
+
+    if library.is_some() || api.is_some() || boundary_contract_cid.is_some() {
+        return Ok(RealizationMemento::Boundary(BoundaryRealization {
+            library: library.unwrap_or_else(|| "legacy-realization".to_string()),
+            api: api.unwrap_or_else(|| "legacy-realization".to_string()),
+            boundary_contract_cid: boundary_contract_cid.unwrap_or_default(),
+        }));
+    }
+
+    if let Some(syntactic_pattern) = first_string_field(
+        object,
+        &["syntactic_pattern", "syntactic_form", "syntactic-form"],
+    ) {
+        return Ok(RealizationMemento::FirstClass(FirstClassRealization {
+            syntactic_pattern,
+            surface_locator: first_string_field(
+                object,
+                &[
+                    "surface_locator",
+                    "surfaceLocator",
+                    "surface",
+                    "target_form",
+                ],
+            )
+            .unwrap_or_else(|| "expression".to_string()),
+        }));
+    }
+
+    if legacy_object_is_sugar_carrier(object) {
+        return Ok(RealizationMemento::SugarCarrier(SugarCarrierRealization {}));
+    }
+
+    Err("unrecognized RealizationMemento shape".to_string())
+}
+
+fn required_string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Result<String, String> {
+    string_field(object, field)
+        .ok_or_else(|| format!("RealizationMemento field `{field}` must be present as a string"))
+}
+
+fn string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &str,
+) -> Option<String> {
+    object
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+fn first_string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    fields: &[&str],
+) -> Option<String> {
+    fields.iter().find_map(|field| string_field(object, field))
+}
+
+fn nested_string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    object_field: &str,
+    nested_field: &str,
+) -> Option<String> {
+    object
+        .get(object_field)
+        .and_then(serde_json::Value::as_object)
+        .and_then(|nested| string_field(nested, nested_field))
+}
+
+fn first_valid_cid_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    fields: &[&str],
+) -> Option<String> {
+    fields
+        .iter()
+        .find_map(|field| string_field(object, field))
+        .filter(|cid| is_blake3_512_cid(cid))
+}
+
+fn legacy_object_is_sugar_carrier(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    object
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|kind| matches!(kind, "sugar-carrier" | "sugar_carrier"))
+}
+
 // ============================================================
 // End manual extension block -- abstraction layer (issue #71)
 // ============================================================
