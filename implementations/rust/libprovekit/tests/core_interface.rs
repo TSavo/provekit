@@ -1371,7 +1371,7 @@ fn dispatcher_returns_rust_platform_semantics_declaration() {
 
 #[test]
 fn dispatcher_still_returns_none_for_unclaimed_targets() {
-    for target in ["c", "unknown"] {
+    for target in ["unknown"] {
         assert_eq!(platform_semantics_for_lower_target(target), None);
     }
 }
@@ -1477,6 +1477,51 @@ fn dispatcher_returns_java_platform_semantics_declaration() {
         &kit_cid,
         &[("BitwiseSemantics", &twos_complement.cid)],
     );
+}
+
+#[test]
+fn dispatcher_returns_c_platform_semantics_declaration() {
+    let declaration = platform_semantics_for_lower_target("c")
+        .expect("c lower target declares platform semantics");
+    assert!(
+        !declaration.tags.is_empty(),
+        "c declaration must include per-op platform semantic tags"
+    );
+
+    let expected_dimensions = BTreeSet::from([
+        "ArithmeticOverflow".to_string(),
+        "BitwiseSemantics".to_string(),
+        "IntegerDivisionRounding".to_string(),
+        "NullSemantics".to_string(),
+        "ShiftMode".to_string(),
+    ]);
+
+    for tag in &declaration.tags {
+        assert_eq!(
+            tag.dimensions.keys().cloned().collect::<BTreeSet<_>>(),
+            expected_dimensions
+        );
+        assert_eq!(tag.cid, tag.recompute_cid());
+        for value_cid in tag.dimensions.values() {
+            assert!(value_cid.starts_with("blake3-512:"));
+            assert_eq!(value_cid.len(), "blake3-512:".len() + 128);
+        }
+    }
+
+    let op_cids = declaration
+        .tags
+        .iter()
+        .map(|tag| tag.op_cid.as_str())
+        .collect::<BTreeSet<_>>();
+    for required in [
+        "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468", // concept:add
+        "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839", // concept:div
+        "blake3-512:c90e3c159b25e4c4c7f9c899da5aa3ee048a548719ced7360f3e514450811096b21cd5473f22d7a05df088f92210bbc916e65970b9fa1e1511c193ed969f112b", // concept:shr
+        "blake3-512:9e96c2445bad6bb1e5a6f902ad7f733e3f4619829b9c0e232361fbf50b978c8332029212ed895762e604d1df009fce58848cda33524a697df798233eae30a14b", // concept:bitand
+        "blake3-512:93ff252a879bc061949fecdb9710a0a927b47f5104f5e628c7e0bd2477e3ea3515ebb2bc2794d9cc7c11c6ea16db511ff20a18c699bb94f7854e79b5e195f717", // concept:deref
+    ] {
+        assert!(op_cids.contains(required), "missing C semantics tag for {required}");
+    }
 }
 
 #[test]
