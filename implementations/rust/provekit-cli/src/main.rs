@@ -25,6 +25,7 @@ mod cmd_bind_migrate;
 mod cmd_ci;
 mod cmd_compose;
 mod cmd_dump;
+mod cmd_exam;
 mod cmd_fix;
 mod cmd_hash;
 mod cmd_implicate;
@@ -163,6 +164,8 @@ enum Cmd {
     /// Implements the eight-verb pipeline (paper 20 §9) against arbitrary user code.
     /// --rewrite={annotate,canonical,invisible} --mode={witness,emitter,monitor,gate} --target-language=<lang>
     Bind(cmd_bind::BindArgs),
+    /// Load and inspect substrate exam manifests.
+    Exam(cmd_exam::ExamArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -423,6 +426,7 @@ fn main() -> ExitCode {
         Cmd::Transport(a) | Cmd::Migrate(a) => cmd_transport::run(a),
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),
+        Cmd::Exam(a) => cmd_exam::run(a),
     };
     ExitCode::from(code)
 }

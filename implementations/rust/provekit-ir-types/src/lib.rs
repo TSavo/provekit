@@ -2791,6 +2791,375 @@ impl std::fmt::Display for PromotionDecisionInvariantError {
 
 impl std::error::Error for PromotionDecisionInvariantError {}
 
+// ============================================================
+// Manual extension: ExamManifestMemento family (issue #1104)
+// Source of truth:
+//   protocol/specs/2026-05-16-exam-manifest-memento.md
+//
+// The manifest is the stable question set for a concept hub version.
+// Coverage state is intentionally outside this family.
+// ============================================================
+
+pub const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1";
+
+/// Envelope layer for an `ExamManifestMemento`.
+///
+/// Locked JCS key order: declaredAt, signature, signer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExamManifestEnvelope {
+    #[serde(rename = "declaredAt")]
+    pub declared_at: String,
+    pub signature: String,
+    pub signer: String,
+}
+
+/// Header layer for an `ExamManifestMemento`.
+///
+/// Locked JCS key order: cid, content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExamManifestHeader {
+    /// DERIVED: BLAKE3-512 over JCS(metadata + content).
+    pub cid: String,
+    pub content: ExamManifestContent,
+}
+
+/// Metadata layer for an `ExamManifestMemento`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExamManifestMetadata {
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+}
+
+/// Content payload for an `ExamManifestMemento`.
+///
+/// Locked JCS key order: concept_hub_version, question_kinds, questions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExamManifestContent {
+    pub concept_hub_version: String,
+    pub question_kinds: Vec<String>,
+    pub questions: Vec<ExamQuestion>,
+}
+
+/// One canonical exam question.
+///
+/// Locked JCS key order: concept, expected_answer_shape, kind, parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExamQuestion {
+    pub concept: String,
+    pub expected_answer_shape: String,
+    pub kind: ExamQuestionKind,
+    pub parameters: serde_json::Value,
+}
+
+/// Exam question kind.
+///
+/// Wire format: a bare JSON string. The six v1 canonical labels are named
+/// variants; unknown labels round-trip through `Other(String)` so shape-level
+/// validators remain open.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum ExamQuestionKind {
+    Morphism,
+    Realization,
+    Sort,
+    Effect,
+    BoundaryTag,
+    Composition,
+    Other(String),
+}
+
+impl ExamQuestionKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Morphism => "morphism",
+            Self::Realization => "realization",
+            Self::Sort => "sort",
+            Self::Effect => "effect",
+            Self::BoundaryTag => "boundary-tag",
+            Self::Composition => "composition",
+            Self::Other(raw) => raw,
+        }
+    }
+}
+
+impl From<String> for ExamQuestionKind {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "morphism" => Self::Morphism,
+            "realization" => Self::Realization,
+            "sort" => Self::Sort,
+            "effect" => Self::Effect,
+            "boundary-tag" => Self::BoundaryTag,
+            "composition" => Self::Composition,
+            _ => Self::Other(s),
+        }
+    }
+}
+
+impl From<ExamQuestionKind> for String {
+    fn from(kind: ExamQuestionKind) -> String {
+        match kind {
+            ExamQuestionKind::Morphism => "morphism".to_string(),
+            ExamQuestionKind::Realization => "realization".to_string(),
+            ExamQuestionKind::Sort => "sort".to_string(),
+            ExamQuestionKind::Effect => "effect".to_string(),
+            ExamQuestionKind::BoundaryTag => "boundary-tag".to_string(),
+            ExamQuestionKind::Composition => "composition".to_string(),
+            ExamQuestionKind::Other(raw) => raw,
+        }
+    }
+}
+
+/// A content-addressed manifest of the canonical exam question set.
+///
+/// Locked JCS key order: envelope, header, metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExamManifestMemento {
+    pub envelope: ExamManifestEnvelope,
+    pub header: ExamManifestHeader,
+    pub metadata: ExamManifestMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExamManifestCanonicalizationError {
+    message: String,
+}
+
+impl ExamManifestCanonicalizationError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ExamManifestCanonicalizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ExamManifestCanonicalizationError {}
+
+impl From<serde_json::Error> for ExamManifestCanonicalizationError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::new(err.to_string())
+    }
+}
+
+impl From<PromotionDecisionCanonicalizationError> for ExamManifestCanonicalizationError {
+    fn from(err: PromotionDecisionCanonicalizationError) -> Self {
+        Self::new(err.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExamQuestionSortKey {
+    kind: String,
+    concept: String,
+    parameters_jcs: String,
+    expected_answer_shape: String,
+}
+
+impl Ord for ExamQuestionSortKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (
+            &self.kind,
+            &self.concept,
+            &self.parameters_jcs,
+            &self.expected_answer_shape,
+        )
+            .cmp(&(
+                &other.kind,
+                &other.concept,
+                &other.parameters_jcs,
+                &other.expected_answer_shape,
+            ))
+    }
+}
+
+impl PartialOrd for ExamQuestionSortKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl ExamManifestMemento {
+    /// Serialize the whole memento through the repo JCS encoder.
+    pub fn to_jcs_string(&self) -> Result<String, ExamManifestCanonicalizationError> {
+        let mut header = serde_json::Map::new();
+        header.insert(
+            "cid".to_string(),
+            serde_json::Value::String(self.header.cid.clone()),
+        );
+        header.insert("content".to_string(), self.normalized_content_value()?);
+
+        let mut value = serde_json::Map::new();
+        value.insert(
+            "envelope".to_string(),
+            serde_json::to_value(&self.envelope)?,
+        );
+        value.insert("header".to_string(), serde_json::Value::Object(header));
+        value.insert(
+            "metadata".to_string(),
+            serde_json::to_value(&self.metadata)?,
+        );
+
+        let canonical = serde_json_to_canonical_value(&serde_json::Value::Object(value))?;
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    /// JCS bytes hashed to derive `header.cid`.
+    pub fn cid_input_jcs_string(&self) -> Result<String, ExamManifestCanonicalizationError> {
+        let mut payload = serde_json::Map::new();
+        payload.insert("content".to_string(), self.normalized_content_value()?);
+        payload.insert(
+            "metadata".to_string(),
+            serde_json::to_value(&self.metadata)?,
+        );
+
+        let canonical = serde_json_to_canonical_value(&serde_json::Value::Object(payload))?;
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    /// Recompute `header.cid` from metadata + content.
+    pub fn recompute_header_cid(&self) -> Result<String, ExamManifestCanonicalizationError> {
+        let jcs = self.cid_input_jcs_string()?;
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+
+    /// Check shape-level invariants for loading an exam manifest.
+    pub fn validate(&self) -> Result<(), ExamManifestValidationError> {
+        if self.metadata.schema_version != EXAM_MANIFEST_SCHEMA_VERSION {
+            return Err(ExamManifestValidationError::InvalidSchemaVersion {
+                schema_version: self.metadata.schema_version.clone(),
+            });
+        }
+        if self.header.content.question_kinds.is_empty() {
+            return Err(ExamManifestValidationError::EmptyQuestionKinds);
+        }
+        if self.header.content.questions.is_empty() {
+            return Err(ExamManifestValidationError::EmptyQuestions);
+        }
+
+        for (index, question) in self.header.content.questions.iter().enumerate() {
+            if question.kind.as_str().is_empty() {
+                return Err(ExamManifestValidationError::EmptyQuestionKind { index });
+            }
+            if question.concept.is_empty() || !question.concept.starts_with("concept:") {
+                return Err(ExamManifestValidationError::InvalidConcept {
+                    index,
+                    concept: question.concept.clone(),
+                });
+            }
+            if question.expected_answer_shape.is_empty() {
+                return Err(ExamManifestValidationError::EmptyExpectedAnswerShape { index });
+            }
+            if !question.parameters.is_object() {
+                return Err(ExamManifestValidationError::ParametersNotObject { index });
+            }
+        }
+
+        Ok(())
+    }
+
+    fn normalized_content_value(
+        &self,
+    ) -> Result<serde_json::Value, ExamManifestCanonicalizationError> {
+        let mut question_kinds = self.header.content.question_kinds.clone();
+        question_kinds.sort();
+
+        let mut keyed_questions = Vec::with_capacity(self.header.content.questions.len());
+        for question in &self.header.content.questions {
+            let parameters = serde_json_to_canonical_value(&question.parameters)?;
+            let parameters_jcs = provekit_canonicalizer::encode_jcs(&parameters);
+            keyed_questions.push((
+                ExamQuestionSortKey {
+                    kind: question.kind.as_str().to_string(),
+                    concept: question.concept.clone(),
+                    parameters_jcs,
+                    expected_answer_shape: question.expected_answer_shape.clone(),
+                },
+                serde_json::to_value(question)?,
+            ));
+        }
+        keyed_questions.sort_by(|left, right| left.0.cmp(&right.0));
+
+        let mut content = serde_json::Map::new();
+        content.insert(
+            "concept_hub_version".to_string(),
+            serde_json::Value::String(self.header.content.concept_hub_version.clone()),
+        );
+        content.insert(
+            "question_kinds".to_string(),
+            serde_json::Value::Array(
+                question_kinds
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+        content.insert(
+            "questions".to_string(),
+            serde_json::Value::Array(
+                keyed_questions
+                    .into_iter()
+                    .map(|(_, question)| question)
+                    .collect(),
+            ),
+        );
+
+        Ok(serde_json::Value::Object(content))
+    }
+}
+
+/// Returned when an `ExamManifestMemento` violates load-time invariants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExamManifestValidationError {
+    InvalidSchemaVersion { schema_version: String },
+    EmptyQuestionKinds,
+    EmptyQuestions,
+    EmptyQuestionKind { index: usize },
+    InvalidConcept { index: usize, concept: String },
+    EmptyExpectedAnswerShape { index: usize },
+    ParametersNotObject { index: usize },
+}
+
+impl std::fmt::Display for ExamManifestValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidSchemaVersion { schema_version } => write!(
+                f,
+                "ExamManifestMemento: schemaVersion must be {EXAM_MANIFEST_SCHEMA_VERSION:?}, got {schema_version:?}"
+            ),
+            Self::EmptyQuestionKinds => f.write_str(
+                "ExamManifestMemento: question_kinds is empty, but at least one question kind is required",
+            ),
+            Self::EmptyQuestions => f.write_str(
+                "ExamManifestMemento: questions is empty, but an empty manifest is a manifest-layer refusal",
+            ),
+            Self::EmptyQuestionKind { index } => write!(
+                f,
+                "ExamManifestMemento: questions[{index}].kind is empty"
+            ),
+            Self::InvalidConcept { index, concept } => write!(
+                f,
+                "ExamManifestMemento: questions[{index}].concept must be non-empty and start with concept:, got {concept:?}"
+            ),
+            Self::EmptyExpectedAnswerShape { index } => write!(
+                f,
+                "ExamManifestMemento: questions[{index}].expected_answer_shape is empty"
+            ),
+            Self::ParametersNotObject { index } => write!(
+                f,
+                "ExamManifestMemento: questions[{index}].parameters must be an object"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ExamManifestValidationError {}
+
 fn serde_json_to_canonical_value(
     value: &serde_json::Value,
 ) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, PromotionDecisionCanonicalizationError> {

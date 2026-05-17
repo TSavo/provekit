@@ -6,6 +6,7 @@ pub mod compose;
 pub mod core;
 pub mod desugar;
 pub mod effect_propagation;
+pub mod exam_manifest;
 pub mod ffi;
 pub mod policy_profile_registry;
 pub mod promotion_decision_registry;
@@ -15,6 +16,7 @@ pub mod transport;
 pub mod witness_registry;
 pub mod wp;
 
+pub use exam_manifest::ExamManifestKit;
 pub use proofir_bridge::{proofir_resolve, proofir_unresolve};
 
 #[derive(Debug, thiserror::Error)]

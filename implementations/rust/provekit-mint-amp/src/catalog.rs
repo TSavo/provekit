@@ -13,6 +13,7 @@ use crate::{canonical_jcs, MintError, Result, Signer};
 pub enum Kind {
     Algorithm,
     Binding,
+    Exam,
     Sort,
     Equation,
     EffectSignature,
@@ -25,6 +26,7 @@ impl Kind {
         match self {
             Kind::Algorithm => "algorithms",
             Kind::Binding => "bindings",
+            Kind::Exam => "exams",
             Kind::Sort => "sorts",
             Kind::Equation => "equations",
             Kind::EffectSignature => "signatures",
@@ -39,6 +41,7 @@ impl std::fmt::Display for Kind {
         let s = match self {
             Kind::Algorithm => "algorithm",
             Kind::Binding => "binding",
+            Kind::Exam => "exam",
             Kind::Sort => "sort",
             Kind::Equation => "equation",
             Kind::EffectSignature => "effect_signature",
@@ -88,6 +91,7 @@ impl Catalog {
         for dir in [
             "algorithms",
             "bindings",
+            "exams",
             "signatures",
             "morphisms",
             "sorts",
