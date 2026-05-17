@@ -3,6 +3,7 @@
 use crate::core::types::PlatformSemanticsDeclaration;
 
 mod python_common;
+pub mod java;
 pub mod python_lift_source;
 pub mod python_realize_core;
 
@@ -27,6 +28,7 @@ pub fn platform_semantics_for_lower_target(target: &str) -> Option<PlatformSeman
                 tags: declaration.tags,
             })
         }
+        "java" => Some(java::declaration()),
         _ => None,
     }
 }
