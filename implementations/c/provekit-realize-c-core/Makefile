@@ -10,6 +10,8 @@ B3_SRC = $(B3_DIR)/blake3.c $(B3_DIR)/blake3_dispatch.c $(B3_DIR)/blake3_portabl
 BIN = target/release/provekit-realize-c
 DISCOVERY_BIN = $(abspath ../target/release/provekit-realize-c)
 TEST_SH = tests/integration.sh
+CONFORMANCE_PY = tests/conformance.py
+BIND_LIFT_BIN = ../provekit-walk-c/provekit-bind-lift-c
 
 .PHONY: all clean test
 
@@ -20,7 +22,10 @@ $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(B3_SRC)
 	cp $@ $(DISCOVERY_BIN)
 
-test: $(BIN) $(TEST_SH)
+$(BIND_LIFT_BIN):
+	$(MAKE) -C ../provekit-walk-c provekit-bind-lift-c
+
+test: $(BIN) $(BIND_LIFT_BIN) $(TEST_SH) $(CONFORMANCE_PY)
 	@chmod +x $(TEST_SH)
 	@$(TEST_SH)
 

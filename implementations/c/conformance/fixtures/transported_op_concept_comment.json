@@ -1,0 +1,56 @@
+{
+  "name": "transported_op_concept_comment",
+  "kind": "concept_carrier",
+  "source_language": "c",
+  "original_source": "/* concept: drop(x) */\nvoid transport_drop(int x) {\n    (void)x;\n}\n",
+  "declared_test_inputs": [
+    []
+  ],
+  "expected_output": [
+    {
+      "stdout": "",
+      "stderr": "",
+      "exit_code": 0,
+      "source_contains": [
+        "/* concept: drop(x) */",
+        "// provekit-concept: ",
+        "// provekit-concept-payload-cid: "
+      ]
+    }
+  ],
+  "realize_request": {
+    "function": "transport_drop",
+    "params": [
+      "x"
+    ],
+    "param_types": [
+      "int"
+    ],
+    "return_type": "void",
+    "concept_name": "concept:drop",
+    "transported_operation": {
+      "args_jcs": {
+        "kind": "call-args",
+        "values": [
+          {
+            "kind": "var",
+            "name": "x"
+          }
+        ]
+      },
+      "callsite_cid": "blake3-512:55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555",
+      "concept_cid": "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "concept_name": "concept:drop",
+      "concept_site_cid": "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+      "loss_record_cid": "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333",
+      "operation_kind": "drop",
+      "policy_cid": "blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444",
+      "shape_cid": "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "sugar_dict_cid": "blake3-512:66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
+      "target_library_tag": "c-core",
+      "term_position": [
+        0
+      ]
+    }
+  }
+}

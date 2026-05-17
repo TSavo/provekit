@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use libprovekit::canonical::{json_cid, serializable_cid, serializable_jcs};
@@ -1212,6 +1213,80 @@ fn conformance_declaration_round_trips_through_json() {
 
     assert_eq!(decode(carrier_json), carrier);
     assert_eq!(decode(non_carrier_json), non_carrier);
+}
+
+#[test]
+fn carrier_fixture_set_requirement_covers_c_emit_compile_run_fixtures() {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("libprovekit has rust parent")
+        .parent()
+        .expect("rust has implementations parent")
+        .parent()
+        .expect("implementations has repo parent")
+        .to_path_buf();
+    let fixtures_path = repo_root
+        .join("implementations")
+        .join("c")
+        .join("conformance")
+        .join("fixtures");
+    let mut registry = KitRegistry::default();
+    registry.register(
+        "lower-c",
+        CKit::default(),
+        ConformanceDeclaration::Carrier {
+            fixtures_path: fixtures_path.clone(),
+        },
+    );
+
+    assert_carrier_fixture_set(&registry, "lower-c", &[
+        "hello_world",
+        "recursive_factorial",
+        "arithmetic_add",
+        "arithmetic_multi_op",
+        "control_flow_if",
+        "transported_op_concept_comment",
+    ]);
+}
+
+fn assert_carrier_fixture_set(registry: &KitRegistry, kit: &str, required: &[&str]) {
+    let Some(ConformanceDeclaration::Carrier { fixtures_path }) = registry.conformance(kit) else {
+        panic!("{kit} must be registered as a carrier kit");
+    };
+    let present = fixture_names(fixtures_path);
+    let missing = required
+        .iter()
+        .copied()
+        .filter(|name| !present.contains(*name))
+        .collect::<Vec<_>>();
+    assert!(
+        missing.is_empty(),
+        "{kit} carrier fixtures at {} missing required fixture(s): {:?}",
+        fixtures_path.display(),
+        missing
+    );
+}
+
+fn fixture_names(path: &FsPath) -> BTreeSet<String> {
+    let entries = std::fs::read_dir(path)
+        .unwrap_or_else(|error| panic!("read carrier fixture dir {}: {error}", path.display()));
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_string)
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+                path.file_stem()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_string)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn refusal_for_failure_kind(failure_kind: &str, failure_detail: &str) -> CompositionRefusalMemento {

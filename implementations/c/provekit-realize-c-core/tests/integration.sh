@@ -95,6 +95,7 @@ def test_concept_citation_comment_emitted_for_transported_operation():
         }
     )
     source = response["result"]["source"]
+    assert "/* concept: sql-execute(sql) */" in source, source
     assert "// provekit-concept: " in source, source
     assert "// provekit-concept-payload-cid: " in source, source
     assert "/* provekit-bind canonical:" not in source, source
@@ -113,3 +114,5 @@ def test_concept_citation_comment_emitted_for_transported_operation():
 
 test_concept_citation_comment_emitted_for_transported_operation()
 PY
+
+python3 tests/conformance.py "$bin"

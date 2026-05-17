@@ -20,7 +20,7 @@
 # Per-language targets:
 #   make build-rust: cargo build --release for workspace + tools
 #   make build-cpp: vendored-blake3 clang++ build of the C++ orchestrator
-#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby / test-php
+#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby / test-php / test-c
 #
 # Determinism:
 #   make ci is the local Linux-profile contract. If it's green, the non-Swift
@@ -197,6 +197,7 @@ build-c:
 	$(MAKE) -C implementations/c/provekit-lift-c-sparse all
 	$(MAKE) -C implementations/c/provekit-lift-c-kernel-doc all
 	$(MAKE) -C implementations/c/provekit-lift-c-assertions all
+	$(MAKE) -C implementations/c/provekit-realize-c-core all
 	$(MAKE) -C implementations/c/provekit-lsp-c all
 	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
@@ -660,6 +661,7 @@ test-c: build-c
 	$(MAKE) -C implementations/c/provekit-lift-c-sparse test
 	$(MAKE) -C implementations/c/provekit-lift-c-kernel-doc test
 	$(MAKE) -C implementations/c/provekit-lift-c-assertions test
+	$(MAKE) -C implementations/c/provekit-realize-c-core test
 	$(MAKE) -C implementations/c/provekit-lift-composition test
 	$(MAKE) -C implementations/c/provekit-lsp-c test
 	$(MAKE) -C implementations/c/provekit-self-contracts test
@@ -719,7 +721,7 @@ build-zig:
 # NOTE: test-swift is intentionally excluded from test-all: it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java
+test-all: test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java test-c
 	@echo ""
 	@echo "==== test-all: PASS ===="
 

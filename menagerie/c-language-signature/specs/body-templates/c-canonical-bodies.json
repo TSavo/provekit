@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:f0948c8f4f00359bfdafb3c1bc19227ffc70f95807dcc53450f4c84be2d44bc77770aaa54f3058014febbad276a759ebcf8cc2acabf5e6e6bddada8167c684a2",
+    "cid": "blake3-512:74f655e44075901e6941049332618f96807b18bedf0381ad7edfb593a0ada8084d07ed2f848817574874e6ec52fa26ec493656e36ec4c66229d668b5bd9db181",
     "content": {
       "entries": [
         {
@@ -42,6 +42,90 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
+          }
+        },
+        {
+          "concept_name": "hello-world",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "extern int printf(const char *, ...);\nif (printf(\"Hello, world!\\n\") < 0) return 1;\nreturn 0;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0,
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "factorial",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} <= 1 ? 1 : ${param0} * factorial(${param0} - 1);"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "add",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0} + ${param1};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_param_types": ["int", "int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "arithmetic-multi-op",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "int sum = ${param0} + ${param1};\nint diff = ${param0} - ${param1};\nreturn sum * diff;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_param_types": ["int", "int"],
+            "requires_return_type": "int"
+          }
+        },
+        {
+          "concept_name": "abs-value",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if (${param0} >= 0) return ${param0};\nreturn -${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {}
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["int"],
+            "requires_return_type": "int"
           }
         },
         {
