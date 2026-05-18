@@ -444,6 +444,12 @@ fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
     if let Some(entries) = value.get_mut("ir").and_then(Json::as_array_mut) {
         for entry in entries {
             if let Some(object) = entry.as_object_mut() {
+                object.remove("attr_pre");
+                object.remove("attrPre");
+                object.remove("attr_post");
+                object.remove("attrPost");
+                object.remove("concept_annotation");
+                object.remove("conceptAnnotation");
                 object.remove("operand_bindings");
                 object.remove("operandBindings");
                 object.remove("source_function_name");

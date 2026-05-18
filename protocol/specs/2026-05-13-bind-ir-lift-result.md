@@ -96,6 +96,24 @@ When `witnesses[]` is non-empty, it is the complete contract evidence set for th
 - **The full IR algebra term.** This entry is the BIND surface (clustering + naming + scoping); the full algebra term used by transport is requested separately via the realize-plugin protocol (`provekit.plugin.invoke` with `method: "lift"` on the realize side, see `2026-05-12-plugin-protocol.md` §4.2.2 and the body-template realize plugins).
 - **Concept-shape catalog matches.** The kit MUST emit `term_shape` + `term_shape_cid`; the catalog match is performed by cmd_bind (Verb 6: Identify), not the kit.
 
+### §1.4 Name lifecycle loop
+
+The authoring name loop is:
+
+1. A source file is lifted and bound.
+2. A realize or lower pass emits source with an editable `// concept: NAME` line.
+3. The user edits that line.
+4. The edited source is lifted again.
+5. The next bind result uses the edited name as the `NamedTerm.conceptName`.
+
+For this loop, lift kits MUST read an immediately preceding `// concept: NAME`
+comment as `concept_annotation`. The emitted field is a carrier from source
+surface into bind naming, not an extra proof term. Consumers use it to choose
+the named substrate binding, then MUST NOT retain the raw `concept_annotation`
+key in the source-term half of a `concept:bind-result` payload. The durable
+substrate fact is the resulting `conceptName`, not the comment syntax that
+carried the edit.
+
 ## §2. Term shape
 
 A term shape is a language-neutral fingerprint of the function body sufficient to cluster structurally-identical functions across languages.

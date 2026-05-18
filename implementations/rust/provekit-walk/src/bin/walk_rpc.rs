@@ -361,7 +361,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         let witnesses_by_symbol =
             contract_witnesses_by_function_symbol(&file, &rel, src.as_bytes());
 
-        for target in collect_bind_lift_targets(&file) {
+        for target in collect_bind_lift_targets_with_source(&file, &src) {
             let item_fn = &target.item_fn;
             let fn_name = &target.fn_name;
             let term_shape = term_shape_for_fn(item_fn);
@@ -376,7 +376,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 .cloned()
                 .unwrap_or_default();
 
-            entries.push(json!({
+            let mut entry = json!({
                 "kind": "bind-lift-entry",
                 "param_names": param_names,
                 "term_shape": cvalue_to_json(&term_shape),
@@ -384,7 +384,11 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "operand_bindings": operand_bindings,
                 "source_function_name": target.source_name,
                 "witnesses": witnesses,
-            }));
+            });
+            if let Some(concept_annotation) = &target.concept_annotation {
+                entry["concept_annotation"] = json!(concept_annotation);
+            }
+            entries.push(entry);
 
             for callsite in collect_bound_library_calls(item_fn, &library_bindings) {
                 let term_shape =
@@ -449,16 +453,25 @@ fn exam_question_cid_for(kind: &str, concept: &str, language: &str) -> Option<St
 struct BindLiftTarget {
     fn_name: String,
     source_name: String,
+    concept_annotation: Option<String>,
     item_fn: syn::ItemFn,
 }
 
 fn collect_bind_lift_targets(file: &syn::File) -> Vec<BindLiftTarget> {
+    collect_bind_lift_targets_with_source(file, "")
+}
+
+fn collect_bind_lift_targets_with_source(file: &syn::File, source: &str) -> Vec<BindLiftTarget> {
     let mut targets = Vec::new();
-    collect_bind_lift_targets_in_items(&file.items, &mut targets);
+    collect_bind_lift_targets_in_items(&file.items, source, &mut targets);
     targets
 }
 
-fn collect_bind_lift_targets_in_items(items: &[syn::Item], targets: &mut Vec<BindLiftTarget>) {
+fn collect_bind_lift_targets_in_items(
+    items: &[syn::Item],
+    source: &str,
+    targets: &mut Vec<BindLiftTarget>,
+) {
     for item in items {
         match item {
             syn::Item::Fn(item_fn) => {
@@ -466,6 +479,7 @@ fn collect_bind_lift_targets_in_items(items: &[syn::Item], targets: &mut Vec<Bin
                 targets.push(BindLiftTarget {
                     source_name: fn_name.clone(),
                     fn_name,
+                    concept_annotation: concept_annotation_for_fn(source, item_fn),
                     item_fn: item_fn.clone(),
                 });
             }
@@ -481,20 +495,80 @@ fn collect_bind_lift_targets_in_items(items: &[syn::Item], targets: &mut Vec<Bin
                         continue;
                     }
                     let source_name = method.sig.ident.to_string();
+                    let item_fn = item_fn_from_impl_method(method);
                     targets.push(BindLiftTarget {
                         fn_name: format!("{qualifier}::{source_name}"),
                         source_name,
-                        item_fn: item_fn_from_impl_method(method),
+                        concept_annotation: concept_annotation_for_fn(source, &item_fn),
+                        item_fn,
                     });
                 }
             }
             syn::Item::Mod(module) => {
                 if let Some((_, nested_items)) = &module.content {
-                    collect_bind_lift_targets_in_items(nested_items, targets);
+                    collect_bind_lift_targets_in_items(nested_items, source, targets);
                 }
             }
             _ => {}
         }
+    }
+}
+
+fn concept_annotation_for_fn(source: &str, item_fn: &syn::ItemFn) -> Option<String> {
+    if source.trim().is_empty() {
+        return None;
+    }
+    let fn_line = item_fn.sig.fn_token.span.start().line;
+    concept_annotation_before_line(source, fn_line)
+}
+
+fn concept_annotation_before_line(source: &str, fn_line: usize) -> Option<String> {
+    if fn_line <= 1 {
+        return None;
+    }
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut idx = fn_line.checked_sub(2)?;
+    loop {
+        let trimmed = lines.get(idx)?.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if trimmed.starts_with("#[") {
+            if idx == 0 {
+                return None;
+            }
+            idx -= 1;
+            continue;
+        }
+        if let Some(comment_body) = rust_line_comment_body(trimmed) {
+            if let Some(name) = parse_concept_comment_body(comment_body) {
+                return Some(name);
+            }
+            if idx == 0 {
+                return None;
+            }
+            idx -= 1;
+            continue;
+        }
+        return None;
+    }
+}
+
+fn rust_line_comment_body(trimmed: &str) -> Option<&str> {
+    trimmed
+        .strip_prefix("///")
+        .or_else(|| trimmed.strip_prefix("//"))
+        .map(str::trim_start)
+}
+
+fn parse_concept_comment_body(body: &str) -> Option<String> {
+    let raw = body.strip_prefix("concept:")?.trim();
+    let token = raw.split_whitespace().next()?;
+    let bare = token.strip_prefix("concept:").unwrap_or(token);
+    if bare.is_empty() {
+        None
+    } else {
+        Some(bare.to_string())
     }
 }
 
@@ -2142,6 +2216,136 @@ pub fn add(x: i64, y: i64) -> i64 {
     }
 
     #[test]
+    fn bind_lift_relifts_edited_concept_comment_into_named_substrate_binding() {
+        let root = temp_workspace("bind_lift_concept_comment_lifecycle");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+// concept: my-thing
+pub fn shaped(x: i64) -> i64 {
+    (x * 7) + 3
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let entry = entries.first().expect("shaped entry");
+        assert_eq!(entry["concept_annotation"], "my-thing");
+
+        let named = bind_term_document(&out, &BindOptions::default())
+            .expect("bind term document builds from relifted source");
+        assert_eq!(named.terms[0].concept_name, "concept:my-thing");
+
+        let original_term = Term::Const {
+            value: out,
+            sort: primitive_sort("LiftPluginResponse"),
+        };
+        let payload = bind_result_payload(original_term, &named).expect("bind payload builds");
+        let payload_bytes =
+            libprovekit::canonical::serializable_jcs(&payload).expect("payload canonicalizes");
+        assert!(
+            !payload_bytes.contains("concept_annotation"),
+            "bind payload must not retain lift-side annotation scaffolding: {payload_bytes}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_concept_comment_survives_adjacent_attrs_and_metadata_comments() {
+        let root = temp_workspace("bind_lift_concept_comment_attrs");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+// concept: attr-backed-name
+// substrate-origin: annotation-lift
+#[cfg_attr(any(), requires(x > 0))]
+pub fn shaped(x: i64) -> i64 {
+    x
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entries = out["ir"].as_array().expect("ir array");
+        let entry = entries.first().expect("shaped entry");
+        assert_eq!(entry["concept_annotation"], "attr-backed-name");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_discrimination_ignores_concept_comment_separated_by_blank_line() {
+        let entry = single_entry_for_source(
+            "concept_comment_blank_line",
+            r#"
+// concept: too-far-away
+
+pub fn shaped(x: i64) -> i64 {
+    x
+}
+"#,
+        );
+
+        assert!(
+            entry.get("concept_annotation").is_none(),
+            "blank-separated concept comment must not bind: {entry:#?}"
+        );
+    }
+
+    #[test]
+    fn bind_lift_discrimination_ignores_inline_trailing_concept_comment() {
+        let entry = single_entry_for_source(
+            "concept_comment_inline",
+            r#"
+pub fn shaped(x: i64) -> i64 { // concept: inline-name
+    x
+}
+"#,
+        );
+
+        assert!(
+            entry.get("concept_annotation").is_none(),
+            "inline trailing concept comment must not bind: {entry:#?}"
+        );
+    }
+
+    #[test]
+    fn bind_lift_discrimination_ignores_empty_concept_comment() {
+        let entry = single_entry_for_source(
+            "concept_comment_empty",
+            r#"
+// concept:
+pub fn shaped(x: i64) -> i64 {
+    x
+}
+"#,
+        );
+
+        assert!(
+            entry.get("concept_annotation").is_none(),
+            "empty concept comment must not bind: {entry:#?}"
+        );
+    }
+
+    #[test]
     fn bind_lift_contract_attrs_do_not_enter_hashed_bind_payload() {
         let root = temp_workspace("bind_lift_contract_attrs_payload");
         let src_dir = root.join("src");
@@ -2402,6 +2606,27 @@ pub fn bitwise_not() -> i64 {
         let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
         fs::create_dir_all(&root).expect("create temp workspace");
         root
+    }
+
+    fn single_entry_for_source(name: &str, source: &str) -> Value {
+        let root = temp_workspace(name);
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), source).expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+        let entry = out["ir"]
+            .as_array()
+            .expect("ir array")
+            .first()
+            .expect("single entry")
+            .clone();
+        let _ = fs::remove_dir_all(root);
+        entry
     }
 
     #[test]
