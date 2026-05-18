@@ -611,6 +611,232 @@ static enum CXChildVisitResult pk_c_clang_find_recovery_function_ref(
     return CXChildVisit_Break;
 }
 
+/* Token-walk fallback for libclang versions (18, 19) that do not expose
+ * CallExpr nodes flagged contains-errors via clang_visitChildren. On those
+ * versions, calls whose arguments include a dependent-type operand (e.g.
+ * an undeclared typedef) are silently absent from the AST walk. We recover
+ * them by tokenizing the function body and scanning for identifier tokens
+ * that (a) name a known FunctionDecl, (b) appear in a direct-call position
+ * (name( / (name)( / (*name)()), and (c) are not already recorded as a
+ * call_site (dedup by caller+callee+line).
+ *
+ * Set env var PROVEKIT_LIFT_DEBUG=1 to enable per-token diagnostic output
+ * to stderr. */
+static int pk_c_clang_token_fallback_calls(
+    pk_c_source_facts *facts,
+    const char *path,
+    const char *caller,
+    CXCursor fn_cursor
+) {
+    CXTranslationUnit tu = clang_Cursor_getTranslationUnit(fn_cursor);
+    CXSourceRange range = clang_getCursorExtent(fn_cursor);
+    CXToken *tokens = NULL;
+    unsigned ntoks = 0;
+    int debug = getenv("PROVEKIT_LIFT_DEBUG") != NULL;
+    int rc = 0;
+    /* Skip tokens in the function signature; only scan the body. Set to 1
+     * after the first '{' token (the opening brace of the function body). */
+    int in_body = 0;
+
+    clang_tokenize(tu, range, &tokens, &ntoks);
+    if (ntoks == 0) {
+        if (tokens != NULL) {
+            clang_disposeTokens(tu, tokens, ntoks);
+        }
+        return 0;
+    }
+
+    for (unsigned i = 0; i < ntoks && rc == 0; i++) {
+        CXString tok_spell;
+        const char *name;
+        int is_known_fn;
+        unsigned next;
+        unsigned prev1;
+        unsigned prev2;
+        int is_call;
+        CXSourceLocation tok_loc;
+        unsigned tok_line;
+        unsigned tok_col;
+        int already_have;
+
+        /* Skip the function signature; only scan the body. */
+        if (!in_body) {
+            if (clang_getTokenKind(tokens[i]) == CXToken_Punctuation) {
+                CXString bs = clang_getTokenSpelling(tu, tokens[i]);
+                if (strcmp(clang_getCString(bs), "{") == 0) {
+                    in_body = 1;
+                }
+                clang_disposeString(bs);
+            }
+            continue;
+        }
+
+        /* Only identifier tokens can be function names. */
+        if (clang_getTokenKind(tokens[i]) != CXToken_Identifier) {
+            continue;
+        }
+
+        tok_spell = clang_getTokenSpelling(tu, tokens[i]);
+        name = clang_getCString(tok_spell);
+        is_known_fn = 0;
+
+        /* Check if this identifier names a declared function. */
+        for (size_t fi = 0; fi < facts->n_functions; fi++) {
+            if (facts->functions[fi].name != NULL &&
+                strcmp(facts->functions[fi].name, name) == 0) {
+                is_known_fn = 1;
+                break;
+            }
+        }
+
+        if (!is_known_fn) {
+            if (debug) {
+                fprintf(stderr,
+                    "[provekit-lift-debug] token-fallback: skip non-fn %s\n",
+                    name);
+            }
+            clang_disposeString(tok_spell);
+            continue;
+        }
+
+        /* Determine call position. Three shapes are supported:
+         *   Shape 1: name(      tokens[i] ident, tokens[i+1] '('
+         *   Shape 2: (name)(    tokens[i-1] '(', tokens[i+1] ')', tokens[i+2] '('
+         *   Shape 3: (*name)(   tokens[i-2] '*', tokens[i-3..] in checked below
+         *                       tokens[i-1] '*', tokens[i-2] '('
+         *                       tokens[i+1] ')', tokens[i+2] '(' */
+        is_call = 0;
+        next = i + 1;
+        prev1 = (i > 0) ? (i - 1) : ntoks;   /* ntoks means "out of bounds" */
+        prev2 = (i > 1) ? (i - 2) : ntoks;
+
+        /* Shape 1: ident directly followed by '(' */
+        if (!is_call && next < ntoks &&
+            clang_getTokenKind(tokens[next]) == CXToken_Punctuation) {
+            CXString ns = clang_getTokenSpelling(tu, tokens[next]);
+            if (strcmp(clang_getCString(ns), "(") == 0) {
+                is_call = 1;
+            }
+            clang_disposeString(ns);
+        }
+
+        /* Shape 2: (ident)( */
+        if (!is_call && prev1 < ntoks &&
+            clang_getTokenKind(tokens[prev1]) == CXToken_Punctuation &&
+            next + 1 < ntoks) {
+            CXString ps1 = clang_getTokenSpelling(tu, tokens[prev1]);
+            if (strcmp(clang_getCString(ps1), "(") == 0) {
+                CXString ns1 = clang_getTokenSpelling(tu, tokens[next]);
+                CXString ns2 = clang_getTokenSpelling(tu, tokens[next + 1]);
+                if (clang_getTokenKind(tokens[next]) == CXToken_Punctuation &&
+                    clang_getTokenKind(tokens[next + 1]) == CXToken_Punctuation &&
+                    strcmp(clang_getCString(ns1), ")") == 0 &&
+                    strcmp(clang_getCString(ns2), "(") == 0) {
+                    is_call = 1;
+                }
+                clang_disposeString(ns1);
+                clang_disposeString(ns2);
+            }
+            clang_disposeString(ps1);
+        }
+
+        /* Shape 3: (*ident)( */
+        if (!is_call && prev1 < ntoks && prev2 < ntoks &&
+            clang_getTokenKind(tokens[prev1]) == CXToken_Punctuation &&
+            clang_getTokenKind(tokens[prev2]) == CXToken_Punctuation &&
+            next + 1 < ntoks) {
+            CXString ps1 = clang_getTokenSpelling(tu, tokens[prev1]);
+            CXString ps2 = clang_getTokenSpelling(tu, tokens[prev2]);
+            if (strcmp(clang_getCString(ps1), "*") == 0 &&
+                strcmp(clang_getCString(ps2), "(") == 0) {
+                CXString ns1 = clang_getTokenSpelling(tu, tokens[next]);
+                CXString ns2 = clang_getTokenSpelling(tu, tokens[next + 1]);
+                if (clang_getTokenKind(tokens[next]) == CXToken_Punctuation &&
+                    clang_getTokenKind(tokens[next + 1]) == CXToken_Punctuation &&
+                    strcmp(clang_getCString(ns1), ")") == 0 &&
+                    strcmp(clang_getCString(ns2), "(") == 0) {
+                    is_call = 1;
+                }
+                clang_disposeString(ns1);
+                clang_disposeString(ns2);
+            }
+            clang_disposeString(ps1);
+            clang_disposeString(ps2);
+        }
+
+        if (!is_call) {
+            if (debug) {
+                fprintf(stderr,
+                    "[provekit-lift-debug] token-fallback: fn %s not in call position\n",
+                    name);
+            }
+            clang_disposeString(tok_spell);
+            continue;
+        }
+
+        /* Get source location for dedup and locus. */
+        tok_loc = clang_getTokenLocation(tu, tokens[i]);
+        tok_line = 0;
+        tok_col = 0;
+        clang_getExpansionLocation(tok_loc, NULL, &tok_line, &tok_col, NULL);
+
+        /* Skip if the AST visitor already recorded this call. */
+        already_have = 0;
+        for (size_t ci = 0; ci < facts->n_call_sites; ci++) {
+            if (facts->call_sites[ci].caller != NULL &&
+                facts->call_sites[ci].callee != NULL &&
+                strcmp(facts->call_sites[ci].caller, caller) == 0 &&
+                strcmp(facts->call_sites[ci].callee, name) == 0 &&
+                facts->call_sites[ci].locus.line == (int)tok_line) {
+                already_have = 1;
+                break;
+            }
+        }
+
+        if (debug) {
+            fprintf(stderr,
+                "[provekit-lift-debug] token-fallback: fn=%s caller=%s"
+                " L%u:C%u is_call=1 already_have=%d\n",
+                name, caller, tok_line, tok_col, already_have);
+        }
+
+        if (!already_have) {
+            pk_c_call_site_fact *fact;
+
+            if (pk_c_clang_grow_calls(facts) != 0) {
+                clang_disposeString(tok_spell);
+                rc = -1;
+                break;
+            }
+            fact = &facts->call_sites[facts->n_call_sites];
+            memset(fact, 0, sizeof(*fact));
+            fact->caller = pk_c_clang_copy(caller);
+            fact->callee = pk_c_clang_copy(name);
+            fact->args_json = pk_c_clang_copy("[]");
+            fact->locus.path = pk_c_clang_copy(path == NULL ? "" : path);
+            fact->locus.line = (int)tok_line;
+            fact->locus.column = (int)tok_col;
+            if (fact->caller == NULL || fact->callee == NULL ||
+                fact->args_json == NULL || fact->locus.path == NULL) {
+                free(fact->caller);
+                free(fact->callee);
+                free(fact->args_json);
+                free(fact->locus.path);
+                memset(fact, 0, sizeof(*fact));
+                clang_disposeString(tok_spell);
+                rc = -1;
+                break;
+            }
+            facts->n_call_sites++;
+        }
+
+        clang_disposeString(tok_spell);
+    }
+
+    clang_disposeTokens(tu, tokens, ntoks);
+    return rc;
+}
+
 static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent, CXClientData client_data) {
     pk_c_clang_visit_ctx *ctx = (pk_c_clang_visit_ctx *)client_data;
     enum CXCursorKind kind = clang_getCursorKind(cursor);
@@ -640,6 +866,15 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
                 free(name);
                 return CXChildVisit_Break;
             }
+            /* Token-walk fallback: recover calls that the AST visitor
+             * missed because the CallExpr node carried contains-errors
+             * (libclang 18/19 hides those nodes entirely). Must run while
+             * the translation unit is still alive so the token API works. */
+            if (pk_c_clang_token_fallback_calls(
+                    ctx->facts, ctx->path, name, cursor) != 0) {
+                free(name);
+                return CXChildVisit_Break;
+            }
             /* Per CCP section 3, extract the function's effect set so
              * downstream composition can decide whether subtrees rooted
              * at this function are safely composable. The extraction is
@@ -659,6 +894,18 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
 
         if (callee == NULL) {
             return CXChildVisit_Break;
+        }
+        if (getenv("PROVEKIT_LIFT_DEBUG") != NULL) {
+            unsigned dbg_line = 0, dbg_col = 0;
+            CXSourceLocation dbg_loc =
+                clang_getRangeStart(clang_getCursorExtent(cursor));
+            clang_getExpansionLocation(
+                dbg_loc, NULL, &dbg_line, &dbg_col, NULL);
+            fprintf(stderr,
+                "[provekit-lift-debug] call-expr: fn=%s caller=%s L%u:C%u\n",
+                callee,
+                ctx->current_function != NULL ? ctx->current_function : "",
+                dbg_line, dbg_col);
         }
         rc = pk_c_clang_append_call(ctx->facts, ctx->path, ctx->current_function, callee, cursor);
         free(callee);
@@ -698,7 +945,22 @@ static enum CXChildVisitResult pk_c_clang_visit(CXCursor cursor, CXCursor parent
         (void)clang_visitChildren(cursor, pk_c_clang_find_recovery_function_ref, &fc);
         if (fc.name != NULL && fc.name[0] != '\0' &&
             pk_c_clang_source_starts_direct_call(cursor, fc.name)) {
-            int rc = pk_c_clang_append_call(
+            int rc;
+
+            if (getenv("PROVEKIT_LIFT_DEBUG") != NULL) {
+                unsigned dbg_line = 0, dbg_col = 0;
+                CXSourceLocation dbg_loc =
+                    clang_getRangeStart(clang_getCursorExtent(cursor));
+                clang_getExpansionLocation(
+                    dbg_loc, NULL, &dbg_line, &dbg_col, NULL);
+                fprintf(stderr,
+                    "[provekit-lift-debug] recovery-expr: fn=%s caller=%s"
+                    " L%u:C%u\n",
+                    fc.name,
+                    ctx->current_function != NULL ? ctx->current_function : "",
+                    dbg_line, dbg_col);
+            }
+            rc = pk_c_clang_append_call(
                 ctx->facts, ctx->path, ctx->current_function, fc.name, cursor);
 
             free(fc.name);
