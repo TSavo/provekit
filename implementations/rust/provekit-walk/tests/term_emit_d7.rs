@@ -20,6 +20,12 @@ fn assert_loss(parsed: &serde_json::Value, dimension: &str) {
         .any(|loss| loss["loss"] == dimension));
 }
 
+fn assert_no_loss_or_effect(parsed: &serde_json::Value) {
+    assert_eq!(parsed["handling"].as_str(), Some("handles-fully"));
+    assert!(parsed["loss_record"].as_array().unwrap().is_empty());
+    assert!(parsed["effect_occurrences"].as_array().unwrap().is_empty());
+}
+
 #[test]
 fn d7_lowers_mut_let_binding_with_path_call_rhs() {
     let parsed = term_json(
@@ -57,7 +63,7 @@ fn d7_lowers_let_binding_with_method_call_rhs() {
         parsed["term_surface"].as_str(),
         Some("let(pattern_bind(result), method:some_method(expr, [arg]), skip)")
     );
-    assert_loss(&parsed, "ffi-call-unresolved-effect");
+    assert_no_loss_or_effect(&parsed);
 }
 
 #[test]
@@ -75,7 +81,7 @@ fn d7_lowers_wildcard_let_binding_with_path_call_rhs() {
         parsed["term_surface"].as_str(),
         Some("let(pattern_wild(), call:encode(hex::encode, [out]), skip)")
     );
-    assert_loss(&parsed, "ffi-call-unresolved-effect");
+    assert_no_loss_or_effect(&parsed);
 }
 
 #[test]
