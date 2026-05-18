@@ -199,6 +199,93 @@ The kit author chooses per concept which primitive to use. The kit's exam answer
 
 ---
 
+## §2.5. R14.5: Function names are sugar at the substrate's algebra layer.
+
+**Status:** Architectural sub-ruling. Ratifies #1093 (CIDs stable under fn rename) by grounding the mechanism in the algebra layer. Locked 2026-05-18 following the trinity_roundtrip + verb_composition cascade that exposed the fn_name-preservation question.
+
+### The rule
+
+Function names are sugar at the substrate's algebra layer. They are unique within a binding scope (codebase, module, linker namespace), not part of the shape of the algebra. The substrate's content-addressability invariant per #1093 (CIDs stable under fn rename) is preserved by treating `fn_name` as a non-CID-affecting annotation on the citation structure, not as part of the term's algebraic shape.
+
+### The load-bearing exhibit: ASM
+
+In assembly, `factorial:` is literally a label that the assembler resolves into an address. After linking, the label disappears into the symbol table; addresses are the real referents. After stripping the binary, even the symbol table is gone, yet the function still runs. The algebra is the byte sequence at the address; the name was scaffolding.
+
+Higher-level languages OBFUSCATE this truth by bundling two unrelated roles into "the function's name":
+
+1. **Developer affordance** -- `factorial(5)` reads better than `call_0x401000(5)`
+2. **Cross-module binding** -- the linker needs a key to resolve a module-A -> module-B reference
+
+ASM presents them as visibly separate phases: label-creation, symbol-resolution, stripping. Neither role is the algebra; both are scaffolding around it. ASM gives you nowhere to pretend that names are load-bearing -- the stripped binary still runs.
+
+The three ASM phases and what they expose:
+
+| Phase | What happens | Name role |
+|---|---|---|
+| Assemble | `factorial:` label written to object file | Name is a symbol-table entry |
+| Link | Linker resolves `call factorial` to `call 0x401000` | Name is a resolution key |
+| Strip | Symbol table removed; binary ships | Name is gone; algebra runs |
+
+The algebra was never the name. The name was a tool for two jobs (readability, resolution) that neither job required to be the same thing as the algebra.
+
+### The bind->lower architectural mirror
+
+The substrate's bind->lower pipeline mirrors ASM's assemble->link->strip pipeline. Two derivations of the `NamedTermDocument` meet at the CID computation site:
+
+| ASM phase | Substrate analog | Fn-name treatment |
+|---|---|---|
+| Source `factorial: ...` | Lifted `NamedTermDocument` | `function` populated, `fn_name_sugar = "factorial"` |
+| Assemble | `bind_term_document` | Build canonical-bytes form: strip both `function` and `fn_name_sugar` |
+| Stripped binary | CID-canonical bytes | Only algebra hashed; name-rename leaves CID unchanged (preserves #1093) |
+| Symbol table | Wire-format payload | Keep `fn_name_sugar` alongside citations; rides through bind stdout |
+| Disassemble + relink | `lower` reading payload | Recover `fn_name_sugar` to populate the realize-request's user-visible name |
+
+The split (CID-canonical strips both `function` and `fn_name_sugar`; wire-format strips only `function`) is the substantive architectural call. CIDs stay stable; names ride through.
+
+This mirrors exactly what ASM teaches. The canonical byte sequence (stripped binary) contains no names. The wire-format payload (symbol table) carries names alongside the binary for consumers who need them. `lower` reads the symbol table to reconstruct user-visible identifiers. The analogy is not decorative; it is the mechanism.
+
+### Why this belongs at the algebra layer, not the citation layer
+
+The content-addressability invariant operates at the algebra layer. A term's CID is its algebraic identity: the byte-canonical form of what it computes. If two terms compute the same algebra, they produce the same CID regardless of what names surround them. This is the Supra omnia, rectum commitment applied to identity: correctness means the identity should track the thing, not the label.
+
+Citation structure (which term cites which, with what operand positions) IS algebraic. It encodes the program's semantic structure. `fn_name` is NOT algebraic: renaming `factorial` to `compute_n_shrinking_product` does not change what the function computes, how it relates to its callers, or what CID the callers' citations point at.
+
+Sugar-carrier comments (per R3) establish the same principle at the concept level: when a concept has no native syntactic form, its identity travels as a comment annotation. `fn_name` is the function-name analog of that annotation: the identity (CID) travels as algebra; the name travels as annotation.
+
+### The one edge case: reflection and dynamic linking
+
+`dlsym(handle, "factorial")` PUSHES the string `"factorial"` as an argument value. Same characters; different role. The dynamic linker uses the string as a runtime symbol-table lookup.
+
+This name is PROMOTED into the algebra as a term-level string constant -- it is no longer "the function's name" but "a string value the program computes over."
+
+ASM exposes this distinction cleanly:
+
+- `factorial:` is a label-directive (sugar, stripped at link time)
+- `"factorial"` in `.rodata` passed to `dlsym` is a value-literal (algebra, term-level constant hashed into the CID)
+
+Same characters; different roles. The substrate handles each correctly:
+
+- Strings-as-values are term-level constants. They hash into the CID because they are part of the algebra (changing them changes what the program computes).
+- Names-as-labels are `fn_name_sugar` annotations on citations. They do not hash into the CID because they are not part of the algebra (changing them does not change what the program computes).
+
+A lifter encountering `dlsym(handle, "factorial")` emits `"factorial"` as a string-constant term. The CID of that term reflects the literal string. Renaming the `factorial` function changes `factorial:`'s sugar field; it also requires updating any `dlsym` callsites' string-constant term, which DOES change their CIDs. The algebra-level distinction handles both cases correctly without special-casing either.
+
+### Implementation reference
+
+The mechanism landed as a new `fn_name_sugar: Option<String>` field on `NamedTerm` (see the PR closing #1148 or the `pk-fix-lower-fn-name` branch when it merges; reference the latest landing if unclear at read time). The architectural commitments:
+
+1. **Bind populates it.** `bind_term_document` reads the input lift entry's `fn_name` and stores it as `fn_name_sugar` on the `NamedTerm` in the wire-format payload.
+
+2. **CID-canonical clone strips it.** The `canonical_bytes` computation clones the `NamedTerm` with `fn_name_sugar = None` AND `function = ""`. Only the algebra hashes. Rename leaves CID unchanged. #1093 holds.
+
+3. **Wire-format payload carries it.** The payload emitted by `bind` stdout includes `fn_name_sugar` alongside citations. Lower can read it.
+
+4. **Lower's `realize_function_name` priority:** `term.function` (if non-empty) > `term.fn_name_sugar` (if `Some` and non-empty) > `term.name` (concept-name fallback, last resort). This priority matches the semantics: a kit-declared `function` field is the most authoritative name; `fn_name_sugar` is the lifted source name; `term.name` is the concept's universal name (often abstract, less suitable as a user-visible function name).
+
+This four-point contract is the mechanistic implementation of the ASM analogy. `bind` plays the role of the assembler (records the label in the symbol table, strips it from the binary). `lower` plays the role of the disassembler reading the symbol table to annotate addresses with names.
+
+---
+
 ## §3. Walking through the load-bearing cases
 
 ### §3.1 Rust drop → C free → Java emission/lift
