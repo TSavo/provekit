@@ -154,7 +154,7 @@ fn python_canonical_bodies_cid_self_consistent() {
     );
     assert_self_consistent(
         path,
-        "blake3-512:5a06ad3425bae615c8b1cf88e0bbb827724f74257ed5f7df1d7d5eaa863666f2cfc5a044d9f4cc4acb6852740c96243061049b4a8ab199cfcc8b1c123169a904",
+        "blake3-512:1a50f6eb71a1586968edf7315eb504ddfe9dbb9464281b02f96f5eb4de27b17dcc88d06be1bb9c94f241482c29f268c6f79e7be43b0d1bc1adff2f7a0b0a01cd",
     );
 }
 
