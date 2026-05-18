@@ -12,8 +12,8 @@ use libprovekit::core::{
     PlatformSemanticComparisonError, PlatformSemanticsDeclaration, Verb,
 };
 use libprovekit::effect_propagation::{
-    propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, PropagationDecision,
-    PropagationInput,
+    propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo,
+    NonEmptyChangedCallsites, PropagationDecision, PropagationInput,
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_types::{
@@ -101,20 +101,21 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         &sql_callsites,
         args.focus.as_deref(),
     )?;
-    let mut changed_callsites = semantic_changes.changed_callsites.clone();
+    let mut all_changed_callsites = semantic_changes.changed_callsites.clone();
     if target_surface.requires_async_delta() {
-        changed_callsites.extend(async_changed_callsites(
+        all_changed_callsites.extend(async_changed_callsites(
             &sql_callsites,
             args.focus.as_deref(),
         ));
     }
-    let decisions = if !changed_callsites.is_empty() {
-        let graph = build_propagation_input(&functions, &sql_callsites, changed_callsites);
-        propagate_effects(&graph)
-            .map_err(|e| format!("effect propagation: {e}"))?
-            .decisions
-    } else {
-        BTreeMap::new()
+    let decisions = match NonEmptyChangedCallsites::new(all_changed_callsites) {
+        Ok(changed_callsites) => {
+            let graph = build_propagation_input(&functions, &sql_callsites, changed_callsites);
+            propagate_effects(&graph)
+                .map_err(|e| format!("effect propagation: {e}"))?
+                .decisions
+        }
+        Err(_) => BTreeMap::new(),
     };
     let migrated_source = render_migrated_source(target_surface);
     for callsite in &mut sql_callsites {
@@ -129,7 +130,7 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         &source_binding_cid,
         &target_binding_cid,
         target_surface,
-        &semantic_changes.divergences_by_effect,
+        &semantic_changes.divergences_by_callsite_and_dimension,
     )?;
     if let Some(fixture) = witness_fixture.as_ref() {
         if target_surface.is_python() {
@@ -674,7 +675,7 @@ fn parse_string_literal(arg: &str) -> Option<String> {
 #[derive(Debug, Clone, Default)]
 struct PlatformSemanticChangeSet {
     changed_callsites: Vec<ChangedCallsite>,
-    divergences_by_effect: BTreeMap<String, DivergenceCharacterization>,
+    divergences_by_callsite_and_dimension: BTreeMap<(String, String), DivergenceCharacterization>,
 }
 
 fn validate_focus(focus: Option<&str>, sql_callsites: &[SqlCallsite]) -> Result<(), String> {
@@ -697,6 +698,7 @@ fn async_changed_callsites(
         .filter(|callsite| focus.is_none_or(|focus| focus == callsite.cid))
         .map(|callsite| ChangedCallsite {
             callsite_cid: callsite.cid.clone(),
+            dimension_name: None,
             effect: ASYNC_EFFECT.to_string(),
         })
         .collect()
@@ -733,11 +735,15 @@ fn platform_semantic_changes(
             continue;
         };
         let effect = divergence_effect_cid(&divergence);
+        let dimension_name = divergence.dimension_name.clone();
         changes.changed_callsites.push(ChangedCallsite {
             callsite_cid: callsite.cid.clone(),
+            dimension_name: Some(dimension_name.clone()),
             effect: effect.clone(),
         });
-        changes.divergences_by_effect.insert(effect, divergence);
+        changes
+            .divergences_by_callsite_and_dimension
+            .insert((callsite.cid.clone(), dimension_name), divergence);
     }
     Ok(changes)
 }
@@ -760,7 +766,7 @@ fn divergence_effect_cid(divergence: &DivergenceCharacterization) -> String {
 fn build_propagation_input(
     functions: &[TsFunction],
     sql_callsites: &[SqlCallsite],
-    changed_callsites: Vec<ChangedCallsite>,
+    changed_callsites: NonEmptyChangedCallsites,
 ) -> PropagationInput {
     let mut function_map = BTreeMap::new();
     for function in functions {
@@ -938,7 +944,7 @@ fn build_receipt(
     source_binding_cid: &str,
     target_binding_cid: &str,
     target_surface: TargetSurface,
-    divergences_by_effect: &BTreeMap<String, DivergenceCharacterization>,
+    divergences_by_callsite_and_dimension: &BTreeMap<(String, String), DivergenceCharacterization>,
 ) -> Result<MigrateReceiptEnvelope, String> {
     let mut concept_sites = Vec::new();
     for callsite in sql_callsites {
@@ -976,6 +982,7 @@ fn build_receipt(
                 effect,
                 function_cid,
                 triggering_callsite_cid,
+                ..
             } => {
                 promotion_decisions.push(promotion_decision(
                     function,
@@ -1023,14 +1030,19 @@ fn build_receipt(
     let mut loss_records = Vec::new();
     for decision in decisions.values() {
         let PropagationDecision::Widen {
-            effect,
+            dimension_name,
             triggering_callsite_cid,
             ..
         } = decision
         else {
             continue;
         };
-        let Some(divergence) = divergences_by_effect.get(effect) else {
+        let Some(dim) = dimension_name else {
+            continue;
+        };
+        let Some(divergence) = divergences_by_callsite_and_dimension
+            .get(&(triggering_callsite_cid.clone(), dim.clone()))
+        else {
             continue;
         };
         let Some(callsite) = sql_callsites
@@ -2190,10 +2202,16 @@ mod tests {
             .iter()
             .map(|callsite| function(&callsite.function))
             .collect::<Vec<_>>();
-        let graph = build_propagation_input(&functions, callsites, changes.changed_callsites);
-        let decisions = propagate_effects(&graph)
-            .expect("propagation succeeds")
-            .decisions;
+        let decisions =
+            match NonEmptyChangedCallsites::new(changes.changed_callsites) {
+                Ok(changed) => {
+                    let graph = build_propagation_input(&functions, callsites, changed);
+                    propagate_effects(&graph)
+                        .expect("propagation succeeds")
+                        .decisions
+                }
+                Err(_) => BTreeMap::new(),
+            };
         build_receipt(
             &decisions,
             callsites,
@@ -2201,7 +2219,7 @@ mod tests {
             "source-binding",
             "target-binding",
             TargetSurface::TypescriptPg,
-            &changes.divergences_by_effect,
+            &changes.divergences_by_callsite_and_dimension,
         )
         .expect("receipt builds")
     }
@@ -2272,12 +2290,14 @@ mod tests {
         let target = platform_semantics_for_lower_target("java").expect("java semantics");
         let changes =
             platform_semantic_changes(&source, &target, &callsites, None).expect("changes");
-        let effect = changes
+        let first_changed = changes
             .changed_callsites
             .first()
-            .expect("changed callsite")
-            .effect
-            .clone();
+            .expect("changed callsite");
+        let dimension = first_changed
+            .dimension_name
+            .clone()
+            .expect("divergence has a dimension name");
         let functions = vec![function("add")];
         let decisions = BTreeMap::from([(
             "add".to_string(),
@@ -2288,7 +2308,9 @@ mod tests {
                 triggering_callsite_cid: "cs:add".to_string(),
             },
         )]);
-        assert!(changes.divergences_by_effect.contains_key(&effect));
+        assert!(changes
+            .divergences_by_callsite_and_dimension
+            .contains_key(&("cs:add".to_string(), dimension)));
 
         let receipt = build_receipt(
             &decisions,
@@ -2297,7 +2319,7 @@ mod tests {
             "source-binding",
             "target-binding",
             TargetSurface::TypescriptPg,
-            &changes.divergences_by_effect,
+            &changes.divergences_by_callsite_and_dimension,
         )
         .expect("receipt builds");
 
