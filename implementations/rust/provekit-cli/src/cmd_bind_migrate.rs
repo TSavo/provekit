@@ -139,6 +139,7 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         &target_binding_cid,
         target_surface,
         &semantic_changes.divergences_by_callsite_and_dimension,
+        &semantic_changes.uncharacterizable_callsites,
     )?;
     if let Some(fixture) = witness_fixture.as_ref() {
         if target_surface.is_python() {
@@ -693,8 +694,23 @@ struct PlatformSemanticChangeSet {
     divergences_by_callsite_and_dimension: BTreeMap<(String, String), DivergenceCharacterization>,
     /// Callsites where exactly one kit declared a tag for the op-CID; the
     /// substrate cannot characterize the divergence. These are routed to the
-    /// refuse leg of the trichotomy by the caller.
-    uncharacterizable_callsites: Vec<(String, Side)>,
+    /// refuse leg of the trichotomy at receipt-construction time.
+    uncharacterizable_callsites: Vec<UncharacterizableCallsite>,
+}
+
+/// A callsite the substrate cannot characterize because exactly one kit
+/// declared a tag for the op-CID. Carries enough context for the refusal
+/// memento to name the declaring kit as the forbidding contract.
+#[derive(Debug, Clone)]
+struct UncharacterizableCallsite {
+    callsite_cid: String,
+    op_cid: String,
+    absent_on: Side,
+    /// The kit-CID of the side that DID declare a tag for the op (the
+    /// non-absent side). When available, used as `forbidding_contract` on
+    /// the refusal memento. Falls back to the op-CID if the declaring kit
+    /// did not carry value mementos.
+    declaring_kit_cid: Option<String>,
 }
 
 fn validate_focus(focus: Option<&str>, sql_callsites: &[SqlCallsite]) -> Result<(), String> {
@@ -763,9 +779,20 @@ fn platform_semantic_changes(
             OpCoverageVerdict::Uncharacterizable { absent_on } => {
                 // Exactly one kit declared a tag. The substrate cannot characterize
                 // the divergence; record for the refuse leg.
-                changes
-                    .uncharacterizable_callsites
-                    .push((callsite.cid.clone(), absent_on));
+                let declaring = match absent_on {
+                    Side::Source => target,
+                    Side::Target => source,
+                };
+                let declaring_kit_cid = declaring
+                    .dimension_values
+                    .first()
+                    .map(|memento| memento.kit_cid.clone());
+                changes.uncharacterizable_callsites.push(UncharacterizableCallsite {
+                    callsite_cid: callsite.cid.clone(),
+                    op_cid: callsite.concept_cid.clone(),
+                    absent_on,
+                    declaring_kit_cid,
+                });
             }
             OpCoverageVerdict::Divergent(divergence) => {
                 let effect = divergence_effect_cid(&divergence);
@@ -981,6 +1008,7 @@ fn build_receipt(
     target_binding_cid: &str,
     target_surface: TargetSurface,
     divergences_by_callsite_and_dimension: &BTreeMap<(String, String), DivergenceCharacterization>,
+    uncharacterizable_callsites: &[UncharacterizableCallsite],
 ) -> Result<MigrateReceiptEnvelope, String> {
     let mut concept_sites = Vec::new();
     for callsite in sql_callsites {
@@ -1063,49 +1091,83 @@ fn build_receipt(
         }
     }
 
-    let mut loss_records = Vec::new();
-    for decision in decisions.values() {
-        let PropagationDecision::Widen {
-            dimension_name,
-            triggering_callsite_cid,
-            ..
-        } = decision
-        else {
-            continue;
+    // Refuse leg of the trichotomy: every uncharacterizable callsite that the
+    // substrate-comparison phase collected becomes a refusal memento. The
+    // declaring kit's CID names the forbidding contract; the reason carries
+    // the absent op CID and the side that lacked a declaration.
+    for uc in uncharacterizable_callsites {
+        let forbidding_contract = uc
+            .declaring_kit_cid
+            .clone()
+            .unwrap_or_else(|| uc.op_cid.clone());
+        let absent_side = match uc.absent_on {
+            Side::Source => "source",
+            Side::Target => "target",
         };
-        let Some(dim) = dimension_name else {
-            continue;
-        };
-        let Some(divergence) = divergences_by_callsite_and_dimension
-            .get(&(triggering_callsite_cid.clone(), dim.clone()))
-        else {
-            continue;
-        };
-        let Some(callsite) = sql_callsites
-            .iter()
-            .find(|callsite| callsite.cid == *triggering_callsite_cid)
-        else {
-            continue;
-        };
-        let mut loss_dimensions = BTreeMap::new();
-        loss_dimensions.insert(
-            divergence.dimension_name.clone(),
-            IrFormula::DivergenceBetween {
-                source: Box::new(divergence.source_compare_to.clone()),
-                target: Box::new(divergence.target_compare_to.clone()),
-            },
-        );
-        let mut loss = LossRecordMemento {
-            callsite_cid: callsite.cid.clone(),
+        let mut refusal = RefusalMemento {
             cid: String::new(),
-            kind: "loss-record".to_string(),
-            loss_dimension: divergence.dimension_name.clone(),
-            loss_dimensions,
+            forbidding_contract,
+            function_cid: uc.callsite_cid.clone(),
+            kind: "refusal".to_string(),
+            reason: format!(
+                "substrate cannot characterize divergence: {absent_side} kit did not declare a tag for op-CID {}",
+                uc.op_cid
+            ),
             schema_version: "1".to_string(),
-            substituted_body: callsite.substituted_body.clone(),
         };
-        loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
-        loss_records.push(loss);
+        refusal.cid = refusal.recompute_cid().map_err(|e| e.to_string())?;
+        refusal_mementos.push(refusal);
+    }
+
+    // Short-circuit lossy emission when any callsite is uncharacterizable.
+    // Per the trichotomy, a migrate that refuses on any callsite is a pure
+    // refusal; emitting partial loss-records alongside would conflate
+    // "loudly-bounded-lossy" with "refuse" and violate Supra omnia, rectum.
+    let mut loss_records = Vec::new();
+    if uncharacterizable_callsites.is_empty() {
+        for decision in decisions.values() {
+            let PropagationDecision::Widen {
+                dimension_name,
+                triggering_callsite_cid,
+                ..
+            } = decision
+            else {
+                continue;
+            };
+            let Some(dim) = dimension_name else {
+                continue;
+            };
+            let Some(divergence) = divergences_by_callsite_and_dimension
+                .get(&(triggering_callsite_cid.clone(), dim.clone()))
+            else {
+                continue;
+            };
+            let Some(callsite) = sql_callsites
+                .iter()
+                .find(|callsite| callsite.cid == *triggering_callsite_cid)
+            else {
+                continue;
+            };
+            let mut loss_dimensions = BTreeMap::new();
+            loss_dimensions.insert(
+                divergence.dimension_name.clone(),
+                IrFormula::DivergenceBetween {
+                    source: Box::new(divergence.source_compare_to.clone()),
+                    target: Box::new(divergence.target_compare_to.clone()),
+                },
+            );
+            let mut loss = LossRecordMemento {
+                callsite_cid: callsite.cid.clone(),
+                cid: String::new(),
+                kind: "loss-record".to_string(),
+                loss_dimension: divergence.dimension_name.clone(),
+                loss_dimensions,
+                schema_version: "1".to_string(),
+                substituted_body: callsite.substituted_body.clone(),
+            };
+            loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
+            loss_records.push(loss);
+        }
     }
     let mut aggregate_summary = AggregateSummaryMemento {
         cid: String::new(),
@@ -2241,6 +2303,7 @@ mod tests {
             "target-binding",
             TargetSurface::TypescriptPg,
             &changes.divergences_by_callsite_and_dimension,
+            &changes.uncharacterizable_callsites,
         )
         .expect("receipt builds")
     }
@@ -2341,6 +2404,7 @@ mod tests {
             "target-binding",
             TargetSurface::TypescriptPg,
             &changes.divergences_by_callsite_and_dimension,
+            &changes.uncharacterizable_callsites,
         )
         .expect("receipt builds");
 
@@ -2377,9 +2441,12 @@ mod tests {
         let changes = platform_semantic_changes(&source, &target, &callsites, None)
             .expect("uncharacterizable does not bubble as error");
         assert_eq!(changes.uncharacterizable_callsites.len(), 1);
-        assert_eq!(changes.uncharacterizable_callsites[0].0, "cs:rust-native");
         assert_eq!(
-            changes.uncharacterizable_callsites[0].1,
+            changes.uncharacterizable_callsites[0].callsite_cid,
+            "cs:rust-native"
+        );
+        assert_eq!(
+            changes.uncharacterizable_callsites[0].absent_on,
             Side::Target,
             "source has the tag; target is absent"
         );
