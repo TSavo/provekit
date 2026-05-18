@@ -294,6 +294,19 @@ fn realize_function_name(term: &NamedTerm) -> &str {
     }
 }
 
+/// Prefer order: function (if set) > fn_name_sugar (CLI pipe sugar) > name (concept fallback)
+pub fn realize_function_name_with_sugar(term: &NamedTerm) -> &str {
+    if !term.function.trim().is_empty() {
+        return term.function.as_str();
+    }
+    if let Some(sugar) = term.fn_name_sugar.as_deref() {
+        if !sugar.trim().is_empty() {
+            return sugar;
+        }
+    }
+    term.name.as_str()
+}
+
 fn merge_realize_sidecar(
     spec: &mut Value,
     claim: &DomainClaim,

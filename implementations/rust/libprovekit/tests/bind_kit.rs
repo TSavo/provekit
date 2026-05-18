@@ -96,6 +96,11 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
     let mut expected_named =
         bind_term_document(&term_value, &BindOptions::default()).expect("existing binder succeeds");
     for term in &mut expected_named.terms {
+        // function is cleared in the wire form (preserving #1093 CID invariant);
+        // fn_name_sugar carries the source name as a non-CID-affecting annotation
+        if !term.function.is_empty() {
+            term.fn_name_sugar = Some(term.function.clone());
+        }
         term.function.clear();
     }
 
@@ -141,10 +146,11 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         serde_json::to_value(&expected_named).expect("expected named term serializes")
     );
 
+    // Bind is deterministic: running the same input twice produces the same payload bytes
     let first_jcs =
         libprovekit::canonical::serializable_jcs(payload).expect("payload canonicalizes");
     let second_claim = BindKit::default()
-        .transform(&Input::Term(expected_payload_source.clone()))
+        .transform(&Input::Term(input_term.clone()))
         .expect("bind kit transforms term input again");
     let second_payload = second_claim
         .payload

@@ -217,6 +217,12 @@ pub struct NamedTerm {
     pub file: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub function: String,
+    #[serde(
+        default,
+        rename = "fnNameSugar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fn_name_sugar: Option<String>,
     pub name: String,
     #[serde(
         default,
@@ -302,6 +308,7 @@ pub fn bind_term_document(
                 options.exam_manifest.as_ref(),
             )?);
         }
+        let fn_name = entry.fn_name;
         terms.push(NamedTerm {
             concept_name,
             discharge_verdict: if witnesses.is_empty() {
@@ -310,7 +317,12 @@ pub fn bind_term_document(
                 "exact".to_string()
             },
             file: entry.file,
-            function: entry.fn_name,
+            function: fn_name.clone(),
+            fn_name_sugar: if fn_name.is_empty() {
+                None
+            } else {
+                Some(fn_name)
+            },
             name,
             named_term_tree,
             param_types: entry.param_types,
@@ -350,8 +362,19 @@ fn bind_payload_named_term_document(named: &NamedTermDocument) -> NamedTermDocum
     let mut canonical = named.clone();
     for term in &mut canonical.terms {
         term.function.clear();
+        term.fn_name_sugar = None;
     }
     canonical
+}
+
+fn bind_payload_wire_named_term_document(named: &NamedTermDocument) -> NamedTermDocument {
+    let mut wire = named.clone();
+    for term in &mut wire.terms {
+        term.function.clear();
+        // fn_name_sugar is preserved: it carries the source fn name as a
+        // non-CID-affecting annotation on the citation (Option C sugar layer)
+    }
+    wire
 }
 
 pub fn concept_bind_result_cid() -> Cid {
@@ -363,9 +386,12 @@ pub fn bind_result_payload(
     named: &NamedTermDocument,
 ) -> Result<Term, BindError> {
     let catalog = ConceptOpCatalog::load()?;
-    let canonical_named = bind_payload_named_term_document(named);
+    // Wire form: function cleared (preserving #1093) but fn_name_sugar kept for
+    // the lower pipeline to recover the source function name without affecting
+    // the named-term-document CID (see named_term_document_cid / bind_payload_named_term_document)
+    let wire_named = bind_payload_wire_named_term_document(named);
     let original_term = strip_realize_sidecar_from_lift_term(original_term);
-    let named_form_binding = named_term_document_op_tree(&canonical_named, &catalog)?;
+    let named_form_binding = named_term_document_op_tree(&wire_named, &catalog)?;
     Ok(Term::Op {
         op_cid: concept_bind_result_cid(),
         name: CONCEPT_BIND_RESULT.to_string(),
@@ -1605,13 +1631,38 @@ mod tests {
             .transform(&Input::Term(lifted_add("adder")))
             .expect("bind adder succeeds");
 
+        // The named-term-document CID (artifacts) must be stable across renames (#1093)
         assert_eq!(
-            add_claim.to, adder_claim.to,
-            "source function name must not enter the bind payload CID"
+            add_claim.artifacts, adder_claim.artifacts,
+            "source function name must not affect the named-term-document CID"
+        );
+        // The payload CID (to) and payload bytes legitimately differ because fn_name_sugar
+        // rides in the wire citations as a non-CID-affecting annotation at the citation level.
+        // Verify that the recovered named-term-document has function="" in both cases,
+        // which is the load-bearing #1093 invariant.
+        let add_payload = add_claim.payload.as_ref().expect("add claim has payload");
+        let adder_payload = adder_claim.payload.as_ref().expect("adder claim has payload");
+        let add_named = named_term_document_from_bind_payload(add_payload)
+            .expect("recover add named term document");
+        let adder_named = named_term_document_from_bind_payload(adder_payload)
+            .expect("recover adder named term document");
+        assert!(
+            add_named.terms[0].function.is_empty(),
+            "recovered function must be empty for add (fn name lives in fn_name_sugar)"
+        );
+        assert!(
+            adder_named.terms[0].function.is_empty(),
+            "recovered function must be empty for adder (fn name lives in fn_name_sugar)"
         );
         assert_eq!(
-            add_claim.payload, adder_claim.payload,
-            "source function name must not enter the bind payload bytes"
+            add_named.terms[0].fn_name_sugar.as_deref(),
+            Some("add"),
+            "fn_name_sugar carries the source function name in the wire form"
+        );
+        assert_eq!(
+            adder_named.terms[0].fn_name_sugar.as_deref(),
+            Some("adder"),
+            "fn_name_sugar carries the source function name in the wire form"
         );
     }
 
@@ -1629,6 +1680,7 @@ mod tests {
                     discharge_verdict: "loudly-bounded-lossy".to_string(),
                     file: String::new(),
                     function: function.to_string(),
+                    fn_name_sugar: None,
                     name: "add".to_string(),
                     named_term_tree: None,
                     param_types: vec!["i64".to_string(), "i64".to_string()],
@@ -1662,6 +1714,7 @@ mod tests {
                 discharge_verdict: "loudly-bounded-lossy".to_string(),
                 file: String::new(),
                 function: String::new(),
+                fn_name_sugar: None,
                 name: "concept:deposit".to_string(),
                 named_term_tree: None,
                 param_types: vec!["i64".to_string()],

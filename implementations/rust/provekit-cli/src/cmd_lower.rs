@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Parser, ValueEnum};
-use libprovekit::core::lower_plugin::realize_spec_from_named_term;
+use libprovekit::core::lower_plugin::{realize_function_name_with_sugar, realize_spec_from_named_term};
 use libprovekit::core::{
     execute_path, named_term_document_from_bind_payload, HashMapInputCatalog, Input, KitRegistry,
     LowerKit, Path as CorePath, PathAlgebra, Term,
@@ -278,7 +278,14 @@ fn lower_named_document(
 ) -> Result<String, LowerNamedError> {
     let mut out = String::new();
     for term in &named.terms {
-        let spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
+        let mut spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
+        // Apply fn_name_sugar override: if the bind payload carried a source function name
+        // annotation (non-CID-affecting sugar), use it to restore the function name in the
+        // realize request. This is the CLI pipe path equivalent of merge_realize_sidecar.
+        let sugar_fn = realize_function_name_with_sugar(term);
+        if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
+            spec["function"] = Json::String(sugar_fn.to_string());
+        }
         let source = lower_named_spec_via_path(project_root, target, spec)?;
         out.push_str(&source);
         if !out.ends_with('\n') {
