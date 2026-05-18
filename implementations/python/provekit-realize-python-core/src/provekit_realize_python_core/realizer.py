@@ -51,6 +51,7 @@ class BodyTemplateEntry:
     max_params: int | None
     requires_param_types: tuple[str, ...] | None
     requires_return_type: str | None
+    loss_record_contribution: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,24 @@ def emit_stub(
 ) -> dict[str, Any]:
     sugar_cids_value = sugar_cids or []
     sugar_plugins_value = sugar_plugins or []
+    observed_loss_record: dict[str, Any] | None = None
+    if transported_op is None and named_term_tree is None and term_shape is None:
+        carrier_entry = sugar_carrier_entry_for(
+            concept_name,
+            params,
+            param_types,
+            return_type,
+        )
+        if carrier_entry is not None:
+            observed_loss_record = _loss_record_from_contribution(
+                carrier_entry.loss_record_contribution
+            )
+            transported_op = _sugar_carrier_transported_op(
+                function,
+                params,
+                concept_name,
+                observed_loss_record,
+            )
     concept_lines = concept_citation_comment_lines(
         transported_op,
         sugar_cids_value,
@@ -194,7 +213,7 @@ def emit_stub(
         "extension": "py",
     }
     if contract_lines or concept_lines:
-        result["observed_loss_record"] = {}
+        result["observed_loss_record"] = observed_loss_record or {}
         result["used_sugars"] = [sugar_cids_value[0]] if sugar_cids_value else []
     return result
 
@@ -444,6 +463,68 @@ def _concept_citation_payload(
     return payload
 
 
+def _sugar_carrier_transported_op(
+    function: str,
+    params: list[str],
+    concept_name: str,
+    loss_record: dict[str, Any],
+) -> dict[str, Any] | None:
+    concept_cid = _catalog_concept_cid(concept_name)
+    if concept_cid is None:
+        return None
+    args_jcs = [{"kind": "var", "name": param} for param in params]
+    return {
+        "args_jcs": args_jcs,
+        "concept_cid": concept_cid,
+        "concept_name": concept_name,
+        "concept_site_cid": _cid_of_json(
+            {
+                "concept_name": concept_name,
+                "function": function,
+                "surface": "python-concept-citation-sugar-carrier",
+            }
+        ),
+        "loss_record_cid": _cid_of_json(loss_record),
+        "operation_kind": concept_name.removeprefix("concept:"),
+        "policy_cid": DEFAULT_CONCEPT_POLICY_CID,
+        "shape_cid": concept_cid,
+        "sugar_dict_cid": DEFAULT_CONCEPT_SUGAR_DICT_CID,
+        "term_position": [0],
+    }
+
+
+def _loss_record_from_contribution(
+    contribution: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if contribution is None:
+        contribution = {"form": "literal", "value": {}}
+    return {"loss_record_contribution": contribution}
+
+
+@lru_cache(maxsize=1)
+def _concept_catalog_index() -> dict[str, Any]:
+    path = _find_repo_file(Path("menagerie/concept-shapes/catalog/index.json"))
+    if path is None:
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _catalog_concept_cid(concept_name: str) -> str | None:
+    index = _concept_catalog_index()
+    entries = index.get("entries")
+    if not isinstance(entries, dict):
+        return None
+    for entry in entries.values():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("kind") != "algorithm" or entry.get("name") != concept_name:
+            continue
+        cid = entry.get("cid")
+        if isinstance(cid, str) and CID_RE.fullmatch(cid):
+            return cid
+    return None
+
+
 def _payload_role(role: str) -> str | None:
     match role:
         case "pre" | "post" | "throws" | "observation":
@@ -587,6 +668,50 @@ def body_template_for(
         param_types,
         return_type,
     )
+
+
+def sugar_carrier_entry_for(
+    concept_name: str,
+    params: list[str],
+    param_types: list[str],
+    return_type: str,
+) -> BodyTemplateEntry | None:
+    mapped_param_types = [map_source_type(ty) for ty in param_types]
+    mapped_return_type = map_source_type(return_type)
+    candidate_names = (concept_name, concept_name.removeprefix("concept:"))
+    for entry in entries():
+        if entry.concept_name not in candidate_names:
+            continue
+        if entry.template_kind != "concept-citation-comment":
+            continue
+        if not _entry_signature_matches(
+            entry,
+            len(params),
+            mapped_param_types,
+            mapped_return_type,
+        ):
+            continue
+        return entry
+    return None
+
+
+def _entry_signature_matches(
+    entry: BodyTemplateEntry,
+    param_count: int,
+    mapped_param_types: list[str],
+    mapped_return_type: str,
+) -> bool:
+    if entry.min_params is not None and param_count < entry.min_params:
+        return False
+    if entry.max_params is not None and param_count > entry.max_params:
+        return False
+    if entry.requires_param_types is not None:
+        if tuple(mapped_param_types) != entry.requires_param_types:
+            return False
+    if entry.requires_return_type is not None:
+        if mapped_return_type != entry.requires_return_type:
+            return False
+    return True
 
 
 class _MissingTemplateCollector:
@@ -1308,16 +1433,13 @@ def _body_template_for_entries(
     for entry in body_entries:
         if entry.concept_name not in candidate_names:
             continue
-        if entry.min_params is not None and len(params) < entry.min_params:
+        if not _entry_signature_matches(
+            entry,
+            len(params),
+            mapped_param_types,
+            mapped_return_type,
+        ):
             continue
-        if entry.max_params is not None and len(params) > entry.max_params:
-            continue
-        if entry.requires_param_types is not None:
-            if tuple(mapped_param_types) != entry.requires_param_types:
-                continue
-        if entry.requires_return_type is not None:
-            if mapped_return_type != entry.requires_return_type:
-                continue
         if entry.template_kind != "verbatim":
             continue
         rendered = render_template(entry.template, params, mapped_param_types, mapped_return_type)
@@ -2136,6 +2258,7 @@ def _entries_from_file(relative: Path) -> tuple[BodyTemplateEntry, ...]:
         concept_name = item.get("concept_name")
         template_kind = template.get("kind")
         template_text = template.get("template")
+        loss_record_contribution = item.get("loss_record_contribution")
         if not isinstance(concept_name, str):
             continue
         if not isinstance(template_kind, str) or not isinstance(template_text, str):
@@ -2153,6 +2276,9 @@ def _entries_from_file(relative: Path) -> tuple[BodyTemplateEntry, ...]:
                 else None,
                 requires_return_type=guard.get("requires_return_type")
                 if isinstance(guard.get("requires_return_type"), str)
+                else None,
+                loss_record_contribution=loss_record_contribution
+                if isinstance(loss_record_contribution, dict)
                 else None,
             )
         )

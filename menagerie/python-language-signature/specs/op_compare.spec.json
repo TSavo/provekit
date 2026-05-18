@@ -59,7 +59,7 @@
         }
       ]
     },
-    "notes": "Chained comparisons are refused by the draft lifter."
+    "notes": "Chained comparisons desugar to pairwise compare operations composed with python:and."
   },
   "effects": {
     "effects": []

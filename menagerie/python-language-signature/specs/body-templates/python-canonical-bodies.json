@@ -346,6 +346,176 @@
           }
         },
         {
+          "concept_name": "concept:addr",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-references-not-addresses": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-references-not-addresses"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:deref",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-implicit-deref": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-implicit-deref"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:decl",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-implicit-decl": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-implicit-decl"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:cast",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-constructor-not-cast": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-constructor-not-cast"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:do",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-no-do-while": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-no-do-while"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:postdec",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-no-postfix-decrement": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-no-postfix-decrement"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:postinc",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-no-postfix-increment": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-no-postfix-increment"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:predec",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-no-prefix-decrement": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-no-prefix-decrement"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:preinc",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-no-prefix-increment": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-no-prefix-increment"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:ushr",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-unified-shr": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-unified-shr"
+              }
+            }
+          }
+        },
+        {
           "concept_name": "unit",
           "emission_template": {
             "kind": "verbatim",

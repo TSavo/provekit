@@ -363,23 +363,7 @@ class _Emitter:
                 result = ctor(op, result, value)
             return result
         if isinstance(node, ast.Compare):
-            if len(node.ops) != 1 or len(node.comparators) != 1:
-                raise _UnsupportedSyntax(
-                    node,
-                    "chained comparisons with more than one operator are refused",
-                )
-            op = _CMPOPS.get(type(node.ops[0]))
-            if op is None:
-                raise _UnsupportedSyntax(
-                    node,
-                    f"unsupported comparison operator: {type(node.ops[0]).__name__}",
-                )
-            return ctor(
-                "python:compare",
-                str_const(op),
-                self.expr(node.left),
-                self.expr(node.comparators[0]),
-            )
+            return self.compare(node)
         if isinstance(node, ast.Call):
             return self.call(node)
         if isinstance(node, ast.Attribute):
@@ -405,6 +389,31 @@ class _Emitter:
         if value is None:
             return none_const()
         raise _UnsupportedSyntax(node, f"unsupported constant: {type(value).__name__}")
+
+    def compare(self, node: ast.Compare) -> Json:
+        if not node.ops or len(node.ops) != len(node.comparators):
+            raise _UnsupportedSyntax(node, "malformed comparison expression")
+        operands: list[ast.expr] = [node.left, *node.comparators]
+        comparisons: list[Json] = []
+        for index, raw_op in enumerate(node.ops):
+            op = _CMPOPS.get(type(raw_op))
+            if op is None:
+                raise _UnsupportedSyntax(
+                    node,
+                    f"unsupported comparison operator: {type(raw_op).__name__}",
+                )
+            comparisons.append(
+                ctor(
+                    "python:compare",
+                    str_const(op),
+                    self.expr(operands[index]),
+                    self.expr(operands[index + 1]),
+                )
+            )
+        result = comparisons[0]
+        for comparison in comparisons[1:]:
+            result = ctor("python:and", result, comparison)
+        return result
 
     def call(self, node: ast.Call) -> Json:
         if node.keywords:
