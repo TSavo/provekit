@@ -1023,3 +1023,99 @@ jobs:
             --test python_emit_compile_run_conformance \
             --features provekit-cli/slow-tests \
             -- --nocapture
+
+  prove-trinity-citation-exhibit:
+    # Trinity citation exhibit (closes #1068).
+    #
+    # Dedicated Path B 2b slow lane for failure attribution. This job runs only
+    # the fixture-backed Python -> Java -> Rust -> Python exhibit over real
+    # Python, Java, and Rust plugin subprocesses.
+    name: prove-trinity-citation-exhibit (slow-lane)
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust target dirs
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Rust target dirs
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install python plugin dependencies (blake3 + lift + realize)
+        run: |
+          set -euo pipefail
+          pip install -e implementations/python/provekit-lift-py-tests
+          pip install -e implementations/python/provekit-lift-python-source --no-deps
+          pip install -e implementations/python/provekit-realize-python-core
+
+      - name: Set up Java 21 + Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Install Java deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends maven
+
+      - name: Build Java plugins (lift + realize)
+        run: |
+          set -euo pipefail
+          mvn -q \
+            -f implementations/java/pom.xml \
+            -pl provekit-lift-java-source,provekit-realize-java-core \
+            -am \
+            -DskipTests \
+            package
+
+      - name: Build dependent Rust binaries (walk-rpc + realize-rust)
+        run: |
+          set -euo pipefail
+          cargo build --release \
+            --manifest-path implementations/rust/Cargo.toml \
+            -p provekit-walk \
+            -p provekit-realize-rust-core \
+            -p provekit-cli
+
+      - name: Run Trinity citation exhibit
+        run: |
+          set -euo pipefail
+          cargo test --release \
+            --manifest-path implementations/rust/Cargo.toml \
+            -p provekit-cli \
+            --test trinity_citation_comments_exhibit \
+            --features provekit-cli/slow-tests \
+            -- --nocapture
