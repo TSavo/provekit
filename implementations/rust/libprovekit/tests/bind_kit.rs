@@ -77,6 +77,52 @@ fn witnessless_concept_input(concept: &str) -> Value {
     value
 }
 
+fn cluster_input(entries: Vec<Value>) -> Value {
+    json!({
+        "kind": "ir-document",
+        "sourceLanguage": "rust",
+        "workspaceRoot": "/tmp/provekit-bind-kit-test",
+        "ir": entries
+    })
+}
+
+fn cluster_entry(fn_name: &str, concept: &str, cid_digit: char, witnesses: Vec<Value>) -> Value {
+    json!({
+        "kind": "bind-lift-entry",
+        "file": "src/lib.rs",
+        "fn_name": fn_name,
+        "fn_line": 14,
+        "concept_annotation": concept,
+        "param_names": ["x"],
+        "param_types": ["i64"],
+        "return_type": "i64",
+        "term_shape": {"kind": "bin", "op": "+"},
+        "term_shape_cid": format!(
+            "blake3-512:{}",
+            std::iter::repeat(cid_digit).take(128).collect::<String>()
+        ),
+        "witnesses": witnesses
+    })
+}
+
+fn candidate_cluster_manifest(named: &Value) -> &Value {
+    named
+        .get("candidateClusterManifest")
+        .expect("candidateClusterManifest emitted")
+}
+
+fn candidate_cluster_count(named: &Value, concept: &str) -> u64 {
+    candidate_cluster_manifest(named)["clusters"]
+        .as_array()
+        .expect("clusters array")
+        .iter()
+        .find(|cluster| cluster["conceptCluster"] == concept)
+        .unwrap_or_else(|| panic!("cluster {concept} missing"))
+        .get("candidateCount")
+        .and_then(Value::as_u64)
+        .expect("candidateCount is u64")
+}
+
 #[test]
 fn bind_kit_transform_emits_bind_result_op_tree() {
     let term_value = bind_input_value();
@@ -161,6 +207,86 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         libprovekit::canonical::serializable_jcs(second_payload)
             .expect("second payload canonicalizes")
     );
+}
+
+#[test]
+fn bind_emits_candidate_cluster_manifest_with_cardinality_per_concept() {
+    let input = cluster_input(vec![
+        cluster_entry("add_one", "add", '1', vec![]),
+        cluster_entry("add_two", "add", '2', vec![]),
+        cluster_entry("sub_one", "sub", '3', vec![]),
+        cluster_entry("mul_one", "concept:mul", '4', vec![]),
+    ]);
+
+    let named = bind_term_document(&input, &BindOptions::default()).expect("bind succeeds");
+    let named_json = serde_json::to_value(&named).expect("named term serializes");
+    let manifest = candidate_cluster_manifest(&named_json);
+
+    assert_eq!(manifest["kind"], "candidate-cluster-manifest");
+    assert_eq!(manifest["schemaVersion"], "1");
+    assert_eq!(manifest["totalCandidates"], 4);
+    assert_eq!(candidate_cluster_count(&named_json, "concept:add"), 2);
+    assert_eq!(candidate_cluster_count(&named_json, "concept:mul"), 1);
+    assert_eq!(candidate_cluster_count(&named_json, "concept:sub"), 1);
+}
+
+#[test]
+fn candidate_cluster_manifest_groups_by_concept_not_function_name() {
+    let input = cluster_input(vec![
+        cluster_entry("add_one", "add", '1', vec![]),
+        cluster_entry("add_two", "add", '1', vec![]),
+    ]);
+
+    let named = bind_term_document(&input, &BindOptions::default()).expect("bind succeeds");
+    let named_json = serde_json::to_value(&named).expect("named term serializes");
+    let clusters = candidate_cluster_manifest(&named_json)["clusters"]
+        .as_array()
+        .expect("clusters array");
+
+    assert_eq!(clusters.len(), 1);
+    assert_eq!(clusters[0]["conceptCluster"], "concept:add");
+    assert_eq!(clusters[0]["candidateCount"], 2);
+}
+
+#[test]
+fn candidate_cluster_manifest_groups_by_concept_not_shape_cid() {
+    let input = cluster_input(vec![
+        cluster_entry("add_one", "add", '1', vec![]),
+        cluster_entry("add_two", "add", '2', vec![]),
+    ]);
+
+    let named = bind_term_document(&input, &BindOptions::default()).expect("bind succeeds");
+    let named_json = serde_json::to_value(&named).expect("named term serializes");
+    let clusters = candidate_cluster_manifest(&named_json)["clusters"]
+        .as_array()
+        .expect("clusters array");
+
+    assert_eq!(clusters.len(), 1);
+    assert_eq!(clusters[0]["conceptCluster"], "concept:add");
+    assert_eq!(clusters[0]["candidateCount"], 2);
+}
+
+#[test]
+fn candidate_cluster_manifest_counts_candidates_not_witnesses() {
+    let witness = json!({
+        "role": "post",
+        "predicate_text": "out == x",
+        "source_kind": "annotation"
+    });
+    let input = cluster_input(vec![
+        cluster_entry("add_one", "add", '1', vec![witness.clone(), witness]),
+        cluster_entry("add_two", "add", '2', vec![]),
+    ]);
+
+    let named = bind_term_document(&input, &BindOptions::default()).expect("bind succeeds");
+    let named_json = serde_json::to_value(&named).expect("named term serializes");
+    let clusters = candidate_cluster_manifest(&named_json)["clusters"]
+        .as_array()
+        .expect("clusters array");
+
+    assert_eq!(clusters.len(), 1);
+    assert_eq!(clusters[0]["conceptCluster"], "concept:add");
+    assert_eq!(clusters[0]["candidateCount"], 2);
 }
 
 #[test]
