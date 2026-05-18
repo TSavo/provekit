@@ -71,22 +71,27 @@ The marketplace dynamic: library authors ship sugar dict plugins for their libra
 
 The substrate does not author Spring's sugar dict. Spring does. The substrate respects loaded sugar dicts via the PEP 1.7.0 plugin protocol.
 
-### R5: Observations come in three shapes: Monitor, Witness, Gate.
+### R5: Observations come in FOUR shapes: Monitor, Witness, Emitter, Gate.
+
+> Amendment 2026-05-18 (T Savo ruling): R5 originally ratified three shapes (Monitor / Witness / Gate). The substrate-internal inconsistency surfaced by the R14 reframe scope audit (PR #1160) -- sugar-dict-memento §2.3 and policy-profile-memento Field Discipline both list four modes including Emitter -- is resolved by RESTORING Emitter as the fourth shape. This aligns R5 with the existing 4-mode vocabulary in the spec layer and unblocks #880 (contract-observation) and #755 (runtime-mode emission sugars) which both enumerate `emitter` as a runtime mode.
 
 These have distinct signing and runtime semantics:
 
-- **Monitor**: a passive observer that records what was checked. A running JUnit test is a monitor. An instrumented assertion log is a monitor. Output: monitor records. Unsigned.
+- **Monitor**: passive observer that records what was checked. Unsigned. Output: monitor records.
 
-- **Witness**: a signed memento attesting that an observation occurred and what was observed. A signed JUnit run result is a witness. A signed formal proof is a witness. A signed regulator attestation is a witness. Each witness has a signer; the substrate's witness registry indexes by (subject, fixture_state_cid). Signed.
+- **Witness**: signed memento attesting that an observation occurred and what was observed. A signed JUnit run result is a witness. A signed formal proof is a witness. A signed regulator attestation is a witness. Each witness has a signer; substrate's witness registry indexes by (subject, fixture_state_cid). Signed.
 
-- **Gate**: an active runtime enforcement. `assert(x > 0)` is a gate. A precondition check that throws is a gate. A boundary refusal at PEP plugin loading is a gate. Output: control flow (continue or throw). Active.
+- **Emitter**: fires a signal that is neither signed nor stored. Example: a metric counter increment, a trace-span emission, a log line without subject-fixation. Output: ephemeral signal; no persistent memento. Active.
 
-The substrate models all three. Different memento families:
+- **Gate**: active runtime enforcement. `assert(x > 0)` is a gate. A precondition check that throws is a gate. A boundary refusal at PEP plugin loading is a gate. Output: control flow (continue or throw). Active.
+
+The substrate models all four. Different memento families:
 - MonitorMemento (or instrumentation record, depending on monitor type)
 - WitnessMemento (already in `provekit-ir-types`)
+- EmitterMemento (NEW -- for emitter declarations; the runtime emission itself does not persist as a memento)
 - GateMemento (for gate declarations; the runtime enforcement is the gate's behavior)
 
-JUnit-as-monitor: the running test observes. JUnit-as-witness: the signed test result attests. JUnit-as-gate: a JUnit assertion that throws (terminates the test) is enforcing.
+JUnit-as-monitor: the running test observes. JUnit-as-witness: the signed test result attests. JUnit-as-emitter: a printf-style logging assertion that emits to stdout without storing a record. JUnit-as-gate: a JUnit assertion that throws (terminates the test) is enforcing.
 
 ### R6: Promotion decisions are policy-mediated per consumer.
 
@@ -412,7 +417,7 @@ The ruling RATIFIES (does not supersede) the following existing specs:
 - `protocol/specs/2026-05-16-exam-manifest-memento.md` v1.0.0: ExamManifestMemento. R11 narrows its scope to structural questions; the v1 manifest's schema needs refinement per R12.
 - `libprovekit/src/effect_propagation.rs`: effect propagation algorithm. R7 names this as the migration analyzer.
 
-These specs collectively constitute the substrate's first-principle commitment. R1-R13 unify them under a coherent vision: concepts universal, per-language tags decide emission, vendors ship sugar dicts, observations come in three shapes, policy mediates promotion, federation operates at three layers, migration is multi-axis, IDE integration is downstream.
+These specs collectively constitute the substrate's first-principle commitment. R1-R13 unify them under a coherent vision: concepts universal, per-language tags decide emission, vendors ship sugar dicts, observations come in four shapes, policy mediates promotion, federation operates at three layers, migration is multi-axis, IDE integration is downstream.
 
 ---
 
@@ -497,7 +502,7 @@ The substrate's first principle (Supra omnia, rectum: above all, correctness) re
 - Concepts at ProofIR are universal.
 - Per-language emission has four tag locations.
 - Sugar dicts are vendor-authored.
-- Observations come in three shapes.
+- Observations come in four shapes.
 - Promotion is policy-mediated.
 - Federation operates at three layers.
 - Migration is multi-axis.
