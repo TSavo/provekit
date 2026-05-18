@@ -205,6 +205,12 @@
       "name": "morphism:python:not:to:concept:not",
       "path": "algorithms/morphism:python:not:to:concept:not.blake3-512:0cfcb5a37de1593f327c5f1c711dcfb1db4cd0b1491b20550c7c43248c5772520e4a3f63c49ca7ed722b88e3db6c5229ba8b77d79eb79da4fbad9beb4ab6f25f.json"
     },
+    "blake3-512:0d0ff6d8054b0989bfbb12df7f9a1f0bba516a941b6aaefabe86639cda603655b4679a3691a5249ea0d5087b6f42228bba261e99a96bbef3c7ee8e5ec38895a9": {
+      "cid": "blake3-512:0d0ff6d8054b0989bfbb12df7f9a1f0bba516a941b6aaefabe86639cda603655b4679a3691a5249ea0d5087b6f42228bba261e99a96bbef3c7ee8e5ec38895a9",
+      "kind": "realization",
+      "name": "concept:iterator->rust:iterator-trait",
+      "path": "realizations/concept:iterator->rust:iterator-trait.blake3-512:0d0ff6d8054b0989bfbb12df7f9a1f0bba516a941b6aaefabe86639cda603655b4679a3691a5249ea0d5087b6f42228bba261e99a96bbef3c7ee8e5ec38895a9.json"
+    },
     "blake3-512:0d8c5c2466655e139e8005e890c79cff5c61a51fd8b52e4382c48a6e441d672a12f774fef7a71397be2963474ef08a7b801d0fee8278f462b29a77f743d681b0": {
       "cid": "blake3-512:0d8c5c2466655e139e8005e890c79cff5c61a51fd8b52e4382c48a6e441d672a12f774fef7a71397be2963474ef08a7b801d0fee8278f462b29a77f743d681b0",
       "kind": "algorithm",
@@ -360,6 +366,12 @@
       "kind": "receipt",
       "name": "morphism_c11_while_to_while",
       "path": "receipts/morphism_c11_while_to_while.blake3-512:22013b4d87381f8e6e680e6a186d9eae72fbd3bdbc5e08fb20fad199b3177d934c4d63d4d01d2f3bd73641a2ca8959d94acce46c9dafdbb23fc9e696788566a9.json"
+    },
+    "blake3-512:223ff8049863e5348c85bc074ec5027f699f10239626e9f4a7af3bbdee16594de5a2aeb2b8691bfbc0eac2ef7bd7793aba28d15c3eecaf5792de61d9b6713fe7": {
+      "cid": "blake3-512:223ff8049863e5348c85bc074ec5027f699f10239626e9f4a7af3bbdee16594de5a2aeb2b8691bfbc0eac2ef7bd7793aba28d15c3eecaf5792de61d9b6713fe7",
+      "kind": "realization",
+      "name": "concept:dynamic-dispatch->rust:dyn-trait-object",
+      "path": "realizations/concept:dynamic-dispatch->rust:dyn-trait-object.blake3-512:223ff8049863e5348c85bc074ec5027f699f10239626e9f4a7af3bbdee16594de5a2aeb2b8691bfbc0eac2ef7bd7793aba28d15c3eecaf5792de61d9b6713fe7.json"
     },
     "blake3-512:22976fbbcd1949d4a701f3c71b8b13a4a44b1da8597b55f06491c9923a5551c100f3e5729f9439e0823e36dea470e2dfa43eccf850ed6d5db2d5804d7063bd61": {
       "cid": "blake3-512:22976fbbcd1949d4a701f3c71b8b13a4a44b1da8597b55f06491c9923a5551c100f3e5729f9439e0823e36dea470e2dfa43eccf850ed6d5db2d5804d7063bd61",
@@ -582,6 +594,12 @@
       "kind": "realization",
       "name": "concept:list->c:linked-struct",
       "path": "realizations/concept:list->c:linked-struct.blake3-512:2cb7ac819938ca8f044240e6da9c517706a165114d4a3ecf9bcc7040e754a0e02a8d8076612701ec0b6ab02e7f60be54ae176c715e552bd739b6972a9c396edb.json"
+    },
+    "blake3-512:2cf2ac1c18917587d10dacdd2c23a030e2f2f5050422dc268c788493a89771673ef7444024805c4c70651e89ec1cbbb0e3c96aca9282dc88802b92bf71f71997": {
+      "cid": "blake3-512:2cf2ac1c18917587d10dacdd2c23a030e2f2f5050422dc268c788493a89771673ef7444024805c4c70651e89ec1cbbb0e3c96aca9282dc88802b92bf71f71997",
+      "kind": "realization",
+      "name": "concept:closure->rust:closure-expression",
+      "path": "realizations/concept:closure->rust:closure-expression.blake3-512:2cf2ac1c18917587d10dacdd2c23a030e2f2f5050422dc268c788493a89771673ef7444024805c4c70651e89ec1cbbb0e3c96aca9282dc88802b92bf71f71997.json"
     },
     "blake3-512:2d7efb65b786fb9e0ce667c260bae3e3ea8569ec51b5639e9b596132e13178b34988d0d368f3030318ddeba1a6a754289b762f1fabc1889dd05d4e5d9850ca01": {
       "cid": "blake3-512:2d7efb65b786fb9e0ce667c260bae3e3ea8569ec51b5639e9b596132e13178b34988d0d368f3030318ddeba1a6a754289b762f1fabc1889dd05d4e5d9850ca01",
@@ -1819,6 +1837,12 @@
       "name": "concept:dict-lookup-over-mro",
       "path": "algorithms/concept:dict-lookup-over-mro.blake3-512:82bd7872234c2e0856b9b3268a944c17ad77fd2ccc7bf591b8f3ccc2c9b85982c0b57553297263ee108da8c9966b4c65fe493829879c8eda13f19d66a48add4d.json"
     },
+    "blake3-512:84132db49284bfbf9c5e88f972d97d32d7f94add3fc2bab286f321148f4b609e6ab59a8a0fe07aba57b37fa7c5db0cb212e7154ba584d2386001d45c7b2457ca": {
+      "cid": "blake3-512:84132db49284bfbf9c5e88f972d97d32d7f94add3fc2bab286f321148f4b609e6ab59a8a0fe07aba57b37fa7c5db0cb212e7154ba584d2386001d45c7b2457ca",
+      "kind": "realization",
+      "name": "concept:generic-instantiation->rust:monomorphization",
+      "path": "realizations/concept:generic-instantiation->rust:monomorphization.blake3-512:84132db49284bfbf9c5e88f972d97d32d7f94add3fc2bab286f321148f4b609e6ab59a8a0fe07aba57b37fa7c5db0cb212e7154ba584d2386001d45c7b2457ca.json"
+    },
     "blake3-512:841459f6ae47709a37249029e916e73d40127c3fd48269a0afda99eced43ea4dd8c9a8eb6f2b41ce851b2e3d229c35660ebb552156621b9b1885d97890af35a0": {
       "cid": "blake3-512:841459f6ae47709a37249029e916e73d40127c3fd48269a0afda99eced43ea4dd8c9a8eb6f2b41ce851b2e3d229c35660ebb552156621b9b1885d97890af35a0",
       "kind": "algorithm",
@@ -2406,6 +2430,12 @@
       "kind": "receipt",
       "name": "morphism_c11_shl_to_shl",
       "path": "receipts/morphism_c11_shl_to_shl.blake3-512:b1cba0f84e5c9c38760e9b14f514cb973b7cb6960a54dae719851d0c501afefa7ad954399f0fc1f8b7f6f287cfcbfa67b6b2f249a764a58d13816a48a19aaa2e.json"
+    },
+    "blake3-512:b21db43e7f596f631f4ecba9b37f70b64550abe124cbc26b1a7183ccf8656fd32d46c80d50942d8faf37764ba1072fd085cd482c3538b074bff9f3418cc7be3f": {
+      "cid": "blake3-512:b21db43e7f596f631f4ecba9b37f70b64550abe124cbc26b1a7183ccf8656fd32d46c80d50942d8faf37764ba1072fd085cd482c3538b074bff9f3418cc7be3f",
+      "kind": "realization",
+      "name": "concept:reference->rust:shared-reference",
+      "path": "realizations/concept:reference->rust:shared-reference.blake3-512:b21db43e7f596f631f4ecba9b37f70b64550abe124cbc26b1a7183ccf8656fd32d46c80d50942d8faf37764ba1072fd085cd482c3538b074bff9f3418cc7be3f.json"
     },
     "blake3-512:b23257f603c8fb58b7e032d4572be7367f3f221b566dd06bd9a5fce5d7694b4a8e7ae583669846004cc2e50e081d6e803a15cbab21f93afa11b8ed20038b79aa": {
       "cid": "blake3-512:b23257f603c8fb58b7e032d4572be7367f3f221b566dd06bd9a5fce5d7694b4a8e7ae583669846004cc2e50e081d6e803a15cbab21f93afa11b8ed20038b79aa",

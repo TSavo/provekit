@@ -28,12 +28,20 @@ pub struct Realization {
 struct BodyTemplateEntry {
     concept_name: String,
     mode: Option<String>,
+    realization_kind: Option<String>,
     template_kind: String,
     template: String,
+    loss_record_contribution: Option<Value>,
     min_params: Option<usize>,
     max_params: Option<usize>,
     requires_param_types: Option<Vec<String>>,
     requires_return_type: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RenderedBody {
+    body: String,
+    observed_loss_record: Value,
 }
 
 pub fn emit_stub(
@@ -61,18 +69,30 @@ pub fn emit_stub_with_mode(
     concept_name: &str,
     mode: Option<&str>,
 ) -> Realization {
-    let body = operator_body_template_for(concept_name, params, param_types, return_type, mode)
+    let rendered = operator_body_template_for(concept_name, params, param_types, return_type, mode)
         .or_else(|| body_template_for(concept_name, params, param_types, return_type, mode));
-    if body.is_none() {
+    if rendered.is_none() {
         if let Some(realized) =
             emit_sugar_carrier(function, params, param_types, return_type, concept_name)
         {
             return realized;
         }
     }
-    let is_stub = body.is_none();
-    let body = body.unwrap_or_else(|| stub_body_for(concept_name));
-    emit_function(function, params, param_types, return_type, &body, is_stub)
+    match rendered {
+        Some(rendered) => emit_function_with_evidence(
+            function,
+            params,
+            param_types,
+            return_type,
+            &rendered.body,
+            rendered.observed_loss_record,
+            Vec::new(),
+        ),
+        None => {
+            let body = stub_body_for(concept_name);
+            emit_function(function, params, param_types, return_type, &body, true)
+        }
+    }
 }
 
 /// Emits Rust for the D7 resolved Value::null body shape:
@@ -616,7 +636,7 @@ fn body_template_for(
     param_types: &[String],
     return_type: &str,
     mode: Option<&str>,
-) -> Option<String> {
+) -> Option<RenderedBody> {
     body_template_for_entries(
         entries(),
         concept_name,
@@ -634,7 +654,7 @@ fn body_template_for_entries(
     param_types: &[String],
     return_type: &str,
     mode: Option<&str>,
-) -> Option<String> {
+) -> Option<RenderedBody> {
     let mapped_param_types: Vec<String> =
         param_types.iter().map(|ty| map_source_type(ty)).collect();
     let mapped_return_type = map_source_type(return_type);
@@ -670,10 +690,25 @@ fn body_template_for_entries(
             &mapped_param_types,
             &mapped_return_type,
         ) {
-            return Some(rendered);
+            return Some(RenderedBody {
+                body: rendered,
+                observed_loss_record: observed_loss_record_for_entry(entry),
+            });
         }
     }
     None
+}
+
+fn observed_loss_record_for_entry(entry: &BodyTemplateEntry) -> Value {
+    if entry.realization_kind.as_deref() != Some("boundary-realization") {
+        return json!({});
+    }
+    let Some(contribution) = entry.loss_record_contribution.clone() else {
+        return json!({});
+    };
+    json!({
+        "loss_record_contribution": contribution
+    })
 }
 
 fn operator_body_template_for(
@@ -682,7 +717,7 @@ fn operator_body_template_for(
     param_types: &[String],
     return_type: &str,
     mode: Option<&str>,
-) -> Option<String> {
+) -> Option<RenderedBody> {
     let root = operator_root()?;
     let (language, library_tag) = operator_binding_surface(&root, concept_name)?;
     if language != "rust" {
@@ -945,8 +980,13 @@ fn parse_entry(item: &Value) -> Option<BodyTemplateEntry> {
     Some(BodyTemplateEntry {
         concept_name: item.get("concept_name")?.as_str()?.to_string(),
         mode: item.get("mode").and_then(Value::as_str).map(str::to_string),
+        realization_kind: item
+            .get("realization_kind")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         template_kind: template.get("kind")?.as_str()?.to_string(),
         template: template.get("template")?.as_str()?.to_string(),
+        loss_record_contribution: item.get("loss_record_contribution").cloned(),
         min_params: guard
             .and_then(|g| g.get("min_params"))
             .and_then(Value::as_u64)
@@ -1413,6 +1453,215 @@ mod tests {
             response["result"]["source"],
             "pub fn toggle(flag: bool) -> bool {\n    !flag\n}\n"
         );
+    }
+
+    #[test]
+    fn renders_dynamic_dispatch_boundary_realization() {
+        let rendered = dynamic_dispatch_render();
+
+        assert!(!rendered.is_stub);
+        assert!(rendered.source.contains("&dyn Fn(i64) -> i64"));
+        assert!(rendered.source.contains("dispatched(arg)"));
+    }
+
+    #[test]
+    fn records_dynamic_dispatch_boundary_loss_without_sugar() {
+        let rendered = dynamic_dispatch_render();
+
+        assert_boundary_loss(
+            &rendered,
+            "rust-dyn-trait-preserves-call-contract-loses-concrete-receiver-type",
+        );
+    }
+
+    #[test]
+    fn discriminates_dynamic_dispatch_boundary_from_missing_concept() {
+        let rendered = dynamic_dispatch_render();
+        let missing = emit_stub(
+            "call_dyn",
+            &strings(&["target", "arg"]),
+            &strings(&["&dyn Fn(i64) -> i64", "i64"]),
+            "i64",
+            "concept:dynamic-dispatch-missing",
+        );
+
+        assert!(!rendered.is_stub);
+        assert!(missing.is_stub);
+        assert!(rendered.source.contains("&dyn Fn(i64) -> i64"));
+        assert!(!missing.source.contains("dispatched(arg)"));
+    }
+
+    #[test]
+    fn renders_closure_boundary_realization() {
+        let rendered = boundary_render("call_closure", "concept:closure");
+
+        assert!(!rendered.is_stub);
+        assert!(rendered.source.contains("let f = move ||"));
+        assert!(rendered.source.contains("f()"));
+    }
+
+    #[test]
+    fn records_closure_boundary_loss_without_sugar() {
+        let rendered = boundary_render("call_closure", "concept:closure");
+
+        assert_boundary_loss(
+            &rendered,
+            "rust-closure-preserves-capture-and-call-loses-explicit-environment-record",
+        );
+    }
+
+    #[test]
+    fn discriminates_closure_boundary_from_missing_concept() {
+        assert_boundary_discriminates("concept:closure", "let f = move ||");
+    }
+
+    #[test]
+    fn renders_iterator_boundary_realization() {
+        let rendered = emit_stub(
+            "first_item",
+            &strings(&["items"]),
+            &strings(&["list"]),
+            "i64",
+            "concept:iterator",
+        );
+
+        assert!(!rendered.is_stub);
+        assert!(rendered.source.contains("let mut iter = items.iter();"));
+        assert!(rendered.source.contains("iter.next().copied().unwrap_or_default()"));
+    }
+
+    #[test]
+    fn records_iterator_boundary_loss_without_sugar() {
+        let rendered = emit_stub(
+            "first_item",
+            &strings(&["items"]),
+            &strings(&["list"]),
+            "i64",
+            "concept:iterator",
+        );
+
+        assert_boundary_loss(
+            &rendered,
+            "rust-iterator-preserves-next-protocol-loses-container-identity",
+        );
+    }
+
+    #[test]
+    fn discriminates_iterator_boundary_from_missing_concept() {
+        let rendered = emit_stub(
+            "first_item",
+            &strings(&["items"]),
+            &strings(&["list"]),
+            "i64",
+            "concept:iterator",
+        );
+        let missing = emit_stub(
+            "first_item",
+            &strings(&["items"]),
+            &strings(&["list"]),
+            "i64",
+            "concept:iterator-missing",
+        );
+
+        assert!(!rendered.is_stub);
+        assert!(missing.is_stub);
+        assert!(rendered.source.contains("items.iter()"));
+        assert!(!missing.source.contains("items.iter()"));
+    }
+
+    #[test]
+    fn renders_generic_instantiation_boundary_realization() {
+        let rendered = boundary_render("generic_id", "concept:generic-instantiation");
+
+        assert!(!rendered.is_stub);
+        assert!(rendered.source.contains("std::convert::identity::<i64>(arg)"));
+    }
+
+    #[test]
+    fn records_generic_instantiation_boundary_loss_without_sugar() {
+        let rendered = boundary_render("generic_id", "concept:generic-instantiation");
+
+        assert_boundary_loss(
+            &rendered,
+            "rust-monomorphization-preserves-type-application-loses-runtime-genericity",
+        );
+    }
+
+    #[test]
+    fn discriminates_generic_instantiation_boundary_from_missing_concept() {
+        assert_boundary_discriminates("concept:generic-instantiation", "identity::<i64>");
+    }
+
+    #[test]
+    fn renders_reference_boundary_realization() {
+        let rendered = boundary_render("borrow_value", "concept:reference");
+
+        assert!(!rendered.is_stub);
+        assert!(rendered.source.contains("let r: &i64 = &arg;"));
+        assert!(rendered.source.contains("*r"));
+    }
+
+    #[test]
+    fn records_reference_boundary_loss_without_sugar() {
+        let rendered = boundary_render("borrow_value", "concept:reference");
+
+        assert_boundary_loss(
+            &rendered,
+            "rust-reference-preserves-aliasing-and-borrow-loses-cross-language-ownership",
+        );
+    }
+
+    #[test]
+    fn discriminates_reference_boundary_from_missing_concept() {
+        assert_boundary_discriminates("concept:reference", "let r: &i64 = &arg;");
+    }
+
+    fn boundary_render(function: &str, concept_name: &str) -> Realization {
+        emit_stub(
+            function,
+            &strings(&["arg"]),
+            &strings(&["i64"]),
+            "i64",
+            concept_name,
+        )
+    }
+
+    fn dynamic_dispatch_render() -> Realization {
+        emit_stub(
+            "call_dyn",
+            &strings(&["target", "arg"]),
+            &strings(&["&dyn Fn(i64) -> i64", "i64"]),
+            "i64",
+            "concept:dynamic-dispatch",
+        )
+    }
+
+    fn assert_boundary_loss(rendered: &Realization, loss_name: &str) {
+        assert!(!rendered.is_stub);
+        assert!(rendered.used_sugars.is_empty());
+        assert!(!rendered.source.contains("provekit-concept:"));
+        let names = rendered
+            .observed_loss_record
+            .pointer("/loss_record_contribution/value")
+            .and_then(Value::as_object)
+            .map(|value| {
+                value
+                    .values()
+                    .filter_map(|item| item.get("name").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        assert!(names.contains(&loss_name));
+    }
+
+    fn assert_boundary_discriminates(concept_name: &str, expected_source: &str) {
+        let rendered = boundary_render("boundary", concept_name);
+        let missing = boundary_render("boundary", &format!("{concept_name}-missing"));
+
+        assert!(!rendered.is_stub);
+        assert!(missing.is_stub);
+        assert!(rendered.source.contains(expected_source));
+        assert!(!missing.source.contains(expected_source));
     }
 
     fn env_lock() -> &'static std::sync::Mutex<()> {
