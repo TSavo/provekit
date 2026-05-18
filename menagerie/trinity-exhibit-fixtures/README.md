@@ -79,3 +79,10 @@ chain, not just LiftKit -> BindKit -> LowerKit for a single target.
 Fixture 06 (`fn-name-roundtrip`) uses `factorial` as one of its three named functions.
 This overlaps structurally with the #1099 `recursive factorial` fixture but tests a
 different property: name survival across three language hops, not emitted code correctness.
+
+## Active slow-lane harness
+
+`implementations/rust/provekit-cli/tests/trinity_citation_comments_exhibit.rs`
+is the dedicated #1068 Path B 2b slow-lane test for this fixture set. v1.0.0
+exercises `01-arithmetic-add/` through the real Python -> Java -> Rust -> Python
+plugin chain and is run by the `prove-trinity-citation-exhibit` CI job.

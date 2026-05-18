@@ -62,3 +62,7 @@ tempfile = "3"
 #
 #   cargo test --test trinity_composition_census --features slow-tests
 slow-tests = []
+
+[[test]]
+name = "trinity_citation_comments_exhibit"
+required-features = ["slow-tests"]
