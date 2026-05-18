@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::core::types::PlatformSemanticsDeclaration;
+use provekit_ir_types::{DimensionValueMemento, PlatformSemanticTag};
 use std::collections::BTreeMap;
 
+pub mod better_sqlite3;
 pub mod java;
+pub mod pg;
 mod python_common;
 pub mod python_lift_source;
 pub mod python_realize_core;
+pub mod typescript;
 
 mod c_realize_core {
     include!(concat!(
@@ -41,6 +45,7 @@ pub fn platform_semantics_for_lower_target(target: &str) -> Option<PlatformSeman
         }
         "java" => Some(java::declaration()),
         "c" => Some(c_realize_core::declaration()),
+        "typescript" => Some(typescript::declaration()),
         _ => None,
     }
 }
@@ -100,4 +105,170 @@ fn rust_concept_op_aliases() -> BTreeMap<String, String> {
             "blake3-512:e0c3e13fd7e0d11fa3b78f4e083ab60b1166bdd905bc04e533e6dcc97d79330bd6a403caaf1265d8134ea3ccd5fe8cfd5a3e18f349ea7edcb6310c098e845c0f".to_string(),
         ),
     ])
+}
+
+/// Compose the language-kit per-op platform semantics with the binding-kit
+/// per-op library semantics. Returns the merged declaration, or None if
+/// neither layer has any declaration for the given pair.
+///
+/// Conflict resolution: if both kits declare a tag for the same op-CID,
+/// the binding-kit tag overrides the language-kit tag for that op.
+/// (Binding-kit semantics are more specific than pure-language semantics.)
+///
+/// NOTE: op_aliases merge uses the same binding-wins policy. If both kits
+/// map the same source op-CID, the binding alias takes precedence.
+/// Agent C can revise this comment if a different alias-merge policy is
+/// needed when wiring binding-kit arms.
+pub fn platform_semantics_for_binding(
+    lang: &str,
+    binding_tag: &str,
+) -> Option<PlatformSemanticsDeclaration> {
+    let lang_decl = platform_semantics_for_lower_target(lang);
+    let binding_decl = binding_semantics_for_tag(binding_tag);
+
+    match (lang_decl, binding_decl) {
+        (None, None) => None,
+        (Some(l), None) => Some(l),
+        (None, Some(b)) => Some(b),
+        (Some(lang_d), Some(binding_d)) => Some(merge_declarations(lang_d, binding_d)),
+    }
+}
+
+/// Extension point for binding-specific platform-semantics declarations.
+///
+/// Binding tags are the second component produced by split_library_surface,
+/// e.g. "better-sqlite3" from "typescript-better-sqlite3", "pg" from
+/// "typescript-pg". This stub is populated with arms for the two binding kits
+/// minted in this branch (Agent B); Agent C wires the end-to-end loss-record
+/// path once the op-CID path is verified.
+fn binding_semantics_for_tag(binding_tag: &str) -> Option<PlatformSemanticsDeclaration> {
+    match binding_tag {
+        "better-sqlite3" => Some(better_sqlite3::declaration()),
+        "pg" => Some(pg::declaration()),
+        _ => None,
+    }
+}
+
+/// Merge language-kit and binding-kit declarations. Binding-kit wins on
+/// op-CID conflicts for both tags and op_aliases. dimension_values are
+/// unioned with deduplication by CID.
+fn merge_declarations(
+    lang: PlatformSemanticsDeclaration,
+    binding: PlatformSemanticsDeclaration,
+) -> PlatformSemanticsDeclaration {
+    // Build a map of lang tags by op-CID for easy override lookup.
+    let mut tags_by_op: BTreeMap<String, PlatformSemanticTag> = lang
+        .tags
+        .into_iter()
+        .map(|tag| (tag.op_cid.clone(), tag))
+        .collect();
+    // Binding-kit tags override language-kit tags for the same op-CID.
+    for tag in binding.tags {
+        tags_by_op.insert(tag.op_cid.clone(), tag);
+    }
+    let merged_tags: Vec<PlatformSemanticTag> = tags_by_op.into_values().collect();
+
+    // Union dimension_values, deduplicating by CID (binding appended last so
+    // its entries survive if a CID collision occurs; the dedup keeps the first
+    // occurrence, so lang values that share a CID with binding values are kept).
+    let mut seen_cids: BTreeMap<String, ()> = BTreeMap::new();
+    let mut merged_values: Vec<DimensionValueMemento> = Vec::new();
+    for value in lang.dimension_values.into_iter().chain(binding.dimension_values) {
+        if seen_cids.insert(value.cid.clone(), ()).is_none() {
+            merged_values.push(value);
+        }
+    }
+
+    // Binding-kit aliases override language-kit aliases for the same source op-CID.
+    let mut merged_aliases = lang.op_aliases;
+    merged_aliases.extend(binding.op_aliases);
+
+    PlatformSemanticsDeclaration {
+        tags: merged_tags,
+        dimension_values: merged_values,
+        op_aliases: merged_aliases,
+    }
+}
+
+#[cfg(test)]
+mod binding_compose_tests {
+    use super::*;
+    use provekit_ir_types::{DimensionValueMemento, IrFormula, PlatformSemanticTag};
+
+    const TEST_KIT_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+    const TEST_OP_A: &str = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const TEST_OP_B: &str = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    fn dim_value(dim: &str, name: &str) -> DimensionValueMemento {
+        DimensionValueMemento::new(
+            TEST_KIT_CID.to_string(),
+            dim.to_string(),
+            name.to_string(),
+            IrFormula::Atomic {
+                name: format!("test:{name}"),
+                args: vec![],
+            },
+        )
+    }
+
+    fn one_tag(op_cid: &str, dim: &str, value_cid: &str) -> PlatformSemanticTag {
+        let mut dimensions = BTreeMap::new();
+        dimensions.insert(dim.to_string(), value_cid.to_string());
+        PlatformSemanticTag::new(
+            TEST_KIT_CID.to_string(),
+            op_cid.to_string(),
+            dimensions,
+        )
+    }
+
+    fn decl_with(op_cid: &str, dim: &str, value_name: &str) -> PlatformSemanticsDeclaration {
+        let val = dim_value(dim, value_name);
+        let tag = one_tag(op_cid, dim, &val.cid.clone());
+        PlatformSemanticsDeclaration {
+            tags: vec![tag],
+            dimension_values: vec![val],
+            op_aliases: BTreeMap::new(),
+        }
+    }
+
+    /// Test 1: Both layers contribute distinct op-CIDs -- merged has both.
+    #[test]
+    fn merge_declarations_combines_non_overlapping_ops() {
+        let lang = decl_with(TEST_OP_A, "LangDim", "LangValue");
+        let binding = decl_with(TEST_OP_B, "BindDim", "BindValue");
+        let merged = merge_declarations(lang, binding);
+        let op_cids: Vec<&str> = merged.tags.iter().map(|t| t.op_cid.as_str()).collect();
+        assert!(op_cids.contains(&TEST_OP_A), "language op must be in merged");
+        assert!(op_cids.contains(&TEST_OP_B), "binding op must be in merged");
+        assert_eq!(merged.dimension_values.len(), 2);
+    }
+
+    /// Test 2: Conflict resolution -- same op-CID in both, binding-kit wins.
+    #[test]
+    fn merge_declarations_binding_overrides_language_for_same_op() {
+        let lang = decl_with(TEST_OP_A, "Dim", "LangValue");
+        let binding = decl_with(TEST_OP_A, "Dim", "BindValue");
+
+        let lang_value_cid = lang.dimension_values[0].cid.clone();
+        let binding_value_cid = binding.dimension_values[0].cid.clone();
+        assert_ne!(lang_value_cid, binding_value_cid, "fixture must differ");
+
+        let merged = merge_declarations(lang, binding);
+        assert_eq!(merged.tags.len(), 1, "conflict deduplicated to one tag");
+        let winning_value_cid = merged.tags[0].dimensions.get("Dim").expect("Dim present");
+        assert_eq!(
+            winning_value_cid, &binding_value_cid,
+            "binding-kit must override language-kit on same op-CID"
+        );
+    }
+
+    /// Test 3: Returns None when both lang and binding_tag are unknown.
+    #[test]
+    fn platform_semantics_for_binding_returns_none_when_neither_layer_declared() {
+        let result = platform_semantics_for_binding("__unknown_lang__", "__unknown_binding__");
+        assert!(
+            result.is_none(),
+            "unknown lang + unknown binding must return None"
+        );
+    }
 }
