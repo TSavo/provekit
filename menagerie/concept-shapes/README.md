@@ -247,11 +247,11 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 
 ## Core Sort Hierarchy
 
-`concept:sort(name, kind)` describes the core sort hierarchy primitive and the initial sort instances.
+`concept:sort(name, kind, generic_args)` describes the core sort hierarchy primitive and the initial sort instances.
 
 | Concept | Kind | CID |
 | --- | --- | --- |
-| `concept:sort` | `shape` | `blake3-512:e26292703e3d9ae50f8332699c4f673c33443d4f857454de67039e8680a364eba2db2e63a33a2450cb4680759f83ba15b83b9f37468f410b8e31dd7f72abc789` |
+| `concept:sort` | `shape` | `blake3-512:8d9e3d54325e7a123528a38f7fc268c64a2dfe9a43fca08a234dd530015c7e53f89510093404db9ab63cdcfee59fe1de712f1b7ac6a736475ae2f090c1d2eab0` |
 | `Int` | `sort-instance` | `blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58` |
 | `Bool` | `sort-instance` | `blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074` |
 | `String` | `sort-instance` | `blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10` |
