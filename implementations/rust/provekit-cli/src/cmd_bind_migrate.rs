@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
 use libprovekit::core::{
-    execute_path, platform_semantics_for_lower_target, DivergenceCharacterization,
-    HashMapInputCatalog, Input, KitRegistry, LowerKit, OpCoverageVerdict, Path as CorePath,
-    PathAlgebra, PlatformSemanticComparisonError, PlatformSemanticsDeclaration, Side, Verb,
+    execute_path, platform_semantics_for_binding, platform_semantics_for_lower_target,
+    DivergenceCharacterization, HashMapInputCatalog, Input, KitRegistry, LowerKit,
+    OpCoverageVerdict, Path as CorePath, PathAlgebra, PlatformSemanticComparisonError,
+    PlatformSemanticsDeclaration, Side, Verb,
 };
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo,
@@ -102,7 +103,9 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
 
     let semantic_changes = platform_semantic_changes_for_targets(
         &source_lang,
+        &source_tag,
         &target_lang,
+        &target_tag,
         &sql_callsites,
         args.focus.as_deref(),
     )?;
@@ -176,7 +179,7 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         receipt.aggregate_summary.refused
     );
     println!(
-        "{} lossy sites: sqlite-specific last_insert_rowid semantics",
+        "{} lossy callsites: kit-declared dimension divergence",
         receipt.aggregate_summary.lossy
     );
 
@@ -299,7 +302,6 @@ struct SqlCallsite {
     cid: String,
     concept_cid: String,
     function: String,
-    lossy: bool,
     sample_args: Vec<JsonValue>,
     sql: String,
     substituted_body: String,
@@ -519,7 +521,6 @@ fn extract_sql_callsites(
             cid,
             concept_cid: concept_cid.to_string(),
             function: function.name.clone(),
-            lossy: function.body.contains("lastInsertRowid"),
             sample_args,
             sql,
             substituted_body: substituted_body_for(&function.name),
@@ -724,14 +725,19 @@ fn async_changed_callsites(
 
 fn platform_semantic_changes_for_targets(
     source_lang: &str,
+    source_tag: &str,
     target_lang: &str,
+    target_tag: &str,
     sql_callsites: &[SqlCallsite],
     focus: Option<&str>,
 ) -> Result<PlatformSemanticChangeSet, String> {
-    let Some(source) = platform_semantics_for_lower_target(source_lang) else {
+    // Compose language-kit (per-op platform semantics: overflow, rounding, etc.)
+    // with binding-kit (per-op library semantics: RowIdMechanism, etc.).
+    // Binding-kit wins on op-CID conflicts.
+    let Some(source) = platform_semantics_for_binding(source_lang, source_tag) else {
         return Ok(PlatformSemanticChangeSet::default());
     };
-    let Some(target) = platform_semantics_for_lower_target(target_lang) else {
+    let Some(target) = platform_semantics_for_binding(target_lang, target_tag) else {
         return Ok(PlatformSemanticChangeSet::default());
     };
     platform_semantic_changes(&source, &target, sql_callsites, focus)
@@ -1101,20 +1107,6 @@ fn build_receipt(
         loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
         loss_records.push(loss);
     }
-    for callsite in sql_callsites.iter().filter(|c| c.lossy) {
-        let mut loss = LossRecordMemento {
-            callsite_cid: callsite.cid.clone(),
-            cid: String::new(),
-            kind: "loss-record".to_string(),
-            loss_dimension: "last_insert_rowid".to_string(),
-            loss_dimensions: BTreeMap::new(),
-            schema_version: "1".to_string(),
-            substituted_body: callsite.substituted_body.clone(),
-        };
-        loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
-        loss_records.push(loss);
-    }
-
     let mut aggregate_summary = AggregateSummaryMemento {
         cid: String::new(),
         halted: halt_mementos.len(),
@@ -2209,7 +2201,6 @@ mod tests {
             cid: cid.to_string(),
             concept_cid: concept_cid.to_string(),
             function: function.to_string(),
-            lossy: false,
             sample_args: Vec::new(),
             sql: String::new(),
             substituted_body: format!("{function}:{cid}"),
@@ -2451,13 +2442,6 @@ mod tests {
             site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
             "callsite must NOT be classified as concept:sql-execute when lastInsertRowid is present"
         );
-
-        // Structural: the lossy flag must still be set (it is not removed in this branch;
-        // Agent C will thread the finer op-CID path to emit the loss-record structurally)
-        assert!(
-            site.lossy,
-            "lossy flag must remain set on lastInsertRowid callsite until Agent C wires the loss-record path"
-        );
     }
 
     // Discrimination: extract_sql_callsites keeps concept:sql-execute for plain run( callsites
@@ -2486,7 +2470,6 @@ mod tests {
             site.concept_cid, SQL_INSERT_AND_GET_ID_CONCEPT_CID,
             "plain .run( without lastInsertRowid must NOT get insert-and-get-id"
         );
-        assert!(!site.lossy, "plain run callsite must not be marked lossy");
     }
 
     // Discrimination: extract_sql_callsites assigns concept:sql-query for read callsites.
