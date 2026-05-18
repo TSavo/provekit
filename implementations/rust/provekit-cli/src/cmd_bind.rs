@@ -13,9 +13,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use libprovekit::core::{
-    address, bind_term_document, execute_path, BindKit, BindOptions, ConformanceDeclaration,
-    HashMapInputCatalog, Input, KitRegistry, Path as CorePath, PathAlgebra, PathExecutionError,
-    Term, Verb,
+    address, execute_path, BindKit, BindOptions, ConformanceDeclaration, HashMapInputCatalog,
+    Input, KitRegistry, Path as CorePath, PathAlgebra, PathExecutionError, Term, Verb,
 };
 use owo_colors::OwoColorize;
 use provekit_ir_types::{CompositionRefusalMemento, Sort};

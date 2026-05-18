@@ -97,15 +97,22 @@ fn bind_from_stdin_emits_named_term_document_with_promotion_decisions() {
     let output = child.wait_with_output().expect("wait bind");
     assert_success("bind stdin", &output);
 
-    let named: NamedTermDocument =
-        serde_json::from_slice(&output.stdout).expect("named term document parses");
+    // cmd_bind's stdout is the bind-result Term::Op payload (post-citation
+    // wiring per #1126); recover the NamedTermDocument via the helper
+    // bind-result consumers use. fn_name is intentionally stripped from
+    // the payload (#1093), so the recovered term has empty `function`.
+    let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
+    let named = named_term_document_from_bind_payload(&payload)
+        .expect("bind payload recovers named term");
     let named = serde_json::to_value(named).expect("named term serializes");
     assert_eq!(named["sourceLanguage"], "rust");
     assert_eq!(
         named["terms"][0]["conceptName"],
         "concept:deposit-then-balance"
     );
-    assert_eq!(named["terms"][0]["function"], "deposit");
+    // fn_name was stripped per #1093 before encoding into the bind-result
+    // payload; recovered NamedTermDocument has no function field.
+    assert!(named["terms"][0]["function"].is_null() || named["terms"][0]["function"] == "");
     assert_eq!(
         named["terms"][0]["witnesses"][0]["predicateText"],
         "out == balance + amount"
