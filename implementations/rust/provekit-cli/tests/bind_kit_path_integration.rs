@@ -143,13 +143,21 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     let chain = execute_path(&path, &registry, &inputs).expect("bind path executes");
     let claim = chain.terminal_claim();
     let cli_bytes = run_bind_cli(&term_value);
-    let cli_named: NamedTermDocument =
-        serde_json::from_slice(&cli_bytes).expect("cmd_bind named terms parse");
+    // cmd_bind's stdout is the bind-result Term::Op payload (post-citation
+    // wiring); recover the NamedTermDocument via the same helper the
+    // path-execution claim consumers use.
+    let cli_payload: Term =
+        serde_json::from_slice(&cli_bytes).expect("cmd_bind bind-result Term parse");
+    assert!(matches!(cli_payload, Term::Op { .. }));
+    let cli_named = named_term_document_from_bind_payload(&cli_payload)
+        .expect("cmd_bind bind-result recovers named term");
     let cli_cid = named_term_document_cid(&cli_named).expect("cmd_bind named terms cid");
 
     assert_eq!(claim.artifacts, vec![cli_cid]);
     assert_eq!(claim.from, vec![address(&input_term)]);
-    assert_eq!(cli_named.terms[0].function, "deposit");
+    // bind_term_document's recovered named-term has empty `function` because
+    // fn_name is stripped from the bind-result payload hash (closes #1093).
+    assert!(cli_named.terms[0].function.is_empty());
     let payload = claim.payload.as_ref().expect("bind claim payload");
     assert!(matches!(payload, Term::Op { .. }));
     let named =
