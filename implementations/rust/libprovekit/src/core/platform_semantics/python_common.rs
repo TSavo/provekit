@@ -30,7 +30,8 @@ const PYTHON_PLATFORM_CONCEPT_OP_CIDS: &[&str] = &[
 ];
 
 pub(super) fn declaration() -> PlatformSemanticsDeclaration {
-    let dimensions = dimensions();
+    let dimension_values = dimension_values();
+    let dimensions = dimensions_from_values(&dimension_values);
     PlatformSemanticsDeclaration {
         tags: PYTHON_PLATFORM_CONCEPT_OP_CIDS
             .iter()
@@ -42,6 +43,8 @@ pub(super) fn declaration() -> PlatformSemanticsDeclaration {
                 )
             })
             .collect(),
+        dimension_values,
+        op_aliases: BTreeMap::new(),
     }
 }
 
@@ -59,10 +62,10 @@ pub(super) fn dimension_values() -> Vec<DimensionValueMemento> {
         .collect()
 }
 
-fn dimensions() -> BTreeMap<String, String> {
-    dimension_values()
-        .into_iter()
-        .map(|value| (value.dimension_name, value.cid))
+fn dimensions_from_values(values: &[DimensionValueMemento]) -> BTreeMap<String, String> {
+    values
+        .iter()
+        .map(|value| (value.dimension_name.clone(), value.cid.clone()))
         .collect()
 }
 

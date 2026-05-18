@@ -55,9 +55,10 @@ pub use traits::{
 };
 pub use types::{
     ArityShape, AritySlot, Attestation, Boundary, ChainIntegrityFailureWitness,
-    ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect, DomainClaim,
-    DomainKind, Formula, Input, LanguageSignature, OperationSignature, Path, PathAlgebra,
-    PathDocument, PathDocumentError, PathError, PathInputBinding, PathInputMaterial,
+    ChainIntegrityWitness, Cid, CidError, ConformanceDeclaration, Contract, Dialect,
+    DivergenceCharacterization, DomainClaim, DomainKind, Formula, Input, LanguageSignature,
+    OperationSignature, Path, PathAlgebra, PathDocument, PathDocumentError, PathError,
+    PathInputBinding, PathInputMaterial, PlatformSemanticComparisonError,
     PlatformSemanticsDeclaration, Refutation, SignatureCatalogError, SlotEvaluation, SlotSort,
     Term, Truth, Verb, Verdict, VerdictCoercionError, Witness,
 };
