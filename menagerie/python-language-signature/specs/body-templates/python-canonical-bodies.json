@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:5a06ad3425bae615c8b1cf88e0bbb827724f74257ed5f7df1d7d5eaa863666f2cfc5a044d9f4cc4acb6852740c96243061049b4a8ab199cfcc8b1c123169a904",
+    "cid": "blake3-512:1a50f6eb71a1586968edf7315eb504ddfe9dbb9464281b02f96f5eb4de27b17dcc88d06be1bb9c94f241482c29f268c6f79e7be43b0d1bc1adff2f7a0b0a01cd",
     "content": {
       "entries": [
         {
@@ -528,6 +528,137 @@
           "signature_guard": {
             "max_params": 0,
             "min_params": 0
+          }
+        },
+        {
+          "concept_name": "concept:closure",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return lambda: ${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "closure-multi-statement-body-not-representable": {
+                "args": [],
+                "head": "atomic",
+                "name": "closure-multi-statement-body-not-representable"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:exception",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "try:\n    return ${param0}\nexcept Exception:\n    return ${param1}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "exception-type-not-parameterized": {
+                "args": [],
+                "head": "atomic",
+                "name": "exception-type-not-parameterized"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:iterator",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return iter(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "iteration-body-not-representable": {
+                "args": [],
+                "head": "atomic",
+                "name": "iteration-body-not-representable"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:reference",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-references-are-name-bindings": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-references-are-name-bindings"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:dynamic-dispatch",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-mro-dict-lookup-has-no-syntactic-body": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-mro-dict-lookup-has-no-syntactic-body"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:double-dispatch",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-match-type-pair-not-emittable-as-body": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-match-type-pair-not-emittable-as-body"
+              }
+            }
+          }
+        },
+        {
+          "concept_name": "concept:generic-instantiation",
+          "emission_template": {
+            "kind": "concept-citation-comment",
+            "template": "pass"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "python-duck-typing-no-generic-instantiation-syntax": {
+                "args": [],
+                "head": "atomic",
+                "name": "python-duck-typing-no-generic-instantiation-syntax"
+              }
+            }
           }
         }
       ],
