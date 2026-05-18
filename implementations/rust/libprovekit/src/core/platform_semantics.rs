@@ -4,10 +4,13 @@ use crate::core::types::PlatformSemanticsDeclaration;
 use provekit_ir_types::{DimensionValueMemento, PlatformSemanticTag};
 use std::collections::BTreeMap;
 
+pub mod better_sqlite3;
 pub mod java;
+pub mod pg;
 mod python_common;
 pub mod python_lift_source;
 pub mod python_realize_core;
+pub mod typescript;
 
 mod c_realize_core {
     include!(concat!(
@@ -42,10 +45,10 @@ pub fn platform_semantics_for_lower_target(target: &str) -> Option<PlatformSeman
         }
         "java" => Some(java::declaration()),
         "c" => Some(c_realize_core::declaration()),
+        "typescript" => Some(typescript::declaration()),
         _ => None,
     }
 }
-
 
 pub fn python_kit_declaration() -> PlatformSemanticsDeclaration {
     python_realize_core::declaration()
@@ -133,10 +136,17 @@ pub fn platform_semantics_for_binding(
 
 /// Extension point for binding-specific platform-semantics declarations.
 ///
-/// Today this returns None for all tags; Agent C populates arms for
-/// library-tagged bindings such as "typescript-better-sqlite3" and "postgres".
-fn binding_semantics_for_tag(_binding_tag: &str) -> Option<PlatformSemanticsDeclaration> {
-    None
+/// Binding tags are the second component produced by split_library_surface,
+/// e.g. "better-sqlite3" from "typescript-better-sqlite3", "pg" from
+/// "typescript-pg". This stub is populated with arms for the two binding kits
+/// minted in this branch (Agent B); Agent C wires the end-to-end loss-record
+/// path once the op-CID path is verified.
+fn binding_semantics_for_tag(binding_tag: &str) -> Option<PlatformSemanticsDeclaration> {
+    match binding_tag {
+        "better-sqlite3" => Some(better_sqlite3::declaration()),
+        "pg" => Some(pg::declaration()),
+        _ => None,
+    }
 }
 
 /// Merge language-kit and binding-kit declarations. Binding-kit wins on
@@ -158,8 +168,9 @@ fn merge_declarations(
     }
     let merged_tags: Vec<PlatformSemanticTag> = tags_by_op.into_values().collect();
 
-    // Union dimension_values, deduplicating by CID. Lang values come first;
-    // binding values are appended and skipped if the CID was already seen.
+    // Union dimension_values, deduplicating by CID (binding appended last so
+    // its entries survive if a CID collision occurs; the dedup keeps the first
+    // occurrence, so lang values that share a CID with binding values are kept).
     let mut seen_cids: BTreeMap<String, ()> = BTreeMap::new();
     let mut merged_values: Vec<DimensionValueMemento> = Vec::new();
     for value in lang.dimension_values.into_iter().chain(binding.dimension_values) {

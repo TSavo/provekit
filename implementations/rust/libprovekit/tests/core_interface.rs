@@ -1644,6 +1644,8 @@ fn op_coverage_verdict_no_opinion_when_both_kits_absent_for_op() {
     let val_b = test_dimension_value("ValueB");
     let decl_b = single_op_declaration(TEST_OP_B, &val_b.cid.clone(), val_b);
 
+    // TEST_OP_A is present in decl_a but not decl_b, and TEST_OP_B is in decl_b but not decl_a.
+    // Query with an op that neither declaration has.
     let unknown_op = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
     assert_eq!(
         decl_a.compare_op_with(unknown_op, &decl_b).expect("no internal error"),
@@ -1662,10 +1664,12 @@ fn op_coverage_verdict_no_opinion_flips_to_uncharacterizable_when_one_kit_gains_
         op_aliases: BTreeMap::new(),
     };
 
+    // With neither kit having the tag: NoOpinion.
     assert_eq!(
         decl_without_op.compare_op_with(TEST_OP_A, &decl_without_op).expect("no error"),
         OpCoverageVerdict::NoOpinion,
     );
+    // Once one kit has the tag: Uncharacterizable.
     assert!(matches!(
         decl_with_op.compare_op_with(TEST_OP_A, &decl_without_op).expect("no error"),
         OpCoverageVerdict::Uncharacterizable { .. }
@@ -1681,7 +1685,9 @@ fn op_coverage_verdict_no_opinion_is_unit_variant() {
         op_aliases: BTreeMap::new(),
     };
     let verdict = decl_empty.compare_op_with(TEST_OP_A, &decl_empty).expect("no error");
+    // Ensure it is exactly NoOpinion and not a wrapper with payload.
     assert_eq!(verdict, OpCoverageVerdict::NoOpinion);
+    // Clone and Eq work correctly.
     assert_eq!(verdict.clone(), OpCoverageVerdict::NoOpinion);
 }
 
@@ -1701,7 +1707,7 @@ fn op_coverage_verdict_uncharacterizable_absent_on_target() {
     );
 }
 
-// -- Uncharacterizable: discrimination -- adding target tag flips to Same
+// -- Uncharacterizable: discrimination -- adding target tag flips to Same or Divergent
 #[test]
 fn op_coverage_verdict_uncharacterizable_flips_to_same_when_target_gains_identical_tag() {
     let val_a = test_dimension_value("ValueA");
@@ -1711,10 +1717,12 @@ fn op_coverage_verdict_uncharacterizable_flips_to_same_when_target_gains_identic
         dimension_values: vec![],
         op_aliases: BTreeMap::new(),
     };
+    // Start: Uncharacterizable
     assert!(matches!(
         decl_source.compare_op_with(TEST_OP_A, &decl_target_empty).expect("no error"),
         OpCoverageVerdict::Uncharacterizable { absent_on: Side::Target }
     ));
+    // After adding the identical tag to target: Same
     let decl_target_with_tag = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
         decl_source.compare_op_with(TEST_OP_A, &decl_target_with_tag).expect("no error"),
@@ -1751,17 +1759,19 @@ fn op_coverage_verdict_same_when_both_kits_declare_identical_value() {
     );
 }
 
-// -- Same: discrimination -- swapping one kit value CID flips to Divergent
+// -- Same: discrimination -- swapping one kit's value CID to a different value flips to Divergent
 #[test]
 fn op_coverage_verdict_same_flips_to_divergent_when_value_cids_differ() {
     let val_a = test_dimension_value("ValueA");
     let val_b = test_dimension_value("ValueB");
     let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    // Same: both kits use val_a.
     let decl_same = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
         decl_source.compare_op_with(TEST_OP_A, &decl_same).expect("no error"),
         OpCoverageVerdict::Same,
     );
+    // Divergent: target uses val_b.
     let decl_divergent = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
     assert!(matches!(
         decl_source.compare_op_with(TEST_OP_A, &decl_divergent).expect("no error"),
@@ -1769,7 +1779,7 @@ fn op_coverage_verdict_same_flips_to_divergent_when_value_cids_differ() {
     ));
 }
 
-// -- Same: structural -- no payload, unit variant
+// -- Same: structural -- no payload, not a tuple or struct variant
 #[test]
 fn op_coverage_verdict_same_is_unit_variant() {
     let val_a = test_dimension_value("ValueA");
@@ -1799,11 +1809,13 @@ fn op_coverage_verdict_divergent_flips_to_same_when_value_cids_made_equal() {
     let val_a = test_dimension_value("ValueA");
     let val_b = test_dimension_value("ValueB");
     let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    // Divergent: different values.
     let decl_target_diff = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
     assert!(matches!(
         decl_source.compare_op_with(TEST_OP_A, &decl_target_diff).expect("no error"),
         OpCoverageVerdict::Divergent(_)
     ));
+    // Same: identical values.
     let decl_target_same = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
         decl_source.compare_op_with(TEST_OP_A, &decl_target_same).expect("no error"),

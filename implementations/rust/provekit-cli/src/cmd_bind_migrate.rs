@@ -2365,8 +2365,9 @@ mod tests {
     fn point_query_uncharacterizable_absent_op_routes_to_refuse_signal() {
         let source = platform_semantics_for_lower_target("rust").expect("rust semantics");
         let target = platform_semantics_for_lower_target("java").expect("java semantics");
-        // After the OpCoverageVerdict refactor, a rust-only op yields
-        // Ok(Uncharacterizable { absent_on: Target }) rather than Err(TargetOpAbsent).
+        // Find a rust-only op: present in source, absent in target.
+        // After the OpCoverageVerdict refactor this returns Ok(Uncharacterizable)
+        // rather than Err(TargetOpAbsent), so we match on the verdict directly.
         let rust_only_op = source
             .tags
             .iter()
@@ -2424,12 +2425,13 @@ mod tests {
     #[test]
     fn extract_sql_callsites_classifies_last_insert_rowid_as_insert_and_get_id() {
         // Minimal source with the function body placed at offset 0.
+        // Use a string literal arg ("alice") so extract_sample_args succeeds.
         let body = concat!(
             "const stmt = db.prepare('INSERT INTO users (name) VALUES (?)');\n",
-            "const result = stmt.run(name);\n",
+            "const result = stmt.run('alice');\n",
             "return { id: Number(result.lastInsertRowid) };\n"
         );
-        let source = body; // body_start is 0 so source offsets match
+        let source = body;
         let functions = vec![ts_function_with_body("createUser", body, 0)];
 
         let callsites =
@@ -2462,9 +2464,10 @@ mod tests {
     // that do NOT access lastInsertRowid.
     #[test]
     fn extract_sql_callsites_keeps_sql_execute_for_plain_run_callsite() {
+        // Use userId (ends with "id") so extract_sample_args resolves to fixture 1.
         let body = concat!(
             "const stmt = db.prepare('UPDATE users SET active = 1 WHERE id = ?');\n",
-            "stmt.run(id);\n"
+            "stmt.run(userId);\n"
         );
         let source = body;
         let functions = vec![ts_function_with_body("activateUser", body, 0)];
@@ -2489,9 +2492,10 @@ mod tests {
     // Discrimination: extract_sql_callsites assigns concept:sql-query for read callsites.
     #[test]
     fn extract_sql_callsites_assigns_sql_query_for_get_callsite() {
+        // Use userId (ends with "id") so extract_sample_args resolves to fixture 1.
         let body = concat!(
             "const stmt = db.prepare('SELECT * FROM users WHERE id = ?');\n",
-            "return stmt.get(id);\n"
+            "return stmt.get(userId);\n"
         );
         let source = body;
         let functions = vec![ts_function_with_body("getUser", body, 0)];
