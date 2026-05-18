@@ -115,6 +115,15 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      - name: Install workspace node_modules (provides tsx for TS lifter)
+        # The TypeScript contract lifter shells out to `pnpm exec tsx ...`
+        # which resolves via the workspace root's `node_modules/.bin/tsx`.
+        # Without this step, supply-chain-rails smoke (and any other test
+        # that exercises the TS lifter through `provekit package inspect`)
+        # fails with `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL Command "tsx" not
+        # found`. Frozen lockfile to avoid drift in CI.
+        run: pnpm install --frozen-lockfile
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -202,6 +211,7 @@ jobs:
             maven \
             nlohmann-json3-dev \
             php-cli \
+            sqlite3 \
             unzip \
             z3
           php -m | grep -q '^sodium$'

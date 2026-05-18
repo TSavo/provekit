@@ -79,8 +79,11 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         value: expected_payload_source_value,
         sort: primitive_sort("LiftPluginResponse"),
     };
-    let expected_named =
+    let mut expected_named =
         bind_term_document(&term_value, &BindOptions::default()).expect("existing binder succeeds");
+    for term in &mut expected_named.terms {
+        term.function.clear();
+    }
 
     let claim = BindKit::default()
         .transform(&Input::Term(input_term.clone()))

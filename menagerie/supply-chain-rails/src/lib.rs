@@ -459,7 +459,10 @@ fn assert_str(
         .pointer(pointer)
         .and_then(Value::as_str)
         .ok_or_else(|| {
-            SupplyChainRailsError::Verify(format!("{label} missing string field `{pointer}`"))
+            SupplyChainRailsError::Verify(format!(
+                "{label} missing string field `{pointer}`\nobserved value:\n{}",
+                value_diagnostic(value)
+            ))
         })?;
     if observed != expected {
         return Err(SupplyChainRailsError::Verify(format!(
@@ -479,7 +482,10 @@ fn assert_bool(
         .pointer(pointer)
         .and_then(Value::as_bool)
         .ok_or_else(|| {
-            SupplyChainRailsError::Verify(format!("{label} missing bool field `{pointer}`"))
+            SupplyChainRailsError::Verify(format!(
+                "{label} missing bool field `{pointer}`\nobserved value:\n{}",
+                value_diagnostic(value)
+            ))
         })?;
     if observed != expected {
         return Err(SupplyChainRailsError::Verify(format!(
@@ -487,6 +493,10 @@ fn assert_bool(
         )));
     }
     Ok(())
+}
+
+fn value_diagnostic(value: &Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
 fn assert_contains_string(

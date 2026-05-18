@@ -1508,7 +1508,7 @@ fn rpc_lower_witness(
     configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(Stdio::piped());
 
     let mut child = command
         .spawn()
@@ -1521,6 +1521,14 @@ fn rpc_lower_witness(
         .stdout
         .take()
         .ok_or("lower kit stdout unavailable".to_string())?;
+    let stderr = child.stderr.take();
+    let stderr_handle = stderr.map(|mut h| {
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = std::io::Read::read_to_string(&mut h, &mut buf);
+            buf
+        })
+    });
     let mut reader = BufReader::new(stdout);
 
     let init_req = json!({
@@ -1535,7 +1543,21 @@ fn rpc_lower_witness(
         }
     });
     writeln!(stdin, "{init_req}").map_err(|e| format!("write lower initialize: {e}"))?;
-    let _ = read_response(&mut reader, 1)?;
+    let init_response = read_response(&mut reader, 1);
+    if let Err(message) = &init_response {
+        let _ = writeln!(stdin, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}");
+        drop(stdin);
+        let _ = child.wait();
+        let stderr_text = stderr_handle
+            .and_then(|h| h.join().ok())
+            .unwrap_or_default();
+        return Err(if stderr_text.is_empty() {
+            message.clone()
+        } else {
+            format!("{message}\nlower kit stderr:\n{stderr_text}")
+        });
+    }
+    let _ = init_response;
 
     let lower_req = json!({
         "jsonrpc": "2.0",
@@ -1548,7 +1570,21 @@ fn rpc_lower_witness(
         }
     });
     writeln!(stdin, "{lower_req}").map_err(|e| format!("write lower realize: {e}"))?;
-    let response = read_response(&mut reader, 2)?;
+    let response = read_response(&mut reader, 2);
+    if let Err(message) = &response {
+        let _ = writeln!(stdin, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}");
+        drop(stdin);
+        let _ = child.wait();
+        let stderr_text = stderr_handle
+            .and_then(|h| h.join().ok())
+            .unwrap_or_default();
+        return Err(if stderr_text.is_empty() {
+            message.clone()
+        } else {
+            format!("{message}\nlower kit stderr:\n{stderr_text}")
+        });
+    }
+    let response = response?;
 
     let shutdown_req = json!({
         "jsonrpc": "2.0",
@@ -1558,6 +1594,7 @@ fn rpc_lower_witness(
     let _ = writeln!(stdin, "{shutdown_req}");
     drop(stdin);
     let _ = child.wait();
+    let _ = stderr_handle.and_then(|h| h.join().ok());
     Ok(response)
 }
 
