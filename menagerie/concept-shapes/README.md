@@ -221,6 +221,14 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | --- | --- | --- |
 | `concept:contract-observation` | `blake3-512:a1bc7493bb1173952c45ea6c25110195eb721733fba685cecada22543b7b543ba4366f06ec0294acb7402c2c27baa24329f1b85fe59a27af87da009ca3f1f063` | mode is a formal slot; observer effects live on the wrapper memento, not the object FCM |
 
+## Fully Qualified Path Concept Shape
+
+`concept:fully-qualified-path(path)` is the hub op for Rust paths whose module, trait, crate-root, and associated item segments must survive lifting.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:fully-qualified-path` | `blake3-512:d715caff02a1db7e15cc4e290496e9696c5502c89eeced222878c391470a10bb410b5ea59bd7139a1cef720dc49a2a949804baddc93911c5222eee73ab6b9a42` | carries the exact path string as the substrate term payload |
+
 ## Log Emit Concept Shape
 
 `concept:log-emit(level, message, structured_fields)` is the hub op for logger-agnostic monitor and emitter body-template composition.

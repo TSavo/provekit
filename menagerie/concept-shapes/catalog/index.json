@@ -3043,6 +3043,12 @@
       "name": "morphism_java_shr_to_shr",
       "path": "receipts/morphism_java_shr_to_shr.blake3-512:d6f176a8f682f666fd50d457257e1d269eb743f9df2dc2cd2451dbd9993120e8c3a3f10afd71a705a68a9ab60f36df32d48c28e961d51cc269220cfbbdb0725e.json"
     },
+    "blake3-512:d715caff02a1db7e15cc4e290496e9696c5502c89eeced222878c391470a10bb410b5ea59bd7139a1cef720dc49a2a949804baddc93911c5222eee73ab6b9a42": {
+      "cid": "blake3-512:d715caff02a1db7e15cc4e290496e9696c5502c89eeced222878c391470a10bb410b5ea59bd7139a1cef720dc49a2a949804baddc93911c5222eee73ab6b9a42",
+      "kind": "algorithm",
+      "name": "concept:fully-qualified-path",
+      "path": "algorithms/concept:fully-qualified-path.blake3-512:d715caff02a1db7e15cc4e290496e9696c5502c89eeced222878c391470a10bb410b5ea59bd7139a1cef720dc49a2a949804baddc93911c5222eee73ab6b9a42.json"
+    },
     "blake3-512:d82d2447ba90229d75a35e003414a5e6ab20cb963d330175ea16ea0546ea00b6454405d531a1adb1338b1b15401c379fe1c80aa1979a7ec36274ce61725ea9f9": {
       "cid": "blake3-512:d82d2447ba90229d75a35e003414a5e6ab20cb963d330175ea16ea0546ea00b6454405d531a1adb1338b1b15401c379fe1c80aa1979a7ec36274ce61725ea9f9",
       "kind": "realization",
