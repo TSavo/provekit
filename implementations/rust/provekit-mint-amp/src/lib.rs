@@ -707,6 +707,11 @@ fn mint_spec_path(
         }
     }
     let cid = match kind {
+        Kind::Abstraction => {
+            return Err(MintError::Validation(
+                "abstraction entries are catalog references, not mintable specs".to_string(),
+            ));
+        }
         Kind::Algorithm => mint_algorithm(AlgorithmSpec::from_path(path)?, signer, catalog)?.cid,
         Kind::BoundaryContract => {
             return Err(MintError::Validation(
@@ -729,6 +734,16 @@ fn mint_spec_path(
         }
         Kind::LanguageMorphism => {
             mint_language_morphism(LanguageMorphismSpec::from_path(path)?, signer, catalog)?.cid
+        }
+        Kind::Realization => {
+            return Err(MintError::Validation(
+                "realization entries are catalog references, not mintable specs".to_string(),
+            ));
+        }
+        Kind::Receipt => {
+            return Err(MintError::Validation(
+                "receipt entries are catalog references, not mintable specs".to_string(),
+            ));
         }
     };
     Ok(cid)

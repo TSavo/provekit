@@ -11,6 +11,7 @@ use crate::{canonical_jcs, MintError, Result, Signer};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
+    Abstraction,
     Algorithm,
     #[serde(rename = "boundary-contract")]
     BoundaryContract,
@@ -21,11 +22,14 @@ pub enum Kind {
     EffectSignature,
     LanguageSignature,
     LanguageMorphism,
+    Realization,
+    Receipt,
 }
 
 impl Kind {
     pub fn directory(self) -> &'static str {
         match self {
+            Kind::Abstraction => "abstractions",
             Kind::Algorithm => "algorithms",
             Kind::BoundaryContract => "boundary-contracts",
             Kind::Binding => "bindings",
@@ -35,6 +39,8 @@ impl Kind {
             Kind::EffectSignature => "signatures",
             Kind::LanguageSignature => "signatures",
             Kind::LanguageMorphism => "morphisms",
+            Kind::Realization => "realizations",
+            Kind::Receipt => "receipts",
         }
     }
 }
@@ -42,6 +48,7 @@ impl Kind {
 impl std::fmt::Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
+            Kind::Abstraction => "abstraction",
             Kind::Algorithm => "algorithm",
             Kind::BoundaryContract => "boundary-contract",
             Kind::Binding => "binding",
@@ -51,6 +58,8 @@ impl std::fmt::Display for Kind {
             Kind::EffectSignature => "effect_signature",
             Kind::LanguageSignature => "language_signature",
             Kind::LanguageMorphism => "language_morphism",
+            Kind::Realization => "realization",
+            Kind::Receipt => "receipt",
         };
         f.write_str(s)
     }
@@ -93,6 +102,7 @@ impl Catalog {
             source,
         })?;
         for dir in [
+            "abstractions",
             "algorithms",
             "boundary-contracts",
             "bindings",
@@ -101,6 +111,8 @@ impl Catalog {
             "morphisms",
             "sorts",
             "equations",
+            "realizations",
+            "receipts",
         ] {
             let path = root.join(dir);
             std::fs::create_dir_all(&path).map_err(|source| MintError::Io { path, source })?;
@@ -289,12 +301,15 @@ fn save_index(root: &Path, index: &CatalogIndex) -> Result<()> {
 
 fn find_cid_path(root: &Path, cid: &str) -> Result<Option<PathBuf>> {
     for dir in [
+        "abstractions",
         "algorithms",
         "bindings",
         "signatures",
         "morphisms",
         "sorts",
         "equations",
+        "realizations",
+        "receipts",
     ] {
         let dir_path = root.join(dir);
         if !dir_path.exists() {

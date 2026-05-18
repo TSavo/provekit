@@ -1,0 +1,59 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:comment",
+    "formals": [
+      "surface"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "String"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "String"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          "surface"
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "comment",
+      "result": "Stmt",
+      "slot_terms": [
+        {
+          "kind": "var",
+          "name": "surface"
+        }
+      ],
+      "wp_note": "Carries source comment trivia as a first-class statement concept. The operation has no runtime effect; formatters own surrounding whitespace."
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Stmt"
+    }
+  },
+  "cid": "blake3-512:d9c806063bb97d59ca655b6c50b6ad2ff4cbadd02d6238a51a33a63ec6626af6d92e338ca10f9598fa322cd960d007349752f477fdf3a9384491282d8d12fef2",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "ZRx7FF47kE9EH81Ejd+5ZAWVRp/OI0gStf7UuPvGQixk8TcDo5agURkRQDmoFhCMIIvGwjEyW/GOlEBNvEI/CQ=="
+  }
+}

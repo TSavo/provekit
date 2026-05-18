@@ -364,9 +364,17 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         for target in collect_bind_lift_targets_with_source(&file, &src) {
             let item_fn = &target.item_fn;
             let fn_name = &target.fn_name;
-            let term_shape = term_shape_for_fn(item_fn);
+            let comment_shapes = comment_shapes_for_fn_source(&src, &target.source_name);
+            let comment_count = comment_shapes.len();
+            let base_term_shape = term_shape_for_fn(item_fn);
+            let base_has_operator = !is_non_operation_shape(&base_term_shape);
+            let term_shape = term_shape_with_comments(base_term_shape, comment_shapes);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
-            let operand_bindings = operand_bindings_for_fn(item_fn);
+            let operand_bindings = operand_bindings_for_fn_with_comment_prefix(
+                item_fn,
+                comment_count,
+                base_has_operator,
+            );
             let param_names = fn_param_names(item_fn);
             let function_symbol = format!("{fn_name}@{rel}");
             let fallback_function_symbol = format!("{}@{rel}", target.source_name);
@@ -1244,9 +1252,170 @@ fn normalize_ws(s: &str) -> String {
     out.trim().to_string()
 }
 
+fn comment_shapes_for_fn_source(src: &str, fn_name: &str) -> Vec<Arc<CValue>> {
+    let Some(body) = function_body_source(src, fn_name) else {
+        return Vec::new();
+    };
+    comment_surfaces_in_source(body)
+        .into_iter()
+        .filter_map(|surface| comment_shape(&surface))
+        .collect()
+}
+
+fn comment_shape(surface: &str) -> Option<Arc<CValue>> {
+    let op_cid = concept_op_cid("concept:comment")?;
+    Some(CValue::object([
+        (
+            "args",
+            CValue::array(vec![CValue::object([
+                ("kind", CValue::string("literal")),
+                ("value", CValue::string(surface.to_string())),
+            ])]),
+        ),
+        ("concept_name", CValue::string("concept:comment")),
+        ("op_cid", CValue::string(op_cid.to_string())),
+    ]))
+}
+
+fn function_body_source<'a>(src: &'a str, fn_name: &str) -> Option<&'a str> {
+    let start = src.find(&format!("fn {fn_name}"))?;
+    let open = src[start..].find('{')? + start;
+    let close = matching_brace(src, open)?;
+    src.get(open + 1..close)
+}
+
+fn matching_brace(src: &str, open: usize) -> Option<usize> {
+    let bytes = src.as_bytes();
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(i);
+                }
+                i += 1;
+            }
+            b'"' => i = skip_quoted(bytes, i, b'"'),
+            b'\'' => i = skip_quoted(bytes, i, b'\''),
+            b'/' if bytes.get(i + 1) == Some(&b'/') => i = skip_line_comment(bytes, i),
+            b'/' if bytes.get(i + 1) == Some(&b'*') => i = skip_block_comment(bytes, i),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+fn comment_surfaces_in_source(src: &str) -> Vec<String> {
+    let bytes = src.as_bytes();
+    let mut surfaces = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => i = skip_quoted(bytes, i, b'"'),
+            b'\'' => i = skip_quoted(bytes, i, b'\''),
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                let end = line_comment_end(bytes, i);
+                if let Some(surface) = src.get(i..end).map(str::trim_end) {
+                    if !is_provekit_comment_carrier(surface) {
+                        surfaces.push(surface.to_string());
+                    }
+                }
+                i = end;
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                let end = block_comment_end(bytes, i);
+                if let Some(surface) = src.get(i..end).map(str::trim) {
+                    if !is_provekit_comment_carrier(surface) {
+                        surfaces.push(surface.to_string());
+                    }
+                }
+                i = end;
+            }
+            _ => i += 1,
+        }
+    }
+    surfaces
+}
+
+fn is_provekit_comment_carrier(surface: &str) -> bool {
+    let mut payload = surface.trim();
+    if let Some(rest) = payload.strip_prefix("//") {
+        payload = rest.trim();
+    } else if payload.starts_with("/*") && payload.ends_with("*/") {
+        payload = payload[2..payload.len() - 2].trim();
+    }
+    [
+        "provekit:concept:",
+        "provekit:concept-payload-cid:",
+        "provekit-concept:",
+        "provekit-concept-payload-cid:",
+        "provekit-contract:",
+        "provekit-contract-payload-cid:",
+    ]
+    .iter()
+    .any(|prefix| payload.starts_with(prefix))
+}
+
+fn skip_quoted(bytes: &[u8], start: usize, quote: u8) -> usize {
+    let mut i = start + 1;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i = (i + 2).min(bytes.len());
+        } else if bytes[i] == quote {
+            return i + 1;
+        } else {
+            i += 1;
+        }
+    }
+    bytes.len()
+}
+
+fn skip_line_comment(bytes: &[u8], start: usize) -> usize {
+    line_comment_end(bytes, start)
+}
+
+fn line_comment_end(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 2;
+    while i < bytes.len() && bytes[i] != b'\n' {
+        i += 1;
+    }
+    i
+}
+
+fn skip_block_comment(bytes: &[u8], start: usize) -> usize {
+    block_comment_end(bytes, start)
+}
+
+fn block_comment_end(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 2;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+            return i + 2;
+        }
+        i += 1;
+    }
+    bytes.len()
+}
+
 fn term_shape_for_fn(item_fn: &syn::ItemFn) -> Arc<CValue> {
     let ctx = ShapeContext::for_fn(item_fn);
     shape_of_block(&item_fn.block, &ctx)
+}
+
+fn term_shape_with_comments(
+    base_term_shape: Arc<CValue>,
+    mut comment_shapes: Vec<Arc<CValue>>,
+) -> Arc<CValue> {
+    if !is_non_operation_shape(&base_term_shape) {
+        comment_shapes.push(base_term_shape);
+    }
+    collapse_operation_shapes(comment_shapes)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1274,6 +1443,23 @@ fn operand_bindings_for_fn(item_fn: &syn::ItemFn) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+fn operand_bindings_for_fn_with_comment_prefix(
+    item_fn: &syn::ItemFn,
+    comment_count: usize,
+    base_has_operator: bool,
+) -> Vec<Value> {
+    let mut bindings = operand_bindings_for_fn(item_fn);
+    if comment_count == 0 || !base_has_operator {
+        return bindings;
+    }
+    for binding in &mut bindings {
+        if let Some(position) = binding.get_mut("position").and_then(Value::as_array_mut) {
+            position.insert(0, json!(comment_count));
+        }
+    }
+    bindings
 }
 
 fn bindings_of_block(block: &syn::Block, ctx: &ShapeContext) -> BindingResult {
@@ -2096,6 +2282,169 @@ pub fn add(x: i64, y: i64) -> i64 {
     }
 
     #[test]
+    fn bind_lift_line_comments_as_concept_comment_terms() {
+        let root = temp_workspace("bind_lift_line_comments");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn commented(value: i64) -> i64 {
+    // first line comment
+    let next = value + 1;
+    // second line comment
+    // third line comment
+    next
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entry = out["ir"]
+            .as_array()
+            .expect("ir array")
+            .first()
+            .expect("entry");
+        assert_eq!(
+            comment_surfaces(&entry["term_shape"]),
+            vec![
+                "// first line comment".to_string(),
+                "// second line comment".to_string(),
+                "// third line comment".to_string(),
+            ]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_excludes_concept_carrier_line_comments() {
+        let root = temp_workspace("bind_lift_comment_carriers");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn commented(value: i64) -> i64 {
+    // provekit:concept:skip
+    // provekit-concept: {}
+    // provekit-concept-payload-cid: blake3-512:dead
+    // ordinary line comment
+    value
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entry = out["ir"]
+            .as_array()
+            .expect("ir array")
+            .first()
+            .expect("entry");
+        assert_eq!(
+            comment_surfaces(&entry["term_shape"]),
+            vec!["// ordinary line comment".to_string()]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_block_comments_as_concept_comment_terms() {
+        let root = temp_workspace("bind_lift_block_comments");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn commented(value: i64) -> i64 {
+    /* first block comment */
+    let next = value + 1;
+    /* second
+       block comment */
+    /* third block comment */
+    next
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entry = out["ir"]
+            .as_array()
+            .expect("ir array")
+            .first()
+            .expect("entry");
+        assert_eq!(
+            comment_surfaces(&entry["term_shape"]),
+            vec![
+                "/* first block comment */".to_string(),
+                "/* second\n       block comment */".to_string(),
+                "/* third block comment */".to_string(),
+            ]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_lift_ignores_comment_markers_inside_strings() {
+        let root = temp_workspace("bind_lift_comment_string_markers");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn commented() -> &'static str {
+    let text = "// not a comment /* still not a comment */";
+    /* actual block */
+    // actual line
+    text
+}
+"#,
+        )
+        .expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+
+        let entry = out["ir"]
+            .as_array()
+            .expect("ir array")
+            .first()
+            .expect("entry");
+        assert_eq!(
+            comment_surfaces(&entry["term_shape"]),
+            vec![
+                "/* actual block */".to_string(),
+                "// actual line".to_string()
+            ]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn term_shape_let_rhs_operator_is_canonical_gamma() {
         let shape = term_shape_json(
             r#"
@@ -2505,6 +2854,39 @@ pub fn bitwise_not() -> i64 {
         cvalue_to_json(&term_shape_for_fn(item_fn))
     }
 
+    fn comment_surfaces(value: &Value) -> Vec<String> {
+        let mut surfaces = Vec::new();
+        collect_comment_surfaces(value, &mut surfaces);
+        surfaces
+    }
+
+    fn collect_comment_surfaces(value: &Value, surfaces: &mut Vec<String>) {
+        match value {
+            Value::Object(object) => {
+                if object.get("concept_name").and_then(Value::as_str) == Some("concept:comment") {
+                    if let Some(surface) = object
+                        .get("args")
+                        .and_then(Value::as_array)
+                        .and_then(|args| args.first())
+                        .and_then(|arg| arg.get("value"))
+                        .and_then(Value::as_str)
+                    {
+                        surfaces.push(surface.to_string());
+                    }
+                }
+                for child in object.values() {
+                    collect_comment_surfaces(child, surfaces);
+                }
+            }
+            Value::Array(items) => {
+                for child in items {
+                    collect_comment_surfaces(child, surfaces);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn assert_no_forbidden_term_shape_fields(value: &Value) {
         match value {
             Value::Object(object) => {
@@ -2638,7 +3020,9 @@ pub fn bitwise_not() -> i64 {
             "source_paths": ["."]
         }))
         .expect("bind lift returns document");
-        let diagnostic = result["diagnostics"][0].as_object().expect("diagnostic object");
+        let diagnostic = result["diagnostics"][0]
+            .as_object()
+            .expect("diagnostic object");
         let expected = exam_question_cid_for("morphism", "concept:source-unit", "rust")
             .expect("source-unit rust question exists");
 

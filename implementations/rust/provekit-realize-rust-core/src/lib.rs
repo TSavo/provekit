@@ -95,6 +95,32 @@ pub fn emit_stub_with_mode(
     }
 }
 
+pub fn emit_from_term_shape(
+    term_shape: &Value,
+    function_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+) -> Realization {
+    match lower_term_shape_body(term_shape) {
+        Some(body) => emit_function(
+            function_name,
+            params,
+            param_types,
+            return_type,
+            &body,
+            false,
+        ),
+        None => emit_stub(
+            function_name,
+            params,
+            param_types,
+            return_type,
+            &term_shape_concept_name(term_shape).unwrap_or_else(|| "term-shape".to_string()),
+        ),
+    }
+}
+
 /// Emits Rust for the D7 resolved Value::null body shape:
 /// `return(call:new(literal("new" | "*::new"), literal(["Null"])))`.
 ///
@@ -181,6 +207,67 @@ fn emit_function_with_evidence(
         observed_loss_record,
         used_sugars,
     }
+}
+
+fn lower_term_shape_body(shape: &Value) -> Option<String> {
+    let concept_name = term_shape_concept_name(shape)?;
+    if concept_name == "concept:comment" || concept_name == "comment" {
+        return Some(rust_comment_body(term_shape_comment_surface(shape)?));
+    }
+    if concept_name == "concept:skip" || concept_name == "skip" {
+        return Some(String::new());
+    }
+    if concept_name == "concept:seq" || concept_name == "seq" {
+        let mut lines = Vec::new();
+        for child in term_shape_args(shape) {
+            let child_body = lower_term_shape_body(child)?;
+            if !child_body.is_empty() {
+                lines.push(child_body);
+            }
+        }
+        return Some(lines.join("\n"));
+    }
+    None
+}
+
+fn term_shape_concept_name(shape: &Value) -> Option<String> {
+    shape
+        .get("concept_name")
+        .or_else(|| shape.get("conceptName"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+}
+
+fn term_shape_args(shape: &Value) -> Vec<&Value> {
+    shape
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|args| args.iter().collect())
+        .unwrap_or_default()
+}
+
+fn term_shape_comment_surface(shape: &Value) -> Option<&str> {
+    term_shape_args(shape)
+        .first()
+        .and_then(|arg| arg.get("value"))
+        .and_then(Value::as_str)
+        .or(Some(""))
+}
+
+fn rust_comment_body(surface: &str) -> String {
+    let trimmed = surface.trim();
+    if trimmed.starts_with("//") || (trimmed.starts_with("/*") && trimmed.ends_with("*/")) {
+        return trimmed.to_string();
+    }
+    if let Some(rest) = trimmed.strip_prefix('#') {
+        return format!("// {}", rest.trim());
+    }
+    if trimmed.contains('\n') {
+        return format!("/*\n{}\n*/", trimmed);
+    }
+    format!("// {trimmed}")
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -570,14 +657,24 @@ pub fn dispatch(request: &Value) -> Value {
             let mode = params.get("mode").and_then(Value::as_str);
             let param_names = string_array(params.get("params"));
             let param_types = string_array(params.get("param_types"));
-            let realized = emit_stub_with_mode(
-                function,
-                &param_names,
-                &param_types,
-                return_type,
-                concept_name,
-                mode,
-            );
+            let realized = if let Some(term_shape) = params.get("term_shape") {
+                emit_from_term_shape(
+                    term_shape,
+                    function,
+                    &param_names,
+                    &param_types,
+                    return_type,
+                )
+            } else {
+                emit_stub_with_mode(
+                    function,
+                    &param_names,
+                    &param_types,
+                    return_type,
+                    concept_name,
+                    mode,
+                )
+            };
             serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -1130,6 +1227,35 @@ mod tests {
 
         assert!(!rendered.is_stub);
         assert_eq!(rendered.source, "pub fn do_nothing() {\n    ()\n}\n");
+    }
+
+    #[test]
+    fn emits_rust_comment_from_comment_term_shape() {
+        let term_shape = serde_json::json!({
+            "concept_name": "concept:comment",
+            "args": [{"kind": "literal", "value": "// keep me exactly"}],
+        });
+        let rendered = emit_from_term_shape(&term_shape, "comment_only", &[], &[], "()");
+
+        assert!(!rendered.is_stub);
+        assert_eq!(
+            rendered.source,
+            "pub fn comment_only() {\n    // keep me exactly\n}\n"
+        );
+    }
+
+    #[test]
+    fn emits_rust_comment_after_python_comment_hop_surface() {
+        let term_shape = serde_json::json!({
+            "concept_name": "concept:comment",
+            "args": [{"kind": "literal", "value": "// byte exact route"}],
+        });
+        let rendered = emit_from_term_shape(&term_shape, "comment_hop", &[], &[], "()");
+
+        assert_eq!(
+            rendered.source,
+            "pub fn comment_hop() {\n    // byte exact route\n}\n"
+        );
     }
 
     #[test]

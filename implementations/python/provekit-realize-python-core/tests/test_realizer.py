@@ -569,6 +569,26 @@ def test_term_shape_sidecar_renders_safe_divide_then_double_source_symbols() -> 
     assert fn(-5, 2) == -1
 
 
+def test_term_shape_comment_emits_python_comment_surface() -> None:
+    result = emit_stub(
+        function="comment_only",
+        params=[],
+        param_types=[],
+        return_type="()",
+        concept_name="concept:comment",
+        term_shape=_shape(
+            "concept:comment",
+            [{"kind": "literal", "value": "// keep me exactly"}],
+        ),
+    )
+
+    assert result["source"] == (
+        "def comment_only():\n"
+        "    # // keep me exactly\n"
+        "    pass\n"
+    )
+
+
 def test_term_shape_operand_bindings_discriminate_symbol_order() -> None:
     shape = _shape("concept:div", [{}, {}])
     left = emit_stub(

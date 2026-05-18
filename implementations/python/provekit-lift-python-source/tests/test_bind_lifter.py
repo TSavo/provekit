@@ -168,6 +168,20 @@ def _operator_concepts(term_shape: dict) -> list[str]:
     return [str(atom["concept_name"]) for atom in _operator_atoms(term_shape)]
 
 
+def _concept_comment_surfaces(term_shape: dict) -> list[str]:
+    surfaces: list[str] = []
+    for atom in _operator_atoms(term_shape):
+        if atom.get("concept_name") != "concept:comment":
+            continue
+        args = atom.get("args", [])
+        if not isinstance(args, list) or not args:
+            continue
+        surface = args[0].get("value") if isinstance(args[0], dict) else None
+        if isinstance(surface, str):
+            surfaces.append(surface)
+    return surfaces
+
+
 def _gamma_shape(concept_name: str, args: list[dict] | None = None) -> dict:
     return {
         "args": args or [],
@@ -573,6 +587,60 @@ def test_bind_lift_compare_three_chain_mixed_ops_desugars_to_and_composition(
 
     assert result.diagnostics == []
     assert _operator_concepts(result.ir[0]["term_shape"]) == expected
+
+
+def test_bind_lift_line_comments_as_concept_comment_terms() -> None:
+    source = (
+        "def f(value):\n"
+        "    # first line comment\n"
+        "    value = value + 1\n"
+        "    # second line comment\n"
+        "    # third line comment\n"
+        "    return value\n"
+    )
+
+    result = lift_source(source, "pkg/comment_lines.py")
+
+    assert result.diagnostics == []
+    term_shape = result.ir[0]["term_shape"]
+    assert _operator_concepts(term_shape).count("concept:comment") == 3
+    assert _concept_comment_surfaces(term_shape) == [
+        "first line comment",
+        "second line comment",
+        "third line comment",
+    ]
+
+
+def test_bind_lift_concept_comment_excludes_comment_carriers() -> None:
+    source = (
+        "def f(value):\n"
+        "    # provekit:concept:skip\n"
+        "    # provekit-concept: {}\n"
+        "    # provekit-concept-payload-cid: blake3-512:dead\n"
+        "    # ordinary comment\n"
+        "    return value\n"
+    )
+
+    result = lift_source(source, "pkg/comment_carriers.py")
+
+    assert _concept_comment_surfaces(result.ir[0]["term_shape"]) == ["ordinary comment"]
+
+
+def test_rust_comment_surface_survives_python_comment_hop() -> None:
+    surface = "// byte exact route"
+    result = emit_stub(
+        function="comment_hop",
+        params=[],
+        param_types=[],
+        return_type="()",
+        concept_name="concept:comment",
+        term_shape=_gamma_shape("concept:comment", [{"kind": "literal", "value": surface}]),
+    )
+
+    lifted = lift_source(result["source"], "pkg/comment_hop.py")
+
+    assert lifted.diagnostics == []
+    assert _concept_comment_surfaces(lifted.ir[0]["term_shape"]) == [surface]
 
 
 def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:

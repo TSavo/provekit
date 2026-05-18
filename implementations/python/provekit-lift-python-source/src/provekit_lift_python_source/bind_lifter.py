@@ -58,6 +58,12 @@ class _ShapeResult:
     operand_bindings: list[Json]
 
 
+@dataclass(frozen=True)
+class _CommentOccurrence:
+    line_no: int
+    surface: str
+
+
 def lift_source(source: str, source_path: str) -> BindLiftResult:
     result = BindLiftResult()
     try:
@@ -165,7 +171,7 @@ def _entry_for_function(
     lines: list[str],
     diagnostics: list[Json],
 ) -> Json:
-    shape_result = _function_shape_with_bindings(node)
+    shape_result = _function_shape_with_bindings(node, lines)
     term_shape = shape_result.shape
     param_names = _signature_param_names(node.args)
     witnesses = []
@@ -205,22 +211,38 @@ def _function_shape(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Json:
 
 def _function_shape_with_bindings(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
+    lines: list[str] | None = None,
 ) -> _ShapeResult:
     statements = [stmt for stmt in node.body if not _is_docstring_stmt(stmt)]
-    return _shape_block_with_bindings(statements)
+    comments = _trivia_comment_occurrences(lines, node) if lines is not None else []
+    return _shape_block_with_bindings(statements, comments)
 
 
 def _shape_block(statements: list[ast.stmt]) -> Json:
     return _shape_block_with_bindings(statements).shape
 
 
-def _shape_block_with_bindings(statements: list[ast.stmt]) -> _ShapeResult:
+def _shape_block_with_bindings(
+    statements: list[ast.stmt],
+    comments: list[_CommentOccurrence] | None = None,
+) -> _ShapeResult:
     shapes: list[Json] = []
     binding_groups: list[list[Json]] = []
     leaf_only: _ShapeResult | None = None
+    pending_comments = sorted(comments or [], key=lambda comment: comment.line_no)
+    comment_index = 0
     for stmt in statements:
         if _is_docstring_stmt(stmt):
             continue
+        stmt_line = getattr(stmt, "lineno", 0)
+        while (
+            comment_index < len(pending_comments)
+            and pending_comments[comment_index].line_no < stmt_line
+        ):
+            comment = pending_comments[comment_index]
+            shapes.append(_comment_shape(comment.surface))
+            binding_groups.append([])
+            comment_index += 1
         candidate = _shape_stmt_with_bindings(stmt, top_level=False)
         shape = candidate.shape
         if _shape_has_operator_identity(shape):
@@ -228,6 +250,11 @@ def _shape_block_with_bindings(statements: list[ast.stmt]) -> _ShapeResult:
             binding_groups.append(candidate.operand_bindings)
         elif leaf_only is None and candidate.operand_bindings:
             leaf_only = candidate
+    while comment_index < len(pending_comments):
+        comment = pending_comments[comment_index]
+        shapes.append(_comment_shape(comment.surface))
+        binding_groups.append([])
+        comment_index += 1
     if not shapes and leaf_only is not None:
         return _ShapeResult({}, _sort_operand_bindings(leaf_only.operand_bindings))
     return _collapse_operation_shape_results(shapes, binding_groups)
@@ -414,6 +441,17 @@ def _operator_shape(concept_name: str, args: list[Json]) -> Json:
     }
 
 
+def _comment_shape(surface: str) -> Json:
+    op_cid = _concept_op_cid("concept:comment")
+    if op_cid is None:
+        return {}
+    return {
+        "args": [{"kind": "literal", "value": surface}],
+        "concept_name": "concept:comment",
+        "op_cid": op_cid,
+    }
+
+
 def _operator_shape_result(concept_name: str, args: list[_ShapeResult]) -> _ShapeResult:
     shape = _operator_shape(concept_name, [arg.shape for arg in args])
     if not shape:
@@ -463,6 +501,10 @@ def _operand_slot(value: Json) -> Json:
         and isinstance(value.get("concept_name"), str)
         and isinstance(value.get("op_cid"), str)
         and isinstance(value.get("args"), list)
+    ):
+        return value
+    if isinstance(value, dict) and (
+        value.get("kind") in {"literal", "const"} or "value" in value
     ):
         return value
     return {}
@@ -749,6 +791,36 @@ def _function_body_comment_surface(
         if stripped.startswith("#"):
             surface.append((idx + 1, stripped[1:].strip()))
     return surface
+
+
+def _trivia_comment_occurrences(
+    lines: list[str],
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[_CommentOccurrence]:
+    end_lineno = getattr(node, "end_lineno", node.lineno)
+    occurrences: list[_CommentOccurrence] = []
+    for idx in range(node.lineno, min(end_lineno, len(lines))):
+        stripped = lines[idx].strip()
+        if not stripped.startswith("#"):
+            continue
+        surface = stripped[1:].strip()
+        if _is_provekit_comment_carrier(surface):
+            continue
+        occurrences.append(_CommentOccurrence(line_no=idx + 1, surface=surface))
+    return occurrences
+
+
+def _is_provekit_comment_carrier(surface: str) -> bool:
+    normalized = surface.strip()
+    carrier_prefixes = (
+        "provekit:concept:",
+        "provekit:concept-payload-cid:",
+        "provekit-concept:",
+        "provekit-concept-payload-cid:",
+        "provekit-contract:",
+        "provekit-contract-payload-cid:",
+    )
+    return any(normalized.startswith(prefix) for prefix in carrier_prefixes)
 
 
 def _concept_citation_comments_from_surface_lines(
