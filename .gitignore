@@ -44,6 +44,7 @@ tools/blake3-vendored/*.o
 .provekit/graph.json
 .provekit/report.json
 .provekit/derivation.json
+.provekit/runs/
 .provekit/provekit.db
 .provekit/provekit.db-journal
 .provekit/provekit.db-wal

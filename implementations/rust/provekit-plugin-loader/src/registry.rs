@@ -463,4 +463,27 @@ mod tests {
         let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
         assert_eq!(m.header.built_in_count, 1);
     }
+
+    #[test]
+    fn write_registry_memento_uses_content_addressed_run_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut reg = PluginRegistry::new();
+        reg.register(dummy_memento("sugar", "blake3-512:aaa"), "./test.json")
+            .unwrap();
+        let m = reg.emit_registry_memento("2026-05-12T00:00:00.000Z");
+
+        let path =
+            crate::write_plugin_registry_memento(temp.path(), &m).expect("write registry memento");
+        let read_back = crate::read_plugin_registry_memento(&path).expect("read registry memento");
+
+        assert_eq!(read_back, m);
+        assert_eq!(
+            path,
+            temp.path()
+                .join(".provekit")
+                .join("runs")
+                .join(m.cid())
+                .join(crate::PLUGIN_REGISTRY_MEMENTO_FILE)
+        );
+    }
 }
