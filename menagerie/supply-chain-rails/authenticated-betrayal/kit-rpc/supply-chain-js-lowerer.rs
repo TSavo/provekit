@@ -52,11 +52,12 @@ fn run_rpc() {
                 }),
             ),
             "realize" => {
-                let workspace = request
-                    .pointer("/params/workspace_root")
-                    .and_then(Value::as_str)
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("."));
+                // The kit dispatcher sets the plugin's cwd to the project root
+                // (workspace_root in the JSON-RPC params). Treating workspace_root
+                // as a path to read from would join it onto cwd, doubling up the
+                // project segment and reading the wrong file. Read relative to
+                // cwd directly.
+                let workspace = PathBuf::from(".");
                 let plan = request
                     .pointer("/params/plan")
                     .cloned()
