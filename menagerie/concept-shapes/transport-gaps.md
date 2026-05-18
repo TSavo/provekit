@@ -301,18 +301,10 @@ See `protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md`.
 | `rust` | `concept:mul` | `sort-mismatch` | `gap_rust_mul_to_concept_mul.json` | add-representation-map, accept-permanent |
 | `rust` | `concept:ne` | `sort-mismatch` | `gap_rust_ne_to_concept_ne.json` | add-representation-map, accept-permanent |
 | `rust` | `concept:neg` | `sort-mismatch` | `gap_rust_neg_to_concept_neg.json` | add-representation-map, accept-permanent |
-| `rust` | `concept:new` | `missing-source-op` | `gap_rust_new_to_concept_new.json` | accept-permanent |
 | `rust` | `concept:not` | `arity-shape-mismatch` | `gap_rust_not_to_concept_not.json` | re-spec-target-op, accept-permanent |
-| `rust` | `concept:postdec` | `missing-source-op` | `gap_rust_postdec_to_concept_postdec.json` | accept-permanent |
-| `rust` | `concept:postinc` | `missing-source-op` | `gap_rust_postinc_to_concept_postinc.json` | accept-permanent |
-| `rust` | `concept:predec` | `missing-source-op` | `gap_rust_predec_to_concept_predec.json` | accept-permanent |
-| `rust` | `concept:preinc` | `missing-source-op` | `gap_rust_preinc_to_concept_preinc.json` | accept-permanent |
 | `rust` | `concept:shl` | `sort-mismatch` | `gap_rust_shl_to_concept_shl.json` | add-representation-map, accept-permanent |
 | `rust` | `concept:shr` | `sort-mismatch` | `gap_rust_shr_to_concept_shr.json` | add-representation-map, accept-permanent |
-| `rust` | `concept:source-unit` | `missing-source-op` | `gap_rust_source_unit_to_concept_source_unit.json` | accept-permanent |
 | `rust` | `concept:sub` | `sort-mismatch` | `gap_rust_sub_to_concept_sub.json` | add-representation-map, accept-permanent |
-| `rust` | `concept:throw` | `sort-mismatch` | `gap_rust_throw_to_concept_throw.json` | add-representation-map, accept-permanent |
-| `rust` | `concept:ushr` | `missing-source-op` | `gap_rust_ushr_to_concept_ushr.json` | accept-permanent |
 | `typescript` | `concept:add` | `polymorphic-source-op` | `gap_typescript_add_to_concept_add.json` | partial-morphism, accept-permanent |
 | `typescript` | `concept:addr` | `missing-source-op` | `gap_typescript_addr_to_concept_addr.json` | accept-permanent |
 | `typescript` | `concept:bitand` | `sort-mismatch` | `gap_typescript_bitand_to_concept_bitand.json` | add-representation-map, accept-permanent |

@@ -94,6 +94,7 @@ impl Catalog {
         })?;
         for dir in [
             "algorithms",
+            "boundary-contracts",
             "bindings",
             "exams",
             "signatures",
