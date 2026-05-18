@@ -42,14 +42,19 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 
 #[allow(unused_imports)]
 pub use libprovekit::core::RealizeContractWitness;
 use libprovekit::core::RealizeTransport;
 pub use libprovekit::core::{RealizeContractPayload, RealizeRequest, RealizedSource};
 use libprovekit::ExamManifestKit;
+use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{Cid, ExamManifestMemento};
-use provekit_plugin_loader::{PluginRegistry, PluginRegistryMemento};
+use provekit_plugin_loader::{
+    cid::compute_plugin_cid, write_plugin_registry_memento, PluginEnvelope, PluginHeader,
+    PluginMemento, PluginMetadata, PluginRegistry, PluginRegistryMemento,
+};
 
 use crate::project_config::read_project_config;
 
@@ -67,6 +72,331 @@ impl RealizeTransport for DispatchRealizeTransport {
         dispatch_realize(workspace_root, target_lang, library_tag, request)
             .map_err(|error| error.to_string())
     }
+}
+
+const REGISTRY_SEALED_AT: &str = "1970-01-01T00:00:00.000Z";
+const REGISTRY_MANIFEST_KINDS: &[&str] = &["lift", "realize", "exam-manifest"];
+
+static RUN_PLUGIN_REGISTRIES: OnceLock<Mutex<BTreeMap<PathBuf, RunPluginRegistry>>> =
+    OnceLock::new();
+static KIT_DISPATCH_DIAGNOSTICS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct SealedPluginRegistry {
+    pub memento: PluginRegistryMemento,
+    pub path: PathBuf,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+struct RunPluginRegistry {
+    sealed: SealedPluginRegistry,
+    plugins: Vec<ManifestPluginRegistration>,
+}
+
+#[derive(Debug, Clone)]
+struct ManifestPluginRegistration {
+    kind: String,
+    surface: String,
+    source: String,
+    manifest_path: PathBuf,
+    parsed: ParsedManifest,
+    memento: PluginMemento,
+}
+
+#[allow(dead_code)]
+pub fn ensure_sealed_plugin_registry_for_project(
+    workspace_root: &Path,
+) -> Result<SealedPluginRegistry, String> {
+    run_plugin_registry_for_project(workspace_root).map(|registry| registry.sealed)
+}
+
+#[allow(dead_code)]
+pub fn reset_kit_dispatch_registry_cache_for_tests() {
+    if let Some(cache) = RUN_PLUGIN_REGISTRIES.get() {
+        cache.lock().expect("registry cache lock").clear();
+    }
+    let _ = drain_kit_dispatch_diagnostics();
+}
+
+#[allow(dead_code)]
+pub fn drain_kit_dispatch_diagnostics() -> Vec<String> {
+    let diagnostics = KIT_DISPATCH_DIAGNOSTICS.get_or_init(|| Mutex::new(Vec::new()));
+    let mut diagnostics = diagnostics.lock().expect("diagnostics lock");
+    std::mem::take(&mut *diagnostics)
+}
+
+fn run_plugin_registry_for_project(workspace_root: &Path) -> Result<RunPluginRegistry, String> {
+    let key = registry_cache_key(workspace_root);
+    let cache = RUN_PLUGIN_REGISTRIES.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Some(registry) = cache
+        .lock()
+        .expect("registry cache lock")
+        .get(&key)
+        .cloned()
+    {
+        return Ok(registry);
+    }
+
+    let registry = build_run_plugin_registry(&key)?;
+    cache
+        .lock()
+        .expect("registry cache lock")
+        .insert(key, registry.clone());
+    Ok(registry)
+}
+
+fn registry_cache_key(workspace_root: &Path) -> PathBuf {
+    std::fs::canonicalize(workspace_root).unwrap_or_else(|_| {
+        if workspace_root.is_absolute() {
+            workspace_root.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(workspace_root)
+        }
+    })
+}
+
+fn build_run_plugin_registry(workspace_root: &Path) -> Result<RunPluginRegistry, String> {
+    let plugins = scan_manifest_plugins(workspace_root)?;
+    let mut registry = PluginRegistry::new();
+    for plugin in &plugins {
+        registry
+            .register(plugin.memento.clone(), &plugin.source)
+            .map_err(|error| format!("register {}: {error}", plugin.source))?;
+    }
+    let memento = registry.emit_registry_memento_with_exam_manifest(
+        REGISTRY_SEALED_AT,
+        Some(configured_exam_manifest_cid(workspace_root)),
+        None,
+    );
+    let path = write_plugin_registry_memento(workspace_root, &memento)
+        .map_err(|error| format!("write sealed PluginRegistryMemento: {error}"))?;
+    Ok(RunPluginRegistry {
+        sealed: SealedPluginRegistry { memento, path },
+        plugins,
+    })
+}
+
+fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegistration>, String> {
+    let mut plugins = Vec::new();
+    for kind in REGISTRY_MANIFEST_KINDS {
+        let kind_dir = workspace_root.join(".provekit").join(kind);
+        let Ok(entries) = std::fs::read_dir(&kind_dir) else {
+            continue;
+        };
+        let mut surfaces = entries
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                if !path.is_dir() {
+                    return None;
+                }
+                let surface = path.file_name()?.to_str()?.to_string();
+                Some((surface, path))
+            })
+            .collect::<Vec<_>>();
+        surfaces.sort_by(|a, b| a.0.cmp(&b.0));
+        for (surface, path) in surfaces {
+            let manifest_path = path.join("manifest.toml");
+            if !manifest_path.exists() {
+                continue;
+            }
+            let parsed = parse_manifest(&manifest_path)?;
+            let source = registry_source(workspace_root, &manifest_path);
+            let memento = manifest_plugin_memento(
+                workspace_root,
+                *kind,
+                &surface,
+                &source,
+                &manifest_path,
+                &parsed,
+            )?;
+            plugins.push(ManifestPluginRegistration {
+                kind: (*kind).to_string(),
+                surface,
+                source,
+                manifest_path,
+                parsed,
+                memento,
+            });
+        }
+    }
+    Ok(plugins)
+}
+
+fn registry_source(workspace_root: &Path, path: &Path) -> String {
+    path.strip_prefix(workspace_root)
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
+fn manifest_plugin_memento(
+    workspace_root: &Path,
+    kind: &str,
+    surface: &str,
+    source: &str,
+    manifest_path: &Path,
+    parsed: &ParsedManifest,
+) -> Result<PluginMemento, String> {
+    let manifest_bytes = std::fs::read(manifest_path)
+        .map_err(|error| format!("read {}: {error}", manifest_path.display()))?;
+    let working_dir = parsed
+        .working_dir
+        .as_ref()
+        .map(|path| path.display().to_string());
+    let content = json!({
+        "kind": "manifest-plugin",
+        "plugin_kind": kind,
+        "surface": surface,
+        "manifest_path": source,
+        "manifest_cid": blake3_512_of(&manifest_bytes),
+        "name": parsed.name.clone(),
+        "command": parsed.command.clone(),
+        "working_dir": working_dir,
+        "library_tag": parsed.library_tag.clone(),
+        "capability_kind": parsed.capability_kind.clone(),
+        "exam_manifest_schema_version": parsed.exam_manifest_schema_version.clone(),
+        "workspace_relative": manifest_path.starts_with(workspace_root),
+    });
+    let mut protocol_versions = parsed.protocol_versions.clone();
+    if protocol_versions.is_empty() {
+        protocol_versions.push(PEP_1_7_0.to_string());
+    }
+    protocol_versions.sort();
+    protocol_versions.dedup();
+    let mut header = PluginHeader {
+        cid: String::new(),
+        content,
+        critical: false,
+        kind: kind.to_string(),
+        protocol_versions,
+        provenance_cid: blake3_512_of(&manifest_bytes),
+        schema_version: "1".to_string(),
+        version: "0.1.0".to_string(),
+    };
+    header.cid = compute_plugin_cid(&header);
+    Ok(PluginMemento {
+        envelope: PluginEnvelope {
+            declared_at: REGISTRY_SEALED_AT.to_string(),
+            signature: "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+            signer: "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
+        },
+        header,
+        metadata: PluginMetadata::default(),
+    })
+}
+
+fn registry_authorizes_plugin(
+    registry: &RunPluginRegistry,
+    plugin: &ManifestPluginRegistration,
+) -> bool {
+    registry.sealed.memento.header.load_order.iter().any(|entry| {
+        entry.kind == plugin.kind
+            && entry.cid == plugin.memento.cid()
+            && entry.source == plugin.source
+    })
+}
+
+fn registry_lift_command(
+    workspace_root: &Path,
+    source_lang: &str,
+) -> Result<Option<(String, ResolvedCommand)>, String> {
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    for surface in [&format!("{source_lang}-bind"), source_lang] {
+        if let Some(plugin) = registry
+            .plugins
+            .iter()
+            .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+            .find(|plugin| plugin.kind == "lift" && plugin.surface == surface)
+        {
+            return Ok(Some((
+                plugin.surface.clone(),
+                resolved_command_from_manifest(workspace_root, &plugin.parsed),
+            )));
+        }
+    }
+    Ok(None)
+}
+
+fn registry_realize_candidates(
+    workspace_root: &Path,
+    target_lang: &str,
+) -> Result<Vec<RealizeCandidate>, String> {
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    let mut candidates = registry
+        .plugins
+        .iter()
+        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+        .filter(|plugin| plugin.kind == "realize")
+        .filter(|plugin| realize_surface_matches_target(&plugin.surface, target_lang))
+        .map(|plugin| RealizeCandidate {
+            tag: plugin
+                .parsed
+                .library_tag
+                .clone()
+                .unwrap_or_else(|| DEFAULT_LIBRARY_TAG.to_string()),
+            command: resolved_command_from_manifest(workspace_root, &plugin.parsed),
+            source: plugin.source.clone(),
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| a.tag.cmp(&b.tag).then(a.source.cmp(&b.source)));
+    Ok(candidates)
+}
+
+fn registry_exam_manifest_command(
+    workspace_root: &Path,
+    plugin_name: &str,
+) -> Result<Option<ResolvedCommand>, String> {
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    let Some(plugin) = registry
+        .plugins
+        .iter()
+        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+        .find(|plugin| plugin.kind == EXAM_MANIFEST_KIND && plugin.surface == plugin_name)
+    else {
+        return Ok(None);
+    };
+    validate_exam_manifest_plugin_manifest(&plugin.manifest_path, &plugin.parsed)?;
+    Ok(Some(resolved_command_from_manifest(
+        workspace_root,
+        &plugin.parsed,
+    )))
+}
+
+fn resolved_command_from_manifest(
+    workspace_root: &Path,
+    parsed: &ParsedManifest,
+) -> ResolvedCommand {
+    let working_dir = parsed
+        .working_dir
+        .clone()
+        .map(|wd| {
+            if wd.is_absolute() {
+                wd
+            } else {
+                workspace_root.join(wd)
+            }
+        })
+        .or_else(|| Some(workspace_root.to_path_buf()));
+    ResolvedCommand {
+        argv: parsed.command.clone(),
+        working_dir,
+    }
+}
+
+fn record_fallback_diagnostic(kind: &str, surface: &str) {
+    let message =
+        format!("deprecated kit_dispatch filesystem fallback: kind={kind} surface={surface}");
+    eprintln!("{message}");
+    KIT_DISPATCH_DIAGNOSTICS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .expect("diagnostics lock")
+        .push(message);
 }
 
 // ============================================================================
@@ -192,6 +522,18 @@ fn resolve_lift_command(
     workspace_root: &Path,
     source_lang: &str,
 ) -> Result<ResolvedCommand, KitUnavailable> {
+    match registry_lift_command(workspace_root, source_lang) {
+        Ok(Some((_surface, command))) => return Ok(command),
+        Ok(None) => record_fallback_diagnostic("lift", &format!("{source_lang}-bind")),
+        Err(detail) => {
+            return Err(KitUnavailable {
+                kit_kind: "lift",
+                language: source_lang.to_string(),
+                detail,
+            })
+        }
+    }
+
     // 1 + 2: project-local manifest under .provekit/lift/<surface>/manifest.toml.
     for surface in [&format!("{source_lang}-bind"), source_lang] {
         let manifest = workspace_root
@@ -201,20 +543,7 @@ fn resolve_lift_command(
             .join("manifest.toml");
         if manifest.exists() {
             if let Ok(parsed) = parse_manifest(&manifest) {
-                let working_dir = parsed
-                    .working_dir
-                    .map(|wd| {
-                        if wd.is_absolute() {
-                            wd
-                        } else {
-                            workspace_root.join(wd)
-                        }
-                    })
-                    .or_else(|| Some(workspace_root.to_path_buf()));
-                return Ok(ResolvedCommand {
-                    argv: parsed.command,
-                    working_dir,
-                });
+                return Ok(resolved_command_from_manifest(workspace_root, &parsed));
             }
         }
     }
@@ -610,8 +939,45 @@ fn resolve_realize_command(
         }
     }
 
-    let candidates = registered_realize_candidates(workspace_root, target_lang)?;
     let requested = library_tag.unwrap_or(DEFAULT_LIBRARY_TAG);
+    let registry_candidates =
+        registry_realize_candidates(workspace_root, target_lang).map_err(|detail| {
+            KitUnavailable {
+                kit_kind: "realize",
+                language: target_lang.to_string(),
+                detail,
+            }
+        })?;
+    if let Some(candidate) = registry_candidates
+        .iter()
+        .find(|candidate| candidate.tag == requested)
+    {
+        return Ok(candidate.command.clone());
+    }
+
+    if library_tag.is_none() {
+        if registry_candidates.len() == 1 {
+            return Ok(registry_candidates[0].command.clone());
+        }
+        if !registry_candidates.is_empty() {
+            let tags = registry_candidates
+                .iter()
+                .map(|candidate| format!("{} from {}", candidate.tag, candidate.source))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(KitUnavailable {
+                kit_kind: "realize",
+                language: target_lang.to_string(),
+                detail: format!(
+                    "multiple realize plugins registered for language `{target_lang}` but none \
+                     has library_tag `default`; pass an explicit library_tag. registered: {tags}"
+                ),
+            });
+        }
+    }
+
+    record_fallback_diagnostic("realize", target_lang);
+    let candidates = legacy_realize_candidates(workspace_root, target_lang)?;
     if let Some(candidate) = candidates
         .iter()
         .find(|candidate| candidate.tag == requested)
@@ -669,7 +1035,7 @@ struct RealizeCandidate {
     source: String,
 }
 
-fn registered_realize_candidates(
+fn legacy_realize_candidates(
     workspace_root: &Path,
     target_lang: &str,
 ) -> Result<Vec<RealizeCandidate>, KitUnavailable> {
@@ -1095,6 +1461,10 @@ pub fn federate_plugin_registries(
     local: &PluginRegistryMemento,
     remote: &PluginRegistryMemento,
 ) -> Result<(), KitDispatchError> {
+    if local.header.cid == remote.header.cid {
+        return Ok(());
+    }
+
     let local_cids = registry_exam_manifest_cids(local);
     let remote_cids = registry_exam_manifest_cids(remote);
     if local_cids.iter().any(|cid| remote_cids.contains(cid)) {
@@ -1170,6 +1540,18 @@ fn resolve_exam_manifest_command(
     workspace_root: &Path,
     plugin_name: &str,
 ) -> Result<Option<ResolvedCommand>, KitUnavailable> {
+    match registry_exam_manifest_command(workspace_root, plugin_name) {
+        Ok(Some(command)) => return Ok(Some(command)),
+        Ok(None) => record_fallback_diagnostic(EXAM_MANIFEST_KIND, plugin_name),
+        Err(detail) => {
+            return Err(KitUnavailable {
+                kit_kind: EXAM_MANIFEST_KIND,
+                language: plugin_name.to_string(),
+                detail,
+            })
+        }
+    }
+
     let project_manifest = workspace_root
         .join(".provekit")
         .join(EXAM_MANIFEST_KIND)
@@ -1205,20 +1587,10 @@ fn resolve_exam_manifest_command(
             detail,
         }
     })?;
-    let working_dir = parsed
-        .working_dir
-        .map(|wd| {
-            if wd.is_absolute() {
-                wd
-            } else {
-                workspace_root.join(wd)
-            }
-        })
-        .or_else(|| Some(workspace_root.to_path_buf()));
-    Ok(Some(ResolvedCommand {
-        argv: parsed.command,
-        working_dir,
-    }))
+    Ok(Some(resolved_command_from_manifest(
+        workspace_root,
+        &parsed,
+    )))
 }
 
 fn validate_exam_manifest_plugin_manifest(
