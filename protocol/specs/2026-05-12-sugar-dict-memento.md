@@ -133,6 +133,8 @@ Additional sugar-specific flags:
 
 For each canonical contract clause C produced by the realizer:
 
+The emission policy described in this section is codified as a content-addressed artifact in `2026-05-18-sugar-selection-policy-memento.md`.
+
 ### §4.0 Emission policy
 
 A sugar consumer MUST apply one of these policies for a clause:
