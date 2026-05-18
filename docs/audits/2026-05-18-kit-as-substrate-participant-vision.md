@@ -1,0 +1,249 @@
+# Kit-as-Substrate-Participant Vision: Audit and Roadmap
+
+Date: 2026-05-18
+Status: Active. Source of truth for the kit-protocol-correctness work. All future GitHub issues on this thread derive from rows in this audit.
+
+## 1. The Vision
+
+The substrate is a PROTOCOL, not a codebase. Its value is what it standardizes (the wire contract for kits + the content-addressed artifact for libraries), not what it implements in any one place. ProvekIt's wire contract is **PEP 1.7.0 over JSON-RPC** for kit dispatch + **`.proof` bundles** for content-addressed substrate artifacts.
+
+The "anyone can write a new language kit and ship libraries in that language and it just works" property holds because:
+
+- All kits implement PEP 1.7.0 over JSON-RPC. The substrate dispatches via subprocess + stdio. Kit-implementation-language is invisible to the dispatcher.
+- All libraries ship one `.proof` bundle alongside their existing distribution (npm, pip, cargo, maven). The substrate resolves library kits via package-manager + .proof read.
+- The substrate's `libprovekit` is thin: protocol + dispatcher + primitives + ProofIR + canonicalizer. Language- and library-specific behavior lives in kits, not substrate code.
+
+This audit catalogs:
+
+1. The substrate primitives that ARE substrate-resident (correctly).
+2. The kits currently in the codebase, classified by face completion and ownership category.
+3. The workflow reinventions where substrate CODE does work the PROTOCOL should be doing.
+4. The dissolution roadmap pairing kit-face mints with workflow dissolution PRs.
+5. The vision realization milestones leading to the Trinity demo (Rust ↔ Java ↔ Python round-trip with library `.proof` bundles + language exams + all five workflows composing one set of primitives).
+
+## 2. Paper grounding
+
+This vision is documented across the After-X arc:
+
+| Paper | Title | Relevance |
+|---|---|---|
+| `docs/papers/12-after-languages-how-proofir-represents-every-language.md` | ProofIR as universal IR | The canonical interchange between language kits. |
+| `docs/papers/13-after-grammars-programming-languages-as-content-addressed-algebras.md` | Languages as content-addressed algebras | Why the kit's lift face produces algebra terms. |
+| `docs/papers/16-after-portability-the-universal-address-space.md` | Universal address space via CIDs | Why .proof + CIDs are the load-bearing carrier. |
+| `docs/papers/21-after-cross-language-every-cross-x-dissolves.md` | Cross-X dissolution | Why the M+N hub matters: every cross-(lang, library) reduces to compose-of-two-kits. |
+| `docs/papers/22-after-vendoring-migration-as-source-transformation.md` | Libraries ship sugar | Why library kits MUST be vendor-distributed via .proof. |
+| `docs/papers/23-after-packages-the-proof-envelope-carries-the-binding.md` | .proof envelope binding | The .proof is the package-level binding artifact. |
+| `docs/papers/25-after-architectures-the-program-was-already-realized.md` | Architecture endgame | The substrate-as-protocol terminus. |
+
+This audit is not the source of the vision; the papers are. The audit maps the CODE BASE to the vision and identifies where they diverge.
+
+## 3. Substrate primitives (the protocol surface)
+
+The kept-thin substrate code that all workflows compose. These should never grow language- or library-specific branches.
+
+| Primitive | File | Symbol | What it does |
+|---|---|---|---|
+| Lift dispatch | `implementations/rust/provekit-cli/src/kit_dispatch.rs:504` | `dispatch_bind_lift(workspace_root, source_lang)` | Resolve `kind=lift` plugin for a language via manifest convention. Invoke via PEP 1.7.0 over JSON-RPC. |
+| Realize dispatch | `implementations/rust/provekit-cli/src/kit_dispatch.rs:913` | `dispatch_realize(workspace_root, target_lang, library_tag, request)` | Resolve `kind=realize` plugin for `(target_lang, library_tag.unwrap_or("default"))` via manifest convention. Invoke via PEP 1.7.0. |
+| Exam dispatch | `implementations/rust/provekit-cli/src/kit_dispatch.rs` | `dispatch_exam_manifest(...)` | Resolve `kind=exam-manifest` plugin. Validates ExamManifestMemento. |
+| Language semantics lookup | `implementations/rust/libprovekit/src/core/platform_semantics.rs:34` | `platform_semantics_for_lower_target(target: &str)` | Returns language-kit declaration for a language. Arms: python, rust, java, c, typescript. |
+| Binding semantics lookup | `implementations/rust/libprovekit/src/core/platform_semantics.rs:144` | `binding_semantics_for_tag(binding_tag: &str)` | Returns library-kit declaration. Arms today: better-sqlite3, pg. |
+| Composition | `implementations/rust/libprovekit/src/core/platform_semantics.rs:122` | `platform_semantics_for_binding(lang, tag)` | Composes language-kit + library-kit via `merge_declarations`. Binding-kit wins op-CID conflicts. |
+| Trichotomy verdict | `implementations/rust/libprovekit/src/core/types.rs` | `PlatformSemanticsDeclaration::compare_op_with(op_cid, other)` | Returns four-state `OpCoverageVerdict`: `NoOpinion` / `Uncharacterizable { absent_on }` / `Same` / `Divergent(c)`. The substrate's load-bearing decision primitive. |
+| Effect propagation | `implementations/rust/libprovekit/src/effect_propagation.rs` | `propagate_effects(graph)` | Widen / Halt / Refuse propagation through the call graph. Used for async-contagion today; generalizable. |
+| BindKit | `implementations/rust/libprovekit/src/core/bind.rs:98` | `BindKit::transform(input)` | Substrate-only algebra pass. Lift IR → applicative-encoded bind-result Term::Op tree. No language/library dispatch. |
+| Address | `implementations/rust/libprovekit/src/core/primitives.rs:30` | `address(&value)` | JCS + BLAKE3-512 content-addressing. The universal identity. |
+| Canonical encode | `implementations/rust/libprovekit/src/canonical.rs` | `json_cid`, `encode_jcs`, etc. | JCS canonicalization. The wire format. |
+| Path executor | `implementations/rust/libprovekit/src/core/path_executor.rs` | `execute_path(path, registry, inputs)` | Composes a sequence of verbs into a chain of DomainClaims. |
+| Exam manifest load | `implementations/rust/libprovekit/src/exam_manifest.rs:147` | `load_default_exam_manifest()` | Loads the v1.1 exam manifest. Pins kit set for a run per pin-all-three. |
+
+These primitives ARE the protocol surface. Any workflow that doesn't compose THESE is reinventing.
+
+## 4. Kit faces inventory
+
+A KIT is one substrate participant. Two kinds:
+
+- **Language kit**: owned by substrate (or in the future, language ecosystem). Declares language-native platform semantics + lifts/realizes language-native code.
+- **Library kit (sugar)**: owned by library author (or substrate-bootstrap during early adoption). Declares library-specific binding semantics + lifts/realizes library-bound boundary calls.
+
+Each kit has three faces: **lift** (source → ProofIR), **declaration** (dimensions/tags for trichotomy), **realize** (ProofIR → source).
+
+### 4.1 Language kit inventory
+
+| Language | Lift face | Declaration face | Realize face | Classification |
+|---|---|---|---|---|
+| Python | `implementations/python/provekit-lift-python-source/` | `implementations/rust/libprovekit/src/core/platform_semantics/python_common.rs:1-77` and `python_lift_source.rs` | `implementations/python/provekit-realize-python-core/` | Bootstrap-resident (decl); plugin-resident (lift, realize) |
+| TypeScript | TODO: locate ts lift plugin | `implementations/rust/libprovekit/src/core/platform_semantics/typescript.rs:1-212` | `implementations/typescript/provekit-realize-typescript-core/` | Bootstrap-resident (decl); plugin-resident (realize) |
+| Java | `implementations/java/provekit-lift-java-source/` | `implementations/rust/libprovekit/src/core/platform_semantics/java.rs:1-142` | `implementations/java/provekit-realize-java-core/` | Bootstrap-resident (decl); plugin-resident (lift, realize) |
+| Rust | `implementations/rust/provekit-walk/src/bin/walk_rpc.rs` | `implementations/rust/provekit-realize-rust-core/src/platform_semantics.rs` | `implementations/rust/provekit-realize-rust-core/` | All bootstrap- or plugin-resident |
+| C | TODO: locate c lift plugin | `implementations/c/provekit-realize-c-core/platform_semantics.rs` | `implementations/c/provekit-realize-c-core/` | Bootstrap-resident |
+
+### 4.2 Library kit inventory (current)
+
+| (Language, Library) | Library tag | Declaration face | Body templates | Realize plugin | Lift plugin |
+|---|---|---|---|---|---|
+| TypeScript + better-sqlite3 | `better-sqlite3` | `platform_semantics/better_sqlite3.rs` (180 lines: RowIdMechanism=LastInsertRowid) | `menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-better-sqlite3.json` | `implementations/typescript/provekit-realize-typescript-better-sqlite3/` | TODO: locate |
+| TypeScript + pg | `pg` | `platform_semantics/pg.rs` (191 lines: RowIdMechanism=ReturningClause) | TODO: locate body templates JSON | `implementations/typescript/provekit-realize-typescript-pg/` | TODO: locate |
+| Python + sqlite3 | `sqlite3` | **MISSING** | TODO: locate body templates JSON | `implementations/python/provekit-realize-python-sqlite3/` (352 lines) | TODO: locate |
+| Python + aiosqlite | `aiosqlite` | **MISSING** | TODO: locate body templates JSON | `implementations/python/provekit-realize-python-aiosqlite/` | TODO: locate |
+| Python + requests | `requests` | TODO: verify | TODO: locate | `implementations/python/provekit-realize-python-requests/` | TODO: locate |
+
+### 4.3 Library kit inventory (Trinity demo target — missing)
+
+For the Rust ↔ Java ↔ Python Trinity demo Sir specified, the following library kits must be minted:
+
+| (Language, Library) | Library tag | Status | Notes |
+|---|---|---|---|
+| Rust + rusqlite (or similar) | `rusqlite` | **NOT STARTED** | Required for Trinity demo's Rust leg. Mechanism: `Connection::last_insert_rowid()` (similar shape to better-sqlite3 but Rust API). |
+| Java + sqlite-jdbc | `sqlite-jdbc` | **NOT STARTED** | Required for Trinity demo's Java leg. Mechanism: PreparedStatement.getGeneratedKeys() + ResultSet. |
+| Python + sqlite3 | `sqlite3` | **PARTIAL** | Realize plugin exists; declaration face missing. |
+
+### 4.4 Language exam inventory
+
+Language exams (ExamManifestMemento) pin which kits participate in a substrate run. Per `2026-05-18-pin-all-three` memory and `exam_manifest.rs`, the exam is load-bearing for substrate-honesty.
+
+| Language | Exam manifest | Status |
+|---|---|---|
+| Default (cross-language) | `menagerie/concept-shapes/exams/v1.1.blake3-512:<cid>.json` (loaded via `DEFAULT_EXAM_MANIFEST_JSON`) | Exists |
+| Rust-specific | TODO: confirm whether a Rust-only language exam exists | UNCLEAR |
+| Java-specific | TODO: confirm | UNCLEAR |
+| Python-specific | TODO: confirm | UNCLEAR |
+| TypeScript-specific | TODO: confirm | UNCLEAR |
+| C-specific | TODO: confirm | UNCLEAR |
+
+If only one default cross-language exam exists today, the Trinity demo requires per-language exams (per Sir's "language exams for all 3 languages") OR confirmation that the default exam suffices.
+
+## 5. Workflow reinventions catalog
+
+For each CLI verb, audit whether it composes substrate primitives or reinvents them.
+
+### 5.1 cmd_bind_migrate.rs — five reinventions identified
+
+| Reinvention | File:line | Substrate primitive it should consume |
+|---|---|---|
+| `TargetSurface` enum (`PythonSqlite3 \| PythonAiosqlite \| TypescriptPg`) hardcoded | `cmd_bind_migrate.rs:230-260` | `dispatch_realize(target_lang, target_tag, request)` already abstracts target dispatch. The enum reinvents target selection. |
+| `requires_async_delta(self) -> bool` hardcoded per-target | `cmd_bind_migrate.rs:267` | Should be a declared dimension per binding-kit (AsyncMode or equivalent). Trichotomy handles like RowIdMechanism. |
+| `render_migrated_source(target_surface)` emits source by hand | `cmd_bind_migrate.rs` (TODO: pin exact line) | `dispatch_realize` already returns `RealizedSource { source, is_stub, ... }`. The realize plugin emits target source. Hand-emission is reinvention. |
+| Early return on None in `platform_semantic_changes_for_targets` | `cmd_bind_migrate.rs:753-758` | Should let `compare_op_with` produce the 4-state verdict including `Uncharacterizable { absent_on }`. The early-return collapses NoOpinion and Uncharacterizable. |
+| "source must be typescript-better-sqlite3" hardcoded source restriction | `cmd_bind_migrate.rs:248-252` | The migrate should generalize to (any source binding-kit, any target binding-kit) once the M+N hub is complete. |
+
+### 5.2 cmd_lift.rs — TODO
+
+Initial reading: dispatches via `dispatch_bind_lift`. Need to verify whether any hardcoded paths exist for specific source languages.
+
+### 5.3 cmd_bind.rs — TODO
+
+Initial reading: `BindKit::transform` is substrate-only. No language/library dispatch expected. Verify.
+
+### 5.4 cmd_lower.rs — TODO
+
+Initial reading: dispatches via `dispatch_lower_witness`. Verify for hardcoded target-language paths.
+
+### 5.5 cmd_transport.rs — TODO
+
+Per the closed #1217 (subsumed into this audit), check for direct-shape walks and any hardcoded transport logic.
+
+### 5.6 cmd_materialize.rs — DOES NOT EXIST
+
+The materialize verb is implied by the vision (Sir's "give me SQL" workflow) but no `cmd_materialize.rs` exists. Implementation is part of vision realization.
+
+### 5.7 Other commands — TODO
+
+The following commands need quick triage to determine whether they're on the Trinity demo critical path:
+
+`cmd_agent.rs`, `cmd_ask.rs`, `cmd_ci.rs`, `cmd_compose.rs`, `cmd_dump.rs`, `cmd_exam.rs`, `cmd_fix.rs`, `cmd_hash.rs`, `cmd_implicate.rs`, `cmd_init.rs`, `cmd_link.rs`, `cmd_mint.rs`, `cmd_must.rs`, `cmd_package.rs`, `cmd_plugin.rs`, `cmd_proof.rs`, `cmd_protocol.rs`, `cmd_prove.rs`, `cmd_search.rs`, `cmd_verify_protocol.rs`, `cmd_version.rs`, `cmd_witness.rs` (27 total).
+
+For each: one-line summary + verdict (on path / off path / reinvention-suspect).
+
+## 6. Dissolution roadmap
+
+Each work unit is a PAIR: a kit-face mint (or face completion) + the workflow reinvention it enables to dissolve.
+
+| # | Kit-face mint | Workflow dissolution | Effect |
+|---|---|---|---|
+| D1 | Mint Python + sqlite3 library kit declaration face (`platform_semantics/python_sqlite3.rs` + arm in `binding_semantics_for_tag`) | Remove `TargetSurface::PythonSqlite3` arm + its branches in `requires_async_delta` and `render_migrated_source`. Migrate dispatches through `dispatch_realize("python", Some("sqlite3"), ...)`. | `platform_semantics_for_binding("python", "sqlite3")` resolves. Trichotomy fires. Receipt characterizes RowIdMechanism divergence (CursorLastRowid vs LastInsertRowid). |
+| D2 | Mint Python + aiosqlite library kit declaration face | Same as D1 for PythonAiosqlite arm. | Adds async-aware Python binding kit. |
+| D3 | Fix `platform_semantic_changes_for_targets` early-return | Let `compare_op_with` produce 4-state verdict including `Uncharacterizable { absent_on }` for unilateral declarations. | Substrate becomes honest per #1204 trichotomy ruling. |
+| D4 | Introduce `AsyncMode` (or equivalent) dimension. Declare AsyncMode per binding kit (better-sqlite3: Sync, pg: Async, sqlite3: Sync, aiosqlite: Async). | Remove `requires_async_delta` flag. Effect propagation reads AsyncMode declarations. | Async-ness becomes uniform with other platform semantics. |
+| D5 | Replace `render_migrated_source(target_surface)` with `dispatch_realize` invocation for each callsite. | The hand-written source emission code is deleted. The realize plugins emit the target source. | Migrate workflow becomes thin — composes primitives. |
+| D6 | Remove "source must be typescript-better-sqlite3" check. | Migrate generalizes to (any source binding-kit, any target binding-kit). | M+N hub fully load-bearing. |
+| D7 | Mint Rust + rusqlite library kit (all three faces) | Migrate can target rusqlite as source or target. | First Trinity leg: Rust. |
+| D8 | Mint Java + sqlite-jdbc library kit (all three faces) | Migrate can target sqlite-jdbc as source or target. | Second Trinity leg: Java. |
+| D9 | Complete Python + sqlite3 library kit (declaration + body templates if missing) | Migrate can target sqlite3 as source. | Third Trinity leg: Python. |
+| D10 | Confirm or mint per-language exam manifests for Rust, Java, Python | Substrate runs with per-language exams (per pin-all-three). | Federation across the Trinity becomes provable. |
+| D11 | Implement `cmd_materialize.rs` | New verb composes `dispatch_realize` + .proof reading. | "Give me SQL" workflow works end-to-end. |
+| D12 | Audit remaining cmd_*.rs for reinventions, dissolve each pair | Workflow layer becomes uniformly thin. | Vision realized at the workflow layer. |
+| D13a | Ship Trinity-demo library kits as shim packages (phase B): `java-sqlite-jdbc-proof.jar`, `provekit-shim-python-sqlite3` (pip), `provekit-shim-rusqlite` (cargo) | `binding_semantics_for_tag` resolves library tags via shim package discovery + .proof read. No hardcoded arms. | Substrate consumes library kits via vendor-ecosystem package managers without requiring vendor cooperation. |
+| D13b | Land vendor adoption for first library (paper 22 / phase C) | Selected library's vendor merges shim into native distribution. Substrate's resolution code-path is unchanged (still .proof + package-manager); the shim package becomes deprecated for that library. | Demonstrates viral adoption loop end-to-end. |
+| D14 | Externalize language kits into separate distributions (cosmic-brain endgame, paper 25) | `platform_semantics_for_lower_target` resolves languages via dynamic kit registration. | Substrate becomes purely protocol. |
+| D15 | Unify lift face + realize face as bidirectional kits per body-template spec | One declarative kit spec → both directions, derived. | The cosmic-brain endgame. |
+
+D1–D6 unblock the substrate-correctness fixes for the existing migrate demo (TypeScript ↔ Python).
+D7–D11 deliver the Trinity demo (Rust ↔ Java ↔ Python with materialize).
+D12–D15 complete the vision realization.
+
+## 7. Vision realization milestones
+
+The substrate's terminus state, with the Trinity demo as the load-bearing checkpoint. Distribution evolves through three phases per the vendor adoption arc; the shim is the bridge that unblocks substrate adoption without requiring vendor cooperation.
+
+### 7.1 Distribution evolution
+
+| Phase | Library kit distribution | Example: java-sqlite-jdbc | Vendor commitment |
+|---|---|---|---|
+| A: Bootstrap-resident | Kit declaration in `libprovekit/src/core/platform_semantics/<tag>.rs` + body templates in `menagerie/<lang>-language-signature/specs/body-templates/`. Realize plugin in `implementations/<lang>/`. | Today's state for better-sqlite3, pg. | None required. Substrate's own bootstrap path. |
+| B: Shim distribution | A separate package (sibling to the library) contains the `.proof` bundle. The substrate discovers it via package-manager dependency resolution. Library author is unaffected. | `org.provekit-shim:java-sqlite-jdbc-proof:X.Y.Z.jar` containing one file (`provekit.proof`). Pairs with `org.xerial:sqlite-jdbc:X.Y.Z`. The shim is a substrate-community-shipped artifact. | None required from the library author. Anyone can ship a shim. |
+| C: Vendor adoption | The library author ships the `.proof` bundle inside the library's own package. Shim becomes unnecessary. | `org.xerial:sqlite-jdbc:X.Y.Z.jar` containing `META-INF/provekit/provekit.proof` natively. | Yes — vendor adopts. |
+
+The shim model is the **viral adoption loop**'s mechanism: anyone can write a shim for any library. The substrate works. When usage grows, vendors absorb the shim into their library distribution. Per `project_provekit_libraries_ship_sugar` memory: "Libraries ship their own sugar — Self-Attested concept-bindings (paper 22 = After Vendoring)."
+
+Per-language shim package format:
+
+| Language | Shim format | Example package id | .proof location inside |
+|---|---|---|---|
+| Java | `.jar` containing one resource | `org.provekit-shim:java-sqlite-jdbc-proof` | `META-INF/provekit/provekit.proof` (or shim-conventional path) |
+| Python | wheel / sdist | `provekit-shim-python-sqlite3` (pip) | `provekit_shim_python_sqlite3/provekit.proof` |
+| Rust | crate (sibling) | `provekit-shim-rusqlite` (cargo) | included via `include_bytes!` or `assets/provekit.proof` |
+| TypeScript / JS | npm package | `@provekit-shim/typescript-better-sqlite3` | `provekit.proof` at package root |
+| Go | module | `github.com/provekit-shim/go-sqlite3` | `provekit.proof` at module root |
+
+The shim is one file in a thin package. No code, no build infrastructure, no fork of the library. Just the `.proof` carried by the language's existing package manager.
+
+### 7.2 Milestones
+
+| Milestone | What works | Distribution phase |
+|---|---|---|
+| M1: Trinity Local Demo | Rust ↔ Java ↔ Python round-trip with sqlite library kits, all workflows compose primitives. | A (bootstrap-resident) |
+| M2: Shim-Distributed Trinity | Same as M1 but library `.proof` bundles ship as shim packages (`java-sqlite-jdbc-proof.jar` etc.). The substrate resolves library tags via package-manager dependency resolution. `binding_semantics_for_tag` dissolves to a shim-discovery primitive. | B (shim distribution) |
+| M3: Vendor-Adopted Library Kits | Selected vendors absorb shims into their library distribution. The substrate finds `.proof` inside the library's own package. Shim packages remain for libraries whose vendors haven't adopted. | C (vendor adoption) — partial |
+| M4: Externalized Language Kits | Language kits ship as separate distributions, not in `libprovekit/src/core/platform_semantics/`. `libprovekit` shrinks to protocol + dispatcher + primitives + ProofIR + canonicalizer. | Both kit kinds externalized. |
+| M5: Bidirectional Kits | One declarative kit spec → both lift and realize directions, derived. The cosmic-brain endgame: kit declaration model is unified, lift+realize fall out of one source. | Substrate is purely protocol; kits are declarative bidirectional artifacts. |
+
+## 8. Issue derivation
+
+GitHub issues derive from rows in this audit:
+
+- Each kit-face mint in section 4 → one issue (e.g., "mint Python + sqlite3 library kit declaration face").
+- Each workflow reinvention in section 5 → one issue (e.g., "dissolve TargetSurface::PythonSqlite3 arm in cmd_bind_migrate").
+- Each dissolution-roadmap pair in section 6 → typically TWO issues (the mint + the dissolution), worked in sequence.
+- Each milestone in section 7 → one umbrella issue covering its sub-rows.
+
+No issue gets filed without verifying file:line refs against the actual code. No issue gets dispatched to codex without confirming the change shape matches what the workflow's production code path actually looks like.
+
+## 9. TODO sections requiring deeper verification
+
+This document is a first-pass audit. The following sections need code-level verification before issues derive from them:
+
+- [ ] Section 5 (workflow reinventions): all cmd_*.rs files beyond cmd_bind_migrate need triage. Pin file:line for each reinvention.
+- [ ] Section 4.1: TypeScript and C lift plugin locations.
+- [ ] Section 4.2: body-template JSON locations for pg, sqlite3, aiosqlite, requests.
+- [ ] Section 4.4: language exam manifests beyond the v1.1 default — confirm or surface as gap.
+- [ ] Section 6 D7, D8: the exact library identifiers and rusqlite/sqlite-jdbc API mechanisms to declare.
+
+This audit document is intended to grow as the verifications complete. Each TODO is its own focused investigation that adds a confirmed row.
+
+## 10. Discipline
+
+- This audit document is the single source of truth for the kit-protocol-correctness work. Updates to the vision flow back into this document, not into ad-hoc memos.
+- No GitHub issue gets filed without referencing a row here.
+- No codex dispatch happens without the issue + this document's row + verified file:line.
+- The audit grows incrementally; the early state captured here is the bootstrap, not the endgame.
