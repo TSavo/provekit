@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use libprovekit::core::{
     address, bind_term_document, concept_bind_result_cid, named_term_document_from_bind_payload,
-    BindKit, BindOptions, Input, Kit, Term,
+    strip_realize_sidecar_from_lift_term, BindKit, BindOptions, Input, Kit, Term,
 };
 use libprovekit::proofir_bridge::CatalogIndex;
 use provekit_ir_types::{ExamManifestMemento, Sort};
@@ -130,14 +130,20 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         value: term_value.clone(),
         sort: primitive_sort("LiftPluginResponse"),
     };
-    let mut expected_payload_source_value = term_value.clone();
-    expected_payload_source_value["ir"][0]
-        .as_object_mut()
-        .expect("bind-lift-entry object")
-        .remove("fn_name");
-    let expected_payload_source = Term::Const {
-        value: expected_payload_source_value,
-        sort: primitive_sort("LiftPluginResponse"),
+    // The bind payload's `source` arg is `strip_fn_name(strip_realize_sidecar(input))`.
+    // The fn_name strip preserves the #1093 CID invariant; the realize-sidecar
+    // strip preserves canonical content identity (so the CID is stable against
+    // attr_pre/attr_post/concept_annotation/operand_bindings/proc_macro_invocations/
+    // source_function_name noise).
+    let expected_payload_source = {
+        let canonical = strip_realize_sidecar_from_lift_term(input_term.clone());
+        let Term::Const { mut value, sort } = canonical else {
+            unreachable!("input term is Term::Const");
+        };
+        if let Some(object) = value["ir"][0].as_object_mut() {
+            object.remove("fn_name");
+        }
+        Term::Const { value, sort }
     };
     let mut expected_named =
         bind_term_document(&term_value, &BindOptions::default()).expect("existing binder succeeds");
@@ -154,7 +160,10 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         .transform(&Input::Term(input_term.clone()))
         .expect("bind kit transforms term input");
 
-    assert_eq!(claim.from, vec![address(&input_term)]);
+    // Bind cites the canonical content CID of its input, which matches
+    // lift.to under the same canonicalization (strip realize sidecar).
+    let canonical_input = strip_realize_sidecar_from_lift_term(input_term.clone());
+    assert_eq!(claim.from, vec![address(&canonical_input)]);
     let payload = claim.payload.as_ref().expect("bind claim carries payload");
     assert_eq!(claim.to, address(payload));
     let Term::Op {

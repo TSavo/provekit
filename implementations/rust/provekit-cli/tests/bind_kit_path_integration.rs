@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use libprovekit::core::{
-    address, execute_path, named_term_document_cid, named_term_document_from_bind_payload, BindKit,
-    ConformanceDeclaration, Dialect, HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit,
-    Path as CorePath, PathAlgebra, Term, Verb,
+    address, execute_path, named_term_document_cid, named_term_document_from_bind_payload,
+    strip_realize_sidecar_from_lift_term, BindKit, ConformanceDeclaration, Dialect,
+    HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit, Path as CorePath, PathAlgebra, Term,
+    Verb,
 };
 
 const BIND_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {
@@ -154,7 +155,9 @@ fn bind_path_executor_matches_cmd_bind_named_term_document_bytes() {
     let cli_cid = named_term_document_cid(&cli_named).expect("cmd_bind named terms cid");
 
     assert_eq!(claim.artifacts, vec![cli_cid]);
-    assert_eq!(claim.from, vec![address(&input_term)]);
+    // Bind cites the canonical content CID (strip realize sidecar) of its input.
+    let canonical_input = strip_realize_sidecar_from_lift_term(input_term.clone());
+    assert_eq!(claim.from, vec![address(&canonical_input)]);
     // bind_term_document's recovered named-term has empty `function` because
     // fn_name is stripped from the bind-result payload hash (closes #1093).
     assert!(cli_named.terms[0].function.is_empty());

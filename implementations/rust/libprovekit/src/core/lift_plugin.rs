@@ -8,6 +8,7 @@ use provekit_ir_types::{IrFormula, IrTerm, Sort};
 use serde_json::{json, Value};
 use thiserror::Error;
 
+use super::bind::strip_realize_sidecar_from_lift_term;
 use super::primitives::address;
 use super::traits::{Kit, KitError};
 use super::types::{
@@ -76,7 +77,15 @@ impl LiftPluginKit {
                 ))
             }
         };
-        let response_cid = address(&response_term);
+        // Substrate identity rule: lift's `to` CID must be stable against
+        // realize-sidecar noise (attr_pre, attr_post, concept_annotation,
+        // operand_bindings, source_function_name, proc_macro_invocations).
+        // Adding a comment that shifts `fn_line` is irrelevant variation, so
+        // the canonical content address strips the sidecar before hashing.
+        // The `payload` field still carries the raw response (with sidecar)
+        // for downstream consumers that need realize-time metadata.
+        let canonical_term = strip_realize_sidecar_from_lift_term(response_term.clone());
+        let response_cid = address(&canonical_term);
         let contract = lift_response_contract(&self.surface, response, &response_cid);
 
         Ok(DomainClaim {

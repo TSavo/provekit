@@ -475,7 +475,12 @@ fn strip_bind_payload_source_function_from_value(value: &mut Json) {
     }
 }
 
-fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
+/// Strip realize-sidecar metadata (attr_pre, attr_post, concept_annotation,
+/// operand_bindings, proc_macro_invocations, source_function_name) from a
+/// lift-output `Term::Const`. Used to compute the canonical content CID that
+/// `lift.to` and `bind.from` both target, so adding a comment that shifts
+/// `fn_line` does not invalidate the proof chain.
+pub fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
     let Term::Const { mut value, sort } = term else {
         return term;
     };
