@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:dynamic-dispatch->rust:dyn-trait-object",
+    "formals": ["receiver", "method_name", "args"],
+    "formal_sorts": [
+      {"kind": "ctor", "name": "Value", "args": []},
+      {"kind": "ctor", "name": "Name", "args": []},
+      {"kind": "ctor", "name": "ListOfValue", "args": []}
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:dynamic-dispatch",
+        "args": [
+          {"kind": "var", "name": "receiver"},
+          {"kind": "var", "name": "method_name"},
+          {"kind": "var", "name": "args"}
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "rust:dyn-trait-object-call",
+        "args": [
+          {"kind": "var", "name": "receiver"},
+          {"kind": "var", "name": "method_name"},
+          {"kind": "var", "name": "args"}
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "rust",
+    "target_library": "rust-language-builtin",
+    "loss_record": {
+      "preserved_call_contract": {
+        "kind": "atomic",
+        "name": "rust-dyn-trait-preserves-call-contract",
+        "args": [{"kind": "var", "name": "method_name"}]
+      },
+      "lost_concrete_receiver_type": {
+        "kind": "atomic",
+        "name": "rust-dyn-trait-loses-concrete-receiver-type",
+        "args": [{"kind": "var", "name": "receiver"}]
+      }
+    },
+    "discharge_receipt": "deferred:pending-pk-1188",
+    "effects": []
+  },
+  "cid": "blake3-512:223ff8049863e5348c85bc074ec5027f699f10239626e9f4a7af3bbdee16594de5a2aeb2b8691bfbc0eac2ef7bd7793aba28d15c3eecaf5792de61d9b6713fe7",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

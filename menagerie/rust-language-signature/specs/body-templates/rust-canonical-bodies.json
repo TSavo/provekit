@@ -83,6 +83,134 @@
           }
         },
         {
+          "concept_name": "concept:dynamic-dispatch",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let dispatched: &dyn Fn(i64) -> i64 = ${param0};\ndispatched(${param1})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "rust-dyn-trait-boundary": {
+                "args": [],
+                "head": "atomic",
+                "name": "rust-dyn-trait-preserves-call-contract-loses-concrete-receiver-type"
+              }
+            }
+          },
+          "realization_kind": "boundary-realization",
+          "realization_target": "rust:dyn-trait-object",
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2,
+            "requires_param_types": ["&dyn Fn(i64) -> i64", "i64"],
+            "requires_return_type": "i64"
+          },
+          "target_library_tag": "rust-language-builtin"
+        },
+        {
+          "concept_name": "concept:closure",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let f = move || ${param0};\nf()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "rust-closure-boundary": {
+                "args": [],
+                "head": "atomic",
+                "name": "rust-closure-preserves-capture-and-call-loses-explicit-environment-record"
+              }
+            }
+          },
+          "realization_kind": "boundary-realization",
+          "realization_target": "rust:closure-expression",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "i64"
+          },
+          "target_library_tag": "rust-language-builtin"
+        },
+        {
+          "concept_name": "concept:iterator",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let mut iter = ${param0}.iter();\niter.next().copied().unwrap_or_default()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "rust-iterator-boundary": {
+                "args": [],
+                "head": "atomic",
+                "name": "rust-iterator-preserves-next-protocol-loses-container-identity"
+              }
+            }
+          },
+          "realization_kind": "boundary-realization",
+          "realization_target": "rust:iterator-trait",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["&[i64]"],
+            "requires_return_type": "i64"
+          },
+          "target_library_tag": "rust-stdlib"
+        },
+        {
+          "concept_name": "concept:generic-instantiation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "std::convert::identity::<${return_type}>(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "rust-generic-instantiation-boundary": {
+                "args": [],
+                "head": "atomic",
+                "name": "rust-monomorphization-preserves-type-application-loses-runtime-genericity"
+              }
+            }
+          },
+          "realization_kind": "boundary-realization",
+          "realization_target": "rust:monomorphization",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_return_type": "i64"
+          },
+          "target_library_tag": "rust-language-builtin"
+        },
+        {
+          "concept_name": "concept:reference",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let r: &${param_type_0} = &${param0};\n*r"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "rust-reference-boundary": {
+                "args": [],
+                "head": "atomic",
+                "name": "rust-reference-preserves-aliasing-and-borrow-loses-cross-language-ownership"
+              }
+            }
+          },
+          "realization_kind": "boundary-realization",
+          "realization_target": "rust:shared-reference",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1,
+            "requires_param_types": ["i64"],
+            "requires_return_type": "i64"
+          },
+          "target_library_tag": "rust-language-builtin"
+        },
+        {
           "concept_name": "http-request",
           "emission_template": {
             "kind": "verbatim",

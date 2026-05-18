@@ -1,0 +1,56 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:generic-instantiation->rust:monomorphization",
+    "formals": ["generic_fn", "type_args", "args"],
+    "formal_sorts": [
+      {"kind": "ctor", "name": "FnContract", "args": []},
+      {"kind": "ctor", "name": "ListOfType", "args": []},
+      {"kind": "ctor", "name": "ListOfValue", "args": []}
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:generic-instantiation",
+        "args": [
+          {"kind": "var", "name": "generic_fn"},
+          {"kind": "var", "name": "type_args"},
+          {"kind": "var", "name": "args"}
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "rust:monomorphized-instance",
+        "args": [
+          {"kind": "var", "name": "generic_fn"},
+          {"kind": "var", "name": "type_args"},
+          {"kind": "var", "name": "args"}
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "rust",
+    "target_library": "rust-language-builtin",
+    "loss_record": {
+      "preserved_type_application": {
+        "kind": "atomic",
+        "name": "rust-monomorphization-preserves-type-application",
+        "args": [{"kind": "var", "name": "type_args"}]
+      },
+      "lost_runtime_genericity": {
+        "kind": "atomic",
+        "name": "rust-monomorphization-loses-runtime-genericity",
+        "args": [{"kind": "var", "name": "generic_fn"}]
+      }
+    },
+    "discharge_receipt": "deferred:pending-pk-1188",
+    "effects": []
+  },
+  "cid": "blake3-512:84132db49284bfbf9c5e88f972d97d32d7f94add3fc2bab286f321148f4b609e6ab59a8a0fe07aba57b37fa7c5db0cb212e7154ba584d2386001d45c7b2457ca",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
