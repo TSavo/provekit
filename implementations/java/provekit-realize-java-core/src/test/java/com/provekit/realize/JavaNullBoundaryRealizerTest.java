@@ -255,6 +255,78 @@ public class JavaNullBoundaryRealizerTest {
     }
 
     @Test
+    public void addr_named_term_tree_derives_concept_citation_carrier_loss() {
+        TransportedOperation transportedOp = TransportedOperation.fromNamedTermTree(namedTermTree(
+            "concept:addr",
+            "addr",
+            cid("1")
+        ));
+
+        assertNotNull(transportedOp);
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "addr_carrier",
+            java.util.List.of("target"),
+            java.util.List.of("Object"),
+            "Object",
+            "concept:addr",
+            "monitor",
+            java.util.List.of("monitor"),
+            null,
+            java.util.List.of(),
+            transportedOp
+        );
+
+        assertTrue(output.source().contains("// provekit-concept: {"), output.source());
+        assertEquals(carrierLossRecordJson("java-references-not-addresses"), output.observedLossRecord());
+
+        String payloadText = conceptPayloadLine(output.source());
+        com.provekit.ir.Jcs.Obj payload = (com.provekit.ir.Jcs.Obj) com.provekit.ir.Jcs.parse(payloadText);
+        assertEquals("concept:addr", payload.stringField("concept_name"));
+        assertEquals("addr", payload.stringField("operation_kind"));
+        assertEquals(transportedOp.lossRecordCid(), payload.stringField("loss_record_cid"));
+        assertEquals(
+            com.provekit.ir.Jcs.cid((com.provekit.ir.Jcs.Json) com.provekit.ir.Jcs.parse(output.observedLossRecord())),
+            payload.stringField("loss_record_cid")
+        );
+    }
+
+    @Test
+    public void deref_named_term_tree_derives_concept_citation_carrier_loss() {
+        TransportedOperation transportedOp = TransportedOperation.fromNamedTermTree(namedTermTree(
+            "concept:deref",
+            "deref",
+            cid("2")
+        ));
+
+        assertNotNull(transportedOp);
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "deref_carrier",
+            java.util.List.of("ref"),
+            java.util.List.of("Object"),
+            "Object",
+            "concept:deref",
+            "monitor",
+            java.util.List.of("monitor"),
+            null,
+            java.util.List.of(),
+            transportedOp
+        );
+
+        assertTrue(output.source().contains("// provekit-concept: {"), output.source());
+        assertEquals(carrierLossRecordJson("java-implicit-deref"), output.observedLossRecord());
+
+        String payloadText = conceptPayloadLine(output.source());
+        com.provekit.ir.Jcs.Obj payload = (com.provekit.ir.Jcs.Obj) com.provekit.ir.Jcs.parse(payloadText);
+        assertEquals("concept:deref", payload.stringField("concept_name"));
+        assertEquals("deref", payload.stringField("operation_kind"));
+        assertEquals(transportedOp.lossRecordCid(), payload.stringField("loss_record_cid"));
+        assertEquals(
+            com.provekit.ir.Jcs.cid((com.provekit.ir.Jcs.Json) com.provekit.ir.Jcs.parse(output.observedLossRecord())),
+            payload.stringField("loss_record_cid")
+        );
+    }
+
+    @Test
     public void modeScopedJunitWitnessSugarDoesNotApplyToMonitor() {
         ContractPayload contract = new ContractPayload(
             "blake3-512:site",
@@ -626,6 +698,25 @@ public class JavaNullBoundaryRealizerTest {
             }
         }
         throw new AssertionError("missing concept payload line:\n" + source);
+    }
+
+    private static String namedTermTree(String conceptName, String operationKind, String shapeCid) {
+        return "{\"conceptName\":\"" + conceptName
+            + "\",\"operationKind\":\"" + operationKind
+            + "\",\"shapeCid\":\"" + shapeCid
+            + "\",\"args\":[{\"conceptName\":\"concept:identity\",\"operationKind\":\"identity\",\"shapeCid\":\""
+            + cid("3")
+            + "\",\"args\":[]}]}";
+    }
+
+    private static String carrierLossRecordJson(String contribution) {
+        return com.provekit.ir.Jcs.encode(com.provekit.ir.Jcs.object(
+            contribution, com.provekit.ir.Jcs.object(
+                "args", com.provekit.ir.Jcs.array(),
+                "head", com.provekit.ir.Jcs.string("atomic"),
+                "name", com.provekit.ir.Jcs.string(contribution)
+            )
+        ));
     }
 
     private static String cid(String ch) {
