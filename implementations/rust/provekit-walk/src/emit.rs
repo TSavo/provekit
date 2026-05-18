@@ -161,6 +161,7 @@ fn rust_function_term_json_value_with_context(
         "handling": handling,
         "effect_occurrences": effect_occurrences,
         "loss_record": loss_record,
+        "return_sort": ctx.return_shape.return_sort_json(),
         "term_surface": term_surface,
         "term": term.to_json()?,
     }))
@@ -337,6 +338,33 @@ impl ExprSort {
             ExprSort::Unit => "Unit",
         }
     }
+
+    fn concept_sort(self) -> ConceptSort {
+        ConceptSort::new(self.name(), Vec::new())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConceptSort {
+    name: String,
+    args: Vec<ConceptSort>,
+}
+
+impl ConceptSort {
+    fn new(name: impl Into<String>, args: Vec<ConceptSort>) -> Self {
+        Self {
+            name: name.into(),
+            args,
+        }
+    }
+
+    fn to_json(&self) -> JsonValue {
+        json!({
+            "kind": "ctor",
+            "name": self.name,
+            "args": self.args.iter().map(ConceptSort::to_json).collect::<Vec<_>>(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,7 +373,9 @@ enum ReturnShape {
     Partial {
         loss: &'static str,
         rust_type: String,
+        return_sort: ConceptSort,
     },
+    SortOnly(ConceptSort),
     Unsupported,
 }
 
@@ -353,7 +383,19 @@ impl ReturnShape {
     fn sort(&self) -> Option<ExprSort> {
         match self {
             ReturnShape::Full(sort) => Some(*sort),
-            ReturnShape::Partial { .. } | ReturnShape::Unsupported => None,
+            ReturnShape::Partial { .. } | ReturnShape::SortOnly(_) | ReturnShape::Unsupported => {
+                None
+            }
+        }
+    }
+
+    fn return_sort_json(&self) -> JsonValue {
+        match self {
+            ReturnShape::Full(sort) => sort.concept_sort().to_json(),
+            ReturnShape::Partial { return_sort, .. } | ReturnShape::SortOnly(return_sort) => {
+                return_sort.to_json()
+            }
+            ReturnShape::Unsupported => JsonValue::Null,
         }
     }
 }
@@ -436,7 +478,10 @@ impl LoweringContext {
             );
         }
         let return_shape = return_shape_from_return_type(&item_fn.sig.output);
-        if let ReturnShape::Partial { loss, rust_type } = &return_shape {
+        if let ReturnShape::Partial {
+            loss, rust_type, ..
+        } = &return_shape
+        {
             push_loss(
                 &losses,
                 LossRecord {
@@ -1223,7 +1268,9 @@ fn lower_return_expr_to_value_term(
             }
         }
         ReturnShape::Full(ExprSort::Unit) => lower_expr_to_unit_term(expr, ctx),
-        ReturnShape::Partial { .. } => lower_expr_to_value_term(expr, ctx),
+        ReturnShape::Partial { .. } | ReturnShape::SortOnly(_) => {
+            lower_expr_to_value_term(expr, ctx)
+        }
         ReturnShape::Unsupported => {
             Err("unsupported function return type for term emission".to_string())
         }
@@ -1901,7 +1948,11 @@ fn return_shape_from_return_type(output: &ReturnType) -> ReturnShape {
                 ReturnShape::Partial {
                     loss,
                     rust_type: type_surface(ty),
+                    return_sort: concept_sort_from_type(ty)
+                        .unwrap_or_else(|| ConceptSort::new(type_surface(ty), Vec::new())),
                 }
+            } else if let Some(return_sort) = concept_sort_from_type(ty) {
+                ReturnShape::SortOnly(return_sort)
             } else {
                 ReturnShape::Unsupported
             }
@@ -1931,6 +1982,89 @@ fn sort_from_type_name(name: &str) -> Option<ExprSort> {
     }
 }
 
+fn concept_sort_from_type(ty: &Type) -> Option<ConceptSort> {
+    match ty {
+        Type::Path(path) if path.qself.is_none() => {
+            let segment = path.path.segments.last()?;
+            let ident = segment.ident.to_string();
+            let name = concept_sort_name_from_type_name(&ident).unwrap_or(ident);
+            Some(ConceptSort::new(
+                name,
+                concept_sort_args_from_path_segment(segment)?,
+            ))
+        }
+        Type::Reference(reference) => {
+            let name = if reference.mutability.is_some() {
+                "RefMut"
+            } else {
+                "Ref"
+            };
+            Some(ConceptSort::new(
+                name,
+                vec![concept_sort_from_type(&reference.elem)?],
+            ))
+        }
+        Type::Array(array) => Some(ConceptSort::new(
+            "Array",
+            vec![concept_sort_from_type(&array.elem)?],
+        )),
+        Type::Slice(slice) => Some(ConceptSort::new(
+            "Slice",
+            vec![concept_sort_from_type(&slice.elem)?],
+        )),
+        Type::Ptr(ptr) => {
+            let name = if ptr.mutability.is_some() {
+                "PtrMut"
+            } else {
+                "Ptr"
+            };
+            Some(ConceptSort::new(
+                name,
+                vec![concept_sort_from_type(&ptr.elem)?],
+            ))
+        }
+        Type::Tuple(tuple) if tuple.elems.is_empty() => Some(ExprSort::Unit.concept_sort()),
+        Type::Tuple(tuple) => Some(ConceptSort::new(
+            "Tuple",
+            tuple
+                .elems
+                .iter()
+                .map(concept_sort_from_type)
+                .collect::<Option<Vec<_>>>()?,
+        )),
+        Type::Paren(paren) => concept_sort_from_type(&paren.elem),
+        Type::Group(group) => concept_sort_from_type(&group.elem),
+        _ => None,
+    }
+}
+
+fn concept_sort_name_from_type_name(name: &str) -> Option<String> {
+    sort_from_type_name(name).map(|sort| sort.name().to_string())
+}
+
+fn concept_sort_args_from_path_segment(segment: &syn::PathSegment) -> Option<Vec<ConceptSort>> {
+    match &segment.arguments {
+        syn::PathArguments::None => Some(Vec::new()),
+        syn::PathArguments::AngleBracketed(args) => {
+            let mut type_args = Vec::new();
+            for arg in &args.args {
+                match arg {
+                    syn::GenericArgument::Type(ty) => {
+                        type_args.push(concept_sort_from_type(ty)?);
+                    }
+                    syn::GenericArgument::Lifetime(_) => {}
+                    syn::GenericArgument::AssocType(assoc) => {
+                        type_args.push(concept_sort_from_type(&assoc.ty)?);
+                    }
+                    _ => return None,
+                }
+            }
+            Some(type_args)
+        }
+        syn::PathArguments::Parenthesized(_) => None,
+    }
+}
+
 fn partial_return_loss(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::Path(path) if path.qself.is_none() => {
@@ -1941,7 +2075,7 @@ fn partial_return_loss(ty: &Type) -> Option<&'static str> {
                 "Option" => Some("return-type-option"),
                 "Vec" if path_type_arg_is_u8(segment) => Some("return-type-byte-vec"),
                 "Vec" => Some("return-type-vec"),
-                _ => Some("return-type-user-defined"),
+                _ => None,
             }
         }
         Type::Array(array) if type_is_u8(&array.elem) => Some("return-type-byte-array"),

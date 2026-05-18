@@ -19,6 +19,22 @@ fn term_json(src: &str, name: &str) -> serde_json::Value {
     serde_json::from_slice(&bytes).expect("term JSON")
 }
 
+fn assert_loss(parsed: &serde_json::Value, dimension: &str) {
+    assert!(parsed["loss_record"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["loss"] == dimension));
+}
+
+fn assert_no_loss(parsed: &serde_json::Value, dimension: &str) {
+    assert!(!parsed["loss_record"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["loss"] == dimension));
+}
+
 #[test]
 fn lowers_let_binding_to_rust_let_op() {
     let parsed = term_json(
@@ -38,7 +54,7 @@ fn lowers_let_binding_to_rust_let_op() {
 }
 
 #[test]
-fn lowers_struct_return_type_with_partial_loss_record() {
+fn lowers_struct_return_type_as_concept_sort_without_user_defined_loss() {
     let parsed = term_json(
         r#"
             struct Point { x: i32, y: i32 }
@@ -48,13 +64,15 @@ fn lowers_struct_return_type_with_partial_loss_record() {
         "#,
         "make_point",
     );
+    assert_eq!(parsed["handling"].as_str(), Some("handles-fully"));
+    assert_no_loss(&parsed, "return-type-user-defined");
     assert_eq!(
-        parsed["handling"].as_str(),
-        Some("handles-partially-with-loss-record")
-    );
-    assert_eq!(
-        parsed["loss_record"][0]["loss"].as_str(),
-        Some("return-type-user-defined")
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Point",
+            "args": []
+        })
     );
     assert_eq!(
         parsed["term_surface"].as_str(),
@@ -77,11 +95,47 @@ fn lowers_result_return_type_with_partial_loss_record() {
         Some("handles-partially-with-loss-record")
     );
     assert!(parsed["term_surface"].as_str().unwrap().contains("call:Ok"));
-    assert!(parsed["loss_record"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|loss| loss["loss"] == "return-type-result"));
+    assert_loss(&parsed, "return-type-result");
+    assert_no_loss(&parsed, "return-type-user-defined");
+    assert_eq!(
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Result",
+            "args": [
+                { "kind": "ctor", "name": "Int", "args": [] },
+                { "kind": "ctor", "name": "Int", "args": [] }
+            ]
+        })
+    );
+}
+
+#[test]
+fn lowers_result_return_type_with_user_defined_args_as_parametric_sort() {
+    let parsed = term_json(
+        r#"
+            struct MyType { value: i32 }
+            enum MyError { Failed }
+            fn make_result(x: i32) -> Result<MyType, MyError> {
+                Ok(MyType { value: x })
+            }
+        "#,
+        "make_result",
+    );
+    assert_loss(&parsed, "return-type-result");
+    assert_no_loss(&parsed, "return-type-user-defined");
+    assert_eq!(
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Result",
+            "args": [
+                { "kind": "ctor", "name": "MyType", "args": [] },
+                { "kind": "ctor", "name": "MyError", "args": [] }
+            ]
+        })
+    );
+    assert!(parsed["term_surface"].as_str().unwrap().contains("call:Ok"));
 }
 
 #[test]
@@ -102,11 +156,18 @@ fn lowers_option_return_type_with_partial_loss_record() {
         .as_str()
         .unwrap()
         .contains("call:Some"));
-    assert!(parsed["loss_record"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|loss| loss["loss"] == "return-type-option"));
+    assert_loss(&parsed, "return-type-option");
+    assert_no_loss(&parsed, "return-type-user-defined");
+    assert_eq!(
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Option",
+            "args": [
+                { "kind": "ctor", "name": "Int", "args": [] }
+            ]
+        })
+    );
 }
 
 #[test]
@@ -127,11 +188,18 @@ fn lowers_byte_vec_return_type_with_partial_loss_record() {
         parsed["term_surface"].as_str(),
         Some("return(array([1, 2, 3]))")
     );
-    assert!(parsed["loss_record"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|loss| loss["loss"] == "return-type-byte-vec"));
+    assert_loss(&parsed, "return-type-byte-vec");
+    assert_no_loss(&parsed, "return-type-user-defined");
+    assert_eq!(
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Vec",
+            "args": [
+                { "kind": "ctor", "name": "Int", "args": [] }
+            ]
+        })
+    );
 }
 
 #[test]
@@ -171,6 +239,55 @@ fn lowers_qualified_constructor_call_with_receiver_prefix() {
         .unwrap()
         .iter()
         .any(|loss| { loss["loss"] == "trait-path-truncated" && loss["detail"] == "Arc :: new" }));
+    assert_no_loss(&parsed, "return-type-user-defined");
+    assert_eq!(
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Arc",
+            "args": [
+                { "kind": "ctor", "name": "Value", "args": [] }
+            ]
+        })
+    );
+}
+
+#[test]
+fn lowers_nested_user_defined_generic_return_type_as_parametric_sort() {
+    let parsed = term_json(
+        r#"
+            struct Box<T>(T);
+            struct MyType { value: i32 }
+            enum MyError { Failed }
+            fn boxed_result(x: i32) -> Box<Result<MyType, MyError>> {
+                Box::new(Ok(MyType { value: x }))
+            }
+        "#,
+        "boxed_result",
+    );
+    assert_no_loss(&parsed, "return-type-user-defined");
+    assert_eq!(
+        parsed["return_sort"],
+        serde_json::json!({
+            "kind": "ctor",
+            "name": "Box",
+            "args": [
+                {
+                    "kind": "ctor",
+                    "name": "Result",
+                    "args": [
+                        { "kind": "ctor", "name": "MyType", "args": [] },
+                        { "kind": "ctor", "name": "MyError", "args": [] }
+                    ]
+                }
+            ]
+        })
+    );
+    assert!(parsed["term_surface"]
+        .as_str()
+        .unwrap()
+        .contains("call:new"));
+    assert!(parsed["term_surface"].as_str().unwrap().contains("call:Ok"));
 }
 
 #[test]

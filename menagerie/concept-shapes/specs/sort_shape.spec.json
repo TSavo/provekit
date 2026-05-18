@@ -13,23 +13,37 @@
       "args": [],
       "kind": "ctor",
       "name": "String"
+    },
+    {
+      "args": [
+        {
+          "args": [],
+          "kind": "ctor",
+          "name": "SortCid"
+        }
+      ],
+      "kind": "ctor",
+      "name": "List<T>"
     }
   ],
   "formals": [
     "name",
-    "kind"
+    "kind",
+    "generic_args"
   ],
   "kind": "algorithm",
   "post": {
     "arity": [
       "String",
-      "String"
+      "String",
+      "List<SortCid>"
     ],
     "arity_shape": {
       "kind": "named",
       "slots": [
         "name",
-        "kind"
+        "kind",
+        "generic_args"
       ]
     },
     "kind": "operation-contract",
@@ -43,9 +57,13 @@
       {
         "kind": "var",
         "name": "kind"
+      },
+      {
+        "kind": "var",
+        "name": "generic_args"
       }
     ],
-    "wp_note": "Mints a sort instance citation. Well-formed iff name is a non-empty string and kind is one of {primitive, parametric, refined, reference}."
+    "wp_note": "Mints a sort instance citation. Well-formed iff name is a non-empty string and kind is one of {primitive, parametric, refined, reference}, and generic_args is empty except for ordered SortCid arguments on parametric sorts."
   },
   "pre": {
     "args": [],

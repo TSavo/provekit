@@ -29,8 +29,8 @@ SORTS = [
 ]
 
 
-def ctor(name: str) -> dict:
-    return {"args": [], "kind": "ctor", "name": name}
+def ctor(name: str, args: list[dict] | None = None) -> dict:
+    return {"args": args or [], "kind": "ctor", "name": name}
 
 
 def var(name: str) -> dict:
@@ -61,22 +61,23 @@ def effect_signature(name: str) -> dict:
 
 
 def build_sort_op_spec() -> dict:
-    formals = ["name", "kind"]
+    formals = ["name", "kind", "generic_args"]
     post = operation_contract(
         "sort",
-        ["String", "String"],
+        ["String", "String", "List<SortCid>"],
         "SortCid",
         formals,
         (
             "Mints a sort instance citation. Well-formed iff name is a non-empty string "
-            "and kind is one of {primitive, parametric, refined, reference}."
+            "and kind is one of {primitive, parametric, refined, reference}, and generic_args "
+            "is empty except for ordered SortCid arguments on parametric sorts."
         ),
     )
 
     return {
         "effects": {"effects": []},
         "fn_name": "concept:sort",
-        "formal_sorts": [ctor("String"), ctor("String")],
+        "formal_sorts": [ctor("String"), ctor("String"), ctor("List<T>", [ctor("SortCid")])],
         "formals": formals,
         "kind": "algorithm",
         "post": post,
@@ -147,7 +148,7 @@ def update_readme(rows: list[dict]) -> None:
     section = [
         "## Core Sort Hierarchy",
         "",
-        "`concept:sort(name, kind)` describes the core sort hierarchy primitive and the initial sort instances.",
+        "`concept:sort(name, kind, generic_args)` describes the core sort hierarchy primitive and the initial sort instances.",
         "",
         "| Concept | Kind | CID |",
         "| --- | --- | --- |",
