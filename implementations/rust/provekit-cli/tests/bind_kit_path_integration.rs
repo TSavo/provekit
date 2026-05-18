@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use libprovekit::core::{
     address, execute_path, named_term_document_cid, named_term_document_from_bind_payload, BindKit,
     ConformanceDeclaration, Dialect, HashMapInputCatalog, Input, Kit, KitRegistry, LiftKit,
-    NamedTermDocument, Path as CorePath, PathAlgebra, Term, Verb,
+    Path as CorePath, PathAlgebra, Term, Verb,
 };
 
 const BIND_NONCARRIER: ConformanceDeclaration = ConformanceDeclaration::NonCarrier {

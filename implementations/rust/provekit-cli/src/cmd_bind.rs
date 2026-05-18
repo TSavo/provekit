@@ -23,7 +23,7 @@ use serde_json::Value as Json;
 use crate::kit_dispatch::dispatch_exam_manifest;
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
-pub use libprovekit::core::{NamedTerm, NamedTermDocument};
+pub use libprovekit::core::NamedTermDocument;
 
 #[derive(Parser, Debug, Clone)]
 pub struct BindArgs {

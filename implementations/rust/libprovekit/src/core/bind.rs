@@ -189,11 +189,9 @@ pub struct BindContractWitness {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedTermDocument {
-    #[serde(
-        default,
-        rename = "gapRecords",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(rename = "candidateClusterManifest", default)]
+    pub candidate_cluster_manifest: CandidateClusterManifest,
+    #[serde(default, rename = "gapRecords", skip_serializing_if = "Vec::is_empty")]
     pub gap_records: Vec<Json>,
     pub kind: String,
     #[serde(rename = "promotionDecisionMementos")]
@@ -205,6 +203,37 @@ pub struct NamedTermDocument {
     pub terms: Vec<NamedTerm>,
     #[serde(rename = "workspaceRoot", skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CandidateClusterManifest {
+    pub clusters: Vec<CandidateCluster>,
+    pub kind: String,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "totalCandidates")]
+    pub total_candidates: u64,
+}
+
+impl Default for CandidateClusterManifest {
+    fn default() -> Self {
+        Self {
+            clusters: Vec::new(),
+            kind: "candidate-cluster-manifest".to_string(),
+            schema_version: "1".to_string(),
+            total_candidates: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CandidateCluster {
+    #[serde(rename = "candidateCids")]
+    pub candidate_cids: Vec<String>,
+    #[serde(rename = "candidateCount")]
+    pub candidate_count: u64,
+    #[serde(rename = "conceptCluster")]
+    pub concept_cluster: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,7 +368,10 @@ pub fn bind_term_document(
         });
     }
 
+    let candidate_cluster_manifest = candidate_cluster_manifest(&terms);
+
     Ok(NamedTermDocument {
+        candidate_cluster_manifest,
         gap_records,
         kind: "named-term-document".to_string(),
         promotion_decision_mementos: decisions,
@@ -1006,6 +1038,8 @@ fn named_term_citation_term(
 
 fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError> {
     let mut value = json!({
+        "candidateClusterManifest": serde_json::to_value(&named.candidate_cluster_manifest)
+            .map_err(|error| BindError::Failed(format!("serialize candidate cluster manifest: {error}")))?,
         "kind": named.kind.clone(),
         "promotionDecisionMementos": serde_json::to_value(&named.promotion_decision_mementos)
             .map_err(|error| BindError::Failed(format!("serialize promotion decisions: {error}")))?,
@@ -1018,6 +1052,33 @@ fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError>
             .map_err(|error| BindError::Failed(format!("serialize gap records: {error}")))?;
     }
     Ok(value)
+}
+
+fn candidate_cluster_manifest(terms: &[NamedTerm]) -> CandidateClusterManifest {
+    let mut by_concept: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for term in terms {
+        by_concept
+            .entry(term.concept_name.clone())
+            .or_default()
+            .push(term.term_shape_cid.clone());
+    }
+    let clusters = by_concept
+        .into_iter()
+        .map(|(concept_cluster, mut candidate_cids)| {
+            candidate_cids.sort();
+            CandidateCluster {
+                candidate_count: candidate_cids.len() as u64,
+                candidate_cids,
+                concept_cluster,
+            }
+        })
+        .collect();
+    CandidateClusterManifest {
+        clusters,
+        kind: "candidate-cluster-manifest".to_string(),
+        schema_version: "1".to_string(),
+        total_candidates: terms.len() as u64,
+    }
 }
 
 fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, BindError> {
@@ -1044,6 +1105,12 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
         .transpose()
         .map_err(|error| BindError::Failed(format!("parse gap records: {error}")))?
         .unwrap_or_default();
+    let parsed_candidate_cluster_manifest = document
+        .get("candidateClusterManifest")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| BindError::Failed(format!("parse candidate cluster manifest: {error}")))?;
     let terms = citations
         .into_iter()
         .map(|(_, citation)| {
@@ -1055,7 +1122,10 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
                 .map_err(|error| BindError::Failed(format!("parse named term citation: {error}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let candidate_cluster_manifest =
+        parsed_candidate_cluster_manifest.unwrap_or_else(|| candidate_cluster_manifest(&terms));
     Ok(NamedTermDocument {
+        candidate_cluster_manifest,
         gap_records,
         kind: document
             .get("kind")
@@ -1214,8 +1284,9 @@ fn wp_rule_synthesis_gap_record(
             respec_target_to: None,
             split_targets: None,
             status: OptionStatus::Deferred,
-            tradeoff: "provide source evidence or a catalog wp_rule before treating the bind as exact"
-                .to_string(),
+            tradeoff:
+                "provide source evidence or a catalog wp_rule before treating the bind as exact"
+                    .to_string(),
         }],
         schema_version: "1".to_string(),
         signature: None,
@@ -1647,7 +1718,10 @@ mod tests {
         // Verify that the recovered named-term-document has function="" in both cases,
         // which is the load-bearing #1093 invariant.
         let add_payload = add_claim.payload.as_ref().expect("add claim has payload");
-        let adder_payload = adder_claim.payload.as_ref().expect("adder claim has payload");
+        let adder_payload = adder_claim
+            .payload
+            .as_ref()
+            .expect("adder claim has payload");
         let add_named = named_term_document_from_bind_payload(add_payload)
             .expect("recover add named term document");
         let adder_named = named_term_document_from_bind_payload(adder_payload)
@@ -1674,10 +1748,11 @@ mod tests {
 
     #[test]
     fn named_term_document_cid_ignores_source_function_name() {
-            fn document(function: &str) -> NamedTermDocument {
-                NamedTermDocument {
-                    gap_records: vec![],
-                    kind: "named-term-document".to_string(),
+        fn document(function: &str) -> NamedTermDocument {
+            NamedTermDocument {
+                candidate_cluster_manifest: CandidateClusterManifest::default(),
+                gap_records: vec![],
+                kind: "named-term-document".to_string(),
                 promotion_decision_mementos: vec![],
                 schema_version: "1".to_string(),
                 source_language: "rust".to_string(),
@@ -1710,6 +1785,7 @@ mod tests {
     #[test]
     fn named_term_document_omits_empty_source_provenance_fields() {
         let document = NamedTermDocument {
+            candidate_cluster_manifest: CandidateClusterManifest::default(),
             gap_records: vec![],
             kind: "named-term-document".to_string(),
             promotion_decision_mementos: vec![],

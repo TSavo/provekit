@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use libprovekit::core::{named_term_document_from_bind_payload, NamedTermDocument, Term};
+use libprovekit::core::{named_term_document_from_bind_payload, Term};
 
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
@@ -59,6 +59,51 @@ fn witnessless_add_term_document() -> &'static [u8] {
 }"#
 }
 
+fn cluster_cardinality_term_document() -> &'static [u8] {
+    br#"{
+  "kind": "ir-document",
+  "sourceLanguage": "rust",
+  "workspaceRoot": "/tmp/provekit-bind-test",
+  "ir": [{
+    "kind": "bind-lift-entry",
+    "file": "src/lib.rs",
+    "fn_name": "add_one",
+    "fn_line": 4,
+    "concept_annotation": "add",
+    "param_names": ["x"],
+    "param_types": ["i64"],
+    "return_type": "i64",
+    "term_shape": {"kind": "bin", "op": "+"},
+    "term_shape_cid": "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+    "witnesses": []
+  }, {
+    "kind": "bind-lift-entry",
+    "file": "src/lib.rs",
+    "fn_name": "add_two",
+    "fn_line": 8,
+    "concept_annotation": "add",
+    "param_names": ["x"],
+    "param_types": ["i64"],
+    "return_type": "i64",
+    "term_shape": {"kind": "bin", "op": "+"},
+    "term_shape_cid": "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
+    "witnesses": []
+  }, {
+    "kind": "bind-lift-entry",
+    "file": "src/lib.rs",
+    "fn_name": "sub_one",
+    "fn_line": 12,
+    "concept_annotation": "sub",
+    "param_names": ["x"],
+    "param_types": ["i64"],
+    "return_type": "i64",
+    "term_shape": {"kind": "bin", "op": "-"},
+    "term_shape_cid": "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333",
+    "witnesses": []
+  }]
+}"#
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -102,8 +147,8 @@ fn bind_from_stdin_emits_named_term_document_with_promotion_decisions() {
     // bind-result consumers use. fn_name is intentionally stripped from
     // the payload (#1093), so the recovered term has empty `function`.
     let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
-    let named = named_term_document_from_bind_payload(&payload)
-        .expect("bind payload recovers named term");
+    let named =
+        named_term_document_from_bind_payload(&payload).expect("bind payload recovers named term");
     let named = serde_json::to_value(named).expect("named term serializes");
     assert_eq!(named["sourceLanguage"], "rust");
     assert_eq!(
@@ -121,6 +166,42 @@ fn bind_from_stdin_emits_named_term_document_with_promotion_decisions() {
         named["promotionDecisionMementos"][0]["header"]["kind"],
         "promotion-decision"
     );
+}
+
+#[test]
+fn bind_from_stdin_emits_candidate_cluster_manifest() {
+    let mut child = Command::new(provekit_bin())
+        .arg("bind")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn bind");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(cluster_cardinality_term_document())
+        .expect("write term");
+    let output = child.wait_with_output().expect("wait bind");
+    assert_success("bind stdin", &output);
+
+    let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
+    let named =
+        named_term_document_from_bind_payload(&payload).expect("bind payload recovers named term");
+    let named = serde_json::to_value(named).expect("named term serializes");
+    let manifest = named["candidateClusterManifest"]
+        .as_object()
+        .expect("candidateClusterManifest object");
+    let clusters = manifest["clusters"].as_array().expect("clusters array");
+
+    assert_eq!(manifest["kind"], "candidate-cluster-manifest");
+    assert_eq!(manifest["schemaVersion"], "1");
+    assert_eq!(manifest["totalCandidates"], 3);
+    assert_eq!(clusters[0]["conceptCluster"], "concept:add");
+    assert_eq!(clusters[0]["candidateCount"], 2);
+    assert_eq!(clusters[1]["conceptCluster"], "concept:sub");
+    assert_eq!(clusters[1]["candidateCount"], 1);
 }
 
 #[test]
