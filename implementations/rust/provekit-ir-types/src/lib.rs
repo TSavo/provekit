@@ -1342,13 +1342,20 @@ pub struct ResolutionOption {
 /// hub op at all; `target_op_cid` is absent in that case.
 ///
 /// Locked JCS key order (alphabetical):
-///   fn_name, gap_kind, kind, reason (omitted when absent),
-///   reason_note (omitted when absent), resolution_options,
-///   schema_version, signature (omitted when absent),
+///   exam_manifest_cid (omitted when absent),
+///   exam_question_cid (omitted when absent), fn_name, gap_kind, kind,
+///   reason (omitted when absent), reason_note (omitted when absent),
+///   resolution_options, schema_version, signature (omitted when absent),
 ///   source_lang, source_op_cid, target_concept_op,
 ///   target_op_cid (omitted when absent)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransportGapMemento {
+    #[serde(rename = "exam_manifest_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exam_manifest_cid: Option<String>,
+    #[serde(rename = "exam_question_cid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exam_question_cid: Option<String>,
     #[serde(rename = "fn_name")]
     pub fn_name: String,
     #[serde(rename = "gap_kind")]
@@ -3173,7 +3180,8 @@ impl std::error::Error for PromotionDecisionInvariantError {}
 // Coverage state is intentionally outside this family.
 // ============================================================
 
-pub const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1";
+pub const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1.1";
+pub const EXAM_MANIFEST_SCHEMA_VERSION_V1: &str = "provekit-exam-manifest/v1";
 
 /// Envelope layer for an `ExamManifestMemento`.
 ///
@@ -3403,7 +3411,9 @@ impl ExamManifestMemento {
 
     /// Check shape-level invariants for loading an exam manifest.
     pub fn validate(&self) -> Result<(), ExamManifestValidationError> {
-        if self.metadata.schema_version != EXAM_MANIFEST_SCHEMA_VERSION {
+        if self.metadata.schema_version != EXAM_MANIFEST_SCHEMA_VERSION
+            && self.metadata.schema_version != EXAM_MANIFEST_SCHEMA_VERSION_V1
+        {
             return Err(ExamManifestValidationError::InvalidSchemaVersion {
                 schema_version: self.metadata.schema_version.clone(),
             });
@@ -3503,7 +3513,7 @@ impl std::fmt::Display for ExamManifestValidationError {
         match self {
             Self::InvalidSchemaVersion { schema_version } => write!(
                 f,
-                "ExamManifestMemento: schemaVersion must be {EXAM_MANIFEST_SCHEMA_VERSION:?}, got {schema_version:?}"
+                "ExamManifestMemento: schemaVersion must be {EXAM_MANIFEST_SCHEMA_VERSION:?} or {EXAM_MANIFEST_SCHEMA_VERSION_V1:?}, got {schema_version:?}"
             ),
             Self::EmptyQuestionKinds => f.write_str(
                 "ExamManifestMemento: question_kinds is empty, but at least one question kind is required",

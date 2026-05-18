@@ -27,14 +27,16 @@ fn registry_memento_serializes_optional_exam_manifest_fields() {
         memento.header.exam_manifest_cid.as_deref(),
         Some(DEFAULT_EXAM_MANIFEST_CID)
     );
+    // exam_manifest_set is sorted lex-ascending for canonical CID determinism
+    // (federation requires byte-identical bytes regardless of caller insertion order).
+    let mut expected_set = vec![
+        DEFAULT_EXAM_MANIFEST_CID.to_string(),
+        OTHER_EXAM_MANIFEST_CID.to_string(),
+    ];
+    expected_set.sort();
     assert_eq!(
         memento.header.exam_manifest_set.as_deref(),
-        Some(
-            &[
-                DEFAULT_EXAM_MANIFEST_CID.to_string(),
-                OTHER_EXAM_MANIFEST_CID.to_string(),
-            ][..]
-        )
+        Some(&expected_set[..])
     );
 
     let json = serde_json::to_string(&memento).expect("serialize registry memento");

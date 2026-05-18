@@ -50,6 +50,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -68,6 +69,9 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
 
 public final class JavaSourceLifter {
+    static final String EXAM_MANIFEST_CID = "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc";
+    private static final String EXAM_MANIFEST_BASENAME = "v1.1." + EXAM_MANIFEST_CID + ".json";
+
     public LiftResult liftSource(String path, String source) {
         List<Jcs.Json> declarations = new ArrayList<>();
         List<Jcs.Json> diagnosticsJson = new ArrayList<>();
@@ -141,7 +145,7 @@ public final class JavaSourceLifter {
     private static Parsed parse(String path, String source, List<Jcs.Json> diagnosticsJson, List<Refusal> refusals) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
-            refusals.add(new Refusal("compiler-unavailable", null, null, "JDK compiler API is not available"));
+            refusals.add(citedRefusal("compiler-unavailable", null, null, "JDK compiler API is not available", "morphism", "concept:source-unit"));
             return null;
         }
         DiagnosticCollector<javax.tools.JavaFileObject> diagnostics = new DiagnosticCollector<>();
@@ -162,7 +166,7 @@ public final class JavaSourceLifter {
             }
             return new Parsed(task, Trees.instance(task), task.getTypes(), task.getElements(), units);
         } catch (IOException | RuntimeException e) {
-            refusals.add(new Refusal("parse-error", null, null, e.getMessage()));
+            refusals.add(citedRefusal("parse-error", null, null, e.getMessage(), "morphism", "concept:source-unit"));
             return null;
         }
     }
@@ -182,15 +186,84 @@ public final class JavaSourceLifter {
         }
     }
 
-    public record Refusal(String kind, String function, Integer line, String reason) {
+    public record Refusal(
+        String kind,
+        String function,
+        Integer line,
+        String reason,
+        String examQuestionCid,
+        String examManifestCid) {
+        public Refusal(String kind, String function, Integer line, String reason) {
+            this(kind, function, line, reason, null, null);
+        }
+
         public Jcs.Obj toJson() {
             List<Jcs.Field> fields = new ArrayList<>();
             fields.add(new Jcs.Field("kind", Jcs.string(kind)));
+            if (examManifestCid != null) fields.add(new Jcs.Field("exam_manifest_cid", Jcs.string(examManifestCid)));
+            if (examQuestionCid != null) fields.add(new Jcs.Field("exam_question_cid", Jcs.string(examQuestionCid)));
             fields.add(new Jcs.Field("function", function == null ? Jcs.nullValue() : Jcs.string(function)));
             fields.add(new Jcs.Field("line", line == null ? Jcs.nullValue() : Jcs.integer(line)));
             fields.add(new Jcs.Field("reason", Jcs.string(reason)));
             return new Jcs.Obj(fields);
         }
+    }
+
+    private static Refusal citedRefusal(String kind, String function, Integer line, String reason, String questionKind, String concept) {
+        return examQuestionCidFor(questionKind, concept, "java")
+            .map(cid -> new Refusal(kind, function, line, reason, cid, EXAM_MANIFEST_CID))
+            .orElseGet(() -> new Refusal(kind, function, line, reason));
+    }
+
+    static Optional<String> examQuestionCidFor(String kind, String concept, String language) {
+        Optional<Jcs.Obj> manifest = loadExamManifest();
+        if (manifest.isEmpty()) return Optional.empty();
+        Jcs.Arr questions = manifest.get()
+            .objectField("header")
+            .objectField("content")
+            .arrayField("questions");
+        for (Jcs.Json value : questions.values()) {
+            if (!(value instanceof Jcs.Obj question)) continue;
+            if (!kind.equals(question.stringFieldOrNull("kind"))) continue;
+            if (!concept.equals(question.stringFieldOrNull("concept"))) continue;
+            Jcs.Json parametersValue = question.get("parameters");
+            if (!(parametersValue instanceof Jcs.Obj parameters)) continue;
+            for (String languageKey : examLanguageKeys(kind)) {
+                if (language.equals(parameters.stringFieldOrNull(languageKey))) {
+                    return Optional.of(Jcs.cid(question));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static List<String> examLanguageKeys(String kind) {
+        return switch (kind) {
+            case "morphism" -> List.of("from_language");
+            case "boundary-realization", "realization" -> List.of("target_language");
+            case "concept-realization", "effect-classification", "sort-classification", "effect", "sort" -> List.of("language");
+            default -> List.of("language", "from_language", "target_language");
+        };
+    }
+
+    private static Optional<Jcs.Obj> loadExamManifest() {
+        List<Path> candidates = new ArrayList<>();
+        String env = System.getenv("PROVEKIT_EXAM_MANIFEST");
+        if (env != null && !env.isBlank()) candidates.add(Path.of(env));
+        Path start = Path.of("").toAbsolutePath().normalize();
+        for (Path current = start; current != null; current = current.getParent()) {
+            candidates.add(current.resolve("menagerie").resolve("concept-shapes").resolve("exams").resolve(EXAM_MANIFEST_BASENAME));
+        }
+        for (Path candidate : candidates) {
+            if (!Files.isRegularFile(candidate)) continue;
+            try {
+                Jcs.Json parsed = Jcs.parse(Files.readString(candidate, StandardCharsets.UTF_8));
+                if (parsed instanceof Jcs.Obj obj) return Optional.of(obj);
+            } catch (IOException | RuntimeException ignored) {
+                continue;
+            }
+        }
+        return Optional.empty();
     }
 
     private static final class JavaSourceFile extends SimpleJavaFileObject {
@@ -233,15 +306,15 @@ public final class JavaSourceLifter {
             String fnName = functionName(executable, parsed.types(), parsed.elements());
             int line = lineOf(parsed.trees(), getCurrentPath().getCompilationUnit(), method);
             if (executable.isVarArgs()) {
-                refusals.add(new Refusal("unsupported-varargs", fnName, line, "varargs methods are not in the java-source v1 slice"));
+                refusals.add(citedRefusal("unsupported-varargs", fnName, line, "varargs methods are not in the java-source v1 slice", "sort-classification", "concept:Term"));
                 return null;
             }
             if (!method.getTypeParameters().isEmpty()) {
-                refusals.add(new Refusal("unsupported-generics", fnName, line, "generic methods are not in the java-source v1 slice"));
+                refusals.add(citedRefusal("unsupported-generics", fnName, line, "generic methods are not in the java-source v1 slice", "sort-classification", "concept:Term"));
                 return null;
             }
             if (executable.getReturnType().getKind() == TypeKind.VOID) {
-                refusals.add(new Refusal("unsupported-return-sort", fnName, line, "java-source v1 emits value-returning function-contract mementos"));
+                refusals.add(citedRefusal("unsupported-return-sort", fnName, line, "java-source v1 emits value-returning function-contract mementos", "sort-classification", "concept:Term"));
                 return null;
             }
             try {
@@ -267,7 +340,7 @@ public final class JavaSourceLifter {
                 );
                 declarations.add(contract);
             } catch (RefuseException e) {
-                refusals.add(new Refusal(e.kind, fnName, e.line, e.getMessage()));
+                refusals.add(citedRefusal(e.kind, fnName, e.line, e.getMessage(), "sort-classification", "concept:Term"));
             } catch (RuntimeException e) {
                 refusals.add(new Refusal("analysis-error", fnName, line, e.getMessage()));
             }

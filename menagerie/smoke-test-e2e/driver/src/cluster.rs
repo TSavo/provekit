@@ -19,6 +19,10 @@
 //      we never accidentally fabricate semantics from a name match.
 
 use crate::algebra::TermShape;
+use provekit_ir_types::{
+    ExamManifestMemento, GapKind, OptionStatus, ResolutionOption, ResolutionOptionKind,
+    TransportGapMemento,
+};
 
 #[derive(Debug, Clone)]
 pub struct CatalogEntry {
@@ -65,5 +69,119 @@ pub fn seed_catalog() -> Catalog {
                 classification: "option-default",
             },
         ],
+    }
+}
+
+pub fn unknown_shape_gap_record(
+    shape_cid: &str,
+    concept: &str,
+    language: &str,
+    manifest: Option<&ExamManifestMemento>,
+) -> Result<serde_json::Value, String> {
+    let (exam_question_cid, exam_manifest_cid) = libprovekit::exam_manifest::exam_question_citation(
+        manifest,
+        "morphism",
+        concept,
+        language,
+        "cluster",
+    );
+    let gap = TransportGapMemento {
+        exam_manifest_cid,
+        exam_question_cid,
+        fn_name: format!(
+            "gap:{}:cluster:unknown-shape:to:{}",
+            language,
+            concept.trim_start_matches("concept:")
+        ),
+        gap_kind: GapKind::MissingTargetConstruct,
+        kind: "TransportGapMemento".to_string(),
+        reason: None,
+        reason_note: Some("cluster refused an unknown shape without a catalog concept".to_string()),
+        resolution_options: vec![ResolutionOption {
+            dual_view_cid: None,
+            loss: None,
+            loss_severity: None,
+            option_kind: ResolutionOptionKind::AcceptPermanent,
+            partial_morphism_cid: None,
+            precondition: None,
+            representation_map_delta: None,
+            respec_target_to: None,
+            split_targets: None,
+            status: OptionStatus::Deferred,
+            tradeoff: "name the concept or add a catalog shape before treating the cluster as exact"
+                .to_string(),
+        }],
+        schema_version: "1".to_string(),
+        signature: None,
+        source_lang: language.to_string(),
+        source_op_cid: shape_cid.to_string(),
+        target_concept_op: concept.to_string(),
+        target_op_cid: None,
+    };
+    serde_json::to_value(gap).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EXAM_MANIFEST_JSON: &str = include_str!(
+        "../../../concept-shapes/exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+    );
+
+    #[test]
+    fn unknown_shape_gap_cites_v1_1_exam_question_when_concept_matches() {
+        let manifest = serde_json::from_str(EXAM_MANIFEST_JSON).expect("manifest parses");
+        let gap = unknown_shape_gap_record(
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "concept:add",
+            "rust",
+            Some(&manifest),
+        )
+        .expect("gap serializes");
+        let expected =
+            libprovekit::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:add", "rust")
+                .expect("lookup add/rust")
+                .expect("add/rust question exists");
+
+        assert_eq!(gap["target_concept_op"], "concept:add");
+        assert_eq!(gap["exam_manifest_cid"], manifest.header.cid);
+        assert_eq!(gap["exam_question_cid"], expected);
+    }
+
+    #[test]
+    fn unknown_shape_gap_does_not_emit_unrelated_gap_variant() {
+        let manifest = serde_json::from_str(EXAM_MANIFEST_JSON).expect("manifest parses");
+        let gap = unknown_shape_gap_record(
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "concept:add",
+            "rust",
+            Some(&manifest),
+        )
+        .expect("gap serializes");
+
+        assert_eq!(gap["gap_kind"], "missing-target-construct");
+        assert_ne!(gap["gap_kind"], "wp-rule-mismatch");
+    }
+
+    #[test]
+    fn unknown_shape_gap_cites_exact_question_not_related_concept() {
+        let manifest = serde_json::from_str(EXAM_MANIFEST_JSON).expect("manifest parses");
+        let gap = unknown_shape_gap_record(
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "concept:add",
+            "rust",
+            Some(&manifest),
+        )
+        .expect("gap serializes");
+        let related =
+            libprovekit::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:sub", "rust")
+                .expect("lookup sub/rust")
+                .expect("sub/rust question exists");
+
+        assert_ne!(
+            gap["exam_question_cid"].as_str().expect("question cid"),
+            related
+        );
     }
 }

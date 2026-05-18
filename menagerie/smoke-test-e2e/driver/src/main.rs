@@ -38,7 +38,7 @@ use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
     CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge, IrFormula,
-    LossRecord,
+    LossRecord, ExamManifestMemento,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -52,6 +52,10 @@ mod synthesize;
 mod test_lift;
 
 use algebra::{FormulaShape, TermShape};
+
+const EXAM_MANIFEST_JSON: &str = include_str!(
+    "../../../concept-shapes/exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+);
 
 fn main() {
     let fixture_dir = locate_fixture_dir();
@@ -290,6 +294,7 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
 
     let artifacts_dir = source_root.join("artifacts");
     let _ = fs::create_dir_all(&artifacts_dir);
+    let exam_manifest: Option<ExamManifestMemento> = serde_json::from_str(EXAM_MANIFEST_JSON).ok();
 
     let signer_seed: Ed25519Seed = [0x42; 32];
 
@@ -404,6 +409,26 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
             } else {
                 name_pick
             };
+            if source == NameSource::Auto {
+                let target_concept = format!("concept:{final_name}");
+                if let Ok(gap) = cluster::unknown_shape_gap_record(
+                    &shape_cid,
+                    &target_concept,
+                    "rust",
+                    exam_manifest.as_ref(),
+                ) {
+                    if let Ok(bytes) = serde_json::to_vec_pretty(&gap) {
+                        let _ = fs::write(
+                            artifacts_dir.join(format!(
+                                "pass{}_cluster_gap_{}.json",
+                                pass_id,
+                                sanitize(&final_name)
+                            )),
+                            bytes,
+                        );
+                    }
+                }
+            }
 
             let abs_value = Value::object([
                 ("kind", Value::string("concept-abstraction-stub-0")),

@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use provekit_ir_types::{ExamManifestMemento, IrFormula, IrTerm, Sort};
+use provekit_ir_types::{ExamManifestMemento, ExamQuestion, IrFormula, IrTerm, Sort};
 use serde_json::Value;
 
 use crate::core::primitives::address;
@@ -18,6 +18,10 @@ use crate::core::types::{
 
 const EXAM_MANIFEST_CONFORMANCE_REASON: &str =
     "loads exam-manifest mementos via PEP 1.7.0; no target source emission";
+pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc";
+pub const DEFAULT_EXAM_MANIFEST_JSON: &str = include_str!(
+    "../../../../menagerie/concept-shapes/exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+);
 
 pub struct ExamManifestKit {}
 
@@ -140,6 +144,69 @@ impl Kit for ExamManifestKit {
     }
 }
 
+pub fn load_default_exam_manifest() -> Result<ExamManifestMemento, KitError> {
+    let manifest: ExamManifestMemento = serde_json::from_str(DEFAULT_EXAM_MANIFEST_JSON)
+        .map_err(|error| KitError::Transformation(format!("parse default exam manifest: {error}")))?;
+    validate_manifest(&manifest)?;
+    if manifest.header.cid != DEFAULT_EXAM_MANIFEST_CID {
+        return Err(KitError::Transformation(format!(
+            "default exam manifest cid mismatch: declared {}, expected {}",
+            manifest.header.cid, DEFAULT_EXAM_MANIFEST_CID
+        )));
+    }
+    Ok(manifest)
+}
+
+pub fn exam_question_cid(question: &ExamQuestion) -> Result<String, KitError> {
+    crate::canonical::serializable_cid(question)
+        .map_err(|error| KitError::Transformation(format!("cid exam question: {error}")))
+}
+
+pub fn exam_question_cid_for(
+    manifest: &ExamManifestMemento,
+    kind: &str,
+    concept: &str,
+    language: &str,
+) -> Result<Option<String>, KitError> {
+    for question in &manifest.header.content.questions {
+        if question.kind.as_str() != kind || question.concept != concept {
+            continue;
+        }
+        if !question_matches_language(question, kind, language) {
+            continue;
+        }
+        return exam_question_cid(question).map(Some);
+    }
+    Ok(None)
+}
+
+pub fn exam_question_citation(
+    manifest: Option<&ExamManifestMemento>,
+    kind: &str,
+    concept: &str,
+    language: &str,
+    diagnostic_scope: &str,
+) -> (Option<String>, Option<String>) {
+    let Some(manifest) = manifest else {
+        return (None, None);
+    };
+    match exam_question_cid_for(manifest, kind, concept, language) {
+        Ok(Some(question_cid)) => (Some(question_cid), Some(manifest.header.cid.clone())),
+        Ok(None) => {
+            eprintln!(
+                "[{diagnostic_scope}] no exam question citation for kind={kind} concept={concept} language={language}"
+            );
+            (None, None)
+        }
+        Err(error) => {
+            eprintln!(
+                "[{diagnostic_scope}] exam question citation failed for kind={kind} concept={concept} language={language}: {error}"
+            );
+            (None, None)
+        }
+    }
+}
+
 fn validate_manifest(manifest: &ExamManifestMemento) -> Result<(), KitError> {
     manifest
         .validate()
@@ -154,6 +221,24 @@ fn validate_manifest(manifest: &ExamManifestMemento) -> Result<(), KitError> {
         )));
     }
     Ok(())
+}
+
+fn question_matches_language(question: &ExamQuestion, kind: &str, language: &str) -> bool {
+    let keys: &[&str] = match kind {
+        "morphism" => &["from_language"],
+        "boundary-realization" => &["target_language"],
+        "concept-realization" | "effect-classification" | "sort-classification" => &["language"],
+        "realization" => &["target_language"],
+        "effect" | "sort" => &["language"],
+        _ => &["language", "from_language", "target_language"],
+    };
+    keys.iter().any(|key| {
+        question
+            .parameters
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            == Some(language)
+    })
 }
 
 fn exam_manifest_contract(manifest_value: &Value, manifest_cid: &Cid) -> crate::core::Contract {

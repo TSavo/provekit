@@ -12,13 +12,19 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use clap::Parser;
-use libprovekit::core::{bind_term_document, BindOptions};
+use libprovekit::core::{
+    address, bind_term_document, execute_path, BindKit, BindOptions, ConformanceDeclaration,
+    HashMapInputCatalog, Input, KitRegistry, Path as CorePath, PathAlgebra, PathExecutionError,
+    Term, Verb,
+};
 use owo_colors::OwoColorize;
+use provekit_ir_types::{CompositionRefusalMemento, Sort};
 use serde_json::Value as Json;
 
+use crate::kit_dispatch::dispatch_exam_manifest;
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
-pub use libprovekit::core::NamedTermDocument;
+pub use libprovekit::core::{NamedTerm, NamedTermDocument};
 
 #[derive(Parser, Debug, Clone)]
 pub struct BindArgs {
@@ -36,6 +42,14 @@ pub struct BindArgs {
     /// Source language hint for diagnostics and named-term metadata.
     #[arg(long, default_value = "auto")]
     pub lang: String,
+
+    /// Exam manifest path or CID used to cite bind refusal gap records.
+    #[arg(long)]
+    pub exam_manifest: Option<String>,
+
+    /// Exam-manifest plugin name. Falls back to the built-in loader when absent.
+    #[arg(long, default_value = "default")]
+    pub exam_manifest_plugin: String,
 
     /// Legacy threshold hint. No effect in the four-verb model.
     #[arg(long, default_value = "1")]
@@ -180,25 +194,79 @@ pub fn run(args: BindArgs) -> u8 {
 }
 
 fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError> {
-    let named = bind_term_document(
-        &term_json,
-        &BindOptions {
-            lang: args.lang.clone(),
+    let exam_manifest = args
+        .exam_manifest
+        .as_deref()
+        .map(|target| {
+            dispatch_exam_manifest(&args.root, &args.exam_manifest_plugin, target)
+                .map_err(|error| BindCliError::Failed(error.to_string()))
+        })
+        .transpose()?;
+    let term = Term::Const {
+        value: term_json,
+        sort: Sort::Primitive {
+            name: "LiftPluginResponse".to_string(),
         },
-    )
-    .map_err(|error| BindCliError::Failed(error.to_string()))?;
-    serde_json::to_value(&named)
-        .map_err(|error| BindCliError::Failed(format!("serialize named terms: {error}")))
+    };
+    let term_cid = address(&term);
+    let mut inputs = HashMapInputCatalog::default();
+    inputs.put(term_cid.clone(), Input::Term(term));
+    let path_input = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "bind".to_string(),
+            kit: "bind-default".to_string(),
+            inputs: vec![term_cid],
+            depends_on: vec![],
+            verb: Verb::Transform,
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register(
+        "bind-default",
+        BindKit::new(BindOptions {
+            lang: args.lang.clone(),
+            exam_manifest,
+        }),
+        ConformanceDeclaration::NonCarrier {
+            reason: "transforms Input::Term to NamedTerm DomainClaim; emits no target source",
+        },
+    );
+    let chain = execute_path(&path_input, &registry, &inputs).map_err(BindCliError::from_path)?;
+    let claim = chain.terminal_claim();
+    let payload = claim
+        .payload
+        .as_ref()
+        .ok_or_else(|| BindCliError::Failed("bind claim missing term payload".to_string()))?;
+    serde_json::to_value(payload)
+        .map_err(|error| BindCliError::Failed(format!("serialize bind payload: {error}")))
 }
 
 #[derive(Debug)]
 enum BindCliError {
+    Refused(Box<CompositionRefusalMemento>),
     Failed(String),
+}
+
+impl BindCliError {
+    fn from_path(error: PathExecutionError) -> Self {
+        match error {
+            PathExecutionError::Refused(refusal) => Self::Refused(refusal),
+            other => Self::Failed(other.to_string()),
+        }
+    }
 }
 
 impl std::fmt::Display for BindCliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Refused(refusal) => {
+                f.write_str(&serde_json::to_string(refusal).unwrap_or_else(|_| {
+                    format!(
+                        "{}: {}",
+                        refusal.header.failure_kind, refusal.header.failure_detail
+                    )
+                }))
+            }
             Self::Failed(message) => f.write_str(message),
         }
     }

@@ -26,7 +26,7 @@ use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
+use provekit_ir_types::{EvidenceMemento, ExamManifestMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::lift_file_with_docstring_evidence;
 use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
 use provekit_walk::{
@@ -37,8 +37,10 @@ use serde_json::{json, Value};
 
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
+const EXAM_MANIFEST_CID: &str = libprovekit::exam_manifest::DEFAULT_EXAM_MANIFEST_CID;
 
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+static EXAM_MANIFEST: OnceLock<Option<ExamManifestMemento>> = OnceLock::new();
 
 fn main() -> io::Result<()> {
     let stdin = io::stdin();
@@ -325,22 +327,28 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         let src = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
-                diagnostics.push(json!({
-                    "kind": "read-error",
-                    "path": path.display().to_string(),
-                    "detail": e.to_string()
-                }));
+                diagnostics.push(cited_diagnostic(
+                    "read-error",
+                    path.display().to_string(),
+                    e.to_string(),
+                    "morphism",
+                    "concept:source-unit",
+                    "rust",
+                ));
                 continue;
             }
         };
         let file = match syn::parse_file(&src) {
             Ok(f) => f,
             Err(e) => {
-                diagnostics.push(json!({
-                    "kind": "parse-error",
-                    "path": path.display().to_string(),
-                    "detail": e.to_string()
-                }));
+                diagnostics.push(cited_diagnostic(
+                    "parse-error",
+                    path.display().to_string(),
+                    e.to_string(),
+                    "morphism",
+                    "concept:source-unit",
+                    "rust",
+                ));
                 continue;
             }
         };
@@ -398,6 +406,43 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         "ir": entries,
         "diagnostics": diagnostics,
     }))
+}
+
+fn cited_diagnostic(
+    kind: &str,
+    path: String,
+    detail: String,
+    question_kind: &str,
+    concept: &str,
+    language: &str,
+) -> Value {
+    let mut diagnostic = json!({
+        "kind": kind,
+        "path": path,
+        "detail": detail,
+    });
+    if let Some(question_cid) = exam_question_cid_for(question_kind, concept, language) {
+        diagnostic["exam_manifest_cid"] = json!(EXAM_MANIFEST_CID);
+        diagnostic["exam_question_cid"] = json!(question_cid);
+    } else {
+        diagnostic["exam_citation_diagnostic"] = json!({
+            "kind": "exam-question-citation-missing",
+            "question_kind": question_kind,
+            "concept": concept,
+            "language": language,
+        });
+    }
+    diagnostic
+}
+
+fn exam_question_cid_for(kind: &str, concept: &str, language: &str) -> Option<String> {
+    let manifest =
+        EXAM_MANIFEST.get_or_init(|| libprovekit::exam_manifest::load_default_exam_manifest().ok());
+    manifest.as_ref().and_then(|manifest| {
+        libprovekit::exam_manifest::exam_question_cid_for(manifest, kind, concept, language)
+            .ok()
+            .flatten()
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -2138,11 +2183,15 @@ pub fn positive_id(x: i64) -> i64 {
         let payload_bytes =
             libprovekit::canonical::serializable_jcs(&payload).expect("payload canonicalizes");
 
+        // `fn_name` is allowed inside gap-record subtrees because TransportGapMemento's
+        // schema (see protocol/specs/2026-05-14-transport-gap-and-partial-morphism-protocol.md)
+        // names the gap by its own fn_name identifier (e.g., "gap:unknown:bind:...:wp-rule").
+        // That is legitimate citation, not a contract-attr leak. Walk the JSON tree and
+        // forbid `fn_name` everywhere EXCEPT under a `gapRecords` ancestor.
         for forbidden in [
             "attr_pre",
             "attr_post",
             "concept_annotation",
-            "fn_name",
             "operand_bindings",
             "source_function_name",
         ] {
@@ -2151,6 +2200,9 @@ pub fn positive_id(x: i64) -> i64 {
                 "bind payload hashed bytes contain forbidden field `{forbidden}`: {payload_bytes}"
             );
         }
+        let payload_json: Value =
+            serde_json::from_str(&payload_bytes).expect("payload bytes parse back to JSON");
+        assert_no_fn_name_outside_gap_records(&payload_json, &[]);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -2311,6 +2363,31 @@ pub fn bitwise_not() -> i64 {
         }
     }
 
+    fn assert_no_fn_name_outside_gap_records(value: &Value, path: &[&str]) {
+        let under_gap_records = path.iter().any(|segment| *segment == "gapRecords");
+        match value {
+            Value::Object(map) => {
+                if !under_gap_records {
+                    assert!(
+                        !map.contains_key("fn_name"),
+                        "bind payload contains forbidden `fn_name` outside gap-record context at path {path:?}: {value:#?}"
+                    );
+                }
+                for (key, child) in map {
+                    let mut next_path: Vec<&str> = path.to_vec();
+                    next_path.push(key.as_str());
+                    assert_no_fn_name_outside_gap_records(child, &next_path);
+                }
+            }
+            Value::Array(items) => {
+                for child in items {
+                    assert_no_fn_name_outside_gap_records(child, path);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn primitive_sort(name: &str) -> Sort {
         Sort::Primitive {
             name: name.to_string(),
@@ -2325,5 +2402,74 @@ pub fn bitwise_not() -> i64 {
         let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
         fs::create_dir_all(&root).expect("create temp workspace");
         root
+    }
+
+    #[test]
+    fn rust_lifter_parse_refusal_cites_v1_1_exam_question() {
+        let dir = rust_lifter_parse_refusal_workspace("cites");
+
+        let result = bind_lift(&json!({
+            "workspace_root": dir,
+            "source_paths": ["."]
+        }))
+        .expect("bind lift returns document");
+        let diagnostic = result["diagnostics"][0].as_object().expect("diagnostic object");
+        let expected = exam_question_cid_for("morphism", "concept:source-unit", "rust")
+            .expect("source-unit rust question exists");
+
+        assert_eq!(diagnostic["kind"], "parse-error");
+        assert_eq!(diagnostic["exam_manifest_cid"], EXAM_MANIFEST_CID);
+        assert_eq!(diagnostic["exam_question_cid"], expected);
+    }
+
+    #[test]
+    fn rust_lifter_parse_refusal_does_not_fire_read_error_variant() {
+        let dir = rust_lifter_parse_refusal_workspace("discrim");
+
+        let result = bind_lift(&json!({
+            "workspace_root": dir,
+            "source_paths": ["."]
+        }))
+        .expect("bind lift returns document");
+
+        assert_eq!(result["diagnostics"][0]["kind"], "parse-error");
+        assert!(result["diagnostics"]
+            .as_array()
+            .expect("diagnostics array")
+            .iter()
+            .all(|item| item["kind"] != "read-error"));
+    }
+
+    #[test]
+    fn rust_lifter_parse_refusal_cites_source_unit_not_related_add() {
+        let dir = rust_lifter_parse_refusal_workspace("structural");
+
+        let result = bind_lift(&json!({
+            "workspace_root": dir,
+            "source_paths": ["."]
+        }))
+        .expect("bind lift returns document");
+        let refusal_cid = result["diagnostics"][0]["exam_question_cid"]
+            .as_str()
+            .expect("exam question cid");
+        let related =
+            exam_question_cid_for("morphism", "concept:add", "rust").expect("add rust exists");
+
+        assert_ne!(refusal_cid, related);
+    }
+
+    fn rust_lifter_parse_refusal_workspace(label: &str) -> PathBuf {
+        let unique = format!(
+            "provekit-walk-citation-{}-{}",
+            label,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(dir.join("src")).expect("create src");
+        std::fs::write(dir.join("src/lib.rs"), "fn broken(").expect("write source");
+        dir
     }
 }

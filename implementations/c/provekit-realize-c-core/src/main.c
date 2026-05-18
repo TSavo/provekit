@@ -9,6 +9,14 @@
 #include <string.h>
 #include <unistd.h>
 
+/* POSIX makes PATH_MAX optional in <limits.h>. On Linux glibc, it is
+ * typically only exposed via <linux/limits.h> or <sys/param.h>. Provide
+ * a portable fallback so the realize binary builds on a stock glibc
+ * toolchain without depending on cached object files masking the gap. */
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+
 #include "blake3.h"
 
 #define BODY_TEMPLATE_REL "menagerie/c-language-signature/specs/body-templates/c-canonical-bodies.json"

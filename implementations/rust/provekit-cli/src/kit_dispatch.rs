@@ -1015,9 +1015,10 @@ fn java_home_from_maven() -> Option<String> {
 // ============================================================================
 
 const EXAM_MANIFEST_KIND: &str = "exam-manifest";
-const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1";
+const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1.1";
+const EXAM_MANIFEST_SCHEMA_VERSION_V1: &str = "provekit-exam-manifest/v1";
 const PEP_1_7_0: &str = "pep/1.7.0";
-pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:0e012db4ce35b235b8482344795ccbe8bccad51522825b5c495a862648736936497b11a940cf0ba9170ee6202849e9a8dc9eca5cb3021261ffa2f4ac4df6edc1";
+pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc";
 #[allow(dead_code)]
 pub const EXAM_MANIFEST_MISMATCH_REASON: &str = "exam-manifest-mismatch";
 
@@ -1242,11 +1243,14 @@ fn validate_exam_manifest_plugin_manifest(
             EXAM_MANIFEST_KIND
         ));
     }
-    if parsed.exam_manifest_schema_version.as_deref() != Some(EXAM_MANIFEST_SCHEMA_VERSION) {
+    if parsed.exam_manifest_schema_version.as_deref() != Some(EXAM_MANIFEST_SCHEMA_VERSION)
+        && parsed.exam_manifest_schema_version.as_deref() != Some(EXAM_MANIFEST_SCHEMA_VERSION_V1)
+    {
         return Err(format!(
-            "manifest {} must declare [capabilities].exam_manifest_schema_version = \"{}\"",
+            "manifest {} must declare [capabilities].exam_manifest_schema_version = \"{}\" or \"{}\"",
             manifest.display(),
-            EXAM_MANIFEST_SCHEMA_VERSION
+            EXAM_MANIFEST_SCHEMA_VERSION,
+            EXAM_MANIFEST_SCHEMA_VERSION_V1
         ));
     }
     Ok(())

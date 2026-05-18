@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,12 @@ from .ir import (
     var,
 )
 
+EXAM_MANIFEST_CID = (
+    "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc"
+)
+EXAM_MANIFEST_BASENAME = f"v1.1.{EXAM_MANIFEST_CID}.json"
+
+
 @dataclass
 class LiftResult:
     ir: list[Json] = field(default_factory=list)
@@ -37,10 +44,19 @@ class _FunctionInfo:
 
 
 class _UnsupportedSyntax(Exception):
-    def __init__(self, node: ast.AST, reason: str, kind: str = "unhandled-syntax"):
+    def __init__(
+        self,
+        node: ast.AST,
+        reason: str,
+        kind: str = "unhandled-syntax",
+        question_kind: str | None = None,
+        concept: str | None = None,
+    ):
         self.node = node
         self.reason = reason
         self.kind = kind
+        self.question_kind = question_kind
+        self.concept = concept
         super().__init__(reason)
 
 
@@ -87,12 +103,15 @@ def lift_source(source: str, source_path: str) -> LiftResult:
         tree = ast.parse(source, filename=source_path)
     except SyntaxError as exc:
         result.refusals.append(
-            {
-                "kind": "syntax-error",
-                "function": None,
-                "line": exc.lineno,
-                "reason": exc.msg,
-            }
+            _refusal(
+                "syntax-error",
+                None,
+                exc.lineno,
+                exc.msg,
+                result.diagnostics,
+                question_kind="morphism",
+                concept="concept:source-unit",
+            )
         )
         result.ir.append(
             source_unit_contract(
@@ -138,22 +157,24 @@ def lift_paths(workspace_root: str, source_paths: Iterable[str]) -> LiftResult:
             resolved = full.resolve()
         except OSError as exc:
             result.refusals.append(
-                {
-                    "kind": "io-error",
-                    "function": None,
-                    "line": None,
-                    "reason": f"cannot resolve path '{requested}': {exc}",
-                }
+                _refusal(
+                    "io-error",
+                    None,
+                    None,
+                    f"cannot resolve path '{requested}': {exc}",
+                    result.diagnostics,
+                )
             )
             continue
         if not _is_relative_to(resolved, root):
             result.refusals.append(
-                {
-                    "kind": "path-traversal",
-                    "function": None,
-                    "line": None,
-                    "reason": f"path '{requested}' escapes workspace root '{root}'",
-                }
+                _refusal(
+                    "path-traversal",
+                    None,
+                    None,
+                    f"path '{requested}' escapes workspace root '{root}'",
+                    result.diagnostics,
+                )
             )
             continue
         for file_path in _iter_python_files(resolved):
@@ -161,12 +182,13 @@ def lift_paths(workspace_root: str, source_paths: Iterable[str]) -> LiftResult:
                 source = file_path.read_text(encoding="utf-8")
             except OSError as exc:
                 result.refusals.append(
-                    {
-                        "kind": "io-error",
-                        "function": None,
-                        "line": None,
-                        "reason": f"cannot read '{file_path}': {exc}",
-                    }
+                    _refusal(
+                        "io-error",
+                        None,
+                        None,
+                        f"cannot read '{file_path}': {exc}",
+                        result.diagnostics,
+                    )
                 )
                 continue
             display_path = os.path.relpath(file_path, root)
@@ -364,7 +386,13 @@ class _Emitter:
             return ctor("python:attribute", self.expr(node.value), str_const(node.attr))
         if isinstance(node, ast.Subscript):
             return ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
-        raise _UnsupportedSyntax(node, f"unhandled expression kind: {type(node).__name__}")
+        question_kind, concept = _citation_for_unhandled_expr(node)
+        raise _UnsupportedSyntax(
+            node,
+            f"unhandled expression kind: {type(node).__name__}",
+            question_kind=question_kind,
+            concept=concept,
+        )
 
     def constant(self, node: ast.Constant) -> Json:
         value = node.value
@@ -452,14 +480,110 @@ def _lift_function(
         )
     except _UnsupportedSyntax as exc:
         result.refusals.append(
-            {
-                "kind": exc.kind,
-                "function": info.fn_name,
-                "line": getattr(exc.node, "lineno", getattr(node, "lineno", None)),
-                "reason": exc.reason,
-            }
+            _refusal(
+                exc.kind,
+                info.fn_name,
+                getattr(exc.node, "lineno", getattr(node, "lineno", None)),
+                exc.reason,
+                result.diagnostics,
+                question_kind=exc.question_kind,
+                concept=exc.concept,
+            )
         )
         return None
+
+
+def _refusal(
+    kind: str,
+    function: str | None,
+    line: int | None,
+    reason: str,
+    diagnostics: list[Json],
+    *,
+    question_kind: str | None = None,
+    concept: str | None = None,
+) -> Json:
+    refusal: Json = {
+        "kind": kind,
+        "function": function,
+        "line": line,
+        "reason": reason,
+    }
+    if question_kind is None or concept is None:
+        diagnostics.append(
+            {
+                "kind": "exam-question-citation-missing",
+                "refusal_kind": kind,
+                "reason": "refusal is outside the v1.1 exam vocabulary",
+            }
+        )
+        return refusal
+    question_cid = _exam_question_cid_for(question_kind, concept, "python")
+    if question_cid is None:
+        diagnostics.append(
+            {
+                "kind": "exam-question-citation-missing",
+                "question_kind": question_kind,
+                "concept": concept,
+                "language": "python",
+            }
+        )
+        return refusal
+    refusal["exam_manifest_cid"] = EXAM_MANIFEST_CID
+    refusal["exam_question_cid"] = question_cid
+    return refusal
+
+
+def _citation_for_unhandled_expr(node: ast.AST) -> tuple[str, str]:
+    if isinstance(node, ast.ListComp):
+        return ("sort-classification", "concept:List<T>")
+    return ("sort-classification", "concept:Term")
+
+
+def _exam_question_cid_for(kind: str, concept: str, language: str) -> str | None:
+    manifest = _load_exam_manifest()
+    if manifest is None:
+        return None
+    for question in manifest.get("header", {}).get("content", {}).get("questions", []):
+        if question.get("kind") != kind or question.get("concept") != concept:
+            continue
+        parameters = question.get("parameters", {})
+        for language_key in _exam_language_keys(kind):
+            if parameters.get(language_key) == language:
+                return cid_of_json(question)
+    return None
+
+
+def _exam_language_keys(kind: str) -> tuple[str, ...]:
+    if kind == "morphism":
+        return ("from_language",)
+    if kind in {"boundary-realization", "realization"}:
+        return ("target_language",)
+    if kind in {
+        "concept-realization",
+        "effect-classification",
+        "sort-classification",
+        "effect",
+        "sort",
+    }:
+        return ("language",)
+    return ("language", "from_language", "target_language")
+
+
+def _load_exam_manifest() -> Json | None:
+    env_path = os.environ.get("PROVEKIT_EXAM_MANIFEST")
+    paths: list[Path] = []
+    if env_path:
+        paths.append(Path(env_path))
+    for base in [Path.cwd(), *Path(__file__).resolve().parents]:
+        paths.append(base / "menagerie" / "concept-shapes" / "exams" / EXAM_MANIFEST_BASENAME)
+    for path in paths:
+        try:
+            if path.is_file():
+                return json.loads(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return None
 
 
 def _contains_refused_control(fn: ast.FunctionDef) -> _UnsupportedSyntax | None:

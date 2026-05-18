@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{
-    IrFormula, IrTerm, PromotionDecisionEnvelope, PromotionDecisionHeader,
-    PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate, PromotionResult, Sort,
+    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, PromotionDecisionEnvelope,
+    PromotionDecisionHeader, PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate,
+    PromotionResult, ResolutionOption, ResolutionOptionKind, Sort, TransportGapMemento,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
@@ -30,12 +31,15 @@ const CONCEPT_SEQ: &str = "concept:seq";
 pub struct BindOptions {
     /// Source language hint for diagnostics and named-term metadata.
     pub lang: String,
+    /// Optional exam manifest used to cite refusal questions in gap records.
+    pub exam_manifest: Option<ExamManifestMemento>,
 }
 
 impl Default for BindOptions {
     fn default() -> Self {
         Self {
             lang: "auto".to_string(),
+            exam_manifest: None,
         }
     }
 }
@@ -185,6 +189,12 @@ pub struct BindContractWitness {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedTermDocument {
+    #[serde(
+        default,
+        rename = "gapRecords",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub gap_records: Vec<Json>,
     pub kind: String,
     #[serde(rename = "promotionDecisionMementos")]
     pub promotion_decision_mementos: Vec<PromotionDecisionMemento>,
@@ -262,6 +272,7 @@ pub fn bind_term_document(
     let mut seen_names: BTreeSet<String> = BTreeSet::new();
     let mut terms = Vec::with_capacity(entries.len());
     let mut decisions = Vec::new();
+    let mut gap_records = Vec::new();
     let mut operation_namer = UnnamedConceptNamer::default();
     for (idx, entry) in entries.into_iter().enumerate() {
         let concept_name = concept_name_for(&entry, idx + 1, &catalog);
@@ -283,6 +294,14 @@ pub fn bind_term_document(
             &site_memento_cid,
             &witnesses,
         )?);
+        if witnesses.is_empty() {
+            gap_records.push(wp_rule_synthesis_gap_record(
+                &source_language,
+                &term_shape_cid,
+                &concept_name,
+                options.exam_manifest.as_ref(),
+            )?);
+        }
         terms.push(NamedTerm {
             concept_name,
             discharge_verdict: if witnesses.is_empty() {
@@ -309,6 +328,7 @@ pub fn bind_term_document(
     }
 
     Ok(NamedTermDocument {
+        gap_records,
         kind: "named-term-document".to_string(),
         promotion_decision_mementos: decisions,
         schema_version: "1".to_string(),
@@ -953,14 +973,19 @@ fn named_term_citation_term(
 }
 
 fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError> {
-    Ok(json!({
+    let mut value = json!({
         "kind": named.kind.clone(),
         "promotionDecisionMementos": serde_json::to_value(&named.promotion_decision_mementos)
             .map_err(|error| BindError::Failed(format!("serialize promotion decisions: {error}")))?,
         "schemaVersion": named.schema_version.clone(),
         "sourceLanguage": named.source_language.clone(),
         "workspaceRoot": named.workspace_root.clone(),
-    }))
+    });
+    if !named.gap_records.is_empty() {
+        value["gapRecords"] = serde_json::to_value(&named.gap_records)
+            .map_err(|error| BindError::Failed(format!("serialize gap records: {error}")))?;
+    }
+    Ok(value)
 }
 
 fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, BindError> {
@@ -980,6 +1005,13 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
         .transpose()
         .map_err(|error| BindError::Failed(format!("parse promotion decisions: {error}")))?
         .unwrap_or_default();
+    let gap_records = document
+        .get("gapRecords")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| BindError::Failed(format!("parse gap records: {error}")))?
+        .unwrap_or_default();
     let terms = citations
         .into_iter()
         .map(|(_, citation)| {
@@ -992,6 +1024,7 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(NamedTermDocument {
+        gap_records,
         kind: document
             .get("kind")
             .and_then(Json::as_str)
@@ -1108,6 +1141,67 @@ fn promotion_decisions(
             Ok(decision)
         })
         .collect()
+}
+
+fn wp_rule_synthesis_gap_record(
+    source_lang: &str,
+    source_op_cid: &str,
+    concept_name: &str,
+    exam_manifest: Option<&ExamManifestMemento>,
+) -> Result<Json, BindError> {
+    let target_concept_op = normalize_concept_name(concept_name);
+    let (exam_question_cid, exam_manifest_cid) = crate::exam_manifest::exam_question_citation(
+        exam_manifest,
+        "morphism",
+        &target_concept_op,
+        source_lang,
+        "bind",
+    );
+    let gap = TransportGapMemento {
+        exam_manifest_cid,
+        exam_question_cid,
+        fn_name: format!(
+            "gap:{}:bind:to:{}:wp-rule",
+            source_lang,
+            target_concept_op.trim_start_matches("concept:")
+        ),
+        gap_kind: GapKind::WpRuleMismatch,
+        kind: "TransportGapMemento".to_string(),
+        reason: None,
+        reason_note: Some(
+            "bind refused to synthesize a wp_rule without lifted contract evidence".to_string(),
+        ),
+        resolution_options: vec![ResolutionOption {
+            dual_view_cid: None,
+            loss: None,
+            loss_severity: None,
+            option_kind: ResolutionOptionKind::AcceptPermanent,
+            partial_morphism_cid: None,
+            precondition: None,
+            representation_map_delta: None,
+            respec_target_to: None,
+            split_targets: None,
+            status: OptionStatus::Deferred,
+            tradeoff: "provide source evidence or a catalog wp_rule before treating the bind as exact"
+                .to_string(),
+        }],
+        schema_version: "1".to_string(),
+        signature: None,
+        source_lang: source_lang.to_string(),
+        source_op_cid: source_op_cid.to_string(),
+        target_concept_op,
+        target_op_cid: None,
+    };
+    serde_json::to_value(gap)
+        .map_err(|error| BindError::Failed(format!("serialize wp_rule gap: {error}")))
+}
+
+fn normalize_concept_name(name: &str) -> String {
+    if name.starts_with("concept:") {
+        name.to_string()
+    } else {
+        format!("concept:{name}")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1389,6 +1483,7 @@ mod tests {
             &term,
             &BindOptions {
                 lang: "rust".to_string(),
+                exam_manifest: None,
             },
         )
         .expect("bind succeeds");
@@ -1435,6 +1530,7 @@ mod tests {
             });
             BindKit::new(BindOptions {
                 lang: "rust".to_string(),
+                exam_manifest: None,
             })
             .bind_term_from_input(&input)
             .expect("bind succeeds")
@@ -1499,6 +1595,7 @@ mod tests {
 
         let kit = BindKit::new(BindOptions {
             lang: "rust".to_string(),
+            exam_manifest: None,
         });
 
         let add_claim = kit
@@ -1520,9 +1617,10 @@ mod tests {
 
     #[test]
     fn named_term_document_cid_ignores_source_function_name() {
-        fn document(function: &str) -> NamedTermDocument {
-            NamedTermDocument {
-                kind: "named-term-document".to_string(),
+            fn document(function: &str) -> NamedTermDocument {
+                NamedTermDocument {
+                    gap_records: vec![],
+                    kind: "named-term-document".to_string(),
                 promotion_decision_mementos: vec![],
                 schema_version: "1".to_string(),
                 source_language: "rust".to_string(),
@@ -1554,6 +1652,7 @@ mod tests {
     #[test]
     fn named_term_document_omits_empty_source_provenance_fields() {
         let document = NamedTermDocument {
+            gap_records: vec![],
             kind: "named-term-document".to_string(),
             promotion_decision_mementos: vec![],
             schema_version: "1".to_string(),
@@ -1677,6 +1776,7 @@ mod tests {
             &term,
             &BindOptions {
                 lang: "rust".to_string(),
+                exam_manifest: None,
             },
         )
         .expect("bind succeeds");
