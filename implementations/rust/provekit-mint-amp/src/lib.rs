@@ -708,6 +708,11 @@ fn mint_spec_path(
     }
     let cid = match kind {
         Kind::Algorithm => mint_algorithm(AlgorithmSpec::from_path(path)?, signer, catalog)?.cid,
+        Kind::BoundaryContract => {
+            return Err(MintError::Validation(
+                "boundary contract minting is not supported by this command".to_string(),
+            ));
+        }
         Kind::Binding => mint_binding(BindingSpec::from_path(path)?, signer, catalog)?.cid,
         Kind::Exam => {
             return Err(MintError::Validation(

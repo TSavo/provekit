@@ -12,6 +12,8 @@ use crate::{canonical_jcs, MintError, Result, Signer};
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     Algorithm,
+    #[serde(rename = "boundary-contract")]
+    BoundaryContract,
     Binding,
     Exam,
     Sort,
@@ -25,6 +27,7 @@ impl Kind {
     pub fn directory(self) -> &'static str {
         match self {
             Kind::Algorithm => "algorithms",
+            Kind::BoundaryContract => "boundary-contracts",
             Kind::Binding => "bindings",
             Kind::Exam => "exams",
             Kind::Sort => "sorts",
@@ -40,6 +43,7 @@ impl std::fmt::Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Kind::Algorithm => "algorithm",
+            Kind::BoundaryContract => "boundary-contract",
             Kind::Binding => "binding",
             Kind::Exam => "exam",
             Kind::Sort => "sort",

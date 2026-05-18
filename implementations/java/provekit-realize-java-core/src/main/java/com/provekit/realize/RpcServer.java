@@ -92,6 +92,13 @@ public final class RpcServer {
         List<String> modes = JsonUtil.decodeJsonStringArray(paramsObj, "modes");
         ContractPayload contract = ContractPayload.fromJson(JsonUtil.extractObjectField(paramsObj, "contract"));
         TransportedOperation transportedOp = TransportedOperation.fromJson(JsonUtil.extractObjectField(paramsObj, "transported_op"));
+        if (transportedOp == null) {
+            String namedTermTree = JsonUtil.extractObjectField(paramsObj, "named_term_tree");
+            if ("{}".equals(namedTermTree)) {
+                namedTermTree = JsonUtil.extractObjectField(paramsObj, "namedTermTree");
+            }
+            transportedOp = TransportedOperation.fromNamedTermTree(namedTermTree);
+        }
         List<String> sugarPlugins = JsonUtil.decodeJsonObjectArray(paramsObj, "sugar_plugins");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");

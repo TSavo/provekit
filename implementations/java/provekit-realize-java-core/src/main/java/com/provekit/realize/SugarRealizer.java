@@ -165,7 +165,9 @@ final class SugarRealizer {
                 ? conceptCitationBlock + "\n;"
                 : bodyTemplate.map(RenderedBody::body)
                     .orElse("throw new UnsupportedOperationException(\"provekit-bind canonical: " + conceptName + "\");");
-        Jcs.Json bodyLossRecord = bodyTemplate.map(RenderedBody::lossRecord).orElse(Jcs.object());
+        Jcs.Json bodyLossRecord = hasConceptCitationCarrier
+                ? conceptCitationCarrierLossRecord(transportedOp)
+                : bodyTemplate.map(RenderedBody::lossRecord).orElse(Jcs.object());
         String observationWrapperEmissionRecord = null;
         if (!isStub && !hasConceptCitationCarrier) {
             Optional<ObservationComposition> observation = composeEmitterAfterReturn(
@@ -572,6 +574,35 @@ final class SugarRealizer {
         }
         return "// provekit-concept: " + Jcs.encode(payload) + "\n"
                 + "// provekit-concept-payload-cid: " + Jcs.cid(payload);
+    }
+
+    private static Jcs.Json conceptCitationCarrierLossRecord(TransportedOperation transportedOp) {
+        String contribution = conceptCitationCarrierLossName(transportedOp);
+        if (contribution.isBlank()) {
+            return Jcs.object();
+        }
+        return Jcs.object(
+                contribution, Jcs.object(
+                        "args", Jcs.array(),
+                        "head", Jcs.string("atomic"),
+                        "name", Jcs.string(contribution)
+                )
+        );
+    }
+
+    private static String conceptCitationCarrierLossName(TransportedOperation transportedOp) {
+        if (transportedOp == null) {
+            return "";
+        }
+        if (conceptMatches("concept:addr", transportedOp.conceptName())
+                || "addr".equals(transportedOp.operationKind())) {
+            return "java-references-not-addresses";
+        }
+        if (conceptMatches("concept:deref", transportedOp.conceptName())
+                || "deref".equals(transportedOp.operationKind())) {
+            return "java-implicit-deref";
+        }
+        return "";
     }
 
     private static Jcs.Obj conceptCitationPayload(
@@ -1149,6 +1180,96 @@ record TransportedOperation(
                 stringValue(obj, "callsite_cid", "callsiteCid"),
                 stringValue(obj, "concept_name", "conceptName"),
                 stringValue(obj, "target_library_tag", "targetLibraryTag")
+        );
+    }
+
+    static TransportedOperation fromNamedTermTree(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json.trim())) {
+            return null;
+        }
+        Jcs.Json parsed;
+        try {
+            parsed = Jcs.parse(json);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (!(parsed instanceof Jcs.Obj obj)) {
+            return null;
+        }
+
+        String conceptName = obj.stringFieldOrNull("conceptName");
+        String operationKind = obj.stringFieldOrNull("operationKind");
+        if (!isJavaCarrierConcept(conceptName, operationKind)) {
+            return null;
+        }
+        if (operationKind == null || operationKind.isBlank()) {
+            operationKind = conceptNameMatches(conceptName, "addr") ? "addr" : "deref";
+        }
+        if (conceptName == null || conceptName.isBlank()) {
+            conceptName = "concept:" + operationKind;
+        }
+        String shapeCid = obj.stringFieldOrNull("shapeCid");
+        if (shapeCid == null || shapeCid.isBlank()) {
+            return null;
+        }
+
+        Jcs.Arr argsJcs = obj.get("args") instanceof Jcs.Arr args ? args : Jcs.array();
+        List<Integer> termPosition = List.of(0);
+        Jcs.Obj site = Jcs.object(
+                "args_jcs_cid", Jcs.string(Jcs.cid(argsJcs)),
+                "concept_cid", Jcs.string(shapeCid),
+                "concept_name", Jcs.string(conceptName == null ? "" : conceptName),
+                "operation_kind", Jcs.string(operationKind == null ? "" : operationKind),
+                "shape_cid", Jcs.string(shapeCid),
+                "term_position", Jcs.array(termPosition.stream().map(Jcs::integer).toList())
+        );
+        Jcs.Json lossRecord = javaCarrierLossRecord(conceptName, operationKind);
+        return new TransportedOperation(
+                shapeCid,
+                Jcs.cid(site),
+                Jcs.cid(lossRecord),
+                operationKind,
+                "",
+                shapeCid,
+                termPosition,
+                argsJcs,
+                "",
+                "",
+                "",
+                conceptName,
+                "java"
+        );
+    }
+
+    private static boolean isJavaCarrierConcept(String conceptName, String operationKind) {
+        return conceptNameMatches(conceptName, "addr")
+                || conceptNameMatches(conceptName, "deref")
+                || "addr".equals(operationKind)
+                || "deref".equals(operationKind);
+    }
+
+    private static boolean conceptNameMatches(String conceptName, String bareName) {
+        if (conceptName == null) {
+            return false;
+        }
+        return conceptName.equals(bareName) || conceptName.equals("concept:" + bareName);
+    }
+
+    private static Jcs.Json javaCarrierLossRecord(String conceptName, String operationKind) {
+        String contribution;
+        if (conceptNameMatches(conceptName, "addr") || "addr".equals(operationKind)) {
+            contribution = "java-references-not-addresses";
+        } else if (conceptNameMatches(conceptName, "deref") || "deref".equals(operationKind)) {
+            contribution = "java-implicit-deref";
+        } else {
+            return Jcs.object();
+        }
+        return Jcs.object(
+                contribution, Jcs.object(
+                        "args", Jcs.array(),
+                        "head", Jcs.string("atomic"),
+                        "name", Jcs.string(contribution)
+                )
         );
     }
 
