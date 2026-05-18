@@ -13,9 +13,9 @@ use libprovekit::core::{
     address, compose, execute_path, link, platform_semantics_for_lower_target, prove, transform,
     verify, ArityShape, AritySlot, CKit, Canonical, Catalog, Cid, ConformanceDeclaration, Dialect,
     DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
-    InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra,
-    PathDocument, PathDocumentError, PathError, PlatformSemanticComparisonError,
-    PlatformSemanticsDeclaration, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
+    InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, OpCoverageVerdict,
+    Path, PathAlgebra, PathDocument, PathDocumentError, PathError, PlatformSemanticComparisonError,
+    PlatformSemanticsDeclaration, Refutation, Side, SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::{blake3_512_of, Value};
 use provekit_ir_types::{
@@ -1534,10 +1534,13 @@ fn platform_semantics_compare_op_reports_open_keyed_dimension_divergence() {
         platform_semantics_for_lower_target("rust").expect("rust lower target declares semantics");
     let div = PYTHON_PLATFORM_CONCEPT_OP_CIDS[3];
 
-    let divergence = source
+    let verdict = source
         .compare_op_with(div, &target)
-        .expect("comparison is characterizable")
-        .expect("python div to rust div diverges");
+        .expect("no internal substrate inconsistency");
+    let divergence = match verdict {
+        OpCoverageVerdict::Divergent(d) => d,
+        other => panic!("expected Divergent, got {other:?}"),
+    };
 
     assert_eq!(divergence.dimension_name, "IntegerDivisionRounding");
     assert_ne!(divergence.source_value_cid, divergence.target_value_cid);
@@ -1566,8 +1569,8 @@ fn platform_semantics_compare_op_preserves_exact_same_kit_leg() {
     assert_eq!(
         source
             .compare_op_with(div, &source)
-            .expect("same-kit comparison is characterizable"),
-        None
+            .expect("same-kit comparison has no internal inconsistency"),
+        OpCoverageVerdict::Same,
     );
 }
 
@@ -1577,17 +1580,273 @@ fn platform_semantics_compare_op_reports_uncharacterizable_absent_target_op() {
         platform_semantics_for_lower_target("rust").expect("rust lower target declares semantics");
     let target = platform_semantics_for_lower_target("java")
         .expect("java lower target declares platform semantics");
+    // After the OpCoverageVerdict refactor, a rust-only op yields
+    // Ok(Uncharacterizable { absent_on: Target }) rather than Err(TargetOpAbsent).
     let rust_only_op = source
         .tags
         .iter()
         .map(|tag| tag.op_cid.as_str())
-        .find(|op_cid| target.compare_op_with(op_cid, &target).is_err())
+        .find(|op_cid| {
+            matches!(
+                source.compare_op_with(op_cid, &target),
+                Ok(OpCoverageVerdict::Uncharacterizable {
+                    absent_on: Side::Target
+                })
+            )
+        })
         .expect("fixture has a rust-only native op cid");
 
     assert!(matches!(
         source.compare_op_with(rust_only_op, &target),
-        Err(PlatformSemanticComparisonError::TargetOpAbsent { .. })
+        Ok(OpCoverageVerdict::Uncharacterizable {
+            absent_on: Side::Target
+        })
     ));
+}
+
+// ---------------------------------------------------------------------------
+// OpCoverageVerdict variant tests -- three per variant (positive + discrimination + structural)
+//
+// All four variants: NoOpinion, Uncharacterizable, Same, Divergent.
+// Helper: build a minimal PlatformSemanticsDeclaration with one tagged op.
+// ---------------------------------------------------------------------------
+
+const TEST_KIT_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+const TEST_OP_A: &str = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TEST_OP_B: &str = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+fn test_dimension_value(value_name: &str) -> DimensionValueMemento {
+    DimensionValueMemento::new(
+        TEST_KIT_CID.to_string(),
+        "TestDimension".to_string(),
+        value_name.to_string(),
+        IrFormula::Atomic {
+            name: format!("test:{value_name}"),
+            args: vec![],
+        },
+    )
+}
+
+fn single_op_declaration(op_cid: &str, value_cid: &str, value: DimensionValueMemento) -> PlatformSemanticsDeclaration {
+    let tag = platform_tag(op_cid, vec![("TestDimension", value_cid.to_string())]);
+    PlatformSemanticsDeclaration {
+        tags: vec![tag],
+        dimension_values: vec![value],
+        op_aliases: BTreeMap::new(),
+    }
+}
+
+// -- NoOpinion: positive --
+#[test]
+fn op_coverage_verdict_no_opinion_when_both_kits_absent_for_op() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_a = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    let val_b = test_dimension_value("ValueB");
+    let decl_b = single_op_declaration(TEST_OP_B, &val_b.cid.clone(), val_b);
+
+    // TEST_OP_A is present in decl_a but not decl_b, and TEST_OP_B is in decl_b but not decl_a.
+    // Query with an op that neither declaration has.
+    let unknown_op = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    assert_eq!(
+        decl_a.compare_op_with(unknown_op, &decl_b).expect("no internal error"),
+        OpCoverageVerdict::NoOpinion,
+    );
+}
+
+// -- NoOpinion: discrimination -- adding a tag to one kit flips to Uncharacterizable
+#[test]
+fn op_coverage_verdict_no_opinion_flips_to_uncharacterizable_when_one_kit_gains_tag() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_with_op = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    let decl_without_op = PlatformSemanticsDeclaration {
+        tags: vec![],
+        dimension_values: vec![],
+        op_aliases: BTreeMap::new(),
+    };
+
+    // With neither kit having the tag: NoOpinion.
+    assert_eq!(
+        decl_without_op.compare_op_with(TEST_OP_A, &decl_without_op).expect("no error"),
+        OpCoverageVerdict::NoOpinion,
+    );
+    // Once one kit has the tag: Uncharacterizable.
+    assert!(matches!(
+        decl_with_op.compare_op_with(TEST_OP_A, &decl_without_op).expect("no error"),
+        OpCoverageVerdict::Uncharacterizable { .. }
+    ));
+}
+
+// -- NoOpinion: structural -- verdict carries no payload (unit variant)
+#[test]
+fn op_coverage_verdict_no_opinion_is_unit_variant() {
+    let decl_empty = PlatformSemanticsDeclaration {
+        tags: vec![],
+        dimension_values: vec![],
+        op_aliases: BTreeMap::new(),
+    };
+    let verdict = decl_empty.compare_op_with(TEST_OP_A, &decl_empty).expect("no error");
+    // Ensure it is exactly NoOpinion and not a wrapper with payload.
+    assert_eq!(verdict, OpCoverageVerdict::NoOpinion);
+    // Clone and Eq work correctly.
+    assert_eq!(verdict.clone(), OpCoverageVerdict::NoOpinion);
+}
+
+// -- Uncharacterizable: positive -- source has tag, target does not
+#[test]
+fn op_coverage_verdict_uncharacterizable_absent_on_target() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    let decl_target = PlatformSemanticsDeclaration {
+        tags: vec![],
+        dimension_values: vec![],
+        op_aliases: BTreeMap::new(),
+    };
+    assert_eq!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_target).expect("no internal error"),
+        OpCoverageVerdict::Uncharacterizable { absent_on: Side::Target },
+    );
+}
+
+// -- Uncharacterizable: discrimination -- adding target tag flips to Same or Divergent
+#[test]
+fn op_coverage_verdict_uncharacterizable_flips_to_same_when_target_gains_identical_tag() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    let decl_target_empty = PlatformSemanticsDeclaration {
+        tags: vec![],
+        dimension_values: vec![],
+        op_aliases: BTreeMap::new(),
+    };
+    // Start: Uncharacterizable
+    assert!(matches!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_target_empty).expect("no error"),
+        OpCoverageVerdict::Uncharacterizable { absent_on: Side::Target }
+    ));
+    // After adding the identical tag to target: Same
+    let decl_target_with_tag = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    assert_eq!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_target_with_tag).expect("no error"),
+        OpCoverageVerdict::Same,
+    );
+}
+
+// -- Uncharacterizable: structural -- absent_on carries the correct Side
+#[test]
+fn op_coverage_verdict_uncharacterizable_absent_on_source_when_only_target_has_tag() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_source_empty = PlatformSemanticsDeclaration {
+        tags: vec![],
+        dimension_values: vec![],
+        op_aliases: BTreeMap::new(),
+    };
+    let decl_target = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    let verdict = decl_source_empty.compare_op_with(TEST_OP_A, &decl_target).expect("no error");
+    assert!(
+        matches!(verdict, OpCoverageVerdict::Uncharacterizable { absent_on: Side::Source }),
+        "expected absent_on = Source but got {verdict:?}"
+    );
+}
+
+// -- Same: positive -- both kits declare identical dimension value CIDs
+#[test]
+fn op_coverage_verdict_same_when_both_kits_declare_identical_value() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_a = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    let decl_b = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    assert_eq!(
+        decl_a.compare_op_with(TEST_OP_A, &decl_b).expect("no internal error"),
+        OpCoverageVerdict::Same,
+    );
+}
+
+// -- Same: discrimination -- swapping one kit's value CID to a different value flips to Divergent
+#[test]
+fn op_coverage_verdict_same_flips_to_divergent_when_value_cids_differ() {
+    let val_a = test_dimension_value("ValueA");
+    let val_b = test_dimension_value("ValueB");
+    let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    // Same: both kits use val_a.
+    let decl_same = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    assert_eq!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_same).expect("no error"),
+        OpCoverageVerdict::Same,
+    );
+    // Divergent: target uses val_b.
+    let decl_divergent = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
+    assert!(matches!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_divergent).expect("no error"),
+        OpCoverageVerdict::Divergent(_)
+    ));
+}
+
+// -- Same: structural -- no payload, not a tuple or struct variant
+#[test]
+fn op_coverage_verdict_same_is_unit_variant() {
+    let val_a = test_dimension_value("ValueA");
+    let decl_a = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    let decl_b = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    let verdict = decl_a.compare_op_with(TEST_OP_A, &decl_b).expect("no error");
+    assert_eq!(verdict, OpCoverageVerdict::Same);
+    assert_eq!(verdict.clone(), OpCoverageVerdict::Same);
+}
+
+// -- Divergent: positive -- both kits present with differing value CIDs
+#[test]
+fn op_coverage_verdict_divergent_when_both_kits_have_differing_values() {
+    let val_a = test_dimension_value("ValueA");
+    let val_b = test_dimension_value("ValueB");
+    let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    let decl_target = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
+    assert!(matches!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_target).expect("no internal error"),
+        OpCoverageVerdict::Divergent(_)
+    ));
+}
+
+// -- Divergent: discrimination -- making value CIDs identical flips to Same
+#[test]
+fn op_coverage_verdict_divergent_flips_to_same_when_value_cids_made_equal() {
+    let val_a = test_dimension_value("ValueA");
+    let val_b = test_dimension_value("ValueB");
+    let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    // Divergent: different values.
+    let decl_target_diff = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
+    assert!(matches!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_target_diff).expect("no error"),
+        OpCoverageVerdict::Divergent(_)
+    ));
+    // Same: identical values.
+    let decl_target_same = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
+    assert_eq!(
+        decl_source.compare_op_with(TEST_OP_A, &decl_target_same).expect("no error"),
+        OpCoverageVerdict::Same,
+    );
+}
+
+// -- Divergent: structural -- payload contains source_compare_to and target_compare_to
+#[test]
+fn op_coverage_verdict_divergent_carries_both_compare_to_formulas() {
+    let val_a = test_dimension_value("ValueA");
+    let val_b = test_dimension_value("ValueB");
+    let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
+    let decl_target = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b.clone());
+    let verdict = decl_source.compare_op_with(TEST_OP_A, &decl_target).expect("no error");
+    match verdict {
+        OpCoverageVerdict::Divergent(ref d) => {
+            assert_eq!(d.dimension_name, "TestDimension");
+            assert_eq!(d.source_value_cid, val_a.cid);
+            assert_eq!(d.target_value_cid, val_b.cid);
+            assert_eq!(
+                d.source_compare_to,
+                IrFormula::Atomic { name: "test:ValueA".to_string(), args: vec![] }
+            );
+            assert_eq!(
+                d.target_compare_to,
+                IrFormula::Atomic { name: "test:ValueB".to_string(), args: vec![] }
+            );
+        }
+        other => panic!("expected Divergent but got {other:?}"),
+    }
 }
 
 #[test]

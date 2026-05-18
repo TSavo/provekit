@@ -815,7 +815,7 @@ pub struct PlatformSemanticsDeclaration {
     pub op_aliases: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DivergenceCharacterization {
     pub dimension_name: String,
     pub source_value_cid: String,
@@ -824,10 +824,48 @@ pub struct DivergenceCharacterization {
     pub target_compare_to: IrFormula,
 }
 
+/// Which side of a comparison was absent when a tag was only present on one kit.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    /// The source kit did not declare a tag for the op-CID.
+    Source,
+    /// The target kit did not declare a tag for the op-CID.
+    Target,
+}
+
+/// Four-state verdict returned by `compare_op_with`.
+///
+/// This replaces the previous `Result<Option<DivergenceCharacterization>, PlatformSemanticComparisonError>`
+/// shape, which conflated "both kits absent" with "exactly one kit absent".
+/// The two op-absent cases have distinct semantics: both-absent means the
+/// substrate has no opinion (caller should continue); exactly-one-absent means
+/// the substrate cannot characterize the divergence (caller must refuse).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum OpCoverageVerdict {
+    /// Neither kit declares a tag for this op. Substrate has no opinion.
+    /// The caller should continue (this op is not in the substrate alphabet
+    /// for the source/target kit pair).
+    NoOpinion,
+
+    /// Exactly one kit declares a tag. The substrate cannot characterize
+    /// the divergence; the caller must route to the refuse leg of the
+    /// trichotomy.
+    Uncharacterizable { absent_on: Side },
+
+    /// Both kits declare a tag and the dimension values are identical.
+    Same,
+
+    /// Both kits declare a tag and the dimension values differ. The
+    /// characterization carries both sides compare_to formulas for
+    /// IrFormula::DivergenceBetween construction at the loss-record layer.
+    Divergent(DivergenceCharacterization),
+}
+
+/// Errors that indicate internal substrate inconsistency (a tag references
+/// a value CID that is absent from `dimension_values`). These are distinct
+/// from op-absent cases, which are handled by `OpCoverageVerdict`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlatformSemanticComparisonError {
-    SourceOpAbsent { op_cid: String },
-    TargetOpAbsent { op_cid: String },
     SourceValueAbsent { value_cid: String },
     TargetValueAbsent { value_cid: String },
 }
@@ -837,17 +875,24 @@ impl PlatformSemanticsDeclaration {
         &self,
         op_cid: &str,
         target: &Self,
-    ) -> Result<Option<DivergenceCharacterization>, PlatformSemanticComparisonError> {
-        let source_tag = self.tag_for_op(op_cid).ok_or_else(|| {
-            PlatformSemanticComparisonError::SourceOpAbsent {
-                op_cid: op_cid.to_string(),
+    ) -> Result<OpCoverageVerdict, PlatformSemanticComparisonError> {
+        let source_tag = self.tag_for_op(op_cid);
+        let target_tag = target.tag_for_op(op_cid);
+
+        let (source_tag, target_tag) = match (source_tag, target_tag) {
+            (None, None) => return Ok(OpCoverageVerdict::NoOpinion),
+            (None, Some(_)) => {
+                return Ok(OpCoverageVerdict::Uncharacterizable {
+                    absent_on: Side::Source,
+                })
             }
-        })?;
-        let target_tag = target.tag_for_op(op_cid).ok_or_else(|| {
-            PlatformSemanticComparisonError::TargetOpAbsent {
-                op_cid: op_cid.to_string(),
+            (Some(_), None) => {
+                return Ok(OpCoverageVerdict::Uncharacterizable {
+                    absent_on: Side::Target,
+                })
             }
-        })?;
+            (Some(s), Some(t)) => (s, t),
+        };
 
         for (dimension_name, source_value_cid) in &source_tag.dimensions {
             let Some(target_value_cid) = target_tag.dimensions.get(dimension_name) else {
@@ -867,7 +912,7 @@ impl PlatformSemanticsDeclaration {
                     value_cid: target_value_cid.clone(),
                 }
             })?;
-            return Ok(Some(DivergenceCharacterization {
+            return Ok(OpCoverageVerdict::Divergent(DivergenceCharacterization {
                 dimension_name: dimension_name.clone(),
                 source_value_cid: source_value_cid.clone(),
                 target_value_cid: target_value_cid.clone(),
@@ -876,7 +921,7 @@ impl PlatformSemanticsDeclaration {
             }));
         }
 
-        Ok(None)
+        Ok(OpCoverageVerdict::Same)
     }
 
     fn tag_for_op(&self, op_cid: &str) -> Option<&PlatformSemanticTag> {

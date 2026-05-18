@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
 use libprovekit::core::{
-    execute_path, platform_semantics_for_lower_target, DivergenceCharacterization,
-    HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
-    PlatformSemanticComparisonError, PlatformSemanticsDeclaration, Verb,
+    execute_path, platform_semantics_for_binding, platform_semantics_for_lower_target,
+    DivergenceCharacterization, HashMapInputCatalog, Input, KitRegistry, LowerKit,
+    OpCoverageVerdict, Path as CorePath, PathAlgebra, PlatformSemanticComparisonError,
+    PlatformSemanticsDeclaration, Side, Verb,
 };
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo,
@@ -34,6 +35,11 @@ const SYNC_EFFECT: &str = "sync";
 const FIXTURE_STATE_CID: &str = "blake3-512:295e0fd280088fc1e5e00d7bade11a2bf850c932180622e28f2fc92e64f97cd5bd757a73acf07f888b7c523e8efb65d8f0d01d50bc02740e5d771e750485d8f4";
 const SQL_QUERY_CONCEPT_CID: &str = "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1";
 const SQL_EXECUTE_CONCEPT_CID: &str = "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9";
+// CID for concept:insert-and-get-id, minted from its AlgorithmMemento via JCS+blake3-512.
+// Characterizes INSERT callsites that capture the newly inserted row id via the
+// binding-library's id-retrieval mechanism (LastInsertRowid for better-sqlite3,
+// ReturningClause for pg). Finer than concept:sql-execute for the divergence walk.
+const SQL_INSERT_AND_GET_ID_CONCEPT_CID: &str = "blake3-512:0a4f0a8d36d8dee96b8d5b32a18bb390f35877ecef611771048c6e10cfc3d25ad8f59de89b00c7794f62cabaf91dbd779244338393a8bb6ef5e8309b0929b3ca";
 
 pub fn run(args: BindArgs) -> u8 {
     match run_inner(args) {
@@ -97,7 +103,9 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
 
     let semantic_changes = platform_semantic_changes_for_targets(
         &source_lang,
+        &source_tag,
         &target_lang,
+        &target_tag,
         &sql_callsites,
         args.focus.as_deref(),
     )?;
@@ -171,7 +179,7 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         receipt.aggregate_summary.refused
     );
     println!(
-        "{} lossy sites: sqlite-specific last_insert_rowid semantics",
+        "{} lossy callsites: kit-declared dimension divergence",
         receipt.aggregate_summary.lossy
     );
 
@@ -294,7 +302,6 @@ struct SqlCallsite {
     cid: String,
     concept_cid: String,
     function: String,
-    lossy: bool,
     sample_args: Vec<JsonValue>,
     sql: String,
     substituted_body: String,
@@ -477,12 +484,21 @@ fn extract_sql_callsites(
         let absolute_prepare = function.body_start + local_prepare;
         let before = location_for_file(source, absolute_prepare, "src/users.ts");
         let is_execute = function.body.contains(".run(");
-        let concept_name = if is_execute {
+        // Finer classification: an execute callsite that also accesses `.lastInsertRowid`
+        // is typed as concept:insert-and-get-id rather than the coarser concept:sql-execute.
+        // Pattern: the callsite body contains the `.lastInsertRowid` property access, which
+        // is how better-sqlite3 exposes the newly inserted row id from stmt.run().
+        let has_last_insert_rowid = function.body.contains(".lastInsertRowid");
+        let concept_name = if is_execute && has_last_insert_rowid {
+            "concept:insert-and-get-id"
+        } else if is_execute {
             "concept:sql-execute"
         } else {
             "concept:sql-query"
         };
-        let concept_cid = if is_execute {
+        let concept_cid = if is_execute && has_last_insert_rowid {
+            SQL_INSERT_AND_GET_ID_CONCEPT_CID
+        } else if is_execute {
             SQL_EXECUTE_CONCEPT_CID
         } else {
             SQL_QUERY_CONCEPT_CID
@@ -505,7 +521,6 @@ fn extract_sql_callsites(
             cid,
             concept_cid: concept_cid.to_string(),
             function: function.name.clone(),
-            lossy: function.body.contains("lastInsertRowid"),
             sample_args,
             sql,
             substituted_body: substituted_body_for(&function.name),
@@ -676,6 +691,10 @@ fn parse_string_literal(arg: &str) -> Option<String> {
 struct PlatformSemanticChangeSet {
     changed_callsites: Vec<ChangedCallsite>,
     divergences_by_callsite_and_dimension: BTreeMap<(String, String), DivergenceCharacterization>,
+    /// Callsites where exactly one kit declared a tag for the op-CID; the
+    /// substrate cannot characterize the divergence. These are routed to the
+    /// refuse leg of the trichotomy by the caller.
+    uncharacterizable_callsites: Vec<(String, Side)>,
 }
 
 fn validate_focus(focus: Option<&str>, sql_callsites: &[SqlCallsite]) -> Result<(), String> {
@@ -706,14 +725,19 @@ fn async_changed_callsites(
 
 fn platform_semantic_changes_for_targets(
     source_lang: &str,
+    source_tag: &str,
     target_lang: &str,
+    target_tag: &str,
     sql_callsites: &[SqlCallsite],
     focus: Option<&str>,
 ) -> Result<PlatformSemanticChangeSet, String> {
-    let Some(source) = platform_semantics_for_lower_target(source_lang) else {
+    // Compose language-kit (per-op platform semantics: overflow, rounding, etc.)
+    // with binding-kit (per-op library semantics: RowIdMechanism, etc.).
+    // Binding-kit wins on op-CID conflicts.
+    let Some(source) = platform_semantics_for_binding(source_lang, source_tag) else {
         return Ok(PlatformSemanticChangeSet::default());
     };
-    let Some(target) = platform_semantics_for_lower_target(target_lang) else {
+    let Some(target) = platform_semantics_for_binding(target_lang, target_tag) else {
         return Ok(PlatformSemanticChangeSet::default());
     };
     platform_semantic_changes(&source, &target, sql_callsites, focus)
@@ -731,19 +755,31 @@ fn platform_semantic_changes(
         .iter()
         .filter(|callsite| focus.is_none_or(|focus| focus == callsite.cid))
     {
-        let Some(divergence) = source.compare_op_with(&callsite.concept_cid, target)? else {
-            continue;
-        };
-        let effect = divergence_effect_cid(&divergence);
-        let dimension_name = divergence.dimension_name.clone();
-        changes.changed_callsites.push(ChangedCallsite {
-            callsite_cid: callsite.cid.clone(),
-            dimension_name: Some(dimension_name.clone()),
-            effect: effect.clone(),
-        });
-        changes
-            .divergences_by_callsite_and_dimension
-            .insert((callsite.cid.clone(), dimension_name), divergence);
+        match source.compare_op_with(&callsite.concept_cid, target)? {
+            OpCoverageVerdict::NoOpinion | OpCoverageVerdict::Same => {
+                // Neither kit has an opinion on this op, or both agree. No action.
+                continue;
+            }
+            OpCoverageVerdict::Uncharacterizable { absent_on } => {
+                // Exactly one kit declared a tag. The substrate cannot characterize
+                // the divergence; record for the refuse leg.
+                changes
+                    .uncharacterizable_callsites
+                    .push((callsite.cid.clone(), absent_on));
+            }
+            OpCoverageVerdict::Divergent(divergence) => {
+                let effect = divergence_effect_cid(&divergence);
+                let dimension_name = divergence.dimension_name.clone();
+                changes.changed_callsites.push(ChangedCallsite {
+                    callsite_cid: callsite.cid.clone(),
+                    dimension_name: Some(dimension_name.clone()),
+                    effect: effect.clone(),
+                });
+                changes
+                    .divergences_by_callsite_and_dimension
+                    .insert((callsite.cid.clone(), dimension_name), divergence);
+            }
+        }
     }
     Ok(changes)
 }
@@ -1071,20 +1107,6 @@ fn build_receipt(
         loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
         loss_records.push(loss);
     }
-    for callsite in sql_callsites.iter().filter(|c| c.lossy) {
-        let mut loss = LossRecordMemento {
-            callsite_cid: callsite.cid.clone(),
-            cid: String::new(),
-            kind: "loss-record".to_string(),
-            loss_dimension: "last_insert_rowid".to_string(),
-            loss_dimensions: BTreeMap::new(),
-            schema_version: "1".to_string(),
-            substituted_body: callsite.substituted_body.clone(),
-        };
-        loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
-        loss_records.push(loss);
-    }
-
     let mut aggregate_summary = AggregateSummaryMemento {
         cid: String::new(),
         halted: halt_mementos.len(),
@@ -2179,7 +2201,6 @@ mod tests {
             cid: cid.to_string(),
             concept_cid: concept_cid.to_string(),
             function: function.to_string(),
-            lossy: false,
             sample_args: Vec::new(),
             sql: String::new(),
             substituted_body: format!("{function}:{cid}"),
@@ -2335,18 +2356,37 @@ mod tests {
     fn point_query_uncharacterizable_absent_op_routes_to_refuse_signal() {
         let source = platform_semantics_for_lower_target("rust").expect("rust semantics");
         let target = platform_semantics_for_lower_target("java").expect("java semantics");
+        // Find a rust-only op: present in source, absent in target.
+        // After the OpCoverageVerdict refactor this returns Ok(Uncharacterizable)
+        // rather than Err(TargetOpAbsent), so we match on the verdict directly.
         let rust_only_op = source
             .tags
             .iter()
             .map(|tag| tag.op_cid.as_str())
-            .find(|op_cid| target.compare_op_with(op_cid, &target).is_err())
+            .find(|op_cid| {
+                matches!(
+                    source.compare_op_with(op_cid, &target),
+                    Ok(OpCoverageVerdict::Uncharacterizable {
+                        absent_on: Side::Target
+                    })
+                )
+            })
             .expect("rust-only op fixture exists");
         let callsites = vec![callsite("cs:rust-native", rust_only_op, "native")];
 
-        assert!(matches!(
-            platform_semantic_changes(&source, &target, &callsites, None),
-            Err(PlatformSemanticComparisonError::TargetOpAbsent { .. })
-        ));
+        let changes = platform_semantic_changes(&source, &target, &callsites, None)
+            .expect("uncharacterizable does not bubble as error");
+        assert_eq!(changes.uncharacterizable_callsites.len(), 1);
+        assert_eq!(changes.uncharacterizable_callsites[0].0, "cs:rust-native");
+        assert_eq!(
+            changes.uncharacterizable_callsites[0].1,
+            Side::Target,
+            "source has the tag; target is absent"
+        );
+        assert!(
+            changes.changed_callsites.is_empty(),
+            "uncharacterizable must not appear in changed_callsites"
+        );
     }
 
     fn atom(name: &str) -> IrFormula {
@@ -2354,5 +2394,112 @@ mod tests {
             name: name.to_string(),
             args: vec![],
         }
+    }
+
+    // Helper: build a minimal TsFunction whose body looks like a real
+    // better-sqlite3 insert-and-capture-id callsite.
+    fn ts_function_with_body(name: &str, body: &str, body_start: usize) -> TsFunction {
+        TsFunction {
+            body: body.to_string(),
+            body_start,
+            is_async: false,
+            line: 1,
+            name: name.to_string(),
+            public_sync_contract_cid: None,
+            return_type: "{ id: number }".to_string(),
+            signature: format!("function {name}(name: string): {{ id: number }}"),
+        }
+    }
+
+    // Integration test: extract_sql_callsites assigns concept:insert-and-get-id
+    // to a callsite whose body contains both .run( and .lastInsertRowid.
+    #[test]
+    fn extract_sql_callsites_classifies_last_insert_rowid_as_insert_and_get_id() {
+        // Minimal source with the function body placed at offset 0.
+        // Use a string literal arg ("alice") so extract_sample_args succeeds.
+        let body = concat!(
+            "const stmt = db.prepare('INSERT INTO users (name) VALUES (?)');\n",
+            "const result = stmt.run('alice');\n",
+            "return { id: Number(result.lastInsertRowid) };\n"
+        );
+        let source = body;
+        let functions = vec![ts_function_with_body("createUser", body, 0)];
+
+        let callsites =
+            extract_sql_callsites(source, &functions).expect("extract_sql_callsites must succeed");
+
+        assert_eq!(callsites.len(), 1, "expected exactly one SQL callsite");
+        let site = &callsites[0];
+
+        // Primary assertion: the finer concept-op CID must be insert-and-get-id
+        assert_eq!(
+            site.concept_cid, SQL_INSERT_AND_GET_ID_CONCEPT_CID,
+            "callsite with .run( + .lastInsertRowid must get concept:insert-and-get-id CID"
+        );
+
+        // Discrimination: must NOT be the coarser sql-execute CID
+        assert_ne!(
+            site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
+            "callsite must NOT be classified as concept:sql-execute when lastInsertRowid is present"
+        );
+    }
+
+    // Discrimination: extract_sql_callsites keeps concept:sql-execute for plain run( callsites
+    // that do NOT access lastInsertRowid.
+    #[test]
+    fn extract_sql_callsites_keeps_sql_execute_for_plain_run_callsite() {
+        // Use userId (ends with "id") so extract_sample_args resolves to fixture 1.
+        let body = concat!(
+            "const stmt = db.prepare('UPDATE users SET active = 1 WHERE id = ?');\n",
+            "stmt.run(userId);\n"
+        );
+        let source = body;
+        let functions = vec![ts_function_with_body("activateUser", body, 0)];
+
+        let callsites =
+            extract_sql_callsites(source, &functions).expect("extract_sql_callsites must succeed");
+
+        assert_eq!(callsites.len(), 1, "expected exactly one SQL callsite");
+        let site = &callsites[0];
+
+        assert_eq!(
+            site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
+            "plain .run( without lastInsertRowid must remain concept:sql-execute"
+        );
+        assert_ne!(
+            site.concept_cid, SQL_INSERT_AND_GET_ID_CONCEPT_CID,
+            "plain .run( without lastInsertRowid must NOT get insert-and-get-id"
+        );
+    }
+
+    // Discrimination: extract_sql_callsites assigns concept:sql-query for read callsites.
+    #[test]
+    fn extract_sql_callsites_assigns_sql_query_for_get_callsite() {
+        // Use userId (ends with "id") so extract_sample_args resolves to fixture 1.
+        let body = concat!(
+            "const stmt = db.prepare('SELECT * FROM users WHERE id = ?');\n",
+            "return stmt.get(userId);\n"
+        );
+        let source = body;
+        let functions = vec![ts_function_with_body("getUser", body, 0)];
+
+        let callsites =
+            extract_sql_callsites(source, &functions).expect("extract_sql_callsites must succeed");
+
+        assert_eq!(callsites.len(), 1, "expected exactly one SQL callsite");
+        let site = &callsites[0];
+
+        assert_eq!(
+            site.concept_cid, SQL_QUERY_CONCEPT_CID,
+            ".get( callsite must be concept:sql-query"
+        );
+        assert_ne!(
+            site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
+            ".get( callsite must NOT be concept:sql-execute"
+        );
+        assert_ne!(
+            site.concept_cid, SQL_INSERT_AND_GET_ID_CONCEPT_CID,
+            ".get( callsite must NOT be concept:insert-and-get-id"
+        );
     }
 }
