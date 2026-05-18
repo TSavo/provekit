@@ -1,0 +1,24 @@
+{
+  "name": "hello_world",
+  "original_source": "def hello_world():\n    print(\"Hello, world!\")\n",
+  "declared_test_inputs": [
+    {
+      "entrypoint": "hello_world",
+      "args": []
+    }
+  ],
+  "expected_output": [
+    {
+      "stdout": "Hello, world!\n",
+      "return_value": null,
+      "exit_code": 0
+    }
+  ],
+  "realize_request": {
+    "function": "hello_world",
+    "params": [],
+    "param_types": [],
+    "return_type": "()",
+    "concept_name": "hello-world"
+  }
+}
