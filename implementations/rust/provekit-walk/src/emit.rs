@@ -70,10 +70,11 @@ pub fn rust_function_term_json_for_file(
 ) -> Result<Vec<u8>, String> {
     let target = find_term_function(file, function_name)
         .ok_or_else(|| format!("function `{function_name}` not found"))?;
-    let value = rust_function_term_json_value_with_losses(
+    let value = rust_function_term_json_value_with_context(
         &target.item_fn,
-        source,
+        source.into(),
         target.contextual_losses,
+        target.ffi_declarations,
     )?;
     let canonical = serde_to_canonical(value);
     Ok(jcs_bytes_of_value(&canonical))
@@ -97,10 +98,11 @@ pub fn rust_function_term_json_cid_for_file(
 ) -> Result<String, String> {
     let target = find_term_function(file, function_name)
         .ok_or_else(|| format!("function `{function_name}` not found"))?;
-    let value = rust_function_term_json_value_with_losses(
+    let value = rust_function_term_json_value_with_context(
         &target.item_fn,
-        source,
+        source.into(),
         target.contextual_losses,
+        target.ffi_declarations,
     )?;
     let canonical = serde_to_canonical(value);
     Ok(cid_of_value(&canonical))
@@ -119,7 +121,26 @@ fn rust_function_term_json_value_with_losses(
     source: impl Into<String>,
     contextual_losses: Vec<LossRecord>,
 ) -> Result<JsonValue, String> {
-    let ctx = LoweringContext::from_item_fn_with_losses(item_fn, contextual_losses);
+    rust_function_term_json_value_with_context(
+        item_fn,
+        source.into(),
+        contextual_losses,
+        HashMap::new(),
+    )
+}
+
+fn rust_function_term_json_value_with_context(
+    item_fn: &syn::ItemFn,
+    source: String,
+    contextual_losses: Vec<LossRecord>,
+    ffi_declarations: HashMap<String, FfiDeclaration>,
+) -> Result<JsonValue, String> {
+    let ctx = LoweringContext::from_item_fn_with_context(
+        item_fn,
+        contextual_losses,
+        ffi_declarations,
+        source.clone(),
+    );
     let term = match lower_function_body_to_term(item_fn, &ctx) {
         Ok(term) => term,
         Err(_) if ctx.allows_accepted_loss_placeholder() => AlgebraTerm::skip(),
@@ -127,6 +148,7 @@ fn rust_function_term_json_value_with_losses(
     };
     let term_surface = term.surface();
     let loss_record = ctx.loss_record_json();
+    let effect_occurrences = ctx.effect_occurrences_json();
     let handling = if loss_record.is_empty() {
         "handles-fully"
     } else {
@@ -135,8 +157,9 @@ fn rust_function_term_json_value_with_losses(
     Ok(json!({
         "kind": "rust-algebra-term",
         "signature_cid": RUST_LANGUAGE_SIGNATURE_CID,
-        "source": source.into(),
+        "source": source,
         "handling": handling,
+        "effect_occurrences": effect_occurrences,
         "loss_record": loss_record,
         "term_surface": term_surface,
         "term": term.to_json()?,
@@ -170,6 +193,8 @@ const LOSS_D4_EXPR_LET: &str = "Expr::Let";
 /// Accepted-loss dimension for Rust macro invocations that are recorded without
 /// expanding their token streams.
 const LOSS_MACRO_NOT_EXPANDED: &str = "macro-not-expanded";
+
+const RUST_UNRESOLVED_CALL_EFFECT_SIGNATURE_CID: &str = "blake3-512:2d368ad6123c2617a938deb71b7094a20cecfa6229909dad7c1d368aa0f931ed9bd2ff4bbf497962f8cdf104ddda56050275e6ee4a2998ce3d75b36925c362cf";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AlgebraTerm {
@@ -339,18 +364,43 @@ struct LossRecord {
     detail: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct EffectOccurrenceRecord {
+    args: JsonValue,
+    discharge_key: String,
+    locator: JsonValue,
+    occurrence_kind: &'static str,
+    role: &'static str,
+    signature_cid: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct FfiDeclaration {
+    abi: String,
+    binding: String,
+    symbol: String,
+}
+
 #[derive(Debug, Clone)]
 struct LoweringContext {
     return_shape: ReturnShape,
+    source: String,
     vars: HashMap<String, ExprSort>,
     mutable_vars: HashSet<String>,
     ssa_aliases: HashMap<String, String>,
     ssa_versions: HashMap<String, usize>,
+    ffi_declarations: HashMap<String, FfiDeclaration>,
     losses: Rc<RefCell<Vec<LossRecord>>>,
+    effect_occurrences: Rc<RefCell<Vec<EffectOccurrenceRecord>>>,
 }
 
 impl LoweringContext {
-    fn from_item_fn_with_losses(item_fn: &syn::ItemFn, contextual_losses: Vec<LossRecord>) -> Self {
+    fn from_item_fn_with_context(
+        item_fn: &syn::ItemFn,
+        contextual_losses: Vec<LossRecord>,
+        ffi_declarations: HashMap<String, FfiDeclaration>,
+        source: String,
+    ) -> Self {
         let mut vars = HashMap::new();
         let mut mutable_vars = HashSet::new();
         for arg in &item_fn.sig.inputs {
@@ -369,6 +419,7 @@ impl LoweringContext {
             }
         }
         let losses = Rc::new(RefCell::new(Vec::new()));
+        let effect_occurrences = Rc::new(RefCell::new(Vec::new()));
         for loss in contextual_losses {
             push_loss(&losses, loss);
         }
@@ -396,11 +447,14 @@ impl LoweringContext {
         }
         Self {
             return_shape,
+            source,
             vars,
             mutable_vars,
             ssa_aliases: HashMap::new(),
             ssa_versions: HashMap::new(),
+            ffi_declarations,
             losses,
+            effect_occurrences,
         }
     }
 
@@ -431,11 +485,14 @@ impl LoweringContext {
         ssa_versions.remove(&name);
         Self {
             return_shape: self.return_shape.clone(),
+            source: self.source.clone(),
             vars,
             mutable_vars,
             ssa_aliases,
             ssa_versions,
+            ffi_declarations: self.ffi_declarations.clone(),
             losses: Rc::clone(&self.losses),
+            effect_occurrences: Rc::clone(&self.effect_occurrences),
         }
     }
 
@@ -473,11 +530,14 @@ impl LoweringContext {
         ssa_versions.insert(source_name.to_string(), next_version);
         let ctx = Self {
             return_shape: self.return_shape.clone(),
+            source: self.source.clone(),
             vars,
             mutable_vars,
             ssa_aliases,
             ssa_versions,
+            ffi_declarations: self.ffi_declarations.clone(),
             losses: Rc::clone(&self.losses),
+            effect_occurrences: Rc::clone(&self.effect_occurrences),
         };
         (rebound_name, ctx)
     }
@@ -500,6 +560,46 @@ impl LoweringContext {
                 json!({
                     "loss": record.loss,
                     "detail": record.detail,
+                })
+            })
+            .collect()
+    }
+
+    fn add_ffi_call_effect_occurrence(&self, declaration: &FfiDeclaration) {
+        let occurrence = EffectOccurrenceRecord {
+            args: json!({
+                "name": declaration.symbol.clone(),
+            }),
+            discharge_key: format!("unresolved-call:{}", declaration.symbol),
+            locator: json!({
+                "abi": declaration.abi.clone(),
+                "binding": declaration.binding.clone(),
+                "file": self.source.clone(),
+                "source": "extern",
+            }),
+            occurrence_kind: "UnresolvedCall",
+            role: "body",
+            signature_cid: RUST_UNRESOLVED_CALL_EFFECT_SIGNATURE_CID,
+        };
+        push_effect_occurrence(&self.effect_occurrences, occurrence);
+    }
+
+    fn ffi_declaration(&self, callee: &str) -> Option<FfiDeclaration> {
+        self.ffi_declarations.get(callee).cloned()
+    }
+
+    fn effect_occurrences_json(&self) -> Vec<JsonValue> {
+        self.effect_occurrences
+            .borrow()
+            .iter()
+            .map(|record| {
+                json!({
+                    "args": record.args.clone(),
+                    "discharge_key": record.discharge_key.clone(),
+                    "locator": record.locator.clone(),
+                    "occurrence_kind": record.occurrence_kind,
+                    "role": record.role,
+                    "signature_cid": record.signature_cid,
                 })
             })
             .collect()
@@ -528,20 +628,36 @@ fn push_loss(losses: &Rc<RefCell<Vec<LossRecord>>>, loss: LossRecord) {
     }
 }
 
+fn push_effect_occurrence(
+    effect_occurrences: &Rc<RefCell<Vec<EffectOccurrenceRecord>>>,
+    occurrence: EffectOccurrenceRecord,
+) {
+    let mut effect_occurrences = effect_occurrences.borrow_mut();
+    if !effect_occurrences
+        .iter()
+        .any(|record| record == &occurrence)
+    {
+        effect_occurrences.push(occurrence);
+    }
+}
+
 struct TermFunctionContext {
     item_fn: syn::ItemFn,
     contextual_losses: Vec<LossRecord>,
+    ffi_declarations: HashMap<String, FfiDeclaration>,
 }
 
 fn find_term_function(file: &syn::File, name: &str) -> Option<TermFunctionContext> {
     let file_losses = accepted_losses_for_file(file);
-    find_term_function_in_items(&file.items, name, &file_losses)
+    let ffi_declarations = ffi_declarations_for_file(file);
+    find_term_function_in_items(&file.items, name, &file_losses, &ffi_declarations)
 }
 
 fn find_term_function_in_items(
     items: &[syn::Item],
     name: &str,
     inherited_losses: &[LossRecord],
+    ffi_declarations: &HashMap<String, FfiDeclaration>,
 ) -> Option<TermFunctionContext> {
     for item in items {
         match item {
@@ -549,6 +665,7 @@ fn find_term_function_in_items(
                 return Some(TermFunctionContext {
                     item_fn: item_fn.clone(),
                     contextual_losses: inherited_losses.to_vec(),
+                    ffi_declarations: ffi_declarations.clone(),
                 });
             }
             syn::Item::Impl(impl_block) => {
@@ -575,6 +692,7 @@ fn find_term_function_in_items(
                                     block: Box::new(method.block.clone()),
                                 },
                                 contextual_losses: impl_losses,
+                                ffi_declarations: ffi_declarations.clone(),
                             });
                         }
                     }
@@ -584,9 +702,12 @@ fn find_term_function_in_items(
                 if let Some((_, nested_items)) = &module.content {
                     let mut module_losses = inherited_losses.to_vec();
                     module_losses.extend(accepted_losses_for_attrs(&module.attrs));
-                    if let Some(found) =
-                        find_term_function_in_items(nested_items, name, &module_losses)
-                    {
+                    if let Some(found) = find_term_function_in_items(
+                        nested_items,
+                        name,
+                        &module_losses,
+                        ffi_declarations,
+                    ) {
                         return Some(found);
                     }
                 }
@@ -595,6 +716,77 @@ fn find_term_function_in_items(
         }
     }
     None
+}
+
+fn ffi_declarations_for_file(file: &syn::File) -> HashMap<String, FfiDeclaration> {
+    let mut declarations = HashMap::new();
+    collect_ffi_declarations_in_items(&file.items, &mut Vec::new(), &mut declarations);
+    declarations
+}
+
+fn collect_ffi_declarations_in_items(
+    items: &[syn::Item],
+    module_path: &mut Vec<String>,
+    declarations: &mut HashMap<String, FfiDeclaration>,
+) {
+    for item in items {
+        match item {
+            syn::Item::ForeignMod(foreign_mod) => {
+                let abi = foreign_mod
+                    .abi
+                    .name
+                    .as_ref()
+                    .map(|name| name.value())
+                    .unwrap_or_else(|| "Rust".to_string());
+                for foreign_item in &foreign_mod.items {
+                    let syn::ForeignItem::Fn(foreign_fn) = foreign_item else {
+                        continue;
+                    };
+                    let binding = foreign_fn.sig.ident.to_string();
+                    let symbol =
+                        link_name_from_attrs(&foreign_fn.attrs).unwrap_or_else(|| binding.clone());
+                    let declaration = FfiDeclaration {
+                        abi: abi.clone(),
+                        binding: binding.clone(),
+                        symbol,
+                    };
+                    declarations.insert(binding.clone(), declaration.clone());
+                    if !module_path.is_empty() {
+                        let mut qualified = module_path.join("::");
+                        qualified.push_str("::");
+                        qualified.push_str(&binding);
+                        declarations.insert(qualified, declaration);
+                    }
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested_items)) = &module.content {
+                    module_path.push(module.ident.to_string());
+                    collect_ffi_declarations_in_items(nested_items, module_path, declarations);
+                    module_path.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn link_name_from_attrs(attrs: &[syn::Attribute]) -> Option<String> {
+    attrs.iter().find_map(|attr| {
+        if !attr.path().is_ident("link_name") {
+            return None;
+        }
+        let syn::Meta::NameValue(name_value) = &attr.meta else {
+            return None;
+        };
+        let Expr::Lit(expr_lit) = &name_value.value else {
+            return None;
+        };
+        let Lit::Str(lit) = &expr_lit.lit else {
+            return None;
+        };
+        Some(lit.value())
+    })
 }
 
 fn accepted_losses_for_file(file: &syn::File) -> Vec<LossRecord> {
@@ -819,6 +1011,7 @@ fn lower_expr_to_stmt(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraTerm,
         Expr::Block(block) => lower_stmts_to_stmt(&block.block.stmts, ctx),
         Expr::ForLoop(for_loop) => lower_for_loop_to_stmt(for_loop, ctx),
         Expr::Match(match_expr) => lower_match_to_stmt(match_expr, ctx),
+        Expr::Unsafe(unsafe_expr) => lower_stmts_to_stmt(&unsafe_expr.block.stmts, ctx),
         Expr::MethodCall(method) => {
             if method.turbofish.is_some() {
                 return Err(
@@ -1016,14 +1209,14 @@ fn lower_return_expr_to_value_term(
 ) -> Result<AlgebraTerm, String> {
     match &ctx.return_shape {
         ReturnShape::Full(ExprSort::Bool) => {
-            if matches!(expr, Expr::Call(_) | Expr::MethodCall(_)) {
+            if matches!(expr, Expr::Call(_) | Expr::MethodCall(_) | Expr::Unsafe(_)) {
                 lower_expr_to_value_term(expr, ctx)
             } else {
                 lower_expr_to_bool_term(expr, ctx)
             }
         }
         ReturnShape::Full(ExprSort::Int) => {
-            if matches!(expr, Expr::Call(_) | Expr::MethodCall(_)) {
+            if matches!(expr, Expr::Call(_) | Expr::MethodCall(_) | Expr::Unsafe(_)) {
                 lower_expr_to_value_term(expr, ctx)
             } else {
                 lower_expr_to_int_term(expr, ctx)
@@ -1126,6 +1319,7 @@ fn lower_expr_to_int_term(expr: &Expr, ctx: &LoweringContext) -> Result<AlgebraT
                 | Expr::MethodCall(_)
                 | Expr::Paren(_)
                 | Expr::Path(_)
+                | Expr::Unsafe(_)
                 | Expr::Unary(_)
         ) =>
         {
@@ -1157,6 +1351,7 @@ fn lower_expr_to_unit_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebra
     match expr {
         Expr::Tuple(tuple) if tuple.elems.is_empty() => Ok(AlgebraTerm::Unit),
         Expr::Block(block) if block.block.stmts.is_empty() => Ok(AlgebraTerm::Unit),
+        Expr::Unsafe(unsafe_expr) => lower_stmts_to_stmt(&unsafe_expr.block.stmts, ctx),
         Expr::ForLoop(_) | Expr::If(_) | Expr::Match(_) => lower_expr_to_stmt(expr, ctx),
         _ => Err(format!("unsupported unit expression {}", expr_kind(expr))),
     }
@@ -1180,6 +1375,12 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
         Expr::Block(block) => {
             let Some(tail) = block_single_tail_expr(&block.block) else {
                 return Err("block expression has no single tail expression".to_string());
+            };
+            lower_expr_to_value_term(tail, ctx)
+        }
+        Expr::Unsafe(unsafe_expr) => {
+            let Some(tail) = block_single_tail_expr(&unsafe_expr.block) else {
+                return Err("unsafe block expression has no single tail expression".to_string());
             };
             lower_expr_to_value_term(tail, ctx)
         }
@@ -1478,7 +1679,9 @@ fn lower_call_expr_to_value_term(
             ("unknown".to_string(), "unknown".to_string())
         }
     };
-    ctx.add_loss("ffi-call-unresolved-effect", callee.clone());
+    if let Some(declaration) = ctx.ffi_declaration(&callee) {
+        ctx.add_ffi_call_effect_occurrence(&declaration);
+    }
     let args = call
         .args
         .iter()
@@ -1494,26 +1697,22 @@ fn lower_method_call_expr_to_value_term(
     method: &syn::ExprMethodCall,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
-    lower_method_call_expr_to_value_term_with_options(method, ctx, true, false)
+    lower_method_call_expr_to_value_term_with_options(method, ctx, false)
 }
 
 fn lower_method_call_expr_to_statement_value_term(
     method: &syn::ExprMethodCall,
     ctx: &LoweringContext,
 ) -> Result<AlgebraTerm, String> {
-    lower_method_call_expr_to_value_term_with_options(method, ctx, false, true)
+    lower_method_call_expr_to_value_term_with_options(method, ctx, true)
 }
 
 fn lower_method_call_expr_to_value_term_with_options(
     method: &syn::ExprMethodCall,
     ctx: &LoweringContext,
-    record_outer_effect: bool,
     statement_mut_args: bool,
 ) -> Result<AlgebraTerm, String> {
     let method_name = method.method.to_string();
-    if record_outer_effect {
-        ctx.add_loss("ffi-call-unresolved-effect", method_name.clone());
-    }
     let receiver = lower_expr_to_value_term(&method.receiver, ctx)?;
     let args = method
         .args

@@ -135,7 +135,7 @@ fn lowers_byte_vec_return_type_with_partial_loss_record() {
 }
 
 #[test]
-fn lowers_simple_call_expression_with_unresolved_call_loss() {
+fn lowers_simple_call_expression_without_ffi_effect_loss() {
     let parsed = term_json(
         r#"
             fn helper(x: i32) -> i32 { x + 1 }
@@ -147,11 +147,8 @@ fn lowers_simple_call_expression_with_unresolved_call_loss() {
         parsed["term_surface"].as_str(),
         Some("return(call:helper(helper, [x]))")
     );
-    assert!(parsed["loss_record"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|loss| loss["loss"] == "ffi-call-unresolved-effect"));
+    assert!(parsed["loss_record"].as_array().unwrap().is_empty());
+    assert!(parsed["effect_occurrences"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -177,7 +174,7 @@ fn lowers_qualified_constructor_call_with_receiver_prefix() {
 }
 
 #[test]
-fn lowers_simple_method_call_expression_with_unresolved_call_loss() {
+fn lowers_simple_method_call_expression_without_ffi_effect_loss() {
     let parsed = term_json(
         r#"
             struct Counter(i32);
@@ -192,11 +189,8 @@ fn lowers_simple_method_call_expression_with_unresolved_call_loss() {
         parsed["term_surface"].as_str(),
         Some("return(method:bump(c, [1]))")
     );
-    assert!(parsed["loss_record"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|loss| loss["loss"] == "ffi-call-unresolved-effect"));
+    assert!(parsed["loss_record"].as_array().unwrap().is_empty());
+    assert!(parsed["effect_occurrences"].as_array().unwrap().is_empty());
 }
 
 #[test]
