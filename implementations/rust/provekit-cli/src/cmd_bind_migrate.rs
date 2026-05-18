@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
 use libprovekit::core::{
-    execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
-    Verb,
+    execute_path, platform_semantics_for_lower_target, DivergenceCharacterization,
+    HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
+    PlatformSemanticComparisonError, PlatformSemanticsDeclaration, Verb,
 };
 use libprovekit::effect_propagation::{
     propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, PropagationDecision,
@@ -16,8 +17,8 @@ use libprovekit::effect_propagation::{
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_types::{
-    AggregateSummaryMemento, CrossLanguageWitnessPair, HaltMemento, LanguageTransitionMemento,
-    LossRecordMemento, MigrateReceiptEnvelope, MigrateReceiptSignature,
+    AggregateSummaryMemento, CrossLanguageWitnessPair, HaltMemento, IrFormula,
+    LanguageTransitionMemento, LossRecordMemento, MigrateReceiptEnvelope, MigrateReceiptSignature,
     MigrationConceptSiteMemento, MigrationEffectDelta, MigrationSourceLocation,
     PromotionDecisionEnvelope, PromotionDecisionHeader, PromotionDecisionMemento,
     PromotionDecisionMetadata, PromotionGate, PromotionResult, RefusalMemento, WitnessMemento,
@@ -85,6 +86,7 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
     if sql_callsites.is_empty() {
         return Err("no better-sqlite3 SQL callsites found".to_string());
     }
+    validate_focus(args.focus.as_deref(), &sql_callsites)?;
 
     let source_binding_cid = body_template_cid(&repo_root, library_from)?;
     let target_binding_cid = body_template_cid(&repo_root, library_to)?;
@@ -93,8 +95,21 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
     probe_realize_binding(&repo_root, &source_lang, &source_tag, "concept:sql-execute")?;
     probe_realize_binding(&repo_root, &target_lang, &target_tag, "concept:sql-execute")?;
 
-    let decisions = if target_surface.requires_async_delta() {
-        let graph = build_propagation_input(&functions, &sql_callsites);
+    let semantic_changes = platform_semantic_changes_for_targets(
+        &source_lang,
+        &target_lang,
+        &sql_callsites,
+        args.focus.as_deref(),
+    )?;
+    let mut changed_callsites = semantic_changes.changed_callsites.clone();
+    if target_surface.requires_async_delta() {
+        changed_callsites.extend(async_changed_callsites(
+            &sql_callsites,
+            args.focus.as_deref(),
+        ));
+    }
+    let decisions = if !changed_callsites.is_empty() {
+        let graph = build_propagation_input(&functions, &sql_callsites, changed_callsites);
         propagate_effects(&graph)
             .map_err(|e| format!("effect propagation: {e}"))?
             .decisions
@@ -114,6 +129,7 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         &source_binding_cid,
         &target_binding_cid,
         target_surface,
+        &semantic_changes.divergences_by_effect,
     )?;
     if let Some(fixture) = witness_fixture.as_ref() {
         if target_surface.is_python() {
@@ -655,9 +671,85 @@ fn parse_string_literal(arg: &str) -> Option<String> {
     Some(out)
 }
 
+#[derive(Debug, Clone, Default)]
+struct PlatformSemanticChangeSet {
+    changed_callsites: Vec<ChangedCallsite>,
+    divergences_by_effect: BTreeMap<String, DivergenceCharacterization>,
+}
+
+fn validate_focus(focus: Option<&str>, sql_callsites: &[SqlCallsite]) -> Result<(), String> {
+    let Some(focus) = focus else {
+        return Ok(());
+    };
+    if sql_callsites.iter().any(|callsite| callsite.cid == focus) {
+        Ok(())
+    } else {
+        Err(format!("--focus callsite {focus} was not found"))
+    }
+}
+
+fn async_changed_callsites(
+    sql_callsites: &[SqlCallsite],
+    focus: Option<&str>,
+) -> Vec<ChangedCallsite> {
+    sql_callsites
+        .iter()
+        .filter(|callsite| focus.map_or(true, |focus| focus == callsite.cid))
+        .map(|callsite| ChangedCallsite {
+            callsite_cid: callsite.cid.clone(),
+            effect: ASYNC_EFFECT.to_string(),
+        })
+        .collect()
+}
+
+fn platform_semantic_changes_for_targets(
+    source_lang: &str,
+    target_lang: &str,
+    sql_callsites: &[SqlCallsite],
+    focus: Option<&str>,
+) -> Result<PlatformSemanticChangeSet, String> {
+    let Some(source) = platform_semantics_for_lower_target(source_lang) else {
+        return Ok(PlatformSemanticChangeSet::default());
+    };
+    let Some(target) = platform_semantics_for_lower_target(target_lang) else {
+        return Ok(PlatformSemanticChangeSet::default());
+    };
+    platform_semantic_changes(&source, &target, sql_callsites, focus)
+        .map_err(|error| format!("platform semantic comparison: {error:?}"))
+}
+
+fn platform_semantic_changes(
+    source: &PlatformSemanticsDeclaration,
+    target: &PlatformSemanticsDeclaration,
+    sql_callsites: &[SqlCallsite],
+    focus: Option<&str>,
+) -> Result<PlatformSemanticChangeSet, PlatformSemanticComparisonError> {
+    let mut changes = PlatformSemanticChangeSet::default();
+    for callsite in sql_callsites
+        .iter()
+        .filter(|callsite| focus.map_or(true, |focus| focus == callsite.cid))
+    {
+        let Some(divergence) = source.compare_op_with(&callsite.concept_cid, target)? else {
+            continue;
+        };
+        let effect = divergence_effect_cid(&divergence);
+        changes.changed_callsites.push(ChangedCallsite {
+            callsite_cid: callsite.cid.clone(),
+            effect: effect.clone(),
+        });
+        changes.divergences_by_effect.insert(effect, divergence);
+    }
+    Ok(changes)
+}
+
+fn divergence_effect_cid(divergence: &DivergenceCharacterization) -> String {
+    divergence.target_value_cid.clone()
+}
+
 fn build_propagation_input(
     functions: &[TsFunction],
     sql_callsites: &[SqlCallsite],
+    changed_callsites: Vec<ChangedCallsite>,
 ) -> PropagationInput {
     let mut function_map = BTreeMap::new();
     for function in functions {
@@ -691,7 +783,6 @@ fn build_propagation_input(
     }
 
     let mut callsites = BTreeMap::new();
-    let mut changed_callsites = Vec::new();
     for callsite in sql_callsites {
         callsites.insert(
             callsite.cid.clone(),
@@ -701,10 +792,6 @@ fn build_propagation_input(
                 containing_fn: callsite.function.clone(),
             },
         );
-        changed_callsites.push(ChangedCallsite {
-            callsite_cid: callsite.cid.clone(),
-            effect: ASYNC_EFFECT.to_string(),
-        });
     }
 
     for caller in functions {
@@ -840,6 +927,7 @@ fn build_receipt(
     source_binding_cid: &str,
     target_binding_cid: &str,
     target_surface: TargetSurface,
+    divergences_by_effect: &BTreeMap<String, DivergenceCharacterization>,
 ) -> Result<MigrateReceiptEnvelope, String> {
     let mut concept_sites = Vec::new();
     for callsite in sql_callsites {
@@ -922,12 +1010,51 @@ fn build_receipt(
     }
 
     let mut loss_records = Vec::new();
+    for decision in decisions.values() {
+        let PropagationDecision::Widen {
+            effect,
+            triggering_callsite_cid,
+            ..
+        } = decision
+        else {
+            continue;
+        };
+        let Some(divergence) = divergences_by_effect.get(effect) else {
+            continue;
+        };
+        let Some(callsite) = sql_callsites
+            .iter()
+            .find(|callsite| callsite.cid == *triggering_callsite_cid)
+        else {
+            continue;
+        };
+        let mut loss_dimensions = BTreeMap::new();
+        loss_dimensions.insert(
+            divergence.dimension_name.clone(),
+            IrFormula::DivergenceBetween {
+                source: Box::new(divergence.source_compare_to.clone()),
+                target: Box::new(divergence.target_compare_to.clone()),
+            },
+        );
+        let mut loss = LossRecordMemento {
+            callsite_cid: callsite.cid.clone(),
+            cid: String::new(),
+            kind: "loss-record".to_string(),
+            loss_dimension: divergence.dimension_name.clone(),
+            loss_dimensions,
+            schema_version: "1".to_string(),
+            substituted_body: callsite.substituted_body.clone(),
+        };
+        loss.cid = loss.recompute_cid().map_err(|e| e.to_string())?;
+        loss_records.push(loss);
+    }
     for callsite in sql_callsites.iter().filter(|c| c.lossy) {
         let mut loss = LossRecordMemento {
             callsite_cid: callsite.cid.clone(),
             cid: String::new(),
             kind: "loss-record".to_string(),
             loss_dimension: "last_insert_rowid".to_string(),
+            loss_dimensions: BTreeMap::new(),
             schema_version: "1".to_string(),
             substituted_body: callsite.substituted_body.clone(),
         };
@@ -1990,6 +2117,232 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
                 .map(|(k, v)| (k.clone(), json_to_value(v)))
                 .collect();
             Value::object(kv)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use libprovekit::core::{platform_semantics_for_lower_target, PlatformSemanticComparisonError};
+    use provekit_ir_types::IrFormula;
+
+    const CONCEPT_ADD_CID: &str = "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468";
+    const CONCEPT_DIV_CID: &str = "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839";
+
+    fn function(name: &str) -> TsFunction {
+        TsFunction {
+            body: format!("return {name};"),
+            body_start: 0,
+            is_async: false,
+            line: 1,
+            name: name.to_string(),
+            public_sync_contract_cid: None,
+            return_type: "number".to_string(),
+            signature: format!("function {name}(): number"),
+        }
+    }
+
+    fn callsite(cid: &str, concept_cid: &str, function: &str) -> SqlCallsite {
+        SqlCallsite {
+            after: MigrationSourceLocation {
+                column: 1,
+                file: "after.rs".to_string(),
+                line: 1,
+            },
+            before: MigrationSourceLocation {
+                column: 1,
+                file: "before.rs".to_string(),
+                line: 1,
+            },
+            cid: cid.to_string(),
+            concept_cid: concept_cid.to_string(),
+            function: function.to_string(),
+            lossy: false,
+            sample_args: Vec::new(),
+            sql: String::new(),
+            substituted_body: format!("{function}:{cid}"),
+        }
+    }
+
+    fn receipt_for(
+        source: &str,
+        target: &str,
+        callsites: &[SqlCallsite],
+        focus: Option<&str>,
+    ) -> MigrateReceiptEnvelope {
+        let source_decl =
+            platform_semantics_for_lower_target(source).expect("source semantics declared");
+        let target_decl =
+            platform_semantics_for_lower_target(target).expect("target semantics declared");
+        let changes = platform_semantic_changes(&source_decl, &target_decl, callsites, focus)
+            .expect("semantic comparison is characterizable");
+        let functions = callsites
+            .iter()
+            .map(|callsite| function(&callsite.function))
+            .collect::<Vec<_>>();
+        let graph = build_propagation_input(&functions, callsites, changes.changed_callsites);
+        let decisions = propagate_effects(&graph)
+            .expect("propagation succeeds")
+            .decisions;
+        build_receipt(
+            &decisions,
+            callsites,
+            &functions,
+            "source-binding",
+            "target-binding",
+            TargetSurface::TypescriptPg,
+            &changes.divergences_by_effect,
+        )
+        .expect("receipt builds")
+    }
+
+    #[test]
+    fn point_query_receipt_populates_divergence_loss_dimensions_and_is_byte_stable() {
+        let callsites = vec![callsite("cs:add", CONCEPT_ADD_CID, "add")];
+
+        let java_receipt = receipt_for("python", "java", &callsites, None);
+        let java_receipt_again = receipt_for("python", "java", &callsites, None);
+        assert_eq!(java_receipt.root_cid, java_receipt_again.root_cid);
+        assert_eq!(java_receipt.aggregate_summary.lossy, 1);
+        assert_eq!(java_receipt.aggregate_summary.widened, 1);
+        let java_loss = &java_receipt.loss_records[0];
+        assert_eq!(java_loss.callsite_cid, "cs:add");
+        assert!(matches!(
+            java_loss.loss_dimensions.get("ArithmeticOverflow"),
+            Some(IrFormula::DivergenceBetween { source, target })
+                if **source == atom("python:ArbitraryPrecision")
+                    && **target == atom("java:Wrapping")
+        ));
+
+        let c_receipt = receipt_for("python", "c", &callsites, None);
+        let c_loss = &c_receipt.loss_records[0];
+        assert!(matches!(
+            c_loss.loss_dimensions.get("ArithmeticOverflow"),
+            Some(IrFormula::DivergenceBetween { source, target })
+                if **source == atom("python:ArbitraryPrecision")
+                    && **target == atom("c:UndefinedBehavior")
+        ));
+        assert_ne!(java_receipt.root_cid, c_receipt.root_cid);
+    }
+
+    #[test]
+    fn point_query_changed_callsite_effect_is_target_dimension_value_cid() {
+        let callsites = vec![callsite("cs:add", CONCEPT_ADD_CID, "add")];
+        let source = platform_semantics_for_lower_target("python").expect("python semantics");
+        let target = platform_semantics_for_lower_target("java").expect("java semantics");
+
+        let changes =
+            platform_semantic_changes(&source, &target, &callsites, None).expect("changes");
+        let changed = changes.changed_callsites.first().expect("changed callsite");
+        let divergence = changes
+            .divergences_by_effect
+            .get(&changed.effect)
+            .expect("effect indexes divergence");
+
+        assert_eq!(changed.effect, divergence.target_value_cid);
+        assert!(target
+            .dimension_values
+            .iter()
+            .any(|value| value.cid == changed.effect));
+    }
+
+    #[test]
+    fn point_query_focus_scopes_loss_records_to_the_focused_callsite() {
+        let callsites = vec![
+            callsite("cs:add", CONCEPT_ADD_CID, "add"),
+            callsite("cs:div", CONCEPT_DIV_CID, "divide"),
+        ];
+
+        let rust_receipt = receipt_for("python", "rust", &callsites, Some("cs:div"));
+        assert_eq!(rust_receipt.loss_records.len(), 1);
+        assert_eq!(rust_receipt.loss_records[0].callsite_cid, "cs:div");
+        assert!(rust_receipt.loss_records[0]
+            .loss_dimensions
+            .contains_key("IntegerDivisionRounding"));
+
+        let java_receipt = receipt_for("python", "java", &callsites, Some("cs:div"));
+        assert_eq!(java_receipt.loss_records.len(), 1);
+        assert_eq!(java_receipt.loss_records[0].callsite_cid, "cs:div");
+        assert_ne!(rust_receipt.root_cid, java_receipt.root_cid);
+    }
+
+    #[test]
+    fn point_query_same_kit_exact_leg_emits_zero_loss_records() {
+        let callsites = vec![callsite("cs:div", CONCEPT_DIV_CID, "divide")];
+
+        let receipt = receipt_for("python", "python", &callsites, None);
+        assert_eq!(receipt.aggregate_summary.lossy, 0);
+        assert_eq!(receipt.aggregate_summary.widened, 0);
+        assert!(receipt.loss_records.is_empty());
+    }
+
+    #[test]
+    fn point_query_refuse_decision_does_not_emit_partial_loss_records() {
+        let callsites = vec![callsite("cs:add", CONCEPT_ADD_CID, "add")];
+        let source = platform_semantics_for_lower_target("python").expect("python semantics");
+        let target = platform_semantics_for_lower_target("java").expect("java semantics");
+        let changes =
+            platform_semantic_changes(&source, &target, &callsites, None).expect("changes");
+        let effect = changes
+            .changed_callsites
+            .first()
+            .expect("changed callsite")
+            .effect
+            .clone();
+        let functions = vec![function("add")];
+        let decisions = BTreeMap::from([(
+            "add".to_string(),
+            PropagationDecision::Refuse {
+                forbidding_contract_cid: "contract:bounds-proof-required".to_string(),
+                function_cid: "function:add".to_string(),
+                reason: "contract forbids platform semantic widening".to_string(),
+                triggering_callsite_cid: "cs:add".to_string(),
+            },
+        )]);
+        assert!(changes.divergences_by_effect.contains_key(&effect));
+
+        let receipt = build_receipt(
+            &decisions,
+            &callsites,
+            &functions,
+            "source-binding",
+            "target-binding",
+            TargetSurface::TypescriptPg,
+            &changes.divergences_by_effect,
+        )
+        .expect("receipt builds");
+
+        assert_eq!(receipt.aggregate_summary.refused, 1);
+        assert_eq!(
+            receipt.refusal_mementos[0].forbidding_contract,
+            "contract:bounds-proof-required"
+        );
+        assert!(receipt.loss_records.is_empty());
+    }
+
+    #[test]
+    fn point_query_uncharacterizable_absent_op_routes_to_refuse_signal() {
+        let source = platform_semantics_for_lower_target("rust").expect("rust semantics");
+        let target = platform_semantics_for_lower_target("java").expect("java semantics");
+        let rust_only_op = source
+            .tags
+            .iter()
+            .map(|tag| tag.op_cid.as_str())
+            .find(|op_cid| target.compare_op_with(op_cid, &target).is_err())
+            .expect("rust-only op fixture exists");
+        let callsites = vec![callsite("cs:rust-native", rust_only_op, "native")];
+
+        assert!(matches!(
+            platform_semantic_changes(&source, &target, &callsites, None),
+            Err(PlatformSemanticComparisonError::TargetOpAbsent { .. })
+        ));
+    }
+
+    fn atom(name: &str) -> IrFormula {
+        IrFormula::Atomic {
+            name: name.to_string(),
+            args: vec![],
         }
     }
 }

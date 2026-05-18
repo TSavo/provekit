@@ -14,8 +14,8 @@ use libprovekit::core::{
     verify, ArityShape, AritySlot, CKit, Canonical, Catalog, Cid, ConformanceDeclaration, Dialect,
     DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
     InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, Path, PathAlgebra,
-    PathDocument, PathDocumentError, PathError, PlatformSemanticsDeclaration, Refutation, SlotSort,
-    Term, Truth, Verb, Verdict, Witness,
+    PathDocument, PathDocumentError, PathError, PlatformSemanticComparisonError,
+    PlatformSemanticsDeclaration, Refutation, SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::{blake3_512_of, Value};
 use provekit_ir_types::{
@@ -1274,6 +1274,8 @@ fn carrier_registration_preserves_platform_semantics_declaration() {
     );
     let declaration = PlatformSemanticsDeclaration {
         tags: vec![first_tag.clone(), second_tag.clone()],
+        dimension_values: vec![wrapping, truncate, arbitrary_precision],
+        op_aliases: BTreeMap::new(),
     };
     let mut registry = KitRegistry::default();
 
@@ -1522,6 +1524,71 @@ fn dispatcher_returns_c_platform_semantics_declaration() {
     ] {
         assert!(op_cids.contains(required), "missing C semantics tag for {required}");
     }
+}
+
+#[test]
+fn platform_semantics_compare_op_reports_open_keyed_dimension_divergence() {
+    let source = platform_semantics_for_lower_target("python")
+        .expect("python lower target declares platform semantics");
+    let target =
+        platform_semantics_for_lower_target("rust").expect("rust lower target declares semantics");
+    let div = PYTHON_PLATFORM_CONCEPT_OP_CIDS[3];
+
+    let divergence = source
+        .compare_op_with(div, &target)
+        .expect("comparison is characterizable")
+        .expect("python div to rust div diverges");
+
+    assert_eq!(divergence.dimension_name, "IntegerDivisionRounding");
+    assert_ne!(divergence.source_value_cid, divergence.target_value_cid);
+    assert_eq!(
+        divergence.source_compare_to,
+        IrFormula::Atomic {
+            name: "python:Floor".to_string(),
+            args: vec![],
+        }
+    );
+    assert_eq!(
+        divergence.target_compare_to,
+        IrFormula::Atomic {
+            name: "rust:Truncate".to_string(),
+            args: vec![],
+        }
+    );
+}
+
+#[test]
+fn platform_semantics_compare_op_preserves_exact_same_kit_leg() {
+    let source = platform_semantics_for_lower_target("python")
+        .expect("python lower target declares platform semantics");
+    let div = PYTHON_PLATFORM_CONCEPT_OP_CIDS[3];
+
+    assert_eq!(
+        source
+            .compare_op_with(div, &source)
+            .expect("same-kit comparison is characterizable"),
+        None
+    );
+}
+
+#[test]
+fn platform_semantics_compare_op_reports_uncharacterizable_absent_target_op() {
+    let source =
+        platform_semantics_for_lower_target("rust").expect("rust lower target declares semantics");
+    let target = platform_semantics_for_lower_target("java")
+        .expect("java lower target declares platform semantics");
+    let rust_only_op = source
+        .tags
+        .iter()
+        .map(|tag| tag.op_cid.as_str())
+        .find(|op_cid| target.compare_op_with(op_cid, &target).is_err())
+        .expect("fixture has a rust-only native op cid");
+
+    assert!(matches!(
+        source.compare_op_with(rust_only_op, &target),
+        Err(PlatformSemanticComparisonError::TargetOpAbsent { op_cid })
+            if op_cid == rust_only_op
+    ));
 }
 
 #[test]

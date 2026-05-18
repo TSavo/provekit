@@ -5653,6 +5653,9 @@ pub struct LossRecordMemento {
     pub kind: String,
     #[serde(rename = "loss_dimension")]
     pub loss_dimension: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(rename = "loss_dimensions")]
+    pub loss_dimensions: BTreeMap<String, IrFormula>,
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     #[serde(rename = "substituted_body")]
