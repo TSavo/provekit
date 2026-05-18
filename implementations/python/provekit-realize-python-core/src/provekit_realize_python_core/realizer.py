@@ -1050,6 +1050,9 @@ def _operand_binding_map(
 def _term_shape_leaf_positions(shape: Any, position: tuple[int, ...]) -> list[tuple[int, ...]]:
     if not isinstance(shape, dict):
         return []
+    kind = shape.get("kind")
+    if kind in {"literal", "const"} or "value" in shape:
+        return []
     if not _shape_concept_name(shape):
         return [position]
     out: list[tuple[int, ...]] = []
@@ -1164,12 +1167,22 @@ def _lower_shape_body(
         return None
     concept_name = _shape_concept_name(shape)
     args = _shape_args(shape)
+    if concept_name in {"concept:comment", "comment"}:
+        surface = _comment_surface_from_shape(shape)
+        if surface is None:
+            return None
+        return TermBody(_python_comment_body(surface))
     if concept_name in {"concept:skip", "skip"} and not args:
         return TermBody("")
     if concept_name in {"concept:seq", "seq"}:
         lines: list[str] = []
         for index, child in enumerate(args[:-1]):
             child_position = (*position, index)
+            child_body = _lower_shape_body(child, context, child_position)
+            if child_body is not None:
+                if child_body.body:
+                    lines.append(child_body.body)
+                continue
             expression = _lower_shape_expression(child, context, child_position)
             if expression is None or expression.text is None:
                 return None
@@ -1293,6 +1306,27 @@ def _shape_leaf_expression(
     if kind == "const" or "value" in shape:
         return _literal_term(shape.get("value"))
     return context.fallback_leaf()
+
+
+def _comment_surface_from_shape(shape: dict[str, Any]) -> str | None:
+    args = _shape_args(shape)
+    if not args:
+        return ""
+    value = args[0].get("value")
+    return value if isinstance(value, str) else None
+
+
+def _python_comment_body(surface: str) -> str:
+    lines = surface.splitlines() or [""]
+    return "\n".join(_python_comment_line(line) for line in lines)
+
+
+def _python_comment_line(surface: str) -> str:
+    if surface.startswith("#"):
+        return surface
+    if surface:
+        return f"# {surface}"
+    return "#"
 
 
 def _literal_term(value: Any) -> TermExpression:
@@ -2300,6 +2334,8 @@ def _function_source(
     function = function or "_provekit_synth"
     param_list = ", ".join(params)
     body_lines = body.splitlines() or ["pass"]
+    if all(not line.strip() or line.lstrip().startswith("#") for line in body_lines):
+        body_lines.append("pass")
     indented = "\n".join(f"    {line}" if line else "" for line in body_lines)
     prefix = ""
     if leading_lines:

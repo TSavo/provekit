@@ -237,6 +237,14 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | --- | --- | --- |
 | `concept:log-emit` | `blake3-512:e52923ef4ccdebb96c7a2127ae7a0053227737664615f21716da723975042a6c5f2689bd467fb1cf2e2e8280473fe361b443b6d69306723664f806e5dc848333` | effect is IO; per-language logger sugars carry honest loss dimensions |
 
+## Comment Concept Shape
+
+`concept:comment(surface)` carries source comments through lift, bind, and lower as trivia with no runtime effect.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:comment` | `blake3-512:d9c806063bb97d59ca655b6c50b6ad2ff4cbadd02d6238a51a33a63ec6626af6d92e338ca10f9598fa322cd960d007349752f477fdf3a9384491282d8d12fef2` | surface is the raw comment delimiter text; formatters own whitespace |
+
 ## Op Definition Concept Shape
 
 `concept:op-definition(name, arg_sorts, return_sort, effects, wp_rule)` describes a hub op definition; CCL's meta-layer primitive.
