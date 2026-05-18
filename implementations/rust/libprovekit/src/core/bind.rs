@@ -670,6 +670,39 @@ fn named_operation_tree(
     catalog: &Catalog,
     namer: &mut UnnamedConceptNamer,
 ) -> Result<Option<NamedTermTree>, BindError> {
+    // Abstract term_shape format (concept-name-keyed): the Python lifter
+    // emits operations as {concept_name, op_cid, args} without a `kind` field.
+    // Short-circuit here so concept-named operations flow into a Shape A
+    // NamedTermTree directly instead of falling through to the Shape B wrapper.
+    if let Some(concept_name) = value.get("concept_name").and_then(Json::as_str) {
+        let arg_values = value
+            .get("args")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut args = Vec::with_capacity(arg_values.len());
+        for arg in &arg_values {
+            if let Some(child) = named_operation_tree(arg, catalog, namer)? {
+                args.push(child);
+            }
+        }
+        let shape_cid = value
+            .get("op_cid")
+            .and_then(Json::as_str)
+            .map(str::to_string)
+            .filter(|s| !s.is_empty())
+            .map(Ok)
+            .unwrap_or_else(|| {
+                crate::canonical::json_cid(value)
+                    .map_err(|e| format!("cid concept_name shape `{concept_name}`: {e}"))
+            })?;
+        return Ok(Some(NamedTermTree {
+            args,
+            concept_name: concept_name.to_string(),
+            operation_kind: "op-application".to_string(),
+            shape_cid,
+        }));
+    }
     let Some(operation_kind) = operation_kind(value) else {
         return Ok(None);
     };
@@ -967,6 +1000,14 @@ fn named_tree_op_tree(
     catalog: &ConceptOpCatalog,
     term_position: Vec<usize>,
 ) -> Result<Term, BindError> {
+    // McCarthy desugar: concept:and / concept:or are demoted hub members
+    // (a && b = ite(a, b, false); a || b = ite(a, true, b)). Rewrite to
+    // concept:ite at the Term level so the substrate's op tree only contains
+    // cataloged primitives. Per-language eq_and_to_ite_desugar mementos
+    // record the equivalence as descriptive substrate history.
+    if tree.concept_name == "concept:and" || tree.concept_name == "concept:or" {
+        return mccarthy_desugar_to_ite(document, term, tree, catalog, term_position);
+    }
     let (resolved_name, op_cid) = catalog.resolved_name_and_cid(&tree.concept_name)?;
     let children = tree
         .args
@@ -1002,6 +1043,58 @@ fn term_args_cid(args: &[Term]) -> Result<String, BindError> {
     let value = serde_json::to_value(args)
         .map_err(|error| BindError::Failed(format!("serialize term args: {error}")))?;
     crate::canonical::json_cid(&value).map_err(|error| BindError::Failed(error.to_string()))
+}
+
+fn mccarthy_desugar_to_ite(
+    document: &NamedTermDocument,
+    term: &NamedTerm,
+    tree: &NamedTermTree,
+    catalog: &ConceptOpCatalog,
+    term_position: Vec<usize>,
+) -> Result<Term, BindError> {
+    if tree.args.len() != 2 {
+        return Err(BindError::Failed(format!(
+            "McCarthy desugar of {} requires 2 args; got {}",
+            tree.concept_name,
+            tree.args.len()
+        )));
+    }
+    let (ite_resolved_name, ite_op_cid) = catalog.resolved_name_and_cid("concept:ite")?;
+    let mut pos_left = term_position.clone();
+    pos_left.push(0);
+    let left = named_tree_op_tree(document, term, &tree.args[0], catalog, pos_left)?;
+    let mut pos_right = term_position.clone();
+    pos_right.push(1);
+    let right = named_tree_op_tree(document, term, &tree.args[1], catalog, pos_right)?;
+    let literal = Term::Const {
+        value: Json::Bool(tree.concept_name == "concept:or"),
+        sort: primitive_sort("Bool"),
+    };
+    let children = if tree.concept_name == "concept:and" {
+        // a && b = ite(a, b, false)
+        vec![left, right, literal]
+    } else {
+        // a || b = ite(a, true, b)
+        vec![left, literal, right]
+    };
+    let args_cid = term_args_cid(&children)?;
+    let metadata = named_term_citation_term(
+        document,
+        term,
+        Some(tree),
+        &ite_resolved_name,
+        &ite_op_cid,
+        &term_position,
+        &args_cid,
+    )?;
+    let mut args = Vec::with_capacity(children.len() + 1);
+    args.push(metadata);
+    args.extend(children);
+    Ok(Term::Op {
+        op_cid: ite_op_cid,
+        name: ite_resolved_name,
+        args,
+    })
 }
 
 fn document_metadata_term(named: &NamedTermDocument) -> Result<Term, BindError> {
