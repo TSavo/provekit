@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:0a74f40c13bf4843b7afea6ee91e1b33ac026145a03c7da0be0b22e7667da8f4361f1dca95daedb0219f825139069096123f72f8df46ca1517a4b108e389f328",
+    "cid": "blake3-512:f85399b05a7b6449158115ebedbdd53bba6d846e181a35d7e0e15d13c77d600ba30d588e1e0911402c832d423ea0484002b6d148f0b0449106c3e04a87edf175",
     "content": {
       "entries": [
         {
@@ -424,6 +424,163 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:closure",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "java.util.function.Function<Object, Object> fn = (${param0}) -> ${param1};\nreturn fn;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "closure-body-expression-is-fixture-specific"
+              },
+              "jvm_invokedynamic_erased": {
+                "args": [],
+                "head": "atomic",
+                "name": "invokedynamic-dispatch-not-visible-at-source-level"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:double-dispatch",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.accept(${param1});\nreturn ${param1}.accept(${param0});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_visitor_type": {
+                "args": [],
+                "head": "atomic",
+                "name": "visitor-accept-method-name-is-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:dynamic-dispatch",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.${param1}(${param2});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_method_name": {
+                "args": [],
+                "head": "atomic",
+                "name": "virtual-method-name-is-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:exception",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "try {\n    return ${param0};\n} catch (Exception ${param1}) {\n    return ${param2};\n}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_exception_type": {
+                "args": [],
+                "head": "atomic",
+                "name": "exception-type-and-handler-body-are-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:generic-instantiation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return (${param1}) ${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "type_parameter_erased": {
+                "args": [],
+                "head": "atomic",
+                "name": "java-generic-type-arguments-erased-at-runtime"
+              },
+              "unchecked_cast": {
+                "args": [],
+                "head": "atomic",
+                "name": "cast-to-erased-type-is-unchecked"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:iterator",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "long count = 0L;\nfor (Object item : ${param0}) {\n    count += 1L;\n}\nreturn count;"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "fixture_specific_loop_body": {
+                "args": [],
+                "head": "atomic",
+                "name": "iterator-loop-body-is-fixture-specific"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:reference",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0};"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "java_reference_semantics_implicit": {
+                "args": [],
+                "head": "atomic",
+                "name": "java-reference-is-implicit-not-addressable"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
           }
         },
         {
