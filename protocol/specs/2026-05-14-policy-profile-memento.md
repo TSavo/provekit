@@ -2,11 +2,11 @@
 
 **Status:** v1.0.0 normative draft.
 **Date:** 2026-05-14
-**Related:** `2026-05-14-witness-consensus-promotion-v1.1-consensus-vector.md`, `2026-05-13-policy-memento.md`, `2026-05-12-sugar-dict-memento.md`, `2026-05-14-contract-comment-sugar.md`, `project_provekit_honesty_gradient.md` (#856).
+**Related:** `2026-05-14-witness-consensus-promotion-v1.1-consensus-vector.md`, `2026-05-13-policy-memento.md`, `2026-05-12-sugar-dict-memento.md`, `2026-05-18-sugar-selection-policy-memento.md`, `2026-05-14-contract-comment-sugar.md`, `project_provekit_honesty_gradient.md` (#856).
 
 ## Motivation
 
-Policy mementos define individual gates. A `ConsensusPolicyMemento` says how a witness consensus vector is judged. A sugar selection policy says how loss and mode coverage are judged. An emission policy says which runtime wrapper mode a realization may emit.
+Policy mementos define individual gates. A `ConsensusPolicyMemento` says how a witness consensus vector is judged. A `SugarSelectionPolicyMemento` says how loss and mode coverage are judged for the sugar selection lane. An emission policy says which runtime wrapper mode a realization may emit.
 
 A run, however, does not choose one gate in isolation. It chooses a profile: local smoke checks often want permissive witness floors and gate wrappers, while production deployment often wants stricter witness diversity and monitor wrappers. If those choices live in CLI defaults, the audit trail loses the policy input that made two runs differ.
 
@@ -68,7 +68,7 @@ Unknown bare decision kinds fail closed. Extension decision kinds MUST be namesp
 
 ## Field Discipline
 
-`policy_cid` points at the gate-local policy memento that owns detailed replay. The profile does not replace that policy. It gives a caller one content-addressed input that resolves to the policies used by all decisions in the run.
+`policy_cid` points at the gate-local policy memento that owns detailed replay. For `decision_kind = "sugar-selection"`, it points at `SugarSelectionPolicyMemento` as specified in `2026-05-18-sugar-selection-policy-memento.md`. The profile does not replace that policy. It gives a caller one content-addressed input that resolves to the policies used by all decisions in the run.
 
 `thresholds` is a query-friendly projection of the gate-local policy. A profile registry validates only the small predicate grammar (`metric>=N`, `metric<=N`, `metric==N`, `metric>N`, `metric<N`). Full policy replay remains the job of the referenced policy.
 
@@ -114,7 +114,7 @@ They are examples and stable test vectors. They are not universal truth. Consume
 
 This spec does not define a new consensus policy. It uses the consensus-policy surface from `witness-consensus/1.1`.
 
-This spec does not define sugar selection scoring. It cites the sugar-selection policy that owns that evaluation.
+This spec does not define sugar selection scoring. It cites `SugarSelectionPolicyMemento`, the sugar-selection policy that owns that evaluation.
 
 This spec does not make `smoke` or `prod` magic strings. They are ordinary profile mementos with ordinary content CIDs.
 

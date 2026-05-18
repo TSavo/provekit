@@ -4140,6 +4140,348 @@ impl std::fmt::Display for PolicyProfileValidationError {
 
 impl std::error::Error for PolicyProfileValidationError {}
 
+// ============================================================
+// Manual extension: SugarSelectionPolicyMemento family (issue #889)
+// Source of truth:
+//   protocol/specs/2026-05-18-sugar-selection-policy-memento.md
+//
+// This is a content-addressed declaration of the sugar selection policy lane
+// cited by PolicyProfileMemento. It codifies the sugar-dict §4 emission
+// policy as a federated memento so vendors can ship policy CIDs alongside
+// sugar dict CIDs.
+// ============================================================
+
+/// The sugar emission mode selected by a sugar selection policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum SugarSelectionMode {
+    BestOnly,
+    Inclusive,
+    Strict,
+}
+
+impl SugarSelectionMode {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::BestOnly => "best-only",
+            Self::Inclusive => "inclusive",
+            Self::Strict => "strict",
+        }
+    }
+}
+
+impl TryFrom<String> for SugarSelectionMode {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "best-only" => Ok(Self::BestOnly),
+            "inclusive" => Ok(Self::Inclusive),
+            "strict" => Ok(Self::Strict),
+            other => Err(format!("unknown sugar selection mode `{other}`")),
+        }
+    }
+}
+
+impl From<SugarSelectionMode> for String {
+    fn from(mode: SugarSelectionMode) -> String {
+        mode.as_str().to_string()
+    }
+}
+
+/// The deterministic tie-breaking strategy from sugar-dict §4.4.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum SugarSelectionTieBreaking {
+    LoadOrderThenEntryIndex,
+}
+
+impl SugarSelectionTieBreaking {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::LoadOrderThenEntryIndex => "load-order-then-entry-index",
+        }
+    }
+}
+
+impl TryFrom<String> for SugarSelectionTieBreaking {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "load-order-then-entry-index" => Ok(Self::LoadOrderThenEntryIndex),
+            other => Err(format!("unknown sugar selection tie_breaking `{other}`")),
+        }
+    }
+}
+
+impl From<SugarSelectionTieBreaking> for String {
+    fn from(tie_breaking: SugarSelectionTieBreaking) -> String {
+        tie_breaking.as_str().to_string()
+    }
+}
+
+/// Per-concept, per-language match criterion for a sugar selection policy.
+///
+/// Locked JCS key order: concept, language.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SugarSelectionAppliesTo {
+    pub concept: String,
+    pub language: String,
+}
+
+/// Content-addressed sugar selection policy.
+///
+/// Header fields are `cid`, `kind`, and `schemaVersion`; the remaining fields
+/// declare the policy content. Field order follows JCS key order:
+/// applies_to, cid, eligible_sugars, forbidden_sugars, kind, mode,
+/// schemaVersion, scoring, tie_breaking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SugarSelectionPolicyMemento {
+    #[serde(rename = "applies_to")]
+    pub applies_to: Vec<SugarSelectionAppliesTo>,
+    /// DERIVED: BLAKE3-512 over JCS(memento) with `cid` elided.
+    pub cid: String,
+    #[serde(rename = "eligible_sugars")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eligible_sugars: Option<Vec<String>>,
+    #[serde(rename = "forbidden_sugars")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forbidden_sugars: Option<Vec<String>>,
+    /// MUST be "sugar-selection-policy".
+    pub kind: String,
+    pub mode: SugarSelectionMode,
+    /// MUST be "1".
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoring: Option<String>,
+    #[serde(rename = "tie_breaking")]
+    pub tie_breaking: SugarSelectionTieBreaking,
+}
+
+impl SugarSelectionPolicyMemento {
+    pub fn from_jcs(jcs: &str) -> Result<Self, SugarSelectionPolicyValidationError> {
+        let policy: Self = serde_json::from_str(jcs)
+            .map_err(|err| SugarSelectionPolicyValidationError::Json(err.to_string()))?;
+        let rendered = policy.to_jcs_string()?;
+        if rendered != jcs {
+            return Err(SugarSelectionPolicyValidationError::NonCanonicalJcs);
+        }
+        policy.validate()?;
+        Ok(policy)
+    }
+
+    pub fn to_jcs_string(&self) -> Result<String, PromotionDecisionCanonicalizationError> {
+        let json = serde_json::to_value(self)?;
+        let canonical = serde_json_to_canonical_value(&json)?;
+        Ok(provekit_canonicalizer::encode_jcs(&canonical))
+    }
+
+    pub fn recompute_cid(&self) -> Result<String, PromotionDecisionCanonicalizationError> {
+        let mut policy = serde_json::to_value(self)?;
+        let serde_json::Value::Object(ref mut object) = policy else {
+            return Err(PromotionDecisionCanonicalizationError::new(
+                "sugar selection policy did not serialize as an object",
+            ));
+        };
+
+        object.remove("cid");
+        let canonical = serde_json_to_canonical_value(&policy)?;
+        let jcs = provekit_canonicalizer::encode_jcs(&canonical);
+        Ok(provekit_canonicalizer::blake3_512_of(jcs.as_bytes()))
+    }
+
+    pub fn validate(&self) -> Result<(), SugarSelectionPolicyValidationError> {
+        if self.kind != "sugar-selection-policy" {
+            return Err(SugarSelectionPolicyValidationError::InvalidKind {
+                kind: self.kind.clone(),
+            });
+        }
+        if self.schema_version != "1" {
+            return Err(SugarSelectionPolicyValidationError::InvalidSchemaVersion {
+                schema_version: self.schema_version.clone(),
+            });
+        }
+        if self.applies_to.is_empty() {
+            return Err(SugarSelectionPolicyValidationError::EmptyAppliesTo);
+        }
+        for (index, criterion) in self.applies_to.iter().enumerate() {
+            if criterion.concept.is_empty() {
+                return Err(SugarSelectionPolicyValidationError::EmptyApplyCriterion {
+                    index,
+                    field: "concept",
+                });
+            }
+            if criterion.language.is_empty() {
+                return Err(SugarSelectionPolicyValidationError::EmptyApplyCriterion {
+                    index,
+                    field: "language",
+                });
+            }
+        }
+
+        if let Some(scoring) = &self.scoring {
+            require_policy_cid("scoring", scoring)?;
+        }
+        validate_policy_cid_list("eligible_sugars", self.eligible_sugars.as_deref())?;
+        validate_policy_cid_list("forbidden_sugars", self.forbidden_sugars.as_deref())?;
+        reject_policy_cid_overlap(
+            self.eligible_sugars.as_deref(),
+            self.forbidden_sugars.as_deref(),
+        )?;
+
+        let actual = self.recompute_cid().map_err(|err| {
+            SugarSelectionPolicyValidationError::Canonicalization(err.to_string())
+        })?;
+        if actual != self.cid {
+            return Err(SugarSelectionPolicyValidationError::CidMismatch {
+                claimed: self.cid.clone(),
+                actual,
+            });
+        }
+
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for SugarSelectionPolicyMemento {
+    type Err = SugarSelectionPolicyValidationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_jcs(s)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SugarSelectionPolicyValidationError {
+    InvalidKind { kind: String },
+    InvalidSchemaVersion { schema_version: String },
+    EmptyAppliesTo,
+    EmptyApplyCriterion { index: usize, field: &'static str },
+    InvalidCid { field: &'static str, cid: String },
+    DuplicateSugarCid { field: &'static str, cid: String },
+    OverlappingSugarCid { cid: String },
+    CidMismatch { claimed: String, actual: String },
+    Canonicalization(String),
+    Json(String),
+    NonCanonicalJcs,
+}
+
+impl std::fmt::Display for SugarSelectionPolicyValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidKind { kind } => {
+                write!(f, "SugarSelectionPolicyMemento: invalid kind `{kind}`")
+            }
+            Self::InvalidSchemaVersion { schema_version } => write!(
+                f,
+                "SugarSelectionPolicyMemento: invalid schemaVersion `{schema_version}`"
+            ),
+            Self::EmptyAppliesTo => {
+                f.write_str("SugarSelectionPolicyMemento: applies_to must be non-empty")
+            }
+            Self::EmptyApplyCriterion { index, field } => write!(
+                f,
+                "SugarSelectionPolicyMemento: applies_to[{index}].{field} must be non-empty"
+            ),
+            Self::InvalidCid { field, cid } => write!(
+                f,
+                "SugarSelectionPolicyMemento: {field} contains invalid cid `{cid}`"
+            ),
+            Self::DuplicateSugarCid { field, cid } => write!(
+                f,
+                "SugarSelectionPolicyMemento: {field} contains duplicate cid `{cid}`"
+            ),
+            Self::OverlappingSugarCid { cid } => write!(
+                f,
+                "SugarSelectionPolicyMemento: sugar cid `{cid}` is both eligible and forbidden"
+            ),
+            Self::CidMismatch { claimed, actual } => write!(
+                f,
+                "SugarSelectionPolicyMemento: cid mismatch: claimed {claimed}, recomputed {actual}"
+            ),
+            Self::Canonicalization(message) => write!(
+                f,
+                "SugarSelectionPolicyMemento: canonicalization failed: {message}"
+            ),
+            Self::Json(message) => {
+                write!(
+                    f,
+                    "SugarSelectionPolicyMemento: JSON parse failed: {message}"
+                )
+            }
+            Self::NonCanonicalJcs => {
+                f.write_str("SugarSelectionPolicyMemento: input was not canonical JCS")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SugarSelectionPolicyValidationError {}
+
+impl From<PromotionDecisionCanonicalizationError> for SugarSelectionPolicyValidationError {
+    fn from(err: PromotionDecisionCanonicalizationError) -> Self {
+        Self::Canonicalization(err.to_string())
+    }
+}
+
+fn require_policy_cid(
+    field: &'static str,
+    cid: &str,
+) -> Result<(), SugarSelectionPolicyValidationError> {
+    if is_blake3_512_cid(cid) {
+        Ok(())
+    } else {
+        Err(SugarSelectionPolicyValidationError::InvalidCid {
+            field,
+            cid: cid.to_string(),
+        })
+    }
+}
+
+fn validate_policy_cid_list(
+    field: &'static str,
+    cids: Option<&[String]>,
+) -> Result<(), SugarSelectionPolicyValidationError> {
+    let Some(cids) = cids else {
+        return Ok(());
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for cid in cids {
+        require_policy_cid(field, cid)?;
+        if !seen.insert(cid.as_str()) {
+            return Err(SugarSelectionPolicyValidationError::DuplicateSugarCid {
+                field,
+                cid: cid.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn reject_policy_cid_overlap(
+    eligible: Option<&[String]>,
+    forbidden: Option<&[String]>,
+) -> Result<(), SugarSelectionPolicyValidationError> {
+    let (Some(eligible), Some(forbidden)) = (eligible, forbidden) else {
+        return Ok(());
+    };
+
+    let eligible = eligible
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    for cid in forbidden {
+        if eligible.contains(cid.as_str()) {
+            return Err(SugarSelectionPolicyValidationError::OverlappingSugarCid {
+                cid: cid.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn is_blake3_512_cid(s: &str) -> bool {
     let Some(hex) = s.strip_prefix("blake3-512:") else {
         return false;
