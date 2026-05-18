@@ -3,8 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use provekit_canonicalizer::blake3_512_of;
-use serde_json::Value;
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use provekit_ir_types::realization_tags::tag_sugar_carrier;
+use serde_json::{json, Value};
 
 pub mod platform_semantics;
 
@@ -19,6 +20,8 @@ pub struct Realization {
     pub is_stub: bool,
     pub extension: String,
     pub emitted_artifact_cid: String,
+    pub observed_loss_record: Value,
+    pub used_sugars: Vec<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +63,13 @@ pub fn emit_stub_with_mode(
 ) -> Realization {
     let body = operator_body_template_for(concept_name, params, param_types, return_type, mode)
         .or_else(|| body_template_for(concept_name, params, param_types, return_type, mode));
+    if body.is_none() {
+        if let Some(realized) =
+            emit_sugar_carrier(function, params, param_types, return_type, concept_name)
+        {
+            return realized;
+        }
+    }
     let is_stub = body.is_none();
     let body = body.unwrap_or_else(|| stub_body_for(concept_name));
     emit_function(function, params, param_types, return_type, &body, is_stub)
@@ -127,6 +137,230 @@ fn emit_function(
         is_stub,
         extension: "rs".to_string(),
         emitted_artifact_cid,
+        observed_loss_record: json!({}),
+        used_sugars: Vec::new(),
+    }
+}
+
+fn emit_function_with_evidence(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    body: &str,
+    observed_loss_record: Value,
+    used_sugars: Vec<Value>,
+) -> Realization {
+    let source = function_source(function, params, param_types, return_type, body);
+    let emitted_artifact_cid = blake3_512_of(source.as_bytes());
+    Realization {
+        source,
+        is_stub: false,
+        extension: "rs".to_string(),
+        emitted_artifact_cid,
+        observed_loss_record,
+        used_sugars,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SugarCarrierSpec {
+    concept_name: &'static str,
+    concept_cid: &'static str,
+    operation_kind: &'static str,
+    loss_name: &'static str,
+}
+
+const SUGAR_CARRIER_SPECS: &[SugarCarrierSpec] = &[
+    SugarCarrierSpec {
+        concept_name: "concept:postdec",
+        concept_cid: "blake3-512:cac33b2bef01e38d327440e7bfecebf3e7540d463a02e68dd047e47d0c9cca45f94181ce773fb389671a960cc957760b540b2927afd6d2c624cf9ddaca225f1a",
+        operation_kind: "postdec",
+        loss_name: "rust-no-postfix-decrement",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:postinc",
+        concept_cid: "blake3-512:be615743882f980a2fde0ca6ec3250305c28e2fac1fe4d17accd1790d62af7992ff80282f6507335b959ccceaa32a047f1845b8a9e96a54d20b3766d46589aee",
+        operation_kind: "postinc",
+        loss_name: "rust-no-postfix-increment",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:predec",
+        concept_cid: "blake3-512:fa83fc84643e03f1e60aa66848412e0cdc25ad6ede0cf216643fb8d4dbe52c4d8df28283f754040cc0f53a62ec22e73a2db623e6507055ab1076df8394024995",
+        operation_kind: "predec",
+        loss_name: "rust-no-prefix-decrement",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:preinc",
+        concept_cid: "blake3-512:8c8383c221eaca3b95d30437d768065d5117091415afb04e92f541af6fb26d37af79d423e25a59ffaf3f6e2d654d0bd64cfe8e071ee5483ed6bca2614442001f",
+        operation_kind: "preinc",
+        loss_name: "rust-no-prefix-increment",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:throw",
+        concept_cid: "blake3-512:bfca9b128ea5128d15236ebbe44150ff60355b9bbcd664ae4abbc34f2e4e658f7441089449956bfdb333d1f2eb1bff828c74a5d2f3df7fec723abe883bb81a12",
+        operation_kind: "throw",
+        loss_name: "rust-result-not-throw",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:new",
+        concept_cid: "blake3-512:26eb0a9484d68fff3fafe1ee82f09e3c3f49e1e2d1e8d01c733362b39473590e61f5903080ffdf69f2532e57047d0fbd4439a11ff778936e27a61f0c4c8c35b8",
+        operation_kind: "new",
+        loss_name: "rust-no-new-keyword",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:ushr",
+        concept_cid: "blake3-512:5746cb4f8bb8d713624731661de51e851e7ca65dae10a88bae4727d1e0070525be77e9919d90939264acaf4c093b00808862e6d0d2c24ac05262ce95cd67c8ad",
+        operation_kind: "ushr",
+        loss_name: "rust-unified-shr",
+    },
+    SugarCarrierSpec {
+        concept_name: "concept:source-unit",
+        concept_cid: "blake3-512:377bec17d4c9ea2e44216e244685c282b3ac83c19191699eab94a47ff0b123bf4899d6b5691ce88fa7bc70d4dd9f8d2566631bd02895f891ec67ca6d32a87285",
+        operation_kind: "source-unit",
+        loss_name: "rust-crate-source-unit",
+    },
+];
+
+fn emit_sugar_carrier(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    concept_name: &str,
+) -> Option<Realization> {
+    let spec = sugar_carrier_spec(concept_name)?;
+    let loss_record = loss_record_for(spec.loss_name);
+    let loss_record_cid = cid_for_json(&loss_record);
+    let sugar_dict = sugar_dict_for(spec, &loss_record);
+    let sugar_dict_cid = cid_for_json(&sugar_dict);
+    let used_sugar = used_sugar_for(&sugar_dict, &sugar_dict_cid);
+    let args_jcs = json!([]);
+    let payload = json!({
+        "args_jcs": args_jcs,
+        "args_jcs_cid": cid_for_json(&args_jcs),
+        "artifact_kind": "provekit-concept-citation-comment-sugar",
+        "concept_cid": spec.concept_cid,
+        "concept_name": spec.concept_name,
+        "concept_site_cid": spec.concept_cid,
+        "emitted_by": {
+            "kit_cid": sugar_dict_cid,
+            "kit_id": format!("provekit-realize-rust-core@{}", env!("CARGO_PKG_VERSION")),
+            "kit_kind": "realize",
+            "target_language": "rust"
+        },
+        "loss_record_cid": loss_record_cid,
+        "operation_kind": spec.operation_kind,
+        "schema_version": "1",
+        "shape_cid": spec.concept_cid,
+        "sugar_dict_cid": sugar_dict_cid,
+        "term_position": [0]
+    });
+    let payload_jcs = jcs_for_json(&payload);
+    let payload_cid = blake3_512_of(payload_jcs.as_bytes());
+    let message = format!("provekit concept carrier: {}", spec.concept_name);
+    let body = format!(
+        "// provekit-concept: {payload_jcs}\n// provekit-concept-payload-cid: {payload_cid}\npanic!({})",
+        rust_string_literal(&message)
+    );
+    Some(emit_function_with_evidence(
+        function,
+        params,
+        param_types,
+        return_type,
+        &body,
+        loss_record,
+        vec![used_sugar],
+    ))
+}
+
+fn sugar_carrier_spec(concept_name: &str) -> Option<SugarCarrierSpec> {
+    let normalized = normalize_concept_name(concept_name);
+    SUGAR_CARRIER_SPECS
+        .iter()
+        .copied()
+        .find(|spec| spec.concept_name == normalized)
+}
+
+fn normalize_concept_name(concept_name: &str) -> String {
+    if concept_name.starts_with("concept:") {
+        concept_name.to_string()
+    } else {
+        format!("concept:{concept_name}")
+    }
+}
+
+fn loss_record_for(loss_name: &str) -> Value {
+    let mut value = serde_json::Map::new();
+    value.insert(
+        loss_name.to_string(),
+        json!({
+            "args": [],
+            "head": "atomic",
+            "name": loss_name
+        }),
+    );
+    json!({
+        "loss_record_contribution": {
+            "form": "literal",
+            "value": Value::Object(value)
+        }
+    })
+}
+
+fn sugar_dict_for(spec: SugarCarrierSpec, loss_record: &Value) -> Value {
+    let realization = serde_json::to_value(tag_sugar_carrier(spec.concept_name))
+        .unwrap_or_else(|_| json!({"kind": "sugar-carrier"}));
+    json!({
+        "concept_name": spec.concept_name,
+        "kind": "concept-citation-sugar-carrier",
+        "loss_record_contribution": loss_record.get("loss_record_contribution").cloned().unwrap_or_else(|| json!({})),
+        "realization": realization,
+        "target_language": "rust"
+    })
+}
+
+fn used_sugar_for(sugar_dict: &Value, sugar_dict_cid: &str) -> Value {
+    let mut value = sugar_dict.clone();
+    if let Value::Object(map) = &mut value {
+        map.insert(
+            "header".to_string(),
+            json!({
+                "cid": sugar_dict_cid,
+                "kind": "sugar"
+            }),
+        );
+    }
+    value
+}
+
+fn cid_for_json(value: &Value) -> String {
+    let jcs = jcs_for_json(value);
+    blake3_512_of(jcs.as_bytes())
+}
+
+fn jcs_for_json(value: &Value) -> String {
+    let canonical = cvalue_from_json(value);
+    encode_jcs(&canonical)
+}
+
+fn cvalue_from_json(value: &Value) -> CValue {
+    match value {
+        Value::Null => CValue::Null,
+        Value::Bool(value) => CValue::Bool(*value),
+        Value::Number(value) => CValue::Integer(value.as_i64().unwrap_or(0)),
+        Value::String(value) => CValue::String(value.clone()),
+        Value::Array(items) => CValue::Array(
+            items
+                .iter()
+                .map(|item| std::sync::Arc::new(cvalue_from_json(item)))
+                .collect(),
+        ),
+        Value::Object(map) => CValue::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), std::sync::Arc::new(cvalue_from_json(value))))
+                .collect(),
+        ),
     }
 }
 
@@ -332,8 +566,8 @@ pub fn dispatch(request: &Value) -> Value {
                     "emitted_artifact_cid": realized.emitted_artifact_cid,
                     "is_stub": realized.is_stub,
                     "extension": realized.extension,
-                    "observed_loss_record": {},
-                    "used_sugars": []
+                    "observed_loss_record": realized.observed_loss_record,
+                    "used_sugars": realized.used_sugars
                 }
             })
         }
