@@ -71,7 +71,7 @@ fn bind_migrates_better_sqlite3_to_pg_with_async_receipt() {
         "6 functions widened to async",
         "1 boundary handlers already async-capable",
         "1 refused exports because public API forbids promise return",
-        "1 lossy sites: sqlite-specific last_insert_rowid semantics",
+        "1 lossy callsites: kit-declared dimension divergence",
     ];
     for line in expected {
         assert!(
