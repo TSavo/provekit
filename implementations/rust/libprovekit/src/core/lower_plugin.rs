@@ -127,7 +127,17 @@ impl<T: RealizeTransport + 'static> Kit for LowerKit<T> {
     }
 
     fn transform(&self, input: &Input) -> Result<DomainClaim, KitError> {
-        let invocation = RealizeInvocation::from_input(input, &self.target_lang, &self.library_tag)
+        let mut invocation =
+            RealizeInvocation::from_input(input, &self.target_lang, &self.library_tag)
+                .map_err(KitError::Transformation)?;
+        let recursive_library_tag = invocation.effective_library_tag.clone();
+        let child_loss_records = invocation
+            .realize_recursive_children(
+                &self.workspace_root,
+                &self.target_lang,
+                recursive_library_tag.as_deref(),
+                &self.transport,
+            )
             .map_err(KitError::Transformation)?;
         let realized = self
             .transport
@@ -140,6 +150,9 @@ impl<T: RealizeTransport + 'static> Kit for LowerKit<T> {
             .map_err(|error| {
                 KitError::Transformation(format!("realize plugin transport: {error}"))
             })?;
+        let mut realized = realized;
+        realized.observed_loss_record =
+            merge_observed_loss_records(child_loss_records, realized.observed_loss_record);
         Ok(claim_from_realized(invocation, realized))
     }
 
@@ -203,6 +216,322 @@ impl RealizeInvocation {
             body_template_cids,
         })
     }
+
+    fn realize_recursive_children<T: RealizeTransport>(
+        &mut self,
+        workspace_root: &Path,
+        target_lang: &str,
+        library_tag: Option<&str>,
+        transport: &T,
+    ) -> Result<Vec<Value>, String> {
+        let Some(tree) = self.request.named_term_tree.clone() else {
+            return Ok(Vec::new());
+        };
+        let mut stack = vec![format!(
+            "{}#{}",
+            self.request.concept_name,
+            self.request.mode.as_deref().unwrap_or("")
+        )];
+        collect_recursive_child_bindings(
+            &tree,
+            self,
+            workspace_root,
+            target_lang,
+            library_tag,
+            transport,
+            &mut stack,
+        )
+    }
+}
+
+fn collect_recursive_child_bindings<T: RealizeTransport>(
+    tree: &Value,
+    invocation: &mut RealizeInvocation,
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    transport: &T,
+    stack: &mut Vec<String>,
+) -> Result<Vec<Value>, String> {
+    let Some(composition_point) = optional_composition_point(tree)? else {
+        return Ok(Vec::new());
+    };
+    let children = recursive_children(tree)?;
+    let mut loss_records = Vec::new();
+    for (index, child) in children {
+        let (claim, realized, binding) = realize_child_node(
+            child,
+            &invocation.request,
+            workspace_root,
+            target_lang,
+            library_tag,
+            transport,
+            vec![index],
+            &composition_point,
+            stack,
+        )?;
+        invocation.premises.push(claim.cid());
+        invocation.premises.extend(explicit_cid_array(
+            child,
+            &["claimCid", "claim_cid", "pathClaimCid", "path_claim_cid"],
+        )?);
+        dedup_cids(&mut invocation.premises);
+        invocation.request.operand_bindings.push(binding);
+        loss_records.push(realized.observed_loss_record);
+    }
+    Ok(loss_records)
+}
+
+fn realize_child_node<T: RealizeTransport>(
+    node: &Value,
+    parent_request: &RealizeRequest,
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    transport: &T,
+    position: Vec<usize>,
+    composition_point: &str,
+    stack: &mut Vec<String>,
+) -> Result<(DomainClaim, RealizedSource, Value), String> {
+    let concept_name = required_node_string(node, &["conceptName", "concept_name"])?;
+    let mode = node_string(node, &["mode"]).or_else(|| parent_request.mode.clone());
+    let stack_key = format!("{}#{}", concept_name, mode.as_deref().unwrap_or(""));
+    if stack.iter().any(|seen| seen == &stack_key) {
+        return Err(format!("recursive realization cycle at `{}`", concept_name));
+    }
+    if stack.len() >= 8 {
+        return Err(format!(
+            "recursive realization depth limit reached at `{}`",
+            concept_name
+        ));
+    }
+    stack.push(stack_key);
+
+    let mut invocation = invocation_from_tree_node(node, parent_request, target_lang, library_tag)?;
+    let child_loss_records = collect_recursive_child_bindings(
+        node,
+        &mut invocation,
+        workspace_root,
+        target_lang,
+        library_tag,
+        transport,
+        stack,
+    )?;
+    let realized = transport
+        .dispatch_realize(
+            workspace_root,
+            target_lang,
+            invocation.effective_library_tag.as_deref(),
+            &invocation.request,
+        )
+        .map_err(|error| {
+            format!(
+                "recursive child `{}` realization refused: {}",
+                concept_name, error
+            )
+        })?;
+    let mut realized = realized;
+    realized.observed_loss_record =
+        merge_observed_loss_records(child_loss_records, realized.observed_loss_record);
+    let claim = claim_from_realized(invocation, realized.clone());
+    let binding = recursive_child_binding(
+        node,
+        position,
+        composition_point,
+        &concept_name,
+        &claim,
+        &realized,
+    );
+    stack.pop();
+    Ok((claim, realized, binding))
+}
+
+fn invocation_from_tree_node(
+    node: &Value,
+    parent_request: &RealizeRequest,
+    target_lang: &str,
+    library_tag: Option<&str>,
+) -> Result<RealizeInvocation, String> {
+    let concept_name = required_node_string(node, &["conceptName", "concept_name"])?;
+    let function = node_string(node, &["function"])
+        .unwrap_or_else(|| child_function_name(&parent_request.function, &concept_name));
+    let params =
+        node_string_array(node, &["params"])?.unwrap_or_else(|| parent_request.params.clone());
+    let param_types = node_string_array(node, &["paramTypes", "param_types"])?
+        .unwrap_or_else(|| parent_request.param_types.clone());
+    let return_type = node_string(node, &["returnType", "return_type"])
+        .unwrap_or_else(|| parent_request.return_type.clone());
+    let mode = node_string(node, &["mode"]).or_else(|| parent_request.mode.clone());
+    let modes =
+        node_string_array(node, &["modes"])?.unwrap_or_else(|| parent_request.modes.clone());
+    let operand_bindings = value_array_field(node, &["operandBindings", "operand_bindings"]);
+    let request = RealizeRequest {
+        function,
+        params,
+        param_types,
+        return_type,
+        concept_name,
+        named_term_tree: Some(node.clone()),
+        term_shape: node
+            .get("termShape")
+            .or_else(|| node.get("term_shape"))
+            .cloned(),
+        operand_bindings,
+        source_function_name: node_string(node, &["sourceFunctionName", "source_function_name"])
+            .or_else(|| parent_request.source_function_name.clone()),
+        mode,
+        modes,
+        contract: parent_request.contract.clone(),
+        sugar_cids: parent_request.sugar_cids.clone(),
+        sugar_plugins: parent_request.sugar_plugins.clone(),
+    };
+    let effective_library_tag = node_string(node, &["libraryTag", "library_tag", "library"])
+        .or_else(|| library_tag.map(str::to_string));
+    let mut from = Vec::new();
+    if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
+        from.push(shape_cid);
+    }
+    if from.is_empty() {
+        from.push(request_address(&request)?);
+    }
+    let mut premises = explicit_cid_array(node, &["premises"])?;
+    premises.extend(explicit_cid_array(
+        node,
+        &["claimCid", "claim_cid", "pathClaimCid", "path_claim_cid"],
+    )?);
+    dedup_cids(&mut premises);
+    let target_library_cid = target_library_cid(
+        target_lang,
+        effective_library_tag.as_deref().unwrap_or("default"),
+    );
+    Ok(RealizeInvocation {
+        request,
+        from,
+        premises,
+        target_library_cid,
+        effective_library_tag,
+        policy_cid: None,
+        body_template_cids: Vec::new(),
+    })
+}
+
+fn request_address(request: &RealizeRequest) -> Result<Cid, String> {
+    let value = serde_json::to_value(request)
+        .map_err(|error| format!("serialize child request: {error}"))?;
+    Ok(address(&Term::Const {
+        value,
+        sort: Sort::Primitive {
+            name: "RealizeRequest".to_string(),
+        },
+    }))
+}
+
+fn recursive_children(tree: &Value) -> Result<Vec<(usize, &Value)>, String> {
+    let Some(args) = tree.get("args") else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = args.as_array() else {
+        return Err("recursive namedTermTree args must be an array".to_string());
+    };
+    let mut children = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        if !item.is_object() {
+            return Err(format!(
+                "recursive child at position {index} must be an object"
+            ));
+        }
+        children.push((index, item));
+    }
+    Ok(children)
+}
+
+fn optional_composition_point(tree: &Value) -> Result<Option<String>, String> {
+    let Some(point) = node_string(tree, &["compositionPoint", "composition_point"]) else {
+        return Ok(None);
+    };
+    if matches!(
+        point.as_str(),
+        "before" | "after-return" | "after-throw" | "around"
+    ) {
+        Ok(Some(point))
+    } else {
+        Err(format!("unknown recursive composition point `{point}`"))
+    }
+}
+
+fn required_node_string(node: &Value, names: &[&str]) -> Result<String, String> {
+    node_string(node, names)
+        .ok_or_else(|| format!("recursive concept node missing string field `{}`", names[0]))
+}
+
+fn node_string(node: &Value, names: &[&str]) -> Option<String> {
+    field(node, names)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn node_string_array(node: &Value, names: &[&str]) -> Result<Option<Vec<String>>, String> {
+    let Some(value) = field(node, names) else {
+        return Ok(None);
+    };
+    let Some(items) = value.as_array() else {
+        return Err(format!(
+            "recursive concept node field `{}` must be an array",
+            names[0]
+        ));
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let Some(text) = item.as_str() else {
+            return Err(format!(
+                "recursive concept node field `{}` must contain strings",
+                names[0]
+            ));
+        };
+        out.push(text.to_string());
+    }
+    Ok(Some(out))
+}
+
+fn child_function_name(parent_function: &str, concept_name: &str) -> String {
+    let suffix = concept_name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    if suffix.is_empty() {
+        format!("{parent_function}__child")
+    } else {
+        format!("{parent_function}__{suffix}")
+    }
+}
+
+fn recursive_child_binding(
+    node: &Value,
+    position: Vec<usize>,
+    composition_point: &str,
+    concept_name: &str,
+    claim: &DomainClaim,
+    realized: &RealizedSource,
+) -> Value {
+    json!({
+        "kind": "recursive-child-realization",
+        "position": position,
+        "composition_point": composition_point,
+        "concept_name": concept_name,
+        "operation_kind": node_string(node, &["operationKind", "operation_kind"]).unwrap_or_default(),
+        "shape_cid": node_string(node, &["shapeCid", "shape_cid"]).unwrap_or_default(),
+        "child_claim_cid": claim.cid(),
+        "child_output_cid": claim.to,
+        "extension": realized.extension,
+        "source": realized.source,
+        "is_stub": realized.is_stub,
+        "emitted_artifact_cid": realized.emitted_artifact_cid,
+        "observed_loss_record": realized.observed_loss_record,
+        "used_sugars": realized.used_sugars,
+        "observation_wrapper_emission_record": realized.observation_wrapper_emission_record
+    })
 }
 
 fn spec_value_from_input(input: &Input) -> Result<Value, String> {
@@ -612,6 +941,50 @@ fn loss_record_cid(record: &Value) -> Option<Cid> {
                 },
             }))
         }),
+    }
+}
+
+fn merge_observed_loss_records(child_records: Vec<Value>, parent_record: Value) -> Value {
+    if child_records.is_empty() {
+        return parent_record;
+    }
+    let mut merged = serde_json::Map::new();
+    for record in child_records
+        .into_iter()
+        .chain(std::iter::once(parent_record))
+    {
+        merge_loss_record_value(&mut merged, record);
+    }
+    Value::Object(merged)
+}
+
+fn merge_loss_record_value(merged: &mut serde_json::Map<String, Value>, record: Value) {
+    match record {
+        Value::Object(entries) => {
+            for (key, value) in entries {
+                match merged.remove(&key) {
+                    Some(existing) if existing == value => {
+                        merged.insert(key, existing);
+                    }
+                    Some(existing) => {
+                        merged.insert(
+                            key,
+                            json!({
+                                "kind": "and",
+                                "operands": [existing, value]
+                            }),
+                        );
+                    }
+                    None => {
+                        merged.insert(key, value);
+                    }
+                }
+            }
+        }
+        Value::Null => {}
+        other => {
+            merged.insert("non_object_loss_record".to_string(), other);
+        }
     }
 }
 
