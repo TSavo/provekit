@@ -314,12 +314,7 @@ def _shape_expr_with_bindings(node: ast.expr) -> _ShapeResult:
             ],
         )
     if isinstance(node, ast.Compare):
-        op = _rel_op(node.ops[0]) if node.ops else None
-        args = [_shape_expr_with_bindings(node.left)]
-        args.extend(_shape_expr_with_bindings(comparator) for comparator in node.comparators[:1])
-        if op is None:
-            return _empty_shape_result()
-        return _operator_shape_result(op, args)
+        return _compare_shape_result(node)
     if isinstance(node, ast.Call):
         args = [_shape_expr_with_bindings(node.func)]
         args.extend(_shape_expr_with_bindings(arg) for arg in node.args)
@@ -378,6 +373,34 @@ def _bin_operator_shape_result(op: ast.operator, args: list[_ShapeResult]) -> _S
     if atom is None:
         return _empty_shape_result()
     return _operator_shape_result(atom, args)
+
+
+def _compare_shape_result(node: ast.Compare) -> _ShapeResult:
+    if not node.ops or len(node.ops) != len(node.comparators):
+        return _empty_shape_result()
+    operands: list[ast.expr] = [node.left, *node.comparators]
+    comparisons: list[_ShapeResult] = []
+    for index, raw_op in enumerate(node.ops):
+        op = _rel_op(raw_op)
+        if op is None:
+            return _empty_shape_result()
+        comparisons.append(
+            _operator_shape_result(
+                op,
+                [
+                    _shape_expr_with_bindings(operands[index]),
+                    _shape_expr_with_bindings(operands[index + 1]),
+                ],
+            )
+        )
+    result = comparisons[0]
+    for comparison in comparisons[1:]:
+        result = _operator_shape_result("concept:ite", [result, comparison, _bool_literal(False)])
+    return result
+
+
+def _bool_literal(value: bool) -> _ShapeResult:
+    return _ShapeResult({}, [{"position": [], "symbol": "True" if value else "False"}])
 
 
 def _operator_shape(concept_name: str, args: list[Json]) -> Json:

@@ -1,0 +1,47 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "morphism:python:rshift:to:concept:shr",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "FunctionContractMemento"
+    }
+  ],
+  "formals": [
+    "source_contract"
+  ],
+  "input_cids": [
+    "blake3-512:e9d1910bf4d05643de9f6a78601fb498706e08c513d169022fef21b928de1415f2b721b5da91a018821094aaddb6839e035cace2f84ce6afbf7a4ef4c49f8069",
+    "blake3-512:c90e3c159b25e4c4c7f9c899da5aa3ee048a548719ced7360f3e514450811096b21cd5473f22d7a05df088f92210bbc916e65970b9fa1e1511c193ed969f112b"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "homomorphism_obligation": {
+      "kind": "structural-wp-abstraction-and-effect-subset",
+      "source": "blake3-512:e9d1910bf4d05643de9f6a78601fb498706e08c513d169022fef21b928de1415f2b721b5da91a018821094aaddb6839e035cace2f84ce6afbf7a4ef4c49f8069",
+      "target": "blake3-512:c90e3c159b25e4c4c7f9c899da5aa3ee048a548719ced7360f3e514450811096b21cd5473f22d7a05df088f92210bbc916e65970b9fa1e1511c193ed969f112b"
+    },
+    "kind": "contract-renaming-morphism",
+    "literal_map": {},
+    "operator_map": {
+      "rshift": "shr"
+    },
+    "renaming_map": {},
+    "representation_map": {},
+    "source_contract_cid": "blake3-512:e9d1910bf4d05643de9f6a78601fb498706e08c513d169022fef21b928de1415f2b721b5da91a018821094aaddb6839e035cace2f84ce6afbf7a4ef4c49f8069",
+    "target_shape_cid": "blake3-512:c90e3c159b25e4c4c7f9c899da5aa3ee048a548719ced7360f3e514450811096b21cd5473f22d7a05df088f92210bbc916e65970b9fa1e1511c193ed969f112b"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "FunctionContractMemento"
+  }
+}

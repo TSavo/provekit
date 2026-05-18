@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import blake3
+import pytest
 
 ROOT = Path(__file__).resolve().parents[4]
 PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
@@ -128,6 +129,21 @@ def _transported_op_payload() -> dict:
         "shape_cid": _cid("e"),
         "sugar_dict_cid": _cid("f"),
         "term_position": [3, 0],
+    }
+
+
+def _loss_record_contribution(loss_name: str) -> dict:
+    return {
+        "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+                loss_name: {
+                    "args": [],
+                    "head": "atomic",
+                    "name": loss_name,
+                }
+            },
+        }
     }
 
 
@@ -1120,3 +1136,51 @@ def test_concept_citation_comment_emitted_for_transported_operation() -> None:
 
     payload_cid = _json_cid(payload)
     assert f"# provekit-concept-payload-cid: {payload_cid}" in source
+
+
+@pytest.mark.parametrize(
+    ("concept_name", "loss_name"),
+    [
+        ("concept:addr", "python-references-not-addresses"),
+        ("concept:deref", "python-implicit-deref"),
+        ("concept:decl", "python-implicit-decl"),
+        ("concept:cast", "python-constructor-not-cast"),
+        ("concept:do", "python-no-do-while"),
+        ("concept:postdec", "python-no-postfix-decrement"),
+        ("concept:postinc", "python-no-postfix-increment"),
+        ("concept:predec", "python-no-prefix-decrement"),
+        ("concept:preinc", "python-no-prefix-increment"),
+        ("concept:ushr", "python-unified-shr"),
+    ],
+)
+def test_python_floor_gap_concepts_emit_named_loss_concept_citation_carriers(
+    concept_name: str,
+    loss_name: str,
+) -> None:
+    function = "carry_" + concept_name.removeprefix("concept:").replace("-", "_")
+
+    result = emit_stub(
+        function=function,
+        params=["x"],
+        param_types=["object"],
+        return_type="object",
+        concept_name=concept_name,
+    )
+
+    source = result["source"]
+    assert "# provekit-concept:" in source
+    assert "# provekit-concept-payload-cid: blake3-512:" in source
+    assert "    pass\n" in source
+    _compiled_namespace(source)
+
+    payloads = _concept_citation_payloads(source)
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["artifact_kind"] == "provekit-concept-citation-comment-sugar"
+    assert payload["concept_name"] == concept_name
+    assert payload["operation_kind"] == concept_name.removeprefix("concept:")
+    assert payload["args_jcs"] == [{"kind": "var", "name": "x"}]
+    assert payload["args_jcs_cid"] == _json_cid(payload["args_jcs"])
+    assert payload["term_position"] == [0]
+    assert payload["loss_record_cid"] == _json_cid(_loss_record_contribution(loss_name))
+    assert result["observed_loss_record"] == _loss_record_contribution(loss_name)

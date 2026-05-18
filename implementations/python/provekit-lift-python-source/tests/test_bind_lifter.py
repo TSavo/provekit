@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[4]
 PKG_SRC = ROOT / "implementations/python/provekit-lift-python-source/src"
 PY_TESTS_SRC = ROOT / "implementations/python/provekit-lift-py-tests/src"
@@ -160,6 +162,10 @@ def _walk_objects(value: object) -> list[dict]:
 
 def _operator_atoms(term_shape: dict) -> list[dict]:
     return [node for node in _walk_objects(term_shape) if "op_cid" in node]
+
+
+def _operator_concepts(term_shape: dict) -> list[str]:
+    return [str(atom["concept_name"]) for atom in _operator_atoms(term_shape)]
 
 
 def _gamma_shape(concept_name: str, args: list[dict] | None = None) -> dict:
@@ -513,6 +519,60 @@ def test_bind_lift_operator_atoms_make_distinct_term_shape_cids() -> None:
     sub = lift_source("def f(x, y):\n    return x - y\n", "pkg/sub.py").ir[0]
 
     assert add["term_shape_cid"] != sub["term_shape_cid"]
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        ("a < b", ["concept:lt"]),
+        ("a == b", ["concept:eq"]),
+        ("a >= b", ["concept:ge"]),
+    ],
+)
+def test_bind_lift_compare_single_op_discriminates_concept_atom(
+    expr: str,
+    expected: list[str],
+) -> None:
+    result = lift_source(f"def f(a, b):\n    return {expr}\n", "pkg/compare_single.py")
+
+    assert result.diagnostics == []
+    assert _operator_concepts(result.ir[0]["term_shape"]) == expected
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        ("a < b < c", ["concept:ite", "concept:lt", "concept:lt"]),
+        ("a < b >= c", ["concept:ite", "concept:lt", "concept:ge"]),
+        ("a == b != c", ["concept:ite", "concept:eq", "concept:ne"]),
+    ],
+)
+def test_bind_lift_compare_two_chain_desugars_to_and_composition(
+    expr: str,
+    expected: list[str],
+) -> None:
+    result = lift_source(f"def f(a, b, c):\n    return {expr}\n", "pkg/compare_two.py")
+
+    assert result.diagnostics == []
+    assert _operator_concepts(result.ir[0]["term_shape"]) == expected
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        ("a < b <= c != d", ["concept:ite", "concept:ite", "concept:lt", "concept:le", "concept:ne"]),
+        ("a > b >= c == d", ["concept:ite", "concept:ite", "concept:gt", "concept:ge", "concept:eq"]),
+        ("a != b < c > d", ["concept:ite", "concept:ite", "concept:ne", "concept:lt", "concept:gt"]),
+    ],
+)
+def test_bind_lift_compare_three_chain_mixed_ops_desugars_to_and_composition(
+    expr: str,
+    expected: list[str],
+) -> None:
+    result = lift_source(f"def f(a, b, c, d):\n    return {expr}\n", "pkg/compare_three.py")
+
+    assert result.diagnostics == []
+    assert _operator_concepts(result.ir[0]["term_shape"]) == expected
 
 
 def test_bind_lift_filters_unnamed_concepts_and_void_return() -> None:

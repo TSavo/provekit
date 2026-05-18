@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[4]
 PKG_SRC = ROOT / "implementations/python/provekit-lift-python-source/src"
 PY_TESTS_SRC = ROOT / "implementations/python/provekit-lift-py-tests/src"
@@ -49,6 +51,20 @@ def _ctor_names(node: object) -> list[str]:
     return []
 
 
+def _compare_pairs(node: object) -> list[tuple[str, str, str]]:
+    pairs: list[tuple[str, str, str]] = []
+    if isinstance(node, dict):
+        if node.get("kind") == "ctor" and node.get("name") == "python:compare":
+            args = node["args"]
+            pairs.append((args[0]["value"], args[1]["name"], args[2]["name"]))
+        for child in node.get("args", []):
+            pairs.extend(_compare_pairs(child))
+    elif isinstance(node, list):
+        for child in node:
+            pairs.extend(_compare_pairs(child))
+    return pairs
+
+
 def test_lift_function_emits_source_unit_and_python_ops() -> None:
     source = "GLOBAL = 3\n\ndef add_one(x):\n    y = x + GLOBAL\n    return y\n"
 
@@ -75,6 +91,69 @@ def test_lift_function_emits_source_unit_and_python_ops() -> None:
         "python:return",
     ]
     assert all(not name.endswith(":unknown") for name in _ctor_names(result.ir))
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected_pairs"),
+    [
+        ("a < b", [("<", "a", "b")]),
+        ("a == b", [("==", "a", "b")]),
+        ("a >= b", [(">=", "a", "b")]),
+    ],
+)
+def test_compare_single_op_lifts_pairwise_discriminated_term(
+    expr: str,
+    expected_pairs: list[tuple[str, str, str]],
+) -> None:
+    result = lift_source(f"def f(a, b):\n    return {expr}\n", "compare_single.py")
+
+    body = _contract(result.ir, ".f")["post"]["args"][1]
+
+    assert result.refusals == []
+    assert _compare_pairs(body) == expected_pairs
+    assert "python:and" not in _ctor_names(body)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected_pairs"),
+    [
+        ("a < b < c", [("<", "a", "b"), ("<", "b", "c")]),
+        ("a < b >= c", [("<", "a", "b"), (">=", "b", "c")]),
+        ("a == b != c", [("==", "a", "b"), ("!=", "b", "c")]),
+    ],
+)
+def test_compare_two_chain_lifts_to_pairwise_and_composition(
+    expr: str,
+    expected_pairs: list[tuple[str, str, str]],
+) -> None:
+    result = lift_source(f"def f(a, b, c):\n    return {expr}\n", "compare_two.py")
+
+    body = _contract(result.ir, ".f")["post"]["args"][1]
+
+    assert result.refusals == []
+    assert _compare_pairs(body) == expected_pairs
+    assert _ctor_names(body).count("python:and") == 1
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected_pairs"),
+    [
+        ("a < b <= c != d", [("<", "a", "b"), ("<=", "b", "c"), ("!=", "c", "d")]),
+        ("a > b >= c == d", [(">", "a", "b"), (">=", "b", "c"), ("==", "c", "d")]),
+        ("a != b < c > d", [("!=", "a", "b"), ("<", "b", "c"), (">", "c", "d")]),
+    ],
+)
+def test_compare_three_chain_mixed_ops_lifts_to_pairwise_and_composition(
+    expr: str,
+    expected_pairs: list[tuple[str, str, str]],
+) -> None:
+    result = lift_source(f"def f(a, b, c, d):\n    return {expr}\n", "compare_three.py")
+
+    body = _contract(result.ir, ".f")["post"]["args"][1]
+
+    assert result.refusals == []
+    assert _compare_pairs(body) == expected_pairs
+    assert _ctor_names(body).count("python:and") == 2
 
 
 def test_refuses_unhandled_syntax_without_unknown_ops() -> None:

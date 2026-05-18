@@ -283,6 +283,12 @@
       "name": "python:seq",
       "path": "algorithms/python:seq.blake3-512:bfb89c4e0b90cf620df75c9e8fa5a61d7825a6cdb03ce3758298956f44807e22dcb3e351a8d0f170babbd0736581b97e192cfcd340956af3cc119b5f3db78556.json"
     },
+    "blake3-512:c137716c71a4501cf7bd51b2514360cf4f89e7ca4abc79d3c098d090849a4e726636b39d120ae12edcec11019d084d893de5ceaeb0aaa8d6e00eaa09d537d74d": {
+      "cid": "blake3-512:c137716c71a4501cf7bd51b2514360cf4f89e7ca4abc79d3c098d090849a4e726636b39d120ae12edcec11019d084d893de5ceaeb0aaa8d6e00eaa09d537d74d",
+      "kind": "algorithm",
+      "name": "python:new",
+      "path": "algorithms/python:new.blake3-512:c137716c71a4501cf7bd51b2514360cf4f89e7ca4abc79d3c098d090849a4e726636b39d120ae12edcec11019d084d893de5ceaeb0aaa8d6e00eaa09d537d74d.json"
+    },
     "blake3-512:caac28c16336aed11dbca6935fd97f68429fa503c9c800af55d90b72652bb1b05274835101e959eccee998b61d41e6945a36bfeb9e26549e1374e696d0370ca7": {
       "cid": "blake3-512:caac28c16336aed11dbca6935fd97f68429fa503c9c800af55d90b72652bb1b05274835101e959eccee998b61d41e6945a36bfeb9e26549e1374e696d0370ca7",
       "kind": "algorithm",
