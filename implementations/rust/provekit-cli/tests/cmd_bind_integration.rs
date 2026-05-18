@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use libprovekit::core::NamedTermDocument;
+use libprovekit::core::{named_term_document_from_bind_payload, NamedTermDocument, Term};
 
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
