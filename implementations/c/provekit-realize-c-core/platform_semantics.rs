@@ -90,7 +90,19 @@ pub fn declaration() -> PlatformSemanticsDeclaration {
                 )
             })
             .collect(),
+        dimension_values: dimension_values(),
+        op_aliases: BTreeMap::new(),
     }
+}
+
+pub fn dimension_values() -> Vec<DimensionValueMemento> {
+    vec![
+        dimension_value(ARITHMETIC_OVERFLOW, UNDEFINED_BEHAVIOR),
+        dimension_value(INTEGER_DIVISION_ROUNDING, TRUNCATE),
+        dimension_value(SHIFT_MODE, IMPLEMENTATION_DEFINED),
+        dimension_value(NULL_SEMANTICS, UNDEFINED_BEHAVIOR),
+        dimension_value(BITWISE_SEMANTICS, TWOS_COMPLEMENT),
+    ]
 }
 
 fn dimension_value(dimension_name: &str, value_name: &str) -> DimensionValueMemento {

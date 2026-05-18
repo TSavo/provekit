@@ -74,6 +74,10 @@ pub struct BindArgs {
     #[arg(long)]
     pub library_to: Option<String>,
 
+    /// Scope migration effect propagation to one triggering callsite CID.
+    #[arg(long)]
+    pub focus: Option<String>,
+
     /// Source directory for migration rewrite.
     #[arg(long)]
     pub source_dir: Option<PathBuf>,
@@ -274,6 +278,7 @@ impl std::fmt::Display for BindCliError {
 fn is_migration_request(args: &BindArgs) -> bool {
     args.library_from.is_some()
         || args.library_to.is_some()
+        || args.focus.is_some()
         || args.source_dir.is_some()
         || args.out_dir.is_some()
         || args.receipt.is_some()

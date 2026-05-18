@@ -22,79 +22,102 @@ const CONCEPT_BITNOT_CID: &str = "blake3-512:5e788f0d551081f4e709e4418e01017fa9a
 
 pub fn declaration() -> PlatformSemanticsDeclaration {
     let kit_cid = blake3_512_of(KIT_ID.as_bytes());
-    let wrapping = dimension_value(&kit_cid, "ArithmeticOverflow", "Wrapping");
-    let truncate = dimension_value(&kit_cid, "IntegerDivisionRounding", "Truncate");
-    let arithmetic = dimension_value(&kit_cid, "ShiftMode", "Arithmetic");
-    let logical = dimension_value(&kit_cid, "ShiftMode", "Logical");
-    let throw_arithmetic = dimension_value(&kit_cid, "NullSemantics", "ThrowArithmeticException");
-    let twos_complement = dimension_value(&kit_cid, "BitwiseSemantics", "TwosComplement");
+    let values = dimension_values_for_kit(&kit_cid);
+    let value_cids = values
+        .iter()
+        .map(|value| (value.value_name.clone(), value.cid.clone()))
+        .collect::<BTreeMap<_, _>>();
 
     PlatformSemanticsDeclaration {
         tags: vec![
             tag(
                 &kit_cid,
                 CONCEPT_ADD_CID,
-                &[("ArithmeticOverflow", wrapping.cid.as_str())],
+                &[("ArithmeticOverflow", value_cids["Wrapping"].as_str())],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_SUB_CID,
-                &[("ArithmeticOverflow", wrapping.cid.as_str())],
+                &[("ArithmeticOverflow", value_cids["Wrapping"].as_str())],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_MUL_CID,
-                &[("ArithmeticOverflow", wrapping.cid.as_str())],
+                &[("ArithmeticOverflow", value_cids["Wrapping"].as_str())],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_NEG_CID,
-                &[("ArithmeticOverflow", wrapping.cid.as_str())],
+                &[("ArithmeticOverflow", value_cids["Wrapping"].as_str())],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_DIV_CID,
                 &[
-                    ("IntegerDivisionRounding", truncate.cid.as_str()),
-                    ("NullSemantics", throw_arithmetic.cid.as_str()),
+                    ("IntegerDivisionRounding", value_cids["Truncate"].as_str()),
+                    (
+                        "NullSemantics",
+                        value_cids["ThrowArithmeticException"].as_str(),
+                    ),
                 ],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_MOD_CID,
                 &[
-                    ("IntegerDivisionRounding", truncate.cid.as_str()),
-                    ("NullSemantics", throw_arithmetic.cid.as_str()),
+                    ("IntegerDivisionRounding", value_cids["Truncate"].as_str()),
+                    (
+                        "NullSemantics",
+                        value_cids["ThrowArithmeticException"].as_str(),
+                    ),
                 ],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_SHL_CID,
-                &[("BitwiseSemantics", twos_complement.cid.as_str())],
+                &[("BitwiseSemantics", value_cids["TwosComplement"].as_str())],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_SHR_CID,
                 &[
-                    ("BitwiseSemantics", twos_complement.cid.as_str()),
-                    ("ShiftMode", arithmetic.cid.as_str()),
+                    ("BitwiseSemantics", value_cids["TwosComplement"].as_str()),
+                    ("ShiftMode", value_cids["Arithmetic"].as_str()),
                 ],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_USHR_CID,
                 &[
-                    ("BitwiseSemantics", twos_complement.cid.as_str()),
-                    ("ShiftMode", logical.cid.as_str()),
+                    ("BitwiseSemantics", value_cids["TwosComplement"].as_str()),
+                    ("ShiftMode", value_cids["Logical"].as_str()),
                 ],
             ),
             tag(
                 &kit_cid,
                 CONCEPT_BITNOT_CID,
-                &[("BitwiseSemantics", twos_complement.cid.as_str())],
+                &[("BitwiseSemantics", value_cids["TwosComplement"].as_str())],
             ),
         ],
+        dimension_values: values,
+        op_aliases: BTreeMap::new(),
     }
+}
+
+pub fn dimension_values() -> Vec<DimensionValueMemento> {
+    let kit_cid = blake3_512_of(KIT_ID.as_bytes());
+    dimension_values_for_kit(&kit_cid)
+}
+
+fn dimension_values_for_kit(kit_cid: &str) -> Vec<DimensionValueMemento> {
+    vec![
+        dimension_value(kit_cid, "ArithmeticOverflow", "Wrapping"),
+        dimension_value(kit_cid, "IntegerDivisionRounding", "Truncate"),
+        dimension_value(kit_cid, "ShiftMode", "Arithmetic"),
+        dimension_value(kit_cid, "ShiftMode", "Logical"),
+        dimension_value(kit_cid, "NullSemantics", "ThrowArithmeticException"),
+        dimension_value(kit_cid, "BitwiseSemantics", "TwosComplement"),
+    ]
 }
 
 fn dimension_value(kit_cid: &str, dimension_name: &str, value_name: &str) -> DimensionValueMemento {

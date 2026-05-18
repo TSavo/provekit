@@ -102,14 +102,39 @@ fn dimension_value_cids() -> DimensionValueCids {
     }
 }
 
-fn dimension_value_cid(dimension_name: &str, value_name: &str, compare_to: IrFormula) -> String {
+pub fn dimension_values() -> Vec<DimensionValueMemento> {
+    vec![
+        dimension_value("ArithmeticOverflow", "Wrapping", atom("rust:Wrapping")),
+        dimension_value("IntegerDivisionRounding", "Truncate", atom("rust:Truncate")),
+        dimension_value("ShiftMode", "Arithmetic", atom("rust:Arithmetic")),
+        dimension_value(
+            "NullSemantics",
+            "PanicOnDivByZero",
+            atom("rust:PanicOnDivByZero"),
+        ),
+        dimension_value(
+            "BitwiseSemantics",
+            "TwosComplement",
+            atom("rust:TwosComplement"),
+        ),
+    ]
+}
+
+fn dimension_value(
+    dimension_name: &str,
+    value_name: &str,
+    compare_to: IrFormula,
+) -> DimensionValueMemento {
     DimensionValueMemento::new(
         RUST_KIT_CID.to_string(),
         dimension_name.to_string(),
         value_name.to_string(),
         compare_to,
     )
-    .cid
+}
+
+fn dimension_value_cid(dimension_name: &str, value_name: &str, compare_to: IrFormula) -> String {
+    dimension_value(dimension_name, value_name, compare_to).cid
 }
 
 fn tag(op_cid: &str, dimensions: &[(&str, &str)]) -> PlatformSemanticTag {

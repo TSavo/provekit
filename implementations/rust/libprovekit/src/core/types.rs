@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_ir_types::{IrFormula, IrTerm, LetBinding, PlatformSemanticTag, Sort};
+use provekit_ir_types::{
+    DimensionValueMemento, IrFormula, IrTerm, LetBinding, PlatformSemanticTag, Sort,
+};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
@@ -807,6 +809,90 @@ pub enum Dialect {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct PlatformSemanticsDeclaration {
     pub tags: Vec<PlatformSemanticTag>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dimension_values: Vec<DimensionValueMemento>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub op_aliases: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DivergenceCharacterization {
+    pub dimension_name: String,
+    pub source_value_cid: String,
+    pub target_value_cid: String,
+    pub source_compare_to: IrFormula,
+    pub target_compare_to: IrFormula,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlatformSemanticComparisonError {
+    SourceOpAbsent { op_cid: String },
+    TargetOpAbsent { op_cid: String },
+    SourceValueAbsent { value_cid: String },
+    TargetValueAbsent { value_cid: String },
+}
+
+impl PlatformSemanticsDeclaration {
+    pub fn compare_op_with(
+        &self,
+        op_cid: &str,
+        target: &Self,
+    ) -> Result<Option<DivergenceCharacterization>, PlatformSemanticComparisonError> {
+        let source_tag = self.tag_for_op(op_cid).ok_or_else(|| {
+            PlatformSemanticComparisonError::SourceOpAbsent {
+                op_cid: op_cid.to_string(),
+            }
+        })?;
+        let target_tag = target.tag_for_op(op_cid).ok_or_else(|| {
+            PlatformSemanticComparisonError::TargetOpAbsent {
+                op_cid: op_cid.to_string(),
+            }
+        })?;
+
+        for (dimension_name, source_value_cid) in &source_tag.dimensions {
+            let Some(target_value_cid) = target_tag.dimensions.get(dimension_name) else {
+                continue;
+            };
+            if source_value_cid == target_value_cid {
+                continue;
+            }
+
+            let source_value = self.value_for_cid(source_value_cid).ok_or_else(|| {
+                PlatformSemanticComparisonError::SourceValueAbsent {
+                    value_cid: source_value_cid.clone(),
+                }
+            })?;
+            let target_value = target.value_for_cid(target_value_cid).ok_or_else(|| {
+                PlatformSemanticComparisonError::TargetValueAbsent {
+                    value_cid: target_value_cid.clone(),
+                }
+            })?;
+            return Ok(Some(DivergenceCharacterization {
+                dimension_name: dimension_name.clone(),
+                source_value_cid: source_value_cid.clone(),
+                target_value_cid: target_value_cid.clone(),
+                source_compare_to: source_value.compare_to.clone(),
+                target_compare_to: target_value.compare_to.clone(),
+            }));
+        }
+
+        Ok(None)
+    }
+
+    fn tag_for_op(&self, op_cid: &str) -> Option<&PlatformSemanticTag> {
+        let resolved = self
+            .op_aliases
+            .get(op_cid)
+            .map(String::as_str)
+            .unwrap_or(op_cid);
+        self.tags.iter().find(|tag| tag.op_cid == resolved)
+    }
+
+    fn value_for_cid(&self, value_cid: &str) -> Option<&DimensionValueMemento> {
+        self.dimension_values
+            .iter()
+            .find(|value| value.cid == value_cid)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
